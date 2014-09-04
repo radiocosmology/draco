@@ -3,6 +3,7 @@
 This is the repository for storing the CHIME Pipeline. 
 
 Important notes:
+
  - *Don't* develop in master, use a `passX` branch instead (`git checkout passX`)
  - *Do* install the `virtualenv` with `./mkvenv.sh`
 
