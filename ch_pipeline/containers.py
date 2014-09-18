@@ -1,5 +1,4 @@
 """Containers for parallel datasets of various types.
-
 """
 
 import numpy as np
@@ -10,14 +9,33 @@ from mpi4py import MPI
 
 
 class SiderealStream(mpidataset.MPIDataset):
+    """Parallel container for holding sidereal timestream data.
 
+    Parameters
+    ----------
+    nra : integer
+        Number of samples in RA.
+    nfreq : integer
+        Number of frequencies.
+    ncorr : integer
+        Number of correlation products.
+    comm : MPI.Comm
+        MPI communicator to distribute over.
+
+    Attributes
+    ----------
+    vis : mpidataset.MPIArray
+        Visibility array.
+    ra : np.ndarray
+        RA samples.
+    """
     _common = { 'ra': None }
 
-    _distributed = { 'data': None }
+    _distributed = { 'vis': None }
 
     @property
-    def data(self):
-        return self['data']
+    def vis(self):
+        return self['vis']
 
     @property
     def ra(self):
@@ -32,6 +50,30 @@ class SiderealStream(mpidataset.MPIDataset):
 
 
 class TimeStream(mpidataset.MPIDataset):
+    """Parallel container for holding timestream data.
+
+    Parameters
+    ----------
+    times : np.ndarray
+        Array of UNIX times in this dataset.
+    nfreq : integer
+        Number of frequencies.
+    ncorr : integer
+        Number of correlation products.
+    comm : MPI.Comm
+        MPI communicator to distribute over.
+
+    Attributes
+    ----------
+    vis : mpidataset.MPIArray
+        Visibility array.
+    timestamp : np.ndarray
+        Timestamps.
+
+    Methods
+    -------
+    from_acq_files
+    """
 
     _common = { 'timestamp': None }
 
@@ -54,6 +96,20 @@ class TimeStream(mpidataset.MPIDataset):
 
     @classmethod
     def from_acq_files(cls, files, comm=None):
+        """Load a set of acquisition files into a parallel timestream object.
+
+        Parameters
+        ----------
+        files : list
+            List of filenames to load. Presumed to be contiguous, and in-order.
+        comm : MPI.Comm, optional
+            MPI communicator to distribute over. Defaults to `MPI.COMM_WORLD`
+
+        Returns
+        -------
+        ts : TimeStream
+            Parallel timestream. Initially distributed across frequency.
+        """
 
         if comm is None:
             comm = MPI.COMM_WORLD
@@ -126,6 +182,32 @@ class TimeStream(mpidataset.MPIDataset):
 
 
 class MaskedTimeStream(TimeStream):
+    """Parallel container for holding *masked* timestream data.
+
+    Parameters
+    ----------
+    times : np.ndarray
+        Array of UNIX times in this dataset.
+    nfreq : integer
+        Number of frequencies.
+    ncorr : integer
+        Number of correlation products.
+    comm : MPI.Comm
+        MPI communicator to distribute over.
+
+    Attributes
+    ----------
+    vis : mpidataset.MPIArray
+        Visibility array.
+    mask : mpidataset.MPIArray
+        Boolean mask of bad values.
+    timestamp : np.ndarray
+        Timestamps.
+
+    Methods
+    -------
+    from_timestream_and_mask
+    """
 
     _distributed = { 'vis': None,
                      'mask': None }
@@ -146,6 +228,19 @@ class MaskedTimeStream(TimeStream):
 
     @classmethod
     def from_timestream_and_mask(cls, ts, mask):
+        """Create from a ``TimeStream`` object and a mask.
+
+        Parameters
+        ----------
+        ts : TimeStream
+            Timestream object to use.
+        mask : mpidataset.MPIArray
+            Distributed array of the mask.
+
+        Returns
+        -------
+        mts : MaskedTimeStream
+        """
 
         mts = cls(np.zeros(1), 1, 1, comm=ts.comm)
 
