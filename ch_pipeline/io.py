@@ -1,5 +1,25 @@
+"""
+=====================================
+Tasks for IO (:mod:`~ch_pipeline.io`)
+=====================================
+
+.. currentmodule:: ch_pipeline.io
+
+Tasks for calculating IO. Notably a task which will write out the parallel
+MPIDataset classes.
+
+Tasks
+=====
+
+.. autosummary::
+    :toctree: generated/
+
+    SaveOutput
+"""
+
 from caput import pipeline
 from caput import config
+
 
 class SaveOutput(pipeline.TaskBase):
     """Save out the input, and pass it on.
