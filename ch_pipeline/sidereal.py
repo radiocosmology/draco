@@ -264,11 +264,11 @@ class SiderealStacker(pipeline.TaskBase):
             self.vis_stack = sdata.vis
             self.count = 1
 
-            print "Starting stack with CSD:%i" % self.sdata.attrs['csd']
+            print "Starting stack with CSD:%i" % sdata.attrs['csd']
 
             return
 
-        print "Adding CSD:%i to stack" % self.sdata.attrs['csd']
+        print "Adding CSD:%i to stack" % sdata.attrs['csd']
 
         # Eventually, we should fix up gains, and combine masks
 
