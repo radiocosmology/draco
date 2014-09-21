@@ -1,4 +1,21 @@
-"""Containers for parallel datasets of various types.
+"""
+=========================================================
+Parallel data containers (:mod:`~ch_pipeline.containers`)
+=========================================================
+
+.. currentmodule:: ch_pipeline.containers
+
+Containers for holding various types of analysis data in a dsitributed fashion.
+
+Containers
+==========
+
+.. autosummary::
+    :toctree: generated/
+
+    TimeStream
+    MaskedTimeStream
+    SiderealStream
 """
 
 import numpy as np

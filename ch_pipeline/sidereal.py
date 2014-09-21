@@ -1,3 +1,31 @@
+"""
+============================================================
+Tasks for sidereal regridding (:mod:`~ch_pipeline.sidereal`)
+============================================================
+
+.. currentmodule:: ch_pipeline.sidereal
+
+Tasks for taking the timestream data and regridding it into sidereal days
+which can be stacked.
+
+Tasks
+=====
+
+.. autosummary::
+    :toctree: generated/
+
+    LoadTimeStreamSidereal
+    SiderealRegridder
+    SiderealStacker
+
+Usage
+=====
+
+Generally you would want to use these tasks together. Starting with a
+:class:`LoadTimeStreamSidereal`, then feeding that into
+:class:`SiderealRegridder` to grid onto each sidereal day, and then into
+:class:`SiderealStacker` if you want to combine the different days.
+"""
 
 import glob
 import numpy as np
@@ -185,6 +213,10 @@ def lanczos_inverse_matrix(x, y, a=5, cond=1e-1):
 
 class SiderealRegridder(pipeline.TaskBase):
     """Take a sidereal days worth of data, and put onto a regular grid.
+
+    Uses a maximum-likelihood inverse of a Lanczos interpolation to do the
+    regridding. This gives a reasonably local regridding, that is pretty well
+    behaved in m-space.
 
     Attributes
     ----------
