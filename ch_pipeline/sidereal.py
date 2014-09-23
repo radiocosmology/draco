@@ -135,8 +135,6 @@ class LoadTimeStreamSidereal(pipeline.TaskBase):
         return ts
 
 
-
-
 def lanczos_kernel(x, a):
     """Lanczos interpolation kernel.
 
@@ -254,20 +252,30 @@ class SiderealRegridder(pipeline.TaskBase):
         csd_grid = np.linspace(csd, csd + 1.0, self.samples, endpoint=False)
 
         # Construct regridding matrix
+        lzf = lanczos_forward_matrix(csd_grid, timestamp_csd, 5)
         lzi = lanczos_inverse_matrix(csd_grid, timestamp_csd, 5)
 
         # Mask data
-        vis_data = (data.vis * (1 - data.mask)).view(np.ndarray)
+        imask = (1.0 - data.mask).view(np.ndarray)
+        vis_data = (data.vis * imask).view(np.ndarray)
 
         # Regrid data
         sts = np.dot(vis_data.reshape(-1, vis_data.shape[-1]), lzi.T)
         sts = sts.reshape(vis_data.shape[:-1] + (self.samples,))
 
+        # Construct inverse noise weighting - assuming imask is the inverse
+        # noise matrix, this calculates the diagonal of the inverse covariance
+        # matrix
+        ni = np.dot(imask.reshape(-1, vis_data.shape[-1]), (lzf * lzf))
+        ni = ni.reshape(vis_data.shape[:-1] + (self.samples,))
+
         # Wrap to produce MPIArray
         sts = mpidataset.MPIArray.wrap(sts, axis=data.vis.axis)
+        ni  = mpidataset.MPIArray.wrap(ni,  axis=data.vis.axis)
 
         sdata = containers.SiderealStream(self.samples, 1, 1)
         sdata._distributed['vis'] = sts
+        sdata._distributed['weight'] = ni
         sdata.attrs['csd'] = csd
         sdata.attrs['tag'] = 'csd_%i' % csd
 
@@ -281,7 +289,7 @@ class SiderealStacker(pipeline.TaskBase):
     """
 
     vis_stack = None
-    mask_stack = None
+    noise_stack = None
     count = 0
 
     def next(self, sdata):
@@ -293,7 +301,8 @@ class SiderealStacker(pipeline.TaskBase):
             Individual sidereal day to stack up.
         """
         if self.count == 0:
-            self.vis_stack = sdata.vis
+            self.vis_stack = mpidataset.MPIArray.wrap(sdata.vis * sdata.weight, axis=sdata.vis.axis)
+            self.weight_stack = sdata.weight
             self.count = 1
 
             print "Starting stack with CSD:%i" % sdata.attrs['csd']
@@ -302,13 +311,16 @@ class SiderealStacker(pipeline.TaskBase):
 
         print "Adding CSD:%i to stack" % sdata.attrs['csd']
 
-        # Eventually, we should fix up gains, and combine masks
+        # Eventually we should fix up gains
 
         # Ensure we are distributed over the same axis
         axis = self.vis_stack.axis
         sdata.redistribute(axis=axis)
 
-        self.vis_stack += sdata.vis
+        # Combine stacks with inverse `noise' weighting
+        self.vis_stack += sdata.vis * sdata.weight
+        self.weight_stack += sdata.weight
+
         self.count += 1
 
     def finish(self):
@@ -320,10 +332,13 @@ class SiderealStacker(pipeline.TaskBase):
             Stack of sidereal days.
         """
 
-        self.vis_stack /= self.count
-
         sstack = containers.SiderealStream(self.vis_stack.global_shape[-1], 1, 1)
-        sstack._distributed['vis'] = self.vis_stack
+
+        vis = np.where(self.weight_stack == 0, np.zeros_like(self.vis_stack), self.vis_stack / self.weight_stack)
+        vis = mpidataset.MPIArray.wrap(vis, self.vis_stack.axis)
+
+        sstack._distributed['vis'] = vis
+        sstack._distributed['weight'] = self.weight_stack
         sstack.attrs['tag'] = 'stack'
 
         return sstack

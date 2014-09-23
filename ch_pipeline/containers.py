@@ -43,6 +43,8 @@ class SiderealStream(mpidataset.MPIDataset):
     ----------
     vis : mpidataset.MPIArray
         Visibility array.
+    weight : mpidataset.MPIArray
+        Array of weights for each point.
     ra : np.ndarray
         RA samples.
     """
@@ -53,6 +55,10 @@ class SiderealStream(mpidataset.MPIDataset):
     @property
     def vis(self):
         return self['vis']
+
+    @property
+    def weight(self):
+        return self['weight']
 
     @property
     def ra(self):
