@@ -34,6 +34,7 @@ from caput import pipeline, config
 from caput import mpiutil, mpidataset
 from ch_util import andata, ephemeris
 
+import dataspec
 import containers
 
 
@@ -78,21 +79,23 @@ class LoadTimeStreamSidereal(pipeline.TaskBase):
 
     Attributes
     ----------
-    files : glob pattern
-        List of filenames as a glob pattern.
     padding : float
         Extra amount of a sidereal day to pad each timestream by. Useful for
         getting rid of interpolation artifacts.
     """
 
-    filepat = config.Property(proptype=str)
     padding = config.Property(proptype=float, default=0.005)
 
-    def setup(self, filelist):
+    def setup(self, dspec):
         """Divide the list of files up into sidereal days.
+
+        Parameters
+        ----------
+        dspec : dict
+            Dataspec dictionary.
         """
 
-        self.files = filelist  #glob.glob(self.filepat)
+        self.files = dataspec.files_from_spec(dspec)
 
         filemap = None
         if mpiutil.rank0:
