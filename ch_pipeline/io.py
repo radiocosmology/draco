@@ -21,45 +21,52 @@ import os
 
 from caput import pipeline
 from caput import config
+from caput import mpiutil
 
 
 def _files_from_spec(inst_name, timerange, archive_root=None):
     # Get a list of files in a dataset from an instrument name and timerange.
 
-    from ch_util import data_index as di
+    files = None
 
-    # Get instrument
-    inst_obj = di.ArchiveInst.select().where(di.ArchiveInst.name == inst_name).get()
+    if mpiutil.rank0:
+        
+        from ch_util import data_index as di
+        
+        # Get instrument
+        inst_obj = di.ArchiveInst.select().where(di.ArchiveInst.name == inst_name).get()
+        
+        # Ensure timerange is a list
+        if not isinstance(timerange, list):
+            timerange = [timerange]
 
-    # Ensure timerange is a list
-    if not isinstance(timerange, list):
-        timerange = [timerange]
+        # Find the earliest and latest times
+        earliest = min([ tr['start'] for tr in timerange ])
+        latest   = max([ tr['end']   for tr in timerange ])
 
-    # Find the earliest and latest times
-    earliest = min([ tr['start'] for tr in timerange ])
-    latest   = max([ tr['end']   for tr in timerange ])
+        # Create a finder object limited to the relevant time
+        fi = di.Finder()
 
-    # Create a finder object limited to the relevant time
-    fi = di.Finder()
+        # Set the archive_root
+        if archive_root is not None:
+            fi.archive_root = archive_root
 
-    # Set the archive_root
-    if archive_root is not None:
-        fi.archive_root = archive_root
+        # Set the time range that encapsulates all the intervals
+        fi.set_time_range(earliest, latest)
 
-    # Set the time range that encapsulates all the intervals
-    fi.set_time_range(earliest, latest)
+        # Add in all the time ranges
+        for ti in timerange:
+            fi.include_time_interval(ti['start'], ti['end'])
 
-    # Add in all the time ranges
-    for ti in timerange:
-        fi.include_time_interval(ti['start'], ti['end'])
+        # Only include the required instrument
+        fi.filter_acqs(di.ArchiveAcq.inst == inst_obj)
 
-    # Only include the required instrument
-    fi.filter_acqs(di.ArchiveAcq.inst == inst_obj)
+        # Pull out the results and extract all the files
+        results = fi.get_results()
+        files = [ fname for result in results for fname in result[0] ]
+        files.sort()
 
-    # Pull out the results and extract all the files
-    results = fi.get_results()
-    files = [ fname for result in results for fname in result[0] ]
-    files.sort()
+    files = mpiutil.world.bcast(files, root=0)
 
     return files
 

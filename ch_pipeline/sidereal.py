@@ -52,7 +52,7 @@ def get_times(acq_files):
     """
     if isinstance(acq_files, list):
         return np.array([get_times(acq_file) for acq_file in acq_files])
-    elif isinstance(acq_files, str):
+    elif isinstance(acq_files, basestring):
         # Load in file (but ignore all datasets)
         ad_empty = andata.AnData.from_acq_h5(acq_files, datasets=())
         start = ad_empty.timestamp[0]
@@ -88,11 +88,11 @@ class LoadTimeStreamSidereal(pipeline.TaskBase):
     filepat = config.Property(proptype=str)
     padding = config.Property(proptype=float, default=0.005)
 
-    def setup(self):
+    def setup(self, filelist):
         """Divide the list of files up into sidereal days.
         """
 
-        self.files = glob.glob(self.filepat)
+        self.files = filelist  #glob.glob(self.filepat)
 
         filemap = None
         if mpiutil.rank0:
@@ -305,11 +305,13 @@ class SiderealStacker(pipeline.TaskBase):
             self.weight_stack = sdata.weight
             self.count = 1
 
-            print "Starting stack with CSD:%i" % sdata.attrs['csd']
+            if mpiutil.rank0:
+                print "Starting stack with CSD:%i" % sdata.attrs['csd']
 
             return
 
-        print "Adding CSD:%i to stack" % sdata.attrs['csd']
+        if mpiutil.rank0:
+            print "Adding CSD:%i to stack" % sdata.attrs['csd']
 
         # Eventually we should fix up gains
 

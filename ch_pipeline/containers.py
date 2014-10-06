@@ -20,9 +20,11 @@ Containers
 
 import numpy as np
 
-from caput import mpidataset
+from caput import mpidataset, mpiutil
 from ch_util import andata
 from mpi4py import MPI
+
+import gc
 
 
 class SiderealStream(mpidataset.MPIDataset):
@@ -133,6 +135,8 @@ class TimeStream(mpidataset.MPIDataset):
         ts : TimeStream
             Parallel timestream. Initially distributed across frequency.
         """
+        ## NOTE: we have frequency explicit garbage collections to free large
+        ## AnData objects which may have many cyclic references.
 
         if comm is None:
             comm = MPI.COMM_WORLD
@@ -143,7 +147,9 @@ class TimeStream(mpidataset.MPIDataset):
             # Open first file and check shape
             d0 = andata.CorrData.from_acq_h5(files[0])
             vis_shape = d0.vis.shape
+
             del d0
+            gc.collect()
 
         vis_shape = comm.bcast(vis_shape, root=0)
 
@@ -153,7 +159,7 @@ class TimeStream(mpidataset.MPIDataset):
 
         # Create distribute dataset
         dset = mpidataset.MPIArray((nfile, nfreq, nprod, ntime),
-                                   dtype=np.complex128, comm=comm)
+                                   dtype=np.complex64, comm=comm)
 
         # Timestamps
         timestamps = []
@@ -166,17 +172,22 @@ class TimeStream(mpidataset.MPIDataset):
             # Load file
             df = andata.CorrData.from_acq_h5(lfile)
 
-            # Check shape is correct
-            if df.vis.shape != vis_shape:
+            # Copy data only if shape is correct
+            if df.vis.shape == vis_shape:
+                # Copy into local dataset
+                dset[li] = df.vis[:]
+            # However, allow short time axis on last file
+            elif (gi == (nfile - 1)) and (df.vis.shape[:-1] == vis_shape[:-1]):
+                nt = df.vis.shape[-1]
+                dset[li, ..., :nt] = df.vis[:]
+            else:
                 raise Exception("Data from %s is not the right shape" % lfile)
-
-            # Copy into local dataset
-            dset[li] = df.vis[:]
 
             # Get timestamps
             timestamps.append((gi, df.timestamp.copy()))
 
             del df
+            gc.collect()
 
         ## Merge timestamps
         tslist = comm.allgather(timestamps)
@@ -187,19 +198,30 @@ class TimeStream(mpidataset.MPIDataset):
         timestamp_array = np.concatenate(tsflat)
 
         # Redistribute by frequency
-        dset2 = dset.redistribute(1)
-        del dset
-        dset = dset2
+        dset = dset.redistribute(1)
+
+        gc.collect()
 
         # Merge file and time axes
         dset = dset.transpose((1, 2, 0, 3))
         dset = dset.reshape((None, nprod, nfile * ntime))
+
+        # If the last file was short there will be less timestamps, if so trim
+        # the dataset to the correct length in time.
+        ttime = timestamp_array.size
+        if ttime != dset.shape[-1]:
+            dset = dset[..., :ttime]
+
+        dset = mpidataset.MPIArray.wrap(dset.astype(np.complex128), axis=0)
 
         # Create TimeStream class (set zeros sizes to stop allocation)
         ts = cls(timestamp_array, 1, 1, comm=comm)
 
         # Replace vis dataset with real data
         ts.distributed['vis'] = dset
+
+        # Final garbage collection to free large AnData objects
+        gc.collect()
 
         return ts
 
