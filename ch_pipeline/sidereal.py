@@ -34,6 +34,7 @@ from caput import pipeline, config
 from caput import mpiutil, mpidataset
 from ch_util import andata, ephemeris
 
+import dataspec
 import containers
 
 
@@ -52,7 +53,7 @@ def get_times(acq_files):
     """
     if isinstance(acq_files, list):
         return np.array([get_times(acq_file) for acq_file in acq_files])
-    elif isinstance(acq_files, str):
+    elif isinstance(acq_files, basestring):
         # Load in file (but ignore all datasets)
         ad_empty = andata.AnData.from_acq_h5(acq_files, datasets=())
         start = ad_empty.timestamp[0]
@@ -78,21 +79,23 @@ class LoadTimeStreamSidereal(pipeline.TaskBase):
 
     Attributes
     ----------
-    files : glob pattern
-        List of filenames as a glob pattern.
     padding : float
         Extra amount of a sidereal day to pad each timestream by. Useful for
         getting rid of interpolation artifacts.
     """
 
-    filepat = config.Property(proptype=str)
     padding = config.Property(proptype=float, default=0.005)
 
-    def setup(self):
+    def setup(self, dspec):
         """Divide the list of files up into sidereal days.
+
+        Parameters
+        ----------
+        dspec : dict
+            Dataspec dictionary.
         """
 
-        self.files = glob.glob(self.filepat)
+        self.files = dataspec.files_from_spec(dspec)
 
         filemap = None
         if mpiutil.rank0:
@@ -305,11 +308,13 @@ class SiderealStacker(pipeline.TaskBase):
             self.weight_stack = sdata.weight
             self.count = 1
 
-            print "Starting stack with CSD:%i" % sdata.attrs['csd']
+            if mpiutil.rank0:
+                print "Starting stack with CSD:%i" % sdata.attrs['csd']
 
             return
 
-        print "Adding CSD:%i to stack" % sdata.attrs['csd']
+        if mpiutil.rank0:
+            print "Adding CSD:%i to stack" % sdata.attrs['csd']
 
         # Eventually we should fix up gains
 
