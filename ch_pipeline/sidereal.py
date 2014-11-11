@@ -27,15 +27,16 @@ Generally you would want to use these tasks together. Starting with a
 :class:`SiderealStacker` if you want to combine the different days.
 """
 
-import glob
+
 import numpy as np
 
 from caput import pipeline, config
 from caput import mpiutil, mpidataset
 from ch_util import andata, ephemeris
 
-import dataspec
-import containers
+from . import dataspec
+from . import containers
+from . import regrid
 
 
 def get_times(acq_files):
@@ -138,80 +139,6 @@ class LoadTimeStreamSidereal(pipeline.TaskBase):
         return ts
 
 
-def lanczos_kernel(x, a):
-    """Lanczos interpolation kernel.
-
-    Parameters
-    ----------
-    x : array_like
-        Point separation.
-    a : integer
-        Lanczos kernel width.
-
-    Returns
-    -------
-    kernel : np.ndarray
-    """
-
-    return np.where(np.abs(x) < a, np.sinc(x) * np.sinc(x/a), np.zeros_like(x))
-
-
-def lanczos_forward_matrix(x, y, a=5):
-    """Regrid data using a maximum likelihood inverse Lanczos.
-
-    Parameters
-    ----------
-    x : np.ndarray[m]
-        Points to regrid data onto. Must be regularly spaced.
-    y : np.ndarray[n]
-        Points we have data at. Irregular spacing.
-    a : integer, optional
-        Lanczos width parameter.
-    cond : float
-        Relative condition number for pseudo-inverse.
-
-    Returns
-    -------
-    matrix : np.ndarray[m, n]
-        Lanczos regridding matrix. Apply to data with `np.dot(matrix, data)`.
-    """
-    dx = x[1] - x[0]
-
-    sep = (x[np.newaxis, :] - y[:, np.newaxis]) / dx
-
-    lz_forward = lanczos_kernel(sep, a)
-
-    return lz_forward
-
-
-def lanczos_inverse_matrix(x, y, a=5, cond=1e-1):
-    """Regrid data using a maximum likelihood inverse Lanczos.
-
-    Parameters
-    ----------
-    x : np.ndarray[m]
-        Points to regrid data onto. Must be regularly spaced.
-    y : np.ndarray[n]
-        Points we have data at. Irregular spacing.
-    a : integer, optional
-        Lanczos width parameter.
-    cond : float
-        Relative condition number for pseudo-inverse.
-
-    Returns
-    -------
-    matrix : np.ndarray[m, n]
-        Lanczos regridding matrix. Apply to data with `np.dot(matrix, data)`.
-    """
-
-    import scipy.linalg as la
-
-    lz_forward = lanczos_forward_matrix(x, y, a)
-    lz_inverse = la.pinv(lz_forward, rcond=cond)
-
-    return lz_inverse
-
-
 class SiderealRegridder(pipeline.TaskBase):
     """Take a sidereal days worth of data, and put onto a regular grid.
 
@@ -223,9 +150,12 @@ class SiderealRegridder(pipeline.TaskBase):
     ----------
     samples : int
         Number of samples across the sidereal day.
+    lanczos_width : int
+        Width of the Lanczos interpolation kernel.
     """
 
     samples = config.Property(proptype=int, default=1024)
+    lanczos_width = config.Property(proptype=int, default=5)
 
     def next(self, data):
         """Regrid the sidereal day.
@@ -255,22 +185,26 @@ class SiderealRegridder(pipeline.TaskBase):
         csd_grid = np.linspace(csd, csd + 1.0, self.samples, endpoint=False)
 
         # Construct regridding matrix
-        lzf = lanczos_forward_matrix(csd_grid, timestamp_csd, 5)
-        lzi = lanczos_inverse_matrix(csd_grid, timestamp_csd, 5)
+        lzf = regrid.lanczos_forward_matrix(csd_grid, timestamp_csd, self.lanczos_width).T.copy()
 
         # Mask data
         imask = (1.0 - data.mask).view(np.ndarray)
-        vis_data = (data.vis * imask).view(np.ndarray)
+        vis_data = data.vis.view(np.ndarray)
 
-        # Regrid data
-        sts = np.dot(vis_data.reshape(-1, vis_data.shape[-1]), lzi.T)
+        # Reshape data
+        vr = vis_data.reshape(-1, vis_data.shape[-1])
+        nr = imask.reshape(-1, vis_data.shape[-1])
+
+        # Construct a signal 'covariance'
+        Si = np.ones_like(csd_grid) * 1e-8
+
+        sts, ni = regrid.band_wiener(lzf, nr, Si, vr, 2*self.lanczos_width-1)
         sts = sts.reshape(vis_data.shape[:-1] + (self.samples,))
-
+        ni = ni.reshape(vis_data.shape[:-1] + (self.samples,))
         # Construct inverse noise weighting - assuming imask is the inverse
         # noise matrix, this calculates the diagonal of the inverse covariance
         # matrix
         ni = np.dot(imask.reshape(-1, vis_data.shape[-1]), (lzf * lzf))
-        ni = ni.reshape(vis_data.shape[:-1] + (self.samples,))
 
         # Wrap to produce MPIArray
         sts = mpidataset.MPIArray.wrap(sts, axis=data.vis.axis)
