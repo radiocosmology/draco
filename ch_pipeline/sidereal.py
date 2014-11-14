@@ -198,13 +198,12 @@ class SiderealRegridder(pipeline.TaskBase):
         # Construct a signal 'covariance'
         Si = np.ones_like(csd_grid) * 1e-8
 
+        # Calculate the interpolated data and a noise weight
         sts, ni = regrid.band_wiener(lzf, nr, Si, vr, 2*self.lanczos_width-1)
+
+        # Reshape to the correct shape
         sts = sts.reshape(vis_data.shape[:-1] + (self.samples,))
         ni = ni.reshape(vis_data.shape[:-1] + (self.samples,))
-        # Construct inverse noise weighting - assuming imask is the inverse
-        # noise matrix, this calculates the diagonal of the inverse covariance
-        # matrix
-        ni = np.dot(imask.reshape(-1, vis_data.shape[-1]), (lzf * lzf))
 
         # Wrap to produce MPIArray
         sts = mpidataset.MPIArray.wrap(sts, axis=data.vis.axis)
