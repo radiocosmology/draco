@@ -296,3 +296,90 @@ class MaskedTimeStream(TimeStream):
         mts._distributed['mask'] = mask
 
         return mts
+
+
+class NoiseInjTimeStream(TimeStream):
+    """Parallel container for holding Noise injection timestream data.
+
+    Parameters
+    ----------
+    times : np.ndarray
+        Array of UNIX times in this dataset.
+    nfreq : integer
+        Number of frequencies.
+    ncorr : integer
+        Number of correlation products.
+    comm : MPI.Comm
+        MPI communicator to distribute over.
+
+    Attributes
+    ----------
+    vis : mpidataset.MPIArray
+        Gain corrected visibility array.
+    gains : mpidataset.MPIArray
+        Gain array. Has the same shape as vis. To remove the gain correction 
+        from the visibility array do vis*gain.
+    dr : mpidataset.MPIArray
+        Dynamic range array. Contains the dynamic range parameter (ratio of
+        largest eigenvalues) for the gain solution.
+    timestamp : np.ndarray
+        Timestamps.
+
+    Methods
+    -------
+    from_timestream_and_mask
+    """
+
+    _distributed = { 'vis': None,
+                     'gains': None,
+                     'dr': None}
+
+    @property
+    def gains(self):
+        return self['gains']
+
+    @property
+    def dr(self):
+        return self['dr']
+
+    def __init__(self, times, nfreq, ncorr, comm=None):
+
+        TimeStream.__init__(self, times, nfreq, ncorr, comm)
+        self.distributed['gains'] = mpidataset.MPIArray((nfreq, ncorr, times.shape[0]), dtype=np.complex128, comm=comm)
+        self.distributed['dr'] = mpidataset.MPIArray((nfreq, 1, times.shape[0]), dtype=np.float64, comm=comm)
+        self.dr[:] = 0.
+
+    @classmethod
+    def from_base_timestream_attrs(cls, vis, gains, dr, timestamp, ts):
+        """Create NoiseInjTimeStream instance from given vis, gains, dr, and
+        timestamp. Copy attributes from given timestamp ts
+
+        Parameters
+        ----------
+        vis : mpidataset.MPIArray
+            Gain corrected visibility array.
+        gains : mpidataset.MPIArray
+            Gain array. Has the same shape as vis. To remove the gain correction 
+            from the visibility array do vis*gain.
+        dr : mpidataset.MPIArray
+            Dynamic range array. Contains the dynamic range parameter (ratio of
+            largest eigenvalues) for the gain solution.
+        timestamp : np.ndarray
+            Timestamps corresponding to gain and vis.        
+        ts : TimeStream
+            Timestream object to from which attributes are copied.
+
+        Returns
+        -------
+        nits : NoiseInjTimeStream
+        """
+
+        nits = cls(np.zeros(1), 1, 1, comm=ts.comm)
+
+        nits._attrs = ts._attrs.copy()
+        nits._common['timestamp'] = timestamp
+        nits._distributed['vis'] = vis
+        nits._distributed['gains'] = gains
+        nits._distributed['dr'] = dr
+
+        return nits
