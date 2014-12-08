@@ -26,4 +26,5 @@ setup(
     description = "CHIME Pipeline",
     url = "http://bitbucket.org/chime/ch_pipeline/",
 
+    package_data = { "ch_pipeline" : [ "data/*" ] }
 )
