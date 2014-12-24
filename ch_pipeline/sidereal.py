@@ -180,9 +180,12 @@ class SiderealRegridder(pipeline.TaskBase):
         # Convert data timestamps into CSDs
         timestamp_csd = ephemeris.csd(data.timestamp)
 
-        # For regular grid in CSD
+        # Fetch which CSD this is
         csd = data.attrs['csd']
-        csd_grid = np.linspace(csd, csd + 1.0, self.samples, endpoint=False)
+
+        # Create a regular grid in CSD, padded at either end to supress interpolation issues
+        pad = 5 * self.lanczos_width
+        csd_grid = csd + np.arange(-pad, self.samples + pad, dtype=np.float64) / self.samples
 
         # Construct regridding matrix
         lzf = regrid.lanczos_forward_matrix(csd_grid, timestamp_csd, self.lanczos_width).T.copy()
@@ -198,8 +201,12 @@ class SiderealRegridder(pipeline.TaskBase):
         # Construct a signal 'covariance'
         Si = np.ones_like(csd_grid) * 1e-8
 
-        # Calculate the interpolated data and a noise weight
+        # Calculate the interpolated data and a noise weight at the points in the padded grid
         sts, ni = regrid.band_wiener(lzf, nr, Si, vr, 2*self.lanczos_width-1)
+
+        # Throw away the padded ends
+        sts = sts[:, pad:-pad].copy()
+        ni = ni[:, pad:-pad].copy()
 
         # Reshape to the correct shape
         sts = sts.reshape(vis_data.shape[:-1] + (self.samples,))

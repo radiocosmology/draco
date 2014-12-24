@@ -68,7 +68,6 @@ def band_wiener(R, Ni, Si, y, bw):
 
     # Generate dirty estimate
     w = np.dot(Ni * y, R.T)
-    print w.shape
 
     # Iterate through and solve noise
     for ki in range(k):

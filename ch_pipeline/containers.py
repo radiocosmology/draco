@@ -147,6 +147,8 @@ class TimeStream(mpidataset.MPIDataset):
             # Open first file and check shape
             d0 = andata.CorrData.from_acq_h5(files[0])
             vis_shape = d0.vis.shape
+            
+            d0.close()
 
             del d0
             gc.collect()
@@ -185,6 +187,9 @@ class TimeStream(mpidataset.MPIDataset):
 
             # Get timestamps
             timestamps.append((gi, df.timestamp.copy()))
+
+            # Explicitly close to break reference cycles and delete
+            df.close()
 
             del df
             gc.collect()
@@ -298,7 +303,7 @@ class MaskedTimeStream(TimeStream):
         return mts
 
 
-class NoiseInjTimeStream(TimeStream):
+class CalibratedTimeStream(TimeStream):
     """Parallel container for holding Noise injection timestream data.
 
     Parameters
@@ -317,7 +322,7 @@ class NoiseInjTimeStream(TimeStream):
     vis : mpidataset.MPIArray
         Gain corrected visibility array.
     gains : mpidataset.MPIArray
-        Gain array. Has the same shape as vis. To remove the gain correction 
+        Gain array. Has the same shape as vis. To remove the gain correction
         from the visibility array do vis*gain.
     dr : mpidataset.MPIArray
         Dynamic range array. Contains the dynamic range parameter (ratio of
@@ -345,13 +350,16 @@ class NoiseInjTimeStream(TimeStream):
     def __init__(self, times, nfreq, ncorr, comm=None):
 
         TimeStream.__init__(self, times, nfreq, ncorr, comm)
-        self.distributed['gains'] = mpidataset.MPIArray((nfreq, ncorr, times.shape[0]), dtype=np.complex128, comm=comm)
+
+        ninput = int((2 * ncorr)**0.5)
+
+        self.distributed['gains'] = mpidataset.MPIArray((nfreq, ninput, times.shape[0]), dtype=np.complex128, comm=comm)
         self.distributed['dr'] = mpidataset.MPIArray((nfreq, 1, times.shape[0]), dtype=np.float64, comm=comm)
         self.dr[:] = 0.
 
     @classmethod
     def from_base_timestream_attrs(cls, vis, gains, dr, timestamp, ts):
-        """Create NoiseInjTimeStream instance from given vis, gains, dr, and
+        """Create CalibratedTimeStream instance from given vis, gains, dr, and
         timestamp. Copy attributes from given timestamp ts
 
         Parameters
@@ -359,27 +367,27 @@ class NoiseInjTimeStream(TimeStream):
         vis : mpidataset.MPIArray
             Gain corrected visibility array.
         gains : mpidataset.MPIArray
-            Gain array. Has the same shape as vis. To remove the gain correction 
+            Gain array. Has the same shape as vis. To remove the gain correction
             from the visibility array do vis*gain.
         dr : mpidataset.MPIArray
             Dynamic range array. Contains the dynamic range parameter (ratio of
             largest eigenvalues) for the gain solution.
         timestamp : np.ndarray
-            Timestamps corresponding to gain and vis.        
+            Timestamps corresponding to gain and vis.
         ts : TimeStream
             Timestream object to from which attributes are copied.
 
         Returns
         -------
-        nits : NoiseInjTimeStream
+        cts : CalibratedTimeStream
         """
 
-        nits = cls(np.zeros(1), 1, 1, comm=ts.comm)
+        cts = cls(np.zeros(1), 1, 1, comm=ts.comm)
 
-        nits._attrs = ts._attrs.copy()
-        nits._common['timestamp'] = timestamp
-        nits._distributed['vis'] = vis
-        nits._distributed['gains'] = gains
-        nits._distributed['dr'] = dr
+        cts._attrs = ts._attrs.copy()
+        cts._common['timestamp'] = timestamp
+        cts._distributed['vis'] = vis
+        cts._distributed['gains'] = gains
+        cts._distributed['dr'] = dr
 
-        return nits
+        return cts
