@@ -191,7 +191,7 @@ class SiderealRegridder(pipeline.TaskBase):
         lzf = regrid.lanczos_forward_matrix(csd_grid, timestamp_csd, self.lanczos_width).T.copy()
 
         # Mask data
-        imask = (1.0 - data.mask).view(np.ndarray)
+        imask = data.weight.view(np.ndarray)
         vis_data = data.vis.view(np.ndarray)
 
         # Reshape data

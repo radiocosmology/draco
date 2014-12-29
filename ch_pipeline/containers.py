@@ -87,37 +87,104 @@ class TimeStream(mpidataset.MPIDataset):
         Number of correlation products.
     comm : MPI.Comm
         MPI communicator to distribute over.
+    weight : boolean, optional
+        Add a weight array or not.
+    gain : boolean, optional
+        Add a gain array or not.
+    copy_attrs : MPIDataset, optional
+        If set, copy the attrs from this dataset.
 
     Attributes
     ----------
-    vis : mpidataset.MPIArray
-        Visibility array.
     timestamp : np.ndarray
         Timestamps.
+    vis : mpidataset.MPIArray
+        Visibility array.
+    weight : mpidataset.MPIArray
+        Array for storing weights used for tracking noise and RFI.
+    gain : mpidataset.MPIArray
+        Gains that have been applied to the dataset.
+    gain_dr : mpidataset.MPIArray
+        Dynamic range of gain solution.
 
     Methods
     -------
     from_acq_files
+    add_weight
+    add_gain
     """
 
     _common = { 'timestamp': None }
 
-    _distributed = { 'vis': None }
+    _distributed = { 'vis': None,
+                     'weight': None,
+                     'gain': None,
+                     'gain_dr': None }
+
+    @property
+    def timestamp(self):
+        return self['timestamp']
 
     @property
     def vis(self):
         return self['vis']
 
     @property
-    def timestamp(self):
-        return self['timestamp']
+    def weight(self):
+        return self['weight']
 
-    def __init__(self, times, nfreq, ncorr, comm=None):
+    @property
+    def gain(self):
+        return self['gain']
+
+    @property
+    def gain_dr(self):
+        return self['gain_dr']
+
+    def __init__(self, times, nfreq, ncorr, comm=None, weight=False, gain=False, copy_attrs=None):
 
         mpidataset.MPIDataset.__init__(self, comm)
 
         self.common['timestamp'] = times
         self.distributed['vis'] = mpidataset.MPIArray((nfreq, ncorr, times.shape[0]), dtype=np.complex128, comm=comm)
+
+        # Add gains if required
+        if weight:
+            self.add_weight()
+
+        # Add weights if required
+        if gain:
+            self.add_gain()
+
+        # Copy attributes from another dataset
+        if copy_attrs is not None and copy_attrs.attrs is not None:
+            self._attrs = copy_attrs.attrs.copy()
+
+    def add_weight(self):
+        """Add a weight array to a timestream without one.
+        """
+
+        if self.weight is None:
+            self.distributed['weight'] = mpidataset.MPIArray(self.vis.global_shape, axis=self.vis.axis,
+                                                             dtype=np.float32, comm=self.vis.comm)
+
+    def add_gains(self):
+        """Add a gain array to a timestream without one.
+        """
+
+        if self.gain is None:
+            nfreq, ncorr, ntime = self.vis.global_shape
+            ninput = int((2 * ncorr)**0.5)
+
+            self.distributed['gain'] = mpidataset.MPIArray((nfreq, ninput, ntime), axis=self.vis.axis,
+                                                           dtype=np.complex128, comm=self.vis.comm)
+            self.distributed['gain_dr'] = mpidataset.MPIArray((nfreq, 1, ntime), axis=self.vis.axis,
+                                                              dtype=np.float32, comm=self.vis.comm)
+
+
+    def copy(self):
+
+
 
     @classmethod
     def from_acq_files(cls, files, comm=None):
@@ -147,7 +214,7 @@ class TimeStream(mpidataset.MPIDataset):
             # Open first file and check shape
             d0 = andata.CorrData.from_acq_h5(files[0])
             vis_shape = d0.vis.shape
-            
+
             d0.close()
 
             del d0
