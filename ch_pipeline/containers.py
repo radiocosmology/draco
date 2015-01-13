@@ -27,6 +27,15 @@ from mpi4py import MPI
 import gc
 
 
+class Map(mpidataset.MPIDataset):
+
+    _distributed = { 'map': None }
+
+    @property
+    def map(self):
+        return self.distributed['map']
+
+
 class SiderealStream(mpidataset.MPIDataset):
     """Parallel container for holding sidereal timestream data.
 
@@ -53,6 +62,7 @@ class SiderealStream(mpidataset.MPIDataset):
     _common = { 'ra': None }
 
     _distributed = { 'vis': None }
+#                     'weight': None }
 
     @property
     def vis(self):
@@ -71,7 +81,53 @@ class SiderealStream(mpidataset.MPIDataset):
         mpidataset.MPIDataset.__init__(self, comm)
 
         self.common['ra'] = np.linspace(0.0, 360.0, nra, endpoint=False)
-        self.distributed['data'] = mpidataset.MPIArray((nfreq, ncorr, nra), dtype=np.complex128, comm=comm)
+        self.distributed['vis'] = mpidataset.MPIArray((nfreq, ncorr, nra), dtype=np.complex128, comm=comm)
+
+
+
+
+class MModes(mpidataset.MPIDataset):
+    """Parallel container for holding m-mode data.
+
+    Parameters
+    ----------
+    mmax : integer
+        Number of samples in RA.
+    nfreq : integer
+        Number of frequencies.
+    ncorr : integer
+        Number of correlation products.
+    comm : MPI.Comm
+        MPI communicator to distribute over.
+
+    Attributes
+    ----------
+    vis : mpidataset.MPIArray
+        Visibility array.
+    weight : mpidataset.MPIArray
+        Array of weights for each point.
+    """
+
+    _distributed = { 'vis': None }
+
+    @property
+    def vis(self):
+        return self['vis']
+
+    @property
+    def weight(self):
+        return self['weight']
+
+    @property
+    def ra(self):
+        return self['ra']
+
+    def __init__(self, mmax, nfreq, ncorr, comm=None):
+
+        mpidataset.MPIDataset.__init__(self, comm)
+
+        self.distributed['vis'] = mpidataset.MPIArray((mmax+1, 2, nfreq, ncorr), dtype=np.complex128, comm=comm)
+
 
 
 class TimeStream(mpidataset.MPIDataset):
@@ -180,11 +236,6 @@ class TimeStream(mpidataset.MPIDataset):
                                                            dtype=np.complex128, comm=self.vis.comm)
             self.distributed['gain_dr'] = mpidataset.MPIArray((nfreq, 1, ntime), axis=self.vis.axis,
                                                               dtype=np.float32, comm=self.vis.comm)
-
-
-    def copy(self):
-
-
 
     @classmethod
     def from_acq_files(cls, files, comm=None):
