@@ -120,6 +120,7 @@ class MapMaker(pipeline.TaskBase):
     maptype = config.Property(proptype=str, default='dirty')
 
     baseline_mask = config.Property(proptype=str, default=None)
+    pol_mask = config.Property(proptype=str, default=None)
 
     prior_amp = config.Property(proptype=float, default=1.0)
     prior_tilt = config.Property(proptype=float, default=0.5)
@@ -160,6 +161,22 @@ class MapMaker(pipeline.TaskBase):
                 fi, fj = tools.icmap(pi, tel.nfeed)
 
                 if tel.feeds[fi].cyl == tel.feeds[fj].cyl:
+                    mask[pi] = 0
+
+        if self.pol_mask == 'x_only':
+            for pi in range(tel.nbase):
+
+                fi, fj = tools.icmap(pi, tel.nfeed)
+
+                if tools.is_chime_y(tel.feeds[fi]) or tools.is_chime_y(tel.feeds[fj]):
+                    mask[pi] = 0
+
+        elif self.pol_mask == 'y_only':
+            for pi in range(tel.nbase):
+
+                fi, fj = tools.icmap(pi, tel.nfeed)
+
+                if tools.is_chime_x(tel.feeds[fi]) or tools.is_chime_x(tel.feeds[fj]):
                     mask[pi] = 0
 
         nw = nw * mask[np.newaxis, :]
