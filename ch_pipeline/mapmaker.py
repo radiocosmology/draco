@@ -91,7 +91,7 @@ class MModeTransform(pipeline.TaskBase):
         marray = _make_marray(sstream.vis)
         marray = mpidataset.MPIArray.wrap(marray, axis=2, comm=sstream.comm)
 
-        ma = containers.MModes(1, 1, 1, comm=sstream.comm)
+        ma = containers.MModes(1, sstream.freq, 1, comm=sstream.comm)
 
         ma._distributed['vis'] = marray
         ma.redistribute(axis=0)
