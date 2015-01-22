@@ -216,9 +216,10 @@ class SiderealRegridder(pipeline.TaskBase):
         sts = mpidataset.MPIArray.wrap(sts, axis=data.vis.axis)
         ni  = mpidataset.MPIArray.wrap(ni,  axis=data.vis.axis)
 
-        sdata = containers.SiderealStream(self.samples, 1, 1)
+        sdata = containers.SiderealStream(self.samples, data.freq, 1)
         sdata._distributed['vis'] = sts
         sdata._distributed['weight'] = ni
+        sdata.common['input'] = data.input
         sdata.attrs['csd'] = csd
         sdata.attrs['tag'] = 'csd_%i' % csd
 
@@ -245,6 +246,8 @@ class SiderealStacker(pipeline.TaskBase):
         """
         if self.count == 0:
             self.vis_stack = mpidataset.MPIArray.wrap(sdata.vis * sdata.weight, axis=sdata.vis.axis)
+            self.freq = sdata.freq
+            self.input = sdata.input
             self.weight_stack = sdata.weight
             self.count = 1
 
@@ -277,13 +280,14 @@ class SiderealStacker(pipeline.TaskBase):
             Stack of sidereal days.
         """
 
-        sstack = containers.SiderealStream(self.vis_stack.global_shape[-1], 1, 1)
+        sstack = containers.SiderealStream(self.vis_stack.global_shape[-1], self.freq, 1)
 
         vis = np.where(self.weight_stack == 0, np.zeros_like(self.vis_stack), self.vis_stack / self.weight_stack)
         vis = mpidataset.MPIArray.wrap(vis, self.vis_stack.axis)
 
-        sstack._distributed['vis'] = vis
-        sstack._distributed['weight'] = self.weight_stack
+        sstack.distributed['vis'] = vis
+        sstack.distributed['weight'] = self.weight_stack
+        sstack.common['input'] = self.input
         sstack.attrs['tag'] = 'stack'
 
         return sstack

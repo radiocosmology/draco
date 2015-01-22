@@ -66,7 +66,8 @@ class SiderealStream(mpidataset.MPIDataset):
         RA samples.
     """
     _common = { 'ra': None,
-                'freq': None }
+                'freq': None,
+                'input': None }
 
     _distributed = { 'vis': None }
 #                     'weight': None }
@@ -86,6 +87,10 @@ class SiderealStream(mpidataset.MPIDataset):
     @property
     def freq(self):
         return self.common['freq']
+
+    @property
+    def input(self):
+        return self.common['input']
 
     def __init__(self, nra, freq, ncorr, comm=None):
 
@@ -120,7 +125,8 @@ class MModes(mpidataset.MPIDataset):
         Array of weights for each point.
     """
 
-    _common = { 'freq': None}
+    _common = { 'freq': None,
+                'input': None }
 
     _distributed = { 'vis': None }
 
@@ -135,6 +141,10 @@ class MModes(mpidataset.MPIDataset):
     @property
     def freq(self):
         return self.common['freq']
+
+    @property
+    def input(self):
+        return self.common['input']
 
     def __init__(self, mmax, freq, ncorr, comm=None):
 
@@ -187,7 +197,8 @@ class TimeStream(mpidataset.MPIDataset):
     """
 
     _common = { 'timestamp': None,
-                'freq': None }
+                'freq': None,
+                'input': None }
 
     _distributed = { 'vis': None,
                      'weight': None,
@@ -201,6 +212,10 @@ class TimeStream(mpidataset.MPIDataset):
     @property
     def freq(self):
         return self.common['freq']
+
+    @property
+    def input(self):
+        return self.common['input']
 
     @property
     def vis(self):
@@ -234,7 +249,7 @@ class TimeStream(mpidataset.MPIDataset):
 
         # Add weights if required
         if gain:
-            self.add_gain()
+            self.add_gains()
 
         # Copy attributes from another dataset
         if copy_attrs is not None and copy_attrs.attrs is not None:
@@ -246,7 +261,7 @@ class TimeStream(mpidataset.MPIDataset):
 
         if self.weight is None:
             self._distributed['weight'] = mpidataset.MPIArray(self.vis.global_shape, axis=self.vis.axis,
-                                                              dtype=np.float32, comm=self.vis.comm)
+                                                              dtype=np.float64, comm=self.vis.comm)
 
     def add_gains(self):
         """Add a gain array to a timestream without one.
@@ -286,12 +301,15 @@ class TimeStream(mpidataset.MPIDataset):
         # Extract data shape from first file, and distribute to all ranks
         vis_shape = None
         freq = None
+        inputs = None
+
         if comm.rank == 0:
             # Open first file and check shape
             d0 = andata.CorrData.from_acq_h5(files[0])
             vis_shape = d0.vis.shape
 
             freq = d0.index_map['freq']
+            inputs = d0.index_map['input']
 
             d0.close()
 
@@ -300,6 +318,7 @@ class TimeStream(mpidataset.MPIDataset):
 
         vis_shape = comm.bcast(vis_shape, root=0)
         freq = comm.bcast(freq, root=0)
+        inputs = comm.bcast(inputs, root=0)
 
         # Unpack to get the individual lengths
         nfreq, nprod, ntime = vis_shape
@@ -366,7 +385,10 @@ class TimeStream(mpidataset.MPIDataset):
         dset = mpidataset.MPIArray.wrap(dset.astype(np.complex128), axis=0)
 
         # Create TimeStream class (set zeros sizes to stop allocation)
-        ts = cls(timestamp_array, 1, 1, comm=comm)
+        ts = cls(timestamp_array, freq, 1, comm=comm)
+
+        # Add input map
+        ts.common['input'] = inputs
 
         # Replace vis dataset with real data
         ts.distributed['vis'] = dset
