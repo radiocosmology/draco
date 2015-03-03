@@ -17,7 +17,7 @@ Tasks
     MapMaker
 """
 import numpy as np
-from caput import pipeline, mpidataset, config
+from caput import pipeline, mpidataset, config, mpiutil
 
 from ch_util import tools
 
@@ -65,6 +65,75 @@ def pinv_svd(M, acond=1e-4, rcond=1e-3):
     B = np.transpose(np.conjugate(np.dot(u[:, : rank] * psigma_diag, vh[: rank])))
 
     return B
+
+
+class SelectProducts(pipeline.TaskBase):
+
+    def setup(self, bt):
+
+        self.beamtransfer = bt
+        self.telescope = bt.telescope
+
+    def next(self, ss):
+
+        ss.redistribute(0)
+
+        ss_keys = ss.input['correlator_input']
+
+        # Figure the mapping between inputs for the beam transfers and the file
+        bt_feeds = self.telescope.feeds
+        bt_keys = [ f.input_sn for f in bt_feeds ]
+
+        input_ind = [np.nonzero(ss_keys == bk)[0][0] for bk in bt_keys]
+
+        # Figure out mapping between the frequencies
+        bt_freq = self.telescope.frequencies
+        ss_freq = ss.freq['centre']
+
+        freq_ind = [np.nonzero(ss_freq == bf)[0][0] for bf in bt_freq]
+
+        if mpiutil.rank0:
+            print input_ind
+            print freq_ind
+
+        sp_freq = ss.freq[freq_ind]
+        sp_input = ss.input[input_ind]
+
+        nfreq = len(sp_freq)
+        nfeed = len(sp_input)
+
+        sp = containers.SiderealStream(len(ss.ra), sp_freq, nfeed * (nfeed + 1) / 2, comm=ss.comm)
+
+        if ss.weight is not None:
+            sp.distributed['weight'] = mpidataset.MPIArray.wrap(np.zeros_like(sp.vis, dtype=np.float64), axis=0, comm=ss.comm)
+
+        # Iterate over the selected frequencies and inputs and pull out the correct data
+        for lfi, fi in sp.vis.enumerate(axis=0):
+
+            lf = freq_ind[fi]
+
+            for ii in range(nfeed):
+
+                li = input_ind[ii]
+
+                for ij in range(ii, nfeed):
+
+                    lj = input_ind[ij]
+
+                    sp_pi = tools.cmap(ii, ij, nfeed)
+                    ss_pi = tools.cmap(li, lj, len(ss_keys))
+
+                    if lj >= li:
+                        sp.vis[lfi, sp_pi] = ss.vis[lf, ss_pi]
+                    else:
+                        sp.vis[lfi, sp_pi] = ss.vis[lf, ss_pi].conj()
+
+                    if sp.weight is not None:
+                        sp.weight[lfi, sp_pi] = ss.weight[lf, ss_pi]
+
+        sp.common['input'] = sp_input
+
+        return sp
 
 
 class MModeTransform(pipeline.TaskBase):
@@ -125,6 +194,8 @@ class MapMaker(pipeline.TaskBase):
     prior_amp = config.Property(proptype=float, default=1.0)
     prior_tilt = config.Property(proptype=float, default=0.5)
 
+    no_m_zero = config.Property(proptype=bool, default=True)
+
     def setup(self, bt):
         """Set the beamtransfer matrices to use.
 
@@ -183,6 +254,10 @@ class MapMaker(pipeline.TaskBase):
 
         # Concatenate the noise weight to take into account positivie and negative m's.
         nw = np.concatenate([nw, nw], axis=1)
+
+        # Zero m=0 if requested
+        if m == 0 and self.no_m_zero:
+            nw[:] = 0.0
 
         return nw
 
@@ -270,14 +345,16 @@ class MapMaker(pipeline.TaskBase):
 
         from cora.util import hputil
 
-        # Ensure we are distributed over m
-        mmodes.redistribute(axis=0)
-
         # Fetch various properties
         bt = self.beamtransfer
         lmax = bt.telescope.lmax
         mmax = bt.telescope.mmax
         nfreq = bt.telescope.nfreq
+
+        # Trim off excess m-modes
+        mmodes.redistribute(axis=2)
+        mmodes.distributed['vis'] = mpidataset.MPIArray.wrap(mmodes.vis[:(mmax+1)], axis=2, comm=mmodes.comm)
+        mmodes.redistribute(axis=0)
 
         # Create array to store alms in.
         alm = mpidataset.MPIArray((nfreq, 4, lmax+1, mmax+1), dtype=np.complex128, axis=3, comm=mmodes.comm)

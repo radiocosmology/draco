@@ -150,3 +150,19 @@ class PrintInput(pipeline.TaskBase):
         print input
 
         return input
+
+class LoadSiderealStack(pipeline.TaskBase):
+
+    filename = config.Property(proptype=str)
+
+    done = False
+
+    def next(self):
+
+        if self.done:
+            raise pipeline.PipelineStopIteration
+
+        ss = containers.SiderealStream.from_hdf5(self.filename)
+        self.done = True
+
+        return ss

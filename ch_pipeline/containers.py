@@ -69,8 +69,8 @@ class SiderealStream(mpidataset.MPIDataset):
                 'freq': None,
                 'input': None }
 
-    _distributed = { 'vis': None }
-#                     'weight': None }
+    _distributed = { 'vis': None,
+                     'weight': None }
 
     @property
     def vis(self):
