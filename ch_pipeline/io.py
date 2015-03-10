@@ -151,6 +151,7 @@ class PrintInput(pipeline.TaskBase):
 
         return input
 
+
 class LoadSiderealStack(pipeline.TaskBase):
 
     filename = config.Property(proptype=str)

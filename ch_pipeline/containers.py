@@ -20,7 +20,7 @@ Containers
 
 import numpy as np
 
-from caput import mpidataset, mpiutil
+from caput import mpidataset
 from ch_util import andata
 from mpi4py import MPI
 
