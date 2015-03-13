@@ -25,6 +25,4 @@ setup(
     author_email = "jrs65@cita.utoronto.ca",
     description = "CHIME Pipeline",
     url = "http://bitbucket.org/chime/ch_pipeline/",
-
-    package_data = { "ch_pipeline" : [ "data/*" ] }
 )

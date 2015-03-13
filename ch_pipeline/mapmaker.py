@@ -190,11 +190,11 @@ class MapMaker(pipeline.TaskBase):
 
     baseline_mask = config.Property(proptype=str, default=None)
     pol_mask = config.Property(proptype=str, default=None)
+    m_mask = config.Property(proptype=str, default='no_m_zero')
 
     prior_amp = config.Property(proptype=float, default=1.0)
     prior_tilt = config.Property(proptype=float, default=0.5)
 
-    no_m_zero = config.Property(proptype=bool, default=True)
 
     def setup(self, bt):
         """Set the beamtransfer matrices to use.
@@ -250,14 +250,15 @@ class MapMaker(pipeline.TaskBase):
                 if tools.is_chime_x(tel.feeds[fi]) or tools.is_chime_x(tel.feeds[fj]):
                     mask[pi] = 0
 
+        if ((self.m_mask == 'no_m_zero' and m == 0) or
+            (self.m_mask == 'positive_only' and m <= 0) or
+            (self.m_mask == 'negative_only' and m > 0)):
+            nw[:] = 0.0
+
         nw = nw * mask[np.newaxis, :]
 
         # Concatenate the noise weight to take into account positivie and negative m's.
         nw = np.concatenate([nw, nw], axis=1)
-
-        # Zero m=0 if requested
-        if m == 0 and self.no_m_zero:
-            nw[:] = 0.0
 
         return nw
 
@@ -322,9 +323,9 @@ class MapMaker(pipeline.TaskBase):
     def _proj(self, m):
         # Return approproate projection matrix depending on value of maptype
 
-        proj_calltable = { 'dirty': self._dirty_proj,
-                           'ml': self._ml_proj,
-                           'wiener': self._wiener_proj_cl }
+        proj_calltable = {'dirty': self._dirty_proj,
+                          'ml': self._ml_proj,
+                          'wiener': self._wiener_proj_cl}
 
         if self.maptype not in proj_calltable.keys():
             raise Exception("Map type not known.")
