@@ -13,6 +13,8 @@ Tasks
 .. autosummary::
     :toctree: generated/
 
+    FrequencyRebin
+    SelectProducts
     MModeTransform
     MapMaker
 """
@@ -67,14 +69,97 @@ def pinv_svd(M, acond=1e-4, rcond=1e-3):
     return B
 
 
+class FrequencyRebin(pipeline.TaskBase):
+    """Rebin neighbouring frequency channels.
+
+    Parameters
+    ----------
+    channel_bin : int
+        Number of channels to in together.
+    """
+
+    channel_bin = config.Property(proptype=int, default=1)
+
+    def next(self, ss):
+        """Take the input dataset and rebin the frequencies.
+
+        Parameters
+        ----------
+        ss : SiderealStream
+
+        Returns
+        -------
+        sb : SiderealStream
+        """
+
+        if len(ss.freq) % self.channel_bin != 0:
+            raise Exception("Binning must exactly divide the number of channels.")
+
+        # Get all frequencies onto same node
+        ss.redistribute(1)
+
+        # Calculate the new frequency centres and widths
+        fc = ss.freq['centre'].reshape(-1, self.channel_bin).mean(axis=-1)
+        fw = ss.freq['width'].reshape(-1, self.channel_bin).sum(axis=-1)
+
+        freq_map = np.empty(fc.shape[0], dtype=ss.freq.dtype)
+        freq_map['centre'] = fc
+        freq_map['width'] = fw
+
+        # Rebin the weight array
+        rshape = ss.vis.shape[1:]
+        wt_rebin = ss.weight.view(np.ndarray).reshape((-1, self.channel_bin) + rshape).sum(axis=1)
+        wt_rebin = mpidataset.MPIArray.wrap(wt_rebin, axis=1)
+
+        # Rebin the visibility array
+        vis_rebin = (ss.vis * ss.weight).view(np.ndarray).reshape((-1, self.channel_bin) + rshape).sum(axis=1)
+        vis_rebin = np.where(wt_rebin == 0, np.zeros_like(vis_rebin), vis_rebin / wt_rebin)
+        vis_rebin = mpidataset.MPIArray.wrap(vis_rebin, axis=1)
+
+        # Construct the container for the rebinned timestream
+        sb = containers.SiderealStream(ss.vis.global_shape[-1], freq_map, 1)
+        sb.distributed['vis'] = vis_rebin
+        sb.distributed['weight'] = wt_rebin
+        sb.common['input'] = ss.input
+        sb.attrs['tag'] = ss.attrs['tag']
+
+        sb.redistribute(0)
+
+        return sb
+
+
 class SelectProducts(pipeline.TaskBase):
+    """Extract and order the correlation products for map-making.
+
+    The task will take a sidereal task and format the products that are needed
+    or the map-making. It uses a BeamTransfer instance to figure out what these
+    products are, and how they should be ordered. It similarly selects only the
+    required frequencies.
+    """
 
     def setup(self, bt):
+        """Set the BeamTransfer instance to use.
+
+        Parameters
+        ----------
+        bt : BeamTransfer
+        """
 
         self.beamtransfer = bt
         self.telescope = bt.telescope
 
     def next(self, ss):
+        """Select and reorder the products.
+
+        Parameters
+        ----------
+        ss : SiderealStream
+
+        Returns
+        -------
+        sp : SiderealStream
+            Dataset containing only the required products.
+        """
 
         ss.redistribute(0)
 
