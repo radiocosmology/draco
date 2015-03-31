@@ -180,15 +180,18 @@ class SiderealRegridder(pipeline.TaskBase):
         # Convert data timestamps into CSDs
         timestamp_csd = ephemeris.csd(data.timestamp)
 
-        # For regular grid in CSD
+        # Fetch which CSD this is
         csd = data.attrs['csd']
-        csd_grid = np.linspace(csd, csd + 1.0, self.samples, endpoint=False)
+
+        # Create a regular grid in CSD, padded at either end to supress interpolation issues
+        pad = 5 * self.lanczos_width
+        csd_grid = csd + np.arange(-pad, self.samples + pad, dtype=np.float64) / self.samples
 
         # Construct regridding matrix
         lzf = regrid.lanczos_forward_matrix(csd_grid, timestamp_csd, self.lanczos_width).T.copy()
 
         # Mask data
-        imask = (1.0 - data.mask).view(np.ndarray)
+        imask = data.weight.view(np.ndarray)
         vis_data = data.vis.view(np.ndarray)
 
         # Reshape data
@@ -198,8 +201,12 @@ class SiderealRegridder(pipeline.TaskBase):
         # Construct a signal 'covariance'
         Si = np.ones_like(csd_grid) * 1e-8
 
-        # Calculate the interpolated data and a noise weight
+        # Calculate the interpolated data and a noise weight at the points in the padded grid
         sts, ni = regrid.band_wiener(lzf, nr, Si, vr, 2*self.lanczos_width-1)
+
+        # Throw away the padded ends
+        sts = sts[:, pad:-pad].copy()
+        ni = ni[:, pad:-pad].copy()
 
         # Reshape to the correct shape
         sts = sts.reshape(vis_data.shape[:-1] + (self.samples,))
@@ -209,9 +216,10 @@ class SiderealRegridder(pipeline.TaskBase):
         sts = mpidataset.MPIArray.wrap(sts, axis=data.vis.axis)
         ni  = mpidataset.MPIArray.wrap(ni,  axis=data.vis.axis)
 
-        sdata = containers.SiderealStream(self.samples, 1, 1)
+        sdata = containers.SiderealStream(self.samples, data.freq, 1)
         sdata._distributed['vis'] = sts
         sdata._distributed['weight'] = ni
+        sdata.common['input'] = data.input
         sdata.attrs['csd'] = csd
         sdata.attrs['tag'] = 'csd_%i' % csd
 
@@ -238,6 +246,8 @@ class SiderealStacker(pipeline.TaskBase):
         """
         if self.count == 0:
             self.vis_stack = mpidataset.MPIArray.wrap(sdata.vis * sdata.weight, axis=sdata.vis.axis)
+            self.freq = sdata.freq
+            self.input = sdata.input
             self.weight_stack = sdata.weight
             self.count = 1
 
@@ -270,13 +280,14 @@ class SiderealStacker(pipeline.TaskBase):
             Stack of sidereal days.
         """
 
-        sstack = containers.SiderealStream(self.vis_stack.global_shape[-1], 1, 1)
+        sstack = containers.SiderealStream(self.vis_stack.global_shape[-1], self.freq, 1)
 
         vis = np.where(self.weight_stack == 0, np.zeros_like(self.vis_stack), self.vis_stack / self.weight_stack)
         vis = mpidataset.MPIArray.wrap(vis, self.vis_stack.axis)
 
-        sstack._distributed['vis'] = vis
-        sstack._distributed['weight'] = self.weight_stack
+        sstack.distributed['vis'] = vis
+        sstack.distributed['weight'] = self.weight_stack
+        sstack.common['input'] = self.input
         sstack.attrs['tag'] = 'stack'
 
         return sstack

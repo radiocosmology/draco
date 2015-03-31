@@ -20,11 +20,26 @@ Containers
 
 import numpy as np
 
-from caput import mpidataset, mpiutil
+from caput import mpidataset
 from ch_util import andata
 from mpi4py import MPI
 
 import gc
+
+
+class Map(mpidataset.MPIDataset):
+
+    _common = {'freq': None}
+
+    _distributed = {'map': None}
+
+    @property
+    def freq(self):
+        return self.common['freq']
+
+    @property
+    def map(self):
+        return self.distributed['map']
 
 
 class SiderealStream(mpidataset.MPIDataset):
@@ -50,9 +65,12 @@ class SiderealStream(mpidataset.MPIDataset):
     ra : np.ndarray
         RA samples.
     """
-    _common = { 'ra': None }
+    _common = { 'ra': None,
+                'freq': None,
+                'input': None }
 
-    _distributed = { 'vis': None }
+    _distributed = { 'vis': None,
+                     'weight': None }
 
     @property
     def vis(self):
@@ -66,12 +84,76 @@ class SiderealStream(mpidataset.MPIDataset):
     def ra(self):
         return self['ra']
 
-    def __init__(self, nra, nfreq, ncorr, comm=None):
+    @property
+    def freq(self):
+        return self.common['freq']
+
+    @property
+    def input(self):
+        return self.common['input']
+
+    def __init__(self, nra, freq, ncorr, comm=None):
 
         mpidataset.MPIDataset.__init__(self, comm)
 
+        nfreq = len(freq)
+
         self.common['ra'] = np.linspace(0.0, 360.0, nra, endpoint=False)
-        self.distributed['data'] = mpidataset.MPIArray((nfreq, ncorr, nra), dtype=np.complex128, comm=comm)
+        self.common['freq'] = freq
+        self.distributed['vis'] = mpidataset.MPIArray((nfreq, ncorr, nra), dtype=np.complex128, comm=comm)
+
+
+class MModes(mpidataset.MPIDataset):
+    """Parallel container for holding m-mode data.
+
+    Parameters
+    ----------
+    mmax : integer
+        Number of samples in RA.
+    nfreq : integer
+        Number of frequencies.
+    ncorr : integer
+        Number of correlation products.
+    comm : MPI.Comm
+        MPI communicator to distribute over.
+
+    Attributes
+    ----------
+    vis : mpidataset.MPIArray
+        Visibility array.
+    weight : mpidataset.MPIArray
+        Array of weights for each point.
+    """
+
+    _common = { 'freq': None,
+                'input': None }
+
+    _distributed = { 'vis': None }
+
+    @property
+    def vis(self):
+        return self['vis']
+
+    @property
+    def weight(self):
+        return self['weight']
+
+    @property
+    def freq(self):
+        return self.common['freq']
+
+    @property
+    def input(self):
+        return self.common['input']
+
+    def __init__(self, mmax, freq, ncorr, comm=None):
+
+        mpidataset.MPIDataset.__init__(self, comm)
+
+        nfreq = len(freq)
+
+        self.common['freq'] = freq
+        self.distributed['vis'] = mpidataset.MPIArray((mmax+1, 2, nfreq, ncorr), dtype=np.complex128, comm=comm)
 
 
 class TimeStream(mpidataset.MPIDataset):
@@ -87,37 +169,112 @@ class TimeStream(mpidataset.MPIDataset):
         Number of correlation products.
     comm : MPI.Comm
         MPI communicator to distribute over.
+    weight : boolean, optional
+        Add a weight array or not.
+    gain : boolean, optional
+        Add a gain array or not.
+    copy_attrs : MPIDataset, optional
+        If set, copy the attrs from this dataset.
 
     Attributes
     ----------
-    vis : mpidataset.MPIArray
-        Visibility array.
     timestamp : np.ndarray
         Timestamps.
+    vis : mpidataset.MPIArray
+        Visibility array.
+    weight : mpidataset.MPIArray
+        Array for storing weights used for tracking noise and RFI.
+    gain : mpidataset.MPIArray
+        Gains that have been applied to the dataset.
+    gain_dr : mpidataset.MPIArray
+        Dynamic range of gain solution.
 
     Methods
     -------
     from_acq_files
+    add_weight
+    add_gain
     """
 
-    _common = { 'timestamp': None }
+    _common = { 'timestamp': None,
+                'freq': None,
+                'input': None }
 
-    _distributed = { 'vis': None }
+    _distributed = { 'vis': None,
+                     'weight': None,
+                     'gain': None,
+                     'gain_dr': None }
+
+    @property
+    def timestamp(self):
+        return self['timestamp']
+
+    @property
+    def freq(self):
+        return self.common['freq']
+
+    @property
+    def input(self):
+        return self.common['input']
 
     @property
     def vis(self):
         return self['vis']
 
     @property
-    def timestamp(self):
-        return self['timestamp']
+    def weight(self):
+        return self['weight']
 
-    def __init__(self, times, nfreq, ncorr, comm=None):
+    @property
+    def gain(self):
+        return self['gain']
+
+    @property
+    def gain_dr(self):
+        return self['gain_dr']
+
+    def __init__(self, times, freq, ncorr, comm=None, weight=False, gain=False, copy_attrs=None):
 
         mpidataset.MPIDataset.__init__(self, comm)
 
+        nfreq = len(freq)
+
         self.common['timestamp'] = times
+        self.common['freq'] = freq
         self.distributed['vis'] = mpidataset.MPIArray((nfreq, ncorr, times.shape[0]), dtype=np.complex128, comm=comm)
+
+        # Add gains if required
+        if weight:
+            self.add_weight()
+
+        # Add weights if required
+        if gain:
+            self.add_gains()
+
+        # Copy attributes from another dataset
+        if copy_attrs is not None and copy_attrs.attrs is not None:
+            self._attrs = copy_attrs.attrs.copy()
+
+    def add_weight(self):
+        """Add a weight array to a timestream without one.
+        """
+
+        if self.weight is None:
+            self._distributed['weight'] = mpidataset.MPIArray(self.vis.global_shape, axis=self.vis.axis,
+                                                              dtype=np.float64, comm=self.vis.comm)
+
+    def add_gains(self):
+        """Add a gain array to a timestream without one.
+        """
+
+        if self.gain is None:
+            nfreq, ncorr, ntime = self.vis.global_shape
+            ninput = int((2 * ncorr)**0.5)
+
+            self.distributed['gain'] = mpidataset.MPIArray((nfreq, ninput, ntime), axis=self.vis.axis,
+                                                           dtype=np.complex128, comm=self.vis.comm)
+            self.distributed['gain_dr'] = mpidataset.MPIArray((nfreq, 1, ntime), axis=self.vis.axis,
+                                                              dtype=np.float32, comm=self.vis.comm)
 
     @classmethod
     def from_acq_files(cls, files, comm=None):
@@ -143,15 +300,25 @@ class TimeStream(mpidataset.MPIDataset):
 
         # Extract data shape from first file, and distribute to all ranks
         vis_shape = None
+        freq = None
+        inputs = None
+
         if comm.rank == 0:
             # Open first file and check shape
             d0 = andata.CorrData.from_acq_h5(files[0])
             vis_shape = d0.vis.shape
 
+            freq = d0.index_map['freq']
+            inputs = d0.index_map['input']
+
+            d0.close()
+
             del d0
             gc.collect()
 
         vis_shape = comm.bcast(vis_shape, root=0)
+        freq = comm.bcast(freq, root=0)
+        inputs = comm.bcast(inputs, root=0)
 
         # Unpack to get the individual lengths
         nfreq, nprod, ntime = vis_shape
@@ -186,10 +353,13 @@ class TimeStream(mpidataset.MPIDataset):
             # Get timestamps
             timestamps.append((gi, df.timestamp.copy()))
 
+            # Explicitly close to break reference cycles and delete
+            df.close()
+
             del df
             gc.collect()
 
-        ## Merge timestamps
+        # Merge timestamps
         tslist = comm.allgather(timestamps)
         tsflat = [ts for proclist in tslist for ts in proclist]  # Flatten list
 
@@ -215,7 +385,10 @@ class TimeStream(mpidataset.MPIDataset):
         dset = mpidataset.MPIArray.wrap(dset.astype(np.complex128), axis=0)
 
         # Create TimeStream class (set zeros sizes to stop allocation)
-        ts = cls(timestamp_array, 1, 1, comm=comm)
+        ts = cls(timestamp_array, freq, 1, comm=comm)
+
+        # Add input map
+        ts.common['input'] = inputs
 
         # Replace vis dataset with real data
         ts.distributed['vis'] = dset
@@ -224,162 +397,3 @@ class TimeStream(mpidataset.MPIDataset):
         gc.collect()
 
         return ts
-
-
-class MaskedTimeStream(TimeStream):
-    """Parallel container for holding *masked* timestream data.
-
-    Parameters
-    ----------
-    times : np.ndarray
-        Array of UNIX times in this dataset.
-    nfreq : integer
-        Number of frequencies.
-    ncorr : integer
-        Number of correlation products.
-    comm : MPI.Comm
-        MPI communicator to distribute over.
-
-    Attributes
-    ----------
-    vis : mpidataset.MPIArray
-        Visibility array.
-    mask : mpidataset.MPIArray
-        Boolean mask of bad values.
-    timestamp : np.ndarray
-        Timestamps.
-
-    Methods
-    -------
-    from_timestream_and_mask
-    """
-
-    _distributed = { 'vis': None,
-                     'mask': None }
-
-    @property
-    def mask(self):
-        return self['mask']
-
-    @property
-    def timestamp(self):
-        return self['timestamp']
-
-    def __init__(self, times, nfreq, ncorr, comm=None):
-
-        TimeStream.__init__(self, times, nfreq, ncorr, comm)
-        self.distributed['mask'] = mpidataset.MPIArray((nfreq, ncorr, times.shape[0]), dtype=np.bool, comm=comm)
-        self.mask[:] = False
-
-    @classmethod
-    def from_timestream_and_mask(cls, ts, mask):
-        """Create from a ``TimeStream`` object and a mask.
-
-        Parameters
-        ----------
-        ts : TimeStream
-            Timestream object to use.
-        mask : mpidataset.MPIArray
-            Distributed array of the mask.
-
-        Returns
-        -------
-        mts : MaskedTimeStream
-        """
-
-        mts = cls(np.zeros(1), 1, 1, comm=ts.comm)
-
-        mts._attrs = ts._attrs.copy()
-        mts._common = ts._common.copy()
-        mts._distributed = ts._distributed.copy()
-
-        mts._distributed['mask'] = mask
-
-        return mts
-
-
-class NoiseInjTimeStream(TimeStream):
-    """Parallel container for holding Noise injection timestream data.
-
-    Parameters
-    ----------
-    times : np.ndarray
-        Array of UNIX times in this dataset.
-    nfreq : integer
-        Number of frequencies.
-    ncorr : integer
-        Number of correlation products.
-    comm : MPI.Comm
-        MPI communicator to distribute over.
-
-    Attributes
-    ----------
-    vis : mpidataset.MPIArray
-        Gain corrected visibility array.
-    gains : mpidataset.MPIArray
-        Gain array. Has the same shape as vis. To remove the gain correction 
-        from the visibility array do vis*gain.
-    dr : mpidataset.MPIArray
-        Dynamic range array. Contains the dynamic range parameter (ratio of
-        largest eigenvalues) for the gain solution.
-    timestamp : np.ndarray
-        Timestamps.
-
-    Methods
-    -------
-    from_timestream_and_mask
-    """
-
-    _distributed = { 'vis': None,
-                     'gains': None,
-                     'dr': None}
-
-    @property
-    def gains(self):
-        return self['gains']
-
-    @property
-    def dr(self):
-        return self['dr']
-
-    def __init__(self, times, nfreq, ncorr, comm=None):
-
-        TimeStream.__init__(self, times, nfreq, ncorr, comm)
-        self.distributed['gains'] = mpidataset.MPIArray((nfreq, ncorr, times.shape[0]), dtype=np.complex128, comm=comm)
-        self.distributed['dr'] = mpidataset.MPIArray((nfreq, 1, times.shape[0]), dtype=np.float64, comm=comm)
-        self.dr[:] = 0.
-
-    @classmethod
-    def from_base_timestream_attrs(cls, vis, gains, dr, timestamp, ts):
-        """Create NoiseInjTimeStream instance from given vis, gains, dr, and
-        timestamp. Copy attributes from given timestamp ts
-
-        Parameters
-        ----------
-        vis : mpidataset.MPIArray
-            Gain corrected visibility array.
-        gains : mpidataset.MPIArray
-            Gain array. Has the same shape as vis. To remove the gain correction 
-            from the visibility array do vis*gain.
-        dr : mpidataset.MPIArray
-            Dynamic range array. Contains the dynamic range parameter (ratio of
-            largest eigenvalues) for the gain solution.
-        timestamp : np.ndarray
-            Timestamps corresponding to gain and vis.        
-        ts : TimeStream
-            Timestream object to from which attributes are copied.
-
-        Returns
-        -------
-        nits : NoiseInjTimeStream
-        """
-
-        nits = cls(np.zeros(1), 1, 1, comm=ts.comm)
-
-        nits._attrs = ts._attrs.copy()
-        nits._common['timestamp'] = timestamp
-        nits._distributed['vis'] = vis
-        nits._distributed['gains'] = gains
-        nits._distributed['dr'] = dr
-
-        return nits
