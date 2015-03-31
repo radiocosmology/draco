@@ -161,8 +161,6 @@ class SelectProducts(pipeline.TaskBase):
             Dataset containing only the required products.
         """
 
-        ss.redistribute(0)
-
         ss_keys = ss.input['correlator_input']
 
         # Figure the mapping between inputs for the beam transfers and the file
@@ -192,8 +190,12 @@ class SelectProducts(pipeline.TaskBase):
         if ss.weight is not None:
             sp.distributed['weight'] = mpidataset.MPIArray.wrap(np.zeros_like(sp.vis, dtype=np.float64), axis=0, comm=ss.comm)
 
+        # Ensure all frequencies and products are on each node
+        ss.redistribute(2)
+        sp.redistribute(2)
+
         # Iterate over the selected frequencies and inputs and pull out the correct data
-        for lfi, fi in sp.vis.enumerate(axis=0):
+        for fi in range(nfreq):
 
             lf = freq_ind[fi]
 
@@ -209,14 +211,18 @@ class SelectProducts(pipeline.TaskBase):
                     ss_pi = tools.cmap(li, lj, len(ss_keys))
 
                     if lj >= li:
-                        sp.vis[lfi, sp_pi] = ss.vis[lf, ss_pi]
+                        sp.vis[fi, sp_pi] = ss.vis[lf, ss_pi]
                     else:
-                        sp.vis[lfi, sp_pi] = ss.vis[lf, ss_pi].conj()
+                        sp.vis[fi, sp_pi] = ss.vis[lf, ss_pi].conj()
 
                     if sp.weight is not None:
-                        sp.weight[lfi, sp_pi] = ss.weight[lf, ss_pi]
+                        sp.weight[fi, sp_pi] = ss.weight[lf, ss_pi]
 
         sp.common['input'] = sp_input
+
+        # Switch back to frequency distribution
+        ss.redistribute(0)
+        sp.redistribute(0)
 
         return sp
 
