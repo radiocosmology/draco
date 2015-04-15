@@ -440,7 +440,7 @@ class MapMaker(pipeline.TaskBase):
         # Fetch various properties
         bt = self.beamtransfer
         lmax = bt.telescope.lmax
-        mmax = bt.telescope.mmax
+        mmax = min(bt.telescope.mmax, mmodes.vis.global_shape[0]-1)
         nfreq = bt.telescope.nfreq
 
         # Trim off excess m-modes
