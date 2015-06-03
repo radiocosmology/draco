@@ -397,3 +397,26 @@ class TimeStream(mpidataset.MPIDataset):
         gc.collect()
 
         return ts
+
+
+class GainData(mpidataset.MPIDataset):
+    """Parallel container for holding gain data.
+
+    Attributes
+    ----------
+    gain : mpidataset.MPIArray
+        Gain array.
+    timestamp : np.ndarray
+        Time samples.
+    """
+    _common = { 'timestamp': None }
+
+    _distributed = { 'gain': None }
+
+    @property
+    def gain(self):
+        return self['gain']
+
+    @property
+    def timestamp(self):
+        return self['timestamp']

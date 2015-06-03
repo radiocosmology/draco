@@ -353,13 +353,13 @@ class MapMaker(pipeline.TaskBase):
 
         return nw
 
-    def _dirty_proj(self, m):
+    def _dirty_proj(self, m, f):
 
         bt = self.beamtransfer
         nw = self._noise_weight(m)
 
-        bm = bt.beam_m(m).reshape(bt.nfreq, bt.ntel, bt.nsky)
-        db = bm.transpose((0, 2, 1)).conj() * nw[:, np.newaxis, :]
+        bm = bt.beam_m(m, fi=f).reshape(bt.ntel, bt.nsky)
+        db = bm.T.conj() * nw[f, np.newaxis, :]
 
         return db
 
@@ -411,7 +411,7 @@ class MapMaker(pipeline.TaskBase):
 
         return wb
 
-    def _proj(self, m):
+    def _proj(self, *args):
         # Return approproate projection matrix depending on value of maptype
 
         proj_calltable = {'dirty': self._dirty_proj,
@@ -421,7 +421,7 @@ class MapMaker(pipeline.TaskBase):
         if self.maptype not in proj_calltable.keys():
             raise Exception("Map type not known.")
 
-        return proj_calltable[self.maptype](m)
+        return proj_calltable[self.maptype](*args)
 
     def next(self, mmodes):
         """Make a map from the given m-modes.
@@ -459,10 +459,9 @@ class MapMaker(pipeline.TaskBase):
         # Loop over all m's and project from m-mode visibilities to alms.
         for mi, m in enumerate(range(ml, mh)):
 
-            pm = self._proj(m)
-
             for fi in range(nfreq):
-                alm[fi, ..., mi] = np.dot(pm[fi], mmodes.vis[mi, :, fi].flatten()).reshape(4, lmax+1)
+                pm = self._proj(m, fi)
+                alm[fi, ..., mi] = np.dot(pm, mmodes.vis[mi, :, fi].flatten()).reshape(4, lmax+1)
 
         # Redistribute back over frequency
         alm = alm.redistribute(axis=0)
