@@ -20,11 +20,23 @@ Containers
 
 import numpy as np
 
-from caput import mpidataset
+from caput import mpidataset, memh5
 from ch_util import andata
 from mpi4py import MPI
 
 import gc
+
+
+class ContainerBase(memh5.BasicCont):
+
+    _dataset_spec = {}
+
+    def __init__(self, *args, **kwargs):
+        pass
+
+    def add_dataset(self, name):
+        pass
+
 
 
 class Map(mpidataset.MPIDataset):

@@ -34,6 +34,7 @@ from caput import pipeline, config
 from caput import mpiutil, mpidataset
 from ch_util import andata, ephemeris
 
+from . import task
 from . import dataspec
 from . import containers
 from . import regrid
@@ -72,7 +73,7 @@ def _days_in_csd(day, se_csd, extra=0.005):
     return np.where(np.logical_and(stest, etest))[0]
 
 
-class LoadTimeStreamSidereal(pipeline.TaskBase):
+class LoadTimeStreamSidereal(task.SingleTask):
     """Load data in sidereal days.
 
     This task takes an input list of data, and loads in a sidereal day at a
@@ -132,9 +133,16 @@ class LoadTimeStreamSidereal(pipeline.TaskBase):
         if mpiutil.rank0:
             print "Starting read of CSD:%i [%i files]" % (csd, len(fmap))
 
-        ts = containers.TimeStream.from_acq_files(sorted(dfiles))  # Ensure file list if sorted
+        ts = andata.CorrData.from_acq_h5(sorted(dfiles), distributed=True)
+
+        # Add attributes for the CSD and a tag for labelling saved files
         ts.attrs['tag'] = ('csd_%i' % csd)
         ts.attrs['csd'] = csd
+
+        # Add a weight dataset if needed
+        if 'vis_weight' not in ts.datasets:
+            weight_dset = ts.create_dataset('vis_weight', shape=ts.vis.shape, distributed=True, dtype=np.uint8)
+            weight_dset.attrs['axis'] = ts.vis.attrs['axis']
 
         return ts
 
@@ -175,10 +183,10 @@ class SiderealRegridder(pipeline.TaskBase):
             print "Regridding CSD:%i" % data.attrs['csd']
 
         # Redistribute if needed too
-        data.redistribute(axis=1)
+        data.redistribute('freq')
 
         # Convert data timestamps into CSDs
-        timestamp_csd = ephemeris.csd(data.timestamp)
+        timestamp_csd = ephemeris.csd(data.time)
 
         # Fetch which CSD this is
         csd = data.attrs['csd']
@@ -191,8 +199,8 @@ class SiderealRegridder(pipeline.TaskBase):
         lzf = regrid.lanczos_forward_matrix(csd_grid, timestamp_csd, self.lanczos_width).T.copy()
 
         # Mask data
-        imask = data.weight.view(np.ndarray)
-        vis_data = data.vis.view(np.ndarray)
+        imask = data.weight[:].view(np.ndarray)
+        vis_data = data.vis[:].view(np.ndarray)
 
         # Reshape data
         vr = vis_data.reshape(-1, vis_data.shape[-1])
