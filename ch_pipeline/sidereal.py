@@ -31,7 +31,7 @@ Generally you would want to use these tasks together. Starting with a
 import numpy as np
 
 from caput import pipeline, config
-from caput import mpiutil, mpidataset
+from caput import mpiutil, mpiarray
 from ch_util import andata, ephemeris
 
 from . import task
@@ -115,7 +115,7 @@ class LoadTimeStreamSidereal(task.SingleTask):
 
         self.filemap = mpiutil.world.bcast(filemap, root=0)
 
-    def next(self):
+    def process(self):
         """Load in each sidereal day.
 
         Returns
@@ -147,7 +147,7 @@ class LoadTimeStreamSidereal(task.SingleTask):
         return ts
 
 
-class SiderealRegridder(pipeline.TaskBase):
+class SiderealRegridder(task.SingleTask):
     """Take a sidereal days worth of data, and put onto a regular grid.
 
     Uses a maximum-likelihood inverse of a Lanczos interpolation to do the
@@ -165,7 +165,7 @@ class SiderealRegridder(pipeline.TaskBase):
     samples = config.Property(proptype=int, default=1024)
     lanczos_width = config.Property(proptype=int, default=5)
 
-    def next(self, data):
+    def process(self, data):
         """Regrid the sidereal day.
 
         Parameters
@@ -221,30 +221,30 @@ class SiderealRegridder(pipeline.TaskBase):
         ni = ni.reshape(vis_data.shape[:-1] + (self.samples,))
 
         # Wrap to produce MPIArray
-        sts = mpidataset.MPIArray.wrap(sts, axis=data.vis.axis)
-        ni  = mpidataset.MPIArray.wrap(ni,  axis=data.vis.axis)
+        sts = mpiarray.MPIArray.wrap(sts, axis=data.vis.axis)
+        ni  = mpiarray.MPIArray.wrap(ni,  axis=data.vis.axis)
 
-        sdata = containers.SiderealStream(self.samples, data.freq, 1)
-        sdata._distributed['vis'] = sts
-        sdata._distributed['weight'] = ni
-        sdata.common['input'] = data.input
+        # FYI this whole process creates an extra copy of the sidereal stack.
+        # This could probably be optimised out with a little work.
+        sdata = containers.SiderealStream(axes_from=data, ra=self.samples)
+        sdata.redistribute('freq')
+        sdata.vis[:] = sts
+        sdata.weight[:] = ni
         sdata.attrs['csd'] = csd
         sdata.attrs['tag'] = 'csd_%i' % csd
 
         return sdata
 
 
-class SiderealStacker(pipeline.TaskBase):
+class SiderealStacker(task.SingleTask):
     """Take in a set of sidereal days, and stack them up.
 
     This will apply relative calibration.
     """
 
-    vis_stack = None
-    noise_stack = None
-    count = 0
+    stack = None
 
-    def next(self, sdata):
+    def process_next(self, sdata):
         """Stack up sidereal days.
 
         Parameters
@@ -252,12 +252,16 @@ class SiderealStacker(pipeline.TaskBase):
         sdata : containers.SiderealStream
             Individual sidereal day to stack up.
         """
-        if self.count == 0:
-            self.vis_stack = mpidataset.MPIArray.wrap(sdata.vis * sdata.weight, axis=sdata.vis.axis)
-            self.freq = sdata.freq
-            self.input = sdata.input
-            self.weight_stack = sdata.weight
-            self.count = 1
+
+        sdata.redistribute('freq')
+
+        if self.stack is None:
+
+            self.stack = containers.SiderealStream(axes_from=sdata)
+            self.stack.redistribute('freq')
+
+            self.stack.vis[:] = (sdata.vis * sdata.weight)
+            self.stack.weight[:] = sdata.weight
 
             if mpiutil.rank0:
                 print "Starting stack with CSD:%i" % sdata.attrs['csd']
@@ -267,19 +271,13 @@ class SiderealStacker(pipeline.TaskBase):
         if mpiutil.rank0:
             print "Adding CSD:%i to stack" % sdata.attrs['csd']
 
-        # Eventually we should fix up gains
-
-        # Ensure we are distributed over the same axis
-        axis = self.vis_stack.axis
-        sdata.redistribute(axis=axis)
+        # note: Eventually we should fix up gains
 
         # Combine stacks with inverse `noise' weighting
-        self.vis_stack += sdata.vis * sdata.weight
-        self.weight_stack += sdata.weight
+        self.stack.vis[:] += (sdata.vis * sdata.weight)
+        self.stack.weight[:] += sdata.weight
 
-        self.count += 1
-
-    def finish(self):
+    def process_finish(self):
         """Construct and emit sidereal stack.
 
         Returns
@@ -288,14 +286,11 @@ class SiderealStacker(pipeline.TaskBase):
             Stack of sidereal days.
         """
 
-        sstack = containers.SiderealStream(self.vis_stack.global_shape[-1], self.freq, 1)
+        self.stack.attrs['tag'] = 'stack'
+        self.stack.vis[:] /=  self.stack
 
-        vis = np.where(self.weight_stack == 0, np.zeros_like(self.vis_stack), self.vis_stack / self.weight_stack)
-        vis = mpidataset.MPIArray.wrap(vis, self.vis_stack.axis)
+        self.stack.vis[:] = np.where(self.stack.weight[:] == 0,
+                                     0.0,
+                                     self.stack.vis[:] / self.stack.weight[:])
 
-        sstack.distributed['vis'] = vis
-        sstack.distributed['weight'] = self.weight_stack
-        sstack.common['input'] = self.input
-        sstack.attrs['tag'] = 'stack'
-
-        return sstack
+        return self.stack

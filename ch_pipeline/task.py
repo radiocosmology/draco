@@ -49,7 +49,7 @@ class SingleTask(pipeline._OneAndOne, pipeline.BasicContMixin):
     _count = 0
 
     def next(self, input=None):
-        """Should not need to override."""
+        """Should not need to override. Implement `process` instead."""
 
         # This should only be called once.
         try:
@@ -73,7 +73,28 @@ class SingleTask(pipeline._OneAndOne, pipeline.BasicContMixin):
         if 'tag' in input.attrs and 'tag' not in output.attrs:
             output.attrs['tag'] = input.attrs['tag']
 
-        # Write output if needed.
+        # Write the output if needed
+        self._save_output(output)
+
+        # Increment internal counter
+        self._count = self._count + 1
+
+        # Return the output for the next task
+        return output
+
+    def finish(self):
+        """Should not need to override. Implement `process_finish` instead."""
+
+        output = self.process_finish()
+
+        # Write the output if needed
+        self._save_output(output)
+
+        return output
+
+    def _save_output(self, output):
+        # Routine to write output if needed.
+
         if self.save and output is not None:
 
             # Create a tag for the output file name
@@ -85,8 +106,6 @@ class SingleTask(pipeline._OneAndOne, pipeline.BasicContMixin):
             # Expand any variables in the path
             outfile = os.path.expanduser(outfile)
             outfile = os.path.expandvars(outfile)
-            # logger.info("%s writing data to file %s." %
-            #             (self.__class__.__name__, output_filename))
 
             outdir = os.path.dirname(outfile)
 
@@ -95,9 +114,3 @@ class SingleTask(pipeline._OneAndOne, pipeline.BasicContMixin):
                 os.makedirs(outdir)
 
             self.write_output(outfile, output)
-
-        # Increment internal counter
-        self._count = self._count + 1
-
-        # Return the output for the next task
-        return output
