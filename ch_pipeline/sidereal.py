@@ -141,8 +141,10 @@ class LoadTimeStreamSidereal(task.SingleTask):
 
         # Add a weight dataset if needed
         if 'vis_weight' not in ts.datasets:
-            weight_dset = ts.create_dataset('vis_weight', shape=ts.vis.shape, distributed=True, dtype=np.uint8)
+            weight_dset = ts.create_dataset('vis_weight', shape=ts.vis.shape, dtype=np.uint8,
+                                            distributed=True, distributed_axis=0)
             weight_dset.attrs['axis'] = ts.vis.attrs['axis']
+            weight_dset[:] = 128
 
         return ts
 
@@ -221,8 +223,8 @@ class SiderealRegridder(task.SingleTask):
         ni = ni.reshape(vis_data.shape[:-1] + (self.samples,))
 
         # Wrap to produce MPIArray
-        sts = mpiarray.MPIArray.wrap(sts, axis=data.vis.axis)
-        ni  = mpiarray.MPIArray.wrap(ni,  axis=data.vis.axis)
+        sts = mpiarray.MPIArray.wrap(sts, axis=data.vis.distributed_axis)
+        ni  = mpiarray.MPIArray.wrap(ni,  axis=data.vis.distributed_axis)
 
         # FYI this whole process creates an extra copy of the sidereal stack.
         # This could probably be optimised out with a little work.
@@ -244,7 +246,7 @@ class SiderealStacker(task.SingleTask):
 
     stack = None
 
-    def process_next(self, sdata):
+    def process(self, sdata):
         """Stack up sidereal days.
 
         Parameters
@@ -260,8 +262,8 @@ class SiderealStacker(task.SingleTask):
             self.stack = containers.SiderealStream(axes_from=sdata)
             self.stack.redistribute('freq')
 
-            self.stack.vis[:] = (sdata.vis * sdata.weight)
-            self.stack.weight[:] = sdata.weight
+            self.stack.vis[:] = (sdata.vis[:] * sdata.weight[:])
+            self.stack.weight[:] = sdata.weight[:]
 
             if mpiutil.rank0:
                 print "Starting stack with CSD:%i" % sdata.attrs['csd']
@@ -274,8 +276,8 @@ class SiderealStacker(task.SingleTask):
         # note: Eventually we should fix up gains
 
         # Combine stacks with inverse `noise' weighting
-        self.stack.vis[:] += (sdata.vis * sdata.weight)
-        self.stack.weight[:] += sdata.weight
+        self.stack.vis[:] += (sdata.vis[:] * sdata.weight[:])
+        self.stack.weight[:] += sdata.weight[:]
 
     def process_finish(self):
         """Construct and emit sidereal stack.
@@ -287,7 +289,6 @@ class SiderealStacker(task.SingleTask):
         """
 
         self.stack.attrs['tag'] = 'stack'
-        self.stack.vis[:] /=  self.stack
 
         self.stack.vis[:] = np.where(self.stack.weight[:] == 0,
                                      0.0,

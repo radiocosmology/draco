@@ -148,7 +148,7 @@ class ContainerBase(memh5.BasicCont):
         dset = self.create_dataset(name, shape=shape, dtype=dtype, distributed=dist,
                                    comm=comm, distributed_axis=dist_axis)
 
-        dset.attrs['axis'] = axes
+        dset.attrs['axis'] = np.array(axes)
 
         return dset
 
@@ -199,13 +199,15 @@ class Map(ContainerBase):
             }
         }
 
-    def __init__(self, nside, polarisation=True, *args, **kwargs):
+    def __init__(self, nside=None, polarisation=None, *args, **kwargs):
 
         # Set up axes from passed arguments
-        kwargs['pixel'] = 12*nside**2
-        kwargs['pol'] = 4 if polarisation else 1
+        if nside is not None:
+            kwargs['pixel'] = 12*nside**2
+        if polarisation is not None:
+            kwargs['pol'] = 4 if polarisation else 1
 
-        super(Map2, self).__init__(*args, **kwargs)
+        super(Map, self).__init__(*args, **kwargs)
 
     @property
     def freq(self):
@@ -253,19 +255,23 @@ class SiderealStream(ContainerBase):
             }
         }
 
-    def __init__(self, ra=1024, *args, **kwargs):
+    def __init__(self, ra=None, *args, **kwargs):
 
         # Set up axes passed ra langth
-        if isinstance(ra, int):
-            ra = np.linspace(0.0, 2*np.pi, ra, endpoint=False)
+        if ra is not None:
+            if isinstance(ra, int):
+                ra = np.linspace(0.0, 360.0, ra, endpoint=False)
+            kwargs['ra'] = ra
 
-        kwargs['ra'] = ra
-
-        super(SiderealStream2, self).__init__(*args, **kwargs)
+        super(SiderealStream, self).__init__(*args, **kwargs)
 
     @property
     def vis(self):
         return self.datasets['vis']
+
+    @property
+    def gain(self):
+        return self.datasets['gain']
 
     @property
     def weight(self):

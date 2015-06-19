@@ -56,7 +56,7 @@ def band_wiener(R, Ni, Si, y, bw):
         Estimate of variance of each element.
     """
 
-    Ni = np.atleast_2d(Ni)
+    Ni = np.atleast_2d(Ni).astype(np.float64)
     y = np.atleast_2d(y)
 
     k = Ni.shape[0]

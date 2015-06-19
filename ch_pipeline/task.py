@@ -3,7 +3,7 @@ import os
 from caput import pipeline, config
 
 
-class SingleTask(pipeline._OneAndOne, pipeline.BasicContMixin):
+class SingleTask(pipeline.TaskBase, pipeline.BasicContMixin):
     """Process a task with at most one input and output.
 
     Both input and output are expected to be :class:`memh5.BasicCont` objects.
@@ -48,6 +48,31 @@ class SingleTask(pipeline._OneAndOne, pipeline.BasicContMixin):
 
     _count = 0
 
+    done = False
+    _no_input = False
+
+    def __init__(self):
+        """Checks inputs and outputs and stuff."""
+
+        import inspect
+
+        # Inspect the `process` method to see how many arguments it takes.
+        pro_argspec = inspect.getargspec(self.process)
+        n_args = len(pro_argspec.args) - 1
+        if n_args  > 1:
+            msg = ("`process` method takes more than 1 argument, which is not"
+                   " allowed.")
+            raise PipelineConfigError(msg)
+        if pro_argspec.varargs or pro_argspec.keywords or pro_argspec.defaults:
+            msg = ("`process` method may not have variable length or optional"
+                   " arguments.")
+            raise PipelineConfigError(msg)
+        if n_args == 0:
+            self._no_input = True
+        else:
+            self._no_input = False
+
+
     def next(self, input=None):
         """Should not need to override. Implement `process` instead."""
 
@@ -65,12 +90,16 @@ class SingleTask(pipeline._OneAndOne, pipeline.BasicContMixin):
                 raise RuntimeError("Somehow `input` was set.")
             output = self.process()
         else:
-            if input is not None:
-                input = self.cast_input(input)
+            #if input is not None:
+            #    input = self.cast_input(input)
             output = self.process(input)
 
+        # Return immediately if output is None to skip writing phase.
+        if output is None:
+            return
+
         # Set a tag in output if needed
-        if 'tag' in input.attrs and 'tag' not in output.attrs:
+        if 'tag' not in output.attrs and input is not None and 'tag' in input.attrs:
             output.attrs['tag'] = input.attrs['tag']
 
         # Write the output if needed
@@ -85,12 +114,16 @@ class SingleTask(pipeline._OneAndOne, pipeline.BasicContMixin):
     def finish(self):
         """Should not need to override. Implement `process_finish` instead."""
 
-        output = self.process_finish()
+        try:
+            output = self.process_finish()
+            
+            # Write the output if needed
+            self._save_output(output)
 
-        # Write the output if needed
-        self._save_output(output)
+            return output
 
-        return output
+        except AttributeError:
+            pass
 
     def _save_output(self, output):
         # Routine to write output if needed.
@@ -106,11 +139,5 @@ class SingleTask(pipeline._OneAndOne, pipeline.BasicContMixin):
             # Expand any variables in the path
             outfile = os.path.expanduser(outfile)
             outfile = os.path.expandvars(outfile)
-
-            outdir = os.path.dirname(outfile)
-
-            # Make directory if required
-            if not os.path.isdir(outdir):
-                os.makedirs(outdir)
 
             self.write_output(outfile, output)
