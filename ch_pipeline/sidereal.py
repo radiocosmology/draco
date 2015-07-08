@@ -35,7 +35,6 @@ from caput import mpiutil, mpiarray
 from ch_util import andata, ephemeris
 
 from . import task
-from . import dataspec
 from . import containers
 from . import regrid
 
@@ -88,16 +87,16 @@ class LoadTimeStreamSidereal(task.SingleTask):
 
     padding = config.Property(proptype=float, default=0.005)
 
-    def setup(self, dspec):
+    def setup(self, files):
         """Divide the list of files up into sidereal days.
 
         Parameters
         ----------
-        dspec : dict
-            Dataspec dictionary.
+        files : list
+            List of files to load.
         """
 
-        self.files = dataspec.files_from_spec(dspec)
+        self.files = files
 
         filemap = None
         if mpiutil.rank0:
@@ -120,7 +119,7 @@ class LoadTimeStreamSidereal(task.SingleTask):
 
         Returns
         -------
-        ts : containers.TimeStream
+        ts : andata.CorrData
             The timestream of each sidereal day.
         """
 
@@ -172,7 +171,7 @@ class SiderealRegridder(task.SingleTask):
 
         Parameters
         ----------
-        data : containers.TimeStream
+        data : andata.CorrData
             Timestream data for the day (must have a `csd` attribute).
 
         Returns
