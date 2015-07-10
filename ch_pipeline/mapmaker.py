@@ -162,11 +162,15 @@ class SelectProducts(task.SingleTask):
             Dataset containing only the required products.
         """
 
-        ss_keys = ss.index_map['input']['correlator_input']
+        ss_keys = ss.index_map['input'][:]
 
         # Figure the mapping between inputs for the beam transfers and the file
-        bt_feeds = self.telescope.feeds
-        bt_keys = [ f.input_sn for f in bt_feeds ]
+        # bt_feeds = self.telescope.feeds
+        # bt_keys = [ f.input_sn for f in bt_feeds ]
+        try:
+            bt_keys = self.telescope.feed_index
+        except AttributeError:
+            bt_keys = np.arange(self.telescope.nfeed)
 
         input_ind = [np.nonzero(ss_keys == bk)[0][0] for bk in bt_keys]
 
@@ -253,13 +257,15 @@ class SelectProductsRedundant(task.SingleTask):
             Dataset containing only the required products.
         """
 
-        ss_keys = ss.index_map['input']['correlator_input']
+        ss_keys = ss.index_map['input'][:]
 
         # Figure the mapping between inputs for the beam transfers and the file
-        bt_feeds = self.telescope.feeds
-        bt_keys = [ f.input_sn for f in bt_feeds ]
+        try:
+            bt_keys = self.telescope.feed_index
+        except AttributeError:
+            bt_keys = np.arange(self.telescope.nfeed)
 
-        input_ind = [np.nonzero(ss_keys == bk)[0][0] for bk in bt_keys]
+        input_ind = [np.nonzero(bt_keys == sk)[0][0] for sk in ss_keys]
 
         # Figure out mapping between the frequencies
         bt_freq = self.telescope.frequencies
@@ -270,9 +276,7 @@ class SelectProductsRedundant(task.SingleTask):
         sp_freq = ss.freq[freq_ind]
         sp_input = ss.input[input_ind]
 
-
         nfreq = len(sp_freq)
-        nfeed = len(sp_input)
 
         sp = containers.SiderealStream(freq=sp_freq, input=sp_input, prod=self.telescope.uniquepairs,
                                        axes_from=ss, distributed=True, comm=ss.comm)
@@ -284,32 +288,38 @@ class SelectProductsRedundant(task.SingleTask):
         sp.vis[:] = 0.0
         sp.weight[:] = 0.0
 
-        # Iterate over the selected frequencies and inputs and pull out the correct data
+        # Iterate over the selected frequencies needed for the output
         for fi in range(nfreq):
 
             lf = freq_ind[fi]
 
-            for ii in range(nfeed):
+            # Iterate over products in the sidereal stream
+            for ss_pi in range(len(ss.index_map['prod'])):
 
-                li = input_ind[ii]
+                # Get the feed indices for this product
+                ii, ij = ss.index_map['prod'][ss_pi]
 
-                for ij in range(ii, nfeed):
+                # Map the feed indices into ones for the Telescope class
+                bi, bj = input_ind[ii], input_ind[ij]
 
-                    lj = input_ind[ij]
+                sp_pi = self.telescope.feedmap[bi, bj]
+                feedconj = self.telescope.feedconj[bi, bj]
 
-                    sp_pi = self.telescope.feedmap[ii, ij]
-                    ss_pi = tools.cmap(li, lj, len(ss_keys))
+                # Skip if product index is not valid
+                if sp_pi < 0:
+                    continue
 
-                    feedconj = self.telescope.feedconj[ii, ij]
+                # Accumulate visibilities, conjugating if required
+                if not feedconj:
+                    sp.vis[fi, sp_pi] += ss.weight[lf, ss_pi] * ss.vis[lf, ss_pi]
+                else:
+                    sp.vis[fi, sp_pi] += ss.weight[lf, ss_pi] * ss.vis[lf, ss_pi].conj()
 
-                    if (lj >= li and not feedconj) or (lj < li and feedconj):
-                        sp.vis[fi, sp_pi] += ss.weight[lf, ss_pi] * ss.vis[lf, ss_pi]
-                    else:
-                        sp.vis[fi, sp_pi] += ss.weight[lf, ss_pi] * ss.vis[lf, ss_pi].conj()
+                # Accumulate weights
+                sp.weight[fi, sp_pi] += ss.weight[lf, ss_pi]
 
-                    sp.weight[fi, sp_pi] += ss.weight[lf, ss_pi]
-
-        sp.vis[:] /= sp.weight[:]
+        # Divide through by weights to get properly weighted visibility average
+        sp.vis[:] *= np.where(sp.weight[:] == 0.0, 0.0, 1.0 / sp.weight[:])
 
         # Switch back to frequency distribution
         ss.redistribute('freq')
