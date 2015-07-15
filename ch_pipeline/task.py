@@ -59,21 +59,24 @@ class SingleTask(pipeline.TaskBase, pipeline.BasicContMixin):
         # Inspect the `process` method to see how many arguments it takes.
         pro_argspec = inspect.getargspec(self.process)
         n_args = len(pro_argspec.args) - 1
-        if n_args  > 1:
-            msg = ("`process` method takes more than 1 argument, which is not"
-                   " allowed.")
-            raise PipelineConfigError(msg)
+
+        #if n_args  > 1:
+        #    msg = ("`process` method takes more than 1 argument, which is not"
+        #           " allowed.")
+        #    raise PipelineConfigError(msg)
+
         if pro_argspec.varargs or pro_argspec.keywords or pro_argspec.defaults:
             msg = ("`process` method may not have variable length or optional"
                    " arguments.")
             raise PipelineConfigError(msg)
+        
         if n_args == 0:
             self._no_input = True
         else:
             self._no_input = False
 
 
-    def next(self, input=None):
+    def next(self, *input):
         """Should not need to override. Implement `process` instead."""
 
         # This should only be called once.
@@ -85,22 +88,20 @@ class SingleTask(pipeline.TaskBase, pipeline.BasicContMixin):
 
         # Process input and fetch ouput
         if self._no_input:
-            if input is not None:
+            if len(input) > 0:
                 # This should never happen.  Just here to catch bugs.
                 raise RuntimeError("Somehow `input` was set.")
             output = self.process()
         else:
-            #if input is not None:
-            #    input = self.cast_input(input)
-            output = self.process(input)
+            output = self.process(*input)
 
         # Return immediately if output is None to skip writing phase.
         if output is None:
             return
 
         # Set a tag in output if needed
-        if 'tag' not in output.attrs and input is not None and 'tag' in input.attrs:
-            output.attrs['tag'] = input.attrs['tag']
+        if 'tag' not in output.attrs and len(input) > 0 and 'tag' in input[0].attrs:
+            output.attrs['tag'] = input[0].attrs['tag']
 
         # Write the output if needed
         self._save_output(output)
