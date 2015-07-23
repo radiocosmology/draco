@@ -87,6 +87,9 @@ class LoadTimeStreamSidereal(task.SingleTask):
 
     padding = config.Property(proptype=float, default=0.005)
 
+    freq_start = config.Property(proptype=int, default=None)
+    freq_end = config.Property(proptype=int, default=None)
+
     def setup(self, files):
         """Divide the list of files up into sidereal days.
 
@@ -114,6 +117,12 @@ class LoadTimeStreamSidereal(task.SingleTask):
 
         self.filemap = mpiutil.world.bcast(filemap, root=0)
 
+        # Set up frequency selection
+        if self.freq_start is not None:
+            self.freq_sel = np.arange(self.freq_start, self.freq_end)
+        else:
+            self.freq_sel = None
+
     def process(self):
         """Load in each sidereal day.
 
@@ -132,7 +141,7 @@ class LoadTimeStreamSidereal(task.SingleTask):
         if mpiutil.rank0:
             print "Starting read of CSD:%i [%i files]" % (csd, len(fmap))
 
-        ts = andata.CorrData.from_acq_h5(sorted(dfiles), distributed=True)
+        ts = andata.CorrData.from_acq_h5(sorted(dfiles), distributed=True, freq_sel=self.freq_sel)
 
         # Add attributes for the CSD and a tag for labelling saved files
         ts.attrs['tag'] = ('csd_%i' % csd)

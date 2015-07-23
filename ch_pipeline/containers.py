@@ -230,7 +230,7 @@ class SiderealStream(ContainerBase):
     _dataset_spec = {
         'vis': {
             'axes': ['freq', 'prod', 'ra'],
-            'dtype': np.complex128,
+            'dtype': np.complex64,
             'initialise': True,
             'distributed': True,
             'distributed_axis': 'freq'
@@ -238,7 +238,7 @@ class SiderealStream(ContainerBase):
 
         'vis_weight': {
             'axes': ['freq', 'prod', 'ra'],
-            'dtype': np.float64,
+            'dtype': np.float32,
             'initialise': True,
             'distributed': True,
             'distributed_axis': 'freq'
@@ -246,7 +246,7 @@ class SiderealStream(ContainerBase):
 
         'gain': {
             'axes': ['freq', 'input', 'ra'],
-            'dtype': np.complex128,
+            'dtype': np.complex64,
             'initialise': False,
             'distributed': True,
             'distributed_axis': 'freq'
