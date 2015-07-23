@@ -5,7 +5,7 @@ Map making tasks (:mod:`~ch_pipeline.mapmaker`)
 
 .. currentmodule:: ch_pipeline.mapmaker
 
-Tools for map makign from CHIME data using the m-mode formalism.
+Tools for map making from CHIME data using the m-mode formalism.
 
 Tasks
 =====
@@ -19,11 +19,11 @@ Tasks
     MapMaker
 """
 import numpy as np
-from caput import pipeline, mpidataset, config, mpiutil
+from caput import mpiarray, config
 
 from ch_util import tools
 
-from . import containers
+from . import containers, task
 
 
 def _make_marray(ts):
@@ -69,7 +69,7 @@ def pinv_svd(M, acond=1e-4, rcond=1e-3):
     return B
 
 
-class FrequencyRebin(pipeline.TaskBase):
+class FrequencyRebin(task.SingleTask):
     """Rebin neighbouring frequency channels.
 
     Parameters
@@ -80,7 +80,7 @@ class FrequencyRebin(pipeline.TaskBase):
 
     channel_bin = config.Property(proptype=int, default=1)
 
-    def next(self, ss):
+    def process(self, ss):
         """Take the input dataset and rebin the frequencies.
 
         Parameters
@@ -96,7 +96,7 @@ class FrequencyRebin(pipeline.TaskBase):
             raise Exception("Binning must exactly divide the number of channels.")
 
         # Get all frequencies onto same node
-        ss.redistribute(1)
+        ss.redistribute(['prod', 'input'])
 
         # Calculate the new frequency centres and widths
         fc = ss.freq['centre'].reshape(-1, self.channel_bin).mean(axis=-1)
@@ -106,29 +106,30 @@ class FrequencyRebin(pipeline.TaskBase):
         freq_map['centre'] = fc
         freq_map['width'] = fw
 
-        # Rebin the weight array
-        rshape = ss.vis.shape[1:]
-        wt_rebin = ss.weight.view(np.ndarray).reshape((-1, self.channel_bin) + rshape).sum(axis=1)
-        wt_rebin = mpidataset.MPIArray.wrap(wt_rebin, axis=1)
-
-        # Rebin the visibility array
-        vis_rebin = (ss.vis * ss.weight).view(np.ndarray).reshape((-1, self.channel_bin) + rshape).sum(axis=1)
-        vis_rebin = np.where(wt_rebin == 0, np.zeros_like(vis_rebin), vis_rebin / wt_rebin)
-        vis_rebin = mpidataset.MPIArray.wrap(vis_rebin, axis=1)
-
-        # Construct the container for the rebinned timestream
-        sb = containers.SiderealStream(ss.vis.global_shape[-1], freq_map, 1)
-        sb.distributed['vis'] = vis_rebin
-        sb.distributed['weight'] = wt_rebin
-        sb.common['input'] = ss.input
+        # Create new container for rebinned stream
+        sb = containers.SiderealStream(freq=freq_map, axes_from=ss)
         sb.attrs['tag'] = ss.attrs['tag']
 
-        sb.redistribute(0)
+        # Rebin the weight arra
+        rshape = ss.vis[:].shape[1:]
+        wt_rebin = ss.weight[:].view(np.ndarray).reshape((-1, self.channel_bin) + rshape).sum(axis=1)
+        wt_rebin = mpiarray.MPIArray.wrap(wt_rebin, axis=1)
+
+        # Rebin the visibility array
+        vis_rebin = (ss.vis[:] * ss.weight[:]).view(np.ndarray).reshape((-1, self.channel_bin) + rshape).sum(axis=1)
+        vis_rebin = np.where(wt_rebin == 0, np.zeros_like(vis_rebin), vis_rebin / wt_rebin)
+        vis_rebin = mpiarray.MPIArray.wrap(vis_rebin, axis=1)
+
+        # Copy in rebinned data
+        sb.vis[:] = vis_rebin
+        sb.weight[:] = wt_rebin
+
+        sb.redistribute('freq')
 
         return sb
 
 
-class SelectProducts(pipeline.TaskBase):
+class SelectProducts(task.SingleTask):
     """Extract and order the correlation products for map-making.
 
     The task will take a sidereal task and format the products that are needed
@@ -148,7 +149,7 @@ class SelectProducts(pipeline.TaskBase):
         self.beamtransfer = bt
         self.telescope = bt.telescope
 
-    def next(self, ss):
+    def process(self, ss):
         """Select and reorder the products.
 
         Parameters
@@ -161,11 +162,15 @@ class SelectProducts(pipeline.TaskBase):
             Dataset containing only the required products.
         """
 
-        ss_keys = ss.input['correlator_input']
+        ss_keys = ss.index_map['input'][:]
 
         # Figure the mapping between inputs for the beam transfers and the file
-        bt_feeds = self.telescope.feeds
-        bt_keys = [ f.input_sn for f in bt_feeds ]
+        # bt_feeds = self.telescope.feeds
+        # bt_keys = [ f.input_sn for f in bt_feeds ]
+        try:
+            bt_keys = self.telescope.feed_index
+        except AttributeError:
+            bt_keys = np.arange(self.telescope.nfeed)
 
         input_ind = [np.nonzero(ss_keys == bk)[0][0] for bk in bt_keys]
 
@@ -175,24 +180,18 @@ class SelectProducts(pipeline.TaskBase):
 
         freq_ind = [np.nonzero(ss_freq == bf)[0][0] for bf in bt_freq]
 
-        if mpiutil.rank0:
-            print input_ind
-            print freq_ind
-
         sp_freq = ss.freq[freq_ind]
         sp_input = ss.input[input_ind]
 
         nfreq = len(sp_freq)
         nfeed = len(sp_input)
 
-        sp = containers.SiderealStream(len(ss.ra), sp_freq, nfeed * (nfeed + 1) / 2, comm=ss.comm)
-
-        if ss.weight is not None:
-            sp.distributed['weight'] = mpidataset.MPIArray.wrap(np.zeros_like(sp.vis, dtype=np.float64), axis=0, comm=ss.comm)
+        sp = containers.SiderealStream(freq=sp_freq, input=sp_input, axes_from=ss,
+                                       distributed=True, comm=ss.comm)
 
         # Ensure all frequencies and products are on each node
-        ss.redistribute(2)
-        sp.redistribute(2)
+        ss.redistribute('ra')
+        sp.redistribute('ra')
 
         # Iterate over the selected frequencies and inputs and pull out the correct data
         for fi in range(nfreq):
@@ -218,22 +217,124 @@ class SelectProducts(pipeline.TaskBase):
                     if sp.weight is not None:
                         sp.weight[fi, sp_pi] = ss.weight[lf, ss_pi]
 
-        sp.common['input'] = sp_input
-
         # Switch back to frequency distribution
-        ss.redistribute(0)
-        sp.redistribute(0)
+        ss.redistribute('freq')
+        sp.redistribute('freq')
 
         return sp
 
 
-class MModeTransform(pipeline.TaskBase):
+class SelectProductsRedundant(task.SingleTask):
+    """Extract and order the correlation products for map-making.
+
+    The task will take a sidereal task and format the products that are needed
+    or the map-making. It uses a BeamTransfer instance to figure out what these
+    products are, and how they should be ordered. It similarly selects only the
+    required frequencies.
+    """
+
+    def setup(self, bt):
+        """Set the BeamTransfer instance to use.
+
+        Parameters
+        ----------
+        bt : BeamTransfer
+        """
+
+        self.beamtransfer = bt
+        self.telescope = bt.telescope
+
+    def process(self, ss):
+        """Select and reorder the products.
+
+        Parameters
+        ----------
+        ss : SiderealStream
+
+        Returns
+        -------
+        sp : SiderealStream
+            Dataset containing only the required products.
+        """
+
+        ss_keys = ss.index_map['input'][:]
+
+        # Figure the mapping between inputs for the beam transfers and the file
+        try:
+            bt_keys = self.telescope.feed_index
+        except AttributeError:
+            bt_keys = np.arange(self.telescope.nfeed)
+
+        input_ind = [np.nonzero(bt_keys == sk)[0][0] for sk in ss_keys]
+
+        # Figure out mapping between the frequencies
+        bt_freq = self.telescope.frequencies
+        ss_freq = ss.freq['centre']
+
+        freq_ind = [np.nonzero(ss_freq == bf)[0][0] for bf in bt_freq]
+
+        sp_freq = ss.freq[freq_ind]
+        sp_input = ss.input[input_ind]
+
+        nfreq = len(sp_freq)
+
+        sp = containers.SiderealStream(freq=sp_freq, input=sp_input, prod=self.telescope.uniquepairs,
+                                       axes_from=ss, distributed=True, comm=ss.comm)
+
+        # Ensure all frequencies and products are on each node
+        ss.redistribute('ra')
+        sp.redistribute('ra')
+
+        sp.vis[:] = 0.0
+        sp.weight[:] = 0.0
+
+        # Iterate over the selected frequencies needed for the output
+        for fi in range(nfreq):
+
+            lf = freq_ind[fi]
+
+            # Iterate over products in the sidereal stream
+            for ss_pi in range(len(ss.index_map['prod'])):
+
+                # Get the feed indices for this product
+                ii, ij = ss.index_map['prod'][ss_pi]
+
+                # Map the feed indices into ones for the Telescope class
+                bi, bj = input_ind[ii], input_ind[ij]
+
+                sp_pi = self.telescope.feedmap[bi, bj]
+                feedconj = self.telescope.feedconj[bi, bj]
+
+                # Skip if product index is not valid
+                if sp_pi < 0:
+                    continue
+
+                # Accumulate visibilities, conjugating if required
+                if not feedconj:
+                    sp.vis[fi, sp_pi] += ss.weight[lf, ss_pi] * ss.vis[lf, ss_pi]
+                else:
+                    sp.vis[fi, sp_pi] += ss.weight[lf, ss_pi] * ss.vis[lf, ss_pi].conj()
+
+                # Accumulate weights
+                sp.weight[fi, sp_pi] += ss.weight[lf, ss_pi]
+
+        # Divide through by weights to get properly weighted visibility average
+        sp.vis[:] *= np.where(sp.weight[:] == 0.0, 0.0, 1.0 / sp.weight[:])
+
+        # Switch back to frequency distribution
+        ss.redistribute('freq')
+        sp.redistribute('freq')
+
+        return sp
+
+
+class MModeTransform(task.SingleTask):
     """Transform a sidereal stream to m-modes.
 
     Currently ignores any noise weighting.
     """
 
-    def next(self, sstream):
+    def process(self, sstream):
         """Perform the m-mode transform.
 
         Parameters
@@ -246,20 +347,23 @@ class MModeTransform(pipeline.TaskBase):
         mmodes : containers.MModes
         """
 
-        sstream.redistribute(axis=0)
+        sstream.redistribute('freq')
 
-        marray = _make_marray(sstream.vis)
-        marray = mpidataset.MPIArray.wrap(marray, axis=2, comm=sstream.comm)
+        marray = _make_marray(sstream.vis[:])
+        marray = mpiarray.MPIArray.wrap(marray[:], axis=2, comm=sstream.comm)
 
-        ma = containers.MModes(1, sstream.freq, 1, comm=sstream.comm)
+        mmax = marray.shape[0] - 1
 
-        ma._distributed['vis'] = marray
-        ma.redistribute(axis=0)
+        ma = containers.MModes(mmax=mmax, axes_from=sstream, comm=sstream.comm)
+        ma.redistribute('freq')
+
+        ma.vis[:] = marray
+        ma.redistribute('m')
 
         return ma
 
 
-class MapMaker(pipeline.TaskBase):
+class MapMaker(task.SingleTask):
     """Rudimetary m-mode map maker.
 
     Attributes
@@ -313,14 +417,18 @@ class MapMaker(pipeline.TaskBase):
 
         # Mask out auto correlations
         if self.baseline_mask == 'no_auto':
-            for fi in range(tel.nfeed):
-                mask[tools.cmap(fi, fi, tel.nfeed)] = 0
+            for pi in range(tel.nbase):
+
+                fi, fj = tel.uniquepairs[pi]
+
+                if fi == fj:
+                    mask[pi] = 0
 
         # Mask out intracylinder correlations
         elif self.baseline_mask == 'no_intra':
             for pi in range(tel.nbase):
 
-                fi, fj = tools.icmap(pi, tel.nfeed)
+                fi, fj = tel.uniquepairs[pi]
 
                 if tel.feeds[fi].cyl == tel.feeds[fj].cyl:
                     mask[pi] = 0
@@ -328,7 +436,7 @@ class MapMaker(pipeline.TaskBase):
         if self.pol_mask == 'x_only':
             for pi in range(tel.nbase):
 
-                fi, fj = tools.icmap(pi, tel.nfeed)
+                fi, fj = tel.uniquepairs[pi]
 
                 if tools.is_chime_y(tel.feeds[fi]) or tools.is_chime_y(tel.feeds[fj]):
                     mask[pi] = 0
@@ -336,7 +444,7 @@ class MapMaker(pipeline.TaskBase):
         elif self.pol_mask == 'y_only':
             for pi in range(tel.nbase):
 
-                fi, fj = tools.icmap(pi, tel.nfeed)
+                fi, fj = tel.uniquepairs[pi]
 
                 if tools.is_chime_x(tel.feeds[fi]) or tools.is_chime_x(tel.feeds[fj]):
                     mask[pi] = 0
@@ -376,40 +484,64 @@ class MapMaker(pipeline.TaskBase):
             nh = nw[fi]**0.5
             ib[fi] = pinv_svd(bm[fi] * nh[:, np.newaxis]) * nh[np.newaxis, :]
 
-        #ib = bt.invbeam_m(m).reshape(bt.nfreq, bt.nsky, bt.ntel)
-
         return ib
 
-    def _wiener_proj_cl(self, m):
+    def _wiener_proj_cl(self, m, f):
 
         import scipy.linalg as la
         bt = self.beamtransfer
         nw = self._noise_weight(m)
         nh = nw**0.5
 
-        bmt = bt.beam_m(m).reshape(bt.nfreq, bt.ntel, bt.nsky) * nh[:, :, np.newaxis]
-        bth = bmt.transpose((0, 2, 1)).conj()
+        bmt = bt.beam_m(m, fi=f).reshape(bt.ntel, bt.nsky) * nh[f, :, np.newaxis]
+        bth = bmt.T.conj()
 
-        wb = np.zeros((bt.nfreq, bt.nsky, bt.ntel), dtype=np.complex128)
+        wb = np.zeros((bt.nsky, bt.ntel), dtype=np.complex128)
 
         l = np.arange(bt.telescope.lmax + 1)
         l[0] = 1
         cl_TT = self.prior_amp**2 * l**(-self.prior_tilt)
         S = np.concatenate([cl_TT] * 4)
 
-        for fi in range(bt.nfreq):
-
-            if bt.ntel > bt.nsky:
-                mat = np.diag(1.0 / S) + np.dot(bth[fi], bmt[fi])
-                print la.eigvalsh(mat)
-                wb[fi] = np.dot(la.inv(mat), bth[fi] * nh[fi, np.newaxis, :])
-            else:
-                mat = np.identity(bt.ntel) + np.dot(bmt[fi] * S[np.newaxis, :], bth[fi])
-                wb[fi] = S[:, np.newaxis] * np.dot(bth[fi], la.inv(mat)) * nh[fi, np.newaxis, :]
-
-        #ib = bt.invbeam_m(m).reshape(bt.nfreq, bt.nsky, bt.ntel)
+        if bt.ntel > bt.nsky:
+            mat = np.diag(1.0 / S) + np.dot(bth, bmt)
+            wb = np.dot(la.inv(mat), bth * nh[f, np.newaxis, :])
+        else:
+            mat = np.identity(bt.ntel) + np.dot(bmt * S[np.newaxis, :], bth)
+            wb = S[:, np.newaxis] * np.dot(bth, la.inv(mat)) * nh[f, np.newaxis, :]
 
         return wb
+
+    # def _wiener_proj_cl(self, m, f):
+    #
+    #     import scipy.linalg as la
+    #     bt = self.beamtransfer
+    #     nw = self._noise_weight(m)
+    #     nh = nw**0.5
+    #
+    #     bmt = bt.beam_m(m).reshape(bt.nfreq, bt.ntel, bt.nsky) * nh[:, :, np.newaxis]
+    #     bth = bmt.transpose((0, 2, 1)).conj()
+    #
+    #     wb = np.zeros((bt.nfreq, bt.nsky, bt.ntel), dtype=np.complex128)
+    #
+    #     l = np.arange(bt.telescope.lmax + 1)
+    #     l[0] = 1
+    #     cl_TT = self.prior_amp**2 * l**(-self.prior_tilt)
+    #     S = np.concatenate([cl_TT] * 4)
+    #
+    #     for fi in range(bt.nfreq):
+    #
+    #         if bt.ntel > bt.nsky:
+    #             mat = np.diag(1.0 / S) + np.dot(bth[fi], bmt[fi])
+    #             print la.eigvalsh(mat)
+    #             wb[fi] = np.dot(la.inv(mat), bth[fi] * nh[fi, np.newaxis, :])
+    #         else:
+    #             mat = np.identity(bt.ntel) + np.dot(bmt[fi] * S[np.newaxis, :], bth[fi])
+    #             wb[fi] = S[:, np.newaxis] * np.dot(bth[fi], la.inv(mat)) * nh[fi, np.newaxis, :]
+    #
+    #     #ib = bt.invbeam_m(m).reshape(bt.nfreq, bt.nsky, bt.ntel)
+    #
+    #     return wb
 
     def _proj(self, *args):
         # Return approproate projection matrix depending on value of maptype
@@ -423,7 +555,7 @@ class MapMaker(pipeline.TaskBase):
 
         return proj_calltable[self.maptype](*args)
 
-    def next(self, mmodes):
+    def process(self, mmodes):
         """Make a map from the given m-modes.
 
         Parameters
@@ -440,24 +572,20 @@ class MapMaker(pipeline.TaskBase):
         # Fetch various properties
         bt = self.beamtransfer
         lmax = bt.telescope.lmax
-        mmax = min(bt.telescope.mmax, mmodes.vis.global_shape[0]-1)
+        mmax = min(bt.telescope.mmax, len(mmodes.index_map['m']) - 1)
         nfreq = bt.telescope.nfreq
 
         # Trim off excess m-modes
-        mmodes.redistribute(axis=2)
-        mmodes.distributed['vis'] = mpidataset.MPIArray.wrap(mmodes.vis[:(mmax+1)], axis=2, comm=mmodes.comm)
-        mmodes.redistribute(axis=0)
+        mmodes.redistribute('freq')
+        m_array = mmodes.vis[:(mmax+1)]
+        m_array = m_array.redistribute(axis=0)
 
         # Create array to store alms in.
-        alm = mpidataset.MPIArray((nfreq, 4, lmax+1, mmax+1), dtype=np.complex128, axis=3, comm=mmodes.comm)
+        alm = mpiarray.MPIArray((nfreq, 4, lmax+1, mmax+1), dtype=np.complex128, axis=3, comm=mmodes.comm)
         alm[:] = 0.0
 
-        # Calculate which m's are local
-        ml = mmodes.vis.local_offset[0]  # Lowest m
-        mh = ml + mmodes.vis.local_shape[0]  # Highest m
-
         # Loop over all m's and project from m-mode visibilities to alms.
-        for mi, m in enumerate(range(ml, mh)):
+        for mi, m in m_array.enumerate(axis=0):
 
             for fi in range(nfreq):
                 pm = self._proj(m, fi)
@@ -467,15 +595,15 @@ class MapMaker(pipeline.TaskBase):
         alm = alm.redistribute(axis=0)
 
         # Copy into square alm array for transform
-        almt = mpidataset.MPIArray((nfreq, 4, lmax+1, lmax+1), dtype=np.complex128, axis=0, comm=mmodes.comm)
+        almt = mpiarray.MPIArray((nfreq, 4, lmax+1, lmax+1), dtype=np.complex128, axis=0, comm=mmodes.comm)
         almt[..., :(mmax+1)] = alm
         alm = almt
 
         # Perform spherical harmonic transform to map space
         maps = hputil.sphtrans_inv_sky(alm, self.nside)
-        maps = mpidataset.MPIArray.wrap(maps, axis=0)
+        maps = mpiarray.MPIArray.wrap(maps, axis=0)
 
-        m = containers.Map(comm=mmodes.comm)
-        m._distributed['map'] = maps
+        m = containers.Map(nside=self.nside, axes_from=mmodes, comm=mmodes.comm)
+        m.map[:] = maps
 
         return m

@@ -56,7 +56,7 @@ def band_wiener(R, Ni, Si, y, bw):
         Estimate of variance of each element.
     """
 
-    Ni = np.atleast_2d(Ni)
+    Ni = np.atleast_2d(Ni) #.astype(np.float64)
     y = np.atleast_2d(y)
 
     k = Ni.shape[0]
@@ -64,21 +64,29 @@ def band_wiener(R, Ni, Si, y, bw):
 
     # Initialise arrays
     xh = np.zeros((k, m), dtype=y.dtype)
-    nw = np.zeros((k, m), dtype=Ni.dtype)
+    nw = np.zeros((k, m), dtype=np.float32)
 
-    # Generate dirty estimate
-    w = np.dot(Ni * y, R.T)
+    # Multiply by noise weights inplace to reduce memory usage (destroys original)
+    y *= Ni
+
+    # Calculate dirty estimate (and output straight into xh)
+    R_s = R.astype(np.float32) 
+    np.dot(y, R_s.T, out=xh)
 
     # Iterate through and solve noise
     for ki in range(k):
+
+        # Upcast noise weights to float type
+        Ni_ki = Ni[ki].astype(np.float64)
+
         # Calculate the Wiener noise weighting (i.e. inverse covariance)
-        Ci = _regrid_work._band_wiener_covariance(R, Ni[ki], bw)
+        Ci = _regrid_work._band_wiener_covariance(R, Ni_ki, bw)
 
         # Add on the signal covariance part
         Ci[-1] += Si
 
         # Solve for the Wiener estimate
-        xh[ki] = la.solveh_banded(Ci, w[ki])
+        xh[ki] = la.solveh_banded(Ci, xh[ki])
         nw[ki] = Ci[-1]
 
     return xh, nw

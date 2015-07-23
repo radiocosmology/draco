@@ -31,10 +31,10 @@ Generally you would want to use these tasks together. Starting with a
 import numpy as np
 
 from caput import pipeline, config
-from caput import mpiutil, mpidataset
+from caput import mpiutil, mpiarray
 from ch_util import andata, ephemeris
 
-from . import dataspec
+from . import task
 from . import containers
 from . import regrid
 
@@ -72,7 +72,7 @@ def _days_in_csd(day, se_csd, extra=0.005):
     return np.where(np.logical_and(stest, etest))[0]
 
 
-class LoadTimeStreamSidereal(pipeline.TaskBase):
+class LoadTimeStreamSidereal(task.SingleTask):
     """Load data in sidereal days.
 
     This task takes an input list of data, and loads in a sidereal day at a
@@ -87,16 +87,19 @@ class LoadTimeStreamSidereal(pipeline.TaskBase):
 
     padding = config.Property(proptype=float, default=0.005)
 
-    def setup(self, dspec):
+    freq_start = config.Property(proptype=int, default=None)
+    freq_end = config.Property(proptype=int, default=None)
+
+    def setup(self, files):
         """Divide the list of files up into sidereal days.
 
         Parameters
         ----------
-        dspec : dict
-            Dataspec dictionary.
+        files : list
+            List of files to load.
         """
 
-        self.files = dataspec.files_from_spec(dspec)
+        self.files = files
 
         filemap = None
         if mpiutil.rank0:
@@ -114,12 +117,18 @@ class LoadTimeStreamSidereal(pipeline.TaskBase):
 
         self.filemap = mpiutil.world.bcast(filemap, root=0)
 
-    def next(self):
+        # Set up frequency selection
+        if self.freq_start is not None:
+            self.freq_sel = np.arange(self.freq_start, self.freq_end)
+        else:
+            self.freq_sel = None
+
+    def process(self):
         """Load in each sidereal day.
 
         Returns
         -------
-        ts : containers.TimeStream
+        ts : andata.CorrData
             The timestream of each sidereal day.
         """
 
@@ -132,14 +141,23 @@ class LoadTimeStreamSidereal(pipeline.TaskBase):
         if mpiutil.rank0:
             print "Starting read of CSD:%i [%i files]" % (csd, len(fmap))
 
-        ts = containers.TimeStream.from_acq_files(sorted(dfiles))  # Ensure file list if sorted
+        ts = andata.CorrData.from_acq_h5(sorted(dfiles), distributed=True, freq_sel=self.freq_sel)
+
+        # Add attributes for the CSD and a tag for labelling saved files
         ts.attrs['tag'] = ('csd_%i' % csd)
         ts.attrs['csd'] = csd
+
+        # Add a weight dataset if needed
+        if 'vis_weight' not in ts.datasets:
+            weight_dset = ts.create_dataset('vis_weight', shape=ts.vis.shape, dtype=np.uint8,
+                                            distributed=True, distributed_axis=0)
+            weight_dset.attrs['axis'] = ts.vis.attrs['axis']
+            weight_dset[:] = 128
 
         return ts
 
 
-class SiderealRegridder(pipeline.TaskBase):
+class SiderealRegridder(task.SingleTask):
     """Take a sidereal days worth of data, and put onto a regular grid.
 
     Uses a maximum-likelihood inverse of a Lanczos interpolation to do the
@@ -157,12 +175,12 @@ class SiderealRegridder(pipeline.TaskBase):
     samples = config.Property(proptype=int, default=1024)
     lanczos_width = config.Property(proptype=int, default=5)
 
-    def next(self, data):
+    def process(self, data):
         """Regrid the sidereal day.
 
         Parameters
         ----------
-        data : containers.TimeStream
+        data : andata.CorrData
             Timestream data for the day (must have a `csd` attribute).
 
         Returns
@@ -175,10 +193,10 @@ class SiderealRegridder(pipeline.TaskBase):
             print "Regridding CSD:%i" % data.attrs['csd']
 
         # Redistribute if needed too
-        data.redistribute(axis=1)
+        data.redistribute('freq')
 
         # Convert data timestamps into CSDs
-        timestamp_csd = ephemeris.csd(data.timestamp)
+        timestamp_csd = ephemeris.csd(data.time)
 
         # Fetch which CSD this is
         csd = data.attrs['csd']
@@ -191,8 +209,8 @@ class SiderealRegridder(pipeline.TaskBase):
         lzf = regrid.lanczos_forward_matrix(csd_grid, timestamp_csd, self.lanczos_width).T.copy()
 
         # Mask data
-        imask = data.weight.view(np.ndarray)
-        vis_data = data.vis.view(np.ndarray)
+        imask = data.weight[:].view(np.ndarray)
+        vis_data = data.vis[:].view(np.ndarray)
 
         # Reshape data
         vr = vis_data.reshape(-1, vis_data.shape[-1])
@@ -213,30 +231,30 @@ class SiderealRegridder(pipeline.TaskBase):
         ni = ni.reshape(vis_data.shape[:-1] + (self.samples,))
 
         # Wrap to produce MPIArray
-        sts = mpidataset.MPIArray.wrap(sts, axis=data.vis.axis)
-        ni  = mpidataset.MPIArray.wrap(ni,  axis=data.vis.axis)
+        sts = mpiarray.MPIArray.wrap(sts, axis=data.vis.distributed_axis)
+        ni  = mpiarray.MPIArray.wrap(ni,  axis=data.vis.distributed_axis)
 
-        sdata = containers.SiderealStream(self.samples, data.freq, 1)
-        sdata._distributed['vis'] = sts
-        sdata._distributed['weight'] = ni
-        sdata.common['input'] = data.input
+        # FYI this whole process creates an extra copy of the sidereal stack.
+        # This could probably be optimised out with a little work.
+        sdata = containers.SiderealStream(axes_from=data, ra=self.samples)
+        sdata.redistribute('freq')
+        sdata.vis[:] = sts
+        sdata.weight[:] = ni
         sdata.attrs['csd'] = csd
         sdata.attrs['tag'] = 'csd_%i' % csd
 
         return sdata
 
 
-class SiderealStacker(pipeline.TaskBase):
+class SiderealStacker(task.SingleTask):
     """Take in a set of sidereal days, and stack them up.
 
     This will apply relative calibration.
     """
 
-    vis_stack = None
-    noise_stack = None
-    count = 0
+    stack = None
 
-    def next(self, sdata):
+    def process(self, sdata):
         """Stack up sidereal days.
 
         Parameters
@@ -244,12 +262,16 @@ class SiderealStacker(pipeline.TaskBase):
         sdata : containers.SiderealStream
             Individual sidereal day to stack up.
         """
-        if self.count == 0:
-            self.vis_stack = mpidataset.MPIArray.wrap(sdata.vis * sdata.weight, axis=sdata.vis.axis)
-            self.freq = sdata.freq
-            self.input = sdata.input
-            self.weight_stack = sdata.weight
-            self.count = 1
+
+        sdata.redistribute('freq')
+
+        if self.stack is None:
+
+            self.stack = containers.SiderealStream(axes_from=sdata)
+            self.stack.redistribute('freq')
+
+            self.stack.vis[:] = (sdata.vis[:] * sdata.weight[:])
+            self.stack.weight[:] = sdata.weight[:]
 
             if mpiutil.rank0:
                 print "Starting stack with CSD:%i" % sdata.attrs['csd']
@@ -259,19 +281,13 @@ class SiderealStacker(pipeline.TaskBase):
         if mpiutil.rank0:
             print "Adding CSD:%i to stack" % sdata.attrs['csd']
 
-        # Eventually we should fix up gains
-
-        # Ensure we are distributed over the same axis
-        axis = self.vis_stack.axis
-        sdata.redistribute(axis=axis)
+        # note: Eventually we should fix up gains
 
         # Combine stacks with inverse `noise' weighting
-        self.vis_stack += sdata.vis * sdata.weight
-        self.weight_stack += sdata.weight
+        self.stack.vis[:] += (sdata.vis[:] * sdata.weight[:])
+        self.stack.weight[:] += sdata.weight[:]
 
-        self.count += 1
-
-    def finish(self):
+    def process_finish(self):
         """Construct and emit sidereal stack.
 
         Returns
@@ -280,14 +296,10 @@ class SiderealStacker(pipeline.TaskBase):
             Stack of sidereal days.
         """
 
-        sstack = containers.SiderealStream(self.vis_stack.global_shape[-1], self.freq, 1)
+        self.stack.attrs['tag'] = 'stack'
 
-        vis = np.where(self.weight_stack == 0, np.zeros_like(self.vis_stack), self.vis_stack / self.weight_stack)
-        vis = mpidataset.MPIArray.wrap(vis, self.vis_stack.axis)
+        self.stack.vis[:] = np.where(self.stack.weight[:] == 0,
+                                     0.0,
+                                     self.stack.vis[:] / self.stack.weight[:])
 
-        sstack.distributed['vis'] = vis
-        sstack.distributed['weight'] = self.weight_stack
-        sstack.common['input'] = self.input
-        sstack.attrs['tag'] = 'stack'
-
-        return sstack
+        return self.stack
