@@ -589,7 +589,7 @@ class MapMaker(task.SingleTask):
 
             for fi in range(nfreq):
                 pm = self._proj(m, fi)
-                alm[fi, ..., mi] = np.dot(pm, mmodes.vis[mi, :, fi].flatten()).reshape(4, lmax+1)
+                alm[fi, ..., mi] = np.dot(pm, m_array[mi, :, fi].flatten()).reshape(4, lmax+1)
 
         # Redistribute back over frequency
         alm = alm.redistribute(axis=0)
