@@ -471,18 +471,15 @@ class MapMaker(task.SingleTask):
 
         return db
 
-    def _ml_proj(self, m):
+    def _ml_proj(self, m, f):
 
         bt = self.beamtransfer
         nw = self._noise_weight(m)
 
-        bm = bt.beam_m(m).reshape(bt.nfreq, bt.ntel, bt.nsky)
+        bm = bt.beam_m(m, fi=f).reshape(bt.ntel, bt.nsky)
 
-        ib = np.zeros((bt.nfreq, bt.nsky, bt.ntel), dtype=np.complex128)
-
-        for fi in range(bt.nfreq):
-            nh = nw[fi]**0.5
-            ib[fi] = pinv_svd(bm[fi] * nh[:, np.newaxis]) * nh[np.newaxis, :]
+        nh = nw[f]**0.5
+        ib = pinv_svd(bm * nh[:, np.newaxis]) * nh[np.newaxis, :]
 
         return ib
 
