@@ -1,0 +1,22 @@
+config:
+    # Only generate Beam Transfers.
+    beamtransfers:      Yes
+    kltransform:        No
+    psfisher:           No
+
+    output_directory:   beams
+
+telescope:
+    type:
+        # Specify a custom class
+        class:  PolarisedCylinderTelescope
+        module: drift.telescope.cylinder
+
+    freq_lower:         400.0
+    freq_upper:         410.0
+    num_freq:           5
+
+    num_cylinders:      2
+    num_feeds:          4
+    feed_spacing:       0.3
+    cylinder_width:     10.0

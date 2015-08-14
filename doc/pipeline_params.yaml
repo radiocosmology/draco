@@ -1,0 +1,49 @@
+
+pipeline:
+    tasks:
+        -   type:       ch_pipeline.io.LoadBeamTransfer
+            out:        [tel, bt]
+            params:
+                product_directory:  "testbeams/bt/"
+
+        -   type:       ch_pipeline.simulate.SimulateSidereal
+            requires:   [tel, bt]
+            out:        sstream
+            params:
+                maps:   [ "testfg.h5" ]
+                save:   Yes
+                output_root: teststream_
+
+        -   type:       ch_pipeline.mapmaker.SelectProductsRedundant
+            requires:   bt
+            in:         sstream
+            out:        rsstream
+            params:
+                save:   Yes
+                output_root: teststream3_
+
+        -   type:       ch_pipeline.mapmaker.MModeTransform
+            in:         rsstream
+            out:        mmodes
+
+        -   type:       ch_pipeline.mapmaker.MapMaker
+            requires:   bt
+            in:         mmodes
+            out:        dirtymap
+            params:
+                maptype: dirty
+                nside:      128
+                baseline_mask:  "no_auto"
+                save:   Yes
+                output_root: map_dirty2_
+
+        -   type:       ch_pipeline.mapmaker.MapMaker
+            requires:   bt
+            in:         mmodes
+            out:        wienermap
+            params:
+                maptype:    wiener
+                nside:      128
+                baseline_mask:  "no_auto"
+                save:   Yes
+                output_root: map_wiener2_
