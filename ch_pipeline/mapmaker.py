@@ -231,6 +231,12 @@ class SelectProductsRedundant(task.SingleTask):
     or the map-making. It uses a BeamTransfer instance to figure out what these
     products are, and how they should be ordered. It similarly selects only the
     required frequencies.
+
+    It is important to note that while the input
+    :class:`SiderealStream` can contain more feeds and frequencies
+    than are contained in the BeamTransfers, the converse is not
+    true. That is, all the frequencies and feeds that are in the
+    BeamTransfers must be found in the timestream object.
     """
 
     def setup(self, bt):
@@ -265,20 +271,33 @@ class SelectProductsRedundant(task.SingleTask):
         except AttributeError:
             bt_keys = np.arange(self.telescope.nfeed)
 
-        input_ind = [np.nonzero(bt_keys == sk)[0][0] for sk in ss_keys]
+        def find_key(key_list, key):
+            try:
+                return map(tuple, list(key_list)).index(tuple(key))
+            except:
+                return None
+
+        def find_key2(key_list, key):
+            try:
+                return list(key_list).index(key)
+            except:
+                return None
+
+        input_ind = [ find_key(bt_keys, sk) for sk in ss_keys]
 
         # Figure out mapping between the frequencies
         bt_freq = self.telescope.frequencies
         ss_freq = ss.freq['centre']
 
-        freq_ind = [np.nonzero(ss_freq == bf)[0][0] for bf in bt_freq]
+        freq_ind = [ find_key2(ss_freq, bf) for bf in bt_freq]
 
-        sp_freq = ss.freq[freq_ind]
-        sp_input = ss.input[input_ind]
+        nfreq = len(bt_freq)
 
-        nfreq = len(sp_freq)
+        #sp_freq = ss.freq[freq_ind]
+        #sp_input = ss.input[input_ind]
 
-        sp = containers.SiderealStream(freq=sp_freq, input=sp_input, prod=self.telescope.uniquepairs,
+        #sp = containers.SiderealStream(freq=sp_freq, input=sp_input, prod=self.telescope.uniquepairs,
+        sp = containers.SiderealStream(freq=len(bt_freq), input=len(bt_keys), prod=self.telescope.uniquepairs,
                                        axes_from=ss, distributed=True, comm=ss.comm)
 
         # Ensure all frequencies and products are on each node
@@ -289,34 +308,42 @@ class SelectProductsRedundant(task.SingleTask):
         sp.weight[:] = 0.0
 
         # Iterate over the selected frequencies needed for the output
-        for fi in range(nfreq):
+        #for fi in range(nfreq):
 
-            lf = freq_ind[fi]
+        #    lf = freq_ind[fi]
 
-            # Iterate over products in the sidereal stream
-            for ss_pi in range(len(ss.index_map['prod'])):
+        # Iterate over products in the sidereal stream
+        for ss_pi in range(len(ss.index_map['prod'])):
 
-                # Get the feed indices for this product
-                ii, ij = ss.index_map['prod'][ss_pi]
+            #if ss.vis.comm.rank == 0:
+            if ss_pi % 100 == 0:
+                print "Progress", ss.vis.comm.rank, ss_pi
 
-                # Map the feed indices into ones for the Telescope class
-                bi, bj = input_ind[ii], input_ind[ij]
+            # Get the feed indices for this product
+            ii, ij = ss.index_map['prod'][ss_pi]
 
-                sp_pi = self.telescope.feedmap[bi, bj]
-                feedconj = self.telescope.feedconj[bi, bj]
+            # Map the feed indices into ones for the Telescope class
+            bi, bj = input_ind[ii], input_ind[ij]
 
-                # Skip if product index is not valid
-                if sp_pi < 0:
-                    continue
+            # If either feed is not in the telescope class, skip it.
+            if bi is None or bj is None:
+                continue
 
-                # Accumulate visibilities, conjugating if required
-                if not feedconj:
-                    sp.vis[fi, sp_pi] += ss.weight[lf, ss_pi] * ss.vis[lf, ss_pi]
-                else:
-                    sp.vis[fi, sp_pi] += ss.weight[lf, ss_pi] * ss.vis[lf, ss_pi].conj()
+            sp_pi = self.telescope.feedmap[bi, bj]
+            feedconj = self.telescope.feedconj[bi, bj]
 
-                # Accumulate weights
-                sp.weight[fi, sp_pi] += ss.weight[lf, ss_pi]
+            # Skip if product index is not valid
+            if sp_pi < 0:
+                continue
+
+            # Accumulate visibilities, conjugating if required
+            if not feedconj:
+                sp.vis[:, sp_pi] += ss.weight[freq_ind, ss_pi] * ss.vis[freq_ind, ss_pi]
+            else:
+                sp.vis[:, sp_pi] += ss.weight[freq_ind, ss_pi] * ss.vis[freq_ind, ss_pi].conj()
+
+            # Accumulate weights
+            sp.weight[:, sp_pi] += ss.weight[freq_ind, ss_pi]
 
         # Divide through by weights to get properly weighted visibility average
         sp.vis[:] *= np.where(sp.weight[:] == 0.0, 0.0, 1.0 / sp.weight[:])

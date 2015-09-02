@@ -178,6 +178,9 @@ class LoadBasicCont(pipeline.TaskBase):
 
         from caput import memh5
 
+        if len(self.files) == 0:
+            raise pipeline.PipelineStopIteration
+
         # Fetch and remove the first item in the list
         file = self.files.pop(0)
 

@@ -142,3 +142,31 @@ class SingleTask(pipeline.TaskBase, pipeline.BasicContMixin):
             outfile = os.path.expandvars(outfile)
 
             self.write_output(outfile, output)
+
+
+class ReturnLastInputOnFinish(SingleTask):
+    """Workaround for `caput.pipeline` issues.
+
+    This caches its input on every call to `process` and then returns
+    the last one for a finish call.
+    """
+    x = None
+    
+    def process(self, x):
+        """Take a reference to the input.
+
+        Parameters
+        ----------
+        x : object
+        """
+        self.x = x
+
+    def process_finish(self):
+        """Return the last input to process.
+
+        Returns
+        -------
+        x : object
+            Last input to process.
+        """
+        return self.x
