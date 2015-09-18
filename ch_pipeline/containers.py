@@ -202,7 +202,7 @@ class Map(ContainerBase):
         # Set up axes from passed arguments
         if nside is not None:
             kwargs['pixel'] = 12*nside**2
-        #if polarisation is not None:
+
         kwargs['pol'] = np.array(['I', 'Q', 'U', 'V']) if polarisation else np.array(['I'])
 
         super(Map, self).__init__(*args, **kwargs)
@@ -383,13 +383,6 @@ class MModes(ContainerBase):
 
 class GainData(ContainerBase):
     """Parallel container for holding gain data.
-
-    Attributes
-    ----------
-    gain : mpidataset.MPIArray
-        Gain array.
-    timestamp : np.ndarray
-        Time samples.
     """
 
     _axes = ('freq', 'input', 'time')
@@ -401,6 +394,13 @@ class GainData(ContainerBase):
             'initialise': True,
             'distributed': True,
             'distributed_axis': 'freq'
+            },
+        'weight': {
+            'axes': ['freq', 'time'],
+            'dtype': np.float64,
+            'initialise': False,
+            'distributed': True,
+            'distributed_axis': 'freq'
             }
         }
 
@@ -409,8 +409,52 @@ class GainData(ContainerBase):
         return self.datasets['gain']
 
     @property
+    def weight(self):
+        return self.datasets['weight']
+
+    @property
     def time(self):
         return self.index_map['time']
+
+    @property
+    def freq(self):
+        return self.index_map['freq']
+
+    @property
+    def input(self):
+        return self.index_map['input']
+
+
+class StaticGainData(ContainerBase):
+    """Parallel container for holding static gain data (i.e. non time varying).
+    """
+
+    _axes = ('freq', 'input', 'time')
+
+    _dataset_spec = {
+        'gain': {
+            'axes': ['freq', 'input'],
+            'dtype': np.complex128,
+            'initialise': True,
+            'distributed': True,
+            'distributed_axis': 'freq'
+            },
+        'weight': {
+            'axes': ['freq'],
+            'dtype': np.float64,
+            'initialise': False,
+            'distributed': True,
+            'distributed_axis': 'freq'
+            }
+        }
+
+    @property
+    def gain(self):
+        return self.datasets['gain']
+
+    @property
+    def weight(self):
+        return self.datasets['weight']
 
     @property
     def freq(self):

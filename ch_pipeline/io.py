@@ -14,17 +14,17 @@ Tasks
 .. autosummary::
     :toctree: generated/
 
+    LoadFiles
+    LoadFilesFromParams
     Save
     Print
-    LoadBasicCont
     LoadBeamTransfer
 """
 
+import os.path
+
 from caput import pipeline
 from caput import config
-from caput import mpiutil
-
-import containers
 
 
 def _list_of_filelists(files):
@@ -46,61 +46,81 @@ def _list_of_filelists(files):
     return f2
 
 
-class LoadFiles(pipeline.TaskBase):
-    """Load data ifrom specified files.
+def _list_or_glob(files):
+    # Take in a list of lists/glob patterns of filenames
+    import glob
+
+    if isinstance(files, str):
+        files = glob.glob(files)
+    elif isinstance(files, list):
+        pass
+    else:
+        raise RuntimeError('Must be list or glob pattern.')
+
+    return files
+
+
+class LoadFilesFromParams(pipeline.TaskBase):
+    """Load data from files given in the tasks parameters.
 
     Attributes
     ----------
-    files : glob pattern
-        List of sets of files to take in. Can either be lists of actual files,
-        or glob patterns. Example: [ 'dir1/*.h5', ['dir2/a.h5', 'dir2/b.h5']].
-
-    Examples
-    --------
-    This can be configured from a pipeline file like this:
-
-    .. code-block:: yaml
-
-        pipeline :
-            tasks:
-            -   type:   ch_pipeline.io.LoadFiles
-                out:    ts
-                params:
-                    files:
-                        -   "dir1/*.h5"
-                        -
-                            -   "dir2/a.h5"
-                            -   "dir2/b.h5"
-
-    Each set is fed through the pipeline individually. That is, using the
-    above example, the first call to `next`, creates a timestream from all the
-    `*.h5` files in `dir1`, and then passes it on. The second, and final
-    `next` call returns a timestream from `dir1/a.h5` and `dir2/b.h5`.
+    files : glob pattern, or list
+        Can either be a glob pattern, or lists of actual files.
     """
 
-    files = config.Property(proptype=_list_of_filelists)
+    files = config.Property(proptype=_list_or_glob)
 
     def next(self):
-        """Load in each set of files.
+        """Load the given files in turn and pass on.
 
         Returns
         -------
-        ts : containers.TimeStream
-            The timestream of each set of files.
+        cont : subclass of `memh5.BasicCont`
         """
+
+        from caput import memh5
 
         if len(self.files) == 0:
             raise pipeline.PipelineStopIteration
 
-        files = self.files.pop(0)
+        # Fetch and remove the first item in the list
+        file_ = self.files.pop(0)
 
-        if mpiutil.rank0:
-            print "Starting read of [%i files]" % len(files)
+        cont = memh5.BasicCont.from_file(file_, distributed=True)
 
-        ts = containers.TimeStream.from_acq_files(sorted(files))  # Ensure file list if sorted
-        ts.attrs['tag'] = 'meh'
+        if 'tag' not in cont.attrs:
+            # Get the first part of the actual filename and use it as the tag
+            tag = os.path.splitext(os.path.basename(file_))[0]
 
-        return ts
+            cont.attrs['tag'] = tag
+
+        return cont
+
+
+# Define alias for old code
+LoadBasicCont = LoadFilesFromParams
+
+
+class LoadFiles(LoadFilesFromParams):
+    """Load data from files passed into the setup routine.
+
+    File must be a serialised subclass of :class:`memh5.BasicCont`.
+    """
+
+    files = None
+
+    def setup(self, files):
+        """Set the list of files to load.
+
+        Parameters
+        ----------
+        files : list
+        """
+        if not isinstance(files, (list, tuple)):
+            raise RuntimeError('Argument must be list of files.')
+
+        self.files = files
 
 
 class Save(pipeline.TaskBase):
@@ -147,46 +167,11 @@ class Print(pipeline.TaskBase):
     """Stupid module which just prints whatever it gets. Good for debugging.
     """
 
-    def next(self, input):
+    def next(self, input_):
 
-        print input
+        print input_
 
-        return input
-
-
-class LoadBasicCont(pipeline.TaskBase):
-    """Load a series of files from disk and pass them through the pipeline.
-
-    Uses the ability of :class:`memh5.BasicCont` to return the data in the class
-    it was saved in.
-
-    Attributes
-    ----------
-    files : list
-        A list containing the paths of files to load.
-    """
-
-    files = config.Property(proptype=list)
-
-    def next(self):
-        """Load the given files in turn and pass on.
-
-        Returns
-        -------
-        cont : subclass of `memh5.BasicCont`
-        """
-
-        from caput import memh5
-
-        if len(self.files) == 0:
-            raise pipeline.PipelineStopIteration
-
-        # Fetch and remove the first item in the list
-        file = self.files.pop(0)
-
-        cont = memh5.BasicCont.from_file(file, distributed=True)
-
-        return cont
+        return input_
 
 
 class LoadBeamTransfer(pipeline.TaskBase):

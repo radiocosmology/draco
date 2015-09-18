@@ -60,21 +60,15 @@ class SingleTask(pipeline.TaskBase, pipeline.BasicContMixin):
         pro_argspec = inspect.getargspec(self.process)
         n_args = len(pro_argspec.args) - 1
 
-        #if n_args  > 1:
-        #    msg = ("`process` method takes more than 1 argument, which is not"
-        #           " allowed.")
-        #    raise PipelineConfigError(msg)
-
         if pro_argspec.varargs or pro_argspec.keywords or pro_argspec.defaults:
             msg = ("`process` method may not have variable length or optional"
                    " arguments.")
-            raise PipelineConfigError(msg)
-        
+            raise pipeline.PipelineConfigError(msg)
+
         if n_args == 0:
             self._no_input = True
         else:
             self._no_input = False
-
 
     def next(self, *input):
         """Should not need to override. Implement `process` instead."""
@@ -117,7 +111,7 @@ class SingleTask(pipeline.TaskBase, pipeline.BasicContMixin):
 
         try:
             output = self.process_finish()
-            
+
             # Write the output if needed
             self._save_output(output)
 
@@ -151,7 +145,7 @@ class ReturnLastInputOnFinish(SingleTask):
     the last one for a finish call.
     """
     x = None
-    
+
     def process(self, x):
         """Take a reference to the input.
 
