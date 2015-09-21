@@ -13,10 +13,10 @@ else:
     compile_args = ['-fopenmp']
     link_args = ['-fopenmp']
 
-# Cython module for fast regridding
-rg_ext = Extension(
-    "ch_pipeline._regrid_work",
-    ["ch_pipeline/_regrid_work.pyx"],
+# Cython module for fast operations
+fast_ext = Extension(
+    "ch_pipeline._fast_tools",
+    ["ch_pipeline/_fast_tools.pyx"],
     include_dirs=[np.get_include()],
     extra_compile_args=compile_args,
     extra_link_args=link_args,
@@ -29,7 +29,7 @@ setup(
     packages = find_packages(),
     package_data = { "ch_pipeline" : [ "data/*" ] },
 
-    ext_modules = cythonize([rg_ext]),
+    ext_modules = cythonize([fast_ext]),
 
     author = "CHIME collaboration",
     author_email = "richard@phas.ubc.ca",

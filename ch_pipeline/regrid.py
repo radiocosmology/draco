@@ -24,7 +24,7 @@ Tasks
 import numpy as np
 import scipy.linalg as la
 
-from . import _regrid_work
+from . import _fast_tools
 
 
 def band_wiener(R, Ni, Si, y, bw):
@@ -70,7 +70,7 @@ def band_wiener(R, Ni, Si, y, bw):
     y *= Ni
 
     # Calculate dirty estimate (and output straight into xh)
-    R_s = R.astype(np.float32) 
+    R_s = R.astype(np.float32)
     np.dot(y, R_s.T, out=xh)
 
     # Iterate through and solve noise
@@ -80,7 +80,7 @@ def band_wiener(R, Ni, Si, y, bw):
         Ni_ki = Ni[ki].astype(np.float64)
 
         # Calculate the Wiener noise weighting (i.e. inverse covariance)
-        Ci = _regrid_work._band_wiener_covariance(R, Ni_ki, bw)
+        Ci = _fast_tools._band_wiener_covariance(R, Ni_ki, bw)
 
         # Add on the signal covariance part
         Ci[-1] += Si
