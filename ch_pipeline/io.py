@@ -23,9 +23,14 @@ Tasks
 
 import os.path
 
+import numpy as np
+
 from caput import pipeline
 from caput import config
 
+from ch_util import andata
+
+from . import task
 
 def _list_of_filelists(files):
     # Take in a list of lists/glob patterns of filenames
@@ -81,6 +86,7 @@ class LoadFilesFromParams(pipeline.TaskBase):
 
         from caput import memh5
 
+
         if len(self.files) == 0:
             raise pipeline.PipelineStopIteration
 
@@ -121,6 +127,69 @@ class LoadFiles(LoadFilesFromParams):
             raise RuntimeError('Argument must be list of files.')
 
         self.files = files
+
+
+class LoadCorrDataFiles(task.SingleTask):
+    """Load data from files passed into the setup routine.
+
+    File must be a serialised subclass of :class:`memh5.BasicCont`.
+    """
+
+    files = None
+
+    freq_start = config.Property(proptype=int, default=None)
+    freq_end = config.Property(proptype=int, default=None)
+
+    def setup(self, files):
+        """Set the list of files to load.
+
+        Parameters
+        ----------
+        files : list
+        """
+        if not isinstance(files, (list, tuple)):
+            raise RuntimeError('Argument must be list of files.')
+
+        self.files = files
+
+        # Set up frequency selection
+        if self.freq_start is not None:
+            self.freq_sel = np.arange(self.freq_start, self.freq_end)
+        else:
+            self.freq_sel = None
+
+
+    def process(self):
+        """Load in each sidereal day.
+
+        Returns
+        -------
+        ts : andata.CorrData
+            The timestream of each sidereal day.
+        """
+
+        if len(self.files) == 0:
+            raise pipeline.PipelineStopIteration
+
+        # Fetch and remove the first item in the list
+        file_ = self.files.pop(0)
+
+        ts = andata.CorrData.from_acq_h5(file_, distributed=True, freq_sel=self.freq_sel)
+
+        if 'tag' not in ts.attrs:
+            # Get the first part of the actual filename and use it as the tag
+            tag = os.path.splitext(os.path.basename(file_))[0]
+
+            ts.attrs['tag'] = tag
+
+        # Add a weight dataset if needed
+        if 'vis_weight' not in ts.datasets:
+            weight_dset = ts.create_dataset('vis_weight', shape=ts.vis.shape, dtype=np.uint8,
+                                            distributed=True, distributed_axis=0)
+            weight_dset.attrs['axis'] = ts.vis.attrs['axis']
+            weight_dset[:] = 128
+
+        return ts
 
 
 class Save(pipeline.TaskBase):
