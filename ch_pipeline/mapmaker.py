@@ -274,13 +274,9 @@ class SelectProductsRedundant(task.SingleTask):
         def find_key(key_list, key):
             try:
                 return map(tuple, list(key_list)).index(tuple(key))
-            except:
-                return None
-
-        def find_key2(key_list, key):
-            try:
+            except TypeError:
                 return list(key_list).index(key)
-            except:
+            except ValueError:
                 return None
 
         input_ind = [ find_key(bt_keys, sk) for sk in ss_keys]
@@ -289,7 +285,7 @@ class SelectProductsRedundant(task.SingleTask):
         bt_freq = self.telescope.frequencies
         ss_freq = ss.freq['centre']
 
-        freq_ind = [ find_key2(ss_freq, bf) for bf in bt_freq]
+        freq_ind = [ find_key(ss_freq, bf) for bf in bt_freq]
 
         nfreq = len(bt_freq)
 
@@ -316,8 +312,8 @@ class SelectProductsRedundant(task.SingleTask):
         for ss_pi in range(len(ss.index_map['prod'])):
 
             #if ss.vis.comm.rank == 0:
-            if ss_pi % 100 == 0:
-                print "Progress", ss.vis.comm.rank, ss_pi
+            #if ss_pi % 100 == 0:
+            #    print "Progress", ss.vis.comm.rank, ss_pi
 
             # Get the feed indices for this product
             ii, ij = ss.index_map['prod'][ss_pi]
