@@ -414,7 +414,10 @@ class GainData(ContainerBase):
 
     @property
     def time(self):
-        return self.index_map['time']
+        try:
+            return self.index_map['time'][:]['ctime']
+        except IndexError:
+            self.index_map['time'][:]
 
     @property
     def freq(self):
@@ -429,7 +432,7 @@ class StaticGainData(ContainerBase):
     """Parallel container for holding static gain data (i.e. non time varying).
     """
 
-    _axes = ('freq', 'input', 'time')
+    _axes = ('freq', 'input')
 
     _dataset_spec = {
         'gain': {
@@ -506,16 +509,19 @@ def make_empty_corrdata(freq=None, input=None, time=None, axes_from=None,
             raise RuntimeError('No input axis defined.')
 
     # Setup time axis
-    if input is None:
+    if time is None:
         if axes_from is not None and 'time' in axes_from.index_map:
-            input = axes_from.index_map['time']
+            time = axes_from.index_map['time']
         else:
             raise RuntimeError('No time axis defined.')
 
     # Create CorrData object and setup axies
     from ch_util import andata
 
-    data = andata.CorrData(distributed=distributed, comm=comm)
+    # Initialise distributed container
+    data = andata.CorrData.__new__(andata.CorrData)
+    memh5.BasicCont.__init__(data, distributed=True, comm=comm)
+
     data.create_index_map('freq', freq)
     data.create_index_map('input', input)
     data.create_index_map('time', time)
@@ -530,7 +536,7 @@ def make_empty_corrdata(freq=None, input=None, time=None, axes_from=None,
                                distributed=distributed, distributed_axis=distributed_axis)
     dset.attrs['axis'] = np.array(['freq', 'prod', 'time'])
 
-    dset = data.create_dataset('vis_weight', shape=(data.nfreq, data.nprod, data.ntime), dtype=np.uint8,
+    dset = data.create_dataset('vis_weight', shape=(data.nfreq, data.nprod, data.ntime), dtype=np.uint16,
                                distributed=distributed, distributed_axis=distributed_axis)
     dset.attrs['axis'] = np.array(['freq', 'prod', 'time'])
 

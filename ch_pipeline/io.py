@@ -172,7 +172,7 @@ class LoadCorrDataFiles(task.SingleTask):
 
         from caput import mpiutil
 
-        if len(self.files) == self._file_ptr:
+        if len(self.files) == self._file_ptr: # or self._file_ptr > 1:
             raise pipeline.PipelineStopIteration
 
         # Fetch and remove the first item in the list

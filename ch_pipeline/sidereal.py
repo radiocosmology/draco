@@ -245,7 +245,7 @@ class SiderealGrouper(task.SingleTask):
         # Calculate the length of data in this current CSD
         start = ephemeris.csd(self._timestream_list[0].time[0])
         end = ephemeris.csd(self._timestream_list[-1].time[-1])
-        day_length = min(end, csd+1) - max(start, csd)
+        day_length = min(end, csd + 1) - max(start, csd)
 
         # If the amount of data for this day is too small, then just skip
         if day_length < 0.1:
@@ -339,7 +339,7 @@ class SiderealRegridder(task.SingleTask):
 
         # Wrap to produce MPIArray
         sts = mpiarray.MPIArray.wrap(sts, axis=data.vis.distributed_axis)
-        ni  = mpiarray.MPIArray.wrap(ni,  axis=data.vis.distributed_axis)
+        ni = mpiarray.MPIArray.wrap(ni,  axis=data.vis.distributed_axis)
 
         # FYI this whole process creates an extra copy of the sidereal stack.
         # This could probably be optimised out with a little work.
