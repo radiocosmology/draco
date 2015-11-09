@@ -527,21 +527,27 @@ def make_empty_corrdata(freq=None, input=None, time=None, axes_from=None,
     data.create_index_map('time', time)
 
     # Construct and create product map
-    nfeed = len(input)
-    prodmap = np.array([[fi, fj] for fi in range(nfeed) for fj in range(fi, nfeed)])
+    if axes_from is not None and 'prod' in axes_from.index_map:
+        prodmap = axes_from.index_map['prod']
+    else:
+        nfeed = len(input)
+        prodmap = np.array([[fi, fj] for fi in range(nfeed) for fj in range(fi, nfeed)])
     data.create_index_map('prod', prodmap)
 
     # Create empty datasets, and add axis attributes to them
     dset = data.create_dataset('vis', shape=(data.nfreq, data.nprod, data.ntime), dtype=np.complex64,
                                distributed=distributed, distributed_axis=distributed_axis)
     dset.attrs['axis'] = np.array(['freq', 'prod', 'time'])
+    dset[:] = 0.0
 
     dset = data.create_dataset('vis_weight', shape=(data.nfreq, data.nprod, data.ntime), dtype=np.uint16,
                                distributed=distributed, distributed_axis=distributed_axis)
     dset.attrs['axis'] = np.array(['freq', 'prod', 'time'])
+    dset[:] = 0.0
 
     dset = data.create_dataset('gain', shape=(data.nfreq, data.ninput, data.ntime), dtype=np.complex64,
                                distributed=distributed, distributed_axis=distributed_axis)
     dset.attrs['axis'] = np.array(['freq', 'input', 'time'])
+    dset[:] = 0.0
 
     return data

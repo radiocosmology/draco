@@ -99,7 +99,8 @@ class FrequencyRebin(task.SingleTask):
             raise RuntimeError("Binning must exactly divide the number of channels.")
 
         # Get all frequencies onto same node
-        ss.redistribute(['prod', 'input'])
+        #ss.redistribute(['prod', 'input'])
+        ss.redistribute('time')
 
         # Calculate the new frequency centres and widths
         fc = ss.index_map['freq']['centre'].reshape(-1, self.channel_bin).mean(axis=-1)
@@ -114,12 +115,12 @@ class FrequencyRebin(task.SingleTask):
             sb = ss.__class__(freq=freq_map, axes_from=ss)
         elif isinstance(ss, andata.CorrData):
             sb = containers.make_empty_corrdata(freq=freq_map, axes_from=ss, distributed=True,
-                                                distributed_axis=1, comm=ss.comm)
+                                                distributed_axis=2, comm=ss.comm)
         else:
             raise RuntimeError("I don't know how to deal with data type %s" % ss.__class__.__name__)
 
         # Get all frequencies onto same node
-        sb.redistribute(['prod', 'input'])
+        sb.redistribute('time')
 
         # Copy over the tag attribute
         sb.attrs['tag'] = ss.attrs['tag']
