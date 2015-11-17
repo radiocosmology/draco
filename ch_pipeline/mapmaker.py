@@ -21,7 +21,7 @@ Tasks
 import numpy as np
 from caput import mpiarray, config
 
-from ch_util import tools
+from ch_util import tools, andata
 
 from . import containers, task
 
@@ -92,37 +92,53 @@ class FrequencyRebin(task.SingleTask):
         sb : SiderealStream
         """
 
+        if 'freq' not in ss.index_map:
+            raise RuntimeError('Data does not have a frequency axis.')
+
         if len(ss.freq) % self.channel_bin != 0:
-            raise Exception("Binning must exactly divide the number of channels.")
+            raise RuntimeError("Binning must exactly divide the number of channels.")
 
         # Get all frequencies onto same node
-        ss.redistribute(['prod', 'input'])
+        #ss.redistribute(['prod', 'input'])
+        ss.redistribute('time')
 
         # Calculate the new frequency centres and widths
-        fc = ss.freq['centre'].reshape(-1, self.channel_bin).mean(axis=-1)
-        fw = ss.freq['width'].reshape(-1, self.channel_bin).sum(axis=-1)
+        fc = ss.index_map['freq']['centre'].reshape(-1, self.channel_bin).mean(axis=-1)
+        fw = ss.index_map['freq']['width'].reshape(-1, self.channel_bin).sum(axis=-1)
 
-        freq_map = np.empty(fc.shape[0], dtype=ss.freq.dtype)
+        freq_map = np.empty(fc.shape[0], dtype=ss.index_map['freq'].dtype)
         freq_map['centre'] = fc
         freq_map['width'] = fw
 
         # Create new container for rebinned stream
-        sb = containers.SiderealStream(freq=freq_map, axes_from=ss)
+        if isinstance(ss, containers.ContainerBase):
+            sb = ss.__class__(freq=freq_map, axes_from=ss)
+        elif isinstance(ss, andata.CorrData):
+            sb = containers.make_empty_corrdata(freq=freq_map, axes_from=ss, distributed=True,
+                                                distributed_axis=2, comm=ss.comm)
+        else:
+            raise RuntimeError("I don't know how to deal with data type %s" % ss.__class__.__name__)
+
+        # Get all frequencies onto same node
+        sb.redistribute('time')
+
+        # Copy over the tag attribute
         sb.attrs['tag'] = ss.attrs['tag']
 
-        # Rebin the weight arra
-        rshape = ss.vis[:].shape[1:]
-        wt_rebin = ss.weight[:].view(np.ndarray).reshape((-1, self.channel_bin) + rshape).sum(axis=1)
-        wt_rebin = mpiarray.MPIArray.wrap(wt_rebin, axis=1)
+        # Rebin the arrays, do this with a loop to save memory
+        for fi in range(len(ss.freq)):
 
-        # Rebin the visibility array
-        vis_rebin = (ss.vis[:] * ss.weight[:]).view(np.ndarray).reshape((-1, self.channel_bin) + rshape).sum(axis=1)
-        vis_rebin = np.where(wt_rebin == 0, np.zeros_like(vis_rebin), vis_rebin / wt_rebin)
-        vis_rebin = mpiarray.MPIArray.wrap(vis_rebin, axis=1)
+            # Calculate rebinned index
+            ri = fi / self.channel_bin
 
-        # Copy in rebinned data
-        sb.vis[:] = vis_rebin
-        sb.weight[:] = wt_rebin
+            sb.vis[ri] += ss.vis[fi] * ss.weight[fi]
+            sb.gain[ri] += ss.gain[fi] / self.channel_bin  # Don't do weighted average for the moment
+
+            sb.weight[ri] += ss.weight[fi]
+
+            # If we are on the final sub-channel then divide the arrays through
+            if (fi + 1) % self.channel_bin == 0:
+                sb.vis[ri] *= tools.invert_no_zero(sb.weight[ri])
 
         sb.redistribute('freq')
 
@@ -342,7 +358,7 @@ class SelectProductsRedundant(task.SingleTask):
             sp.weight[:, sp_pi] += ss.weight[freq_ind, ss_pi]
 
         # Divide through by weights to get properly weighted visibility average
-        sp.vis[:] *= np.where(sp.weight[:] == 0.0, 0.0, 1.0 / sp.weight[:])
+        sp.vis[:] *= tools.invert_no_zero(sp.weight[:])
 
         # Switch back to frequency distribution
         ss.redistribute('freq')

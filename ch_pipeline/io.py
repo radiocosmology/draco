@@ -137,6 +137,8 @@ class LoadCorrDataFiles(task.SingleTask):
 
     files = None
 
+    _file_ptr = 0
+
     freq_start = config.Property(proptype=int, default=None)
     freq_end = config.Property(proptype=int, default=None)
 
@@ -168,11 +170,17 @@ class LoadCorrDataFiles(task.SingleTask):
             The timestream of each sidereal day.
         """
 
-        if len(self.files) == 0:
+        from caput import mpiutil
+
+        if len(self.files) == self._file_ptr: # or self._file_ptr > 1:
             raise pipeline.PipelineStopIteration
 
         # Fetch and remove the first item in the list
-        file_ = self.files.pop(0)
+        file_ = self.files[self._file_ptr]
+        self._file_ptr += 1
+
+        if mpiutil.rank0:
+            print "Reading file %i of %i." % (self._file_ptr, len(self.files))
 
         ts = andata.CorrData.from_acq_h5(file_, distributed=True, freq_sel=self.freq_sel)
 

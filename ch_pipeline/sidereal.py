@@ -157,6 +157,113 @@ class LoadTimeStreamSidereal(task.SingleTask):
         return ts
 
 
+class SiderealGrouper(task.SingleTask):
+    """Group individual timestreams together into whole Sidereal days.
+
+    Attributes
+    ----------
+    padding : float
+        Extra amount of a sidereal day to pad each timestream by. Useful for
+        getting rid of interpolation artifacts.
+    """
+
+    padding = config.Property(proptype=float, default=0.005)
+
+    def __init__(self):
+        self._timestream_list = []
+        self._current_csd = None
+
+    def process(self, tstream):
+        """Load in each sidereal day.
+
+        Parameters
+        ----------
+        tstream : andata.CorrData
+            Timestream to group together.
+
+        Returns
+        -------
+        ts : andata.CorrData or None
+            Returns the timestream of each sidereal day when we have received
+            the last file, otherwise returns :obj:`None`.
+        """
+
+        # Get the start and end CSDs of the file
+        csd_start = int(ephemeris.csd(tstream.time[0]))
+        csd_end = int(ephemeris.csd(tstream.time[-1]))
+
+        # If current_csd is None then this is the first time we've run
+        if self._current_csd is None:
+            self._current_csd = csd_start
+
+        # If this file started during the current CSD add it onto the list
+        if self._current_csd == csd_start:
+            self._timestream_list.append(tstream)
+
+        if tstream.vis.comm.rank == 0:
+            print "Adding file into group for CSD:%i" % csd_start
+
+        # If this file ends during a later CSD then we need to process the
+        # current list and restart the system
+        if self._current_csd < csd_end:
+
+            if tstream.vis.comm.rank == 0:
+                print "Concatenating files for CSD:%i" % csd_start
+
+            # Combine timestreams into a single container for the whole day this
+            # could get returned as None if there wasn't enough data
+            tstream_all = self._process_current_csd()
+
+            # Reset list and current CSD for the new file
+            self._timestream_list = [tstream]
+            self._current_csd = csd_end
+
+            return tstream_all
+        else:
+            return None
+
+    def process_finish(self):
+        """Return the final sidereal day.
+
+        Returns
+        -------
+        ts : andata.CorrData or None
+            Returns the timestream of the final sidereal day if it's long
+            enough, otherwise returns :obj:`None`.
+        """
+
+        # If we are here there is no more data coming, we just need to process any remaining data
+        tstream_all = self._process_current_csd()
+
+        return tstream_all
+
+    def _process_current_csd(self):
+        # Combine the current set of files into a timestream
+
+        csd = self._current_csd
+
+        # Calculate the length of data in this current CSD
+        start = ephemeris.csd(self._timestream_list[0].time[0])
+        end = ephemeris.csd(self._timestream_list[-1].time[-1])
+        day_length = min(end, csd + 1) - max(start, csd)
+
+        # If the amount of data for this day is too small, then just skip
+        if day_length < 0.1:
+            return None
+
+        if self._timestream_list[0].vis.comm.rank == 0:
+            print "Constructing CSD:%i [%i files]" % (csd, len(self._timestream_list))
+
+        # Construct the combined timestream
+        ts = andata.concatenate(self._timestream_list)
+
+        # Add attributes for the CSD and a tag for labelling saved files
+        ts.attrs['tag'] = ('csd_%i' % csd)
+        ts.attrs['csd'] = csd
+
+        return ts
+
+
 class SiderealRegridder(task.SingleTask):
     """Take a sidereal days worth of data, and put onto a regular grid.
 
@@ -232,7 +339,7 @@ class SiderealRegridder(task.SingleTask):
 
         # Wrap to produce MPIArray
         sts = mpiarray.MPIArray.wrap(sts, axis=data.vis.distributed_axis)
-        ni  = mpiarray.MPIArray.wrap(ni,  axis=data.vis.distributed_axis)
+        ni = mpiarray.MPIArray.wrap(ni,  axis=data.vis.distributed_axis)
 
         # FYI this whole process creates an extra copy of the sidereal stack.
         # This could probably be optimised out with a little work.

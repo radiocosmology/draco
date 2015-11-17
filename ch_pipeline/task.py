@@ -73,6 +73,8 @@ class SingleTask(pipeline.TaskBase, pipeline.BasicContMixin):
     def next(self, *input):
         """Should not need to override. Implement `process` instead."""
 
+        print "Starting next for task %s" % self.__class__.__name__
+
         # This should only be called once.
         try:
             if self.done:
@@ -103,11 +105,15 @@ class SingleTask(pipeline.TaskBase, pipeline.BasicContMixin):
         # Increment internal counter
         self._count = self._count + 1
 
+        print "Leaving next for task %s" % self.__class__.__name__
+
         # Return the output for the next task
         return output
 
     def finish(self):
         """Should not need to override. Implement `process_finish` instead."""
+
+        print "Starting finish for task %s" % self.__class__.__name__
 
         try:
             output = self.process_finish()
@@ -115,9 +121,12 @@ class SingleTask(pipeline.TaskBase, pipeline.BasicContMixin):
             # Write the output if needed
             self._save_output(output)
 
+            print "Leaving finish for task %s" % self.__class__.__name__
+
             return output
 
         except AttributeError:
+            print "No finish for task %s" % self.__class__.__name__
             pass
 
     def _save_output(self, output):

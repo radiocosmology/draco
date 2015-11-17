@@ -46,8 +46,6 @@ class RFIFilter(task.SingleTask):
         if mpiutil.rank0:
             print "RFI filtering %s" % data.attrs['tag']
 
-        data.redistribute('time')
-
         # Construct RFI mask
         mask = rfi.flag_dataset(data, only_autos=False, threshold=self.threshold_mad, flag1d=self.flag1d)
 
@@ -69,6 +67,10 @@ class ChannelFlagger(task.SingleTask):
     """
 
     test_freq = config.Property(proptype=list, default=[610.0])
+
+    ignore_fit = config.Property(proptype=bool, default=False)
+    ignore_noise = config.Property(proptype=bool, default=False)
+    ignore_gains = config.Property(proptype=bool, default=False)
 
     def process(self, timestream, inputmap):
         """Flag bad channels in timestream.
@@ -94,6 +96,11 @@ class ChannelFlagger(task.SingleTask):
         # Create a global channel weight
         chan_mask = np.ones(timestream.ninput, dtype=np.int)
 
+        # Mark any Blank channels as bad
+        for i in range(timestream.ninput):
+            if isinstance(inputmap[i], tools.Blank):
+                chan_mask[i] = 0
+
         # Calculate start and end frequencies
         sf = timestream.vis.local_offset[0]
         ef = sf + timestream.vis.local_shape[0]
@@ -103,10 +110,25 @@ class ChannelFlagger(task.SingleTask):
 
             # Only run good_channels if frequency is local
             if fi >= sf and fi < ef:
-                good_gains, good_noise, good_fit, test_channels = data_quality.good_channels(timestream, test_freq=fi, inputs=inputmap)
+
+                # Run good channels code and unpack arguments
+                res = data_quality.good_channels(timestream, test_freq=fi, inputs=inputmap, verbose=False)
+                good_gains, good_noise, good_fit, test_channels = res
+
+                print ("Frequency %i bad channels: blank %i; gains %i; noise %i; fit %i %s" %
+                       ( fi, np.sum(chan_mask == 0), np.sum(good_gains == 0), np.sum(good_noise == 0),
+                         np.sum(good_fit == 0), '[ignored]' if self.ignore_fit else ''))
+
+                if good_noise is None:
+                    good_noise = np.ones_like(test_channels)
 
                 # Construct the overall channel mask for this frequency
-                chan_mask[test_channels] *= (good_gains * good_noise * good_fit)
+                if not self.ignore_gains:
+                    chan_mask[test_channels] *= good_gains
+                if not self.ignore_noise:
+                    chan_mask[test_channels] *= good_noise
+                if not self.ignore_fit:
+                    chan_mask[test_channels] *= good_fit
 
         # Gather the channel flags from all nodes, and combine into a
         # single flag (checking that all tests pass)
@@ -134,7 +156,7 @@ class BadNodeFlagger(task.SingleTask):
     """
 
     nodes = config.Property(proptype=list, default=[])
-    
+
     flag_freq_zero = config.Property(proptype=bool, default=True)
 
     def process(self, timestream):
@@ -149,7 +171,7 @@ class BadNodeFlagger(task.SingleTask):
         flagged_timestream : same type as timestream
         """
 
-        timestream.redistribute('prod')
+        timestream.redistribute(['prod', 'input'])
 
         if self.flag_freq_zero:
             timestream.datasets['vis_weight'][0] = 0.0
@@ -161,5 +183,5 @@ class BadNodeFlagger(task.SingleTask):
             timestream.datasets['vis_weight'][node::16] = 0.0
 
         timestream.redistribute('freq')
-        
+
         return timestream
