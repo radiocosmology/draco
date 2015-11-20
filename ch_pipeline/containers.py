@@ -468,6 +468,48 @@ class StaticGainData(ContainerBase):
         return self.index_map['input']
 
 
+class RingMap(ContainerBase):
+    """Container for holding multifrequency ring maps.
+
+    The maps are packed in format `[freq, pol, ra, EW beam, elevation]` where
+    the polarisations are Stokes I, Q, U and V.
+
+    Parameters
+    ----------
+    nside : int
+        The nside of the Healpix maps.
+    polarisation : bool, optional
+        If `True` all Stokes parameters are stored, if `False` only Stokes I is
+        stored.
+    """
+
+    _axes = ('freq', 'pol', 'ra', 'beam', 'el')
+
+    _dataset_spec = {
+        'map': {
+            'axes': ['freq', 'pol', 'ra', 'beam', 'el'],
+            'dtype': np.float64,
+            'initialise': True,
+            'distributed': True,
+            'distributed_axis': 'freq'
+        }
+    }
+
+    def __init__(self, polarisation=True, *args, **kwargs):
+
+        kwargs['pol'] = np.array(['I', 'Q', 'U', 'V']) if polarisation else np.array(['I'])
+
+        super(RingMap, self).__init__(*args, **kwargs)
+
+    @property
+    def freq(self):
+        return self.index_map['freq']
+
+    @property
+    def map(self):
+        return self.datasets['map']
+
+
 def make_empty_corrdata(freq=None, input=None, time=None, axes_from=None,
                         distributed=True, distributed_axis=0, comm=None):
     """Make an empty CorrData (i.e. timestream) container.
