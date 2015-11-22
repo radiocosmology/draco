@@ -195,7 +195,11 @@ class LoadCorrDataFiles(task.SingleTask):
             weight_dset = ts.create_dataset('vis_weight', shape=ts.vis.shape, dtype=np.uint8,
                                             distributed=True, distributed_axis=0)
             weight_dset.attrs['axis'] = ts.vis.attrs['axis']
-            weight_dset[:] = 128
+
+            # Set weight to a reasonable value (128), unless the vis value is
+            # zero which presumably came from missing data. NOTE: this may have
+            # a small bias
+            weight_dset[:] = np.where(ts.vis[:] == 0.0, 0, 128)
 
         return ts
 
