@@ -308,7 +308,7 @@ class SelectProductsRedundant(task.SingleTask):
 
         # sp = containers.SiderealStream(freq=sp_freq, input=sp_input, prod=self.telescope.uniquepairs,
         sp = containers.SiderealStream(freq=sp_freq, input=len(bt_keys), prod=self.telescope.uniquepairs,
-                                       axes_from=ss, distributed=True, comm=ss.comm)
+                                       axes_from=ss, attrs_from=ss, distributed=True, comm=ss.comm)
 
         # Ensure all frequencies and products are on each node
         ss.redistribute('ra')

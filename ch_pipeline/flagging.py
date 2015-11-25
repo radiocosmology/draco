@@ -72,6 +72,8 @@ class ChannelFlagger(task.SingleTask):
     ignore_noise = config.Property(proptype=bool, default=False)
     ignore_gains = config.Property(proptype=bool, default=False)
 
+    known_bad = config.Property(proptype=list, default=[])
+
     def process(self, timestream, inputmap):
         """Flag bad channels in timestream.
 
@@ -93,13 +95,13 @@ class ChannelFlagger(task.SingleTask):
         # to the given physical frequencies
         freq_ind = [np.argmin(np.abs(timestream.freq - freq)) for freq in self.test_freq]
 
-        # Create a global channel weight
-        chan_mask = np.ones(timestream.ninput, dtype=np.int)
+        # Create a global channel weight (channels are bad by default)
+        chan_mask = np.zeros(timestream.ninput, dtype=np.int)
 
-        # Mark any Blank channels as bad
+        # Mark any CHIME channels as good
         for i in range(timestream.ninput):
-            if isinstance(inputmap[i], tools.Blank):
-                chan_mask[i] = 0
+            if isinstance(inputmap[i], tools.CHIMEAntenna):
+                chan_mask[i] = 1
 
         # Calculate start and end frequencies
         sf = timestream.vis.local_offset[0]
@@ -135,6 +137,10 @@ class ChannelFlagger(task.SingleTask):
         chan_mask_all = np.zeros((timestream.comm.size, timestream.ninput), dtype=np.int)
         timestream.comm.Allgather(chan_mask, chan_mask_all)
         chan_mask = np.prod(chan_mask_all, axis=0)
+
+        # Mark already known bad channels
+        for ch in self.known_bad:
+            chan_mask[ch] = 0.0
 
         # Apply weights to files weight array
         chan_mask = chan_mask[np.newaxis, :, np.newaxis]

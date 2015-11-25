@@ -60,13 +60,17 @@ class ContainerBase(memh5.BasicCont):
 
     _dataset_spec = {}
 
-    def __init__(self, axes_from=None, *args, **kwargs):
+    def __init__(self, axes_from=None, attrs_from=None, *args, **kwargs):
 
         dist = kwargs['distributed'] if 'distributed' in kwargs else True
         comm = kwargs['comm'] if 'comm' in kwargs and dist else None
 
         # Run base initialiser
         memh5.BasicCont.__init__(self, distributed=dist, comm=comm)
+
+        # Copy over attributes
+        if attrs_from is not None:
+            memh5.copyattrs(attrs_from.attrs, self.attrs)
 
         # Create axis entries
         for axis in self._axes:
