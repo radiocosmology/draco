@@ -388,7 +388,7 @@ class SelectFreq(task.SingleTask):
         freq_map = data.index_map['freq'][self.frequencies]
         data.redistribute(['ra', 'time'])
 
-        newdata = data.__class__(freq=freq_map, axes_from=data)
+        newdata = data.__class__(freq=freq_map, axes_from=data, attrs_from=data)
         newdata.redistribute(['ra', 'time'])
 
         for name, dset in data.datasets.items():
@@ -690,6 +690,8 @@ class RingMapMaker(task.SingleTask):
     weighting : one of ['natural']
     """
 
+    npix = config.Property(proptype=int, default=512)
+
     def setup(self, bt):
         """Set the beamtransfer matrices to use.
 
@@ -753,14 +755,12 @@ class RingMapMaker(task.SingleTask):
         vdr[..., 0, 0] = 0.0
 
         # Construct phase array
-        sin_el = np.linspace(-1.0, 1.0, n_el)
+        sin_el = np.linspace(-1.0, 1.0, self.npix)
         vis_pos_1d = np.fft.fftfreq(nvis_1d, d=(1.0 / (nvis_1d * sp)))
 
         # Create empty ring map
-        rm = containers.RingMap(beam=(2 * ncyl - 1), el=n_el, polarisation=True, axes_from=sstream)
+        rm = containers.RingMap(beam=(2 * ncyl - 1), el=self.npix, polarisation=True, axes_from=sstream)
         rm.redistribute('freq')
-
-        print rm.map
 
         for lfi, fi in sstream.vis[:].enumerate(0):
 
