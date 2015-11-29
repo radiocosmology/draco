@@ -643,30 +643,44 @@ class MapMaker(task.SingleTask):
         bt = self.beamtransfer
         lmax = bt.telescope.lmax
         mmax = min(bt.telescope.mmax, len(mmodes.index_map['m']) - 1)
-        nfreq = bt.telescope.nfreq
+        nfreq = len(mmodes.index_map['freq'])  # bt.telescope.nfreq
+
+        def find_key(key_list, key):
+            try:
+                return map(tuple, list(key_list)).index(tuple(key))
+            except TypeError:
+                return list(key_list).index(key)
+            except ValueError:
+                return None
+
+        # Figure out mapping between the frequencies
+        bt_freq = self.beamtransfer.telescope.frequencies
+        mm_freq = mmodes.index_map['freq']['centre']
+
+        freq_ind = [ find_key(bt_freq, mf) for mf in mm_freq]
 
         # Trim off excess m-modes
         mmodes.redistribute('freq')
-        m_array = mmodes.vis[:(mmax+1)]
+        m_array = mmodes.vis[:(mmax + 1)]
         m_array = m_array.redistribute(axis=0)
 
         # Create array to store alms in.
-        alm = mpiarray.MPIArray((nfreq, 4, lmax+1, mmax+1), dtype=np.complex128, axis=3, comm=mmodes.comm)
+        alm = mpiarray.MPIArray((nfreq, 4, lmax + 1, mmax + 1), dtype=np.complex128, axis=3, comm=mmodes.comm)
         alm[:] = 0.0
 
         # Loop over all m's and project from m-mode visibilities to alms.
         for mi, m in m_array.enumerate(axis=0):
 
             for fi in range(nfreq):
-                pm = self._proj(m, fi)
-                alm[fi, ..., mi] = np.dot(pm, m_array[mi, :, fi].flatten()).reshape(4, lmax+1)
+                pm = self._proj(m, freq_ind[fi])
+                alm[fi, ..., mi] = np.dot(pm, m_array[mi, :, fi].flatten()).reshape(4, lmax + 1)
 
         # Redistribute back over frequency
         alm = alm.redistribute(axis=0)
 
         # Copy into square alm array for transform
-        almt = mpiarray.MPIArray((nfreq, 4, lmax+1, lmax+1), dtype=np.complex128, axis=0, comm=mmodes.comm)
-        almt[..., :(mmax+1)] = alm
+        almt = mpiarray.MPIArray((nfreq, 4, lmax + 1, lmax + 1), dtype=np.complex128, axis=0, comm=mmodes.comm)
+        almt[..., :(mmax + 1)] = alm
         alm = almt
 
         # Perform spherical harmonic transform to map space
