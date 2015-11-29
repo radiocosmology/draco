@@ -283,8 +283,11 @@ class SunClean(task.SingleTask):
 
     flag_time = config.Property(proptype=float, default=None)
 
+    def setup(self, inputmap):
+        self.inputmap = inputmap
 
-    def process(self, sstream, inputmap):
+
+    def process(self, sstream): #, inputmap):
         """Apply a day time mask.
 
         Parameters
@@ -297,6 +300,8 @@ class SunClean(task.SingleTask):
         mstream : containers.SiderealStream
             Masked sidereal stream.
         """
+
+        inputmap = self.inputmap
 
         from ch_util import ephemeris
         import ephem
@@ -386,7 +391,7 @@ class SunClean(task.SingleTask):
             # Construct a mask for each
             rise_mask = ((ra - rise_ra) % 360.0) > self.flag_time
             set_mask = ((ra - set_ra + self.flag_time) % 360.0) > self.flag_time
-            transit_mask = ((ra - transit_ra + self.flag_time) % 360.0) > (2 * self.flag_time)
+            transit_mask = ((ra - transit_ra + self.flag_time / 2) % 360.0) > self.flag_time
 
             # Combine the masks and apply to data
             mask = np.logical_and(rise_mask, np.logical_and(set_mask, transit_mask))

@@ -56,7 +56,8 @@ def _list_or_glob(files):
     import glob
 
     if isinstance(files, str):
-        files = glob.glob(files)
+        files = sorted(glob.glob(files))
+        print files
     elif isinstance(files, list):
         pass
     else:
@@ -92,6 +93,8 @@ class LoadFilesFromParams(pipeline.TaskBase):
 
         # Fetch and remove the first item in the list
         file_ = self.files.pop(0)
+
+        print "Loading file %s" % file_
 
         cont = memh5.BasicCont.from_file(file_, distributed=True)
 
@@ -186,8 +189,8 @@ class LoadCorrDataFiles(task.SingleTask):
 
         if 'tag' not in ts.attrs:
             # Get the first part of the actual filename and use it as the tag
-            tag = os.path.splitext(os.path.basename(file_))[0]
-
+            #tag = os.path.splitext(os.path.basename(file_))[0]
+            tag = 'file%03i' % self._file_ptr
             ts.attrs['tag'] = tag
 
         # Add a weight dataset if needed
