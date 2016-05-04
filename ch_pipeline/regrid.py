@@ -110,19 +110,19 @@ def lanczos_kernel(x, a):
     return np.where(np.abs(x) < a, np.sinc(x) * np.sinc(x/a), np.zeros_like(x))
 
 
-def lanczos_forward_matrix(x, y, a=5):
-    """Regrid data using a maximum likelihood inverse Lanczos.
+def lanczos_forward_matrix(x, y, a=5, periodic=False):
+    """Lanczos interpolation matrix.
 
     Parameters
     ----------
     x : np.ndarray[m]
-        Points to regrid data onto. Must be regularly spaced.
+        Points we have data at. Must be regularly spaced.
     y : np.ndarray[n]
-        Points we have data at. Irregular spacing.
+        Point we want to interpolate data onto.
     a : integer, optional
         Lanczos width parameter.
-    cond : float
-        Relative condition number for pseudo-inverse.
+    periodic : boolean, optional
+        Treat input points as periodic.
 
     Returns
     -------
@@ -132,6 +132,10 @@ def lanczos_forward_matrix(x, y, a=5):
     dx = x[1] - x[0]
 
     sep = (x[np.newaxis, :] - y[:, np.newaxis]) / dx
+
+    if periodic:
+        n = len(x)
+        sep = np.where(np.abs(sep) > n/2, n - np.abs(sep), sep)
 
     lz_forward = lanczos_kernel(sep, a)
 
