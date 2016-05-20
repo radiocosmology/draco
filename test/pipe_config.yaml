@@ -51,7 +51,7 @@ pipeline:
                 output_root: "output/tstream2_"
 
         -   type:       ch_pipeline.simulate.RandomGains
-            in:         tstream
+            in:         tstream2
             out:        gain_fluc
             params:
                 output_root: "output/gainfluc_"
@@ -69,3 +69,34 @@ pipeline:
             params:
                 save:   Yes
                 output_root: "output/tstream_final_"
+
+        -   type:       ch_pipeline.sidereal.SiderealGrouper
+            in:         tstream2
+            out:        gtstream
+            params:
+                save:   No
+                output_root: "output/gtstream_"
+
+        -   type:       ch_pipeline.sidereal.SiderealRegridder
+            in:         gtstream
+            out:        csstream
+            params:
+                save:   No
+                output_root: "output/csstream_"
+
+        -   type:       ch_pipeline.mapmaker.SelectProductsRedundant
+            requires:   bt
+            in:         csstream
+            out:        rsstream
+
+        -   type:       ch_pipeline.mapmaker.MModeTransform
+            in:         rsstream
+            out:        mmodes
+
+        -   type:       ch_pipeline.mapmaker.MapMaker
+            requires:   bt
+            in:         mmodes
+            out:        map1
+            params:
+                save:   Yes
+                output_root: "output/map_"
