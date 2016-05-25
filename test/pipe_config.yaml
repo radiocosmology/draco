@@ -10,12 +10,12 @@ cluster:
 
 pipeline:
     tasks:
-        -   type:       ch_pipeline.io.LoadBeamTransfer
+        -   type:       ch_pipeline.core.io.LoadBeamTransfer
             out:        [tel, bt]
             params:
                 product_directory:  products/bt/
 
-        -   type:       ch_pipeline.simulate.SimulateSidereal
+        -   type:       ch_pipeline.simulate.stream.SimulateSidereal
             requires:   [tel, bt]
             out:        sstream
             params:
@@ -24,7 +24,7 @@ pipeline:
                 save:   No
                 output_root: "output/sstream_"
 
-        -   type:       ch_pipeline.simulate.MakeFullProducts
+        -   type:       ch_pipeline.simulate.stream.ExpandProducts
             requires:   tel
             in:         sstream
             out:        sstream2
@@ -32,7 +32,7 @@ pipeline:
                 save:   No
                 output_root: "output/sstream2_"
 
-        -   type:       ch_pipeline.simulate.MakeCorrDataFiles
+        -   type:       ch_pipeline.simulate.stream.MakeTimeStream
             requires:   sstream2
             out:        tstream
             params:
@@ -42,7 +42,7 @@ pipeline:
                 save:   No
                 output_root: "output/tstream_"
 
-        -   type:       ch_pipeline.simulate.ReceiverTemperature
+        -   type:       ch_pipeline.simulate.noise.ReceiverTemperature
             in:         tstream
             out:        tstream2
             params:
@@ -50,50 +50,50 @@ pipeline:
                 save:   No
                 output_root: "output/tstream2_"
 
-        -   type:       ch_pipeline.simulate.RandomGains
+        -   type:       ch_pipeline.simulate.gain.RandomGains
             in:         tstream2
             out:        gain_fluc
             params:
                 output_root: "output/gainfluc_"
                 save:   No
 
-        -   type:       ch_pipeline.calibration.ApplyGain
+        -   type:       ch_pipeline.analysis.calibration.ApplyGain
             in:         [tstream2, gain_fluc]
             out:        tstream3
             params:
                 inverse: No
 
-        -   type:       ch_pipeline.simulate.SampleNoise
+        -   type:       ch_pipeline.simulate.noise.SampleNoise
             in:         tstream3
             out:        tstream4
             params:
                 save:   Yes
                 output_root: "output/tstream_final_"
 
-        -   type:       ch_pipeline.sidereal.SiderealGrouper
+        -   type:       ch_pipeline.analysis.sidereal.SiderealGrouper
             in:         tstream2
             out:        gtstream
             params:
                 save:   No
                 output_root: "output/gtstream_"
 
-        -   type:       ch_pipeline.sidereal.SiderealRegridder
+        -   type:       ch_pipeline.analysis.sidereal.SiderealRegridder
             in:         gtstream
             out:        csstream
             params:
                 save:   No
                 output_root: "output/csstream_"
 
-        -   type:       ch_pipeline.mapmaker.SelectProductsRedundant
+        -   type:       ch_pipeline.analysis.mapmaker.SelectProductsRedundant
             requires:   bt
             in:         csstream
             out:        rsstream
 
-        -   type:       ch_pipeline.mapmaker.MModeTransform
+        -   type:       ch_pipeline.analysis.mapmaker.MModeTransform
             in:         rsstream
             out:        mmodes
 
-        -   type:       ch_pipeline.mapmaker.MapMaker
+        -   type:       ch_pipeline.analysis.mapmaker.MapMaker
             requires:   bt
             in:         mmodes
             out:        map1
