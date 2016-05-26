@@ -1,0 +1,102 @@
+cluster:
+    name:      sim_test
+    directory: simtest
+
+    nodes:     4
+    ompnum:    8
+    time:      4:00:00
+
+    venv:      /home/k/krs/jrs65/ch_pipeline/venv
+
+pipeline:
+    tasks:
+        -   type:       ch_pipeline.io.LoadBeamTransfer
+            out:        [tel, bt]
+            params:
+                product_directory:  products/bt/
+
+        -   type:       ch_pipeline.simulate.SimulateSidereal
+            requires:   [tel, bt]
+            out:        sstream
+            params:
+                maps:
+                        - "map256.h5"
+                save:   No
+                output_root: "output/sstream_"
+
+        -   type:       ch_pipeline.simulate.MakeFullProducts
+            requires:   tel
+            in:         sstream
+            out:        sstream2
+            params:
+                save:   No
+                output_root: "output/sstream2_"
+
+        -   type:       ch_pipeline.simulate.MakeCorrDataFiles
+            requires:   sstream2
+            out:        tstream
+            params:
+                start_time: 2015-10-05 12:15:00
+                end_time:   2015-10-06 14:37:00
+                integration_frame_exp: 23
+                save:   No
+                output_root: "output/tstream_"
+
+        -   type:       ch_pipeline.simulate.ReceiverTemperature
+            in:         tstream
+            out:        tstream2
+            params:
+                recv_temp: 50.0
+                save:   No
+                output_root: "output/tstream2_"
+
+        -   type:       ch_pipeline.simulate.RandomGains
+            in:         tstream2
+            out:        gain_fluc
+            params:
+                output_root: "output/gainfluc_"
+                save:   No
+
+        -   type:       ch_pipeline.calibration.ApplyGain
+            in:         [tstream2, gain_fluc]
+            out:        tstream3
+            params:
+                inverse: No
+
+        -   type:       ch_pipeline.simulate.SampleNoise
+            in:         tstream3
+            out:        tstream4
+            params:
+                save:   Yes
+                output_root: "output/tstream_final_"
+
+        -   type:       ch_pipeline.sidereal.SiderealGrouper
+            in:         tstream2
+            out:        gtstream
+            params:
+                save:   No
+                output_root: "output/gtstream_"
+
+        -   type:       ch_pipeline.sidereal.SiderealRegridder
+            in:         gtstream
+            out:        csstream
+            params:
+                save:   No
+                output_root: "output/csstream_"
+
+        -   type:       ch_pipeline.mapmaker.SelectProductsRedundant
+            requires:   bt
+            in:         csstream
+            out:        rsstream
+
+        -   type:       ch_pipeline.mapmaker.MModeTransform
+            in:         rsstream
+            out:        mmodes
+
+        -   type:       ch_pipeline.mapmaker.MapMaker
+            requires:   bt
+            in:         mmodes
+            out:        map1
+            params:
+                save:   Yes
+                output_root: "output/map_"

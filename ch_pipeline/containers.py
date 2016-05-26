@@ -414,14 +414,17 @@ class GainData(ContainerBase):
 
     @property
     def weight(self):
-        return self.datasets['weight']
+        try:
+            return self.datasets['weight']
+        except KeyError:
+            return None
 
     @property
     def time(self):
         try:
             return self.index_map['time'][:]['ctime']
         except IndexError:
-            self.index_map['time'][:]
+            return self.index_map['time'][:]
 
     @property
     def freq(self):

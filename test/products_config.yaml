@@ -1,0 +1,24 @@
+config:
+    # Only generate Beam Transfers.
+    beamtransfers:      Yes
+    kltransform:        No
+    psfisher:           No
+
+    skip_svd:           Yes
+
+    output_directory:   "products/"
+
+telescope:
+    type: PolarisedCylinder
+
+    freq_lower:         400.0
+    freq_upper:         410.0
+    num_freq:           2
+
+    num_cylinders:      2
+    num_feeds:          8
+
+    cylinder_width:     5.0
+    feed_spacing:       0.3
+
+    auto_correlations:  Yes
