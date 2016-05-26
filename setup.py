@@ -23,16 +23,16 @@ fast_ext = Extension(
 )
 
 setup(
-    name = 'ch_pipeline',
-    version = 0.1,
+    name='ch_pipeline',
+    version=0.1,
 
-    packages = find_packages(),
-    package_data = { "ch_pipeline" : [ "data/*" ] },
+    packages=find_packages(),
+    package_data={ "ch_pipeline": [ "data/*" ] },
 
-    ext_modules = cythonize([fast_ext]),
+    ext_modules=cythonize([fast_ext]),
 
-    author = "CHIME collaboration",
-    author_email = "richard@phas.ubc.ca",
-    description = "CHIME Pipeline",
-    url = "http://bitbucket.org/chime/ch_pipeline/",
+    author="CHIME collaboration",
+    author_email="richard@phas.ubc.ca",
+    description="CHIME Pipeline",
+    url="http://bitbucket.org/chime/ch_pipeline/",
 )

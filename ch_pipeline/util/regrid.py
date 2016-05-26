@@ -56,7 +56,7 @@ def band_wiener(R, Ni, Si, y, bw):
         Estimate of variance of each element.
     """
 
-    Ni = np.atleast_2d(Ni) #.astype(np.float64)
+    Ni = np.atleast_2d(Ni)
     y = np.atleast_2d(y)
 
     k = Ni.shape[0]
@@ -107,7 +107,7 @@ def lanczos_kernel(x, a):
     kernel : np.ndarray
     """
 
-    return np.where(np.abs(x) < a, np.sinc(x) * np.sinc(x/a), np.zeros_like(x))
+    return np.where(np.abs(x) < a, np.sinc(x) * np.sinc(x / a), np.zeros_like(x))
 
 
 def lanczos_forward_matrix(x, y, a=5, periodic=False):
@@ -135,7 +135,7 @@ def lanczos_forward_matrix(x, y, a=5, periodic=False):
 
     if periodic:
         n = len(x)
-        sep = np.where(np.abs(sep) > n/2, n - np.abs(sep), sep)
+        sep = np.where(np.abs(sep) > n / 2, n - np.abs(sep), sep)
 
     lz_forward = lanczos_kernel(sep, a)
 

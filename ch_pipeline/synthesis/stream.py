@@ -26,9 +26,9 @@ Tasks
 import numpy as np
 
 from cora.util import hputil
-from caput import mpiutil, pipeline, config, memh5, mpiarray
+from caput import mpiutil, pipeline, config, mpiarray
 
-from ch_util import tools, ephemeris
+from ch_util import ephemeris
 
 from ..core import containers, task
 
@@ -97,11 +97,10 @@ class SimulateSidereal(task.SingleTask):
         lm, sm, em = mpiutil.split_local(mmax + 1)
 
         # Set the minimum resolution required for the sky.
-        ntime = 2*mmax+1
+        ntime = 2 * mmax + 1
 
         # If we want to add maps use the m-mode formalism to project a skymap
         # into visibility space
-
 
         # Allocate array to store the local frequencies
         row_map = None
@@ -122,10 +121,10 @@ class SimulateSidereal(task.SingleTask):
                 row_map += mc.map[:]
 
         # Calculate the alm's for the local sections
-        row_alm = hputil.sphtrans_sky(row_map, lmax=lmax).reshape((lfreq, npol * (lmax+1), lmax+1))
+        row_alm = hputil.sphtrans_sky(row_map, lmax=lmax).reshape((lfreq, npol * (lmax + 1), lmax + 1))
 
         # Trim off excess m's and wrap into MPIArray
-        row_alm = row_alm[..., :(mmax+1)]
+        row_alm = row_alm[..., :(mmax + 1)]
         row_alm = mpiarray.MPIArray.wrap(row_alm, axis=0)
 
         # Perform the transposition to distribute different m's across processes. Neat
@@ -134,10 +133,10 @@ class SimulateSidereal(task.SingleTask):
         col_alm = row_alm.redistribute(axis=2)
 
         # Transpose and reshape to shift m index first.
-        col_alm = col_alm.transpose((2, 0, 1)).reshape((None, nfreq, npol, lmax+1))
+        col_alm = col_alm.transpose((2, 0, 1)).reshape((None, nfreq, npol, lmax + 1))
 
         # Create storage for visibility data
-        vis_data = mpiarray.MPIArray((mmax+1, nfreq, bt.ntel), axis=0, dtype=np.complex128)
+        vis_data = mpiarray.MPIArray((mmax + 1, nfreq, bt.ntel), axis=0, dtype=np.complex128)
         vis_data[:] = 0.0
 
         # Iterate over m's local to this process and generate the corresponding
@@ -158,8 +157,8 @@ class SimulateSidereal(task.SingleTask):
         col_vis = mpiarray.MPIArray((tel.npairs, nfreq, ntime), axis=1, dtype=np.complex128)
         col_vis[:] = 0.0
         col_vis[..., 0] = col_vis_tmp[0, 0]
-        for mi in range(1, mmax+1):
-            col_vis[...,  mi] = col_vis_tmp[mi, 0]
+        for mi in range(1, mmax + 1):
+            col_vis[..., mi] = col_vis_tmp[mi, 0]
             col_vis[..., -mi] = col_vis_tmp[mi, 1].conj()  # Conjugate only (not (-1)**m - see paper)
 
         del col_vis_tmp
