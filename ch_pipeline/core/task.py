@@ -1,3 +1,22 @@
+"""
+==========================================================
+Improved Pipeline Task Base (:mod:`ch_pipeline.core.task`)
+==========================================================
+
+.. currentmodule:: ch_pipeline.core.task
+
+An improved base task implementing easy saving of outputs to files on explicit
+requests.
+
+Tasks
+=====
+
+.. autosummary::
+    :toctree: generated/
+
+    SingleTask
+    ReturnLastInputOnFinish
+"""
 import os
 
 from caput import pipeline, config

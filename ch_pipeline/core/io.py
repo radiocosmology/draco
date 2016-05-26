@@ -1,9 +1,9 @@
 """
-=====================================
-Tasks for IO (:mod:`~ch_pipeline.io`)
-=====================================
+==========================================
+Tasks for IO (:mod:`~ch_pipeline.core.io`)
+==========================================
 
-.. currentmodule:: ch_pipeline.io
+.. currentmodule:: ch_pipeline.core.io
 
 Tasks for calculating IO. Notably a task which will write out the parallel
 MPIDataset classes.
@@ -31,6 +31,7 @@ from caput import config
 from ch_util import andata
 
 from . import task
+
 
 def _list_of_filelists(files):
     # Take in a list of lists/glob patterns of filenames
@@ -86,7 +87,6 @@ class LoadFilesFromParams(pipeline.TaskBase):
         """
 
         from caput import memh5
-
 
         if len(self.files) == 0:
             raise pipeline.PipelineStopIteration
@@ -163,7 +163,6 @@ class LoadCorrDataFiles(task.SingleTask):
         else:
             self.freq_sel = None
 
-
     def process(self):
         """Load in each sidereal day.
 
@@ -175,7 +174,7 @@ class LoadCorrDataFiles(task.SingleTask):
 
         from caput import mpiutil
 
-        if len(self.files) == self._file_ptr: # or self._file_ptr > 1:
+        if len(self.files) == self._file_ptr:
             raise pipeline.PipelineStopIteration
 
         # Fetch and remove the first item in the list
@@ -188,8 +187,7 @@ class LoadCorrDataFiles(task.SingleTask):
         ts = andata.CorrData.from_acq_h5(file_, distributed=True, freq_sel=self.freq_sel)
 
         if 'tag' not in ts.attrs:
-            # Get the first part of the actual filename and use it as the tag
-            #tag = os.path.splitext(os.path.basename(file_))[0]
+            # Use a simple incrementing string as the tag
             tag = 'file%03i' % self._file_ptr
             ts.attrs['tag'] = tag
 

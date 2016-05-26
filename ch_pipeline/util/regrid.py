@@ -1,9 +1,9 @@
 """
-=================================================================
-General routines for regridding data (:mod:`~ch_pipeline.regrid`)
-=================================================================
+======================================================================
+General routines for regridding data (:mod:`~ch_pipeline.util.regrid`)
+======================================================================
 
-.. currentmodule:: ch_pipeline.regrid
+.. currentmodule:: ch_pipeline.util.regrid
 
 Routines for regridding irregular using a Lanczos/Wiener filtering approach.
 This is described in some detail in `doclib:173
@@ -24,7 +24,7 @@ Tasks
 import numpy as np
 import scipy.linalg as la
 
-from . import _fast_tools
+from ..util import _fast_tools
 
 
 def band_wiener(R, Ni, Si, y, bw):

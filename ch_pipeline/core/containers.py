@@ -1,9 +1,9 @@
 """
-=========================================================
-Parallel data containers (:mod:`~ch_pipeline.containers`)
-=========================================================
+==============================================================
+Parallel data containers (:mod:`~ch_pipeline.core.containers`)
+==============================================================
 
-.. currentmodule:: ch_pipeline.containers
+.. currentmodule:: ch_pipeline.core.containers
 
 Containers for holding various types of analysis data in a dsitributed fashion.
 
@@ -198,14 +198,14 @@ class Map(ContainerBase):
             'initialise': True,
             'distributed': True,
             'distributed_axis': 'freq'
-            }
         }
+    }
 
     def __init__(self, nside=None, polarisation=True, *args, **kwargs):
 
         # Set up axes from passed arguments
         if nside is not None:
-            kwargs['pixel'] = 12*nside**2
+            kwargs['pixel'] = 12 * nside**2
 
         kwargs['pol'] = np.array(['I', 'Q', 'U', 'V']) if polarisation else np.array(['I'])
 
@@ -238,7 +238,7 @@ class SiderealStream(ContainerBase):
             'initialise': True,
             'distributed': True,
             'distributed_axis': 'freq'
-            },
+        },
 
         'vis_weight': {
             'axes': ['freq', 'prod', 'ra'],
@@ -246,7 +246,7 @@ class SiderealStream(ContainerBase):
             'initialise': True,
             'distributed': True,
             'distributed_axis': 'freq'
-            },
+        },
 
         'gain': {
             'axes': ['freq', 'input', 'ra'],
@@ -254,8 +254,8 @@ class SiderealStream(ContainerBase):
             'initialise': False,
             'distributed': True,
             'distributed_axis': 'freq'
-            }
         }
+    }
 
     def __init__(self, ra=None, *args, **kwargs):
 
@@ -342,7 +342,7 @@ class MModes(ContainerBase):
             'initialise': True,
             'distributed': True,
             'distributed_axis': 'm'
-            },
+        },
 
         'vis_weight': {
             'axes': ['m', 'msign', 'freq', 'prod'],
@@ -350,8 +350,8 @@ class MModes(ContainerBase):
             'initialise': True,
             'distributed': True,
             'distributed_axis': 'm'
-            },
-        }
+        },
+    }
 
     @property
     def vis(self):
@@ -398,15 +398,15 @@ class GainData(ContainerBase):
             'initialise': True,
             'distributed': True,
             'distributed_axis': 'freq'
-            },
+        },
         'weight': {
             'axes': ['freq', 'time'],
             'dtype': np.float64,
             'initialise': False,
             'distributed': True,
             'distributed_axis': 'freq'
-            }
         }
+    }
 
     @property
     def gain(self):
@@ -450,15 +450,15 @@ class StaticGainData(ContainerBase):
             'initialise': True,
             'distributed': True,
             'distributed_axis': 'freq'
-            },
+        },
         'weight': {
             'axes': ['freq'],
             'dtype': np.float64,
             'initialise': False,
             'distributed': True,
             'distributed_axis': 'freq'
-            }
         }
+    }
 
     @property
     def gain(self):

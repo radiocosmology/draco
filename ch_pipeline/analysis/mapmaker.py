@@ -1,9 +1,9 @@
 """
-===============================================
-Map making tasks (:mod:`~ch_pipeline.mapmaker`)
-===============================================
+========================================================
+Map making tasks (:mod:`~ch_pipeline.analysis.mapmaker`)
+========================================================
 
-.. currentmodule:: ch_pipeline.mapmaker
+.. currentmodule:: ch_pipeline.anaysis.mapmaker
 
 Tools for map making from CHIME data using the m-mode formalism.
 
@@ -23,7 +23,7 @@ from caput import mpiarray, config
 
 from ch_util import tools, andata
 
-from . import containers, task
+from ..core import containers, task
 
 
 def _make_marray(ts):
@@ -42,7 +42,7 @@ def _pack_marray(mmodes, mmax=None):
 
     shape = mmodes.shape[:-1]
 
-    marray = np.zeros((mmax+1, 2) + shape, dtype=np.complex128)
+    marray = np.zeros((mmax + 1, 2) + shape, dtype=np.complex128)
 
     marray[0, 0] = mmodes[..., 0]
 
@@ -99,7 +99,6 @@ class FrequencyRebin(task.SingleTask):
             raise RuntimeError("Binning must exactly divide the number of channels.")
 
         # Get all frequencies onto same node
-        #ss.redistribute(['prod', 'input'])
         ss.redistribute('time')
 
         # Calculate the new frequency centres and widths
@@ -320,10 +319,6 @@ class SelectProductsRedundant(task.SingleTask):
         # Iterate over products in the sidereal stream
         for ss_pi in range(len(ss.index_map['prod'])):
 
-            #if ss.vis.comm.rank == 0:
-            #if ss_pi % 100 == 0:
-            #    print "Progress", ss.vis.comm.rank, ss_pi
-
             # Get the feed indices for this product
             ii, ij = ss.index_map['prod'][ss_pi]
 
@@ -463,7 +458,6 @@ class MapMaker(task.SingleTask):
     prior_amp = config.Property(proptype=float, default=1.0)
     prior_tilt = config.Property(proptype=float, default=0.5)
 
-
     def setup(self, bt):
         """Set the beamtransfer matrices to use.
 
@@ -525,6 +519,7 @@ class MapMaker(task.SingleTask):
         if ((self.m_mask == 'no_m_zero' and m == 0) or
             (self.m_mask == 'positive_only' and m <= 0) or
             (self.m_mask == 'negative_only' and m > 0)):
+
             nw[:] = 0.0
 
         nw = nw * mask[np.newaxis, :]
@@ -742,7 +737,6 @@ class RingMapMaker(task.SingleTask):
         ncyl = 2
         sp = 0.3048
         nvis_1d = 2 * nfeed - 1
-        n_el = 1024
 
         # Construct mapping from vis array to unpacked 2D grid
         feed_list = [ (tel.feeds[fi], tel.feeds[fj]) for fi, fj in sstream.index_map['prod'][:]]

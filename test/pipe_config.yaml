@@ -15,7 +15,7 @@ pipeline:
             params:
                 product_directory:  products/bt/
 
-        -   type:       ch_pipeline.simulate.stream.SimulateSidereal
+        -   type:       ch_pipeline.synthesis.stream.SimulateSidereal
             requires:   [tel, bt]
             out:        sstream
             params:
@@ -24,7 +24,7 @@ pipeline:
                 save:   No
                 output_root: "output/sstream_"
 
-        -   type:       ch_pipeline.simulate.stream.ExpandProducts
+        -   type:       ch_pipeline.synthesis.stream.ExpandProducts
             requires:   tel
             in:         sstream
             out:        sstream2
@@ -32,7 +32,7 @@ pipeline:
                 save:   No
                 output_root: "output/sstream2_"
 
-        -   type:       ch_pipeline.simulate.stream.MakeTimeStream
+        -   type:       ch_pipeline.synthesis.stream.MakeTimeStream
             requires:   sstream2
             out:        tstream
             params:
@@ -42,7 +42,7 @@ pipeline:
                 save:   No
                 output_root: "output/tstream_"
 
-        -   type:       ch_pipeline.simulate.noise.ReceiverTemperature
+        -   type:       ch_pipeline.synthesis.noise.ReceiverTemperature
             in:         tstream
             out:        tstream2
             params:
@@ -50,7 +50,7 @@ pipeline:
                 save:   No
                 output_root: "output/tstream2_"
 
-        -   type:       ch_pipeline.simulate.gain.RandomGains
+        -   type:       ch_pipeline.synthesis.gain.RandomGains
             in:         tstream2
             out:        gain_fluc
             params:
@@ -63,7 +63,7 @@ pipeline:
             params:
                 inverse: No
 
-        -   type:       ch_pipeline.simulate.noise.SampleNoise
+        -   type:       ch_pipeline.synthesis.noise.SampleNoise
             in:         tstream3
             out:        tstream4
             params:

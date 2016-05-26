@@ -1,9 +1,9 @@
 """
-======================================================
-Tasks for Flagging Data (:mod:`~ch_pipeline.flagging`)
-======================================================
+===============================================================
+Tasks for Flagging Data (:mod:`~ch_pipeline.analysis.flagging`)
+===============================================================
 
-.. currentmodule:: ch_pipeline.flagging
+.. currentmodule:: ch_pipeline.analysis.flagging
 
 Tasks for calculating RFI and data quality masks for timestream data.
 
@@ -286,8 +286,7 @@ class SunClean(task.SingleTask):
     def setup(self, inputmap):
         self.inputmap = inputmap
 
-
-    def process(self, sstream): #, inputmap):
+    def process(self, sstream):
         """Apply a day time mask.
 
         Parameters

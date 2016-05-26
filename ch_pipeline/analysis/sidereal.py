@@ -1,9 +1,9 @@
 """
-============================================================
-Tasks for sidereal regridding (:mod:`~ch_pipeline.sidereal`)
-============================================================
+=====================================================================
+Tasks for sidereal regridding (:mod:`~ch_pipeline.analysis.sidereal`)
+=====================================================================
 
-.. currentmodule:: ch_pipeline.sidereal
+.. currentmodule:: ch_pipeline.analysis.sidereal
 
 Tasks for taking the timestream data and regridding it into sidereal days
 which can be stacked.
@@ -15,6 +15,7 @@ Tasks
     :toctree: generated/
 
     LoadTimeStreamSidereal
+    SiderealGrouper
     SiderealRegridder
     SiderealStacker
 
@@ -34,42 +35,8 @@ from caput import pipeline, config
 from caput import mpiutil, mpiarray
 from ch_util import andata, ephemeris
 
-from . import task
-from . import containers
+from ..core import task, containers
 from . import regrid
-
-
-def get_times(acq_files):
-    """Extract the start and end times of a list of acquisition files.
-
-    Parameters
-    ----------
-    acq_files : list
-        List of filenames.
-
-    Returns
-    -------
-    times : np.ndarray[nfiles, 2]
-        Start and end times.
-    """
-    if isinstance(acq_files, list):
-        return np.array([get_times(acq_file) for acq_file in acq_files])
-    elif isinstance(acq_files, basestring):
-        # Load in file (but ignore all datasets)
-        ad_empty = andata.AnData.from_acq_h5(acq_files, datasets=())
-        start = ad_empty.timestamp[0]
-        end = ad_empty.timestamp[-1]
-        return start, end
-    else:
-        raise Exception('Input %s, not understood' % repr(acq_files))
-
-
-def _days_in_csd(day, se_csd, extra=0.005):
-    # Find which days are in each CSD
-    stest = se_csd[:, 1] > day - extra
-    etest = se_csd[:, 0] < day + 1 - extra
-
-    return np.where(np.logical_and(stest, etest))[0]
 
 
 class LoadTimeStreamSidereal(task.SingleTask):
@@ -77,6 +44,10 @@ class LoadTimeStreamSidereal(task.SingleTask):
 
     This task takes an input list of data, and loads in a sidereal day at a
     time, and passes it on.
+
+    .. deprecated:: pass1
+        The preferred option now is to load a whole range of files one at a time
+        and feed them into the :class:`SiderealGrouper`.
 
     Attributes
     ----------
@@ -327,7 +298,7 @@ class SiderealRegridder(task.SingleTask):
         Si = np.ones_like(csd_grid) * 1e-8
 
         # Calculate the interpolated data and a noise weight at the points in the padded grid
-        sts, ni = regrid.band_wiener(lzf, nr, Si, vr, 2*self.lanczos_width-1)
+        sts, ni = regrid.band_wiener(lzf, nr, Si, vr, 2 * self.lanczos_width - 1)
 
         # Throw away the padded ends
         sts = sts[:, pad:-pad].copy()
@@ -339,7 +310,7 @@ class SiderealRegridder(task.SingleTask):
 
         # Wrap to produce MPIArray
         sts = mpiarray.MPIArray.wrap(sts, axis=data.vis.distributed_axis)
-        ni = mpiarray.MPIArray.wrap(ni,  axis=data.vis.distributed_axis)
+        ni = mpiarray.MPIArray.wrap(ni, axis=data.vis.distributed_axis)
 
         # FYI this whole process creates an extra copy of the sidereal stack.
         # This could probably be optimised out with a little work.
@@ -410,3 +381,36 @@ class SiderealStacker(task.SingleTask):
                                      self.stack.vis[:] / self.stack.weight[:])
 
         return self.stack
+
+
+def get_times(acq_files):
+    """Extract the start and end times of a list of acquisition files.
+
+    Parameters
+    ----------
+    acq_files : list
+        List of filenames.
+
+    Returns
+    -------
+    times : np.ndarray[nfiles, 2]
+        Start and end times.
+    """
+    if isinstance(acq_files, list):
+        return np.array([get_times(acq_file) for acq_file in acq_files])
+    elif isinstance(acq_files, basestring):
+        # Load in file (but ignore all datasets)
+        ad_empty = andata.AnData.from_acq_h5(acq_files, datasets=())
+        start = ad_empty.timestamp[0]
+        end = ad_empty.timestamp[-1]
+        return start, end
+    else:
+        raise Exception('Input %s, not understood' % repr(acq_files))
+
+
+def _days_in_csd(day, se_csd, extra=0.005):
+    # Find which days are in each CSD
+    stest = se_csd[:, 1] > day - extra
+    etest = se_csd[:, 0] < day + 1 - extra
+
+    return np.where(np.logical_and(stest, etest))[0]

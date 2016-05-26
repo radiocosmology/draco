@@ -15,8 +15,8 @@ else:
 
 # Cython module for fast operations
 fast_ext = Extension(
-    "ch_pipeline._fast_tools",
-    ["ch_pipeline/_fast_tools.pyx"],
+    "ch_pipeline.util._fast_tools",
+    ["ch_pipeline/util/_fast_tools.pyx"],
     include_dirs=[np.get_include()],
     extra_compile_args=compile_args,
     extra_link_args=link_args,
