@@ -423,7 +423,9 @@ class GainData(ContainerBase):
     def time(self):
         try:
             return self.index_map['time'][:]['ctime']
-        except IndexError:
+        # Need to check for both types as different numpy versions return
+        # different exceptions.
+        except (IndexError, ValueError):
             return self.index_map['time'][:]
 
     @property
