@@ -220,7 +220,7 @@ def mpi_random_seed(seed, extra=0):
 
     # Just choose a random number per process as the seed if nothing was set.
     if seed is None:
-        seed = np.random.randint()
+        seed = np.random.randint(2**30)
 
     # Construct the new process specific seed
     new_seed = seed + mpiutil.rank + 4096 * extra
