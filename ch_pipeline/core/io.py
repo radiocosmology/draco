@@ -292,7 +292,6 @@ class LoadBeamTransfer(pipeline.TaskBase):
         tel = bt.telescope
 
         try:
-            feed_info = tel.feed_info
-            return tel, bt, feed_info
+            return tel, bt, tel.feeds
         except AttributeError:
             return tel, bt
