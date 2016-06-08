@@ -22,6 +22,8 @@ Tasks
     SampleNoise
 """
 
+import contextlib
+
 import numpy as np
 
 from caput import config
@@ -73,9 +75,12 @@ class SampleNoise(task.SingleTask):
         Multiplies the number of samples in each measurement. For instance this
         could be a duty cycle if the correlator was not keeping up, or could be
         larger than one if multiple measurements were combined.
+    seed : int
+        Random seed for the noise generation.
     """
 
     sample_frac = config.Property(proptype=float, default=1.0)
+    seed = config.Property(proptype=int, default=None)
 
     def process(self, data_exp):
         """Generate a noisy dataset.
@@ -104,27 +109,29 @@ class SampleNoise(task.SingleTask):
         # Barrier)
         vis_data = data_exp.vis[:]
 
-        # Iterate over frequencies
-        for lfi, fi in vis_data.enumerate(0):
+        with mpi_random_seed(self.seed):
 
-            # Get the time and frequency intervals
-            dt = data_exp.time[1] - data_exp.time[0]
-            df = data_exp.index_map['freq']['width'][fi] * 1e6
+            # Iterate over frequencies
+            for lfi, fi in vis_data.enumerate(0):
 
-            # Calculate the number of samples
-            nsamp = int(self.sample_frac * dt * df)
+                # Get the time and frequency intervals
+                dt = data_exp.time[1] - data_exp.time[0]
+                df = data_exp.index_map['freq']['width'][fi] * 1e6
 
-            # Iterate over time
-            for lti, ti in vis_data.enumerate(2):
+                # Calculate the number of samples
+                nsamp = int(self.sample_frac * dt * df)
 
-                # Unpack visibilites into full matrix
-                vis_utv = vis_data[lfi, :, lti].view(np.ndarray).copy()
-                vis_mat = np.zeros((nfeed, nfeed), dtype=vis_utv.dtype)
-                _fast_tools._unpack_product_array_fast(vis_utv, vis_mat, np.arange(nfeed), nfeed)
+                # Iterate over time
+                for lti, ti in vis_data.enumerate(2):
 
-                vis_samp = draw_complex_wishart(vis_mat, nsamp) / nsamp
+                    # Unpack visibilites into full matrix
+                    vis_utv = vis_data[lfi, :, lti].view(np.ndarray).copy()
+                    vis_mat = np.zeros((nfeed, nfeed), dtype=vis_utv.dtype)
+                    _fast_tools._unpack_product_array_fast(vis_utv, vis_mat, np.arange(nfeed), nfeed)
 
-                vis_data[lfi, :, lti] = vis_samp[np.triu_indices(nfeed)]
+                    vis_samp = draw_complex_wishart(vis_mat, nsamp) / nsamp
+
+                    vis_data[lfi, :, lti] = vis_samp[np.triu_indices(nfeed)]
 
         return data_exp
 
@@ -186,3 +193,41 @@ def draw_complex_wishart(C, n):
 
     # Transform to get the Wishart variable
     return np.dot(L, np.dot(A, L.T.conj()))
+
+
+@contextlib.contextmanager
+def mpi_random_seed(seed, extra=0):
+    """Use a specific random seed for the context, and return to the original state on exit.
+
+    This is designed to work for MPI computations, incrementing the actual seed
+    of each process by the MPI rank. Overall each process gets the numpy seed:
+    `numpy_seed = seed + mpi_rank + 4096 * extra`.
+
+    Parameters
+    ----------
+    seed : int
+        Base seed to set. If seed is :obj:`None`, re-seed randomly.
+    extra : int, optional
+        An extra part of the seed, which should be changed for calculations
+        using the same seed, but that want different random sequences.
+    """
+
+    import numpy as np
+    from caput import mpiutil
+
+    # Copy the old state for restoration later.
+    old_state = np.random.get_state()
+
+    # Just choose a random number per process as the seed if nothing was set.
+    if seed is None:
+        seed = np.random.randint()
+
+    # Construct the new process specific seed
+    new_seed = seed + mpiutil.rank + 4096 * extra
+    np.random.seed(new_seed)
+
+    # Enter the context block, and reset the state on exit.
+    try:
+        yield
+    finally:
+        np.random.set_state(old_state)

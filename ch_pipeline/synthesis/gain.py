@@ -105,8 +105,8 @@ class RandomGains(task.SingleTask):
         else:
 
             # Get the previous set of ampliude and phase fluctuations. Note we
-            # need to remove one from the amplitude, and unwrap the phase to
-            # make it smooth
+            # need to subtract one from the amplitude; and we unwrap the phase
+            # to make it smooth
             prev_time = self._prev_gain.index_map['time'][:]
             prev_amp = (np.abs(self._prev_gain.gain[:].view(np.ndarray)) - 1.0).reshape(nsamp, len(prev_time))
             prev_phase = np.unwrap(np.angle(self._prev_gain.gain[:].view(np.ndarray))).reshape(nsamp, len(prev_time))

@@ -163,32 +163,6 @@ class SimulateSidereal(task.SingleTask):
 
         del col_vis_tmp
 
-        # If we're simulating noise, create a realisation and add it to col_vis
-        # if self.ndays > 0:
-        #
-        #     # Fetch the noise powerspectrum
-        #     noise_ps = tel.noisepower(np.arange(tel.npairs)[:, np.newaxis],
-        #                               np.arange(sfreq, efreq)[np.newaxis, :],
-        #                               ndays=self.ndays).reshape(tel.npairs, lfreq)[:, :, np.newaxis]
-        #
-        #     # Seed random number generator to give consistent noise
-        #     if self.seed is not None:
-        #         # Must include rank such that we don't have massive power deficit from correlated noise
-        #         np.random.seed(self.seed + mpiutil.rank)
-        #
-        #     # Create and weight complex noise coefficients
-        #     noise_vis = (np.array([1.0, 1.0J]) * np.random.standard_normal(col_vis.shape + (2,))).sum(axis=-1)
-        #     noise_vis *= (noise_ps / 2.0)**0.5
-        #
-        #     # Reset RNG
-        #     if self.seed is not None:
-        #         np.random.seed()
-        #
-        #     # Add into main noise sims
-        #     col_vis += noise_vis
-        #
-        #     del noise_vis
-
         # Fourier transform m-modes back to get final timestream.
         vis_stream = np.fft.ifft(col_vis, axis=-1) * ntime
         vis_stream = vis_stream.reshape((tel.npairs, lfreq, ntime))
@@ -196,7 +170,7 @@ class SimulateSidereal(task.SingleTask):
 
         # Try and fetch out the feed index and info from the telescope object.
         try:
-            feed_index = tel.feed_index
+            feed_index = tel.input_index
         except AttributeError:
             feed_index = tel.nfeed
 
