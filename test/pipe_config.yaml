@@ -15,13 +15,19 @@ pipeline:
             params:
                 product_directory:  products/bt/
 
-        -   type:       ch_pipeline.synthesis.stream.SimulateSidereal
-            requires:   [tel, bt]
-            out:        sstream
+        -   type:       ch_pipeline.core.io.LoadMaps
+            out:        imap
             params:
                 maps:
-                        - "map256.h5"
-                save:   No
+                    files: ["map256.h5"]
+                    tag:   testmap
+
+        -   type:       ch_pipeline.synthesis.stream.SimulateSidereal
+            requires:   bt
+            in:         imap
+            out:        sstream
+            params:
+                save:   Yes
                 output_root: "output/sstream_"
 
         -   type:       ch_pipeline.synthesis.stream.ExpandProducts

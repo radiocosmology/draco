@@ -15,10 +15,33 @@ Tasks
     :toctree: generated/
 
     LoadFiles
+    LoadMaps
     LoadFilesFromParams
     Save
     Print
     LoadBeamTransfer
+
+File Groups
+===========
+
+Several tasks accept groups of files as arguments. These are specified in the YAML file as a dictionary like below.
+
+.. codeblock:: yaml
+
+    list_of_file_groups:
+        -   tag: first_group  # An optional tag naming the group
+            files:
+                -   'file1.h5'
+                -   'file[3-4].h5'  # Globs are processed
+                -   'file7.h5'
+
+        -   files:  # No tag specified, implicitly gets the tag 'group_2'
+                -   'another_file1.h5'
+                -   'another_file2.h5'
+
+
+    single_group:
+        files: ['file1.h5', 'file2.h5']
 """
 
 import os.path
@@ -30,7 +53,7 @@ from caput import config
 
 from ch_util import andata
 
-from . import task
+from . import task, containers
 
 
 def _list_of_filelists(files):
@@ -65,6 +88,98 @@ def _list_or_glob(files):
         raise RuntimeError('Must be list or glob pattern.')
 
     return files
+
+
+def _list_of_filegroups(groups):
+    # Process a file group/groups
+    import glob
+
+    f2 = []
+
+    # Convert to list if the group was not included in a list
+    if not isinstance(groups, list):
+        groups = [groups]
+
+    # Iterate over groups, set the tag if needed, and process the file list
+    # through glob
+    for gi, group in enumerate(groups):
+
+        files = group['files']
+
+        if 'tag' not in group:
+            group['tag'] = 'group_%i' % gi
+
+        flist = []
+
+        for fname in files:
+            flist += glob.glob(fname)
+
+        group['files'] = flist
+
+    return groups
+
+
+class LoadMaps(pipeline.TaskBase):
+    """Load a series of maps from files given in the tasks parameters.
+
+    Maps are given as one, or a list of `File Groups` (see :mod:`ch_pipeline.core.io`). Maps within the same group are added together before being passed on.
+
+    Attributes
+    ----------
+    maps : list or dict
+        A dictionary specifying a file group, or a list of them.
+    """
+
+    maps = config.Property(proptype=_list_of_filegroups)
+
+    def next(self):
+        """Load the groups of maps from disk and pass them on.
+
+        Returns
+        -------
+        map : :class:`containers.Map`
+        """
+
+        from . import containers
+
+        # Exit this task if we have eaten all the file groups
+        if len(self.maps) == 0:
+            raise pipeline.PipelineStopIteration
+
+        group = self.maps.pop(0)
+
+        map_stack = None
+
+        # Iterate over all the files in the group, load them into a Map
+        # container and add them all together
+        for mfile in group['files']:
+
+            current_map = containers.Map.from_file(mfile, distributed=True)
+            current_map.redistribute('freq')
+
+            # Start the stack if needed
+            if map_stack is None:
+                map_stack = current_map
+
+            # Otherwise, check that the new map has consistent frequencies,
+            # nside and pol and stack up.
+            else:
+
+                if (current_map.freq != map_stack.freq).all():
+                    raise RuntimeError('Maps do not have consistent frequencies.')
+
+                if (current_map.index_map['pol'] != map_stack.index_map['pol']).all():
+                    raise RuntimeError('Maps do not have the same polarisations.')
+
+                if (current_map.index_map['pixel'] != map_stack.index_map['pixel']).all():
+                    raise RuntimeError('Maps do not have the same pixelisation.')
+
+                map_stack.map[:] += current_map.map[:]
+
+        # Assign a tag to the stack of maps
+        map_stack.attrs['tag'] = group['tag']
+
+        return map_stack
 
 
 class LoadFilesFromParams(pipeline.TaskBase):

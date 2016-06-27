@@ -34,42 +34,29 @@ from ..core import containers, task
 
 
 class SimulateSidereal(task.SingleTask):
-    """Create a simulated timestream.
-
-    Attributes
-    ----------
-    maps : list
-        List of map filenames. The sum of these form the simulated sky.
-    ndays : float, optional
-        Number of days of observation. Setting `ndays = None` (default) uses
-        the default stored in the telescope object; `ndays = 0`, assumes the
-        observation time is infinite so that the noise is zero. This allows a
-        fractional number to account for higher noise.
-    seed : integer, optional
-        Set the random seed used for the noise simulations. Default (None) is
-        to choose a random seed.
+    """Create a simulated sidereal dataset from an input map.
     """
-    maps = config.Property(proptype=list)
-    ndays = config.Property(proptype=float, default=0.0)
-    seed = config.Property(proptype=int, default=None)
 
     done = False
 
-    def setup(self, telescope, beamtransfer):
+    def setup(self, beamtransfer):
         """Setup the simulation.
 
         Parameters
         ----------
-        tel : TransitTelescope
-            Telescope object.
         bt : BeamTransfer
             Beam Transfer maanger.
         """
         self.beamtransfer = beamtransfer
-        self.telescope = telescope
+        self.telescope = beamtransfer.telescope
 
-    def process(self):
+    def process(self, map_):
         """Simulate a SiderealStream
+
+        Parameters
+        ----------
+        map : :class:`containers.Map`
+            The sky map to process to into a sidereal stream. Frequencies in the map, must match the Beam Transfer matrices.
 
         Returns
         -------
@@ -92,33 +79,17 @@ class SimulateSidereal(task.SingleTask):
         npol = tel.num_pol_sky
 
         lfreq, sfreq, efreq = mpiutil.split_local(nfreq)
-        freqmap = None
 
         lm, sm, em = mpiutil.split_local(mmax + 1)
 
         # Set the minimum resolution required for the sky.
         ntime = 2 * mmax + 1
 
-        # If we want to add maps use the m-mode formalism to project a skymap
-        # into visibility space
+        freqmap = map_.index_map['freq'][:]
+        row_map = map_.map[:]
 
-        # Allocate array to store the local frequencies
-        row_map = None
-
-        # Read in and sum up the local frequencies of the supplied maps.
-        for mapfile in self.maps:
-
-            mc = containers.Map.from_file(mapfile, distributed=True)
-            mc.redistribute('freq')
-            freqmap = mc.index_map['freq'][:]
-
-            if (tel.frequencies != freqmap['centre']).all():
-                raise RuntimeError('Frequencies in map file (%s) do not match those in Beam Transfers.' % mapfile)
-
-            if row_map is None:
-                row_map = mc.map[:]
-            else:
-                row_map += mc.map[:]
+        if (tel.frequencies != freqmap['centre']).all():
+            raise RuntimeError('Frequencies in map file (%s) do not match those in Beam Transfers.' % mapfile)
 
         # Calculate the alm's for the local sections
         row_alm = hputil.sphtrans_sky(row_map, lmax=lmax).reshape((lfreq, npol * (lmax + 1), lmax + 1))
@@ -176,7 +147,7 @@ class SimulateSidereal(task.SingleTask):
 
         # Construct container and set visibility data
         sstream = containers.SiderealStream(freq=freqmap, ra=ntime, input=feed_index,
-                                            prod=tel.uniquepairs, distributed=True, comm=mc.comm)
+                                            prod=tel.uniquepairs, distributed=True, comm=map_.comm)
         sstream.vis[:] = mpiarray.MPIArray.wrap(vis_stream, axis=0)
         sstream.weight[:] = 1.0
 
