@@ -15,6 +15,9 @@ Tasks
 
     RFIFilter
     ChannelFlagger
+    BadNodeFlagger
+    DayMask
+    SunClean
 """
 import numpy as np
 
@@ -364,7 +367,7 @@ class SunClean(task.SingleTask):
             sscut.vis[fi] = vis
             sscut.weight[fi] = weight
 
-            # Iterate over polarisations to di projection independently for each.
+            # Iterate over polarisations to do projection independently for each.
             # This is needed because of the different beams for each pol.
             for pol in range(4):
 

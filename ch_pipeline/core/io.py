@@ -53,7 +53,7 @@ from caput import config
 
 from ch_util import andata
 
-from . import task, containers
+from . import task
 
 
 def _list_of_filelists(files):
@@ -94,8 +94,6 @@ def _list_of_filegroups(groups):
     # Process a file group/groups
     import glob
 
-    f2 = []
-
     # Convert to list if the group was not included in a list
     if not isinstance(groups, list):
         groups = [groups]
@@ -122,7 +120,9 @@ def _list_of_filegroups(groups):
 class LoadMaps(pipeline.TaskBase):
     """Load a series of maps from files given in the tasks parameters.
 
-    Maps are given as one, or a list of `File Groups` (see :mod:`ch_pipeline.core.io`). Maps within the same group are added together before being passed on.
+    Maps are given as one, or a list of `File Groups` (see
+    :mod:`ch_pipeline.core.io`). Maps within the same group are added together
+    before being passed on.
 
     Attributes
     ----------
