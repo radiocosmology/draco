@@ -62,6 +62,8 @@ pipeline:
             params:
                 output_root: "output/gainfluc_"
                 save:   No
+                sigma_amp: 0.001
+                sigma_phase: 0.001
 
         -   type:       ch_pipeline.analysis.calibration.ApplyGain
             in:         [tstream2, gain_fluc]
@@ -90,19 +92,35 @@ pipeline:
                 save:   No
                 output_root: "output/csstream_"
 
-        -   type:       ch_pipeline.analysis.mapmaker.SelectProductsRedundant
+        -   type:       ch_pipeline.analysis.transform.CollateProducts
             requires:   bt
             in:         csstream
             out:        rsstream
 
-        -   type:       ch_pipeline.analysis.mapmaker.MModeTransform
+        -   type:       ch_pipeline.analysis.transform.MModeTransform
             in:         rsstream
             out:        mmodes
 
-        -   type:       ch_pipeline.analysis.mapmaker.MapMaker
-            requires:   bt
+        -   type:       ch_pipeline.analysis.flagging.MaskData
             in:         mmodes
+            out:        mmodes2
+            params:
+                auto_correlations: No
+                m_zero:            Yes
+
+        -   type:       ch_pipeline.analysis.mapmaker.DirtyMapMaker
+            requires:   bt
+            in:         mmodes2
             out:        map1
             params:
                 save:   Yes
-                output_root: "output/map_"
+                output_root: "output/dirty_map_"
+
+        -   type:       ch_pipeline.analysis.mapmaker.WienerMapMaker
+            requires:   bt
+            in:         mmodes2
+            out:        map2
+            params:
+                save:   Yes
+                output_root: "output/wiener_map_"
+                prior_amp:   1e4

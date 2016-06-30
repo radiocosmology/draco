@@ -5,7 +5,9 @@ Tasks for Flagging Data (:mod:`~ch_pipeline.analysis.flagging`)
 
 .. currentmodule:: ch_pipeline.analysis.flagging
 
-Tasks for calculating RFI and data quality masks for timestream data.
+Tasks for calculating flagging out unwanted data. This includes RFI removal, and
+data quality flagging on timestream data; sun excision on sidereal data; and
+pre-map making flagging on m-modes.
 
 Tasks
 =====
@@ -18,6 +20,8 @@ Tasks
     BadNodeFlagger
     DayMask
     SunClean
+    MaskData
+    MaskCHIMEData
 """
 import numpy as np
 
@@ -25,7 +29,7 @@ from caput import config
 from caput import mpiutil
 from ch_util import rfi, data_quality, tools
 
-from . import task
+from ..core import task
 
 
 class RFIFilter(task.SingleTask):
@@ -400,3 +404,123 @@ class SunClean(task.SingleTask):
             sscut.weight[:] *= mask
 
         return sscut
+
+
+class MaskData(task.SingleTask):
+    """Mask out data ahead of map making.
+
+    Attributes
+    ----------
+    auto_correlations : bool
+        Exclude auto correlations if set (default=False).
+    m_zero : bool
+        Ignore the m=0 mode (default=False).
+    positive_m : bool
+        Include positive m-modes (default=True).
+    negative_m : bool
+        Include negative m-modes (default=True).
+    """
+
+    auto_correlations = config.Property(proptype=bool, default=False)
+    m_zero = config.Property(proptype=bool, default=False)
+    positive_m = config.Property(proptype=bool, default=True)
+    negative_m = config.Property(proptype=bool, default=True)
+
+    def process(self, mmodes):
+        """Mask out unwanted datain the m-modes.
+
+        Parameters
+        ----------
+        mmodes : containers.MModes
+
+        Returns
+        -------
+        mmodes : containers.MModes
+        """
+
+        # Exclude auto correlations if set
+        if not self.auto_correlations:
+            for pi, (fi, fj) in enumerate(mmodes.index_map['prod']):
+                if fi == fj:
+                    mmodes.weight[..., pi] = 0.0
+
+        # Apply m based masks
+        if not self.m_zero:
+            mmodes.weight[0] = 0.0
+
+        if not self.positive_m:
+            mmodes.weight[1:, 0] = 0.0
+
+        if not self.negative_m:
+            mmodes.weight[1:, 1] = 0.0
+
+        return mmodes
+
+
+class MaskCHIMEData(task.SingleTask):
+    """Mask out data ahead of map making.
+
+    Attributes
+    ----------
+    intra_cylinder : bool
+        Include baselines within the same cylinder (default=True).
+    xx_pol : bool
+        Include X-polarisation (default=True).
+    yy no_pol : bool
+        Include Y-polarisation (default=True).
+    cross_pol : bool
+        Include cross-polarisation (default=True).
+    """
+
+    intra_cylinder = config.Property(proptype=bool, default=True)
+
+    xx_pol = config.Property(proptype=bool, default=True)
+    yy_pol = config.Property(proptype=bool, default=True)
+    cross_pol = config.Property(proptype=bool, default=True)
+
+    def setup(self, tel):
+        """Setup the task.
+
+        Parameters
+        ----------
+        tel : :class:`ch_pipeline.core.pathfinder.CHIMEPathfinder`
+            CHIME telescope class to use to get feed information.
+        """
+        self.telescope = tel
+
+    def process(self, mmodes):
+        """Mask out unwanted datain the m-modes.
+
+        Parameters
+        ----------
+        mmodes : containers.MModes
+
+        Returns
+        -------
+        mmodes : containers.MModes
+        """
+
+        tel = self.telescope
+
+        for pi, (fi, fj) in enumerate(mmodes.index_map['prod']):
+
+            oi, oj = tel.feeds[fi], tel.feeds[fj]
+
+            # Check if baseline is intra-cylinder
+            if not self.intra_cylinder and (oi.cyl == oj.cyl):
+                mmodes.weight[..., pi] = 0.0
+
+            # Check all the polarisation states
+            is_xx = tools.is_chime_x(oi) and tools.is_chime_x(oj)
+            is_yy = tools.is_chime_y(oi) and tools.is_chime_y(oj)
+
+            if not self.xx_pol and is_xx:
+                mmodes.weight[..., pi] = 0.0
+
+            if not self.yy_pol and is_yy:
+                mmodes.weight[..., pi] = 0.0
+
+            if not self.cross_pol and not (is_xx or is_yy):
+                mmodes.weight[..., pi] = 0.0
+
+        return mmodes
