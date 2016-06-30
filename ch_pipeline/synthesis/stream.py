@@ -89,7 +89,7 @@ class SimulateSidereal(task.SingleTask):
         row_map = map_.map[:]
 
         if (tel.frequencies != freqmap['centre']).all():
-            raise RuntimeError('Frequencies in map file (%s) do not match those in Beam Transfers.' % mapfile)
+            raise RuntimeError('Frequencies in map do not match those in Beam Transfers.')
 
         # Calculate the alm's for the local sections
         row_alm = hputil.sphtrans_sky(row_map, lmax=lmax).reshape((lfreq, npol * (lmax + 1), lmax + 1))
