@@ -1,11 +1,6 @@
-"""
-======================================================================
-General routines for regridding data (:mod:`~ch_pipeline.util.regrid`)
-======================================================================
+"""Routines for regridding irregular data using a Lanczos/Wiener filtering
+approach.
 
-.. currentmodule:: ch_pipeline.util.regrid
-
-Routines for regridding irregular using a Lanczos/Wiener filtering approach.
 This is described in some detail in `doclib:173
 <http://bao.phas.ubc.ca/doc/cgi-bin/general/documents/display?Id=173>`_.
 

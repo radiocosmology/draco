@@ -1,11 +1,4 @@
-"""
-======================================================
-Gain fluctuations (:mod:`~ch_pipeline.synthesis.gain`)
-======================================================
-
-.. currentmodule:: ch_pipeline.synthesis.gain
-
-Tasks for generating random gain fluctuations in the data.
+"""Tasks for generating random gain fluctuations in the data.
 
 At the moment there is only a very simple task which draws random Gaussian
 distributed gain fluctuations.

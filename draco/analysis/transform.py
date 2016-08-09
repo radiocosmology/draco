@@ -1,12 +1,5 @@
-"""
-=============================================================
-Data transformations (:mod:`~ch_pipeline.analysis.transform`)
-=============================================================
-
-.. currentmodule:: ch_pipeline.anaysis.transform
-
-A collection of miscellaneous transformations to do on data, from grouping
-frequencies and products to performing the m-mode transform.
+"""Miscellaneous transformations to do on data, from grouping frequencies and
+products to performing the m-mode transform.
 
 Tasks
 =====

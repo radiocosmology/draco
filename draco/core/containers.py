@@ -1,11 +1,4 @@
-"""
-==============================================================
-Parallel data containers (:mod:`~ch_pipeline.core.containers`)
-==============================================================
-
-.. currentmodule:: ch_pipeline.core.containers
-
-Containers for holding various types of analysis data in a dsitributed fashion.
+"""Distributed containers for holding various types of analysis data.
 
 Containers
 ==========

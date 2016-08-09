@@ -1,11 +1,4 @@
-"""
-========================================================
-Map making tasks (:mod:`~ch_pipeline.analysis.mapmaker`)
-========================================================
-
-.. currentmodule:: ch_pipeline.analysis.mapmaker
-
-Tools for map making from CHIME data using the m-mode formalism.
+"""Map making from driftscan data using the m-mode formalism.
 
 Tasks
 =====

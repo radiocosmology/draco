@@ -1,12 +1,4 @@
-"""
-==========================================================
-Improved Pipeline Task Base (:mod:`ch_pipeline.core.task`)
-==========================================================
-
-.. currentmodule:: ch_pipeline.core.task
-
-An improved base task implementing easy saving of outputs to files on explicit
-requests.
+"""An improved base task implementing easy (and explicit) saving of outputs.
 
 Tasks
 =====

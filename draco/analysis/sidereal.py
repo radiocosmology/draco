@@ -1,12 +1,5 @@
-"""
-=====================================================================
-Tasks for sidereal regridding (:mod:`~ch_pipeline.analysis.sidereal`)
-=====================================================================
-
-.. currentmodule:: ch_pipeline.analysis.sidereal
-
-Tasks for taking the timestream data and regridding it into sidereal days
-which can be stacked.
+"""Take timestream data and regridding it into sidereal days which can be
+stacked.
 
 Tasks
 =====
@@ -14,7 +7,6 @@ Tasks
 .. autosummary::
     :toctree: generated/
 
-    LoadTimeStreamSidereal
     SiderealGrouper
     SiderealRegridder
     SiderealStacker
@@ -22,8 +14,8 @@ Tasks
 Usage
 =====
 
-Generally you would want to use these tasks together. Starting with a
-:class:`LoadTimeStreamSidereal`, then feeding that into
+Generally you would want to use these tasks together. Sending time stream data
+into  :class:`SiderealGrouper`, then feeding that into
 :class:`SiderealRegridder` to grid onto each sidereal day, and then into
 :class:`SiderealStacker` if you want to combine the different days.
 """
@@ -31,101 +23,12 @@ Generally you would want to use these tasks together. Starting with a
 
 import numpy as np
 
-from caput import pipeline, config
+from caput import config
 from caput import mpiutil, mpiarray
 from ch_util import andata, ephemeris
 
 from ..core import task, containers
 from ..util import regrid
-
-
-class LoadTimeStreamSidereal(task.SingleTask):
-    """Load data in sidereal days.
-
-    This task takes an input list of data, and loads in a sidereal day at a
-    time, and passes it on.
-
-    .. deprecated:: pass1
-        The preferred option now is to load a whole range of files one at a time
-        and feed them into the :class:`SiderealGrouper`.
-
-    Attributes
-    ----------
-    padding : float
-        Extra amount of a sidereal day to pad each timestream by. Useful for
-        getting rid of interpolation artifacts.
-    """
-
-    padding = config.Property(proptype=float, default=0.005)
-
-    freq_start = config.Property(proptype=int, default=None)
-    freq_end = config.Property(proptype=int, default=None)
-
-    def setup(self, files):
-        """Divide the list of files up into sidereal days.
-
-        Parameters
-        ----------
-        files : list
-            List of files to load.
-        """
-
-        self.files = files
-
-        filemap = None
-        if mpiutil.rank0:
-
-            se_times = get_times(self.files)
-            se_csd = ephemeris.csd(se_times)
-            days = np.unique(np.floor(se_csd).astype(np.int))
-
-            # Construct list of files in each day
-            filemap = [ (day, _days_in_csd(day, se_csd, extra=self.padding)) for day in days ]
-
-            # Filter our days with only a few files in them.
-            filemap = [ (day, dmap) for day, dmap in filemap if dmap.size > 1 ]
-            filemap.sort()
-
-        self.filemap = mpiutil.world.bcast(filemap, root=0)
-
-        # Set up frequency selection
-        if self.freq_start is not None:
-            self.freq_sel = np.arange(self.freq_start, self.freq_end)
-        else:
-            self.freq_sel = None
-
-    def process(self):
-        """Load in each sidereal day.
-
-        Returns
-        -------
-        ts : andata.CorrData
-            The timestream of each sidereal day.
-        """
-
-        if len(self.filemap) == 0:
-            raise pipeline.PipelineStopIteration
-
-        csd, fmap = self.filemap.pop(0)
-        dfiles = [ self.files[fi] for fi in fmap ]
-
-        if mpiutil.rank0:
-            print "Starting read of CSD:%i [%i files]" % (csd, len(fmap))
-
-        ts = andata.CorrData.from_acq_h5(sorted(dfiles), distributed=True, freq_sel=self.freq_sel)
-
-        # Add attributes for the CSD and a tag for labelling saved files
-        ts.attrs['tag'] = ('csd_%i' % csd)
-        ts.attrs['csd'] = csd
-
-        # Add a weight dataset if needed
-        if 'vis_weight' not in ts.datasets:
-            weight_dset = ts.create_dataset('vis_weight', shape=ts.vis.shape, dtype=np.uint8,
-                                            distributed=True, distributed_axis=0)
-            weight_dset.attrs['axis'] = ts.vis.attrs['axis']
-            weight_dset[:] = 128
-
-        return ts
 
 
 class SiderealGrouper(task.SingleTask):
@@ -381,36 +284,3 @@ class SiderealStacker(task.SingleTask):
                                      self.stack.vis[:] / self.stack.weight[:])
 
         return self.stack
-
-
-def get_times(acq_files):
-    """Extract the start and end times of a list of acquisition files.
-
-    Parameters
-    ----------
-    acq_files : list
-        List of filenames.
-
-    Returns
-    -------
-    times : np.ndarray[nfiles, 2]
-        Start and end times.
-    """
-    if isinstance(acq_files, list):
-        return np.array([get_times(acq_file) for acq_file in acq_files])
-    elif isinstance(acq_files, basestring):
-        # Load in file (but ignore all datasets)
-        ad_empty = andata.AnData.from_acq_h5(acq_files, datasets=())
-        start = ad_empty.timestamp[0]
-        end = ad_empty.timestamp[-1]
-        return start, end
-    else:
-        raise Exception('Input %s, not understood' % repr(acq_files))
-
-
-def _days_in_csd(day, se_csd, extra=0.005):
-    # Find which days are in each CSD
-    stest = se_csd[:, 1] > day - extra
-    etest = se_csd[:, 0] < day + 1 - extra
-
-    return np.where(np.logical_and(stest, etest))[0]

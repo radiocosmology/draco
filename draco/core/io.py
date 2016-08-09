@@ -1,12 +1,4 @@
-"""
-==========================================
-Tasks for IO (:mod:`~ch_pipeline.core.io`)
-==========================================
-
-.. currentmodule:: ch_pipeline.core.io
-
-Tasks for calculating IO. Notably a task which will write out the parallel
-MPIDataset classes.
+"""Tasks for reading and writing data.
 
 Tasks
 =====

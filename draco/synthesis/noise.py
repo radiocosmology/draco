@@ -1,11 +1,4 @@
-"""
-====================================================================
-Instrumental Noise Simulations (:mod:`~ch_pipeline.synthesis.noise`)
-====================================================================
-
-.. currentmodule:: ch_pipeline.synthesis.noise
-
-Add the effects of instrumental noise into the simulation.
+"""Add the effects of instrumental noise into the simulation.
 
 This is separated out into two tasks. The first, :class:`ReceiverTemperature`
 adds in the effects of instrumental noise bias into the data. The second,

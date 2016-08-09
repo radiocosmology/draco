@@ -1,11 +1,4 @@
-"""
-============================================================
-Timestream Simulation (:mod:`~ch_pipeline.synthesis.stream`)
-============================================================
-
-.. currentmodule:: ch_pipeline.synthesis.stream
-
-Tasks for simulating sidereal and time stream data.
+"""Tasks for simulating sidereal and time stream data.
 
 A typical pattern would be to turn a map into a
 :class:`containers.SiderealStream` with the :class:`SimulateSidereal` task, then
@@ -154,12 +147,6 @@ class SimulateSidereal(task.SingleTask):
         self.done = True
 
         return sstream
-
-
-def _list_of_timeranges(dlist):
-
-    if not isinstance(list, dlist):
-        pass
 
 
 class ExpandProducts(task.SingleTask):
