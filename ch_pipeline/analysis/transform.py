@@ -111,10 +111,10 @@ class CollateProducts(task.SingleTask):
     required frequencies.
 
     It is important to note that while the input
-    :class:`SiderealStream` can contain more feeds and frequencies
-    than are contained in the BeamTransfers, the converse is not
-    true. That is, all the frequencies and feeds that are in the
-    BeamTransfers must be found in the timestream object.
+    :class:`~containers.SiderealStream` can contain more feeds and frequencies
+    than are contained in the BeamTransfers, the converse is not true. That is,
+    all the frequencies and feeds that are in the BeamTransfers must be found in
+    the timestream object.
     """
 
     def setup(self, bt):

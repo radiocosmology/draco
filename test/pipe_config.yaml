@@ -6,23 +6,23 @@ cluster:
     ompnum:    8
     time:      4:00:00
 
-    venv:      /home/k/krs/jrs65/ch_pipeline/venv
+    venv:      /home/k/krs/jrs65/draco/venv
 
 pipeline:
     tasks:
-        -   type:       ch_pipeline.core.io.LoadBeamTransfer
+        -   type:       draco.core.io.LoadBeamTransfer
             out:        [tel, bt]
             params:
                 product_directory:  products/bt/
 
-        -   type:       ch_pipeline.core.io.LoadMaps
+        -   type:       draco.core.io.LoadMaps
             out:        imap
             params:
                 maps:
                     files: ["map256.h5"]
                     tag:   testmap
 
-        -   type:       ch_pipeline.synthesis.stream.SimulateSidereal
+        -   type:       draco.synthesis.stream.SimulateSidereal
             requires:   bt
             in:         imap
             out:        sstream
@@ -30,7 +30,7 @@ pipeline:
                 save:   Yes
                 output_root: "output/sstream_"
 
-        -   type:       ch_pipeline.synthesis.stream.ExpandProducts
+        -   type:       draco.synthesis.stream.ExpandProducts
             requires:   tel
             in:         sstream
             out:        sstream2
@@ -38,7 +38,7 @@ pipeline:
                 save:   No
                 output_root: "output/sstream2_"
 
-        -   type:       ch_pipeline.synthesis.stream.MakeTimeStream
+        -   type:       draco.synthesis.stream.MakeTimeStream
             requires:   sstream2
             out:        tstream
             params:
@@ -48,7 +48,7 @@ pipeline:
                 save:   No
                 output_root: "output/tstream_"
 
-        -   type:       ch_pipeline.synthesis.noise.ReceiverTemperature
+        -   type:       draco.synthesis.noise.ReceiverTemperature
             in:         tstream
             out:        tstream2
             params:
@@ -56,7 +56,7 @@ pipeline:
                 save:   No
                 output_root: "output/tstream2_"
 
-        -   type:       ch_pipeline.synthesis.gain.RandomGains
+        -   type:       draco.synthesis.gain.RandomGains
             in:         tstream2
             out:        gain_fluc
             params:
@@ -65,50 +65,50 @@ pipeline:
                 sigma_amp: 0.001
                 sigma_phase: 0.001
 
-        -   type:       ch_pipeline.analysis.calibration.ApplyGain
+        -   type:       draco.analysis.calibration.ApplyGain
             in:         [tstream2, gain_fluc]
             out:        tstream3
             params:
                 inverse: No
 
-        -   type:       ch_pipeline.synthesis.noise.SampleNoise
+        -   type:       draco.synthesis.noise.SampleNoise
             in:         tstream3
             out:        tstream4
             params:
                 save:   Yes
                 output_root: "output/tstream_final_"
 
-        -   type:       ch_pipeline.analysis.sidereal.SiderealGrouper
+        -   type:       draco.analysis.sidereal.SiderealGrouper
             in:         tstream2
             out:        gtstream
             params:
                 save:   No
                 output_root: "output/gtstream_"
 
-        -   type:       ch_pipeline.analysis.sidereal.SiderealRegridder
+        -   type:       draco.analysis.sidereal.SiderealRegridder
             in:         gtstream
             out:        csstream
             params:
                 save:   No
                 output_root: "output/csstream_"
 
-        -   type:       ch_pipeline.analysis.transform.CollateProducts
+        -   type:       draco.analysis.transform.CollateProducts
             requires:   bt
             in:         csstream
             out:        rsstream
 
-        -   type:       ch_pipeline.analysis.transform.MModeTransform
+        -   type:       draco.analysis.transform.MModeTransform
             in:         rsstream
             out:        mmodes
 
-        -   type:       ch_pipeline.analysis.flagging.MaskData
+        -   type:       draco.analysis.flagging.MaskData
             in:         mmodes
             out:        mmodes2
             params:
                 auto_correlations: No
                 m_zero:            Yes
 
-        -   type:       ch_pipeline.analysis.mapmaker.DirtyMapMaker
+        -   type:       draco.analysis.mapmaker.DirtyMapMaker
             requires:   bt
             in:         mmodes2
             out:        map1
@@ -116,7 +116,7 @@ pipeline:
                 save:   Yes
                 output_root: "output/dirty_map_"
 
-        -   type:       ch_pipeline.analysis.mapmaker.WienerMapMaker
+        -   type:       draco.analysis.mapmaker.WienerMapMaker
             requires:   bt
             in:         mmodes2
             out:        map2
