@@ -65,7 +65,7 @@ pipeline:
                 sigma_amp: 0.001
                 sigma_phase: 0.001
 
-        -   type:       draco.analysis.calibration.ApplyGain
+        -   type:       draco.core.misc.ApplyGain
             in:         [tstream2, gain_fluc]
             out:        tstream3
             params:

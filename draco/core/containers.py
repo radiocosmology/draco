@@ -591,7 +591,7 @@ def make_empty_corrdata(freq=None, input=None, time=None, axes_from=None,
     dset.attrs['axis'] = np.array(['freq', 'prod', 'time'])
     dset[:] = 0.0
 
-    dset = data.create_dataset('vis_weight', shape=(data.nfreq, data.nprod, data.ntime), dtype=np.uint16,
+    dset = data.create_dataset('flags/vis_weight', shape=(data.nfreq, data.nprod, data.ntime), dtype=np.uint16,
                                distributed=distributed, distributed_axis=distributed_axis)
     dset.attrs['axis'] = np.array(['freq', 'prod', 'time'])
     dset[:] = 0.0

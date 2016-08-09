@@ -1,6 +1,8 @@
 
-CHIME Analysis Pipeline Documentation
-=====================================
+draco
+=====
+
+A basic pipeline for the analysis and simulation of drift scan radio data.
 
 The purpose of the CHIME pipeline is to analyse timestream data, turning it into
 maps and power spectra, and to do the reverse, take (synthetic) maps and turn
@@ -16,8 +18,6 @@ Contents:
    :hidden:
 
    index
-
-
 
 
 Tutorial
@@ -211,6 +211,28 @@ Ninja Techniques
 ^^^^^^^^^^^^^^^^
 
 Running on a cluster. Coming soon....
+
+
+API Reference
+-------------
+
+.. currentmodule:: draco
+
+.. autosummary::
+    :toctree: generated/
+
+    analysis.flagging
+    analysis.mapmaker
+    analysis.sidereal
+    analysis.transform
+    core.containers
+    core.io
+    core.misc
+    core.task
+    synthesis.gain
+    synthesis.noise
+    synthesis.stream
+    util.regrid
 
 
 Development Guidelines

@@ -34,10 +34,9 @@ extensions = [
     'sphinx.ext.autosummary',
     'sphinx.ext.mathjax',
     'sphinx.ext.viewcode',
-    'numpydoc',
-    'alabaster'
+    'sphinx.ext.napoleon'
 ]
-numpydoc_show_class_members = False
+#numpydoc_show_class_members = False
 import glob
 autosummary_generate = glob.glob("*.rst")
 
@@ -56,9 +55,9 @@ source_suffix = '.rst'
 master_doc = 'index'
 
 # General information about the project.
-project = u'ch_pipeline'
-copyright = u'2015, CHIME collaboration'
-author = u'CHIME collaboration'
+project = u'draco'
+copyright = u'2016, Richard Shaw'
+author = u'Richard Shaw'
 
 # The version info for the project you're documenting, acts as replacement for
 # |version| and |release|, also used in various other places throughout the
@@ -118,7 +117,7 @@ todo_include_todos = False
 
 # The theme to use for HTML and HTML Help pages.  See the documentation for
 # a list of builtin themes.
-html_theme = 'alabaster'#'sphinx_rtd_theme'
+html_theme = 'alabaster'  #'sphinx_rtd_theme'
 
 # Theme options are theme-specific and customize the look and feel of a theme
 # further.  For a list of options available for each theme, see the
@@ -232,8 +231,8 @@ latex_elements = {
 # (source start file, target name, title,
 #  author, documentclass [howto, manual, or own class]).
 latex_documents = [
-  (master_doc, 'ch_pipeline.tex', u'ch\\_pipeline Documentation',
-   u'CHIME collaboration', 'manual'),
+  (master_doc, 'draco.tex', u'draco Documentation',
+   u'Richard Shaw', 'manual'),
 ]
 
 # The name of an image file (relative to this directory) to place at the top of
