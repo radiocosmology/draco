@@ -15,10 +15,10 @@ Tasks
 import numpy as np
 from caput import mpiarray, config
 
-from ch_util import tools, andata
+from ch_util import andata
 
 from ..core import containers, task
-
+from ..util import tools
 
 class FrequencyRebin(task.SingleTask):
     """Rebin neighbouring frequency channels.
