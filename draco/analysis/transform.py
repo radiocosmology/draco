@@ -13,9 +13,7 @@ Tasks
     MModeTransform
 """
 import numpy as np
-from caput import mpiarray, config
-
-from ch_util import andata
+from caput import mpiarray, config, tod
 
 from ..core import containers, task
 from ..util import tools
@@ -36,11 +34,14 @@ class FrequencyRebin(task.SingleTask):
 
         Parameters
         ----------
-        ss : SiderealStream
+        ss : containers.SiderealStream or containers.TimeStream
+            Input data to rebin. Can also be an `andata.CorrData` instance,
+            however the output will be a `containers.TimeStream` instance.
 
         Returns
         -------
-        sb : SiderealStream
+        sb : containers.SiderealStream or containers.TimeStream
+            Rebinned data. Type should match the input.
         """
 
         if 'freq' not in ss.index_map:
@@ -50,7 +51,7 @@ class FrequencyRebin(task.SingleTask):
             raise RuntimeError("Binning must exactly divide the number of channels.")
 
         # Get all frequencies onto same node
-        ss.redistribute('time')
+        ss.redistribute(['time', 'ra'])
 
         # Calculate the new frequency centres and widths
         fc = ss.index_map['freq']['centre'].reshape(-1, self.channel_bin).mean(axis=-1)
@@ -61,16 +62,16 @@ class FrequencyRebin(task.SingleTask):
         freq_map['width'] = fw
 
         # Create new container for rebinned stream
-        if isinstance(ss, containers.ContainerBase):
-            sb = ss.__class__(freq=freq_map, axes_from=ss)
-        elif isinstance(ss, andata.CorrData):
-            sb = containers.make_empty_corrdata(freq=freq_map, axes_from=ss, distributed=True,
-                                                distributed_axis=2, comm=ss.comm)
+        if isinstance(ss, containers.SiderealStream):
+            sb = containers.SiderealStream(freq=freq_map, axes_from=ss)
+        elif isinstance(ss, tod.TOData):
+            # This clause should catch both TimeStream and andata.CorrData instances.
+            sb = containers.TimeStream(freq=freq_map, axes_from=ss)
         else:
             raise RuntimeError("I don't know how to deal with data type %s" % ss.__class__.__name__)
 
         # Get all frequencies onto same node
-        sb.redistribute('time')
+        sb.redistribute(['time', 'ra'])
 
         # Copy over the tag attribute
         sb.attrs['tag'] = ss.attrs['tag']

@@ -21,8 +21,6 @@ import numpy as np
 from cora.util import hputil
 from caput import mpiutil, pipeline, config, mpiarray
 
-from ch_util import ephemeris
-
 from ..core import containers, task
 
 
@@ -49,7 +47,8 @@ class SimulateSidereal(task.SingleTask):
         Parameters
         ----------
         map : :class:`containers.Map`
-            The sky map to process to into a sidereal stream. Frequencies in the map, must match the Beam Transfer matrices.
+            The sky map to process to into a sidereal stream. Frequencies in the
+            map, must match the Beam Transfer matrices.
 
         Returns
         -------
@@ -223,8 +222,8 @@ class MakeTimeStream(task.SingleTask):
         Number of samples per file.
     """
 
-    start_time = config.Property(proptype=ephemeris.ensure_unix)
-    end_time = config.Property(proptype=ephemeris.ensure_unix)
+    start_time = config.utc_time()
+    end_time = config.utc_time()
 
     integration_time = config.Property(proptype=float, default=None)
     integration_frame_exp = config.Property(proptype=int, default=23)
@@ -233,14 +232,20 @@ class MakeTimeStream(task.SingleTask):
 
     _cur_time = 0.0  # Hold the current file start time
 
-    def setup(self, sstream):
+    def setup(self, sstream, observer):
         """Get the sidereal stream to turn into files.
 
         Parameters
         ----------
         sstream : SiderealStream
+            The sidereal data to use.
+        observer : :class:`~caput.time.Observer`
+            An Observer object holding the geographic location of the telescope.
+            Note that :class:`~drift.core.TransitTelescope` instances are also
+            Observers.
         """
         self.sstream = sstream
+        self.observer = observer
 
         # Initialise the current start time
         self._cur_time = self.start_time
@@ -261,6 +266,28 @@ class MakeTimeStream(task.SingleTask):
         if self._cur_time > self.end_time:
             raise pipeline.PipelineStopIteration
 
+        time = self._next_time_axis()
+
+        # Make the timestream container
+        tstream = containers.TimeStream(axes_from=self.sstream, time=time)
+
+        # Make the interpolation array
+        ra = self.observer.unix_to_lsa(tstream.time)
+        lza = regrid.lanczos_forward_matrix(self.sstream.ra, ra, periodic=True)
+        lza = lza.T.astype(np.complex64)
+
+        # Apply the interpolation matrix to construct the new timestream, place
+        # the output directly into the container
+        np.dot(self.sstream.vis[:], lza, out=tstream.vis[:])
+
+        # Set the weights array to the maximum value for CHIME
+        tstream.weight[:] = 1.0
+
+        # Output the timestream
+        return tstream
+
+    def _next_time_axis(self):
+
         # Calculate the integration time
         if self.integration_time is not None:
             int_time = self.integration_time
@@ -278,25 +305,9 @@ class MakeTimeStream(task.SingleTask):
             _time_dtype = [('fpga_count', np.uint64), ('ctime', np.float64)]
             time = np.zeros(nsamp, _time_dtype)
             time['ctime'] = timestamps
-            time['fpga_count'] = (timestamps - self.start_time) / int_time * 2**self.integration_frame_exp
-
-        # Make the timestream container
-        tstream = containers.make_empty_corrdata(axes_from=self.sstream, time=time)
-
-        # Make the interpolation array
-        ra = ephemeris.transit_RA(tstream.time)
-        lza = regrid.lanczos_forward_matrix(self.sstream.ra, ra, periodic=True)
-        lza = lza.T.astype(np.complex64)
-
-        # Apply the interpolation matrix to construct the new timestream, place
-        # the output directly into the container
-        np.dot(self.sstream.vis[:], lza, out=tstream.vis[:])
-
-        # Set the weights array to the maximum value for CHIME
-        tstream.weight[:] = 255.0
+            time['fpga_count'] = ((timestamps - self.start_time) / int_time * 2**self.integration_frame_exp).astype(np.uint64)
 
         # Increment the current start time for the next iteration
         self._cur_time += nsamp * int_time
 
-        # Output the timestream
-        return tstream
+        return time

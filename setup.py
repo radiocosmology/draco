@@ -5,6 +5,8 @@ from Cython.Build import cythonize
 
 import numpy as np
 
+import draco
+
 # Enable OpenMP support if available
 if sys.platform == 'darwin':
     compile_args = []
@@ -24,7 +26,7 @@ fast_ext = Extension(
 
 setup(
     name='draco',
-    version=0.1,
+    version=draco.__version__,
 
     packages=find_packages(),
 

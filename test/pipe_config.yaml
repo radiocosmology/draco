@@ -39,7 +39,7 @@ pipeline:
                 output_root: "output/sstream2_"
 
         -   type:       draco.synthesis.stream.MakeTimeStream
-            requires:   sstream2
+            requires:   [sstream2, tel]
             out:        tstream
             params:
                 start_time: 2015-10-05 12:15:00
@@ -79,6 +79,7 @@ pipeline:
                 output_root: "output/tstream_final_"
 
         -   type:       draco.analysis.sidereal.SiderealGrouper
+            requires:   tel
             in:         tstream2
             out:        gtstream
             params:
@@ -86,6 +87,7 @@ pipeline:
                 output_root: "output/gtstream_"
 
         -   type:       draco.analysis.sidereal.SiderealRegridder
+            requires:   tel
             in:         gtstream
             out:        csstream
             params:

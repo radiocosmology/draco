@@ -23,9 +23,7 @@ into  :class:`SiderealGrouper`, then feeding that into
 
 import numpy as np
 
-from caput import config
-from caput import mpiutil, mpiarray
-from ch_util import andata, ephemeris
+from caput import config, mpiutil, mpiarray, tod
 
 from ..core import task, containers
 from ..util import regrid
@@ -45,52 +43,64 @@ class SiderealGrouper(task.SingleTask):
 
     def __init__(self):
         self._timestream_list = []
-        self._current_csd = None
+        self._current_lsd = None
+
+    def setup(self, observer):
+        """Set the local observers position.
+
+        Parameters
+        ----------
+        observer : :class:`~caput.time.Observer`
+            An Observer object holding the geographic location of the telescope.
+            Note that :class:`~drift.core.TransitTelescope` instances are also
+            Observers.
+        """
+        self.observer = observer
 
     def process(self, tstream):
         """Load in each sidereal day.
 
         Parameters
         ----------
-        tstream : andata.CorrData
+        tstream : containers.TimeStream
             Timestream to group together.
 
         Returns
         -------
-        ts : andata.CorrData or None
+        ts : containers.TimeStream or None
             Returns the timestream of each sidereal day when we have received
             the last file, otherwise returns :obj:`None`.
         """
 
-        # Get the start and end CSDs of the file
-        csd_start = int(ephemeris.csd(tstream.time[0]))
-        csd_end = int(ephemeris.csd(tstream.time[-1]))
+        # Get the start and end LSDs of the file
+        lsd_start = int(self.observer.unix_to_lsd(tstream.time[0]))
+        lsd_end = int(self.observer.unix_to_lsd(tstream.time[-1]))
 
-        # If current_csd is None then this is the first time we've run
-        if self._current_csd is None:
-            self._current_csd = csd_start
+        # If current_lsd is None then this is the first time we've run
+        if self._current_lsd is None:
+            self._current_lsd = lsd_start
 
-        # If this file started during the current CSD add it onto the list
-        if self._current_csd == csd_start:
+        # If this file started during the current lsd add it onto the list
+        if self._current_lsd == lsd_start:
             self._timestream_list.append(tstream)
 
         if tstream.vis.comm.rank == 0:
-            print "Adding file into group for CSD:%i" % csd_start
+            print "Adding file into group for LSD:%i" % lsd_start
 
-        # If this file ends during a later CSD then we need to process the
+        # If this file ends during a later LSD then we need to process the
         # current list and restart the system
-        if self._current_csd < csd_end:
+        if self._current_lsd < lsd_end:
 
             if tstream.vis.comm.rank == 0:
-                print "Concatenating files for CSD:%i" % csd_start
+                print "Concatenating files for LSD:%i" % lsd_start
 
             # Combine timestreams into a single container for the whole day this
             # could get returned as None if there wasn't enough data
-            tstream_all = self._process_current_csd()
+            tstream_all = self._process_current_lsd()
 
-            # Reset list and current CSD for the new file
+            # Reset list and current LSD for the new file
             self._timestream_list = [tstream]
-            self._current_csd = csd_end
+            self._current_lsd = lsd_end
 
             return tstream_all
         else:
@@ -101,39 +111,39 @@ class SiderealGrouper(task.SingleTask):
 
         Returns
         -------
-        ts : andata.CorrData or None
+        ts : containers.TimeStream or None
             Returns the timestream of the final sidereal day if it's long
             enough, otherwise returns :obj:`None`.
         """
 
         # If we are here there is no more data coming, we just need to process any remaining data
-        tstream_all = self._process_current_csd()
+        tstream_all = self._process_current_lsd()
 
         return tstream_all
 
-    def _process_current_csd(self):
+    def _process_current_lsd(self):
         # Combine the current set of files into a timestream
 
-        csd = self._current_csd
+        lsd = self._current_lsd
 
-        # Calculate the length of data in this current CSD
-        start = ephemeris.csd(self._timestream_list[0].time[0])
-        end = ephemeris.csd(self._timestream_list[-1].time[-1])
-        day_length = min(end, csd + 1) - max(start, csd)
+        # Calculate the length of data in this current LSD
+        start = self.observer.unix_to_lsd(self._timestream_list[0].time[0])
+        end = self.observer.unix_to_lsd(self._timestream_list[-1].time[-1])
+        day_length = min(end, lsd + 1) - max(start, lsd)
 
         # If the amount of data for this day is too small, then just skip
         if day_length < 0.1:
             return None
 
         if self._timestream_list[0].vis.comm.rank == 0:
-            print "Constructing CSD:%i [%i files]" % (csd, len(self._timestream_list))
+            print "Constructing LSD:%i [%i files]" % (lsd, len(self._timestream_list))
 
         # Construct the combined timestream
-        ts = andata.concatenate(self._timestream_list)
+        ts = tod.concatenate(self._timestream_list)
 
-        # Add attributes for the CSD and a tag for labelling saved files
-        ts.attrs['tag'] = ('csd_%i' % csd)
-        ts.attrs['csd'] = csd
+        # Add attributes for the LSD and a tag for labelling saved files
+        ts.attrs['tag'] = ('lsd_%i' % lsd)
+        ts.attrs['lsd'] = lsd
 
         return ts
 
@@ -156,13 +166,25 @@ class SiderealRegridder(task.SingleTask):
     samples = config.Property(proptype=int, default=1024)
     lanczos_width = config.Property(proptype=int, default=5)
 
+    def setup(self, observer):
+        """Set the local observers position.
+
+        Parameters
+        ----------
+        observer : :class:`~caput.time.Observer`
+            An Observer object holding the geographic location of the telescope.
+            Note that :class:`~drift.core.TransitTelescope` instances are also
+            Observers.
+        """
+        self.observer = observer
+
     def process(self, data):
         """Regrid the sidereal day.
 
         Parameters
         ----------
-        data : andata.CorrData
-            Timestream data for the day (must have a `csd` attribute).
+        data : containers.TimeStream
+            Timestream data for the day (must have a `LSD` attribute).
 
         Returns
         -------
@@ -171,23 +193,23 @@ class SiderealRegridder(task.SingleTask):
         """
 
         if mpiutil.rank0:
-            print "Regridding CSD:%i" % data.attrs['csd']
+            print "Regridding LSD:%i" % data.attrs['lsd']
 
         # Redistribute if needed too
         data.redistribute('freq')
 
-        # Convert data timestamps into CSDs
-        timestamp_csd = ephemeris.csd(data.time)
+        # Convert data timestamps into LSDs
+        timestamp_lsd = self.observer.unix_to_lsd(data.time)
 
-        # Fetch which CSD this is
-        csd = data.attrs['csd']
+        # Fetch which LSD this is
+        lsd = data.attrs['lsd']
 
-        # Create a regular grid in CSD, padded at either end to supress interpolation issues
+        # Create a regular grid in LSD, padded at either end to supress interpolation issues
         pad = 5 * self.lanczos_width
-        csd_grid = csd + np.arange(-pad, self.samples + pad, dtype=np.float64) / self.samples
+        lsd_grid = lsd + np.arange(-pad, self.samples + pad, dtype=np.float64) / self.samples
 
         # Construct regridding matrix
-        lzf = regrid.lanczos_forward_matrix(csd_grid, timestamp_csd, self.lanczos_width).T.copy()
+        lzf = regrid.lanczos_forward_matrix(lsd_grid, timestamp_lsd, self.lanczos_width).T.copy()
 
         # Mask data
         imask = data.weight[:].view(np.ndarray)
@@ -198,7 +220,7 @@ class SiderealRegridder(task.SingleTask):
         nr = imask.reshape(-1, vis_data.shape[-1])
 
         # Construct a signal 'covariance'
-        Si = np.ones_like(csd_grid) * 1e-8
+        Si = np.ones_like(lsd_grid) * 1e-8
 
         # Calculate the interpolated data and a noise weight at the points in the padded grid
         sts, ni = regrid.band_wiener(lzf, nr, Si, vr, 2 * self.lanczos_width - 1)
@@ -221,8 +243,8 @@ class SiderealRegridder(task.SingleTask):
         sdata.redistribute('freq')
         sdata.vis[:] = sts
         sdata.weight[:] = ni
-        sdata.attrs['csd'] = csd
-        sdata.attrs['tag'] = 'csd_%i' % csd
+        sdata.attrs['lsd'] = lsd
+        sdata.attrs['tag'] = 'lsd_%i' % lsd
 
         return sdata
 
@@ -255,12 +277,12 @@ class SiderealStacker(task.SingleTask):
             self.stack.weight[:] = sdata.weight[:]
 
             if mpiutil.rank0:
-                print "Starting stack with CSD:%i" % sdata.attrs['csd']
+                print "Starting stack with LSD:%i" % sdata.attrs['lsd']
 
             return
 
         if mpiutil.rank0:
-            print "Adding CSD:%i to stack" % sdata.attrs['csd']
+            print "Adding LSD:%i to stack" % sdata.attrs['lsd']
 
         # note: Eventually we should fix up gains
 

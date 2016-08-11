@@ -13,7 +13,7 @@ Containers
 
 import numpy as np
 
-from caput import memh5
+from caput import memh5, tod
 
 
 class ContainerBase(memh5.BasicCont):
@@ -44,7 +44,11 @@ class ContainerBase(memh5.BasicCont):
     Parameters
     ----------
     axes_from : `memh5.BasicCont`, optional
-        Another container to copy axis definitions from.
+        Another container to copy axis definitions from. Must be supplied as
+        keyword argument.
+    attrs_from : `memh5.BasicCont`, optional
+        Another container to copy attributes from.  Must be supplied as keyword
+        argument.
     kwargs : dict
         Should contain entries for all other axes.
     """
@@ -53,13 +57,23 @@ class ContainerBase(memh5.BasicCont):
 
     _dataset_spec = {}
 
-    def __init__(self, axes_from=None, attrs_from=None, *args, **kwargs):
+    def __init__(self, *args, **kwargs):
 
-        dist = kwargs['distributed'] if 'distributed' in kwargs else True
-        comm = kwargs['comm'] if 'comm' in kwargs and dist else None
+        # Pull out the values of needed arguments
+        axes_from = kwargs.pop('axes_from', None)
+        attrs_from = kwargs.pop('attrs_from', None)
+        dist = kwargs.pop('distributed', True)
+        comm = kwargs.pop('comm', None)
 
         # Run base initialiser
         memh5.BasicCont.__init__(self, distributed=dist, comm=comm)
+
+        # Check to see if this call looks like it was called like
+        # memh5.MemDiskGroup would have been. If it is, we're probably trying to
+        # create a bare container, so don't initialise any datasets. This
+        # behaviour is needed to support tod.concatenate
+        if len(args) or 'data_group' in kwargs:
+            return
 
         # Copy over attributes
         if attrs_from is not None:
@@ -165,6 +179,24 @@ class ContainerBase(memh5.BasicCont):
             if not memh5.is_group(value):
                 out[name] = value
         return memh5.ro_dict(out)
+
+
+class TODContainer(ContainerBase, tod.TOData):
+    """A pipeline container for time ordered data.
+
+    This works like a normal :class:`ContainerBase` container, with the added
+    ability to be concatenated, and treated like a a :class:`tod.TOData`
+    instance.
+    """
+
+    @property
+    def time(self):
+        try:
+            return self.index_map['time'][:]['ctime']
+        # Need to check for both types as different numpy versions return
+        # different exceptions.
+        except (IndexError, ValueError):
+            return self.index_map['time'][:]
 
 
 class Map(ContainerBase):
@@ -304,6 +336,63 @@ class SiderealStream(ContainerBase):
         return self.index_map['input']
 
 
+class TimeStream(TODContainer):
+    """A container for holding a visibility dataset in time.
+
+    This should look similar enough to the CHIME
+    :class:`~ch_util.andata.CorrData` container that they can be used
+    interchangably in most cases.
+    """
+
+    _axes = ('freq', 'prod', 'input', 'time')
+
+    _dataset_spec = {
+        'vis': {
+            'axes': ['freq', 'prod', 'time'],
+            'dtype': np.complex64,
+            'initialise': True,
+            'distributed': True,
+            'distributed_axis': 'freq'
+        },
+
+        'vis_weight': {
+            'axes': ['freq', 'prod', 'time'],
+            'dtype': np.float32,
+            'initialise': True,
+            'distributed': True,
+            'distributed_axis': 'freq'
+        },
+
+        'gain': {
+            'axes': ['freq', 'input', 'time'],
+            'dtype': np.complex64,
+            'initialise': False,
+            'distributed': True,
+            'distributed_axis': 'freq'
+        }
+    }
+
+    @property
+    def vis(self):
+        return self.datasets['vis']
+
+    @property
+    def gain(self):
+        return self.datasets['gain']
+
+    @property
+    def weight(self):
+        return self.datasets['vis_weight']
+
+    @property
+    def freq(self):
+        return self.index_map['freq']
+
+    @property
+    def input(self):
+        return self.index_map['input']
+
+
 class MModes(ContainerBase):
     """Parallel container for holding m-mode data.
 
@@ -378,7 +467,7 @@ class MModes(ContainerBase):
         super(MModes, self).__init__(*args, **kwargs)
 
 
-class GainData(ContainerBase):
+class GainData(TODContainer):
     """Parallel container for holding gain data.
     """
 
@@ -411,15 +500,6 @@ class GainData(ContainerBase):
             return self.datasets['weight']
         except KeyError:
             return None
-
-    @property
-    def time(self):
-        try:
-            return self.index_map['time'][:]['ctime']
-        # Need to check for both types as different numpy versions return
-        # different exceptions.
-        except (IndexError, ValueError):
-            return self.index_map['time'][:]
 
     @property
     def freq(self):
@@ -510,88 +590,3 @@ class RingMap(ContainerBase):
     @property
     def map(self):
         return self.datasets['map']
-
-
-def make_empty_corrdata(freq=None, input=None, time=None, axes_from=None,
-                        distributed=True, distributed_axis=0, comm=None):
-    """Make an empty CorrData (i.e. timestream) container.
-
-    Parameters
-    ----------
-    freq : np.ndarray, optional
-        Frequency map to use.
-    input : np.ndarray, optional
-        Input map.
-    time : np.ndarray, optional
-        Time map.
-    axes_from : BasicCont, optional
-        Another container to copy any unspecified axes from.
-    distributed : boolean, optional
-        Whether to create the container in distributed mode.
-    distributed_axis : int, optional
-        Axis to distribute over.
-    comm : MPI.Comm, optional
-        MPI communicator to distribute over.
-
-    Returns
-    -------
-    data : andata.CorrData
-    """
-
-    # Setup frequency axis
-    if freq is None:
-        if axes_from is not None and 'freq' in axes_from.index_map:
-            freq = axes_from.index_map['freq']
-        else:
-            raise RuntimeError('No frequency axis defined.')
-
-    # Setup input axis
-    if input is None:
-        if axes_from is not None and 'input' in axes_from.index_map:
-            input = axes_from.index_map['input']
-        else:
-            raise RuntimeError('No input axis defined.')
-
-    # Setup time axis
-    if time is None:
-        if axes_from is not None and 'time' in axes_from.index_map:
-            time = axes_from.index_map['time']
-        else:
-            raise RuntimeError('No time axis defined.')
-
-    # Create CorrData object and setup axies
-    from ch_util import andata
-
-    # Initialise distributed container
-    data = andata.CorrData.__new__(andata.CorrData)
-    memh5.BasicCont.__init__(data, distributed=True, comm=comm)
-
-    data.create_index_map('freq', freq)
-    data.create_index_map('input', input)
-    data.create_index_map('time', time)
-
-    # Construct and create product map
-    if axes_from is not None and 'prod' in axes_from.index_map:
-        prodmap = axes_from.index_map['prod']
-    else:
-        nfeed = len(input)
-        prodmap = np.array([[fi, fj] for fi in range(nfeed) for fj in range(fi, nfeed)])
-    data.create_index_map('prod', prodmap)
-
-    # Create empty datasets, and add axis attributes to them
-    dset = data.create_dataset('vis', shape=(data.nfreq, data.nprod, data.ntime), dtype=np.complex64,
-                               distributed=distributed, distributed_axis=distributed_axis)
-    dset.attrs['axis'] = np.array(['freq', 'prod', 'time'])
-    dset[:] = 0.0
-
-    dset = data.create_dataset('flags/vis_weight', shape=(data.nfreq, data.nprod, data.ntime), dtype=np.uint16,
-                               distributed=distributed, distributed_axis=distributed_axis)
-    dset.attrs['axis'] = np.array(['freq', 'prod', 'time'])
-    dset[:] = 0.0
-
-    dset = data.create_dataset('gain', shape=(data.nfreq, data.ninput, data.ntime), dtype=np.complex64,
-                               distributed=distributed, distributed_axis=distributed_axis)
-    dset.attrs['axis'] = np.array(['freq', 'input', 'time'])
-    dset[:] = 0.0
-
-    return data

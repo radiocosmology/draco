@@ -15,7 +15,6 @@ Tasks
 import numpy as np
 
 from caput import config
-from ch_util import tools
 
 from ..core import task
 
