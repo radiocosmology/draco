@@ -80,7 +80,7 @@ class SampleNoise(task.SingleTask):
 
         Parameters
         ----------
-        data_exp : :class:`containers.SiderealStream` or :class:`andata.CorrData`
+        data_exp : :class:`containers.SiderealStream` or :class:`containers.TimeStream`
             The expected (i.e. noiseless) visibility dataset. Must be the full
             triangle. Make sure you have added an instrumental noise bias if you
             want instrumental noise.

@@ -255,7 +255,7 @@ class MakeTimeStream(task.SingleTask):
 
         Returns
         -------
-        tstream : :class:`andata.CorrData`
+        tstream : :class:`containers.TimeStream`
             Time stream object.
         """
 

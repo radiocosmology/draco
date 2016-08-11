@@ -43,8 +43,6 @@ import numpy as np
 from caput import pipeline
 from caput import config
 
-from ch_util import andata
-
 from . import task
 
 
@@ -237,79 +235,6 @@ class LoadFiles(LoadFilesFromParams):
             raise RuntimeError('Argument must be list of files.')
 
         self.files = files
-
-
-class LoadCorrDataFiles(task.SingleTask):
-    """Load data from files passed into the setup routine.
-
-    File must be a serialised subclass of :class:`memh5.BasicCont`.
-    """
-
-    files = None
-
-    _file_ptr = 0
-
-    freq_start = config.Property(proptype=int, default=None)
-    freq_end = config.Property(proptype=int, default=None)
-
-    def setup(self, files):
-        """Set the list of files to load.
-
-        Parameters
-        ----------
-        files : list
-        """
-        if not isinstance(files, (list, tuple)):
-            raise RuntimeError('Argument must be list of files.')
-
-        self.files = files
-
-        # Set up frequency selection
-        if self.freq_start is not None:
-            self.freq_sel = np.arange(self.freq_start, self.freq_end)
-        else:
-            self.freq_sel = None
-
-    def process(self):
-        """Load in each sidereal day.
-
-        Returns
-        -------
-        ts : andata.CorrData
-            The timestream of each sidereal day.
-        """
-
-        from caput import mpiutil
-
-        if len(self.files) == self._file_ptr:
-            raise pipeline.PipelineStopIteration
-
-        # Fetch and remove the first item in the list
-        file_ = self.files[self._file_ptr]
-        self._file_ptr += 1
-
-        if mpiutil.rank0:
-            print "Reading file %i of %i." % (self._file_ptr, len(self.files))
-
-        ts = andata.CorrData.from_acq_h5(file_, distributed=True, freq_sel=self.freq_sel)
-
-        if 'tag' not in ts.attrs:
-            # Use a simple incrementing string as the tag
-            tag = 'file%03i' % self._file_ptr
-            ts.attrs['tag'] = tag
-
-        # Add a weight dataset if needed
-        if 'vis_weight' not in ts.datasets:
-            weight_dset = ts.create_dataset('vis_weight', shape=ts.vis.shape, dtype=np.uint8,
-                                            distributed=True, distributed_axis=0)
-            weight_dset.attrs['axis'] = ts.vis.attrs['axis']
-
-            # Set weight to a reasonable value (128), unless the vis value is
-            # zero which presumably came from missing data. NOTE: this may have
-            # a small bias
-            weight_dset[:] = np.where(ts.vis[:] == 0.0, 0, 128)
-
-        return ts
 
 
 class Save(pipeline.TaskBase):

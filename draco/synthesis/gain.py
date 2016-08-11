@@ -57,7 +57,7 @@ class RandomGains(task.SingleTask):
 
         Parameters
         ----------
-        data : :class:`andata.CorrData`
+        data : :class:`containers.TimeStream`
             Generate a timestream for this dataset.
 
         Returns
