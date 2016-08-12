@@ -2,7 +2,7 @@
 
 A pipeline for the analysis and simulation of drift scan radio data.
 
-`draco` is a set of building blocks designed for the analysis of the transit
+**draco** is a set of building blocks designed for the analysis of the transit
 radio data with the m-mode formalism (see the papers
 [arXiv:1302.0327](http://arxiv.org/abs/1302.0327) and
 [arXiv:1401.2095](http://arxiv.org/abs/1401.2095) for details). It is being used
@@ -25,7 +25,7 @@ To do this it depends on various related packages:
   simulation and analysis.
 - [cora](http://github.com/radiocosmology/cora): for modelling and simulating
   the radio sky
-- [caput]((http://github.com/radiocosmology/caput): provides infrastructure for
+- [caput](http://github.com/radiocosmology/caput): provides infrastructure for
   building these packages
 It also depends on the usual suspects: `numpy`, `scipy`, `healpy`, `h5py` and `skyfield`.
 
