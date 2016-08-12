@@ -9,7 +9,7 @@ Tasks
 =====
 
 .. autosummary::
-    :toctree: generated/
+    :toctree:
 
     SimulateSidereal
     ExpandProducts

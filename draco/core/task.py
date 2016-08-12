@@ -4,7 +4,7 @@ Tasks
 =====
 
 .. autosummary::
-    :toctree: generated/
+    :toctree:
 
     SingleTask
     ReturnLastInputOnFinish

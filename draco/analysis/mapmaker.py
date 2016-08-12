@@ -4,7 +4,7 @@ Tasks
 =====
 
 .. autosummary::
-    :toctree: generated/
+    :toctree:
 
     DirtyMapMaker
     MaximumLikelihoodMapMaker
@@ -207,7 +207,7 @@ class MaximumLikelihoodMapMaker(BaseMapMaker):
 
 
 class WienerMapMaker(BaseMapMaker):
-    """Generate a Wiener filtered map assuming that the signal is a Gaussian
+    r"""Generate a Wiener filtered map assuming that the signal is a Gaussian
     random field described by a power-law power spectum.
 
     Attributes

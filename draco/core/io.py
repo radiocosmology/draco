@@ -4,7 +4,7 @@ Tasks
 =====
 
 .. autosummary::
-    :toctree: generated/
+    :toctree:
 
     LoadFiles
     LoadMaps
@@ -18,7 +18,7 @@ File Groups
 
 Several tasks accept groups of files as arguments. These are specified in the YAML file as a dictionary like below.
 
-.. codeblock:: yaml
+.. code-block:: yaml
 
     list_of_file_groups:
         -   tag: first_group  # An optional tag naming the group
@@ -111,7 +111,7 @@ class LoadMaps(pipeline.TaskBase):
     """Load a series of maps from files given in the tasks parameters.
 
     Maps are given as one, or a list of `File Groups` (see
-    :mod:`ch_pipeline.core.io`). Maps within the same group are added together
+    :mod:`draco.core.io`). Maps within the same group are added together
     before being passed on.
 
     Attributes

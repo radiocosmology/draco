@@ -50,11 +50,11 @@ if you get an error, it's not installed properly so you'll need to fix it.
 With that all sorted, we're ready to start. First step, download the pipeline
 repository to wherever you want it installed::
 
-    $ git clone git@bitbucket.org/chime/ch_pipeline.git
+    $ git clone git@github.com/radiocosmology/draco.git
 
 Then change into that directory, and run the script `mkvenv.sh`::
 
-    $ cd ch_pipeline
+    $ cd draco
     $ ./mkvenv.sh
 
 The script will do three things. First it will create a python virtual
@@ -72,10 +72,10 @@ to import some of the packages. For example::
 
     >>> from drift.core import telescope
     >>> print telescope.__file__
-    /Users/richard/code/ch_pipeline/venv/src/driftscan/drift/core/telescope.pyc
-    >>> from ch_pipeline import containers
+    /Users/richard/code/draco/venv/src/driftscan/drift/core/telescope.pyc
+    >>> from draco import containers
     >>> print containers.__file__
-    /Users/richard/code/ch_pipeline/ch_pipeline/containers.pyc
+    /Users/richard/code/draco/draco/containers.pyc
 
 
 External Products
@@ -131,7 +131,7 @@ For further details you can consult the ``caput`` documentation on the pipeline.
 
 The bulk of this configuration file is a list of tasks being configured. There
 is a ``type`` field where the class is specified by its fully qualified python
-name (for example, the first task ``ch_pipeline.io.LoadBeamTransfer``). To
+name (for example, the first task ``draco.io.LoadBeamTransfer``). To
 connect one task to another, you simply specify a label for the ``output`` of
 one task, and give the same label to the ``input`` or ``requires`` of the other
 task. The labels themselves are dummy variables, any string will do, provided it
@@ -172,7 +172,7 @@ In the YAML file we configured the task as follows:
 
 .. code-block:: YAML
 
-    -   type:       ch_pipeline.simulate.SimulateSidereal
+    -   type:       draco.synthesis.stream.SimulateSidereal
         requires:   [tel, bt]
         out:        sstream
         params:
@@ -248,7 +248,7 @@ As far as possible the pipeline code should be using Kiyo's pipeline task module
 Structure
 ^^^^^^^^^
 
-Tasks should go into `ch_pipeline`.
+Tasks should go into `draco`.
 
 Branches
 ^^^^^^^^

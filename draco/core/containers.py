@@ -4,11 +4,24 @@ Containers
 ==========
 
 .. autosummary::
-    :toctree: generated/
+    :toctree:
 
     TimeStream
-    MaskedTimeStream
     SiderealStream
+    GainData
+    StaticGainData
+    Map
+    MModes
+    RingMap
+
+Container Base Classes
+----------------------
+
+.. autosummary::
+    :toctree:
+
+    ContainerBase
+    TODContainer
 """
 
 import numpy as np

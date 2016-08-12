@@ -5,7 +5,7 @@ Tasks
 =====
 
 .. autosummary::
-    :toctree: generated/
+    :toctree:
 
     SiderealGrouper
     SiderealRegridder

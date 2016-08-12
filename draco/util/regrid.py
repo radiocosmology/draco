@@ -8,7 +8,7 @@ Tasks
 =====
 
 .. autosummary::
-    :toctree: generated/
+    :toctree:
 
     band_wiener
     lanczos_kernel
