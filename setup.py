@@ -27,7 +27,7 @@ fast_ext = Extension(
 setup(
     name='draco',
     version=draco.__version__,
-    license='BSD',
+    license='MIT',
 
     packages=find_packages(),
 
