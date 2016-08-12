@@ -9,11 +9,13 @@ radio data with the m-mode formalism (see the papers
 as part of the analysis and simulation pipeline for
 [CHIME](http://chime.phas.ubc.ca) though is (and will remain) telescope agnostic. It
 can:
+
 - Simulate time stream data from maps of the sky (using the m-mode formalism)
 - Add gain fluctuations and correctly correlated instrumental noise (i.e.
   Wishart distributed)
 - Perform various cuts on the data
 - Make maps of the sky from data using the m-mode formalism
+
 It does not do some of the key steps in radio data analysis, notably *RFI
 flagging* and *calibration*. The implementations we had were too specific to
 CHIME so they have been left out, until a more generic version is produced.
@@ -27,6 +29,7 @@ To do this it depends on various related packages:
   the radio sky
 - [caput](http://github.com/radiocosmology/caput): provides infrastructure for
   building these packages
+
 It also depends on the usual suspects: `numpy`, `scipy`, `healpy`, `h5py` and `skyfield`.
 
 draco can be installed with `pip` in the usual way:
