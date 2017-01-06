@@ -8,6 +8,7 @@ Tasks
 
     SingleTask
     ReturnLastInputOnFinish
+    ReturnFirstInputOnFinish
 """
 import os
 
@@ -174,6 +175,35 @@ class ReturnLastInputOnFinish(SingleTask):
         x : object
         """
         self.x = x
+
+    def process_finish(self):
+        """Return the last input to process.
+
+        Returns
+        -------
+        x : object
+            Last input to process.
+        """
+        return self.x
+
+
+class ReturnFirstInputOnFinish(SingleTask):
+    """Workaround for `caput.pipeline` issues.
+
+    This caches its input on the first call to `process` and
+    then returns it for a finish call.
+    """
+    x = None
+
+    def process(self, x):
+        """Take a reference to the input.
+
+        Parameters
+        ----------
+        x : object
+        """
+        if self.x is None:
+            self.x = x
 
     def process_finish(self):
         """Return the last input to process.

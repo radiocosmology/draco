@@ -7,7 +7,7 @@ all be moved out into their own module.
 
 import numpy as np
 
-from caput import config
+from caput import config, mpiutil
 
 from ..core import task, containers
 from ..util import tools
@@ -20,11 +20,14 @@ class ApplyGain(task.SingleTask):
     ----------
     inverse : bool, optional
         Apply the gains directly, or their inverse.
+    update_weight : bool, optional
+        Scale the weight array with the updated gains.
     smoothing_length : float, optional
         Smooth the gain timestream across the given number of seconds.
     """
 
     inverse = config.Property(proptype=bool, default=True)
+    update_weight = config.Property(proptype=bool, default=False)
     smoothing_length = config.Property(proptype=float, default=None)
 
     def process(self, tstream, gain):
@@ -87,12 +90,27 @@ class ApplyGain(task.SingleTask):
         # Regularise any crazy entries
         gain_arr = np.nan_to_num(gain_arr)
 
-        # Invert the gains if needed
-        if self.inverse:
-            gain_arr = tools.invert_no_zero(gain_arr)
+        # Invert the gains as we need both the gains and the inverse to update
+        # the visibilities and the weights
+        inverse_gain_arr = tools.invert_no_zero(gain_arr)
 
         # Apply gains to visibility matrix
-        tools.apply_gain(tstream.vis[:], gain_arr, out=tstream.vis[:])
+        if mpiutil.rank0:
+            print "Applying inverse gain." if self.inverse else "Applying gain."
+        gvis = inverse_gain_arr if self.inverse else gain_arr
+        tools.apply_gain(tstream.vis[:], gvis, out=tstream.vis[:])
+
+        # Apply gains to the weights
+        if self.update_weight:
+            if mpiutil.rank0:
+                print "Applying gain to weight."
+            gweight = np.abs(gain_arr if self.inverse else inverse_gain_arr)**2
+            tools.apply_gain(tstream.weight[:], gweight, out=tstream.weight[:])
+
+        # Update units if thet were specified
+        convert_units_to = gain.gain.attrs.get('convert_units_to')
+        if convert_units_to is not None:
+            tstream.vis.attrs['units'] = convert_units_to
 
         # Modify the weight array according to the gain weights
         if weight_arr is not None:

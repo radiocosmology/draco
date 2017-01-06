@@ -13,10 +13,11 @@ Tasks
     MModeTransform
 """
 import numpy as np
-from caput import mpiarray, config, tod
+from caput import mpiarray, config
 
 from ..core import containers, task
 from ..util import tools
+
 
 class FrequencyRebin(task.SingleTask):
     """Rebin neighbouring frequency channels.
@@ -62,19 +63,10 @@ class FrequencyRebin(task.SingleTask):
         freq_map['width'] = fw
 
         # Create new container for rebinned stream
-        if isinstance(ss, containers.SiderealStream):
-            sb = containers.SiderealStream(freq=freq_map, axes_from=ss)
-        elif isinstance(ss, tod.TOData):
-            # This clause should catch both TimeStream and andata.CorrData instances.
-            sb = containers.TimeStream(freq=freq_map, axes_from=ss)
-        else:
-            raise RuntimeError("I don't know how to deal with data type %s" % ss.__class__.__name__)
+        sb = containers.empty_like(ss, freq=freq_map)
 
         # Get all frequencies onto same node
         sb.redistribute(['time', 'ra'])
-
-        # Copy over the tag attribute
-        sb.attrs['tag'] = ss.attrs['tag']
 
         # Rebin the arrays, do this with a loop to save memory
         for fi in range(len(ss.freq)):
@@ -139,7 +131,7 @@ class CollateProducts(task.SingleTask):
 
         # Figure the mapping between inputs for the beam transfers and the file
         try:
-            bt_keys = self.telescope.feeds
+            bt_keys = self.telescope.input_index
         except AttributeError:
             bt_keys = np.arange(self.telescope.nfeed)
 
@@ -213,15 +205,25 @@ class CollateProducts(task.SingleTask):
 
 
 class SelectFreq(task.SingleTask):
-    """Select a subset of frequencies from the data.
+    """Select a subset of frequencies from a container.
 
     Attributes
     ----------
-    frequencies : list
-        List of frequency indices.
+    freq_physical : list
+        List of physical frequencies in MHz.
+        Given first priority.
+    channel_range : list
+        Range of frequency channel indices, either
+        [start, stop, step], [start, stop], or [stop]
+        is acceptable.  Given second priority.
+    channel_index : list
+        List of frequency channel indices.
+        Given third priority.
     """
 
-    frequencies = config.Property(proptype=list)
+    freq_physical = config.Property(proptype=list, default=[])
+    channel_range = config.Property(proptype=list, default=[])
+    channel_index = config.Property(proptype=list, default=[])
 
     def process(self, data):
         """Selet a subset of the frequencies.
@@ -237,18 +239,57 @@ class SelectFreq(task.SingleTask):
             New container with trimmed frequencies.
         """
 
-        freq_map = data.index_map['freq'][self.frequencies]
+        # Set up frequency selection.
+        freq_map = data.index_map['freq']
+
+        # Construct the frequency channel selection
+        if self.freq_physical:
+            newindex = sorted(set([np.argmin(np.abs(freq_map['centre'] - freq)) for freq in self.freq_physical]))
+
+        elif self.channel_range and (len(self.channel_range) <= 3):
+            newindex = slice(*self.channel_range)
+
+        elif self.channel_index:
+            newindex = self.channel_index
+
+        else:
+            ValueError("Must specify either freq_physical, channel_range, or channel_index.")
+
+        freq_map = freq_map[newindex]
+
+        # Destribute input container over ra or time.
         data.redistribute(['ra', 'time'])
 
-        newdata = data.__class__(freq=freq_map, axes_from=data, attrs_from=data)
+        # Create new container with subset of frequencies.
+        newdata = containers.empty_like(data, freq=freq_map)
+
+        # Redistribute new container over ra or time.
         newdata.redistribute(['ra', 'time'])
 
-        for name, dset in data.datasets.items():
+        # Copy over datasets. If the dataset has a frequency axis,
+        # then we only copy over the subset.
+        if isinstance(data, containers.ContainerBase):
 
-            if 'freq' in dset.attrs['axis']:
-                newdata.datasets[name][:] = data.datasets[name][self.frequencies, ...]
-            else:
-                newdata.datasets[name][:] = data.datasets[name][:]
+            for name, dset in data.datasets.iteritems():
+
+                if name not in newdata.datasets:
+                    newdata.add_dataset(name)
+
+                if 'freq' in dset.attrs['axis']:
+                    slc = [slice(None)] * len(dset.shape)
+                    slc[list(dset.attrs['axis']).index('freq')] = newindex
+                    newdata.datasets[name][:] = dset[slc]
+                else:
+                    newdata.datasets[name][:] = dset[:]
+
+        else:
+            newdata.vis[:] = data.vis[newindex, :, :]
+            newdata.weight[:] = data.weight[newindex, :, :]
+            newdata.gain[:] = data.gain[newindex, :, :]
+
+        # Switch back to frequency distribution
+        data.redistribute('freq')
+        newdata.redistribute('freq')
 
         return newdata
 
