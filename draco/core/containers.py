@@ -603,3 +603,45 @@ class RingMap(ContainerBase):
     @property
     def map(self):
         return self.datasets['map']
+
+class BeamPerturbation(TODContainer):
+    """Container for holding beam perturbation values.
+    """
+
+    _axes = ('freq', 'input', 'time')
+
+    _dataset_spec = {
+        'gain': {
+            'axes': ['freq', 'input', 'time'],
+            'dtype': np.complex128,
+            'initialise': True,
+            'distributed': True,
+            'distributed_axis': 'freq'
+        },
+        'weight': {
+            'axes': ['freq', 'time'],
+            'dtype': np.float64,
+            'initialise': False,
+            'distributed': True,
+            'distributed_axis': 'freq'
+        }
+    }
+
+    @property
+    def gain(self):
+        return self.datasets['pert']
+
+    @property
+    def weight(self):
+        try:
+            return self.datasets['weight']
+        except KeyError:
+            return None
+
+    @property
+    def freq(self):
+        return self.index_map['freq']
+
+    @property
+    def input(self):
+        return self.index_map['input']
