@@ -95,15 +95,13 @@ class ApplyGain(task.SingleTask):
         inverse_gain_arr = tools.invert_no_zero(gain_arr)
 
         # Apply gains to visibility matrix
-        if mpiutil.rank0:
-            print "Applying inverse gain." if self.inverse else "Applying gain."
+        self.log.info("Applying inverse gain." if self.inverse else "Applying gain.")
         gvis = inverse_gain_arr if self.inverse else gain_arr
         tools.apply_gain(tstream.vis[:], gvis, out=tstream.vis[:])
 
         # Apply gains to the weights
         if self.update_weight:
-            if mpiutil.rank0:
-                print "Applying gain to weight."
+            self.log.info("Applying gain to weight.")
             gweight = np.abs(gain_arr if self.inverse else inverse_gain_arr)**2
             tools.apply_gain(tstream.weight[:], gweight, out=tstream.weight[:])
 

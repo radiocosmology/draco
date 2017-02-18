@@ -14,8 +14,204 @@ import os
 
 from caput import pipeline, config
 
+import logging
 
-class SingleTask(pipeline.TaskBase, pipeline.BasicContMixin):
+
+class MPILogFilter(logging.Filter):
+    """Filter log entries by MPI rank.
+
+    Also this will optionally add MPI rank information, and add an elapsed time
+    entry.
+
+    Parameters
+    ----------
+    add_mpi_info : boolean, optional
+        Add MPI rank/size info to log records that don't already have it.
+    level_rank0 : int
+        Log level for messages from rank=0.
+    level_all : int
+        Log level for messages from all other ranks.
+    """
+
+    def __init__(self, add_mpi_info=True, level_rank0=logging.INFO,
+                 level_all=logging.WARN):
+
+        from mpi4py import MPI
+
+        self.add_mpi_info = add_mpi_info
+
+        self.level_rank0 = level_rank0
+        self.level_all = level_all
+
+        self.comm = MPI.COMM_WORLD
+
+    def filter(self, record):
+
+        # Add MPI info if desired
+        try:
+            record.mpi_rank
+        except AttributeError:
+            if self.add_mpi_info:
+                record.mpi_rank = self.comm.rank
+                record.mpi_size = self.comm.size
+
+        # Add a new field with the elapsed time in seconds (as a float)
+        record.elapsedTime = record.relativeCreated * 1e-3
+
+        # Return whether we should filter the record or not.
+        return ((record.mpi_rank == 0 and record.levelno >= self.level_rank0) or
+                (record.mpi_rank > 0 and record.levelno >= self.level_all))
+
+
+def _log_level(x):
+    """Interpret the input as a logging level.
+
+    Parameters
+    ----------
+    x : int or str
+        Explicit integer logging level or one of 'DEBUG', 'INFO', 'WARN',
+        'ERROR' or 'CRITICAL'.
+
+    Returns
+    -------
+    level : int
+    """
+
+    level_dict = {
+        'DEBUG': logging.DEBUG,
+        'INFO': logging.INFO,
+        'WARN': logging.WARN,
+        'ERROR': logging.ERROR,
+        'CRITICAL': logging.CRITICAL
+    }
+
+    if isinstance(x, int):
+        return x
+    elif isinstance(x, str) and x in level_dict:
+        return level_dict[x.upper()]
+    else:
+        raise ValueError('Logging level %s not understood' % repr(x))
+
+
+class SetMPILogging(pipeline.TaskBase):
+    """A task used to configure MPI aware logging.
+
+    Attributes
+    ----------
+    level_rank0, level_all : int or str
+        Log level for rank=0, and other ranks respectively.
+    """
+
+    level_rank0 = config.Property(proptype=_log_level, default=logging.INFO)
+    level_all = config.Property(proptype=_log_level, default=logging.WARN)
+
+    def __init__(self):
+
+        from mpi4py import MPI
+        import math
+
+        logging.captureWarnings(True)
+
+        rank_length = int(math.log10(MPI.COMM_WORLD.size)) + 1
+
+        mpi_fmt = "[MPI %%(mpi_rank)%id/%%(mpi_size)%id]" % (rank_length, rank_length)
+
+        root_logger = logging.getLogger()
+        root_logger.setLevel(logging.DEBUG)
+
+        filt = MPILogFilter()
+
+        # create console handler and set level to debug
+        ch = root_logger.handlers[0]
+        ch.setLevel(logging.DEBUG)
+        ch.addFilter(filt)
+
+        formatter = logging.Formatter(
+            "%(elapsedTime)8.1fs " + mpi_fmt +
+            " - %(levelname)-8s %(name)s: %(message)s"
+        )
+
+        ch.setFormatter(formatter)
+
+
+class LoggedTask(pipeline.TaskBase):
+    """A task with logger support.
+    """
+
+    log_level = config.Property(proptype=_log_level, default=None)
+
+    def __init__(self):
+
+        # Get the logger for this task
+        self._log = logging.getLogger("%s.%s" %
+                                      (__name__, self.__class__.__name__))
+
+        # Set the log level for this task if specified
+        if self.log_level is not None:
+            self.log.setLevel(self.log_level)
+
+    @property
+    def log(self):
+        """The logger object for this task.
+        """
+        return self._log
+
+
+class MPITask(pipeline.TaskBase):
+    """Base class for MPI using tasks. Just ensures that the task gets a `comm`
+    attribute.
+    """
+
+    comm = None
+
+    def __init__(self):
+
+        from mpi4py import MPI
+
+        # Set default communicator
+        self.comm = MPI.COMM_WORLD
+
+
+class _AddRankLogAdapter(logging.LoggerAdapter):
+    """Add the rank of the logging process to a log message.
+
+    Attributes
+    ----------
+    calling_obj : object
+        An object with a `comm` property that will be queried for the rank.
+    """
+
+    calling_obj = None
+
+    def process(self, msg, kwargs):
+
+        if 'extra' not in kwargs:
+            kwargs['extra'] = {}
+
+        kwargs['extra']['mpi_rank'] = self.calling_obj.comm.rank
+        kwargs['extra']['mpi_size'] = self.calling_obj.comm.size
+
+        return msg, kwargs
+
+
+class MPILoggedTask(MPITask, LoggedTask):
+    """A task base that has MPI aware logging.
+    """
+
+    def __init__(self):
+
+        # Initialise the base classes
+        MPITask.__init__(self)
+        LoggedTask.__init__(self)
+
+        # Replace the logger with a LogAdapter instance that adds MPI process
+        # information
+        logadapter = _AddRankLogAdapter(self._log, None)
+        logadapter.calling_obj = self
+        self._log = logadapter
+
+
+class SingleTask(MPILoggedTask, pipeline.BasicContMixin):
     """Process a task with at most one input and output.
 
     Both input and output are expected to be :class:`memh5.BasicCont` objects.
@@ -66,6 +262,8 @@ class SingleTask(pipeline.TaskBase, pipeline.BasicContMixin):
     def __init__(self):
         """Checks inputs and outputs and stuff."""
 
+        super(SingleTask, self).__init__()
+
         import inspect
 
         # Inspect the `process` method to see how many arguments it takes.
@@ -85,7 +283,9 @@ class SingleTask(pipeline.TaskBase, pipeline.BasicContMixin):
     def next(self, *input):
         """Should not need to override. Implement `process` instead."""
 
-        print "Starting next for task %s" % self.__class__.__name__
+        self.log.info("Starting next for task %s" % self.__class__.__name__)
+
+        self.comm.Barrier()
 
         # This should only be called once.
         try:
@@ -117,7 +317,7 @@ class SingleTask(pipeline.TaskBase, pipeline.BasicContMixin):
         # Increment internal counter
         self._count = self._count + 1
 
-        print "Leaving next for task %s" % self.__class__.__name__
+        self.log.info("Leaving next for task %s" % self.__class__.__name__)
 
         # Return the output for the next task
         return output
@@ -125,7 +325,7 @@ class SingleTask(pipeline.TaskBase, pipeline.BasicContMixin):
     def finish(self):
         """Should not need to override. Implement `process_finish` instead."""
 
-        print "Starting finish for task %s" % self.__class__.__name__
+        self.log.info("Starting finish for task %s" % self.__class__.__name__)
 
         try:
             output = self.process_finish()
@@ -133,12 +333,12 @@ class SingleTask(pipeline.TaskBase, pipeline.BasicContMixin):
             # Write the output if needed
             self._save_output(output)
 
-            print "Leaving finish for task %s" % self.__class__.__name__
+            self.log.info("Leaving finish for task %s" % self.__class__.__name__)
 
             return output
 
         except AttributeError:
-            print "No finish for task %s" % self.__class__.__name__
+            self.log.info("No finish for task %s" % self.__class__.__name__)
             pass
 
     def _save_output(self, output):
