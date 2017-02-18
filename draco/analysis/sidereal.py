@@ -256,6 +256,7 @@ class SiderealStacker(task.SingleTask):
     """
 
     stack = None
+    lsd_list = None
 
     def process(self, sdata):
         """Stack up sidereal days.
@@ -268,13 +269,28 @@ class SiderealStacker(task.SingleTask):
 
         sdata.redistribute('freq')
 
+        # Get the LSD label out of the data (resort to using a CSD if it's
+        # present). If there's no label just use a place holder and stack
+        # anyway.
+        if 'lsd' in sdata.attrs:
+            input_lsd = sdata.attrs['lsd']
+        elif 'csd' in sdata.attrs:
+            input_lsd = sdata.attrs['csd']
+        else:
+            input_lsd = -1
+
+        input_lsd = _ensure_list(input_lsd)
+
+
         if self.stack is None:
 
-            self.stack = containers.SiderealStream(axes_from=sdata)
+            self.stack = containers.empty_like(sdata)
             self.stack.redistribute('freq')
 
-            self.stack.vis[:] = (sdata.vis[:] * sdata.weight[:])
+            self.stack.vis[:] = sdata.vis[:] * sdata.weight[:]
             self.stack.weight[:] = sdata.weight[:]
+
+            self.lsd_list = input_lsd
 
             if mpiutil.rank0:
                 print "Starting stack with LSD:%i" % sdata.attrs['lsd']
@@ -290,6 +306,9 @@ class SiderealStacker(task.SingleTask):
         self.stack.vis[:] += (sdata.vis[:] * sdata.weight[:])
         self.stack.weight[:] += sdata.weight[:]
 
+        self.lsd_list += input_lsd
+
+
     def process_finish(self):
         """Construct and emit sidereal stack.
 
@@ -300,9 +319,20 @@ class SiderealStacker(task.SingleTask):
         """
 
         self.stack.attrs['tag'] = 'stack'
+        self.stack.attrs['lsd'] = np.array(self.lsd_list)
 
         self.stack.vis[:] = np.where(self.stack.weight[:] == 0,
                                      0.0,
                                      self.stack.vis[:] / self.stack.weight[:])
 
         return self.stack
+
+
+def _ensure_list(x):
+
+    if hasattr(x, '__iter__'):
+        y = [xx for xx in x]
+    else:
+        y = [x]
+
+    return y

@@ -22,6 +22,18 @@ Container Base Classes
 
     ContainerBase
     TODContainer
+
+Helper Routines
+---------------
+
+These routines are designed to be replaced by other packages trying to insert
+their own custom container types.
+
+.. autosummary::
+    :toctree:
+
+    empty_like
+    empty_timestream
 """
 
 import numpy as np
@@ -60,8 +72,8 @@ class ContainerBase(memh5.BasicCont):
         Another container to copy axis definitions from. Must be supplied as
         keyword argument.
     attrs_from : `memh5.BasicCont`, optional
-        Another container to copy attributes from.  Must be supplied as keyword
-        argument.
+        Another container to copy attributes from. Must be supplied as keyword
+        argument. This applies to attributes in default datasets too.
     kwargs : dict
         Should contain entries for all other axes.
     """
@@ -87,10 +99,6 @@ class ContainerBase(memh5.BasicCont):
         # behaviour is needed to support tod.concatenate
         if len(args) or 'data_group' in kwargs:
             return
-
-        # Copy over attributes
-        if attrs_from is not None:
-            memh5.copyattrs(attrs_from.attrs, self.attrs)
 
         # Create axis entries
         for axis in self._axes:
@@ -120,6 +128,25 @@ class ContainerBase(memh5.BasicCont):
         for name, spec in self._dataset_spec.items():
             if 'initialise' in spec and spec['initialise']:
                 self.add_dataset(name)
+
+        # Copy over attributes
+        if attrs_from is not None:
+
+            # Copy attributes from container root
+            memh5.copyattrs(attrs_from.attrs, self.attrs)
+
+            # Copy attributes over from any common datasets
+            for name in self._dataset_spec.keys():
+                if name in self.datasets and name in attrs_from.datasets:
+                    memh5.copyattrs(attrs_from.datasets[name].attrs,
+                                    self.datasets[name].attrs)
+
+            # Make sure that the __memh5_subclass attribute is accurate
+            clspath = self.__class__.__module__ + '.' + self.__class__.__name__
+            clsattr = self.attrs.get('__memh5_subclass', None)
+            if clsattr and (clsattr != clspath):
+                self.attrs['__memh5_subclass'] = clspath
+
 
     def add_dataset(self, name):
         """Create an empty dataset.
@@ -563,43 +590,43 @@ class StaticGainData(ContainerBase):
         return self.index_map['input']
 
 
-class RingMap(ContainerBase):
-    """Container for holding multifrequency ring maps.
-
-    The maps are packed in format `[freq, pol, ra, EW beam, elevation]` where
-    the polarisations are Stokes I, Q, U and V.
+def empty_like(obj, **kwargs):
+    """Create an empty container like `obj`.
 
     Parameters
     ----------
-    nside : int
-        The nside of the Healpix maps.
-    polarisation : bool, optional
-        If `True` all Stokes parameters are stored, if `False` only Stokes I is
-        stored.
+    obj : ContainerBase
+        Container to base this one off.
+    kwargs : optional
+        Optional definitions of specific axes we want to override. Works in the
+        same way as the `ContainerBase` constructor, though `axes_from=obj` and
+        `attrs_from=obj` are implied.
+
+    Returns
+    -------
+    newobj : container.ContainerBase
+        New data container.
     """
 
-    _axes = ('freq', 'pol', 'ra', 'beam', 'el')
+    if isinstance(obj, ContainerBase):
+        return obj.__class__(axes_from=obj, attrs_from=obj, **kwargs)
+    else:
+        raise RuntimeError("I don't know how to deal with data type %s" % obj.__class__.__name__)
 
-    _dataset_spec = {
-        'map': {
-            'axes': ['freq', 'pol', 'ra', 'beam', 'el'],
-            'dtype': np.float64,
-            'initialise': True,
-            'distributed': True,
-            'distributed_axis': 'freq'
-        }
-    }
 
-    def __init__(self, polarisation=True, *args, **kwargs):
+def empty_timestream(**kwargs):
+    """Create a new timestream container.
 
-        kwargs['pol'] = np.array(['I', 'Q', 'U', 'V']) if polarisation else np.array(['I'])
+    This indirect call exists so it can be replaced to return custom timestream
+    types.
 
-        super(RingMap, self).__init__(*args, **kwargs)
+    Parameters
+    ----------
+    kwargs : optional
+        Arguments to pass to the timestream constructor.
 
-    @property
-    def freq(self):
-        return self.index_map['freq']
-
-    @property
-    def map(self):
-        return self.datasets['map']
+    Returns
+    -------
+    ts : TimeStream
+    """
+    return TimeStream(**kwargs)
