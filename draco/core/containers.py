@@ -141,6 +141,12 @@ class ContainerBase(memh5.BasicCont):
                     memh5.copyattrs(attrs_from.datasets[name].attrs,
                                     self.datasets[name].attrs)
 
+            # Make sure that the __memh5_subclass attribute is accurate
+            clspath = self.__class__.__module__ + '.' + self.__class__.__name__
+            clsattr = self.attrs.get('__memh5_subclass', None)
+            if clsattr and (clsattr != clspath):
+                self.attrs['__memh5_subclass'] = clspath
+
 
     def add_dataset(self, name):
         """Create an empty dataset.

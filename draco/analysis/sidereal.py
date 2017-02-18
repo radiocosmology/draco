@@ -326,3 +326,13 @@ class SiderealStacker(task.SingleTask):
                                      self.stack.vis[:] / self.stack.weight[:])
 
         return self.stack
+
+
+def _ensure_list(x):
+
+    if hasattr(x, '__iter__'):
+        y = [xx for xx in x]
+    else:
+        y = [x]
+
+    return y
