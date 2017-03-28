@@ -428,15 +428,8 @@ class PointSourceWienerMapMaker(BaseMapMaker):
                 a = alm[fi, ..., mi].view(np.ndarray)
                 Ni = m_weight[mi, :, fi].view(np.ndarray)
 
-                if mpiutil.rank0:
-                    print eph.datetime.now(), "DEBUG: Inside loop getting diagonal piece: fi, mi = ", fi, mi
-
                 #Get the diagonal (in m) piece of the inverse
                 a[:], Ainv, ps_amps_i = self._solve_m_diagonal(m, mi, fi, bt_freq[fi], v, Ni)
-#                a[:], Ainv = self._solve_m_diagonal(m, mi, fi, bt_freq[fi], v, Ni)
-
-                if mpiutil.rank0:
-                    print eph.datetime.now(), "DEBUG: Inside loop getting correction: fi, mi = ", fi, mi
 
                 #Get the ingredients for the correction in point-source space
                 M_pss_i, vis_pss_i = self._solve_m_correction(Ainv, m, mi, fi, v, Ni)
@@ -444,9 +437,6 @@ class PointSourceWienerMapMaker(BaseMapMaker):
                 vis_pss[fi] = vis_pss[fi] + vis_pss_i
                 M_pss[fi] = M_pss[fi] + M_pss_i
                 ps_amps[fi] = ps_amps[fi] + ps_amps_i
-
-        if mpiutil.rank0:
-            print eph.datetime.now(), "DEBUG: Before redistribute."
 
         for fi in range(nfreq):
             #invert the point-source space covariance
@@ -466,7 +456,7 @@ class PointSourceWienerMapMaker(BaseMapMaker):
                 corr = self._spread_ps_results(vis_pss[fi], m, mi, fi, Ni)
 
                 acorr, Ainv, pscorr = self._solve_m_diagonal(m, mi, fi, bt_freq[fi], corr, Ni, prewhiten=False)
-#                acorr, Ainv = self._solve_m_diagonal(m, mi, fi, bt_freq[fi], corr, Ni, prewhiten=False)
+
                 a[:] = a[:] - acorr
                 ps_amps[fi] = ps_amps[fi] - pscorr
 
