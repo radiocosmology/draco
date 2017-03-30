@@ -42,6 +42,8 @@ class SiderealGrouper(task.SingleTask):
     padding = config.Property(proptype=float, default=0.005)
 
     def __init__(self):
+        super(SiderealGrouper, self).__init__()
+
         self._timestream_list = []
         self._current_lsd = None
 
@@ -84,15 +86,13 @@ class SiderealGrouper(task.SingleTask):
         if self._current_lsd == lsd_start:
             self._timestream_list.append(tstream)
 
-        if tstream.vis.comm.rank == 0:
-            print "Adding file into group for LSD:%i" % lsd_start
+        self.log.info("Adding file into group for LSD:%i", lsd_start)
 
         # If this file ends during a later LSD then we need to process the
         # current list and restart the system
         if self._current_lsd < lsd_end:
 
-            if tstream.vis.comm.rank == 0:
-                print "Concatenating files for LSD:%i" % lsd_start
+            self.log.info("Concatenating files for LSD:%i", lsd_start)
 
             # Combine timestreams into a single container for the whole day this
             # could get returned as None if there wasn't enough data
@@ -135,8 +135,8 @@ class SiderealGrouper(task.SingleTask):
         if day_length < 0.1:
             return None
 
-        if self._timestream_list[0].vis.comm.rank == 0:
-            print "Constructing LSD:%i [%i files]" % (lsd, len(self._timestream_list))
+        self.log.info("Constructing LSD:%i [%i files]",
+                      lsd, len(self._timestream_list))
 
         # Construct the combined timestream
         ts = tod.concatenate(self._timestream_list)
@@ -192,8 +192,7 @@ class SiderealRegridder(task.SingleTask):
             The regularly gridded sidereal timestream.
         """
 
-        if mpiutil.rank0:
-            print "Regridding LSD:%i" % data.attrs['lsd']
+        self.log.info("Regridding LSD:%i", data.attrs['lsd'])
 
         # Redistribute if needed too
         data.redistribute('freq')
@@ -281,7 +280,6 @@ class SiderealStacker(task.SingleTask):
 
         input_lsd = _ensure_list(input_lsd)
 
-
         if self.stack is None:
 
             self.stack = containers.empty_like(sdata)
@@ -292,13 +290,11 @@ class SiderealStacker(task.SingleTask):
 
             self.lsd_list = input_lsd
 
-            if mpiutil.rank0:
-                print "Starting stack with LSD:%i" % sdata.attrs['lsd']
+            self.log.info("Starting stack with LSD:%i", sdata.attrs['lsd'])
 
             return
 
-        if mpiutil.rank0:
-            print "Adding LSD:%i to stack" % sdata.attrs['lsd']
+        self.log.info("Adding LSD:%i to stack", sdata.attrs['lsd'])
 
         # note: Eventually we should fix up gains
 
@@ -307,7 +303,6 @@ class SiderealStacker(task.SingleTask):
         self.stack.weight[:] += sdata.weight[:]
 
         self.lsd_list += input_lsd
-
 
     def process_finish(self):
         """Construct and emit sidereal stack.

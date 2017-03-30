@@ -199,7 +199,7 @@ class LoadFilesFromParams(pipeline.TaskBase):
         # Fetch and remove the first item in the list
         file_ = self.files.pop(0)
 
-        print "Loading file %s" % file_
+        self.log.info("Loading file %s" % file_)
 
         cont = memh5.BasicCont.from_file(file_, distributed=True)
 

@@ -10,6 +10,9 @@ cluster:
 
 pipeline:
     tasks:
+
+        -   type:       draco.core.task.SetMPILogging
+
         -   type:       draco.core.io.LoadBeamTransfer
             out:        [tel, bt]
             params:
