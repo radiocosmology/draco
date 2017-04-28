@@ -36,6 +36,8 @@ their own custom container types.
     empty_timestream
 """
 
+import inspect
+
 import numpy as np
 
 from caput import memh5, tod
@@ -46,25 +48,7 @@ class ContainerBase(memh5.BasicCont):
 
     This class is designed to do much of the work of setting up pipeline
     containers. It should be derived from, and two variables set `_axes` and
-    `_dataset_spec`.
-
-    The variable `_axes` should be a tuple containing the names of axes that
-    datasets in this container will use.
-
-    The variable `_dataset_spec` should define the datasets. It's a dictionary
-    with the name of the dataset as key. Each entry should be another
-    dictionary, the entry 'axes' is mandatory and should be a list of the axes
-    the dataset has (these should correspond to entries in `_axes`), as is
-    `dtype` which should be a datatype understood by numpy. Other possible
-    entries are:
-
-    - `initialise` : if set to `True` the dataset will be created as the container is initialised.
-
-    - `distributed` : the dataset will be distributed if the entry is `True`, if
-      `False` it won't be, and if not set it will be distributed if the
-      container is set to be.
-
-    - `distributed_axis` : the axis to distribute over. Should be a name given in the `axes` entry.
+    `_dataset_spec`. See the `Notes`_ section for details.
 
     Parameters
     ----------
@@ -76,6 +60,33 @@ class ContainerBase(memh5.BasicCont):
         argument. This applies to attributes in default datasets too.
     kwargs : dict
         Should contain entries for all other axes.
+
+    Notes
+    -----
+
+    Inheritance from other `ContainerBase` subclasses should work as expected,
+    with datasets defined in super classes appearing as expected, and being
+    overriden where they are redefined in the derived class.
+
+    The variable `_axes` should be a tuple containing the names of axes that
+    datasets in this container will use.
+
+    The variable `_dataset_spec` should define the datasets. It's a dictionary
+    with the name of the dataset as key. Each entry should be another
+    dictionary, the entry 'axes' is mandatory and should be a list of the axes
+    the dataset has (these should correspond to entries in `_axes`), as is
+    `dtype` which should be a datatype understood by numpy. Other possible
+    entries are:
+
+    - `initialise` : if set to `True` the dataset will be created as the
+      container is initialised.
+
+    - `distributed` : the dataset will be distributed if the entry is `True`, if
+      `False` it won't be, and if not set it will be distributed if the
+      container is set to be.
+
+    - `distributed_axis` : the axis to distribute over. Should be a name given
+      in the `axes` entry.
     """
 
     _axes = ()
@@ -101,7 +112,7 @@ class ContainerBase(memh5.BasicCont):
             return
 
         # Create axis entries
-        for axis in self._axes:
+        for axis in self.axes:
 
             axis_map = None
 
@@ -125,7 +136,7 @@ class ContainerBase(memh5.BasicCont):
                 raise RuntimeError('No definition of axis %s supplied.' % axis)
 
         # Iterate over datasets and initialise any that specify it
-        for name, spec in self._dataset_spec.items():
+        for name, spec in self.dataset_spec.items():
             if 'initialise' in spec and spec['initialise']:
                 self.add_dataset(name)
 
@@ -136,7 +147,7 @@ class ContainerBase(memh5.BasicCont):
             memh5.copyattrs(attrs_from.attrs, self.attrs)
 
             # Copy attributes over from any common datasets
-            for name in self._dataset_spec.keys():
+            for name in self.dataset_spec.keys():
                 if name in self.datasets and name in attrs_from.datasets:
                     memh5.copyattrs(attrs_from.datasets[name].attrs,
                                     self.datasets[name].attrs)
@@ -146,7 +157,6 @@ class ContainerBase(memh5.BasicCont):
             clsattr = self.attrs.get('__memh5_subclass', None)
             if clsattr and (clsattr != clspath):
                 self.attrs['__memh5_subclass'] = clspath
-
 
     def add_dataset(self, name):
         """Create an empty dataset.
@@ -164,10 +174,10 @@ class ContainerBase(memh5.BasicCont):
         """
 
         # Dataset must be specified
-        if name not in self._dataset_spec:
+        if name not in self.dataset_spec:
             raise RuntimeError('Dataset name not known.')
 
-        dspec = self._dataset_spec[name]
+        dspec = self.dataset_spec[name]
 
         # Fetch dataset properties
         axes = dspec['axes']
@@ -219,6 +229,179 @@ class ContainerBase(memh5.BasicCont):
             if not memh5.is_group(value):
                 out[name] = value
         return memh5.ro_dict(out)
+
+    @property
+    def dataset_spec(self):
+        """Return a copy of the fully resolved dataset specifiction as a
+        dictionary.
+        """
+
+        ddict = {}
+
+        # Iterate over the reversed MRO and look for _table_spec attributes
+        # which get added to a temporary dict. We go over the reversed MRO so
+        # that the `tdict.update` overrides tables in base classes.`
+        for cls in inspect.getmro(self.__class__)[::-1]:
+
+            try:
+                # NOTE: this is a little ugly as the following line will drop
+                # down to base classes if dataset_spec isn't present, and thus
+                # try and `update` with the same values again.
+                ddict.update(cls._dataset_spec)
+            except AttributeError:
+                pass
+
+        # Add in any _dataset_spec found on the instance
+        ddict.update(self.__dict__.get('_dataset_spec', {}))
+
+        return ddict
+
+    @property
+    def axes(self):
+        """Return the set of axes for this container..
+        """
+        axes = set()
+
+        # Iterate over the reversed MRO and look for _table_spec attributes
+        # which get added to a temporary dict. We go over the reversed MRO so
+        # that the `tdict.update` overrides tables in base classes.
+        for cls in inspect.getmro(self.__class__)[::-1]:
+
+            try:
+                axes |= set(cls._axes)
+            except AttributeError:
+                pass
+
+        # Add in any axes found on the instance
+        axes |= set(self.__dict__.get('_axes', []))
+
+        return tuple(axes)
+
+
+class TableBase(ContainerBase):
+    """A base class for containers holding tables of data.
+
+    Similar to the `ContainerBase` class, the container is defined through a
+    dictionary given as a `_table_spec` class attribute. The container may also
+    hold generic datasets by specifying `_dataset_spec` as with `ContainerBase`.
+    See `Notes`_ for details.
+
+    Parameters
+    ----------
+    axes_from : `memh5.BasicCont`, optional
+        Another container to copy axis definitions from. Must be supplied as
+        keyword argument.
+    attrs_from : `memh5.BasicCont`, optional
+        Another container to copy attributes from. Must be supplied as keyword
+        argument. This applies to attributes in default datasets too.
+    kwargs : dict
+        Should contain definitions for all other table axes.
+
+    Notes
+    -----
+
+    A `_table_spec` consists of a dictionary mapping table names into a
+    description of the table. That description is another dictionary containing
+    several entries.
+
+    - `columns` : the set of columns in the table. Given as a list of
+      `(name, dtype)` pairs.
+
+    - `axis` : an optional name for the rows of the table. This is automatically
+      generated as `'<tablename>_index'` if not explicitly set. This corresponds
+      to an `index_map` entry on the container.
+
+    - `initialise` : whether to create the table by default.
+
+    - `distributed` : whether the table is distributed, or common across all MPI ranks.
+
+    An example `_table_spec` entry is::
+
+        _table_spec = {
+            'quasars': {
+                'columns': [
+                    ['ra': np.float64],
+                    ['dec': np.float64],
+                    ['z': np.float64]
+                ],
+                'distributed': False,
+                'axis': 'quasar_id'
+            }
+            'quasar_mask': {
+                'columns': [
+                    ['mask', np.bool]
+                ],
+                'axis': 'quasar_id'
+            }
+        }
+    """
+
+    _table_spec = {}
+
+    def __init__(self, *args, **kwargs):
+
+        # Get the dataset specifiction for this class (not any base classes), or
+        # an empty dictionary if it does not exist. Do the same for the axes entry..
+        dspec = self.__class__.__dict__.get('_dataset_spec', {})
+        axes = self.__class__.__dict__.get('_axes', ())
+
+        # Iterate over all table_spec entries and construct dataset specifications for them.
+        for name, spec in self.table_spec.items():
+
+            # Get the specifieid axis or if not present create a unique one for
+            # this table entry
+            axis = spec.get('axis', name + '_index')
+
+            dtype = self._create_dtype(spec['columns'])
+
+            _dataset = {
+                'axes': [axis],
+                'dtype': dtype,
+                'initialise': spec.get('initialise', True),
+                'distributed': spec.get('distributed', False),
+                'distributed_axis': axis
+            }
+
+            dspec[name] = _dataset
+
+            if axis not in axes:
+                axes += (axis,)
+
+        self._dataset_spec = dspec
+        self._axes = axes
+
+        super(TableBase, self).__init__(*args, **kwargs)
+
+    def _create_dtype(self, columns):
+        """Take a dictionary of columns and turn into the
+        appropriate compound data type.
+        """
+
+        dt = []
+        for ci, (name, dtype) in enumerate(columns):
+            if not isinstance(name, str):
+                raise ValueError("Column %i is invalid" % ci)
+            dt.append((name, dtype))
+
+        return dt
+
+    @property
+    def table_spec(self):
+        """Return a copy of the fully resolved table specifiction as a
+        dictionary.
+        """
+        import inspect
+
+        tdict = {}
+
+        for cls in inspect.getmro(self.__class__)[::-1]:
+
+            try:
+                tdict.update(cls._table_spec)
+            except AttributeError:
+                pass
+
+        return tdict
 
 
 class TODContainer(ContainerBase, tod.TOData):
@@ -588,6 +771,40 @@ class StaticGainData(ContainerBase):
     @property
     def input(self):
         return self.index_map['input']
+
+
+class SourceCatalog(TableBase):
+    """A basic container for holding astronomical source catalogs.
+
+    Notes
+    -----
+    The `ra` and `dec` coordinates should be ICRS.
+    """
+
+    _table_spec = {
+        'position': {
+            'columns': [
+                ['ra', np.float64],
+                ['dec', np.float64]
+            ],
+            'axis': 'object_id'
+        }
+    }
+
+
+class SpectroscopicCatalog(SourceCatalog):
+    """A container for spectroscopic catalogs.
+    """
+
+    _table_spec = {
+        'redshift': {
+            'columns': [
+                ['z', np.float64],
+                ['z_error', np.float64]
+            ],
+            'axis': 'object_id'
+        }
+    }
 
 
 def empty_like(obj, **kwargs):
