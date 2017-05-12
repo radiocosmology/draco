@@ -606,20 +606,21 @@ class RingMap(ContainerBase):
 
 class BeamPerturbation(TODContainer):
     """Container for holding beam perturbation values.
+	(as created in draco.synthesis.expand_perturbed)
     """
 
-    _axes = ('freq', 'input', 'time')
+    _axes = ('freq', 'input')
 
     _dataset_spec = {
-        'gain': {
-            'axes': ['freq', 'input', 'time'],
+        'pert': {
+            'axes': ['freq', 'input'],
             'dtype': np.complex128,
             'initialise': True,
             'distributed': True,
             'distributed_axis': 'freq'
         },
         'weight': {
-            'axes': ['freq', 'time'],
+            'axes': ['freq'],
             'dtype': np.float64,
             'initialise': False,
             'distributed': True,
@@ -628,7 +629,7 @@ class BeamPerturbation(TODContainer):
     }
 
     @property
-    def gain(self):
+    def pert(self):
         return self.datasets['pert']
 
     @property
