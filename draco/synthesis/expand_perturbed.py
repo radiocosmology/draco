@@ -1,10 +1,13 @@
 
-"""Tasks for simulating sidereal and time stream data.
+"""Tasks for expanding sidereal stream data with perturbed beams.
 
-A typical pattern would be to turn a map into a
-:class:`containers.SiderealStream` with the :class:`SimulateSidereal` task, then
-expand any redundant products with :class:`ExpandProducts` and finally generate
-a set of time stream files with :class:`MakeTimeStream`.
+A typical pattern would be to turn a sidereal stream from the :class:`SimulateSidereal` task,
+then generate one or more non-zero perturbation values with the :class:`GeneratePerturbation`
+or :class:`GenerateSinglePerturbation` tasks then apply the perturbations and expand
+nominally redundant products to first order with :class:`ExpandPerturbedProducts`
+or to second order with :class:`ExpandPerturbedProducts2ndOrder`. Optionally, individual
+components of the expanded sidereal stream can be output via :class:`OutputPertStructure`.
+Then, the expanded stream can be passed on to make timestreams as in unperturbed sims.
 
 Tasks
 =====
@@ -12,9 +15,12 @@ Tasks
 .. autosummary::
     :toctree:
 
-    SimulateSidereal
-    ExpandProducts
-    MakeTimeStream
+    GeneratePerturbation
+    GenerateSinglePerturbation
+    ExpandPerturbedProducts
+    ExpandPerturbedProducts2ndOrder
+    OutputPertStructure
+
 """
 
 import numpy as np
@@ -34,7 +40,7 @@ class GeneratePerturbation(task.SingleTask):
     # Define multiplier value. This is usually set in the .yaml file used to run the pipeline.
     # The idea is it sets the overall size of the beam perturbations, allowing
     # us to ensure smaller values than the usual size of a numpy random number.
-    mult = config.Property(proptype=float, default=0.01)
+    mult = config.Property(proptype = float, default = 0.01)
     def setup(self,telescope):
         """Get a reference to the telescope class.
 
@@ -89,7 +95,74 @@ class GeneratePerturbation(task.SingleTask):
         return perturbation_list
 
 
+class GenerateSinglePerturbation(task.SingleTask):
+    """ Generate small, random number perturbation for just 1 input to send to the
+        ExpandPerturbedProducts task.
 
+        This is a bit limited in scope, but useful for getting an idea of where
+        the perturbation is showing up in later analyses.
+    """
+
+    # Define multiplier value. This is usually set in the .yaml file used to run the pipeline.
+    # The idea is it sets the overall size of the beam perturbations, allowing
+    # us to ensure smaller values than the usual size of a numpy random number.
+    pert_val = config.Property(proptype = float, default = 0.01)
+    pert_index = config.Property(proptype = float, default = 0)
+    def setup(self,telescope):
+        """Get a reference to the telescope class.
+
+        Parameters
+        -------------
+        tel : : class: `drift.core.TransitTelescope`
+            Telescope object.
+        """
+        self.telescope = telescope
+
+    def process(self, sstream, map_):
+        # Need to write container and add saving to container to this.
+        # Then will be ready to roll out in first form.
+        # Drop multiplier if that's not working
+        """ Generate perturbations for each feed.
+        """
+        tel = self.telescope
+
+        # Determine total number of inputs from sstream
+        ninput = len(sstream.input)
+        # Determine the number of inputs per perturbation.
+        ninputperpert = ninput / tel.npert
+
+        # There's a slight chance this is going to freak out for more than 1
+        # perturbation. If it does, we'll modify it.
+        pertlistlen = ninputperpert
+        #print "Pert List Len", pertlistlen
+
+        # Define frequency map for upcoming container.
+        freqmap = map_.index_map['freq'][:]
+
+        # Calculate random numbers to be perturbation values. Set the general size using input mult.
+        #perturbations = np.random.standard_normal(pertlistlen) * self.mult
+        # Do this only for communicator rank 0 (the first one) so that you don't
+        # have four independent sets of perturbations running around.
+        comm = sstream.comm
+        if comm.rank == 0:
+            # Set the perturbation matrix to be all zeros
+            perturbations = np.zeros(pertlistlen)
+            # Set just one entry (which you selected) to be the perturbation value you put in.
+            perturbations[pert_index] = self.pert_val
+        else:
+            perturbations = None
+
+        perturbations = comm.bcast(perturbations, root=0)
+        # Calculate the desired number of products
+        desired_prod = np.array([ (fi, fj) for fi in range(ninputperpert) for fj in range(fi, ninputperpert)])
+
+        # Define a BeamPerturbation container to hold the beam perturbations
+        perturbation_list = containers.BeamPerturbation(freq = freqmap, input = pertlistlen,
+                            distributed = True, prod = desired_prod, comm = map_.comm)
+        # Add beam perturbation values to container.
+        perturbation_list.pert[:] = perturbations
+
+        return perturbation_list
 
 class ExpandPerturbedProducts(task.SingleTask):
     """Un-wrap collated products to full triangle.
