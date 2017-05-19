@@ -78,7 +78,6 @@ def apply_gain(vis, gain, axis=1, out=None, prod_map=None):
     -------
     out : np.ndarray
         Visibility array with gains applied. Same shape as :obj:`vis`.
-
     """
 
     nprod = vis.shape[axis]
@@ -135,3 +134,42 @@ def invert_no_zero(x):
     """
     with np.errstate(divide='ignore', invalid='ignore'):
         return np.where(x == 0, 0.0, 1.0 / x)
+
+
+def extract_diagonal(utmat, axis=1):
+    """Extract the diagonal elements of an upper triangular array.
+
+    Parameters
+    ----------
+    utmat : np.ndarray[..., nprod, ...]
+        Upper triangular array.
+    axis : int, optional
+        Axis of array that is upper triangular.
+
+    Returns
+    -------
+    diag : np.ndarray[..., ninput, ...]
+        Diagonal of the array.
+    """
+
+    # Estimate nside from the array shape
+    nside = int((2 * utmat.shape[axis])**0.5)
+
+    # Check that this nside is correct
+    if utmat.shape[axis] != (nside * (nside + 1) / 2):
+        msg = ('Array length (%i) of axis %i does not correspond upper triangle\
+                of square matrix' % (utmat.shape[axis], axis))
+        raise RuntimeError(msg)
+
+    # Find indices of the diagonal
+    diag_ind = [cmap(ii, ii, nside) for ii in range(nside)]
+
+    # Construct slice objects representing the axes before and after the product axis
+    slice0 = (np.s_[:],) * axis
+    slice1 = (np.s_[:],) * (len(utmat.shape) - axis - 1)
+
+    # Extract wanted elements with a giant slice
+    sl = slice0 + (diag_ind,) + slice1
+    diag_array = utmat[sl]
+
+    return diag_array

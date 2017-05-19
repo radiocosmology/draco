@@ -773,6 +773,27 @@ class StaticGainData(ContainerBase):
         return self.index_map['input']
 
 
+class DelaySpectrum(ContainerBase):
+    """Container for a delay spectrum.
+    """
+
+    _axes = ('baseline', 'delay')
+
+    _dataset_spec = {
+        'spectrum': {
+            'axes': ['baseline', 'delay'],
+            'dtype': np.float64,
+            'initialise': True,
+            'distributed': True,
+            'distributed_axis': 'baseline'
+        }
+    }
+
+    @property
+    def spectrum(self):
+        return self.datasets['spectrum']
+
+
 class SourceCatalog(TableBase):
     """A basic container for holding astronomical source catalogs.
 

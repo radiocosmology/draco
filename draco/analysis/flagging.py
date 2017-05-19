@@ -11,12 +11,15 @@ Tasks
 
     DayMask
     MaskData
+    MaskBaselines
+    RadiometerWeight
 """
 import numpy as np
 
 from caput import config
 
-from ..core import task
+from ..core import task, containers
+from ..util import tools
 
 
 class DayMask(task.SingleTask):
@@ -144,3 +147,113 @@ class MaskData(task.SingleTask):
             mmodes.weight[1:, 1] = 0.0
 
         return mmodes
+
+
+class MaskBaselines(task.SingleTask):
+    """Mask out baselines from a dataset.
+
+    Attributes
+    ----------
+    mask_long_ns : float
+        Mask out baselines longer than a given distance in the N/S direction.
+    mask_short : float
+        Mask out baselines shorter than a given distance.
+    """
+
+    mask_long_ns = config.Property(proptype=float, default=None)
+    mask_short = config.Property(proptype=float, default=None)
+
+    def setup(self, telescope):
+        """Set the telescope model.
+
+        Parameters
+        ----------
+        telescope : TransitTelescope
+        """
+
+        self.telescope = telescope
+
+    def process(self, ss):
+        """Apply the mask to data.
+
+        Parameters
+        ----------
+        ss : SiderealStream or TimeStream
+            Data to mask. Applied in place.
+        """
+
+        ss.redistribute('freq')
+
+        baselines = self.telescope.baselines
+
+        if self.mask_long_ns is not None:
+            long_ns_mask = np.abs(baselines[:, 1]) < self.mask_long_ns
+            ss.weight[:] *= long_ns_mask[np.newaxis, :, np.newaxis]
+
+        if self.mask_short is not None:
+            short_mask = np.sum(baselines**2, axis=1) > self.mask_short
+            ss.weight[:] *= short_mask[np.newaxis, :, np.newaxis]
+
+        return ss
+
+
+class RadiometerWeight(task.SingleTask):
+    """Update vis_weight according to the radiometer equation:
+
+    .. math::
+
+        \text{weight}_{ij} = N_\text{samp} / V_{ii} V_{jj}
+
+    Attributes
+    ----------
+    replace : bool, optional
+        Replace any existing weights (default). If `False` then we multiply the
+        existing weights by the radiometer values.
+
+    """
+
+    replace = config.Property(proptype=bool, default=True)
+
+    def process(self, stream):
+        """Change the vis weight.
+
+        Parameters
+        ----------
+        stream : SiderealStream or TimeStream
+            Data to be weighted. This is done in place.
+
+        Returns
+        --------
+        stream : SiderealStream or TimeStream
+        """
+
+        from caput.time import STELLAR_S
+
+        # Redistribute over the frequency direction
+        stream.redistribute('freq')
+
+        ninput = len(stream.index_map['input'])
+        nprod = len(stream.index_map['prod'])
+
+        if nprod != (ninput * (ninput + 1) / 2):
+            raise RuntimeError('Must have a input stream with the full correlation triangle.')
+
+        freq_width = np.median(stream.index_map['freq']['width'])
+
+        if isinstance(stream, containers.SiderealStream):
+            RA_S = 240 * STELLAR_S  # SI seconds in 1 deg of RA change
+            int_time = np.median(np.abs(np.diff(stream.ra))) / RA_S
+        else:
+            int_time = np.median(np.abs(np.diff(stream.index_map['time'])))
+
+        if self.replace:
+            stream.weight[:] = 1.0
+
+        # Construct and set the correct weights in place
+        nsamp = (1e6 * freq_width * int_time)
+        autos = tools.extract_diagonal(stream.vis[:]).real
+        weight_fac = nsamp**0.5 / autos
+        tools.apply_gain(stream.weight[:], weight_fac, out=stream.weight[:])
+
+        # Return timestream with updated weights
+        return stream

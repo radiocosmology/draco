@@ -103,16 +103,15 @@ class CollateProducts(task.SingleTask):
     the timestream object.
     """
 
-    def setup(self, bt):
+    def setup(self, tel):
         """Set the BeamTransfer instance to use.
 
         Parameters
         ----------
-        bt : BeamTransfer
+        tel : TransitTelescope
         """
 
-        self.beamtransfer = bt
-        self.telescope = bt.telescope
+        self.telescope = tel
 
     def process(self, ss):
         """Select and reorder the products.
