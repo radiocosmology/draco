@@ -148,7 +148,7 @@ class GenerateSinglePerturbation(task.SingleTask):
             # Set the perturbation matrix to be all zeros
             perturbations = np.zeros(pertlistlen)
             # Set just one entry (which you selected) to be the perturbation value you put in.
-            perturbations[pert_index] = self.pert_val
+            perturbations[self.pert_index] = self.pert_val
         else:
             perturbations = None
 
