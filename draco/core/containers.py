@@ -621,14 +621,8 @@ class MModes(ContainerBase):
 
     Parameters
     ----------
-    mmax : integer
-        Number of samples in RA.
-    nfreq : integer
-        Number of frequencies.
-    ncorr : integer
-        Number of correlation products.
-    comm : MPI.Comm
-        MPI communicator to distribute over.
+    mmax : integer, optional
+        Largest m to be held.
 
     Attributes
     ----------
@@ -667,10 +661,6 @@ class MModes(ContainerBase):
         return self.datasets['vis_weight']
 
     @property
-    def ra(self):
-        return self.index_map['ra']
-
-    @property
     def freq(self):
         return self.index_map['freq']
 
@@ -688,6 +678,89 @@ class MModes(ContainerBase):
         kwargs['msign'] = np.array(['+', '-'])
 
         super(MModes, self).__init__(*args, **kwargs)
+
+
+class SVDModes(ContainerBase):
+    """Parallel container for holding SVD m-mode data.
+
+    Parameters
+    ----------
+    mmax : integer, optional
+        Largest m to be held.
+
+    Attributes
+    ----------
+    vis : mpidataset.MPIArray
+        Visibility array.
+    weight : mpidataset.MPIArray
+        Array of weights for each point.
+    """
+
+    _axes = ('m', 'mode')
+
+    _dataset_spec = {
+        'vis': {
+            'axes': ['m', 'mode'],
+            'dtype': np.complex128,
+            'initialise': True,
+            'distributed': True,
+            'distributed_axis': 'm'
+        },
+
+        'vis_weight': {
+            'axes': ['m', 'mode'],
+            'dtype': np.float64,
+            'initialise': True,
+            'distributed': True,
+            'distributed_axis': 'm'
+        },
+
+        'nmode': {
+            'axes': ['m'],
+            'dtype': np.int32,
+            'initialise': True,
+            'distributed': True,
+            'distributed_axis': 'm'
+        }
+    }
+
+    @property
+    def vis(self):
+        return self.datasets['vis']
+
+    @property
+    def nmode(self):
+        return self.datasets['nmode']
+
+    @property
+    def weight(self):
+        return self.datasets['vis_weight']
+
+    def __init__(self, mmax=None, *args, **kwargs):
+
+        # Set up axes from passed arguments
+        if mmax is not None:
+            kwargs['m'] = mmax + 1
+
+        super(SVDModes, self).__init__(*args, **kwargs)
+
+
+class KLModes(SVDModes):
+    """Parallel container for holding KL filtered m-mode data.
+
+    Parameters
+    ----------
+    mmax : integer, optional
+        Largest m to be held.
+
+    Attributes
+    ----------
+    vis : mpidataset.MPIArray
+        Visibility array.
+    weight : mpidataset.MPIArray
+        Array of weights for each point.
+    """
+    pass
 
 
 class GainData(TODContainer):
@@ -786,6 +859,27 @@ class DelaySpectrum(ContainerBase):
             'initialise': True,
             'distributed': True,
             'distributed_axis': 'baseline'
+        }
+    }
+
+    @property
+    def spectrum(self):
+        return self.datasets['spectrum']
+
+
+class SVDSpectrum(ContainerBase):
+    """Container for an m-mode SVD spectrum.
+    """
+
+    _axes = ('m', 'singularvalue')
+
+    _dataset_spec = {
+        'spectrum': {
+            'axes': ['m', 'singularvalue'],
+            'dtype': np.float64,
+            'initialise': True,
+            'distributed': True,
+            'distributed_axis': 'm'
         }
     }
 
