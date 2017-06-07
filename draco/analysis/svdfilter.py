@@ -99,6 +99,9 @@ class SVDFilter(task.SingleTask):
 
         sv_max = 0.0
 
+        # TODO: this should be changed such that it does all the computation in
+        # a single SVD pass.
+
         # Do a quick first pass calculation of all the singular values to get the max on this rank.
         for mi, m in vis.enumerate(axis=0):
 
