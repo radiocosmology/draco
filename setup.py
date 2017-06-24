@@ -34,7 +34,7 @@ setup(
     ext_modules=cythonize([fast_ext]),
 
     install_requires=['Cython>0.18', 'numpy>=1.7', 'scipy>=0.10',
-                      'caput>=0.3', 'cora', 'driftscan>=0.2'],
+                      'caput>=0.4', 'cora', 'driftscan>=1.2'],
 
     author="Richard Shaw",
     author_email="richard@phas.ubc.ca",
