@@ -7,46 +7,6 @@ from caput import config
 from ..core import task, containers, io
 
 
-def enum(options, default=None):
-    """A property type that accepts only a set of possible values.
-
-    Parameters
-    ----------
-    options : list
-        List of allowed options.
-    default : optional
-        The optional default value.
-
-    Returns
-    -------
-    prop : Property
-        A property instance setup to validate an enum type.
-
-    Examples
-    --------
-    Should be used like::
-
-        class Project(object):
-
-            mode = enum(['forward', 'backward'], default='forward')
-    """
-
-    def _prop(val):
-
-        if val not in options:
-            raise ValueError('Input %f not in %s' % (repr(val), repr(options)))
-
-        return val
-
-    if default is not None and default not in options:
-        raise ValueError('Default value %s must be in %s (or None)' %
-                         (repr(default), repr(options)))
-
-    prop = config.Property(proptype=_prop, default=default)
-
-    return prop
-
-
 class _ProjectFilterBase(task.SingleTask):
     """A base class for projecting data to/from a different basis.
 
@@ -58,7 +18,7 @@ class _ProjectFilterBase(task.SingleTask):
         data through the basis (filter).
     """
 
-    mode = enum(['forward', 'backward', 'filter'], default='forward')
+    mode = config.enum(['forward', 'backward', 'filter'], default='forward')
 
     def process(self, inp):
         """Project or filter the input data.
