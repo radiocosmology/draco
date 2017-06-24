@@ -160,7 +160,7 @@ class ExpandProducts(task.SingleTask):
         tel : :class:`drift.core.TransitTelescope`
             Telescope object.
         """
-        self.telescope = telescope
+        self.telescope = io.get_telescope(telescope)
 
     def process(self, sstream):
         """Transform a sidereal stream to having a full product matrix.

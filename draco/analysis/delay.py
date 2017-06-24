@@ -7,7 +7,7 @@ import scipy.stats as st
 
 from caput import mpiarray, config
 
-from ..core import containers, task
+from ..core import containers, task, io
 
 
 class DelayFilter(task.SingleTask):
@@ -95,7 +95,7 @@ class DelaySpectrumEstimator(task.SingleTask):
         ----------
         telescope : TransitTelescope
         """
-        self.telescope = telescope
+        self.telescope = io.get_telescope(telescope)
 
     def process(self, ss):
         """Estimate the delay spectrum.

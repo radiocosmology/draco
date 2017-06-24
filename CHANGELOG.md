@@ -8,11 +8,17 @@ that I'm using PEP440 to denote pre-releases.
 
 ### Added
 
-- MPI aware logging functionality for tasks.
-- Support for table like data containers.
+- MPI aware logging functionality for tasks
+- Support for table like data containers
 - Routines for delay spectrum estimation and filtering
 - KL based foreground filtering
+- SVD based foreground filtering
 - Quadratic power spectrum estimation
+- Task for setting weights based on the radiometer expectation
+- Baseline masking task
+- Support for reading `ProductManager` instances (from `driftscan`) and updated
+  tasks to allow using them in place of `BeamTransfer` or `TransitTelescope`
+  instances as task arguments.
 
 ### Fixes
 

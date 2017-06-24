@@ -15,7 +15,7 @@ Tasks
 import numpy as np
 from caput import mpiarray, config
 
-from ..core import containers, task
+from ..core import containers, task, io
 from ..util import tools
 
 
@@ -111,7 +111,7 @@ class CollateProducts(task.SingleTask):
         tel : TransitTelescope
         """
 
-        self.telescope = tel
+        self.telescope = io.get_telescope(tel)
 
     def process(self, ss):
         """Select and reorder the products.

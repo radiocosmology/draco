@@ -18,7 +18,7 @@ import numpy as np
 
 from caput import config
 
-from ..core import task, containers
+from ..core import task, containers, io
 from ..util import tools
 
 
@@ -171,7 +171,7 @@ class MaskBaselines(task.SingleTask):
         telescope : TransitTelescope
         """
 
-        self.telescope = telescope
+        self.telescope = io.get_telescope(telescope)
 
     def process(self, ss):
         """Apply the mask to data.
