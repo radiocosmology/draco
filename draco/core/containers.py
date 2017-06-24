@@ -867,6 +867,79 @@ class DelaySpectrum(ContainerBase):
         return self.datasets['spectrum']
 
 
+class Powerspectrum2D(ContainerBase):
+    """Container for a 2D cartesian power spectrum.
+
+    Generally you should set the standard attributes `z_start` and `z_end` with
+    the redshift range included in the power spectrum estimate, and the `type`
+    attribute with a description of the estimator type. Suggested valued for
+    `type` are:
+
+    `unwindowed`
+        The standard unbiased quadratic estimator.
+
+    `minimum_variance`
+        The minimum variance, but highly correlated, estimator. Just a rescaled
+        version of the q-estimator.
+
+    `uncorrelated`
+        The uncorrelated estimator using the root of the Fisher matrix.
+
+    Parameters
+    ----------
+    kpar_edges, kperp_edges : np.ndarray
+        Array of the power spectrum bin boundaries.
+    """
+
+    _axes = ('kpar', 'kperp')
+
+    _dataset_spec = {
+        'powerspectrum': {
+            'axes': ['kpar', 'kperp'],
+            'dtype': np.float64,
+            'initialise': True,
+            'distributed': False
+        },
+
+        'C_inv': {
+            'axes': ['kpar', 'kperp', 'kpar', 'kperp'],
+            'dtype': np.float64,
+            'initialise': True,
+            'distributed': False
+        }
+    }
+
+    def __init__(self, kpar_edges=None, kperp_edges=None, *args, **kwargs):
+
+        # Construct the kpar axis from the bin edges
+        if kpar_edges is not None:
+            centre = 0.5 * (kpar_edges[1:] + kpar_edges[:-1])
+            width = kpar_edges[1:] - kpar_edges[:-1]
+
+            kwargs['kpar'] = np.rec.fromarrays(
+                [centre, width], names=['centre', 'width']
+            ).view(np.ndarray)
+
+        # Construct the kperp axis from the bin edges
+        if kperp_edges is not None:
+            centre = 0.5 * (kperp_edges[1:] + kperp_edges[:-1])
+            width = kperp_edges[1:] - kperp_edges[:-1]
+
+            kwargs['kperp'] = np.rec.fromarrays(
+                [centre, width], names=['centre', 'width']
+            ).view(np.ndarray)
+
+        super(Powerspectrum2D, self).__init__(*args, **kwargs)
+
+    @property
+    def powerspectrum(self):
+        return self.datasets['powerspectrum']
+
+    @property
+    def C_inv(self):
+        return self.datasets['C_inv']
+
+
 class SVDSpectrum(ContainerBase):
     """Container for an m-mode SVD spectrum.
     """
