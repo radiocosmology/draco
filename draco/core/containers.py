@@ -562,47 +562,74 @@ class StaticGainData(ContainerBase):
     def input(self):
         return self.index_map['input']
 
-
-class RingMap(ContainerBase):
-    """Container for holding multifrequency ring maps.
-
-    The maps are packed in format `[freq, pol, ra, EW beam, elevation]` where
-    the polarisations are Stokes I, Q, U and V.
-
-    Parameters
-    ----------
-    nside : int
-        The nside of the Healpix maps.
-    polarisation : bool, optional
-        If `True` all Stokes parameters are stored, if `False` only Stokes I is
-        stored.
+class SourceCatalog(TableBase):
+    """A basic container for holding astronomical source catalogs.
+    Notes
+    -----
+    The `ra` and `dec` coordinates should be ICRS.
     """
 
-    _axes = ('freq', 'pol', 'ra', 'beam', 'el')
-
-    _dataset_spec = {
-        'map': {
-            'axes': ['freq', 'pol', 'ra', 'beam', 'el'],
-            'dtype': np.float64,
-            'initialise': True,
-            'distributed': True,
-            'distributed_axis': 'freq'
+    _table_spec = {
+        'position': {
+            'columns': [
+                ['ra', np.float64],
+                ['dec', np.float64]
+            ],
+            'axis': 'object_id'
         }
     }
 
-    def __init__(self, polarisation=True, *args, **kwargs):
 
-        kwargs['pol'] = np.array(['I', 'Q', 'U', 'V']) if polarisation else np.array(['I'])
+class SpectroscopicCatalog(SourceCatalog):
+    """A container for spectroscopic catalogs.
+    """
 
-        super(RingMap, self).__init__(*args, **kwargs)
+    _table_spec = {
+        'redshift': {
+            'columns': [
+                ['z', np.float64],
+                ['z_error', np.float64]
+            ],
+            'axis': 'object_id'
+        }
+    }
 
-    @property
-    def freq(self):
-        return self.index_map['freq']
 
-    @property
-    def map(self):
-        return self.datasets['map']
+def empty_like(obj, **kwargs):
+    """Create an empty container like `obj`.
+    Parameters
+    ----------
+    obj : ContainerBase
+        Container to base this one off.
+    kwargs : optional
+        Optional definitions of specific axes we want to override. Works in the
+        same way as the `ContainerBase` constructor, though `axes_from=obj` and
+        `attrs_from=obj` are implied.
+    Returns
+    -------
+    newobj : container.ContainerBase
+        New data container.
+    """
+
+    if isinstance(obj, ContainerBase):
+        return obj.__class__(axes_from=obj, attrs_from=obj, **kwargs)
+    else:
+        raise RuntimeError("I don't know how to deal with data type %s" % obj.__class__.__name__)
+
+
+def empty_timestream(**kwargs):
+    """Create a new timestream container.
+    This indirect call exists so it can be replaced to return custom timestream
+    types.
+    Parameters
+    ----------
+    kwargs : optional
+        Arguments to pass to the timestream constructor.
+    Returns
+    -------
+    ts : TimeStream
+    """
+return TimeStream(**kwargs)
 
 class BeamPerturbation(TODContainer):
     """Container for holding beam perturbation values.
