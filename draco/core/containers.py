@@ -10,6 +10,7 @@ Containers
     Map
     MModes
     RingMap
+    BeamPerturbation
 Container Base Classes
 ----------------------
 .. autosummary::
