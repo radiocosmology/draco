@@ -25,8 +25,7 @@ Tasks
 
 import numpy as np
 
-from cora.util import hputil
-from caput import mpiutil, pipeline, config, mpiarray
+from caput import config
 
 from ..core import containers, task
 
@@ -73,7 +72,7 @@ class GeneratePerturbation(task.SingleTask):
         freqmap = map_.index_map['freq'][:]
 
         # Calculate random numbers to be perturbation values. Set the general size using input mult.
-        #perturbations = np.random.standard_normal(pertlistlen) * self.mult
+
         # Do this only for communicator rank 0 (the first one) so that you don't
         # have four independent sets of perturbations running around.
         comm = sstream.comm
@@ -142,7 +141,6 @@ class GenerateSinglePerturbation(task.SingleTask):
         freqmap = map_.index_map['freq'][:]
 
         # Calculate random numbers to be perturbation values. Set the general size using input mult.
-        #perturbations = np.random.standard_normal(pertlistlen) * self.mult
         # Do this only for communicator rank 0 (the first one) so that you don't
         # have four independent sets of perturbations running around.
         comm = sstream.comm
@@ -179,7 +177,6 @@ class GenerateAllButOnePerturbation(task.SingleTask):
     # Define multiplier value. This is usually set in the .yaml file used to run the pipeline.
     # The idea is it sets the overall size of the beam perturbations, allowing
     # us to ensure smaller values than the usual size of a numpy random number.
-    #pert_val = config.Property(proptype = float, default = 0.01)
     nopert_index = config.Property(proptype=float, default=0)
 
     def setup(self, telescope):
@@ -214,7 +211,6 @@ class GenerateAllButOnePerturbation(task.SingleTask):
         freqmap = map_.index_map['freq'][:]
 
         # Calculate random numbers to be perturbation values. Set the general size using input mult.
-        #perturbations = np.random.standard_normal(pertlistlen) * self.mult
         # Do this only for communicator rank 0 (the first one) so that you don't
         # have four independent sets of perturbations running around.
         comm = sstream.comm
@@ -283,31 +279,23 @@ class ExpandPerturbedProducts(task.SingleTask):
         # Redistribute sstream over freq
         sstream.redistribute('freq')
 
-        # Define total ninput based on sstream
-        ninput = len(sstream.input)
-
         # Determine ninput per perturbation based on ninput/n perturbations.
         ninputperpert = len(sstream.input) / tel.npert
 
         # Define array with the size of all of the products from sstream.
-        #all_prod = np.array([ (fi, fj) for fi in range(ninput) for fj in range(fi, ninput)])
 
         # Define array with the size of the desired number of total products from sstream.
         desired_prod = np.array([(fi, fj) for fi in range(ninputperpert)
                                  for fj in range(fi, ninputperpert)])
 
-        # Set l max, m max, number of frequencies,  number of polarizations, and sky resolution in the same manner as sstream.
-        # We aren't changing  any of them, but we need have them defined here to make new_stream.
-        lmax = tel.lmax
+        # Set m max in the same manner as sstream.
+        # We aren't changing it, but we need have them defined here to make new_stream.
         mmax = tel.mmax
-        nfreq = tel.nfreq
-        npol = tel.num_pol_sky
 
         # Set the minimum resolution required for the sky.
         ntime = 2 * mmax + 1
 
         freqmap = map_.index_map['freq'][:]
-        row_map = map_.map[:]
 
         if (tel.frequencies != freqmap['centre']).all():
             raise RuntimeError('Frequencies in map do not match those in Beam Transfers.')
@@ -348,12 +336,6 @@ class ExpandPerturbedProducts(task.SingleTask):
                 # Define the feed index in sstream for the perturbed component corresponding to each feed.
                 fi_pert = fi + ninputperpert * pert_index
                 fj_pert = fj + ninputperpert * pert_index
-
-                # Define the product index for the fi & fj perturbed component.
-                # By default we won't put this component in new_stream as we're working to first order.
-                # However, its' good to track what it is.
-                pertfifj_ind = self.telescope.feedmap[fi_pert, fj_pert]
-                pertfifj_conj = self.telescope.feedconj[fi_pert, fj_pert]
 
                 # Define product index in sstream for the fi perturbed component.
                 pertfi_ind = self.telescope.feedmap[fi_pert, fj]
@@ -428,31 +410,21 @@ class ExpandPerturbedProducts2ndOrder(task.SingleTask):
         # Redistribute sstream over freq
         sstream.redistribute('freq')
 
-        # Define total ninput based on sstream
-        ninput = len(sstream.input)
-
         # Determine ninput per perturbation based on ninput/n perturbations.
         ninputperpert = len(sstream.input) / tel.npert
-
-        # Define array with the size of all of the products from sstream.
-        #all_prod = np.array([ (fi, fj) for fi in range(ninput) for fj in range(fi, ninput)])
 
         # Define array with the size of the desired number of total products from sstream.
         desired_prod = np.array([(fi, fj) for fi in range(ninputperpert)
                                  for fj in range(fi, ninputperpert)])
 
-        # Set l max, m max, number of frequencies,  number of polarizations, and sky resolution in the same manner as sstream.
-        # We aren't changing  any of them, but we need have them defined here to make new_stream.
-        lmax = tel.lmax
+        # Set m max in the same manner as sstream.
+        # We aren't changing it, but we need have them defined here to make new_stream.
         mmax = tel.mmax
-        nfreq = tel.nfreq
-        npol = tel.num_pol_sky
 
         # Set the minimum resolution required for the sky.
         ntime = 2 * mmax + 1
 
         freqmap = map_.index_map['freq'][:]
-        row_map = map_.map[:]
 
         if (tel.frequencies != freqmap['centre']).all():
             raise RuntimeError('Frequencies in map do not match those in Beam Transfers.')
@@ -576,24 +548,17 @@ class OutputPertStructure(task.SingleTask):
         # Determine ninput per perturbation.
         ninputperpert = ninput / tel.npert
 
-        all_prod = np.array([(fi, fj) for fi in range(ninput) for fj in range(fi, ninput)])
-        # print len(all_prod)
-
         # Define array with the size of the desired number of total products from sstream.
         desired_prod = np.array([(fi, fj) for fi in range(ninputperpert)
                                  for fj in range(fi, ninputperpert)])
 
         # Copy down from sstream time & freq info - need to properly assemble new container.
-        lmax = tel.lmax
         mmax = tel.mmax
-        nfreq = tel.nfreq
-        npol = tel.num_pol_sky
 
         # Set the minimum resolution required for the sky.
         ntime = 2 * mmax + 1
 
         freqmap = map_.index_map['freq'][:]
-        row_map = map_.map[:]
 
         if (tel.frequencies != freqmap['centre']).all():
             raise RuntimeError('Frequencies in map do not match those in Beam Transfers.')
