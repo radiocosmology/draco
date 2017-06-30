@@ -30,14 +30,19 @@ from ..core import containers, task
 class GeneratePerturbation(task.SingleTask):
     """ Generate small, random number perturbatons to input to the
         ExpandPerturbedProducts task.
+
+        Setting pert_all to 1 (the default) generates perturbations for all
+        inputs using pert_val to multiply np.Random, but setting it to any other value will only generate a
+        perturbation for the input at pert_index.
     """
 
     # Define multiplier value. This is usually set in the .yaml file used to run the pipeline.
     # The idea is it sets the overall size of the beam perturbations, allowing
     # us to ensure smaller values than the usual size of a numpy random number.
     pert_val = config.Property(proptype=float, default=0.01)
-    pert_all = config.Property(proptype=float, default=1)
+    pert_all = config.Property(proptype=bool, default=True)
     pert_index = config.Property(proptype=int, default=0)
+    pert_fixed = config.Property(proptype=bool, default=False)
 
     def setup(self, telescope):
         """Get a reference to the telescope class.
@@ -50,10 +55,20 @@ class GeneratePerturbation(task.SingleTask):
         self.telescope = telescope
 
     def process(self, sstream, map_):
-        # Need to write container and add saving to container to this.
-        # Then will be ready to roll out in first form.
-        # Drop multiplier if that's not working
         """ Generate perturbations for each feed.
+
+        Parameters
+        -------------
+        sstream : :class:`containers.SiderealStream`
+            Sidereal stream to which the beam perturbations will ultimately be applied.
+        map_ : :class:
+            Map used in creating BeamPerturbation container.
+
+        Returns
+        -------
+        perturbation_list : :class:`containers.BeamPerturbation`
+            Values of per-feed beam perturbations.
+
         """
         tel = self.telescope
 
@@ -76,14 +91,18 @@ class GeneratePerturbation(task.SingleTask):
         # have four independent sets of perturbations running around.
         comm = sstream.comm
         if comm.rank == 0:
-            if self.pert_all == 1:
+            if self.pert_all is True:
                 # If self.pert_all == "All", generate perturbations for all inputs
                 perturbations = np.random.standard_normal(pertlistlen) * self.pert_val
             else:
                 # Set the perturbation matrix to be all zeros
                 perturbations = np.zeros(pertlistlen)
-                # Set just one entry (which you selected) to be the perturbation value you put in.
-                perturbations[self.pert_index] = self.pert_val
+                if self.pert_fixed is True:
+                    # Set just one entry (which you selected) to be the perturbation value you put in.
+                    perturbations[self.pert_index] = self.pert_val
+                else:
+                    # Generate a single random perturbation for the one entry you selected.
+                    perturbations[self.pert_index] = np.random.standard_normal(1) * self.pert_val
         else:
             perturbations = None
 
@@ -125,6 +144,11 @@ class ExpandPerturbedProducts(task.SingleTask):
         ----------
         sstream : :class:`containers.SiderealStream`
             Sidereal stream to unwrap.
+        map_ : :class:
+            Map used to create sidereal stream.
+        perturbations: :class: `containers.BeamPerturbation`
+            Beam perturbation values to be applied.
+
 
         Returns
         -------
@@ -275,6 +299,8 @@ class OutputPertStructure(task.SingleTask):
         ----------
         sstream : :class:`containers.SiderealStream`
             Sidereal stream to unwrap.
+        map_ :
+            Map used to create sidereal stream.
 
         Returns
         -------
