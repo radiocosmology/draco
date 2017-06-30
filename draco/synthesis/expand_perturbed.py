@@ -30,18 +30,24 @@ from ..core import containers, task
 class GeneratePerturbation(task.SingleTask):
     """ Generate small, random number perturbatons to input to the
         ExpandPerturbedProducts task.
-
-        Setting pert_all to 1 (the default) generates perturbations for all
-        inputs using pert_val to multiply np.Random, but setting it to any other value will only generate a
-        perturbation for the input at pert_index.
     """
 
-    # Define multiplier value. This is usually set in the .yaml file used to run the pipeline.
+    # Define perturbation parameters.
+
+    # For fixed pert_val, pert_val is value plugged in. For unfixed pert_val
+    # (default), pert_val multiplies a numpy random number.
     # The idea is it sets the overall size of the beam perturbations, allowing
     # us to ensure smaller values than the usual size of a numpy random number.
     pert_val = config.Property(proptype=float, default=0.01)
+    # Setting pert_all to True (the default) generates perturbations for all
+    # inputs using pert_val to multiply np.Random, but setting it to any other
+    # value will only generate a perturbation for the input at pert_index.
     pert_all = config.Property(proptype=bool, default=True)
+    # Select an input to be selected for a single pert or a single fixed pert
     pert_index = config.Property(proptype=int, default=0)
+    # Setting pert_fixed (default = False ) to True makes the pert_val the
+    # value of the single perturbation (if pert_all is False)
+    # or of one perturbation at pert_index (if pert_all is True).
     pert_fixed = config.Property(proptype=bool, default=False)
 
     def setup(self, telescope):
@@ -61,7 +67,7 @@ class GeneratePerturbation(task.SingleTask):
         -------------
         sstream : :class:`containers.SiderealStream`
             Sidereal stream to which the beam perturbations will ultimately be applied.
-        map_ : :class:
+        map_ : :class:`containers.Map`
             Map used in creating BeamPerturbation container.
 
         Returns
@@ -92,17 +98,21 @@ class GeneratePerturbation(task.SingleTask):
         comm = sstream.comm
         if comm.rank == 0:
             if self.pert_all is True:
-                # If self.pert_all == "All", generate perturbations for all inputs
-                perturbations = np.random.standard_normal(pertlistlen) * self.pert_val
+                if self.pert_fixed is False:
+                    # If self.pert_all == "All", generate perturbations for all inputs
+                    perturbations = np.random.standard_normal(pertlistlen) * self.pert_val
+                else:
+                    perturbations[self.pert_index] = self.pert_val
             else:
                 # Set the perturbation matrix to be all zeros
                 perturbations = np.zeros(pertlistlen)
-                if self.pert_fixed is True:
-                    # Set just one entry (which you selected) to be the perturbation value you put in.
-                    perturbations[self.pert_index] = self.pert_val
-                else:
+                if self.pert_fixed is False:
                     # Generate a single random perturbation for the one entry you selected.
                     perturbations[self.pert_index] = np.random.standard_normal(1) * self.pert_val
+                else:
+                    # Set just one entry (which you selected) to be the perturbation value you put in.
+                    perturbations[self.pert_index] = self.pert_val
+
         else:
             perturbations = None
 
@@ -144,7 +154,7 @@ class ExpandPerturbedProducts(task.SingleTask):
         ----------
         sstream : :class:`containers.SiderealStream`
             Sidereal stream to unwrap.
-        map_ : :class:
+        map_ : :class:`containers.Map`
             Map used to create sidereal stream.
         perturbations: :class: `containers.BeamPerturbation`
             Beam perturbation values to be applied.
@@ -299,7 +309,7 @@ class OutputPertStructure(task.SingleTask):
         ----------
         sstream : :class:`containers.SiderealStream`
             Sidereal stream to unwrap.
-        map_ :
+        map_ : :class:`containers.Map`
             Map used to create sidereal stream.
 
         Returns
