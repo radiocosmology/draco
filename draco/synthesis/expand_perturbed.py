@@ -2,11 +2,10 @@
 
 A typical pattern would be to turn a sidereal stream from the :class:`SimulateSidereal` task,
 then generate one or more non-zero perturbation values with the :class:`GeneratePerturbation`
-or :class:`GenerateSinglePerturbation` tasks then apply the perturbations and expand
-nominally redundant products to first order with :class:`ExpandPerturbedProducts`
-or to second order with :class:`ExpandPerturbedProducts2ndOrder`. Optionally, individual
+task then apply the perturbations and expand nominally redundant products to
+either first or second order with :class:`ExpandPerturbedProducts`. Optionally, individual
 components of the expanded sidereal stream can be output via :class:`OutputPertStructure`.
-Then, the expanded stream can be passed on to make timestreams as in unperturbed sims.
+Then, the expanded stream can be passed on to make timestreams as in unperturbed simulations.
 
 Tasks
 =====
