@@ -1,0 +1,607 @@
+"""Take a quasar catalog and a 21cm simulated map and generate mock 
+catalogs correlated to the 21cm maps and following a selection function
+derived from the original catalog.
+
+Pipeline tasks
+==============
+
+.. autosummary::
+    :toctree:
+
+    SelFuncEstimator
+    PdfGenerator
+    MockQCatGenerator
+
+Internal functions
+==================
+
+.. autosummary::
+    :toctree:
+
+    _zlims_to_freq
+    _freq_to_z
+    _z_to_freq
+    _pix_to_radec
+    _radec_to_pix
+
+Usage
+=====
+
+Generally you would want to use these tasks together. Providing a catalog
+path to :class:`SelFuncEstimator`, then feeding the resulting selection
+function to :class:`PdfGenerator` and finally passing the resulting
+probability distribution function to :class:`MockQCatGenerator` to generate
+mock catalogs. Below is an example of yaml file to generate mock catalogs:
+
+>>> spam_config = '''
+... pipeline :
+...     tasks:
+...         -   type:   draco.synthesis.mockcatalog.SelFuncEstimator
+...             params: selfunc_params
+...             out:    selfunc
+... 
+...         -   type:     draco.synthesis.mockcatalog.PdfGenerator
+...             params:   h1_params
+...             requires: selfunc
+...             out:      pdf_map
+... 
+...         -   type:     draco.synthesis.mockcatalog.MockQCatGenerator
+...             params:   mqcat_params
+...             requires: pdf_map
+...             out:      mockqcat
+... 
+... selfunc_params:
+...     bqcat_path: '/bg01/homescinet/k/krs/jrs65/sdss_quasar_catalog.h5'
+...     nside: 16
+... 
+... h1_params:
+...     h1maps_path: '/scratch/k/krs/fandino/xcorrSDSS/sim21cm/21cmmap.hdf5'
+... 
+... mqcat_params:
+...     nqsos: 200000
+...     ncats: 5
+...     save: True
+...     output_root: '/scratch/k/krs/fandino/test_mqcat/mqcat'
+
+'''
+
+
+"""
+
+
+import numpy as np
+import healpy as hp
+
+from cora.signal import corr21cm
+from cora.util import units
+from caput import config
+from caput import mpiarray
+from ..core import task, containers
+
+# For easy access to MPI namespace
+MPI_ = mpiarray.mpiutil.MPI
+
+
+# Pipeline tasks
+# --------------
+
+class SelFuncEstimator(task.SingleTask):
+    """Takes a quasar catalog as input and returns an estimate of the
+    selection function based on a low rank SVD reconstruction.
+
+    Attributes
+    ----------
+    bqcat_path : str
+        Full path to base quasar catalog.
+    nside : int
+        NSIDE for catalog maps generated for the SVD.
+    n_z : int
+        Number of redshift bins for catalog maps generated for the SVD.
+    n_modes : int
+        Number of modes used in recovering the selection function from
+        base catalogue maps SVD.
+    z_stt : float
+        Starting redshift for catalog maps generated for the SVD.
+    z_stp : float
+        Stopping redshift for catalog maps generated for the SVD.
+
+    """
+
+    bqcat_path = config.Property(proptype=str)
+
+    # These seem to be optimal parameters and should not
+    # usually need to be changed from the default values:
+    nside = config.Property(proptype=int, default=16)
+    n_z = config.Property(proptype=int, default=32)
+    n_modes = config.Property(proptype=int, default=7)
+    z_stt = config.Property(proptype=float, default=0.8)
+    z_stp = config.Property(proptype=float, default=2.5)
+
+
+    def setup(self):
+        """
+        """
+        # Load base quasar catalog from file:
+        self._base_qcat = containers.SpectroscopicCatalog.from_file(
+                                                        self.bqcat_path)
+
+    def process(self):
+        """Put the base catalog into maps. SVD the maps and recover
+        with a small number of modes. This smoothes out the distribution
+        quasars and provides an estimate of the selection function used.
+        """
+        # Number of pixels to use in catalog maps for SVD
+        n_pix = hp.pixelfunc.nside2npix(self.nside)
+        # Redshift bins edges
+        zlims_selfunc = np.linspace(self.z_stt,self.z_stp,self.n_z+1)
+        # Redshift bins centre
+        z_selfunc = (zlims_selfunc[:-1]+zlims_selfunc[1:])*0.5
+
+        # Have to transform the z axis to a freq axis to return selfunc in
+        # containers.Map format:
+        freq_selfunc = _zlims_to_freq(z_selfunc,zlims_selfunc)
+
+        # Create maps from original catalog:
+        # No point in distributing this in a mpi clever way
+        # because I need to SVD it. 
+        maps = np.zeros((self.n_z,n_pix))
+        # Indices of each qso in z axis:
+        idxs = np.digitize(self.base_qcat['redshift']['z'],
+                           zlims_selfunc)-1 # -1 to get indices
+        # Map pixel of each qso
+        pixls = _radec_to_pix(self.base_qcat['position']['ra'],
+                              self.base_qcat['position']['dec'],
+                              self.nside)
+        for jj in range(self.n_z):
+            zpixls = pixls[idxs==jj] # Map pixels of qsos in z bin jj
+            for kk in range(n_pix):
+                # Number of quasars in z bin jj and pixel kk
+                maps[jj,kk] = np.sum(zpixls==kk)
+
+
+        # SVD the quasar density maps:
+        svd = np.linalg.svd(maps,full_matrices=0)
+
+        # Map container to store the selection function:
+        self._selfunc = containers.Map(nside=self.nside,
+                                      polarisation=False,freq=freq_selfunc)
+        # Start as zeroes:
+        self._selfunc['map'][:,:,:] = np.zeros(
+                                        self._selfunc['map'].local_shape)
+
+        # Get axis parameters for distributed map:
+        lo = self._selfunc['map'][:,0,:].local_offset[0]
+        ls = self._selfunc['map'][:,0,:].local_shape[0]
+        # Recover the n_modes approximation to the original catalog maps:
+        for jj in range(self.n_modes):
+            uj = svd[0][:,jj]
+            sj = svd[1][jj]
+            vj = svd[2][jj,:]
+            # Re-constructed mode (distribute in freq/redshift):
+            recmode = mpiarray.MPIArray.wrap(
+                                    (uj[:,None]*sj*vj[None,:])[lo:lo+ls],
+                                    axis=0 )
+            self._selfunc['map'][:,0,:] = ( self._selfunc['map'][:,0,:]
+                                           + recmode )
+        # Remove negative entries remaining from SVD recovery:
+        self._selfunc['map'][np.where(self._selfunc.map[:]<0.)] = 0.
+
+        self.done = True
+
+        return self.selfunc 
+
+    def process_finish(self):
+        """
+        """
+        return None
+
+    @property
+    def base_qcat(self):
+        return self._base_qcat
+
+    @property
+    def selfunc(self):
+        return self._selfunc
+
+
+class PdfGenerator(task.SingleTask):
+    """Take a quasar catalog selection function and simulated HI maps
+    and return a PDF map correlated with the HI maps and the selection
+    function. This PDF maps can be used by the task 
+    :class:`MockQCatGenerator` to draw mock catalogs.
+
+    Attributes
+    ----------
+    h1maps_path : str
+        Full path to simulated HI maps.
+    qso_bias_prm : float
+        Quasar bias. So far only suports a single bias parameter for
+        all redshifts.
+    
+    """
+
+    h1maps_path = config.Property(proptype=str)
+    qso_bias_prm = config.Property(proptype=float, default=1.)
+
+    def setup(self,selfunc):
+        """
+        """
+        self.selfunc = selfunc
+
+        # Load H1 CORA maps from file:
+        h1maps = containers.Map.from_file(self.h1maps_path,distributed=True)
+        n_px = h1maps.map.shape[2]
+        n_side = hp.pixelfunc.npix2nside(n_px) # NSIDE of CORA maps
+        freq = h1maps.freq
+        ls = h1maps.map.local_shape[0]
+        lo = h1maps.map.local_offset[0]
+
+        self.h1maps = h1maps # Setter sets other parameters too
+
+        # For easy access to communicator:
+        self.comm_ = self.h1maps.comm
+        self.rank = self.comm_.Get_rank() # Unused for now
+
+    def process(self):
+        """
+        """
+        # From frequency to redshift:
+        z = _freq_to_z(self.h1maps.freq)
+        n_z = len(z)
+    
+        # Freq to redshift of selection function:
+        z_selfunc = _freq_to_z(self.selfunc.freq)
+
+        # Re-distribute maps in pixels:
+        self.h1maps.redistribute(dist_axis=2)
+
+        # For now the quasar bias is just 1. for all redshifts
+        qso_bias = np.ones(n_z)*self.qso_bias_prm
+
+        # Fetch the mean brightness temperature and the HI bias from CORA
+        # Initialize Corr21cm object:
+        cr = corr21cm.Corr21cm()
+        # Set NSIDE to be the same as H1 CORA maps:
+        cr.nside = self._nside 
+        # Set frequencies to be the same as H1 CORA maps:
+        cr.frequencies = self.h1maps.freq['centre']
+        # Average brightness temperature. Is z-dependent:
+        T_b = cr.T_b(z['centre'])
+        # HI bias. For now this is just 1 for all z's:
+        h1_bias = cr.bias_z(z['centre'])
+
+        # Convert Brightnes in Kelvin to delta_m
+        delta_m = self.h1maps.map[:,0,:] / (T_b[:, np.newaxis]
+                                          * h1_bias[:, np.newaxis])
+        # Convert gaussian delta_m to lognorm rho_m:
+        rho_m = mpiarray.MPIArray.wrap(np.exp(qso_bias[:,np.newaxis]*delta_m),
+                                                                       axis=1)
+
+        # Re-distribute in frequencies before normalizing 
+        # (which requires summing over pixels)
+        # Note: mpiarray.MPIArray.redistribute returns the redistributed array
+        # That's different from the behaviour of the containers.
+        rho_m = rho_m.redistribute(axis=0)
+
+        # Normalize density to have unit mean in each z-bin:
+        rho_m = mpiarray.MPIArray.wrap( rho_m 
+                        / np.mean(rho_m,axis=1)[:,np.newaxis],axis=0)
+
+        # Resizing the selection function to match the voxel size of the H1
+        # CORA maps by hand. Result is distributed in axis 0.
+        resized_selfunc = self._resize_map(self.selfunc.map[:,0,:],
+                                  rho_m.global_shape,z,z_selfunc)
+
+        
+
+        # Generate wheights for correct distribution of quasars in redshift:
+        z_wheights = np.sum(resized_selfunc,axis=1)
+        # Sum wheights in each comm rank. Need array of scalar here.
+        z_total = mpiarray.MPIArray.wrap( np.array([ np.sum(z_wheights,
+                                                       axis=0) ]), axis=0 )
+        # Sum accross ranks. All ranks get the same result:
+        self.comm_.Allreduce(z_total,z_total)
+        # Normalize z_wheights:
+        z_wheights = mpiarray.MPIArray.wrap( z_wheights/z_total, axis=0 )
+
+        # PDF following selection function and CORA maps:
+        # (both rho_m and resized_selfunc are distributed in axis 0)
+        pdf = rho_m*resized_selfunc
+
+        # Enforce redshift distribution to follow selection function:
+        pdf = mpiarray.MPIArray.wrap( pdf 
+                                    / np.sum(pdf,axis=1)[:,np.newaxis] 
+                                    * z_wheights[:,np.newaxis], axis=0 )
+
+        # Put PDF in a map container:
+        pdf_map = containers.Map(nside=self._nside,
+                             polarisation=False,freq=self.h1maps.freq)
+
+        # I am not sure I need this test every time:
+        if pdf_map['map'].local_offset[0] == pdf.local_offset[0] :
+            pdf_map['map'][:,0,:] = pdf
+        else: raise RuntimeError("Local offsets don't match.")
+
+        self.done = True
+        return pdf_map
+
+    def process_finish(self):
+        """
+        """
+        return None
+
+    def _resize_map(self,map,new_shape,z_new,z_old):
+        """Re-size map (np.array) to new shape, taking into account
+        mpi distribution.
+        """
+        from ..util import regrid
+
+        # redistribute in axis 1 to re-size axis 0:
+        map = mpiarray.MPIArray.wrap(map,axis=0)
+        map = map.redistribute(axis=1)
+
+        # Form interpolation matrix:
+        interp_m = regrid.lanczos_forward_matrix(
+                                z_old['centre'],z_new['centre'])
+        # Correct for redshift bin widths:
+        interp_m = ( interp_m 
+                   / z_old['width'][np.newaxis,:] 
+                   * z_new['width'][:,np.newaxis] )
+        # Resize axis 0:
+        map = np.dot(interp_m,map)
+        map = mpiarray.MPIArray.wrap(np.array(map),axis=1)
+        # redistribute in axis 0 to re-size axis 1:
+        map = map.redistribute(axis=0)
+
+        # Resize axis 1:
+        # new_shape is a global shape, so can only use it in axis 1 here
+        resized_map = np.zeros((map.local_shape[0],new_shape[1]))
+        n_side = hp.pixelfunc.npix2nside(new_shape[1]) # NSIDE of new shape
+        for ii in range(map.local_shape[0]):
+            resized_map[ii] = hp.pixelfunc.ud_grade(map[ii,:],
+                                                    nside_out=n_side)
+
+        # Remove negative values. (The Lanczos kernel can make things 
+        # slightly negative at the edges)
+        resized_map = np.where(resized_map>=0.,resized_map,
+                                            np.zeros_like(resized_map))
+
+        return mpiarray.MPIArray.wrap( resized_map, axis=0 )
+
+
+    @property
+    def h1maps(self):
+        return self._h1maps
+
+    @h1maps.setter
+    def h1maps(self,h1maps):
+        """
+        Setter for h1maps
+        Also set the attributes:
+            self._npix : Number of pixels in CORA H1maps 
+            self._nside : NSIDE of CORA H1 maps
+
+        """
+        if isinstance(h1maps,containers.Map):
+            self._h1maps = h1maps
+            self._npix = len(self._h1maps.index_map['pixel'])
+            self._nside = hp.pixelfunc.npix2nside(self._npix)
+        else:
+            msg = (
+                "h1maps is not an instance of "
+                + "draco.core.containers.Map\n"
+                + "Value for _h1maps not set." )
+            print msg
+
+
+class MockQCatGenerator(task.SingleTask):
+    """Take PDF maps generated by task :class:`PdfGenerator` 
+    and use it to draw mock catalogs.
+
+    Attributes
+    ----------
+    nqsos : int
+        Number of quasars to draw in each mock catalog
+    ncats : int
+        Number of catalogs to generate 
+    """
+
+    nqsos = config.Property(proptype=int)
+    ncats = config.Property(proptype=int)
+
+    def setup(self,pdf_map):
+        """
+        """
+        self.pdf = pdf_map
+
+        # For easy access to communicator:
+        self.comm_ = self.pdf.comm
+        self.rank = self.comm_.Get_rank()
+
+        # Easy access to local shapes and offsets
+        self.lo = self.pdf.map[:,0,:].local_offset[0]
+        self.ls = self.pdf.map[:,0,:].local_shape[0]
+        self.lo_list = self.comm_.allgather(self.lo)
+        self.ls_list = self.comm_.allgather(self.ls)
+
+        # Global shape:
+        n_z = self.pdf.map[:,0,:].global_shape[0]
+
+        # Wheight of each redshift bin in the pdf 
+        z_wheights = np.sum( self.pdf.map[:,0,:], axis=1)
+
+        if self.rank == 0:
+            # Only rank zero is relevant. All the others are None.
+            self.global_z_wheights = np.zeros(n_z)
+        else:
+            # All processes must have a value for self.global_z_wheights:
+            self.global_z_wheights = None
+
+        # Gather z_wheights on rank 0 (necessary to draw a redshift 
+        # distribution of quasars):
+        self.comm_.Gatherv(z_wheights,[self.global_z_wheights,
+                tuple(self.ls_list),tuple(self.lo_list),MPI_.DOUBLE],root=0)
+
+        # CDF to draw quasars from:
+        self.cdf = np.cumsum(self.pdf.map[:,0,:],axis=1)
+        # Normalize:
+        self.cdf = self.cdf/self.cdf[:,-1][:,np.newaxis]
+
+
+    def process(self):
+        """
+        """
+
+        if self.rank == 0:
+            # Only rank zero is relevant. All the others are None.
+            # The number of quasars in each redshift bin follows a multinomial
+            # distribution (reshape from (1,nz) to (nz) to make a 1D array): 
+            global_qso_numbers = np.random.multinomial(self.nqsos,
+                                                self.global_z_wheights)
+        else:
+            # All processes must have a value for qso_numbers:
+            global_qso_numbers = None
+
+        qso_numbers = np.zeros(self.ls,dtype=int)
+        # Need to pass tuples. For some reason lists don't work.
+        # qso_numbers has shape (self.ls)
+        self.comm_.Scatterv([global_qso_numbers,tuple(self.ls_list),
+                                tuple(self.lo_list),MPI_.DOUBLE], qso_numbers)
+
+        # Generate random numbers to assign voxels. 
+        # Shape: [self.ls=local # of z-bins][# of qsos in each z-bin]
+        rnbs = [ np.random.uniform(size=num) 
+                                for num in qso_numbers ]
+
+        # Indices of each random quasar in pdf maps pixels. 
+        # Shape: [self.ls=local # of z-bins][# of qsos in each z-bin]
+        idxs = [np.digitize(rnbs[ii],self.cdf[ii]) for ii in range(len(rnbs))]
+
+        # Generate random nmbrs to randomize position of quasars in each voxel:
+        # Random numbers for z-placement range: (-0.5,0.5)
+        rz = [ np.random.uniform(size=num)-0.5
+                                for num in qso_numbers ]
+        # Random numbers for theta-placement range: (-0.5,0.5)
+        rtheta = [ np.random.uniform(size=num)-0.5
+                                for num in qso_numbers ]
+        # Random numbers for phi-placement range: (-0.5,0.5)
+        rphi = [ np.random.uniform(size=num)-0.5
+                                for num in qso_numbers ]
+
+        # :meth::nside2resol() returns the square root of the pixel area, 
+        # which is a gross approximation of the pixel size, given the 
+        # different pixel shapes. I convert to degrees.
+        ang_size = hp.pixelfunc.nside2resol(self._nside)*180./np.pi
+
+        # Global values for redshift bins:
+        z = _freq_to_z(self.pdf.freq)
+
+        mock_zs = []
+        mock_angular = []
+        for ii in range(len(idxs)):# For each local redshift bin
+            for jj in range(len(idxs[ii])): # For each quasar in in z-bin ii
+                decbase, RAbase = _pix_to_radec(idxs[ii][jj],self._nside)
+                # global redshift index:
+                global_z_index = ii+self.lo 
+                # Randomly distributed in z bin range:
+                z_value = ( z['width'][global_z_index]
+                          * rz[ii][jj]
+                          + z['centre'][global_z_index] )
+                # There is a provision for z-error. Zero here:
+                mock_zs.append( (z_value, 0.) )
+                mock_angular.append( ( RAbase + ang_size*rtheta[ii][jj],
+                                        decbase + ang_size*rphi[ii][jj] ) )
+
+        # Gather quasars in rank 0. Ordering is irrelevant, 
+        # so using lower case version of :meth::gather.
+        mock_zs_list = self.comm_.allgather(mock_zs)
+        mock_angular_list = self.comm_.allgather(mock_angular)
+
+        # the result of allgather is a list containing
+        # each rank's lists. Concatenate lists:
+        mock_zs, mock_angular = [], []
+        for list_ in mock_zs_list:
+            mock_zs.extend(list_)
+        for list_ in mock_angular_list:
+            mock_angular.extend(list_)
+
+        # Put data in catalog container:
+        mock_catalog = containers.SpectroscopicCatalog(
+                        object_id=np.arange(self.nqsos,dtype=np.uint64))
+        mock_catalog['position'][:] = np.array( mock_angular,
+                                    dtype=[('ra', '<f8'), ('dec', '<f8')] )
+        mock_catalog['redshift'][:] = np.array( mock_zs,
+                                dtype=[('z', '<f8'), ('z_error', '<f8')] )
+
+        if self._count == self.ncats-1:
+            self.done = True
+
+        return mock_catalog 
+
+    def process_finish(self):
+        """
+        """
+        return None
+
+
+    @property
+    def pdf(self):
+        return self._pdf
+
+    @pdf.setter
+    def pdf(self,pdf):
+        """
+        Setter for pdf
+        Also set the attributes:
+            self._npix : Number of pixels in PDF maps 
+            self._nside : NSIDE of PDF maps
+
+        """
+        if isinstance(pdf,containers.Map):
+            self._pdf = pdf
+            self._npix = len(self._pdf.index_map['pixel'])
+            self._nside = hp.pixelfunc.npix2nside(self._npix)
+        else:
+            msg = (
+                "pdf is not an instance of "
+                + "draco.core.containers.Map\n"
+                + "Value for _pdf not set." )
+            print msg
+
+
+# Internal functions
+# ------------------
+
+
+def _zlims_to_freq(z, zlims):
+    freqcentre = units.nu21/(z+1)
+    freqlims = units.nu21/(zlims+1)
+    freqwidth = abs(freqlims[:-1]-freqlims[1:])
+    return  np.array( [ (freqcentre[ii],freqwidth[ii]) 
+                         for ii in range(len(z)) ], 
+                         dtype = [('centre', '<f8'), ('width', '<f8')] )
+
+def _freq_to_z(freq):
+    fc = freq['centre']
+    fw = freq['width']
+    z = units.nu21/fc - 1.
+
+    sgn = np.sign(fc[-1]-fc[0])
+
+    flims = fc - sgn*0.5*fw
+    flims = np.append(flims,fc[-1]+sgn*0.5*fw[-1])
+    zlims = units.nu21/flims - 1.
+    z_width = abs(zlims[:-1]-zlims[1:])
+
+    return  np.array( [ (z[ii],z_width[ii]) 
+                         for ii in range(len(z)) ], 
+                         dtype = [('centre', '<f8'), ('width', '<f8')] )
+
+def _pix_to_radec(index,nside):
+    theta, phi = hp.pixelfunc.pix2ang(nside,index)
+    return -np.degrees(theta-np.pi/2.),np.degrees(phi)
+
+def _radec_to_pix(ra,dec,nside):
+    return hp.pixelfunc.ang2pix(nside,np.radians(-dec+90.),np.radians(ra))
+
+
