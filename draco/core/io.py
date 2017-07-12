@@ -172,7 +172,7 @@ class LoadMaps(pipeline.TaskBase):
         return map_stack
 
 
-class LoadFilesFromParams(pipeline.TaskBase):
+class LoadFilesFromParams(task.SingleTask):
     """Load data from files given in the tasks parameters.
 
     Attributes
@@ -183,7 +183,7 @@ class LoadFilesFromParams(pipeline.TaskBase):
 
     files = config.Property(proptype=_list_or_glob)
 
-    def next(self):
+    def process(self):
         """Load the given files in turn and pass on.
 
         Returns
