@@ -80,12 +80,7 @@ class GeneratePerturbation(task.SingleTask):
         # Determine total number of inputs from sstream
         ninput = len(sstream.input)
         # Determine the number of inputs per perturbation.
-        ninputperpert = ninput / tel.npert
-
-        # There's a slight chance this is going to freak out for more than 1
-        # perturbation. If it does, we'll modify it.
-        pertlistlen = ninputperpert
-        # print "Pert List Len", pertlistlen
+        pertlistlen = int(ninput / tel.npert)
 
         # Define frequency map for upcoming container.
         freqmap = map_.index_map['freq'][:]
@@ -117,8 +112,8 @@ class GeneratePerturbation(task.SingleTask):
 
         perturbations = comm.bcast(perturbations, root=0)
         # Calculate the desired number of products
-        desired_prod = np.array([(fi, fj) for fi in range(ninputperpert)
-                                 for fj in range(fi, ninputperpert)])
+        desired_prod = np.array([(fi, fj) for fi in range(pertlistlen)
+                                 for fj in range(fi, pertlistlen)])
 
         # Define a BeamPerturbation container to hold the beam perturbations
         perturbation_list = containers.BeamPerturbation(freq=freqmap, input=pertlistlen,
@@ -164,7 +159,6 @@ class ExpandPerturbedProducts(task.SingleTask):
         new_sstream : :class:`containers.SiderealStream`
             Unwrapped sidereal stream with unperturbed and perturbed components of products combined.
         """
-        tel = self.telescope
 
         # Load and redistribute perturbations from input list.
         # Generally, this list will come from GeneratePertubation, but it may
@@ -178,7 +172,7 @@ class ExpandPerturbedProducts(task.SingleTask):
         sstream.redistribute('freq')
 
         # Determine ninput per perturbation based on ninput/n perturbations.
-        ninputperpert = len(sstream.input) / tel.npert
+        ninputperpert = int(len(sstream.input) / self.telescope.npert)
 
         # Define array with the size of all of the products from sstream.
 
@@ -188,14 +182,14 @@ class ExpandPerturbedProducts(task.SingleTask):
 
         # Set m max in the same manner as sstream.
         # We aren't changing it, but we need have them defined here to make new_stream.
-        mmax = tel.mmax
+        mmax = self.telescope.mmax
 
         # Set the minimum resolution required for the sky.
         ntime = 2 * mmax + 1
 
         freqmap = map_.index_map['freq'][:]
 
-        if (tel.frequencies != freqmap['centre']).all():
+        if (self.telescope.frequencies != freqmap['centre']).all():
             raise RuntimeError('Frequencies in map do not match those in Beam Transfers.')
 
         # Define new sidereal stream container for the new dimensions. We now have ninputperpert inputs and desired_prod products.
@@ -316,28 +310,27 @@ class OutputPertStructure(task.SingleTask):
         f_stream : :class:`containers.SiderealStream`
             Individual unpert or pert sidereal stream.
         """
-        tel = self.telescope
         # Redistribute sstream.
         sstream.redistribute('freq')
 
         # Determine n input from sstream.
         ninput = len(sstream.input)
         # Determine ninput per perturbation.
-        ninputperpert = ninput / tel.npert
+        ninputperpert = int(ninput / self.telescope.npert)
 
         # Define array with the size of the desired number of total products from sstream.
         desired_prod = np.array([(fi, fj) for fi in range(ninputperpert)
                                  for fj in range(fi, ninputperpert)])
 
         # Copy down from sstream time & freq info - need to properly assemble new container.
-        mmax = tel.mmax
+        mmax = self.telescope.mmax
 
         # Set the minimum resolution required for the sky.
         ntime = 2 * mmax + 1
 
         freqmap = map_.index_map['freq'][:]
 
-        if (tel.frequencies != freqmap['centre']).all():
+        if (self.telescope.frequencies != freqmap['centre']).all():
             raise RuntimeError('Frequencies in map do not match those in Beam Transfers.')
 
         # Define a new sidereal stream container to hold one or more of the perturbation structure components.
