@@ -42,6 +42,8 @@ class SiderealGrouper(task.SingleTask):
     padding = config.Property(proptype=float, default=0.005)
 
     def __init__(self):
+        super(SiderealGrouper, self).__init__()
+
         self._timestream_list = []
         self._current_lsd = None
 
@@ -84,15 +86,13 @@ class SiderealGrouper(task.SingleTask):
         if self._current_lsd == lsd_start:
             self._timestream_list.append(tstream)
 
-        if tstream.vis.comm.rank == 0:
-            print "Adding file into group for LSD:%i" % lsd_start
+        self.log.info("Adding file into group for LSD:%i", lsd_start)
 
         # If this file ends during a later LSD then we need to process the
         # current list and restart the system
         if self._current_lsd < lsd_end:
 
-            if tstream.vis.comm.rank == 0:
-                print "Concatenating files for LSD:%i" % lsd_start
+            self.log.info("Concatenating files for LSD:%i", lsd_start)
 
             # Combine timestreams into a single container for the whole day this
             # could get returned as None if there wasn't enough data
@@ -135,8 +135,8 @@ class SiderealGrouper(task.SingleTask):
         if day_length < 0.1:
             return None
 
-        if self._timestream_list[0].vis.comm.rank == 0:
-            print "Constructing LSD:%i [%i files]" % (lsd, len(self._timestream_list))
+        self.log.info("Constructing LSD:%i [%i files]",
+                      lsd, len(self._timestream_list))
 
         # Construct the combined timestream
         ts = tod.concatenate(self._timestream_list)
@@ -192,8 +192,7 @@ class SiderealRegridder(task.SingleTask):
             The regularly gridded sidereal timestream.
         """
 
-        if mpiutil.rank0:
-            print "Regridding LSD:%i" % data.attrs['lsd']
+        self.log.info("Regridding LSD:%i", data.attrs['lsd'])
 
         # Redistribute if needed too
         data.redistribute('freq')
@@ -256,6 +255,7 @@ class SiderealStacker(task.SingleTask):
     """
 
     stack = None
+    lsd_list = None
 
     def process(self, sdata):
         """Stack up sidereal days.
@@ -268,27 +268,41 @@ class SiderealStacker(task.SingleTask):
 
         sdata.redistribute('freq')
 
+        # Get the LSD label out of the data (resort to using a CSD if it's
+        # present). If there's no label just use a place holder and stack
+        # anyway.
+        if 'lsd' in sdata.attrs:
+            input_lsd = sdata.attrs['lsd']
+        elif 'csd' in sdata.attrs:
+            input_lsd = sdata.attrs['csd']
+        else:
+            input_lsd = -1
+
+        input_lsd = _ensure_list(input_lsd)
+
         if self.stack is None:
 
-            self.stack = containers.SiderealStream(axes_from=sdata)
+            self.stack = containers.empty_like(sdata)
             self.stack.redistribute('freq')
 
-            self.stack.vis[:] = (sdata.vis[:] * sdata.weight[:])
+            self.stack.vis[:] = sdata.vis[:] * sdata.weight[:]
             self.stack.weight[:] = sdata.weight[:]
 
-            if mpiutil.rank0:
-                print "Starting stack with LSD:%i" % sdata.attrs['lsd']
+            self.lsd_list = input_lsd
+
+            self.log.info("Starting stack with LSD:%i", sdata.attrs['lsd'])
 
             return
 
-        if mpiutil.rank0:
-            print "Adding LSD:%i to stack" % sdata.attrs['lsd']
+        self.log.info("Adding LSD:%i to stack", sdata.attrs['lsd'])
 
         # note: Eventually we should fix up gains
 
         # Combine stacks with inverse `noise' weighting
         self.stack.vis[:] += (sdata.vis[:] * sdata.weight[:])
         self.stack.weight[:] += sdata.weight[:]
+
+        self.lsd_list += input_lsd
 
     def process_finish(self):
         """Construct and emit sidereal stack.
@@ -300,9 +314,20 @@ class SiderealStacker(task.SingleTask):
         """
 
         self.stack.attrs['tag'] = 'stack'
+        self.stack.attrs['lsd'] = np.array(self.lsd_list)
 
         self.stack.vis[:] = np.where(self.stack.weight[:] == 0,
                                      0.0,
                                      self.stack.vis[:] / self.stack.weight[:])
 
         return self.stack
+
+
+def _ensure_list(x):
+
+    if hasattr(x, '__iter__'):
+        y = [xx for xx in x]
+    else:
+        y = [x]
+
+    return y

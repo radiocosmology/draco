@@ -1,8 +1,11 @@
 """Distributed containers for holding various types of analysis data.
+
 Containers
 ==========
+
 .. autosummary::
     :toctree:
+
     TimeStream
     SiderealStream
     GainData
@@ -11,18 +14,25 @@ Containers
     MModes
     RingMap
     BeamPerturbation
+
 Container Base Classes
 ----------------------
+
 .. autosummary::
     :toctree:
+
     ContainerBase
     TODContainer
+
 Helper Routines
 ---------------
+
 These routines are designed to be replaced by other packages trying to insert
 their own custom container types.
+
 .. autosummary::
     :toctree:
+
     empty_like
     empty_timestream
 """
@@ -36,9 +46,11 @@ from caput import memh5, tod
 
 class ContainerBase(memh5.BasicCont):
     """A base class for pipeline containers.
+
     This class is designed to do much of the work of setting up pipeline
     containers. It should be derived from, and two variables set `_axes` and
     `_dataset_spec`. See the `Notes`_ section for details.
+
     Parameters
     ----------
     axes_from : `memh5.BasicCont`, optional
@@ -49,24 +61,31 @@ class ContainerBase(memh5.BasicCont):
         argument. This applies to attributes in default datasets too.
     kwargs : dict
         Should contain entries for all other axes.
+
     Notes
     -----
+
     Inheritance from other `ContainerBase` subclasses should work as expected,
     with datasets defined in super classes appearing as expected, and being
     overriden where they are redefined in the derived class.
+
     The variable `_axes` should be a tuple containing the names of axes that
     datasets in this container will use.
+
     The variable `_dataset_spec` should define the datasets. It's a dictionary
     with the name of the dataset as key. Each entry should be another
     dictionary, the entry 'axes' is mandatory and should be a list of the axes
     the dataset has (these should correspond to entries in `_axes`), as is
     `dtype` which should be a datatype understood by numpy. Other possible
     entries are:
+
     - `initialise` : if set to `True` the dataset will be created as the
       container is initialised.
+
     - `distributed` : the dataset will be distributed if the entry is `True`, if
       `False` it won't be, and if not set it will be distributed if the
       container is set to be.
+
     - `distributed_axis` : the axis to distribute over. Should be a name given
       in the `axes` entry.
     """
@@ -142,11 +161,14 @@ class ContainerBase(memh5.BasicCont):
 
     def add_dataset(self, name):
         """Create an empty dataset.
+
         The dataset must be defined in the specification for the container.
+
         Parameters
         ----------
         name : string
             Name of the dataset to create.
+
         Returns
         -------
         dset : `memh5.MemDataset`
@@ -193,12 +215,15 @@ class ContainerBase(memh5.BasicCont):
     @property
     def datasets(self):
         """Return the datasets in this container.
+
         Do not try to add a new dataset by assigning to an item of this
         property. Use `create_dataset` instead.
+
         Returns
         -------
         datasets : read only dictionary
             Entries are :mod:`caput.memh5` datasets.
+
         """
         out = {}
         for name, value in self._data.iteritems():
@@ -256,10 +281,12 @@ class ContainerBase(memh5.BasicCont):
 
 class TableBase(ContainerBase):
     """A base class for containers holding tables of data.
+
     Similar to the `ContainerBase` class, the container is defined through a
     dictionary given as a `_table_spec` class attribute. The container may also
     hold generic datasets by specifying `_dataset_spec` as with `ContainerBase`.
     See `Notes`_ for details.
+
     Parameters
     ----------
     axes_from : `memh5.BasicCont`, optional
@@ -270,19 +297,27 @@ class TableBase(ContainerBase):
         argument. This applies to attributes in default datasets too.
     kwargs : dict
         Should contain definitions for all other table axes.
+
     Notes
     -----
+
     A `_table_spec` consists of a dictionary mapping table names into a
     description of the table. That description is another dictionary containing
     several entries.
+
     - `columns` : the set of columns in the table. Given as a list of
       `(name, dtype)` pairs.
+
     - `axis` : an optional name for the rows of the table. This is automatically
       generated as `'<tablename>_index'` if not explicitly set. This corresponds
       to an `index_map` entry on the container.
+
     - `initialise` : whether to create the table by default.
+
     - `distributed` : whether the table is distributed, or common across all MPI ranks.
+
     An example `_table_spec` entry is::
+
         _table_spec = {
             'quasars': {
                 'columns': [
@@ -372,6 +407,7 @@ class TableBase(ContainerBase):
 
 class TODContainer(ContainerBase, tod.TOData):
     """A pipeline container for time ordered data.
+
     This works like a normal :class:`ContainerBase` container, with the added
     ability to be concatenated, and treated like a a :class:`tod.TOData`
     instance.
@@ -389,8 +425,10 @@ class TODContainer(ContainerBase, tod.TOData):
 
 class Map(ContainerBase):
     """Container for holding multifrequency sky maps.
+
     The maps are packed in format `[freq, pol, pixel]` where the polarisations
     are Stokes I, Q, U and V, and the pixel dimension stores a Healpix map.
+
     Parameters
     ----------
     nside : int
@@ -433,6 +471,7 @@ class Map(ContainerBase):
 
 class SiderealStream(ContainerBase):
     """A container for holding a visibility dataset in sidereal time.
+
     Parameters
     ----------
     ra : int
@@ -523,6 +562,7 @@ class SiderealStream(ContainerBase):
 
 class TimeStream(TODContainer):
     """A container for holding a visibility dataset in time.
+
     This should look similar enough to the CHIME
     :class:`~ch_util.andata.CorrData` container that they can be used
     interchangably in most cases.
@@ -579,6 +619,7 @@ class TimeStream(TODContainer):
 
 class MModes(ContainerBase):
     """Parallel container for holding m-mode data.
+
     Parameters
     ----------
     mmax : integer
@@ -589,6 +630,7 @@ class MModes(ContainerBase):
         Number of correlation products.
     comm : MPI.Comm
         MPI communicator to distribute over.
+
     Attributes
     ----------
     vis : mpidataset.MPIArray
@@ -734,6 +776,7 @@ class StaticGainData(ContainerBase):
 
 class SourceCatalog(TableBase):
     """A basic container for holding astronomical source catalogs.
+
     Notes
     -----
     The `ra` and `dec` coordinates should be ICRS.
@@ -767,6 +810,7 @@ class SpectroscopicCatalog(SourceCatalog):
 
 def empty_like(obj, **kwargs):
     """Create an empty container like `obj`.
+
     Parameters
     ----------
     obj : ContainerBase
@@ -775,6 +819,7 @@ def empty_like(obj, **kwargs):
         Optional definitions of specific axes we want to override. Works in the
         same way as the `ContainerBase` constructor, though `axes_from=obj` and
         `attrs_from=obj` are implied.
+
     Returns
     -------
     newobj : container.ContainerBase
@@ -789,12 +834,15 @@ def empty_like(obj, **kwargs):
 
 def empty_timestream(**kwargs):
     """Create a new timestream container.
+
     This indirect call exists so it can be replaced to return custom timestream
     types.
+
     Parameters
     ----------
     kwargs : optional
         Arguments to pass to the timestream constructor.
+
     Returns
     -------
     ts : TimeStream

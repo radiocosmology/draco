@@ -269,7 +269,7 @@ class MakeTimeStream(task.SingleTask):
         time = self._next_time_axis()
 
         # Make the timestream container
-        tstream = containers.TimeStream(axes_from=self.sstream, time=time)
+        tstream = containers.empty_timestream(axes_from=self.sstream, time=time)
 
         # Make the interpolation array
         ra = self.observer.unix_to_lsa(tstream.time)
