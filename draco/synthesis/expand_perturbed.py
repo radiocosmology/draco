@@ -1,11 +1,13 @@
 """Tasks for expanding sidereal stream data with perturbed beams.
 
-A typical pattern would be to turn a sidereal stream from the :class:`SimulateSidereal` task,
-then generate one or more non-zero perturbation values with the :class:`GeneratePerturbation`
-task then apply the perturbations and expand nominally redundant products to
-either first or second order with :class:`ExpandPerturbedProducts`. Optionally, individual
-components of the expanded sidereal stream can be output via :class:`OutputPertStructure`.
-Then, the expanded stream can be passed on to make timestreams as in unperturbed simulations.
+A typical pattern would be to turn a sidereal stream from the
+:class:`SimulateSidereal` task, then generate one or more non-zero perturbation
+values with the :class:`GeneratePerturbation` task then apply the perturbations
+and expand nominally redundant products to either first or second order  in
+perturbation value with :class:`ExpandPerturbedProducts`. Optionally,
+individual components of the expanded sidereal stream can be output via
+:class:`OutputPertStructure`.Then, the expanded stream can be passed on to
+make timestreams as in unperturbed simulations.
 
 Tasks
 =====
@@ -27,8 +29,10 @@ from ..core import containers, task
 
 
 class GeneratePerturbation(task.SingleTask):
-    """ Generate small, random number perturbatons to input to the
-        ExpandPerturbedProducts task.
+    """ Generate perturbation values to input to ExpandPerturbedProducts task.
+
+        Perturbations can be fixed or random and can be applied to all or
+        a single input.
     """
 
     # Define perturbation parameters.
@@ -60,7 +64,8 @@ class GeneratePerturbation(task.SingleTask):
         self.telescope = telescope
 
     def process(self, sstream, map_):
-        """ Generate perturbations for each feed.
+        """ Generate perturbations for desired inputs,
+         either each or a single input.
 
         Parameters
         -------------
@@ -85,7 +90,8 @@ class GeneratePerturbation(task.SingleTask):
         # Define frequency map for upcoming container.
         freqmap = map_.index_map['freq'][:]
 
-        # Calculate random numbers to be perturbation values. Set the general size using input mult.
+        # Calculate random numbers to be perturbation values.
+        # Set the general size using input mult.
 
         # Do this only for communicator rank 0 (the first one) so that you don't
         # have four independent sets of perturbations running around.
@@ -93,7 +99,8 @@ class GeneratePerturbation(task.SingleTask):
         if comm.rank == 0:
             if self.pert_all is True:
                 if self.pert_fixed is False:
-                    # If self.pert_all == "All", generate perturbations for all inputs
+                    # If self.pert_all == "All", generate perturbations for all
+                    # inputs
                     perturbations = np.random.standard_normal(pertlistlen) * self.pert_val
                 else:
                     perturbations[self.pert_index] = self.pert_val
@@ -101,10 +108,12 @@ class GeneratePerturbation(task.SingleTask):
                 # Set the perturbation matrix to be all zeros
                 perturbations = np.zeros(pertlistlen)
                 if self.pert_fixed is False:
-                    # Generate a single random perturbation for the one entry you selected.
+                    # Generate a single random perturbation for the one entry
+                    # you selected.
                     perturbations[self.pert_index] = np.random.standard_normal(1) * self.pert_val
                 else:
-                    # Set just one entry (which you selected) to be the perturbation value you put in.
+                    # Set just one entry (which you selected) to be the
+                    # perturbation value you put in.
                     perturbations[self.pert_index] = self.pert_val
 
         else:
@@ -125,8 +134,10 @@ class GeneratePerturbation(task.SingleTask):
 
 
 class ExpandPerturbedProducts(task.SingleTask):
-    """Un-wrap collated products to full triangle.
-    Combine unperturbed and perturbed beam components into one set of output products.
+    """Un-wrap collated products to full triangle. Apply perturbation values
+    from a BeamPerturbation container to the first order perturbation
+    components of the input SiderealStream. Combine unperturbed and perturbed
+    beam components into one set of output products.
     """
     solution_order = config.Property(proptype=float, default=1)
 
@@ -141,8 +152,10 @@ class ExpandPerturbedProducts(task.SingleTask):
         self.telescope = telescope
 
     def process(self, sstream, map_, perturbations):
-        # def process(self,sstream,map_,perturbations=0)
-        """Transform a sidereal stream to having a full product matrix.
+        """Transform a sidereal stream to having a full product matrix. Multiply
+        first order beam perturbation sidereal stream components by per-feed
+        perturbation values. Combine zeroth and first order beam perturbation
+        components of full product matrix.
 
         Parameters
         ----------
@@ -157,7 +170,8 @@ class ExpandPerturbedProducts(task.SingleTask):
         Returns
         -------
         new_sstream : :class:`containers.SiderealStream`
-            Unwrapped sidereal stream with unperturbed and perturbed components of products combined.
+            Unwrapped sidereal stream with unperturbed and perturbed components
+            of products combined.
         """
 
         # Load and redistribute perturbations from input list.
@@ -176,12 +190,14 @@ class ExpandPerturbedProducts(task.SingleTask):
 
         # Define array with the size of all of the products from sstream.
 
-        # Define array with the size of the desired number of total products from sstream.
+        # Define array with the size of the desired number of total products
+        # from sstream.
         desired_prod = np.array([(fi, fj) for fi in range(ninputperpert)
                                  for fj in range(fi, ninputperpert)])
 
         # Set m max in the same manner as sstream.
-        # We aren't changing it, but we need have them defined here to make new_stream.
+        # We aren't changing it, but we need have them defined here to make
+        # new_stream.
         mmax = self.telescope.mmax
 
         # Set the minimum resolution required for the sky.
@@ -192,7 +208,8 @@ class ExpandPerturbedProducts(task.SingleTask):
         if (self.telescope.frequencies != freqmap['centre']).all():
             raise RuntimeError('Frequencies in map do not match those in Beam Transfers.')
 
-        # Define new sidereal stream container for the new dimensions. We now have ninputperpert inputs and desired_prod products.
+        # Define new sidereal stream container for the new dimensions.
+        # We now have ninputperpert inputs and desired_prod products.
         new_stream = containers.SiderealStream(freq=freqmap, ra=ntime, input=ninputperpert,
                                                prod=desired_prod, distributed=True, comm=map_.comm)
 
@@ -204,7 +221,8 @@ class ExpandPerturbedProducts(task.SingleTask):
         # the sidereal stack.
         for pi, (fi, fj) in enumerate(desired_prod):
 
-            # Define product index for the unperturbed component of the given product
+            # Define product index for the unperturbed component
+            # of the given product
             unique_ind = self.telescope.feedmap[fi, fj]
             # Also conjugate just in case
             conj = self.telescope.feedconj[fi, fj]
@@ -223,9 +241,11 @@ class ExpandPerturbedProducts(task.SingleTask):
             # Conjugate if necessary.
             prod_stream = prod_stream_noconj.conj() if conj else prod_stream_noconj
 
-            # Loop over each perturbation, starting from 1 as 0 would be the unperturbed component.
+            # Loop over each perturbation, starting from 1 as 0
+            # would be the unperturbed component.
             for pert_index in range(1, self.telescope.npert):
-                # Define the feed index in sstream for the perturbed component corresponding to each feed.
+                # Define the feed index in sstream for the perturbed component
+                # corresponding to each feed.
                 fi_pert = fi + ninputperpert * pert_index
                 fj_pert = fj + ninputperpert * pert_index
 
@@ -237,16 +257,19 @@ class ExpandPerturbedProducts(task.SingleTask):
                 pertfifj_stream = sstream.vis[:, pertfifj_ind] * feed_perts[fi_pert -
                                                                             ninputperpert * pert_index] * feed_perts[fj_pert - ninputperpert * pert_index]
 
-                # Define product index in sstream for the fi perturbed component.
+                # Define product index in sstream for the fi perturbed
+                # component.
                 pertfi_ind = self.telescope.feedmap[fi_pert, fj]
-                # Select the visibility corresponding to the fi perturbed component
-                # Multiply it by the perturbation value corresponding to the fi in this perturbation
+                # Select the visibility corresponding to the fi perturbed
+                # component. Multiply it by the perturbation value
+                # corresponding to the fi in this perturbation
                 pertfi_stream = sstream.vis[:, pertfi_ind] * \
                     feed_perts[fi_pert - ninputperpert * pert_index]
 
                 # Define product index for fj perturbed component
                 pertfj_ind = self.telescope.feedmap[fi, fj_pert]
-                # Select visibility corresponding to fj perturbed component and multiply by perturbation value
+                # Select visibility corresponding to fj perturbed component and
+                # multiply by perturbation value
                 pertfj_stream = sstream.vis[:, pertfj_ind] * \
                     feed_perts[fj - ninputperpert * pert_index]
 
@@ -261,7 +284,8 @@ class ExpandPerturbedProducts(task.SingleTask):
                     # Add fi perturbation component to unperturbed sstream
                     prod_stream = prod_stream + (pertfi_stream.conj() if pertfi_conj else pertfi_stream)
 
-                    # Add fj perturbation component to unperturbed sstream + fi perturbation sstream
+                    # Add fj perturbation component to unperturbed sstream +
+                    # fi perturbation sstream
                     prod_stream = prod_stream + (pertfj_stream.conj() if pertfj_conj else pertfj_stream)
                     if self.solution_order == 1:
                         continue
@@ -278,9 +302,10 @@ class ExpandPerturbedProducts(task.SingleTask):
 
 class OutputPertStructure(task.SingleTask):
     """ Output the individual unperturbed, fi perturbed, and fj perturbed
-        components of a sidereal stream.
-        DOES NOT APPLY PERTURBATIONS because this is really designed for analyses
-        which are trying to solve for perturbations.
+        components of a sidereal stream. THIS DOES NOT APPLY PERTURBATION
+        VALUES; it only separates zeroth and first order SiderealStream
+        components. (This is really designed for use in solving for
+        perturbation values.)
     """
     pert_feed = config.Property(proptype=float, default=0)
 
@@ -318,11 +343,13 @@ class OutputPertStructure(task.SingleTask):
         # Determine ninput per perturbation.
         ninputperpert = int(ninput / self.telescope.npert)
 
-        # Define array with the size of the desired number of total products from sstream.
+        # Define array with the size of the desired number of total products
+        # from sstream.
         desired_prod = np.array([(fi, fj) for fi in range(ninputperpert)
                                  for fj in range(fi, ninputperpert)])
 
-        # Copy down from sstream time & freq info - need to properly assemble new container.
+        # Copy down from sstream time & freq info - need to properly assemble
+        # new container.
         mmax = self.telescope.mmax
 
         # Set the minimum resolution required for the sky.
@@ -333,7 +360,8 @@ class OutputPertStructure(task.SingleTask):
         if (self.telescope.frequencies != freqmap['centre']).all():
             raise RuntimeError('Frequencies in map do not match those in Beam Transfers.')
 
-        # Define a new sidereal stream container to hold one or more of the perturbation structure components.
+        # Define a new sidereal stream container to hold one or more of the
+        # perturbation structure components.
         f_stream = containers.SiderealStream(freq=freqmap, ra=ntime, input=ninputperpert,
                                              prod=desired_prod, distributed=True, comm=map_.comm)
 
@@ -361,7 +389,8 @@ class OutputPertStructure(task.SingleTask):
             prod_stream = prod_stream_noconj.conj() if conj else prod_stream_noconj
 
             for pert_index in range(1, self.telescope.npert):
-                # Define the feed index in sstream for the perturbed component corresponding to each feed.
+                # Define the feed index in sstream for the perturbed component
+                # corresponding to each feed.
                 fi_pert = fi + ninputperpert * pert_index
                 fj_pert = fj + ninputperpert * pert_index
 
