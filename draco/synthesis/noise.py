@@ -21,7 +21,8 @@ import numpy as np
 
 from caput import config
 
-from ..core import task
+from ..core import task, containers
+from ..util import tools
 
 
 class ReceiverTemperature(task.SingleTask):
@@ -70,10 +71,13 @@ class SampleNoise(task.SingleTask):
         larger than one if multiple measurements were combined.
     seed : int
         Random seed for the noise generation.
+    set_weights : bool
+        Set the weights to the appropriate values.
     """
 
     sample_frac = config.Property(proptype=float, default=1.0)
     seed = config.Property(proptype=int, default=None)
+    set_weights = config.Property(proptype=bool, default=True)
 
     def process(self, data_exp):
         """Generate a noisy dataset.
@@ -91,6 +95,7 @@ class SampleNoise(task.SingleTask):
             The sampled (i.e. noisy) visibility dataset.
         """
 
+        from caput.time import STELLAR_S
         from ..util import _fast_tools
 
         data_exp.redistribute('freq')
@@ -102,13 +107,18 @@ class SampleNoise(task.SingleTask):
         # Barrier)
         vis_data = data_exp.vis[:]
 
+        # Get the time interval
+        if isinstance(data_exp, containers.SiderealStream):
+            dt = 240 * (data_exp.ra[1] - data_exp.ra[0]) * STELLAR_S
+        else:
+            dt = data_exp.time[1] - data_exp.time[0]
+
         with mpi_random_seed(self.seed):
 
             # Iterate over frequencies
             for lfi, fi in vis_data.enumerate(0):
 
-                # Get the time and frequency intervals
-                dt = data_exp.time[1] - data_exp.time[0]
+                # Get the frequency interval
                 df = data_exp.index_map['freq']['width'][fi] * 1e6
 
                 # Calculate the number of samples
@@ -125,6 +135,16 @@ class SampleNoise(task.SingleTask):
                     vis_samp = draw_complex_wishart(vis_mat, nsamp) / nsamp
 
                     vis_data[lfi, :, lti] = vis_samp[np.triu_indices(nfeed)]
+
+                # Construct and set the correct weights in place
+                if self.set_weights:
+                    autos = tools.extract_diagonal(vis_data[lfi], axis=0).real
+                    weight_fac = nsamp**0.5 / autos
+                    tools.apply_gain(
+                        data_exp.weight[lfi][np.newaxis, ...],
+                        weight_fac[np.newaxis, ...],
+                        out=data_exp.weight[lfi][np.newaxis, ...]
+                    )
 
         return data_exp
 

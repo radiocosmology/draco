@@ -41,6 +41,8 @@ import os.path
 from caput import pipeline
 from caput import config
 
+from . import task
+
 
 def _list_of_filelists(files):
     # Take in a list of lists/glob patterns of filenames
