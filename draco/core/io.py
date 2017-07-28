@@ -38,12 +38,8 @@ Several tasks accept groups of files as arguments. These are specified in the YA
 
 import os.path
 
-import numpy as np
-
 from caput import pipeline
 from caput import config
-
-from . import task
 
 
 def _list_of_filelists(files):
@@ -101,6 +97,9 @@ def _list_of_filegroups(groups):
 
         for fname in files:
             flist += glob.glob(fname)
+
+        if not len(flist):
+            raise RuntimeError('No files in group exist (%s).' % files)
 
         group['files'] = flist
 
@@ -327,3 +326,67 @@ class LoadBeamTransfer(pipeline.TaskBase):
             return tel, bt, tel.feeds
         except AttributeError:
             return tel, bt
+
+
+class LoadProductManager(pipeline.TaskBase):
+    """Loads a driftscan product manager from disk.
+
+    Attributes
+    ----------
+    product_directory : str
+        Path to the root of the products. This is the same as the output
+        directory used by ``drift-makeproducts``.
+    """
+
+    product_directory = config.Property(proptype=str)
+
+    def setup(self):
+        """Load the beam transfer matrices.
+
+        Returns
+        -------
+        manager : ProductManager
+            Object describing the telescope.
+        """
+
+        import os
+
+        from drift.core import manager
+
+        if not os.path.exists(self.product_directory):
+            raise RuntimeError('Products do not exist.')
+
+        # Load ProductManager and Timestream
+        pm = manager.ProductManager.from_config(self.product_directory)
+
+        return pm
+
+
+def get_telescope(obj):
+    """Return a telescope object out of the input (either `ProductManager`,
+    `BeamTransfer` or `TransitTelescope`).
+    """
+    from drift.core import telescope
+
+    try:
+        return get_beamtransfer(obj).telescope
+    except RuntimeError:
+        if isinstance(obj, telescope.TransitTelescope):
+            return obj
+
+    raise RuntimeError("Could not get telescope instance out of %s" % repr(obj))
+
+
+def get_beamtransfer(obj):
+    """Return a BeamTransfer object out of the input (either `ProductManager`,
+    `BeamTransfer`).
+    """
+    from drift.core import manager, beamtransfer
+
+    if isinstance(obj, beamtransfer.BeamTransfer):
+        return obj
+
+    if isinstance(obj, manager.ProductManager):
+        return obj.beamtransfer
+
+    raise RuntimeError("Could not get BeamTransfer instance out of %s" % repr(obj))

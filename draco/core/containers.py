@@ -621,14 +621,8 @@ class MModes(ContainerBase):
 
     Parameters
     ----------
-    mmax : integer
-        Number of samples in RA.
-    nfreq : integer
-        Number of frequencies.
-    ncorr : integer
-        Number of correlation products.
-    comm : MPI.Comm
-        MPI communicator to distribute over.
+    mmax : integer, optional
+        Largest m to be held.
 
     Attributes
     ----------
@@ -667,10 +661,6 @@ class MModes(ContainerBase):
         return self.datasets['vis_weight']
 
     @property
-    def ra(self):
-        return self.index_map['ra']
-
-    @property
     def freq(self):
         return self.index_map['freq']
 
@@ -688,6 +678,89 @@ class MModes(ContainerBase):
         kwargs['msign'] = np.array(['+', '-'])
 
         super(MModes, self).__init__(*args, **kwargs)
+
+
+class SVDModes(ContainerBase):
+    """Parallel container for holding SVD m-mode data.
+
+    Parameters
+    ----------
+    mmax : integer, optional
+        Largest m to be held.
+
+    Attributes
+    ----------
+    vis : mpidataset.MPIArray
+        Visibility array.
+    weight : mpidataset.MPIArray
+        Array of weights for each point.
+    """
+
+    _axes = ('m', 'mode')
+
+    _dataset_spec = {
+        'vis': {
+            'axes': ['m', 'mode'],
+            'dtype': np.complex128,
+            'initialise': True,
+            'distributed': True,
+            'distributed_axis': 'm'
+        },
+
+        'vis_weight': {
+            'axes': ['m', 'mode'],
+            'dtype': np.float64,
+            'initialise': True,
+            'distributed': True,
+            'distributed_axis': 'm'
+        },
+
+        'nmode': {
+            'axes': ['m'],
+            'dtype': np.int32,
+            'initialise': True,
+            'distributed': True,
+            'distributed_axis': 'm'
+        }
+    }
+
+    @property
+    def vis(self):
+        return self.datasets['vis']
+
+    @property
+    def nmode(self):
+        return self.datasets['nmode']
+
+    @property
+    def weight(self):
+        return self.datasets['vis_weight']
+
+    def __init__(self, mmax=None, *args, **kwargs):
+
+        # Set up axes from passed arguments
+        if mmax is not None:
+            kwargs['m'] = mmax + 1
+
+        super(SVDModes, self).__init__(*args, **kwargs)
+
+
+class KLModes(SVDModes):
+    """Parallel container for holding KL filtered m-mode data.
+
+    Parameters
+    ----------
+    mmax : integer, optional
+        Largest m to be held.
+
+    Attributes
+    ----------
+    vis : mpidataset.MPIArray
+        Visibility array.
+    weight : mpidataset.MPIArray
+        Array of weights for each point.
+    """
+    pass
 
 
 class GainData(TODContainer):
@@ -771,6 +844,121 @@ class StaticGainData(ContainerBase):
     @property
     def input(self):
         return self.index_map['input']
+
+
+class DelaySpectrum(ContainerBase):
+    """Container for a delay spectrum.
+    """
+
+    _axes = ('baseline', 'delay')
+
+    _dataset_spec = {
+        'spectrum': {
+            'axes': ['baseline', 'delay'],
+            'dtype': np.float64,
+            'initialise': True,
+            'distributed': True,
+            'distributed_axis': 'baseline'
+        }
+    }
+
+    @property
+    def spectrum(self):
+        return self.datasets['spectrum']
+
+
+class Powerspectrum2D(ContainerBase):
+    """Container for a 2D cartesian power spectrum.
+
+    Generally you should set the standard attributes `z_start` and `z_end` with
+    the redshift range included in the power spectrum estimate, and the `type`
+    attribute with a description of the estimator type. Suggested valued for
+    `type` are:
+
+    `unwindowed`
+        The standard unbiased quadratic estimator.
+
+    `minimum_variance`
+        The minimum variance, but highly correlated, estimator. Just a rescaled
+        version of the q-estimator.
+
+    `uncorrelated`
+        The uncorrelated estimator using the root of the Fisher matrix.
+
+    Parameters
+    ----------
+    kpar_edges, kperp_edges : np.ndarray
+        Array of the power spectrum bin boundaries.
+    """
+
+    _axes = ('kpar', 'kperp')
+
+    _dataset_spec = {
+        'powerspectrum': {
+            'axes': ['kpar', 'kperp'],
+            'dtype': np.float64,
+            'initialise': True,
+            'distributed': False
+        },
+
+        'C_inv': {
+            'axes': ['kpar', 'kperp', 'kpar', 'kperp'],
+            'dtype': np.float64,
+            'initialise': True,
+            'distributed': False
+        }
+    }
+
+    def __init__(self, kpar_edges=None, kperp_edges=None, *args, **kwargs):
+
+        # Construct the kpar axis from the bin edges
+        if kpar_edges is not None:
+            centre = 0.5 * (kpar_edges[1:] + kpar_edges[:-1])
+            width = kpar_edges[1:] - kpar_edges[:-1]
+
+            kwargs['kpar'] = np.rec.fromarrays(
+                [centre, width], names=['centre', 'width']
+            ).view(np.ndarray)
+
+        # Construct the kperp axis from the bin edges
+        if kperp_edges is not None:
+            centre = 0.5 * (kperp_edges[1:] + kperp_edges[:-1])
+            width = kperp_edges[1:] - kperp_edges[:-1]
+
+            kwargs['kperp'] = np.rec.fromarrays(
+                [centre, width], names=['centre', 'width']
+            ).view(np.ndarray)
+
+        super(Powerspectrum2D, self).__init__(*args, **kwargs)
+
+    @property
+    def powerspectrum(self):
+        return self.datasets['powerspectrum']
+
+    @property
+    def C_inv(self):
+        return self.datasets['C_inv']
+
+
+class SVDSpectrum(ContainerBase):
+    """Container for an m-mode SVD spectrum.
+    """
+
+    _axes = ('m', 'singularvalue')
+
+    _dataset_spec = {
+        'spectrum': {
+            'axes': ['m', 'singularvalue'],
+            'dtype': np.float64,
+            'initialise': True,
+            'distributed': True,
+            'distributed_axis': 'm'
+        }
+    }
+
+    @property
+    def spectrum(self):
+        return self.datasets['spectrum']
 
 
 class SourceCatalog(TableBase):

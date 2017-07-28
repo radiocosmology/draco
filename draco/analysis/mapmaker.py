@@ -14,7 +14,7 @@ Tasks
 import numpy as np
 from caput import mpiarray, config
 
-from ..core import containers, task
+from ..core import containers, task, io
 
 
 class BaseMapMaker(task.SingleTask):
@@ -33,12 +33,12 @@ class BaseMapMaker(task.SingleTask):
 
         Parameters
         ----------
-        bt : beamtransfer.BeamTransfer
-            Beam transfer manager object containing all the pre-generated beam
-            transfer matrices.
+        bt : beamtransfer.BeamTransfer or manager.ProductManager
+            Beam transfer manager object (or ProductManager) containing all the
+            pre-generated beam transfer matrices.
         """
 
-        self.beamtransfer = bt
+        self.beamtransfer = io.get_beamtransfer(bt)
 
     def process(self, mmodes):
         """Make a map from the given m-modes.

@@ -21,7 +21,7 @@ import numpy as np
 from cora.util import hputil
 from caput import mpiutil, pipeline, config, mpiarray
 
-from ..core import containers, task
+from ..core import containers, task, io
 
 
 class SimulateSidereal(task.SingleTask):
@@ -30,16 +30,16 @@ class SimulateSidereal(task.SingleTask):
 
     done = False
 
-    def setup(self, beamtransfer):
+    def setup(self, bt):
         """Setup the simulation.
 
         Parameters
         ----------
-        bt : BeamTransfer
+        bt : ProductManager or BeamTransfer
             Beam Transfer maanger.
         """
-        self.beamtransfer = beamtransfer
-        self.telescope = beamtransfer.telescope
+        self.beamtransfer = io.get_beamtransfer(bt)
+        self.telescope = io.get_telescope(bt)
 
     def process(self, map_):
         """Simulate a SiderealStream
@@ -160,7 +160,7 @@ class ExpandProducts(task.SingleTask):
         tel : :class:`drift.core.TransitTelescope`
             Telescope object.
         """
-        self.telescope = telescope
+        self.telescope = io.get_telescope(telescope)
 
     def process(self, sstream):
         """Transform a sidereal stream to having a full product matrix.
