@@ -257,13 +257,13 @@ class SelectFreq(task.SingleTask):
         freq_map = freq_map[newindex]
 
         # Destribute input container over ra or time.
-        data.redistribute(['ra', 'time'])
+        data.redistribute(['ra', 'time', 'pixel'])
 
         # Create new container with subset of frequencies.
         newdata = containers.empty_like(data, freq=freq_map)
 
         # Redistribute new container over ra or time.
-        newdata.redistribute(['ra', 'time'])
+        newdata.redistribute(['ra', 'time', 'pixel'])
 
         # Copy over datasets. If the dataset has a frequency axis,
         # then we only copy over the subset.
