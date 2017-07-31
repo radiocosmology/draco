@@ -81,6 +81,7 @@ def _log_level(x):
         'DEBUG': logging.DEBUG,
         'INFO': logging.INFO,
         'WARN': logging.WARN,
+        'WARNING': logging.WARN,
         'ERROR': logging.ERROR,
         'CRITICAL': logging.CRITICAL
     }

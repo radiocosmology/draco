@@ -141,9 +141,9 @@ class SampleNoise(task.SingleTask):
                     autos = tools.extract_diagonal(vis_data[lfi], axis=0).real
                     weight_fac = nsamp**0.5 / autos
                     tools.apply_gain(
-                        data_exp.weight[lfi][np.newaxis, ...],
+                        data_exp.weight[fi][np.newaxis, ...],
                         weight_fac[np.newaxis, ...],
-                        out=data_exp.weight[lfi][np.newaxis, ...]
+                        out=data_exp.weight[fi][np.newaxis, ...]
                     )
 
         return data_exp
