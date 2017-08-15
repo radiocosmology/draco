@@ -109,11 +109,13 @@ def apply_gain(vis, gain, axis=1, out=None, prod_map=None):
         ii, ij = prod_map[pp]
 
         # Fetch the gains
-        gi = gain[:, ii]
-        gj = gain[:, ij].conj()
+        gi = gain[[slice(None) for i in range(axis)] + [ii]]
+        gj = gain[[slice(None) for i in range(axis)] + [ij]].conj()
 
         # Apply the gains and save into the output array.
-        out[:, pp] = vis[:, pp] * gi * gj
+        vis_slice = [slice(None) for i in range(axis)] + [pp]
+        out[vis_slice] = vis[vis_slice] * gi * gj
+
 
     return out
 
