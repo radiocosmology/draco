@@ -66,7 +66,7 @@ def apply_gain(vis, gain, axis=1, out=None, prod_map=None):
         Array of gains. One gain per input.
     axis : integer, optional
         The axis along which the inputs (or visibilities) are
-        contained. Currently only supports axis=1.
+        contained.
     out : np.ndarray
         Array to place output in. If :obj:`None` create a new
         array. This routine can safely use `out = vis`.
@@ -102,6 +102,9 @@ def apply_gain(vis, gain, axis=1, out=None, prod_map=None):
     elif out.shape != vis.shape:
         raise Exception("Output array is wrong shape.")
 
+    # Define slices for use in gain & vis selection & combination
+    gain_vis_slice = [slice(None) for i in range(axis)]
+
     # Iterate over input pairs and set gains
     for pp in range(nprod):
 
@@ -109,12 +112,11 @@ def apply_gain(vis, gain, axis=1, out=None, prod_map=None):
         ii, ij = prod_map[pp]
 
         # Fetch the gains
-        gi = gain[[slice(None) for i in range(axis)] + [ii]]
-        gj = gain[[slice(None) for i in range(axis)] + [ij]].conj()
+        gi = gain[gain_vis_slice + [ii]]
+        gj = gain[gain_vis_slice + [ij]].conj()
 
         # Apply the gains and save into the output array.
-        vis_slice = [slice(None) for i in range(axis)] + [pp]
-        out[vis_slice] = vis[vis_slice] * gi * gj
+        out[gain_vis_slice + [pp]] = vis[gain_vis_slice + [pp]] * gi * gj
 
 
     return out
