@@ -83,6 +83,14 @@ class SVDModeProject(_ProjectFilterBase):
             tm = mmodes.vis[mi].reshape(tel.nfreq, 2 * tel.npairs)
             svdm = bt.project_vector_telescope_to_svd(mi, tm)
 
+            if np.isfinite(svdm).all() is False:
+                print "M MODE", mi
+                print np.isfinite(svdm).all(), "NOT FINITE"
+
+            if np.isnan(svdm).any() is True:
+                print "M MODE", mi
+                print np.isnan(svdm).any(), "FOUND A NAN"
+
             svdmodes.nmode[mi] = len(svdm)
             svdmodes.vis[mi, :svdmodes.nmode[mi]] = svdm
 

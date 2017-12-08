@@ -72,7 +72,7 @@ class BaseMapMaker(task.SingleTask):
         bt_freq = self.beamtransfer.telescope.frequencies
         mm_freq = mmodes.index_map['freq']['centre']
 
-        freq_ind = [ find_key(bt_freq, mf) for mf in mm_freq]
+        freq_ind = [find_key(bt_freq, mf) for mf in mm_freq]
 
         # Trim off excess m-modes
         mmodes.redistribute('freq')
@@ -135,6 +135,111 @@ class BaseMapMaker(task.SingleTask):
         a : np.ndarray[npol, lmax+1]
         """
         pass
+
+
+class BaseMapMakerSVD(task.SingleTask):
+    """Rudimentary map maker from svd-modes.
+
+    Attributes
+    ----------
+    nside : int
+        Resolution of output Healpix map.
+    """
+
+    nside = config.Property(proptype=int, default=256)
+
+    def setup(self, bt):
+        """Set the beamtransfer matrices to use.
+
+        Parameters
+        ----------
+        bt : beamtransfer.BeamTransfer or manager.ProductManager
+            Beam transfer manager object (or ProductManager) containing all the
+            pre-generated beam transfer matrices.
+        """
+
+        self.beamtransfer = io.get_beamtransfer(bt)
+
+    def process(self, svdmodes):
+        """Make a map from the given svd-modes.
+
+        Parameters
+        ----------
+        mmodes : containers.SVDModes
+
+        Returns
+        -------
+        map : containers.Map
+        """
+
+        from cora.util import hputil
+
+        # Fetch various properties
+        bt = self.beamtransfer
+        lmax = bt.telescope.lmax
+        mmax = min(bt.telescope.mmax, len(svdmodes.index_map['m']) - 1)
+        nfreq = bt.telescope.nfreq
+
+        svdmodes.redistribute('m')
+        m_local = svdmodes.vis.local_shape[0]
+        svd_array = svdmodes.vis[:]
+        # NOT SURE IF I NEED WEIGHT/noise
+        svd_weight = svdmodes.weight[:]
+
+        # Create alm array
+        alm = mpiarray.MPIArray((nfreq, 4, lmax + 1, mmax + 1), axis=3,
+                                dtype=np.complex128, comm=svdmodes.comm)
+        alm[:] = 0.0
+
+        # Loop over all m's and solve from svd-mode visibilities to alms.
+        for mi, m in svd_array.enumerate(axis=0):
+
+            for fi in range(nfreq):
+                v = svd_array.view(np.ndarray).reshape(m_local, nfreq, lmax +1)[mi, fi, :]
+                a = alm[fi, ..., mi].view(np.ndarray)
+                # not sure if I need the noise, since in thise basis its 1.
+                # Ni = svd_weight.view(np.ndarray).reshape(m_local, nfreq, lmax+1)[mi, fi, :]
+
+                a[:] = self._solve_m(m, fi, v)  # Ni commented out
+
+        # Redistribute back over frequency
+        alm = alm.redistribute(axis=0)
+
+        # Copy into square alm array for transform
+        almt = mpiarray.MPIArray((nfreq, 4, lmax + 1, lmax + 1), dtype=np.complex128, axis=0, comm=svdmodes.comm)
+        almt[..., :(mmax + 1)] = alm
+        alm = almt
+
+        # Perform spherical harmonic transform to map space
+        maps = hputil.sphtrans_inv_sky(alm, self.nside)
+        maps = mpiarray.MPIArray.wrap(maps, axis=0)
+
+        m = containers.Map(nside=self.nside, axes_from=svdmodes, comm=svdmodes.comm)
+        m.map[:] = maps
+
+        return m
+
+        def _solve_m(self, m, f, v):  # Ni commented out
+            """Solve for the a_lm's.
+
+            This implementation is blank. Must be overriden.
+
+            Parameters
+            ----------
+            m : int
+                Which m-mode are we solving for.
+            f : int
+                Frequency we are solving for.
+            v : np.ndarray[2, nbase]
+                Visibility data.
+            Ni : np.ndarray[2, nbase]
+                Inverse of noise variance. Used as the noise matrix for the solve.
+
+            Returns
+            -------
+            a : np.ndarray[npol, lmax+1]
+            """
+            pass
 
 
 class DirtyMapMaker(BaseMapMaker):
@@ -251,7 +356,7 @@ class WienerMapMaker(BaseMapMaker):
         # Construct pre-wightened beam and beam-conjugated matrices
         bmt = bm * Nh[:, np.newaxis]
         bth = bmt.T.conj()
-
+        print bmt.shape, "shape of beam transfer matrice"
         # Pre-wighten the visibilities
         vt = Nh * v
 
@@ -261,7 +366,8 @@ class WienerMapMaker(BaseMapMaker):
         l = l[m:]  # Trim off any l < m
         cl_TT = self.prior_amp**2 * l**(-self.prior_tilt)
         S_diag = np.concatenate([cl_TT] * 4)
-
+        print np.diag(1./S_diag).shape, "Shape of signal cov matrix"
+        print np.dot(bth, bmt).shape, "Shape of dot product"
         # For large ntel it's quickest to solve in the standard Wiener filter way
         if bt.ntel > bt.nsky:
             Ci = np.diag(1.0 / S_diag) + np.dot(bth, bmt)  # Construct the inverse covariance
@@ -277,6 +383,81 @@ class WienerMapMaker(BaseMapMaker):
         # Copy the solution into a correctly shaped array output
         a = np.zeros((bt.telescope.num_pol_sky, bt.telescope.lmax + 1), dtype=v.dtype)
         a[:, m:] = a_wiener.reshape(bt.telescope.num_pol_sky, -1)
+
+        return a
+
+
+class WienerMapMaker_SVD(BaseMapMakerSVD):
+    r"""Generate a Wiener filtered map from the SVD basis assuming that the signal is a Gaussian
+    random field described by a power-law power spectum.
+
+    Attributes
+    ----------
+    prior_amp : float
+        An amplitude prior to use for the map maker. In Kelvin.
+    prior_tilt : float
+        Power law index prior for the power spectrum.
+
+    Notes
+    -----
+
+    The Wiener map is produced by generating a set of :math:`a_{lm}` coefficients
+    using
+
+    .. math::
+        \hat{\mathbf{a}} = \left( \mathbf{S}^{-1} + \mathbf{B}^\dagger
+        \mathbf{N}^{-1} \mathbf{B} \right)^{-1} \mathbf{B}^\dagger \mathbf{N}^{-1} \mathbf{v}
+
+    where the signal covariance matrix :math:`\mathbf{S}` is assumed to be
+    governed by a power law power spectrum for each polarisation component.
+    """
+
+    prior_amp = config.Property(proptype=float, default=1.0)
+    prior_tilt = config.Property(proptype=float, default=0.5)
+
+    def _solve_m(self, m, f, v):
+
+        import scipy.linalg as la
+
+        bt = self.beamtransfer
+
+        # Massage the arrays into shape
+        # v per m, per f, should be 491 long
+        # Ni = Ni.reshape(bt.ntel)
+        # Nh = Ni**0.5
+
+        # Get the SVD projection matrix
+        # ut = bt.beam_ut(m, f)
+        # Ptoject noise into SVD basis
+
+        # Get the beam transfer matrix
+        bsvd = bt.beam_svd(m, fi=f).reshape(bt.telescope.lmax + 1, -1)
+        # Construct beam-conjugated matrices
+        bsvdh = bsvd.T.conj()
+
+        # Construct the signal covariance matrix
+        l = np.arange(bt.telescope.lmax + 1)
+        l[0] = 1  # Change l=0 to get around singularity
+        cl_TT = self.prior_amp**2 * l**(-self.prior_tilt)
+        S_diag = np.concatenate([cl_TT] * 4)
+
+        # For large ntel it's quickest to solve in the standard Wiener filter way
+        # CAROLIN: NOT SURE IF I NEED THIS IF STATEMENT?!
+        # if bt.ntel > bt.nsky:
+        Ci = np.diag(1.0 / S_diag) + np.dot(bsvdh, bsvd)  # Construct the inverse covariance
+        a_dirty = np.dot(bsvdh, v)  # Find the dirty map
+        a_wiener = la.solve(Ci, a_dirty, sym_pos=True)  # Solve to find C vt
+
+        # If not it's better to rearrange using the results for blockwise matrix inversion
+        # Carolin : DON't UNDERSTAND THIS!!!!
+        # else:
+        # pCi = np.identity(bt.lmax + 1) + np.dot(bsvd * S_diag[np.newaxis, :], bsvdh)
+        # v_int = la.solve(pCi, v, sym_pos=True)
+        # a_wiener = S_diag * np.dot(bth, v_int)
+
+        # Copy the solution into a correctly shaped array output
+        a = np.zeros((bt.telescope.num_pol_sky, bt.telescope.lmax + 1), dtype=v.dtype)
+        a[:, :] = a_wiener.reshape(bt.telescope.num_pol_sky, -1)
 
         return a
 

@@ -806,6 +806,53 @@ class GainData(TODContainer):
         return self.index_map['input']
 
 
+class SiderealGainData(ContainerBase):
+    """Parallel container for holding sidereal gain data.
+    """
+
+    _axes = ('freq', 'input', 'ra')
+
+    _dataset_spec = {
+        'gain': {
+            'axes': ['freq', 'input', 'ra'],
+            'dtype': np.complex128,
+            'initialise': True,
+            'distributed': True,
+            'distributed_axis': 'freq'
+        },
+        'weight': {
+            'axes': ['freq', 'ra'],
+            'dtype': np.float64,
+            'initialise': False,
+            'distributed': True,
+            'distributed_axis': 'freq'
+        }
+    }
+
+    @property
+    def gain(self):
+        return self.datasets['gain']
+
+    @property
+    def weight(self):
+        try:
+            return self.datasets['weight']
+        except KeyError:
+            return None
+
+    @property
+    def freq(self):
+        return self.index_map['freq']
+
+    @property
+    def input(self):
+        return self.index_map['input']
+
+    @property
+    def ra(self):
+        return self.index_map['ra']
+
+
 class StaticGainData(ContainerBase):
     """Parallel container for holding static gain data (i.e. non time varying).
     """
