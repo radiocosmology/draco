@@ -58,7 +58,8 @@ class BaseMapMaker(task.SingleTask):
         bt = self.beamtransfer
         lmax = bt.telescope.lmax
         mmax = min(bt.telescope.mmax, len(mmodes.index_map['m']) - 1)
-        nfreq = len(mmodes.index_map['freq'])  # bt.telescope.nfreq
+        nfreq = bt.telescope.nfreq
+        # len(mmodes.index_map['freq'])
 
         def find_key(key_list, key):
             try:
@@ -165,7 +166,7 @@ class BaseMapMakerSVD(task.SingleTask):
 
         Parameters
         ----------
-        mmodes : containers.SVDModes
+        svdmodes : containers.SVDModes
 
         Returns
         -------
@@ -181,7 +182,6 @@ class BaseMapMakerSVD(task.SingleTask):
         nfreq = bt.telescope.nfreq
 
         svdmodes.redistribute('m')
-        m_local = svdmodes.vis.local_shape[0]
         svd_array = svdmodes.vis[:]
         # NOT SURE IF I NEED WEIGHT/noise
         svd_weight = svdmodes.weight[:]
@@ -195,9 +195,9 @@ class BaseMapMakerSVD(task.SingleTask):
         for mi, m in svd_array.enumerate(axis=0):
 
             for fi in range(nfreq):
-                v = svd_array.view(np.ndarray).reshape(m_local, nfreq, lmax +1)[mi, fi, :]
+                v = svd_array[mi, :].view(np.ndarray)
                 a = alm[fi, ..., mi].view(np.ndarray)
-                # not sure if I need the noise, since in thise basis its 1.
+                # not sure if I need the noise, since in this basis its 1.
                 # Ni = svd_weight.view(np.ndarray).reshape(m_local, nfreq, lmax+1)[mi, fi, :]
 
                 a[:] = self._solve_m(m, fi, v)  # Ni commented out
@@ -214,7 +214,13 @@ class BaseMapMakerSVD(task.SingleTask):
         maps = hputil.sphtrans_inv_sky(alm, self.nside)
         maps = mpiarray.MPIArray.wrap(maps, axis=0)
 
-        m = containers.Map(nside=self.nside, axes_from=svdmodes, comm=svdmodes.comm)
+        # Create freq axes
+        freqmap = np.zeros(nfreq,
+                           dtype=[('centre', np.float64), ('width', np.float64)])
+        freqmap['centre'][:] = bt.telescope.frequencies
+        freqmap['width'][:] = np.abs(np.diff(bt.telescope.frequencies)[0])
+
+        m = containers.Map(nside=self.nside, freq=freqmap, comm=svdmodes.comm)
         m.map[:] = maps
 
         return m
@@ -356,7 +362,6 @@ class WienerMapMaker(BaseMapMaker):
         # Construct pre-wightened beam and beam-conjugated matrices
         bmt = bm * Nh[:, np.newaxis]
         bth = bmt.T.conj()
-        print bmt.shape, "shape of beam transfer matrice"
         # Pre-wighten the visibilities
         vt = Nh * v
 
@@ -366,8 +371,7 @@ class WienerMapMaker(BaseMapMaker):
         l = l[m:]  # Trim off any l < m
         cl_TT = self.prior_amp**2 * l**(-self.prior_tilt)
         S_diag = np.concatenate([cl_TT] * 4)
-        print np.diag(1./S_diag).shape, "Shape of signal cov matrix"
-        print np.dot(bth, bmt).shape, "Shape of dot product"
+
         # For large ntel it's quickest to solve in the standard Wiener filter way
         if bt.ntel > bt.nsky:
             Ci = np.diag(1.0 / S_diag) + np.dot(bth, bmt)  # Construct the inverse covariance
@@ -387,7 +391,51 @@ class WienerMapMaker(BaseMapMaker):
         return a
 
 
-class WienerMapMaker_SVD(BaseMapMakerSVD):
+class DirtyMapMakerSVD(BaseMapMakerSVD):
+    """Generate a dirty map in SVD basis.
+
+    Notes
+    -----
+
+    The dirty map is produced by generating a set of :math:`a_{lm}` coefficients
+    using
+
+    .. math:: \hat{\mathbf{a}} = \bar{\mathbf{B}^{+}}  \bar{\mathbf{v}}
+
+    and then performing the spherical harmonic transform to get the sky intensity.
+    """
+
+    def _solve_m(self, m, f, vec):
+
+        bt = self.beamtransfer
+
+        # Get the svd beamtransfer matrix for a specific m and f
+        beam = bt.beam_svd(m, f)
+        # Create alm array
+        a = np.zeros((bt.telescope.num_pol_sky, bt.telescope.lmax + 1), dtype=vec.dtype)
+        # Get the significant svd modes and the frequency bounds
+        svnum, svbounds = bt._svd_num(m)
+
+        if svnum[f] < 1:
+            return a
+
+        # Get the svd vector for this frequency
+        fvec = vec[svbounds[f]:svbounds[f+1]]
+        # Get the inverse beam with the significant svd modes
+        beam_svnum = beam[:svnum[f], :, :]
+        beam_svnum = beam_svnum.reshape(svnum[f], -1)
+
+        # Construct beam-conjugated matrices
+        beam_svnum_conj = beam_svnum.T.conj()
+
+        # Solve for the dirty map alms
+        a = np.dot(beam_svnum_conj, fvec)
+        a = a.reshape(bt.telescope.num_pol_sky, bt.telescope.lmax + 1)
+
+        return a
+
+
+class WienerMapMakerSVD(BaseMapMakerSVD):
     r"""Generate a Wiener filtered map from the SVD basis assuming that the signal is a Gaussian
     random field described by a power-law power spectum.
 
@@ -415,25 +463,30 @@ class WienerMapMaker_SVD(BaseMapMakerSVD):
     prior_amp = config.Property(proptype=float, default=1.0)
     prior_tilt = config.Property(proptype=float, default=0.5)
 
-    def _solve_m(self, m, f, v):
+    def _solve_m(self, m, f, vec):
 
         import scipy.linalg as la
 
         bt = self.beamtransfer
 
-        # Massage the arrays into shape
-        # v per m, per f, should be 491 long
-        # Ni = Ni.reshape(bt.ntel)
-        # Nh = Ni**0.5
+        # Get the beam transfer matrix for an m and f
+        beam = bt.beam_svd(m, f)
+        # Create alm array
+        a = np.zeros((bt.telescope.num_pol_sky, bt.telescope.lmax + 1), dtype=vec.dtype)
+        # Get the significant svd modes and the frequency bounds
+        svnum, svbounds = bt._svd_num(m)
 
-        # Get the SVD projection matrix
-        # ut = bt.beam_ut(m, f)
-        # Ptoject noise into SVD basis
+        if svnum[f] < 1:
+            return a
 
-        # Get the beam transfer matrix
-        bsvd = bt.beam_svd(m, fi=f).reshape(bt.telescope.lmax + 1, -1)
+        # Get the svd vector for this frequency
+        fvec = vec[svbounds[f]:svbounds[f+1]]
+
+        beam_svnum = beam[:svnum[f], :, :]
+        beam_svnum = beam_svnum.reshape(svnum[f], -1) #126, 1964
+
         # Construct beam-conjugated matrices
-        bsvdh = bsvd.T.conj()
+        beam_svnum_conj = beam_svnum.T.conj() # 1964, 126
 
         # Construct the signal covariance matrix
         l = np.arange(bt.telescope.lmax + 1)
@@ -442,21 +495,11 @@ class WienerMapMaker_SVD(BaseMapMakerSVD):
         S_diag = np.concatenate([cl_TT] * 4)
 
         # For large ntel it's quickest to solve in the standard Wiener filter way
-        # CAROLIN: NOT SURE IF I NEED THIS IF STATEMENT?!
-        # if bt.ntel > bt.nsky:
-        Ci = np.diag(1.0 / S_diag) + np.dot(bsvdh, bsvd)  # Construct the inverse covariance
-        a_dirty = np.dot(bsvdh, v)  # Find the dirty map
+        Ci = np.diag(1.0 / S_diag) + np.dot(beam_svnum_conj, beam_svnum)  # Construct the inverse covariance
+        a_dirty = np.dot(beam_svnum_conj, fvec)  # Find the dirty map
         a_wiener = la.solve(Ci, a_dirty, sym_pos=True)  # Solve to find C vt
 
-        # If not it's better to rearrange using the results for blockwise matrix inversion
-        # Carolin : DON't UNDERSTAND THIS!!!!
-        # else:
-        # pCi = np.identity(bt.lmax + 1) + np.dot(bsvd * S_diag[np.newaxis, :], bsvdh)
-        # v_int = la.solve(pCi, v, sym_pos=True)
-        # a_wiener = S_diag * np.dot(bth, v_int)
-
         # Copy the solution into a correctly shaped array output
-        a = np.zeros((bt.telescope.num_pol_sky, bt.telescope.lmax + 1), dtype=v.dtype)
         a[:, :] = a_wiener.reshape(bt.telescope.num_pol_sky, -1)
 
         return a

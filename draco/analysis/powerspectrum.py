@@ -60,13 +60,13 @@ class QuadraticPSEstimation(task.SingleTask):
         q_list = []
 
         for mi, m in klmodes.vis[:].enumerate(axis=0):
-
             ps_single = pse.q_estimator(m, klmodes.vis[m, :klmodes.nmode[m]])
             q_list.append(ps_single)
 
         q = klmodes.comm.allgather(np.array(q_list).sum(axis=0))
         q = np.array(q).sum(axis=0)
 
+        # reading from directory
         fisher, bias = pse.fisher_bias()
 
         ps = containers.Powerspectrum2D(kpar_edges=pse.kpar_bands,
@@ -84,7 +84,8 @@ class QuadraticPSEstimation(task.SingleTask):
         elif self.pstype == 'minimum_variance':
             M = np.diag(fisher.sum(axis=1)**-1)
 
-        ps.powerspectrum[:] = np.dot(M, q - bias).reshape(npar, nperp)
+        # ps.powerspectrum[:] = np.dot(M, q - bias).reshape(npar, nperp)
+        ps.powerspectrum[:] = np.dot(M, q).reshape(npar, nperp)
         ps.C_inv[:] = fisher.reshape(npar, nperp, npar, nperp)
 
         return ps

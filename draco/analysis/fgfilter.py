@@ -80,7 +80,7 @@ class SVDModeProject(_ProjectFilterBase):
         # Iterate over local m's, project mode and save to disk.
         for lm, mi in mmodes.vis[:].enumerate(axis=0):
 
-            tm = mmodes.vis[mi].reshape(tel.nfreq, 2 * tel.npairs)
+            tm = mmodes.vis[mi].transpose((1, 0, 2)).reshape(tel.nfreq, 2 * tel.npairs)
             svdm = bt.project_vector_telescope_to_svd(mi, tm)
 
             if np.isfinite(svdm).all() is False:
