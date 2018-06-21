@@ -938,34 +938,25 @@ class Powerspectrum2D(ContainerBase):
         Array of the power spectrum bin boundaries.
     """
 
-    _axes = ('kpar', 'kperp')
+    _axes = ('kperp', 'kpar')
 
     _dataset_spec = {
         'powerspectrum': {
-            'axes': ['kpar', 'kperp'],
+            'axes': ['kperp', 'kpar'],
             'dtype': np.float64,
             'initialise': True,
             'distributed': False
         },
 
         'C_inv': {
-            'axes': ['kpar', 'kperp', 'kpar', 'kperp'],
+            'axes': ['kperp', 'kpar', 'kperp', 'kpar'],
             'dtype': np.float64,
             'initialise': True,
             'distributed': False
         }
     }
 
-    def __init__(self, kpar_edges=None, kperp_edges=None, *args, **kwargs):
-
-        # Construct the kpar axis from the bin edges
-        if kpar_edges is not None:
-            centre = 0.5 * (kpar_edges[1:] + kpar_edges[:-1])
-            width = kpar_edges[1:] - kpar_edges[:-1]
-
-            kwargs['kpar'] = np.rec.fromarrays(
-                [centre, width], names=['centre', 'width']
-            ).view(np.ndarray)
+    def __init__(self, kperp_edges=None, kpar_edges=None, *args, **kwargs):
 
         # Construct the kperp axis from the bin edges
         if kperp_edges is not None:
@@ -973,6 +964,15 @@ class Powerspectrum2D(ContainerBase):
             width = kperp_edges[1:] - kperp_edges[:-1]
 
             kwargs['kperp'] = np.rec.fromarrays(
+                [centre, width], names=['centre', 'width']
+            ).view(np.ndarray)
+
+        # Construct the kpar axis from the bin edges
+        if kpar_edges is not None:
+            centre = 0.5 * (kpar_edges[1:] + kpar_edges[:-1])
+            width = kpar_edges[1:] - kpar_edges[:-1]
+
+            kwargs['kpar'] = np.rec.fromarrays(
                 [centre, width], names=['centre', 'width']
             ).view(np.ndarray)
 
