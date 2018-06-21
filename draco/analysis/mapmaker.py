@@ -197,8 +197,7 @@ class BaseMapMakerSVD(task.SingleTask):
             for fi in range(nfreq):
                 v = svd_array[mi, :].view(np.ndarray)
                 a = alm[fi, ..., mi].view(np.ndarray)
-                # not sure if I need the noise, since in this basis its 1.
-                # Ni = svd_weight.view(np.ndarray).reshape(m_local, nfreq, lmax+1)[mi, fi, :]
+                #Don't need to set noise, since in this basis its 1.
 
                 a[:] = self._solve_m(m, fi, v)  # Ni commented out
 
@@ -483,7 +482,7 @@ class WienerMapMakerSVD(BaseMapMakerSVD):
         fvec = vec[svbounds[f]:svbounds[f+1]]
 
         beam_svnum = beam[:svnum[f], :, :]
-        beam_svnum = beam_svnum.reshape(svnum[f], -1) 
+        beam_svnum = beam_svnum.reshape(svnum[f], -1)
 
         # Construct beam-conjugated matrices
         beam_svnum_conj = beam_svnum.T.conj()
@@ -497,7 +496,7 @@ class WienerMapMakerSVD(BaseMapMakerSVD):
         # For large ntel it's quickest to solve in the standard Wiener filter way
         Ci = np.diag(1.0 / S_diag) + np.dot(beam_svnum_conj, beam_svnum)  # Construct the inverse covariance
         a_dirty = np.dot(beam_svnum_conj, fvec)  # Find the dirty map
-        a_wiener = la.solve(Ci, a_dirty, sym_pos=True)  # Solve to find C vt
+        a_wiener = la.solve(Ci, a_dirty, sym_pos=True)
 
         # Copy the solution into a correctly shaped array output
         a[:, :] = a_wiener.reshape(bt.telescope.num_pol_sky, -1)
