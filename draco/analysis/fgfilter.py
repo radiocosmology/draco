@@ -74,6 +74,8 @@ class SVDModeProject(_ProjectFilterBase):
 
         svdmodes = containers.SVDModes(mode=bt.ndofmax, axes_from=mmodes,
                                        attrs_from=mmodes)
+        svdmodes.vis[:] = 0.0
+
         mmodes.redistribute('m')
         svdmodes.redistribute('m')
 
@@ -82,14 +84,6 @@ class SVDModeProject(_ProjectFilterBase):
 
             tm = mmodes.vis[mi].transpose((1, 0, 2)).reshape(tel.nfreq, 2 * tel.npairs)
             svdm = bt.project_vector_telescope_to_svd(mi, tm)
-
-            if np.isfinite(svdm).all() is False:
-                print "M MODE", mi
-                print np.isfinite(svdm).all(), "NOT FINITE"
-
-            if np.isnan(svdm).any() is True:
-                print "M MODE", mi
-                print np.isnan(svdm).any(), "FOUND A NAN"
 
             svdmodes.nmode[mi] = len(svdm)
             svdmodes.vis[mi, :svdmodes.nmode[mi]] = svdm
@@ -184,6 +178,9 @@ class KLModeProject(_ProjectFilterBase):
         # Construct the container and redistribute
         klmodes = containers.KLModes(mode=bt.ndofmax, axes_from=svdmodes,
                                      attrs_from=svdmodes)
+
+        klmodes.vis[:] = 0.0
+
         klmodes.redistribute('m')
         svdmodes.redistribute('m')
 

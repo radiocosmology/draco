@@ -483,10 +483,10 @@ class WienerMapMakerSVD(BaseMapMakerSVD):
         fvec = vec[svbounds[f]:svbounds[f+1]]
 
         beam_svnum = beam[:svnum[f], :, :]
-        beam_svnum = beam_svnum.reshape(svnum[f], -1) #126, 1964
+        beam_svnum = beam_svnum.reshape(svnum[f], -1) 
 
         # Construct beam-conjugated matrices
-        beam_svnum_conj = beam_svnum.T.conj() # 1964, 126
+        beam_svnum_conj = beam_svnum.T.conj()
 
         # Construct the signal covariance matrix
         l = np.arange(bt.telescope.lmax + 1)

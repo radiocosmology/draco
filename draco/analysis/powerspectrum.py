@@ -85,7 +85,7 @@ class QuadraticPSEstimation(task.SingleTask):
             M = np.diag(fisher.sum(axis=1)**-1)
 
         # ps.powerspectrum[:] = np.dot(M, q - bias).reshape(npar, nperp)
-        ps.powerspectrum[:] = np.dot(M, q).reshape(npar, nperp)
-        ps.C_inv[:] = fisher.reshape(npar, nperp, npar, nperp)
+        ps.powerspectrum[:] = np.dot(M, q).reshape(nperp, npar)
+        ps.C_inv[:] = fisher.reshape(nperp, npar, nperp, npar)
 
         return ps
