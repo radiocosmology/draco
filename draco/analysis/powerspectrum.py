@@ -69,23 +69,23 @@ class QuadraticPSEstimation(task.SingleTask):
         # reading from directory
         fisher, bias = pse.fisher_bias()
 
-        ps = containers.Powerspectrum2D(kpar_edges=pse.kpar_bands,
-                                        kperp_edges=pse.kperp_bands)
+        ps = containers.Powerspectrum2D(kperp_edges=pse.kperp_bands,
+                                        kpar_edges=pse.kpar_bands)
 
         npar = len(ps.index_map['kpar'])
         nperp = len(ps.index_map['kperp'])
 
         # Calculate the right unmixing matrix for each ps type
         if self.pstype == 'unwindowed':
-            M = la.inv(fisher)
+            M = la.pinv(fisher, rcond=1e-12)
         elif self.pstype == 'uncorrelated':
             Fh = la.cholesky(fisher)
             M = la.inv(Fh) / Fh.sum(axis=1)[:, np.newaxis]
         elif self.pstype == 'minimum_variance':
             M = np.diag(fisher.sum(axis=1)**-1)
 
-        # ps.powerspectrum[:] = np.dot(M, q - bias).reshape(npar, nperp)
-        ps.powerspectrum[:] = np.dot(M, q).reshape(nperp, npar)
+        ps.powerspectrum[:] = np.dot(M, q - bias).reshape(nperp, npar)
+        #ps.powerspectrum[:] = np.dot(M, q).reshape(nperp, npar)
         ps.C_inv[:] = fisher.reshape(nperp, npar, nperp, npar)
 
         return ps
