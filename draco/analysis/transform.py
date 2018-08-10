@@ -298,6 +298,15 @@ class MModeTransform(task.SingleTask):
 
     Currently ignores any noise weighting.
     """
+    def setup(self, manager):
+
+        """Set the telescope instance.
+
+        Parameters
+        ----------
+        manager :  ProductManager or BeamTransfer
+        """
+        self.telescope = io.get_telescope(manager)
 
     def process(self, sstream):
         """Perform the m-mode transform.
@@ -319,11 +328,11 @@ class MModeTransform(task.SingleTask):
         weight_sum = sstream.weight[:].sum(axis=-1)
 
         # Construct the array of m-modes
-        marray = _make_marray(sstream.vis[:])
+        mmax = self.telescope.mmax
+        marray = _make_marray(sstream.vis[:], mmax)
         marray = mpiarray.MPIArray.wrap(marray[:], axis=2, comm=sstream.comm)
 
         # Create the container to store the modes in
-        mmax = marray.shape[0] - 1
         ma = containers.MModes(mmax=mmax, axes_from=sstream, comm=sstream.comm)
         ma.redistribute('freq')
 
@@ -336,10 +345,10 @@ class MModeTransform(task.SingleTask):
         return ma
 
 
-def _make_marray(ts):
+def _make_marray(ts, mmax):
     # Construct an array of m-modes from a sidereal time stream
     mmodes = np.fft.fft(ts, axis=-1) / ts.shape[-1]
-    marray = _pack_marray(mmodes)
+    marray = _pack_marray(mmodes, mmax)
 
     return marray
 
