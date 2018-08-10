@@ -77,7 +77,7 @@ class QuadraticPSEstimation(task.SingleTask):
 
         # Calculate the right unmixing matrix for each ps type
         if self.pstype == 'unwindowed':
-            M = la.pinv(fisher, rcond=1e-12)
+            M = la.pinv(fisher, rcond=1e-8)
         elif self.pstype == 'uncorrelated':
             Fh = la.cholesky(fisher)
             M = la.inv(Fh) / Fh.sum(axis=1)[:, np.newaxis]
