@@ -255,27 +255,11 @@ class PdfGenerator(task.SingleTask):
         # Re-distribute maps in pixels:
         self.h1maps.redistribute(dist_axis=2)
 
-        # For now the quasar bias is just 1. for all redshifts
-        qso_bias = np.ones(n_z)*self.qso_bias_prm
 
-        # Fetch the mean brightness temperature and the HI bias from CORA
-        # Initialize Corr21cm object:
-        cr = corr21cm.Corr21cm()
-        # Set NSIDE to be the same as H1 CORA maps:
-        cr.nside = self._nside 
-        # Set frequencies to be the same as H1 CORA maps:
-        cr.frequencies = self.h1maps.freq['centre']
-        # Average brightness temperature. Is z-dependent:
-        T_b = cr.T_b(z['centre'])
-        # HI bias. For now this is just 1 for all z's:
-        h1_bias = cr.bias_z(z['centre'])
+        # TODO: Change h1maps for something more generic, like density_maps
 
-        # Convert Brightnes in Kelvin to delta_m
-        delta_m = self.h1maps.map[:,0,:] / (T_b[:, np.newaxis]
-                                          * h1_bias[:, np.newaxis])
-        # Convert gaussian delta_m to lognorm rho_m:
-        rho_m = mpiarray.MPIArray.wrap(np.exp(qso_bias[:,np.newaxis]*delta_m),
-                                                                       axis=1)
+        rho_m = mpiarray.MPIArray.wrap(self.h1maps.map[:,0,:]+1.,axis=1)
+ 
 
         # Re-distribute in frequencies before normalizing 
         # (which requires summing over pixels)
