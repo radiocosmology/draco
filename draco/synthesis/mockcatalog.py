@@ -200,9 +200,6 @@ class SelFuncEstimator(task.SingleTask):
         # Remove negative entries remaining from SVD recovery:
         self._selfunc['map'][np.where(self._selfunc.map[:]<0.)] = 0.
 
-        # TODO: delete. For test only.
-        #self.selfunc.save(filename='/home/fandino/scratch/xcorrSDSS/mqcats/corr_freqs/test/selfunc.h5')
-
         self.done = True
 
         return self.selfunc 
@@ -320,9 +317,6 @@ class PdfGenerator(task.SingleTask):
         if pdf_map['map'].local_offset[0] == pdf.local_offset[0] :
             pdf_map['map'][:,0,:] = pdf
         else: raise RuntimeError("Local offsets don't match.")
-
-        # TODO: delete. For test only.
-        #pdf_map.save(filename='/home/fandino/scratch/xcorrSDSS/mqcats/corr_freqs/test/pdfmap.h5')
 
         self.done = True
         return pdf_map
