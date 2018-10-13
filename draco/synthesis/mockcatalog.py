@@ -108,6 +108,7 @@ class SelFuncEstimator(task.SingleTask):
     """
 
     bqcat_path = config.Property(proptype=str)
+    density_maps_path = config.Property(proptype=str, default='')
 
     # These seem to be optimal parameters and should not
     # usually need to be changed from the default values:
@@ -125,6 +126,18 @@ class SelFuncEstimator(task.SingleTask):
         self._base_qcat = containers.SpectroscopicCatalog.from_file(
                                                         self.bqcat_path)
 
+        if self.density_maps_path != '':
+            densitymaps = containers.Map.from_file(self.density_maps_path,
+                                                   distributed=True)
+            densityz = _freq_to_z(densitymaps.freq)
+            # If density map is given overrride z_stt and z_stp
+            idx_stt = np.argmin(densityz['centre'])
+            idx_stp = np.argmax(densityz['centre'])
+            self.z_stt = (densityz['centre'][idx_stt] 
+                          - 0.5*densityz['width'][idx_stt])
+            self.z_stp = (densityz['centre'][idx_stp] 
+                          + 0.5*densityz['width'][idx_stp])
+
     def process(self):
         """Put the base catalog into maps. SVD the maps and recover
         with a small number of modes. This smoothes out the distribution
@@ -132,6 +145,7 @@ class SelFuncEstimator(task.SingleTask):
         """
         # Number of pixels to use in catalog maps for SVD
         n_pix = hp.pixelfunc.nside2npix(self.nside)
+
         # Redshift bins edges
         zlims_selfunc = np.linspace(self.z_stt,self.z_stp,self.n_z+1)
         # Redshift bins centre
@@ -185,6 +199,9 @@ class SelFuncEstimator(task.SingleTask):
                                            + recmode )
         # Remove negative entries remaining from SVD recovery:
         self._selfunc['map'][np.where(self._selfunc.map[:]<0.)] = 0.
+
+        # TODO: delete. For test only.
+        #self.selfunc.save(filename='/home/fandino/scratch/xcorrSDSS/mqcats/corr_freqs/test/selfunc.h5')
 
         self.done = True
 
@@ -276,8 +293,6 @@ class PdfGenerator(task.SingleTask):
         resized_selfunc = self._resize_map(self.selfunc.map[:,0,:],
                                   rho_m.global_shape,z,z_selfunc)
 
-        
-
         # Generate wheights for correct distribution of quasars in redshift:
         z_wheights = np.sum(resized_selfunc,axis=1)
         # Sum wheights in each comm rank. Need array of scalar here.
@@ -305,6 +320,9 @@ class PdfGenerator(task.SingleTask):
         if pdf_map['map'].local_offset[0] == pdf.local_offset[0] :
             pdf_map['map'][:,0,:] = pdf
         else: raise RuntimeError("Local offsets don't match.")
+
+        # TODO: delete. For test only.
+        #pdf_map.save(filename='/home/fandino/scratch/xcorrSDSS/mqcats/corr_freqs/test/pdfmap.h5')
 
         self.done = True
         return pdf_map
