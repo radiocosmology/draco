@@ -111,7 +111,7 @@ class DelaySpectrumEstimator(task.SingleTask):
 
         tel = self.telescope
 
-        ss.redistribute('time')
+        ss.redistribute('freq')
 
         # Construct the Stokes I vis
         vis_I, vis_weight, baselines = stokes_I(ss, tel)
@@ -138,9 +138,10 @@ class DelaySpectrumEstimator(task.SingleTask):
 
         # Initialise the spectrum container
         delay_spec = containers.DelaySpectrum(baseline=baselines, delay=delays)
+        delay_spec.redistribute('baselines')
         delay_spec.spectrum[:] = 0.0
 
-        initial_S = np.ones_like(delays) * 1e5
+        initial_S = np.ones_like(delays) * 1e1
 
         # Iterate over all baselines and use the Gibbs sampler to estimate the spectrum
         for lbi, bi in delay_spec.spectrum[:].enumerate(axis=0):
@@ -179,9 +180,9 @@ def stokes_I(sstream, tel):
     Returns
     -------
     vis_I : mpiarray.MPIArray[nbase, nfreq, ntime]
-        The instrumental Stokes I visibilities.
+        The instrumental Stokes I visibilities, distributed over baselines.
     vis_weight : mpiarray.MPIArray[nbase, nfreq, ntime]
-        The weights for each visibility
+        The weights for each visibility, distributed over baselines.
     baselines : np.ndarray[nbase, 2]
     """
 
@@ -194,8 +195,8 @@ def stokes_I(sstream, tel):
     nbase = ubase.shape[0]
 
     vis_shape = (nbase, sstream.vis.local_shape[0], sstream.vis.local_shape[2])
-    vis_I = np.zeros(vis_shape, dtype=np.complex64)
-    vis_weight = np.zeros(vis_shape, dtype=np.float32)
+    vis_I = np.zeros(vis_shape, dtype=sstream.vis.dtype)
+    vis_weight = np.zeros(vis_shape, dtype=sstream.weight.dtype)
 
     # Iterate over products to construct the Stokes I vis
     # TODO: this should be updated when driftscan gains a concept of polarisation
@@ -486,6 +487,7 @@ def null_delay_filter(freq, max_delay, mask, num_delay=200, tol=1e-8, window=Tru
     u, sig, vh = la.svd(F)
     nmodes = np.sum(sig > tol * sig.max())
     p = u[:, :nmodes]
+    print "Removing %i modes" % nmodes
 
     # Construct a projection matrix for the filter
     proj = np.identity(len(freq)) - np.dot(p, p.T.conj())

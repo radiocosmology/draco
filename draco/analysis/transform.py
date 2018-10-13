@@ -218,9 +218,13 @@ class SelectFreq(task.SingleTask):
     channel_index : list
         List of frequency channel indices.
         Given third priority.
+    freq_physical_range : list
+        Range of physical frequencies to include given as (low_freq, high_freq).
+        Given fourth priority.
     """
 
     freq_physical = config.Property(proptype=list, default=[])
+    freq_physical_range = config.Property(proptype=list, default=[])
     channel_range = config.Property(proptype=list, default=[])
     channel_index = config.Property(proptype=list, default=[])
 
@@ -250,6 +254,10 @@ class SelectFreq(task.SingleTask):
 
         elif self.channel_index:
             newindex = self.channel_index
+
+        elif self.freq_physical_range:
+            low, high = sorted(self.freq_physical_range)
+            newindex = np.where((freq_map['centre'] >= low) & (freq_map['centre'] < high))[0]
 
         else:
             ValueError("Must specify either freq_physical, channel_range, or channel_index.")
