@@ -23,7 +23,7 @@ from caput import config
 
 from ..core import task, containers
 from ..util import tools
-
+from caput.time import STELLAR_S
 
 class ReceiverTemperature(task.SingleTask):
     """Add a basic receiver temperature term into the data.
@@ -49,6 +49,67 @@ class ReceiverTemperature(task.SingleTask):
             # Great an auto!
             if prod[0] == prod[1]:
                 data.vis[:, pi] += self.recv_temp
+
+        return data
+
+
+class GaussianNoise(task.SingleTask):
+    """Add Gaussian Noise from Receiver Temperature."""
+
+    recv_temp = config.Property(proptype=float, default=50.0)
+    ndays = config.Property(proptype=float, default=733.)
+    seed = config.Property(proptype=int, default=None)
+    set_weights = config.Property(proptype=bool, default=True)
+
+    def process(self, data):
+
+
+        data.redistribute('freq')
+
+        visdata = data.vis[:]
+
+        # Get the time interval
+        if isinstance(data, containers.SiderealStream):
+            dt = 240 * (data.ra[1] - data.ra[0]) * STELLAR_S
+            ntime = len(data.ra)
+        else:
+            dt = data.time[1] - data.time[0]
+            ntime = len(data.time)
+
+        df = data.index_map['freq']['width'][0] * 1e6
+        nfreq = data.vis.local_shape[0]
+        nprod = len(data.index_map['prod'])
+
+        #with mpi_random_seed(self.seed):
+
+        # Calculate the number of samples
+        nsamp = int(self.ndays * dt * df)
+        std = self.recv_temp / np.sqrt(2 * nsamp)
+        ndraws = nfreq * ntime * nprod
+
+        std_real = std * np.random.standard_normal(ndraws).reshape(nfreq, nprod, ntime)
+        std_imag = std * np.random.standard_normal(ndraws).reshape(nfreq, nprod, ntime)
+
+
+        # Iterate over the products to find the auto-correlations and add the noise into them
+        for pi, prod in enumerate(data.index_map['prod']):
+
+            # Auto: multiply by sqrt(2) because auto has twice the variance
+            if prod[0] == prod[1]:
+                visdata[:, pi].real += (np.sqrt(2) * std_real[:, pi])
+
+            else:
+                visdata[:, pi].real += std_real[:, pi]
+                visdata[:, pi].imag += std_imag[:, pi]
+
+        # Construct and set the correct weights in place
+        if self.set_weights:
+            for lfi, fi in visdata.enumerate(0):
+                autos = tools.extract_diagonal(visdata[lfi], axis=0).real
+                weight_fac = nsamp**0.5 / autos
+                tools.apply_gain(data.weight[fi][np.newaxis, ...],
+                                 weight_fac[np.newaxis, ...],
+                                 out=data.weight[fi][np.newaxis, ...])
 
         return data
 
