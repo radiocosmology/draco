@@ -244,6 +244,9 @@ class PdfGenerator(task.SingleTask):
 
         # Load H1 CORA maps from file:
         h1maps = containers.Map.from_file(self.h1maps_path,distributed=True)
+	# To make a random (not correlated) catalog
+	#h1maps.map[:] = np.zeros_like(h1maps.map)
+
         n_px = h1maps.map.shape[2]
         n_side = hp.pixelfunc.npix2nside(n_px) # NSIDE of CORA maps
         freq = h1maps.freq
@@ -293,10 +296,12 @@ class PdfGenerator(task.SingleTask):
         # Generate wheights for correct distribution of quasars in redshift:
         z_wheights = np.sum(resized_selfunc,axis=1)
         # Sum wheights in each comm rank. Need array of scalar here.
-        z_total = mpiarray.MPIArray.wrap( np.array([ np.sum(z_wheights,
+        z_total_temp = mpiarray.MPIArray.wrap( np.array([ np.sum(z_wheights,
                                                        axis=0) ]), axis=0 )
+	z_total = np.zeros_like(z_total_temp)
+
         # Sum accross ranks. All ranks get the same result:
-        self.comm_.Allreduce(z_total,z_total)
+        self.comm_.Allreduce(z_total_temp,z_total)
         # Normalize z_wheights:
         z_wheights = mpiarray.MPIArray.wrap( z_wheights/z_total, axis=0 )
 
