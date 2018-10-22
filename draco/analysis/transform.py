@@ -165,6 +165,15 @@ class CollateProducts(task.SingleTask):
         sp.vis[:] = 0.0
         sp.weight[:] = 0.0
 
+        # Infer number of products that went into each stack
+        good_prod = np.empty((len(ss_keys), len(ss_keys)), dtype=np.uint8)
+        np.outer(ss.input_flags, ss.input_flags, out=good_prod)
+        nprod_in_stack = np.bincount(
+            ss.index_map['reverse_map/stack']['stack'],
+            weights=good_prod, minlength=len(ss.prod)
+        )
+        nprod_in_stack[np.where(nprod_in_stack == 0)] = 1
+
         # Iterate over products in the sidereal stream
         for ss_pi in range(len(ss.prod)):
 
@@ -197,6 +206,8 @@ class CollateProducts(task.SingleTask):
 
         # Divide through by weights to get properly weighted visibility average
         sp.vis[:] *= tools.invert_no_zero(sp.weight[:])
+        # TODO: use this for uniform stacking over N2 products
+        #sp.vis[:] /= nprod_in_stack
 
         # Switch back to frequency distribution
         ss.redistribute('freq')
