@@ -514,6 +514,12 @@ class SiderealStream(ContainerBase):
             'distributed_axis': 'freq'
         },
 
+        'input_flags': {
+            'axes': ['input', 'time'],
+            'dtype': np.float32,
+            'initialise': True,
+        },
+
         'gain': {
             'axes': ['freq', 'input', 'ra'],
             'dtype': np.complex64,
@@ -565,6 +571,10 @@ class SiderealStream(ContainerBase):
         return self.datasets['vis_weight']
 
     @property
+    def input_flags(self):
+        return self.datasets['input_flags']
+
+    @property
     def ra(self):
         return self.index_map['ra']
 
@@ -612,6 +622,12 @@ class TimeStream(TODContainer):
             'distributed_axis': 'freq'
         },
 
+        'input_flags': {
+            'axes': ['input', 'time'],
+            'dtype': np.float32,
+            'initialise': True,
+        },
+
         'gain': {
             'axes': ['freq', 'input', 'time'],
             'dtype': np.complex64,
@@ -632,6 +648,10 @@ class TimeStream(TODContainer):
     @property
     def weight(self):
         return self.datasets['vis_weight']
+
+    @property
+    def input_flags(self):
+        return self.datasets['input_flags']
 
     @property
     def freq(self):
