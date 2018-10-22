@@ -152,6 +152,7 @@ class CollateProducts(task.SingleTask):
 
         sp_freq = ss.freq[freq_ind]
 
+        # TODO: adjust for updated SiderealStream
         sp = containers.SiderealStream(
             freq=sp_freq, input=len(bt_keys), prod=self.telescope.uniquepairs,
             axes_from=ss, attrs_from=ss, distributed=True, comm=ss.comm
@@ -165,10 +166,10 @@ class CollateProducts(task.SingleTask):
         sp.weight[:] = 0.0
 
         # Iterate over products in the sidereal stream
-        for ss_pi in range(len(ss.index_map['prod'])):
+        for ss_pi in range(len(ss.prod)):
 
             # Get the feed indices for this product
-            ii, ij = ss.index_map['prod'][ss_pi]
+            ii, ij = ss.prod[ss_pi]
 
             # Map the feed indices into ones for the Telescope class
             bi, bj = input_ind[ii], input_ind[ij]
@@ -185,7 +186,8 @@ class CollateProducts(task.SingleTask):
                 continue
 
             # Accumulate visibilities, conjugating if required
-            if not feedconj:
+            # representative product in stack map may also need to be conjugated
+            if feedconj == ss.conj[ss_pi]:
                 sp.vis[:, sp_pi] += ss.weight[freq_ind, ss_pi] * ss.vis[freq_ind, ss_pi]
             else:
                 sp.vis[:, sp_pi] += ss.weight[freq_ind, ss_pi] * ss.vis[freq_ind, ss_pi].conj()
