@@ -558,6 +558,14 @@ class SiderealStream(ContainerBase):
     def input(self):
         return self.index_map['input']
 
+    @property
+    def prod(self):
+        return self.index_map['prod'][:][self.index_map['stack']['prod']]
+
+    @property
+    def conjugate(self):
+        return self.index_map['stack']['conjugate']
+
 
 class TimeStream(TODContainer):
     """A container for holding a visibility dataset in time.
@@ -614,6 +622,14 @@ class TimeStream(TODContainer):
     @property
     def input(self):
         return self.index_map['input']
+
+    @property
+    def prod(self):
+        return self.index_map['prod'][:][self.index_map['stack']['prod']]
+
+    @property
+    def conjugate(self):
+        return self.index_map['stack']['conjugate']
 
 
 class MModes(ContainerBase):
