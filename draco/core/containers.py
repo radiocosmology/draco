@@ -135,6 +135,24 @@ class ContainerBase(memh5.BasicCont):
             else:
                 raise RuntimeError('No definition of axis %s supplied.' % axis)
 
+        # Create reverse map
+        if 'reverse_map_stack' in kwargs:
+            # If axis is an integer, turn into an arange as a default definition
+            if isinstance(kwargs['reverse_map_stack'], int):
+                reverse_map_stack = np.arange(kwargs['reverse_map_stack'])
+            else:
+                reverse_map_stack = kwargs['reverse_map_stack']
+
+        # If not set in the arguments copy from another object if set
+        elif axes_from is not None and 'stack' in axes_from.reverse_map:
+            reverse_map_stack = axes_from.reverse_map['stack']
+
+        # Set the reverse_map['stack'] if we have a definition, 
+        # otherwise do NOT throw an error, errors are thrown in 
+        # classes that actually need a reverse stack
+        if reverse_map_stack is not None:
+            self.create_reverse_map('stack', reverse_map_stack)
+        
         # Iterate over datasets and initialise any that specify it
         for name, spec in self.dataset_spec.items():
             if 'initialise' in spec and spec['initialise']:
