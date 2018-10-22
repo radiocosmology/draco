@@ -101,7 +101,17 @@ class CollateProducts(task.SingleTask):
     than are contained in the BeamTransfers, the converse is not true. That is,
     all the frequencies and feeds that are in the BeamTransfers must be found in
     the timestream object.
+
+    Parameters
+    ----------
+    weight : string ('uniform', 'natural', or 'inverse_variance')
+        How to weight the redundant baselines:
+            'natural' - each baseline weighted by its redundancy (default)
+            'uniform' - each baseline given equal weight
+            'inverse_variance' - each baseline weighted by the weight attribute
     """
+
+    weight = config.Property(proptype=str, default='natural')
 
     def setup(self, tel):
         """Set the BeamTransfer instance to use.
@@ -110,6 +120,9 @@ class CollateProducts(task.SingleTask):
         ----------
         tel : TransitTelescope
         """
+
+        if self.weight not in ['inverse_variance', 'natural', 'uniform']:
+            KeyError("Do not recognize weight = %s" % self.weight)
 
         self.telescope = io.get_telescope(tel)
 
@@ -159,8 +172,8 @@ class CollateProducts(task.SingleTask):
         )
 
         # Ensure all frequencies and products are on each node
-        ss.redistribute('ra')
-        sp.redistribute('ra')
+        ss.redistribute(['ra', 'time'])
+        sp.redistribute(['ra', 'time'])
 
         sp.vis[:] = 0.0
         sp.weight[:] = 0.0
@@ -174,11 +187,12 @@ class CollateProducts(task.SingleTask):
         )
         nprod_in_stack[np.where(nprod_in_stack == 0)] = 1
 
-        # Iterate over products in the sidereal stream
-        for ss_pi in range(len(ss.prod)):
 
-            # Get the feed indices for this product
-            ii, ij = ss.prod[ss_pi]
+
+        counter = np.zeros_like(sp.weight[:])
+
+        # Iterate over products in the sidereal stream
+        for ss_pi, (ii, ij) in enumerate(ss.prod):
 
             # Map the feed indices into ones for the Telescope class
             bi, bj = input_ind[ii], input_ind[ij]
@@ -194,20 +208,30 @@ class CollateProducts(task.SingleTask):
             if sp_pi < 0:
                 continue
 
-            # Accumulate visibilities, conjugating if required
-            # representative product in stack map may also need to be conjugated
-            if feedconj == ss.conj[ss_pi]:
-                sp.vis[:, sp_pi] += ss.weight[freq_ind, ss_pi] * ss.vis[freq_ind, ss_pi]
+            # Generate weight
+            if self.weight == 'inverse_variance':
+                wss = ss.weight[freq_ind, ss_pi]
+            elif self.weight == 'natural':
+                wss = nprod_in_stack[ss_pi]
             else:
-                sp.vis[:, sp_pi] += ss.weight[freq_ind, ss_pi] * ss.vis[freq_ind, ss_pi].conj()
+                wss = 1.0
+
+            # Accumulate visibilities, conjugating if required
+            if not feedconj:
+                sp.vis[:, sp_pi] += wss * ss.vis[freq_ind, ss_pi]
+            else:
+                sp.vis[:, sp_pi] += wss * ss.vis[freq_ind, ss_pi].conj()
 
             # Accumulate weights
-            sp.weight[:, sp_pi] += ss.weight[freq_ind, ss_pi]
+            sp.weight[:, sp_pi] += wss**2 * tools.invert_no_zero(ss.weight[freq_ind, ss_pi])
+
+            # Increment counter
+            counter[:, sp_pi] += wss
+
 
         # Divide through by weights to get properly weighted visibility average
-        sp.vis[:] *= tools.invert_no_zero(sp.weight[:])
-        # TODO: use this for uniform stacking over N2 products
-        #sp.vis[:] /= nprod_in_stack
+        sp.vis[:] *= tools.invert_no_zero(counter)
+        sp.weight[:] = counter**2 * tools.invert_no_zero(sp.weight[:])
 
         # Switch back to frequency distribution
         ss.redistribute('freq')
