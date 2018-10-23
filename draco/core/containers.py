@@ -135,6 +135,7 @@ class ContainerBase(memh5.BasicCont):
             else:
                 raise RuntimeError('No definition of axis %s supplied.' % axis)
 
+        reverse_map_stack = None
         # Create reverse map
         if 'reverse_map_stack' in kwargs:
             # If axis is an integer, turn into an arange as a default definition
@@ -152,6 +153,7 @@ class ContainerBase(memh5.BasicCont):
         # classes that actually need a reverse stack
         if reverse_map_stack is not None:
             self.create_reverse_map('stack', reverse_map_stack)
+
         
         # Iterate over datasets and initialise any that specify it
         for name, spec in self.dataset_spec.items():
@@ -518,6 +520,7 @@ class SiderealStream(ContainerBase):
             'axes': ['input', 'time'],
             'dtype': np.float32,
             'initialise': True,
+            'distributed': False
         },
 
         'gain': {
@@ -639,6 +642,7 @@ class TimeStream(TODContainer):
             'axes': ['input', 'time'],
             'dtype': np.float32,
             'initialise': True,
+            'distributed': False
         },
 
         'gain': {

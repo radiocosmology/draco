@@ -165,13 +165,13 @@ class CollateProducts(task.SingleTask):
         # We will fill in the stack index_map later
         if isinstance(ss,containers.SiderealStream):
             sp = containers.SiderealStream(
-                freq=sp_freq, input=len(bt_keys),
+                freq=ss.freq[:], input=len(bt_keys),
                 stack=np.zeros(len(self.telescope.uniquepairs), dtype=ss.index_map['stack'].dtype),
                 axes_from=ss, attrs_from=ss, distributed=True, comm=ss.comm
             )
         else:
             sp = containers.TimeStream(
-                freq=sp_freq, input=len(bt_keys),
+                freq=ss.freq[:], input=len(bt_keys),
                 stack=np.zeros(len(self.telescope.uniquepairs), dtype=ss.index_map['stack'].dtype),
                 axes_from=ss, attrs_from=ss, distributed=True, comm=ss.comm
             )
