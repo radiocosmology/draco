@@ -231,7 +231,7 @@ class FindFiles(pipeline.TaskBase):
     def setup(self):
         """ Return list of files specified in the parameters.
         """
-        if not isinstance(files, (list, tuple)):
+        if not isinstance(self.files, (list, tuple)):
             raise RuntimeError('Argument must be list of files.')
 
         return self.files
