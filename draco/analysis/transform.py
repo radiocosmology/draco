@@ -165,9 +165,10 @@ class CollateProducts(task.SingleTask):
 
         sp_freq = ss.freq[freq_ind]
 
-        # TODO: adjust for updated SiderealStream
+        # We will fill in the stack index_map later
         sp = containers.SiderealStream(
-            freq=sp_freq, input=len(bt_keys), stack=self.telescope.uniquepairs,
+            freq=sp_freq, input=len(bt_keys),
+            stack=np.zeros(len(self.telescope.uniquepairs), dtype=ss.index_map['stack'].dtype),
             axes_from=ss, attrs_from=ss, distributed=True, comm=ss.comm
         )
 
