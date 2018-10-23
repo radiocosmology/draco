@@ -159,15 +159,12 @@ class CollateProducts(task.SingleTask):
 
         # Figure out mapping between the frequencies
         bt_freq = self.telescope.frequencies
-        ss_freq = ss.freq['centre']
 
-        freq_ind = [ find_key(ss_freq, bf) for bf in bt_freq]
-
-        sp_freq = ss.freq[freq_ind]
+        freq_ind = [ find_key(ss.freq[:], bf) for bf in bt_freq]
 
         # We will fill in the stack index_map later
         sp = containers.SiderealStream(
-            freq=sp_freq, input=len(bt_keys),
+            freq=ss.index_map['freq'][freq_ind], input=len(bt_keys),
             stack=np.zeros(len(self.telescope.uniquepairs), dtype=ss.index_map['stack'].dtype),
             axes_from=ss, attrs_from=ss, distributed=True, comm=ss.comm
         )

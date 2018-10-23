@@ -479,7 +479,7 @@ class Map(ContainerBase):
 
     @property
     def freq(self):
-        return self.index_map['freq']
+        return self.index_map['freq']['centre']
 
     @property
     def map(self):
@@ -580,7 +580,7 @@ class SiderealStream(ContainerBase):
 
     @property
     def freq(self):
-        return self.index_map['freq']
+        return self.index_map['freq']['centre']
 
     @property
     def input(self):
@@ -655,7 +655,7 @@ class TimeStream(TODContainer):
 
     @property
     def freq(self):
-        return self.index_map['freq']
+        return self.index_map['freq']['centre']
 
     @property
     def input(self):
@@ -716,7 +716,7 @@ class MModes(ContainerBase):
 
     @property
     def freq(self):
-        return self.index_map['freq']
+        return self.index_map['freq']['centre']
 
     @property
     def input(self):
@@ -853,7 +853,7 @@ class GainData(TODContainer):
 
     @property
     def freq(self):
-        return self.index_map['freq']
+        return self.index_map['freq']['centre']
 
     @property
     def input(self):
@@ -893,7 +893,7 @@ class StaticGainData(ContainerBase):
 
     @property
     def freq(self):
-        return self.index_map['freq']
+        return self.index_map['freq']['centre']
 
     @property
     def input(self):
