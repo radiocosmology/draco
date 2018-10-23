@@ -217,6 +217,26 @@ class LoadFilesFromParams(task.SingleTask):
 LoadBasicCont = LoadFilesFromParams
 
 
+class FindFiles(pipeline.TaskBase):
+    """ Take a glob or list of files specified as a parameter in the
+    configuration file and pass on to other tasks.
+
+    Parameters
+    ----------
+    files : list or glob
+    """
+
+    files = config.Property(proptype=_list_or_glob)
+
+    def setup(self):
+        """ Return list of files specified in the parameters.
+        """
+        if not isinstance(files, (list, tuple)):
+            raise RuntimeError('Argument must be list of files.')
+
+        return self.files
+
+
 class LoadFiles(LoadFilesFromParams):
     """Load data from files passed into the setup routine.
 
