@@ -104,8 +104,8 @@ class CollateProducts(task.SingleTask):
 
     Parameters
     ----------
-    weight : string ('uniform', 'natural', or 'inverse_variance')
-        How to weight the redundant baselines:
+    weight : string ('natural', 'uniform', or 'inverse_variance')
+        How to weight the redundant baselines when stacking:
             'natural' - each baseline weighted by its redundancy (default)
             'uniform' - each baseline given equal weight
             'inverse_variance' - each baseline weighted by the weight attribute
@@ -121,7 +121,7 @@ class CollateProducts(task.SingleTask):
         tel : TransitTelescope
         """
 
-        if self.weight not in ['inverse_variance', 'natural', 'uniform']:
+        if self.weight not in ['natural', 'uniform', 'inverse_variance']:
             KeyError("Do not recognize weight = %s" % self.weight)
 
         self.telescope = io.get_telescope(tel)
@@ -179,16 +179,18 @@ class CollateProducts(task.SingleTask):
         sp.weight[:] = 0.0
 
         # Infer number of products that went into each stack
-        good_prod = np.empty((len(ss_keys), len(ss_keys)), dtype=np.uint8)
-        np.outer(ss.input_flags, ss.input_flags, out=good_prod)
-        nprod_in_stack = np.bincount(
-            ss.index_map['reverse_map/stack']['stack'],
-            weights=good_prod, minlength=len(ss.prod)
-        )
-        nprod_in_stack[np.where(nprod_in_stack == 0)] = 1
+        if self.weight != 'inverse_variance':
 
+            nprod_in_stack = np.zeros(sp.vis.shape[1:], dtype=np.float32)
+            for ind_ss, ind_sp in enumerate(ss.index_map['reverse_map/stack']['stack']):
+                aa, bb = ss.index_map['prod'][ind_ss]
+                nprod_in_stack[ind_sp, :] += ss.input_flags[aa, :] * ss.input_flags[bb, :]
 
+            if self.weight == 'uniform':
+                nprod_in_stack = (nprod_in_stack > 0).astype(np.float32)
 
+        # Create counter to increment during the stacking.
+        # This will be used to normalize at the end.
         counter = np.zeros_like(sp.weight[:])
 
         # Iterate over products in the sidereal stream
@@ -211,25 +213,23 @@ class CollateProducts(task.SingleTask):
             # Generate weight
             if self.weight == 'inverse_variance':
                 wss = ss.weight[freq_ind, ss_pi]
-            elif self.weight == 'natural':
-                wss = nprod_in_stack[ss_pi]
             else:
-                wss = 1.0
+                wss = nprod_in_stack[np.newaxis, ss_pi]
 
             # Accumulate visibilities, conjugating if required
-            if not feedconj:
+            if feedconj == ss.conj[ss_pi]:
                 sp.vis[:, sp_pi] += wss * ss.vis[freq_ind, ss_pi]
             else:
                 sp.vis[:, sp_pi] += wss * ss.vis[freq_ind, ss_pi].conj()
 
-            # Accumulate weights
+            # Accumulate variances in quadrature.  Save in the weight dataset.
             sp.weight[:, sp_pi] += wss**2 * tools.invert_no_zero(ss.weight[freq_ind, ss_pi])
 
             # Increment counter
             counter[:, sp_pi] += wss
 
 
-        # Divide through by weights to get properly weighted visibility average
+        # Divide through by counter to get properly weighted visibility average
         sp.vis[:] *= tools.invert_no_zero(counter)
         sp.weight[:] = counter**2 * tools.invert_no_zero(sp.weight[:])
 
