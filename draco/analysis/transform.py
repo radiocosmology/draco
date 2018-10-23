@@ -167,7 +167,7 @@ class CollateProducts(task.SingleTask):
 
         # TODO: adjust for updated SiderealStream
         sp = containers.SiderealStream(
-            freq=sp_freq, input=len(bt_keys), prod=self.telescope.uniquepairs,
+            freq=sp_freq, input=len(bt_keys), stack=self.telescope.uniquepairs,
             axes_from=ss, attrs_from=ss, distributed=True, comm=ss.comm
         )
 
@@ -182,7 +182,7 @@ class CollateProducts(task.SingleTask):
         if self.weight != 'inverse_variance':
 
             nprod_in_stack = np.zeros(sp.vis.shape[1:], dtype=np.float32)
-            for ind_ss, ind_sp in enumerate(ss.index_map['reverse_map/stack']['stack']):
+            for ind_ss, ind_sp in enumerate(ss.reverse_map['stack']):
                 aa, bb = ss.index_map['prod'][ind_ss]
                 nprod_in_stack[ind_sp, :] += ss.input_flags[aa, :] * ss.input_flags[bb, :]
 
@@ -193,7 +193,7 @@ class CollateProducts(task.SingleTask):
         # This will be used to normalize at the end.
         counter = np.zeros_like(sp.weight[:])
 
-        # Iterate over products in the sidereal stream
+        # Iterate over products (stacked) in the sidereal stream
         for ss_pi, (ii, ij) in enumerate(ss.prod):
 
             # Map the feed indices into ones for the Telescope class
@@ -228,6 +228,15 @@ class CollateProducts(task.SingleTask):
             # Increment counter
             counter[:, sp_pi] += wss
 
+            # Update stack axis
+            sp.index_map['stack'][sp_pi] = (ss.index_map['stack']['prod'][ss_pi], feedconj)
+
+        # Update stack reverse map
+        for ss_pi, (ii, ij) in enumerate(ss.index_map['prod']):
+            bi, bj = input_ind[ii], input_ind[ij]
+            new_stack_ind = self.telescope.feedmap[bi, bj]
+            feedconj = self.telescope.feedconj[bi, bj]
+            sp.reverse_map['stack'][ss_pi] = (new_stack_ind, feedconj)
 
         # Divide through by counter to get properly weighted visibility average
         sp.vis[:] *= tools.invert_no_zero(counter)
