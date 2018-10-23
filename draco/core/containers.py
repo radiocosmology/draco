@@ -479,7 +479,7 @@ class Map(ContainerBase):
 
     @property
     def freq(self):
-        return self.index_map['freq']
+        return self.index_map['freq']['centre']
 
     @property
     def map(self):
@@ -495,11 +495,11 @@ class SiderealStream(ContainerBase):
         The number of points to divide the RA axis up into.
     """
 
-    _axes = ('freq', 'prod', 'input', 'ra')
+    _axes = ('freq', 'prod', 'stack', 'input', 'ra')
 
     _dataset_spec = {
         'vis': {
-            'axes': ['freq', 'prod', 'ra'],
+            'axes': ['freq', 'stack', 'ra'],
             'dtype': np.complex64,
             'initialise': True,
             'distributed': True,
@@ -507,7 +507,7 @@ class SiderealStream(ContainerBase):
         },
 
         'vis_weight': {
-            'axes': ['freq', 'prod', 'ra'],
+            'axes': ['freq', 'stack', 'ra'],
             'dtype': np.float32,
             'initialise': True,
             'distributed': True,
@@ -551,10 +551,23 @@ class SiderealStream(ContainerBase):
         elif ('axes_from' in kwargs) and ('input' in kwargs['axes_from'].index_map):
             inputs = kwargs['axes_from'].index_map['input']
 
+        # Resolve stack map
+        stack = None
+        if 'stack' in kwargs:
+            stack = kwargs['stack']
+        elif ('axes_from' in kwargs) and ('stack' in kwargs['axes_from'].index_map):
+            stack = kwargs['axes_from'].index_map['stack']
+
         # Automatically construct product map from inputs if not given
         if prod is None and inputs is not None:
             nfeed = inputs if isinstance(inputs, int) else len(inputs)
             kwargs['prod'] = np.array([[fi, fj] for fi in range(nfeed) for fj in range(fi, nfeed)])
+
+        if stack is None:
+            stack = np.empty_like(prod, dtype=[('prod', '<u4'), ('conjugate', 'u1')])
+            stack['prod'][:] = np.arange(len(prod))
+            stack['conjugate'] = 0
+            kwargs['stack'] = stack
 
         super(SiderealStream, self).__init__(*args, **kwargs)
 
@@ -580,7 +593,7 @@ class SiderealStream(ContainerBase):
 
     @property
     def freq(self):
-        return self.index_map['freq']
+        return self.index_map['freq']['centre']
 
     @property
     def input(self):
@@ -603,11 +616,11 @@ class TimeStream(TODContainer):
     interchangably in most cases.
     """
 
-    _axes = ('freq', 'prod', 'input', 'time')
+    _axes = ('freq', 'prod', 'stack', 'input', 'time')
 
     _dataset_spec = {
         'vis': {
-            'axes': ['freq', 'prod', 'time'],
+            'axes': ['freq', 'stack', 'time'],
             'dtype': np.complex64,
             'initialise': True,
             'distributed': True,
@@ -615,7 +628,7 @@ class TimeStream(TODContainer):
         },
 
         'vis_weight': {
-            'axes': ['freq', 'prod', 'time'],
+            'axes': ['freq', 'stack', 'time'],
             'dtype': np.float32,
             'initialise': True,
             'distributed': True,
@@ -637,6 +650,42 @@ class TimeStream(TODContainer):
         }
     }
 
+    def __init__(self, *args, **kwargs):
+
+        # Resolve product map
+        prod = None
+        if 'prod' in kwargs:
+            prod = kwargs['prod']
+        elif ('axes_from' in kwargs) and ('prod' in kwargs['axes_from'].index_map):
+            prod = kwargs['axes_from'].index_map['prod']
+
+        # Resolve input map
+        inputs = None
+        if 'input' in kwargs:
+            inputs = kwargs['input']
+        elif ('axes_from' in kwargs) and ('input' in kwargs['axes_from'].index_map):
+            inputs = kwargs['axes_from'].index_map['input']
+
+        # Resolve stack map
+        stack = None
+        if 'stack' in kwargs:
+            stack = kwargs['stack']
+        elif ('axes_from' in kwargs) and ('stack' in kwargs['axes_from'].index_map):
+            stack = kwargs['axes_from'].index_map['stack']
+
+        # Automatically construct product map from inputs if not given
+        if prod is None and inputs is not None:
+            nfeed = inputs if isinstance(inputs, int) else len(inputs)
+            kwargs['prod'] = np.array([[fi, fj] for fi in range(nfeed) for fj in range(fi, nfeed)])
+
+        if stack is None:
+            stack = np.empty_like(prod, dtype=[('prod', '<u4'), ('conjugate', 'u1')])
+            stack['prod'][:] = np.arange(len(prod))
+            stack['conjugate'] = 0
+            kwargs['stack'] = stack
+
+        super(TimeStream, self).__init__(*args, **kwargs)
+
     @property
     def vis(self):
         return self.datasets['vis']
@@ -655,7 +704,7 @@ class TimeStream(TODContainer):
 
     @property
     def freq(self):
-        return self.index_map['freq']
+        return self.index_map['freq']['centre']
 
     @property
     def input(self):
@@ -716,7 +765,7 @@ class MModes(ContainerBase):
 
     @property
     def freq(self):
-        return self.index_map['freq']
+        return self.index_map['freq']['centre']
 
     @property
     def input(self):
@@ -853,7 +902,7 @@ class GainData(TODContainer):
 
     @property
     def freq(self):
-        return self.index_map['freq']
+        return self.index_map['freq']['centre']
 
     @property
     def input(self):
@@ -893,7 +942,7 @@ class StaticGainData(ContainerBase):
 
     @property
     def freq(self):
-        return self.index_map['freq']
+        return self.index_map['freq']['centre']
 
     @property
     def input(self):
