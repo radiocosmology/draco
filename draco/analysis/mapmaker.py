@@ -30,6 +30,8 @@ class BaseMapMaker(task.SingleTask):
     basis = config.enum(['mmodes', 'svdmodes'], default='mmodes')
     use_weights = config.Property(proptype=bool, default=True)
 
+    bt_cache = None
+
     def setup(self, bt):
         """Set the beamtransfer matrices to use.
 
@@ -71,16 +73,12 @@ class BaseMapMaker(task.SingleTask):
             except ValueError:
                 return None
 
-        # Figure out mapping between the frequencies, there need to be more
-        # frequencies in beamstransfers than in the mmodes for this to work
-        # Plus, the frequencies in mmodes have to match exactly the ones
-        # in the beamtransfer matrices.
-        bt_freq = self.beamtransfer.telescope.frequencies
-        # mm_freq = modes.index_map['freq']['centre']
-        # freq_ind = [find_key(bt_freq, mf) for mf in mm_freq]
-
-        # If in m-modes basis, redistribute over frequency first.
         if self.basis == 'mmodes':
+            # Figure out mapping between the frequencies, there need to be more.
+            bt_freq = self.beamtransfer.telescope.frequencies
+            mm_freq = modes.index_map['freq']['centre']
+            freq_ind = [find_key(bt_freq, mf) for mf in mm_freq]
+
             modes.redistribute('freq')
             # Trim off excess m-modes
             m_array = modes.vis[:(mmax + 1)]
@@ -90,7 +88,6 @@ class BaseMapMaker(task.SingleTask):
             m_weight = m_weight.redistribute(axis=0)
 
         if self.basis == 'svdmodes':
-            print "in svdmodes if statement"
             modes.redistribute('m')
             m_array = modes.vis[:]
             m_weight = modes.weight[:]
@@ -102,9 +99,16 @@ class BaseMapMaker(task.SingleTask):
 
         # Loop over all m's and solve from m-mode visibilities to alms.
         for mi, m in m_array.enumerate(axis=0):
+
+            self.log.debug("Processing m=%i (local %i/%i)",
+                           m, mi + 1, m_array.local_shape[0])
+            # Get and cache the beam transfer matrix, but trim off any l < m.
+            # if self.bt_cache is None:
+            #   self.bt_cache = (m, bt.beam_m(m))
+            #   self.log.debug("Cached beamtransfer for m=%i", m)
+
             for fi in range(nfreq):
                 if self.basis == 'svdmodes':
-                    print "in svdmodes statement 2"
                     v = m_array[mi, :].view(np.ndarray)
                     Ni = m_weight[mi, :].view(np.ndarray)
                 else:
@@ -113,7 +117,9 @@ class BaseMapMaker(task.SingleTask):
 
                 a = alm[fi, ..., mi].view(np.ndarray)
 
-                a[:] = self._solve_m(m, fi, v, Ni)
+                a[:] = self._solve_m(m, freq_ind[fi], v, Ni)
+
+            self.bt_cache = None
 
         # Redistribute back over frequency
         alm = alm.redistribute(axis=0)
@@ -154,7 +160,7 @@ class BaseMapMaker(task.SingleTask):
         m : int
             Which m-mode are we solving for.
         f : int
-            Frequency we are solving for.
+            Frequency we are solving for. This is the index for the beam transfers.
         v : np.ndarray[2, nbase]
             Visibility data.
         Ni : np.ndarray[2, nbase]
@@ -264,17 +270,23 @@ class WienerMapMaker(BaseMapMaker):
     prior_amp = config.Property(proptype=float, default=1.0)
     prior_tilt = config.Property(proptype=float, default=0.5)
 
+    bt_cache = None
+
     def _solve_m(self, m, f, v, Ni):
 
         bt = self.beamtransfer
+
+        # Get transfer for this m and f
+        if self.bt_cache is not None and self.bt_cache[0] == m:
+            bm = self.bt_cache[1][f]
+        else:
+            bm = bt.beam_m(m, fi=f)
+        bm = bm[..., m:].reshape(bt.ntel, -1)
 
         # Massage the arrays into shape
         v = v.reshape(bt.ntel)
         Ni = Ni.reshape(bt.ntel)
         Nh = Ni**0.5
-
-        # Get the beam transfer matrix, but trim off any l < m.
-        bm = bt.beam_m(m, fi=f)[..., m:].reshape(bt.ntel, -1)
 
         # Construct pre-wightened beam and beam-conjugated matrices
         bmt = bm * Nh[:, np.newaxis]
@@ -305,7 +317,6 @@ class WienerMapMaker(BaseMapMaker):
 
         # For large ntel it's quickest to solve in the standard Wiener filter way
         if bt.ntel > bt.nsky:
-            print "First if statement"
             Ci = np.diag(1.0 / S_diag) + np.dot(beam_conj, beam)  # Construct the inverse covariance
             a_dirty = np.dot(beam_conj, vec)  # Find the dirty map
             a_wiener = la.solve(Ci, a_dirty, sym_pos=True)  # Solve to find C vt
