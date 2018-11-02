@@ -27,7 +27,7 @@ class BaseMapMaker(task.SingleTask):
     """
 
     nside = config.Property(proptype=int, default=256)
-    map_type = config.enum(['mmodes', 'svdmodes'], default='mmodes')
+    basis = config.enum(['mmodes', 'svdmodes'], default='mmodes')
     use_weights = config.Property(proptype=bool, default=True)
 
     def setup(self, bt):
@@ -71,26 +71,26 @@ class BaseMapMaker(task.SingleTask):
             except ValueError:
                 return None
 
-        if self.map_type == 'mmodes':
-            # Figure out mapping between the frequencies, there need to be more
-            #frequencies in beamstransfers than in the mmodes for this to workself.
-            # Plus, the frequencies in mmodes have to match exactly the ones from
-            # the beamtransfer matrices.
-            bt_freq = self.beamtransfer.telescope.frequencies
-            mm_freq = modes.index_map['freq']['centre']
-            freq_ind = [find_key(bt_freq, mf) for mf in mm_freq]
+        # Figure out mapping between the frequencies, there need to be more
+        # frequencies in beamstransfers than in the mmodes for this to work
+        # Plus, the frequencies in mmodes have to match exactly the ones
+        # in the beamtransfer matrices.
+        bt_freq = self.beamtransfer.telescope.frequencies
+        # mm_freq = modes.index_map['freq']['centre']
+        # freq_ind = [find_key(bt_freq, mf) for mf in mm_freq]
 
-            # Trim off excess m-modes
+        # If in m-modes basis, redistribute over frequency first.
+        if self.basis == 'mmodes':
             modes.redistribute('freq')
-
+            # Trim off excess m-modes
             m_array = modes.vis[:(mmax + 1)]
             m_array = m_array.redistribute(axis=0)
 
             m_weight = modes.weight[:(mmax + 1)]
             m_weight = m_weight.redistribute(axis=0)
 
-        if self.map_type == 'svdmodes':
-
+        if self.basis == 'svdmodes':
+            print "in svdmodes if statement"
             modes.redistribute('m')
             m_array = modes.vis[:]
             m_weight = modes.weight[:]
@@ -102,15 +102,19 @@ class BaseMapMaker(task.SingleTask):
 
         # Loop over all m's and solve from m-mode visibilities to alms.
         for mi, m in m_array.enumerate(axis=0):
-            print mi, m
             for fi in range(nfreq):
-                v = m_array[mi, :, fi].view(np.ndarray)
+                if self.basis == 'svdmodes':
+                    print "in svdmodes statement 2"
+                    v = m_array[mi, :].view(np.ndarray)
+                    Ni = m_weight[mi, :].view(np.ndarray)
+                else:
+                    v = m_array[mi, :, fi].view(np.ndarray)
+                    Ni = m_weight[mi, :, fi].view(np.ndarray)
+
                 a = alm[fi, ..., mi].view(np.ndarray)
-                Ni = m_weight[mi, :, fi].view(np.ndarray)
 
                 a[:] = self._solve_m(m, fi, v, Ni)
-                if m ==0:
-                    print a[:]
+
         # Redistribute back over frequency
         alm = alm.redistribute(axis=0)
 
@@ -123,9 +127,9 @@ class BaseMapMaker(task.SingleTask):
         maps = hputil.sphtrans_inv_sky(alm, self.nside)
         maps = mpiarray.MPIArray.wrap(maps, axis=0)
 
-        #If we are making an svd map we need to create a frequency axis -
-        #for now we assume that the telescope object tracks the frequencies in the data.
-        if self.map_type == 'svdmodes':
+        # If we are making an svd map we need to create a frequency axis -
+        # Get frequencies from telescope object
+        if self.basis == 'svdmodes':
             freqmap = np.zeros(nfreq,
                                dtype=[('centre', np.float64), ('width', np.float64)])
             freqmap['centre'][:] = bt.telescope.frequencies
@@ -133,7 +137,7 @@ class BaseMapMaker(task.SingleTask):
 
             m = containers.Map(nside=self.nside, freq=freqmap, comm=modes.comm)
 
-        if self.map_type == 'mmodes':
+        if self.basis == 'mmodes':
             m = containers.Map(nside=self.nside, axes_from=modes, comm=modes.comm)
 
         m.map[:] = maps
@@ -262,8 +266,6 @@ class WienerMapMaker(BaseMapMaker):
 
     def _solve_m(self, m, f, v, Ni):
 
-        import scipy.linalg as la
-
         bt = self.beamtransfer
 
         # Massage the arrays into shape
@@ -272,7 +274,7 @@ class WienerMapMaker(BaseMapMaker):
         Nh = Ni**0.5
 
         # Get the beam transfer matrix, but trim off any l < m.
-        bm = bt.beam_m(m, fi=f)[..., m:].reshape(bt.ntel, -1)  # No
+        bm = bt.beam_m(m, fi=f)[..., m:].reshape(bt.ntel, -1)
 
         # Construct pre-wightened beam and beam-conjugated matrices
         bmt = bm * Nh[:, np.newaxis]
@@ -287,7 +289,6 @@ class WienerMapMaker(BaseMapMaker):
         a[:, m:] = a_wiener.reshape(bt.telescope.num_pol_sky, -1)
 
         return a
-
 
     def _minimize(self, m, beam, beam_conj, vec):
 
@@ -304,13 +305,14 @@ class WienerMapMaker(BaseMapMaker):
 
         # For large ntel it's quickest to solve in the standard Wiener filter way
         if bt.ntel > bt.nsky:
+            print "First if statement"
             Ci = np.diag(1.0 / S_diag) + np.dot(beam_conj, beam)  # Construct the inverse covariance
             a_dirty = np.dot(beam_conj, vec)  # Find the dirty map
             a_wiener = la.solve(Ci, a_dirty, sym_pos=True)  # Solve to find C vt
 
         # If not it's better to rearrange using the results for blockwise matrix inversion
         else:
-            pCi = np.identity(bt.ntel) + np.dot(beam * S_diag[np.newaxis, :], beam_conj)
+            pCi = np.identity(vec.shape[0]) + np.dot(beam * S_diag[np.newaxis, :], beam_conj)
             v_int = la.solve(pCi, vec, sym_pos=True)
             a_wiener = S_diag * np.dot(beam_conj, v_int)
 
@@ -347,8 +349,8 @@ class DirtyMapMakerSVD(BaseMapMaker):
 
         # Get the svd vector for this frequency
         fvec = vec[svbounds[f]:svbounds[f+1]]
-        # Get the inverse beam with the significant svd modes
-        beam_svnum = beam[:svnum[f], :, :]
+        # Get the inverse beam with the significant svd modes but trim off any l < m.
+        beam_svnum = beam[:svnum[f], :, m:]
         beam_svnum = beam_svnum.reshape(svnum[f], -1)
 
         # Construct beam-conjugated matrices
@@ -356,7 +358,7 @@ class DirtyMapMakerSVD(BaseMapMaker):
 
         # Solve for the dirty map alms
         a = np.dot(beam_svnum_conj, fvec)
-        a = a.reshape(bt.telescope.num_pol_sky, bt.telescope.lmax + 1)
+        a = a.reshape(bt.telescope.num_pol_sky, -1)
 
         return a
 
@@ -386,9 +388,7 @@ class WienerMapMakerSVD(WienerMapMaker):
     governed by a power law power spectrum for each polarisation component.
     """
 
-    def _solve_m(self, m, f, vec):
-
-        import scipy.linalg as la
+    def _solve_m(self, m, f, vec, Ni):
 
         bt = self.beamtransfer
 
@@ -404,17 +404,17 @@ class WienerMapMakerSVD(WienerMapMaker):
 
         # Get the svd vector for this frequency
         fvec = vec[svbounds[f]:svbounds[f+1]]
-
-        beam_svnum = beam[:svnum[f], :, :]
+        # Get the inverse beam with the significant svd modes but trim off any l < m.
+        beam_svnum = beam[:svnum[f], :, m:]
         beam_svnum = beam_svnum.reshape(svnum[f], -1)
 
         # Construct beam-conjugated matrices
         beam_svnum_conj = beam_svnum.T.conj()
 
-        a_wiener = WienerMapMaker._minimize(self, m, beam_svnum, beam_svnum_conj, fvec)
+        a_wiener = self._minimize(m, beam_svnum, beam_svnum_conj, fvec)
 
         # Copy the solution into a correctly shaped array output
-        a[:, :] = a_wiener.reshape(bt.telescope.num_pol_sky, -1)
+        a[:, m:] = a_wiener.reshape(bt.telescope.num_pol_sky, -1)
 
         return a
 
