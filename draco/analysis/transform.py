@@ -15,6 +15,8 @@ Tasks
 import numpy as np
 from caput import mpiarray, config
 
+from collections import Counter
+
 from ..core import containers, task, io
 from ..util import tools
 
@@ -186,20 +188,35 @@ class CollateProducts(task.SingleTask):
         # Infer number of products that went into each stack
         if self.weight != 'inverse_variance':
 
-            nprod_in_stack = np.zeros(sp.vis.shape[1:], dtype=np.float32)
-            for ind_ss, ind_sp in enumerate(ss.reverse_map['stack']):
-                aa, bb = ss.index_map['prod'][ind_ss]
-                nprod_in_stack[ind_sp, :] += ss.input_flags[aa, :] * ss.input_flags[bb, :]
+            nprod_in_stack = np.zeros(ss.vis.shape[1:], dtype=np.float32)
+
+            # Check if we were actually setting the input flags.
+            if np.any(ss.input_flags):
+                for prod, ind_stack in zip(ss.index_map['prod'][:], ss.reverse_map['stack']['stack'][:]):
+                    nprod_in_stack[ind_stack, :] += ss.input_flags[prod[0], :] * ss.input_flags[prod[1], :]
+            else:
+                for ind_stack, val in Counter(ss.reverse_map['stack']['stack'][:]).iteritems():
+                    nprod_in_stack[ind_stack, :] = val
 
             if self.weight == 'uniform':
                 nprod_in_stack = (nprod_in_stack > 0).astype(np.float32)
+
+        # Determine current conjugation and product map.
+        # Planning to clean this up by forcing CorrData
+        # to always have a stack index.
+        if 'stack' in ss.index_map:
+            ss_conj = ss.index_map['stack']['conjugate']
+            ss_prod = ss.index_map['prod'][ss.index_map['stack']['prod']]
+        else:
+            ss_conj = np.zeros(ss.vis.shape[1], dtype=np.bool)
+            ss_prod = ss.index_map['prod']
 
         # Create counter to increment during the stacking.
         # This will be used to normalize at the end.
         counter = np.zeros_like(sp.weight[:])
 
         # Iterate over products (stacked) in the sidereal stream
-        for ss_pi, (ii, ij) in enumerate(ss.prod):
+        for ss_pi, (ii, ij) in enumerate(ss_prod):
 
             # Map the feed indices into ones for the Telescope class
             bi, bj = input_ind[ii], input_ind[ij]
@@ -222,7 +239,7 @@ class CollateProducts(task.SingleTask):
                 wss = nprod_in_stack[np.newaxis, ss_pi]
 
             # Accumulate visibilities, conjugating if required
-            if feedconj == ss.conj[ss_pi]:
+            if feedconj == ss_conj[ss_pi]:
                 sp.vis[:, sp_pi] += wss * ss.vis[freq_ind, ss_pi]
             else:
                 sp.vis[:, sp_pi] += wss * ss.vis[freq_ind, ss_pi].conj()
