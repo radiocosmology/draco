@@ -141,13 +141,29 @@ class CollateProducts(task.SingleTask):
             Dataset containing only the required products.
         """
 
-        ss_keys = ss.index_map['input'][:]
+        # Determine current conjugation and product map.
+        # Planning to clean this up by forcing CorrData
+        # to always have a stack index.
+        match_sn = True
+        if 'stack' in ss.index_map:
+            match_sn = ss.index_map['stack'].size == ss.index_map['prod'].size
+            ss_conj = ss.index_map['stack']['conjugate']
+            ss_prod = ss.index_map['prod'][ss.index_map['stack']['prod']]
+        else:
+            ss_conj = np.zeros(ss.vis.shape[1], dtype=np.bool)
+            ss_prod = ss.index_map['prod']
 
         # Figure the mapping between inputs for the beam transfers and the file
+        ss_keys = ss.index_map['input'][:]
         try:
             bt_keys = self.telescope.input_index
         except AttributeError:
-            bt_keys = np.arange(self.telescope.nfeed)
+            bt_keys = np.array(np.arange(self.telescope.nfeed), dtype=[('chan_id', 'u2')])
+            match_sn = False
+
+        match_key = 'correlator_input' if match_sn else 'chan_id'
+        ss_keys = ss_keys[match_key]
+        bt_keys = bt_keys[match_key]
 
         def find_key(key_list, key):
             try:
@@ -157,24 +173,22 @@ class CollateProducts(task.SingleTask):
             except ValueError:
                 return None
 
-        input_ind = [ find_key(bt_keys, sk) for sk in ss_keys]
+        input_ind = [ find_key(bt_keys, sk) for sk in ss_keys ]
 
         # Figure out mapping between the frequencies
         bt_freq = self.telescope.frequencies
 
-        freq_ind = [ find_key(ss.freq[:], bf) for bf in bt_freq]
+        freq_ind = [ find_key(ss.freq[:], bf) for bf in bt_freq ]
 
         # We will fill in the stack index_map later
         if isinstance(ss,containers.SiderealStream):
             sp = containers.SiderealStream(
-                freq=ss.freq[:], input=len(bt_keys),
-                stack=np.zeros(len(self.telescope.uniquepairs), dtype=ss.index_map['stack'].dtype),
+                input=len(bt_keys), stack=np.zeros(len(self.telescope.uniquepairs), dtype=ss.index_map['stack'].dtype),
                 axes_from=ss, attrs_from=ss, distributed=True, comm=ss.comm
             )
         else:
             sp = containers.TimeStream(
-                freq=ss.freq[:], input=len(bt_keys),
-                stack=np.zeros(len(self.telescope.uniquepairs), dtype=ss.index_map['stack'].dtype),
+                input=len(bt_keys), stack=np.zeros(len(self.telescope.uniquepairs), dtype=ss.index_map['stack'].dtype),
                 axes_from=ss, attrs_from=ss, distributed=True, comm=ss.comm
             )
 
@@ -200,16 +214,6 @@ class CollateProducts(task.SingleTask):
 
             if self.weight == 'uniform':
                 nprod_in_stack = (nprod_in_stack > 0).astype(np.float32)
-
-        # Determine current conjugation and product map.
-        # Planning to clean this up by forcing CorrData
-        # to always have a stack index.
-        if 'stack' in ss.index_map:
-            ss_conj = ss.index_map['stack']['conjugate']
-            ss_prod = ss.index_map['prod'][ss.index_map['stack']['prod']]
-        else:
-            ss_conj = np.zeros(ss.vis.shape[1], dtype=np.bool)
-            ss_prod = ss.index_map['prod']
 
         # Create counter to increment during the stacking.
         # This will be used to normalize at the end.
@@ -253,12 +257,8 @@ class CollateProducts(task.SingleTask):
             # Update stack axis
             sp.index_map['stack'][sp_pi] = (ss.index_map['stack']['prod'][ss_pi], feedconj)
 
-        # Update stack reverse map
-        for ss_pi, (ii, ij) in enumerate(ss.index_map['prod']):
-            bi, bj = input_ind[ii], input_ind[ij]
-            new_stack_ind = self.telescope.feedmap[bi, bj]
-            feedconj = self.telescope.feedconj[bi, bj]
-            sp.reverse_map['stack'][ss_pi] = (new_stack_ind, feedconj)
+            # Update stack reverse map
+            sp.reverse_map['stack'][ss_pi] = (sp_pi, feedconj)
 
         # Divide through by counter to get properly weighted visibility average
         sp.vis[:] *= tools.invert_no_zero(counter)

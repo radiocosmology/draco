@@ -517,7 +517,7 @@ class SiderealStream(ContainerBase):
         },
 
         'input_flags': {
-            'axes': ['input', 'time'],
+            'axes': ['input', 'ra'],
             'dtype': np.float32,
             'initialise': True,
             'distributed': False
