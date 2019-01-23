@@ -245,7 +245,7 @@ class CollateProducts(task.SingleTask):
             nprod_in_stack = tools.calculate_redundancy(ss.input_flags[:],
                                                         ss.index_map['prod'][:],
                                                         ss.reverse_map['stack']['stack'][:],
-                                                        nstack=ss.vis.shape[1])
+                                                        ss.vis.shape[1])
 
             if self.weight == 'uniform':
                 nprod_in_stack = (nprod_in_stack > 0).astype(np.float32)
