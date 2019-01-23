@@ -15,8 +15,6 @@ Tasks
 import numpy as np
 from caput import mpiarray, config
 
-from collections import Counter
-
 from ..core import containers, task, io
 from ..util import tools
 
@@ -116,7 +114,7 @@ class CollateProducts(task.SingleTask):
     weight = config.Property(proptype=str, default='natural')
 
     def setup(self, tel):
-        """Set the BeamTransfer instance to use.
+        """Set the Telescope instance to use.
 
         Parameters
         ----------
@@ -141,9 +139,30 @@ class CollateProducts(task.SingleTask):
             Dataset containing only the required products.
         """
 
+        # Define two functions that are used below
+        def find_key(key_list, key):
+            try:
+                return map(tuple, list(key_list)).index(tuple(key))
+            except TypeError:
+                return list(key_list).index(key)
+            except ValueError:
+                return None
+
+        def pack_product_array(arr):
+
+            nfeed = arr.shape[0]
+            nprod = (nfeed * (nfeed+1)) // 2
+
+            ret = np.zeros(nprod, dtype=arr.dtype)
+            iout = 0
+
+            for i in xrange(nfeed):
+                ret[iout:(iout+nfeed-i)] = arr[i,i:]
+                iout += (nfeed-i)
+
+            return ret
+
         # Determine current conjugation and product map.
-        # Planning to clean this up by forcing CorrData
-        # to always have a stack index.
         match_sn = True
         if 'stack' in ss.index_map:
             match_sn = ss.index_map['stack'].size == ss.index_map['prod'].size
@@ -153,7 +172,7 @@ class CollateProducts(task.SingleTask):
             ss_conj = np.zeros(ss.vis.shape[1], dtype=np.bool)
             ss_prod = ss.index_map['prod']
 
-        # Figure the mapping between inputs for the beam transfers and the file
+        # For each input in the file, find the corresponding index in the telescope instance
         ss_keys = ss.index_map['input'][:]
         try:
             bt_keys = self.telescope.input_index
@@ -161,56 +180,72 @@ class CollateProducts(task.SingleTask):
             bt_keys = np.array(np.arange(self.telescope.nfeed), dtype=[('chan_id', 'u2')])
             match_sn = False
 
-        match_key = 'correlator_input' if match_sn else 'chan_id'
-        ss_keys = ss_keys[match_key]
-        bt_keys = bt_keys[match_key]
+        field_to_match = 'correlator_input' if match_sn else 'chan_id'
+        input_ind = [find_key(bt_keys[field_to_match], sk) for sk in ss_keys[field_to_match]]
 
-        def find_key(key_list, key):
-            try:
-                return map(tuple, list(key_list)).index(tuple(key))
-            except TypeError:
-                return list(key_list).index(key)
-            except ValueError:
-                return None
+        # Figure out the reverse mapping (i.e., for each input in the telescope instance,
+        # find the corresponding index in file)
+        rev_input_ind = [find_key(ss_keys[field_to_match], bk) for bk in bt_keys[field_to_match]]
 
-        input_ind = [ find_key(bt_keys, sk) for sk in ss_keys ]
+        if any([rv is None for rv in rev_input_ind]):
+            raise ValueError("All feeds in Telescope instance must exist in Timestream instance.")
 
         # Figure out mapping between the frequencies
-        bt_freq = self.telescope.frequencies
+        freq_ind = [find_key(ss.freq[:], bf) for bf in self.telescope.frequencies]
 
-        freq_ind = [ find_key(ss.freq[:], bf) for bf in bt_freq ]
+        if any([fi is None for fi in freq_ind]):
+            raise ValueError("All frequencies in Telescope instance must exist in Timestream instance.")
 
-        # We will fill in the stack index_map later
-        if isinstance(ss,containers.SiderealStream):
-            sp = containers.SiderealStream(
-                input=len(bt_keys), stack=np.zeros(len(self.telescope.uniquepairs), dtype=ss.index_map['stack'].dtype),
-                axes_from=ss, attrs_from=ss, distributed=True, comm=ss.comm
-            )
+        bt_freq = ss.index_map['freq'][freq_ind]
+
+        # Construct the equivalent prod and stack index_map for the telescope instance
+        bt_prod = np.array([(fi, fj) for fi in range(self.telescope.nfeed)
+                                     for fj in range(fi, self.telescope.nfeed)],
+                                     dtype=[('input_a', '<u2'), ('input_b', '<u2')])
+
+        bt_stack = np.array([(tools.cmap(upp[0], upp[1], self.telescope.nfeed), 0)
+                             if upp[0] <= upp[1] else
+                             (tools.cmap(upp[1], upp[0], self.telescope.nfeed), 1)
+                             for upp in self.telescope.uniquepairs],
+                             dtype=[('prod', '<u4'), ('conjugate', 'u1')])
+
+        # Construct the equivalent stack reverse_map for the telescope instance.  Note
+        # that we identify invalid products here using an index that is the size of the stack axis.
+        feedmask = pack_product_array(self.telescope.feedmask)
+        bt_rev = np.array(zip(
+                 np.where(feedmask, pack_product_array(self.telescope.feedmap), self.telescope.npairs),
+                 np.where(feedmask, pack_product_array(self.telescope.feedconj), 0)),
+                 dtype=[('stack', '<u4'), ('conjugate', 'u1')])
+
+        # Create output container
+        if isinstance(ss, containers.SiderealStream):
+            OutputContainer = containers.SiderealStream
         else:
-            sp = containers.TimeStream(
-                input=len(bt_keys), stack=np.zeros(len(self.telescope.uniquepairs), dtype=ss.index_map['stack'].dtype),
-                axes_from=ss, attrs_from=ss, distributed=True, comm=ss.comm
-            )
+            OutputContainer = containers.TimeStream
+
+        sp = OutputContainer(freq=bt_freq, input=bt_keys, prod=bt_prod,
+                             stack=bt_stack, reverse_map_stack=bt_rev,
+                             axes_from=ss, attrs_from=ss, distributed=True, comm=ss.comm)
 
         # Ensure all frequencies and products are on each node
         ss.redistribute(['ra', 'time'])
         sp.redistribute(['ra', 'time'])
 
+        # Initialize datasets in output container
         sp.vis[:] = 0.0
         sp.weight[:] = 0.0
+        sp.input_flags[:] = ss.input_flags[rev_input_ind, :]
+        if 'gain' in ss.datasets:
+            sp.add_dataset('gain')
+            sp.gain[:] = ss.gain[freq_ind][:, rev_input_ind, :]
 
         # Infer number of products that went into each stack
         if self.weight != 'inverse_variance':
 
-            nprod_in_stack = np.zeros(ss.vis.shape[1:], dtype=np.float32)
-
-            # Check if we were actually setting the input flags.
-            if np.any(ss.input_flags):
-                for prod, ind_stack in zip(ss.index_map['prod'][:], ss.reverse_map['stack']['stack'][:]):
-                    nprod_in_stack[ind_stack, :] += ss.input_flags[prod[0], :] * ss.input_flags[prod[1], :]
-            else:
-                for ind_stack, val in Counter(ss.reverse_map['stack']['stack'][:]).iteritems():
-                    nprod_in_stack[ind_stack, :] = val
+            nprod_in_stack = tools.calculate_redundancy(ss.input_flags[:],
+                                                        ss.index_map['prod'][:],
+                                                        ss.reverse_map['stack']['stack'][:],
+                                                        nstack=ss.vis.shape[1])
 
             if self.weight == 'uniform':
                 nprod_in_stack = (nprod_in_stack > 0).astype(np.float32)
@@ -220,7 +255,7 @@ class CollateProducts(task.SingleTask):
         counter = np.zeros_like(sp.weight[:])
 
         # Iterate over products (stacked) in the sidereal stream
-        for ss_pi, (ii, ij) in enumerate(ss_prod):
+        for ss_pi, ((ii, ij), conj) in enumerate(zip(ss_prod, ss_conj)):
 
             # Map the feed indices into ones for the Telescope class
             bi, bj = input_ind[ii], input_ind[ij]
@@ -239,11 +274,13 @@ class CollateProducts(task.SingleTask):
             # Generate weight
             if self.weight == 'inverse_variance':
                 wss = ss.weight[freq_ind, ss_pi]
+
             else:
-                wss = nprod_in_stack[np.newaxis, ss_pi]
+                wss = (ss.weight[freq_ind, ss_pi] > 0.0).astype(np.float32)
+                wss *= nprod_in_stack[np.newaxis, ss_pi]
 
             # Accumulate visibilities, conjugating if required
-            if feedconj == ss_conj[ss_pi]:
+            if feedconj == conj:
                 sp.vis[:, sp_pi] += wss * ss.vis[freq_ind, ss_pi]
             else:
                 sp.vis[:, sp_pi] += wss * ss.vis[freq_ind, ss_pi].conj()
@@ -253,12 +290,6 @@ class CollateProducts(task.SingleTask):
 
             # Increment counter
             counter[:, sp_pi] += wss
-
-            # Update stack axis
-            sp.index_map['stack'][sp_pi] = (ss.index_map['stack']['prod'][ss_pi], feedconj)
-
-            # Update stack reverse map
-            sp.reverse_map['stack'][ss_pi] = (sp_pi, feedconj)
 
         # Divide through by counter to get properly weighted visibility average
         sp.vis[:] *= tools.invert_no_zero(counter)
