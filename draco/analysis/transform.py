@@ -17,6 +17,7 @@ from caput import mpiarray, config
 
 from ..core import containers, task, io
 from ..util import tools
+from ..util import regrid
 
 
 class FrequencyRebin(task.SingleTask):
@@ -371,3 +372,125 @@ def _pack_marray(mmodes, mmax=None):
         marray[mi, 1] = mmodes[..., -mi].conj()
 
     return marray
+
+
+class Regridder(task.SingleTask):
+    """Interpolate time-ordered data onto a regular grid.
+
+    Uses a maximum-likelihood inverse of a Lanczos interpolation to do the
+    regridding. This gives a reasonably local regridding, that is pretty well
+    behaved in m-space.
+
+    Attributes
+    ----------
+    samples : int
+        Number of samples to interpolate onto.
+    start: float
+        Start of the interpolated samples.
+    end: float
+        End of the interpolated samples.
+    lanczos_width : int
+        Width of the Lanczos interpolation kernel.
+    snr_cov: float
+        Ratio of signal covariance to noise covariance (used for Wiener filter).
+    """
+
+    samples = config.Property(proptype=int, default=1024)
+    start = config.Property(proptype=float)
+    end = config.Property(proptype=float)
+    lanczos_width = config.Property(proptype=int, default=5)
+    snr_cov = config.Property(proptype=float, default=1e-8)
+
+    def setup(self, observer):
+        """Set the local observers position.
+
+        Parameters
+        ----------
+        observer : :class:`~caput.time.Observer`
+            An Observer object holding the geographic location of the telescope.
+            Note that :class:`~drift.core.TransitTelescope` instances are also
+            Observers.
+        """
+        self.observer = observer
+
+    def process(self, data):
+        """Regrid visibility data in the time direction.
+
+        Parameters
+        ----------
+        data : containers.TODContainer
+            Time-ordered data.
+
+        Returns
+        -------
+        new_data : containers.TODContainer
+            The regularly gridded interpolated timestream.
+        """
+
+        # Redistribute if needed
+        data.redistribute('freq')
+
+        # View of data
+        weight = data.weight[:].view(np.ndarray)
+        vis_data = data.vis[:].view(np.ndarray)
+
+        # Get input time grid
+        timelike_axis = data.vis.attrs['axis'][-1]
+        times = data.index_map[timelike_axis][:]
+
+        # check bounds
+        if self.start is None:
+            self.start = times[0]
+        if self.end is None:
+            self.end = times[-1]
+        if (self.start < times[0] or self.end > times[1]):
+            msg = "Start or end points for regridder fall outside bounds of input data."
+            self.log.error(msg)
+            raise RuntimeError(msg)
+
+        # perform regridding
+        new_grid, new_vis, ni = self.regrid(vis_data, weight, times)
+
+        # Wrap to produce MPIArray
+        new_vis = mpiarray.MPIArray.wrap(new_vis, axis=data.vis.distributed_axis)
+        ni = mpiarray.MPIArray.wrap(ni, axis=data.vis.distributed_axis)
+
+        # Create new container for output
+        cont_type = data.__class__
+        new_data = cont_type(axes_from=data, timelike_axis=new_grid)
+        new_data.redistribute('freq')
+        new_data.vis[:] = new_vis
+        new_data.weight[:] = ni
+
+        return new_data
+
+    def regrid(self, vis_data, weight, times):
+
+        # Create a regular grid, padded at either end to supress interpolation issues
+        pad = 5 * self.lanczos_width
+        interp_grid = np.arange(-pad, self.samples + pad, dtype=np.float64) / self.samples
+        # scale to specified range
+        interp_grid = interp_grid * (self.end - self.start) + self.start
+
+        # Construct regridding matrix for reverse problem
+        lzf = regrid.lanczos_forward_matrix(interp_grid, times, self.lanczos_width).T.copy()
+
+        # Reshape data
+        vr = vis_data.reshape(-1, vis_data.shape[-1])
+        nr = weight.reshape(-1, vis_data.shape[-1])
+
+        # Construct a signal 'covariance'
+        Si = np.ones_like(interp_grid) * self.snr_cov
+
+        # Calculate the interpolated data and a noise weight at the points in the padded grid
+        sts, ni = regrid.band_wiener(lzf, nr, Si, vr, 2 * self.lanczos_width - 1)
+
+        # Throw away the padded ends
+        sts = sts[:, pad:-pad].copy()
+        ni = ni[:, pad:-pad].copy()
+
+        # Reshape to the correct shape
+        sts = sts.reshape(vis_data.shape[:-1] + (self.samples,))
+        ni = ni.reshape(vis_data.shape[:-1] + (self.samples,))
+
+        return interp_grid, sts, ni
