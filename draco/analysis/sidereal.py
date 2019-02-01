@@ -208,7 +208,7 @@ class SiderealRegridder(Regridder):
         vis_data = data.vis[:].view(np.ndarray)
 
         # perform regridding
-        new_grid, sts, ni = self.regrid(vis_data, weight, timestamp_lsd)
+        new_grid, sts, ni = self._regrid(vis_data, weight, timestamp_lsd)
 
         # Wrap to produce MPIArray
         sts = mpiarray.MPIArray.wrap(sts, axis=data.vis.distributed_axis)

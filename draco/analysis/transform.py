@@ -449,7 +449,7 @@ class Regridder(task.SingleTask):
             raise RuntimeError(msg)
 
         # perform regridding
-        new_grid, new_vis, ni = self.regrid(vis_data, weight, times)
+        new_grid, new_vis, ni = self._regrid(vis_data, weight, times)
 
         # Wrap to produce MPIArray
         new_vis = mpiarray.MPIArray.wrap(new_vis, axis=data.vis.distributed_axis)
@@ -457,14 +457,14 @@ class Regridder(task.SingleTask):
 
         # Create new container for output
         cont_type = data.__class__
-        new_data = cont_type(axes_from=data, timelike_axis=new_grid)
+        new_data = cont_type(axes_from=data, **{timelike_axis: new_grid})
         new_data.redistribute('freq')
         new_data.vis[:] = new_vis
         new_data.weight[:] = ni
 
         return new_data
 
-    def regrid(self, vis_data, weight, times):
+    def _regrid(self, vis_data, weight, times):
 
         # Create a regular grid, padded at either end to supress interpolation issues
         pad = 5 * self.lanczos_width
