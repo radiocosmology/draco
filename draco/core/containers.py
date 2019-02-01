@@ -621,18 +621,18 @@ class GridBeam(ContainerBase):
         coordinates on a rectangular grid.
     """
 
-    _axes = ('freq', 'pol', 'input', 'theta', 'phi')
+    _axes = ('freq', 'pol', 'feed', 'theta', 'phi')
 
     _dataset_spec = {
         'beam': {
-            'axes': ['freq', 'pol', 'input', 'theta', 'phi'],
+            'axes': ['freq', 'pol', 'feed', 'theta', 'phi'],
             'dtype': np.complex64,
             'initialise': True,
             'distributed': True,
             'distributed_axis': 'freq'
         },
         'weight': {
-            'axes': ['freq', 'pol', 'input', 'theta', 'phi'],
+            'axes': ['freq', 'pol', 'feed', 'theta', 'phi'],
             'dtype': np.float32,
             'initialise': True,
             'distributed': True,
@@ -658,8 +658,8 @@ class GridBeam(ContainerBase):
         return self.index_map['pol']
 
     @property
-    def input(self):
-        return self.index_map['input']
+    def feed(self):
+        return self.index_map['feed']
 
     @property
     def theta(self):
@@ -676,18 +676,18 @@ class TrackBeam(ContainerBase):
         the numpy.dtype [('theta', np.float32), ('phi', np.float32)].
     """
 
-    _axes = ('freq', 'pol', 'input', 'pix')
+    _axes = ('freq', 'pol', 'feed', 'pix')
 
     _dataset_spec = {
         'beam': {
-            'axes': ['freq', 'pol', 'input', 'pix'],
+            'axes': ['freq', 'pol', 'feed', 'pix'],
             'dtype': np.complex64,
             'initialise': True,
             'distributed': True,
             'distributed_axis': 'freq'
         },
         'weight': {
-            'axes': ['freq', 'pol', 'input', 'pix'],
+            'axes': ['freq', 'pol', 'feed', 'pix'],
             'dtype': np.float32,
             'initialise': True,
             'distributed': True,
@@ -712,7 +712,7 @@ class TrackBeam(ContainerBase):
         self.attrs['coords'] = coords
         self.attrs['track_type'] = track_type
 
-        super(GridBeam, self).__init__(*args, **kwargs)
+        super(TrackBeam, self).__init__(*args, **kwargs)
 
     @property
     def coords(self):
@@ -731,8 +731,8 @@ class TrackBeam(ContainerBase):
         return self.index_map['pol']
 
     @property
-    def input(self):
-        return self.index_map['input']
+    def feed(self):
+        return self.index_map['feed']
 
     @property
     def pix(self):
