@@ -488,6 +488,7 @@ class Regridder(task.SingleTask):
         # Throw away the padded ends
         sts = sts[:, pad:-pad].copy()
         ni = ni[:, pad:-pad].copy()
+        interp_grid = interp_grid[pad:-pad].copy()
 
         # Reshape to the correct shape
         sts = sts.reshape(vis_data.shape[:-1] + (self.samples,))
