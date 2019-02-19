@@ -19,7 +19,7 @@ from ..core import containers, task
 
 
 class BaseGains(task.SingleTask):
-    r"""Rudimentary class to generate gain timestreams.
+    """Rudimentary class to generate gain timestreams.
     The gains are drawn for times which match up to an input time stream file
 
     Attributes
@@ -170,7 +170,8 @@ class RandomGains(BaseGains):
         ntime = len(time)
 
         # Generate amplitude fluctuations
-        gain_amp = generate_fluctuations(time, cf_amp, num_realisations, self._prev_time, self._prev_amp)
+        gain_amp = generate_fluctuations(time, cf_amp, self._prev_time,
+                                         self._prev_amp, num_realisations)
 
         # Save amplitude fluctuations to instannce
         self._prev_amp = gain_amp
@@ -189,7 +190,8 @@ class RandomGains(BaseGains):
         ntime = len(time)
 
         # Generate phase fluctuations
-        gain_phase_fluc = generate_fluctuations(time, cf_phase, num_realisations, self._prev_time, self._prev_phase)
+        gain_phase_fluc = generate_fluctuations(time, cf_phase, self._prev_time,
+                                                self._prev_phase, num_realisations)
 
         # Save phase fluctuations to instannce
         self._prev_phase = gain_phase_fluc
@@ -199,18 +201,38 @@ class RandomGains(BaseGains):
         return gain_phase_fluc
 
 
-def generate_fluctuations(time, cf, num_realisations, prev_time, prev_fluc):
-    """Generate time streams which are Gaussian distributed with
-    correlation function given. Time stream are drawn as a constrained
-    realisation against the previous file."""
-    ntime = len(time)
+def generate_fluctuations(x, corrfunc, n, prev_x, prev_fluc):
+    """Generate correlated random streams.
+
+    Generates a Gaussian field from the given correlation function and (potentially)
+    correlated with prior data.
+
+    Parameters
+    ----------
+    x : np.ndarray[npoints]
+        Coordinates of samples in the new stream.
+    corrfunc : function
+        See documentation of `gaussian_realisation`.
+    prev_x : np.ndarray[npoints]
+        Coordinates of previous samples. Ignored if `prev_fluc` is None.
+    prev_fluc : np.ndarray[npoints]
+        Values of previous samples. If `None` the stream is initialised.
+    n : int
+        Number of realisations to generate.
+
+    Returns
+    -------
+    y : np.ndarray[n, npoints]
+        Realisations of the stream.
+    """
+    nx = len(x)
 
     if prev_fluc is None:
-        fluctuations = gaussian_realisation(time, cf, num_realisations).reshape(num_realisations, ntime)
+        fluctuations = gaussian_realisation(x, corrfunc, n).reshape(n, nx)
 
     else:
-        fluctuations = constrained_gaussian_realisation(time, cf, num_realisations,
-                                                        prev_time, prev_fluc).reshape(num_realisations, ntime)
+        fluctuations = constrained_gaussian_realisation(
+            x, corrfunc, n, prev_x, prev_fluc).reshape(n, nx)
 
     return fluctuations
 
