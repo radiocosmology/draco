@@ -23,7 +23,7 @@ from caput import config
 
 from ..core import task, containers
 from ..util import tools
-
+from caput.time import STELLAR_S
 
 class ReceiverTemperature(task.SingleTask):
     """Add a basic receiver temperature term into the data.
@@ -49,6 +49,88 @@ class ReceiverTemperature(task.SingleTask):
             # Great an auto!
             if prod[0] == prod[1]:
                 data.vis[:, pi] += self.recv_temp
+
+        return data
+
+
+class GaussianNoise(task.SingleTask):
+    """Add Gaussian distributed noise to a visibility dataset.
+
+    Note that this is an approximation to the actual noise distribution good only
+    when T_recv >> T_sky and delta_time * delta_freq >> 1.
+
+    Attributes
+    ----------
+    ndays : float
+        Multiplies the number of samples in each measurement.
+    seed : int
+        Random seed for the noise generation.
+    set_weights : bool
+        Set the weights to the appropriate values.
+    recv_temp : bool
+        The temperature of the noise to add.
+    """
+    recv_temp = config.Property(proptype=float, default=50.0)
+    ndays = config.Property(proptype=float, default=733.)
+    seed = config.Property(proptype=int, default=None)
+    set_weights = config.Property(proptype=bool, default=True)
+
+    def process(self, data):
+        """Generate a noisy dataset.
+
+        Parameters
+        ----------
+        data : :class:`containers.SiderealStream` or :class:`containers.TimeStream`
+            The expected (i.e. noiseless) visibility dataset. Note the modification
+            is done in place.
+
+        Returns
+        -------
+        data_noise : same as :param:`data`
+            The sampled (i.e. noisy) visibility dataset.
+        """
+
+        data.redistribute('freq')
+
+        visdata = data.vis[:]
+
+        # Get the time interval
+        if isinstance(data, containers.SiderealStream):
+            dt = 240 * (data.ra[1] - data.ra[0]) * STELLAR_S
+            ntime = len(data.ra)
+        else:
+            dt = data.time[1] - data.time[0]
+            ntime = len(data.time)
+
+        # TODO: this assumes uniform channels
+        df = data.index_map['freq']['width'][0] * 1e6
+        nfreq = data.vis.local_shape[0]
+        nprod = len(data.index_map['prod'])
+
+        # Calculate the number of samples
+        nsamp = int(self.ndays * dt * df)
+        std = self.recv_temp / np.sqrt(2 * nsamp)
+
+        with mpi_random_seed(self.seed):
+            noise_real = std * np.random.standard_normal((nfreq, nprod, ntime))
+            noise_imag = std * np.random.standard_normal((nfreq, nprod, ntime))
+
+        # TODO: make this work with stacked data
+        # Iterate over the products to find the auto-correlations and add the noise into them
+        for pi, prod in enumerate(data.index_map['prod']):
+
+            # Auto: multiply by sqrt(2) because auto has twice the variance
+            if prod[0] == prod[1]:
+                visdata[:, pi].real += (np.sqrt(2) * noise_real[:, pi])
+
+            else:
+                visdata[:, pi].real += noise_real[:, pi]
+                visdata[:, pi].imag += noise_imag[:, pi]
+
+        # Construct and set the correct weights in place
+        if self.set_weights:
+            for lfi, fi in visdata.enumerate(0):
+                data.weight[lfi] = 2.0 / std**2
 
         return data
 

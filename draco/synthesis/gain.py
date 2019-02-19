@@ -1,5 +1,4 @@
 """Tasks for generating random gain fluctuations in the data.
-
 At the moment there is only a very simple task which draws random Gaussian
 distributed gain fluctuations.
 
@@ -19,10 +18,121 @@ from caput import config, mpiarray
 from ..core import containers, task
 
 
-class RandomGains(task.SingleTask):
-    r"""Generate a random gaussian realisation of gain timestreams.
+class BaseGains(task.SingleTask):
+    """Rudimentary class to generate gain timestreams.
+    The gains are drawn for times which match up to an input time stream file
 
-    The gains are drawn for times which match up to an input time stream file.
+    Attributes
+    ----------
+    amp: bool
+        Generate gain amplitude fluctuations. Default is True.
+    phase: bool
+        Generate gain phase fluctuations. Default is True.
+    """
+    amp = config.Property(default=True, proptype=bool)
+    phase = config.Property(default=True, proptype=bool)
+
+    _prev_time = None
+
+    def process(self, data):
+        """Generate a gain timestream for the inputs and times in `data`.
+
+        Parameters
+        ----------
+        data : :class:`containers.TimeStream`
+            Generate a timestream for this dataset.
+
+        Returns
+        -------
+        gain : :class:`containers.GainData`
+        """
+        data.redistribute('prod')
+
+        time = data.time
+
+        gain_data = containers.GainData(time=time, axes_from=data)
+        gain_data.redistribute('input')
+
+        ninput = gain_data.gain.local_shape[1]
+        freq = data.index_map['freq']['centre'][:]
+
+        gain_amp = 1.0
+        gain_phase = 0.0
+
+        if self.amp:
+            gain_amp = self._generate_amp(time, freq, ninput)
+
+        if self.phase:
+            gain_phase = self._generate_phase(time, freq, ninput)
+
+        # Combine into an overall gain fluctuation
+        gain_comb = gain_amp * np.exp(1.0J * gain_phase)
+
+        # Copy the gain entries into the output container
+        gain_comb = mpiarray.MPIArray.wrap(gain_comb, axis=1)
+        gain_data.gain[:] = gain_comb
+
+        # Keep a reference to time around for the next round
+        self._prev_time = time
+
+        return gain_data
+
+    def _corr_func(self, zeta, amp):
+        """This generates the correlation function
+
+        Parameters
+        ----------
+        zeta: float
+            Correlation length
+        amp : float
+            Amplitude (given as standard deviation) of fluctuations.
+        """
+        def _cf(x):
+            dij = x[:, np.newaxis] - x[np.newaxis, :]
+            return amp**2 * np.exp(-0.5 * (dij / zeta)**2)
+
+        return _cf
+
+    def _generate_amp(self, time, freq, ninput):
+        """Generate phase gain errors.
+
+        This implementation is blank. Must be overriden.
+
+        Parameters:
+        -----------
+        time : np.ndarray
+            Generate amplitude fluctuations for this time period.
+        freq : np.ndarray
+             Frequencies from data for which to generate gain fluctuations.
+        ninput : float
+            Number of inputs to generate fluctuations for.
+        """
+        pass
+
+    def _generate_phase(self,  time, freq, ninput):
+        """Generate phase gain errors.
+
+        This implementation is blank. Must be overriden.
+
+        Parameters:
+        -----------
+        time : np.ndarray
+               Generate phase fluctuations for this time period.
+        freq : np.ndarray
+             Frequencies from data for which to generate gain fluctuations.
+        ninput : float
+            Number of inputs to generate fluctuations for.
+        """
+        pass
+
+
+class RandomGains(BaseGains):
+    r"""Generate random gains.
+
+    Notes
+    -----
+    The Random Gains class generates random fluctuations in gain amplitude and
+    phase.
 
     Attributes
     ----------
@@ -43,84 +153,88 @@ class RandomGains(task.SingleTask):
     consistency between them each gain time stream is drawn as a constrained
     realisation against the previous file.
     """
-
     corr_length_amp = config.Property(default=3600.0, proptype=float)
     corr_length_phase = config.Property(default=3600.0, proptype=float)
 
     sigma_amp = config.Property(default=0.02, proptype=float)
     sigma_phase = config.Property(default=0.1, proptype=float)
 
-    _prev_gain = None
+    _prev_amp = None
+    _prev_phase = None
 
-    def process(self, data):
-        """Generate a gain timestream for the inputs and times in `data`.
+    def _generate_amp(self, time, freq, ninput):
 
-        Parameters
-        ----------
-        data : :class:`containers.TimeStream`
-            Generate a timestream for this dataset.
-
-        Returns
-        -------
-        gain : :class:`containers.GainData`
-        """
-
-        data.redistribute('freq')
-
-        time = data.time
-
-        gain_data = containers.GainData(time=time, axes_from=data)
-        gain_data.redistribute('freq')
-
+        # Generate the correlation function
+        cf_amp = self._corr_func(self.corr_length_amp, self.sigma_amp)
+        num_realisations = len(freq) * ninput
         ntime = len(time)
-        nfreq = data.vis.local_shape[0]
-        ninput = len(data.index_map['input'])
-        nsamp = nfreq * ninput
 
-        def corr_func(zeta, amp):
+        # Generate amplitude fluctuations
+        gain_amp = generate_fluctuations(time, cf_amp, self._prev_time,
+                                         self._prev_amp, num_realisations)
 
-            def _cf(x):
-                dij = x[:, np.newaxis] - x[np.newaxis, :]
-                return amp * np.exp(-0.5 * (dij / zeta)**2)
+        # Save amplitude fluctuations to instannce
+        self._prev_amp = gain_amp
 
-            return _cf
+        gain_amp = gain_amp.reshape((len(freq), ninput, ntime))
 
-        # Generate the correlation functions
-        cf_amp = corr_func(self.corr_length_amp, self.sigma_amp)
-        cf_phase = corr_func(self.corr_length_phase, self.sigma_phase)
+        gain_amp = 1.0 + gain_amp
 
-        if self._prev_gain is None:
+        return gain_amp
 
-            # Generate amplitude and phase fluctuations
-            gain_amp = 1.0 + gaussian_realisation(time, cf_amp, nsamp)
-            gain_phase = gaussian_realisation(time, cf_phase, nsamp)
+    def _generate_phase(self, time, freq, ninput):
 
-        else:
+        # Generate the correlation function
+        cf_phase = self._corr_func(self.corr_length_phase, self.sigma_phase)
+        num_realisations = len(freq) * ninput
+        ntime = len(time)
 
-            # Get the previous set of ampliude and phase fluctuations. Note we
-            # need to subtract one from the amplitude; and we unwrap the phase
-            # to make it smooth
-            prev_time = self._prev_gain.index_map['time'][:]
-            prev_amp = (np.abs(self._prev_gain.gain[:].view(np.ndarray)) - 1.0).reshape(nsamp, len(prev_time))
-            prev_phase = np.unwrap(np.angle(self._prev_gain.gain[:].view(np.ndarray))).reshape(nsamp, len(prev_time))
+        # Generate phase fluctuations
+        gain_phase_fluc = generate_fluctuations(time, cf_phase, self._prev_time,
+                                                self._prev_phase, num_realisations)
 
-            # Generate amplitude and phase fluctuations consistent with the existing data
-            gain_amp = 1.0 + constrained_gaussian_realisation(time, cf_amp, nsamp,
-                                                              prev_time, prev_amp)
-            gain_phase = constrained_gaussian_realisation(time, cf_phase, nsamp,
-                                                          prev_time, prev_phase)
+        # Save phase fluctuations to instannce
+        self._prev_phase = gain_phase_fluc
+        # Reshape to correct size
+        gain_phase_fluc = gain_phase_fluc.reshape((len(freq), ninput, ntime))
 
-        # Combine into an overall gain fluctuation
-        gain_comb = gain_amp * np.exp(1.0J * gain_phase)
+        return gain_phase_fluc
 
-        # Copy the gain entries into the output container
-        gain_comb = mpiarray.MPIArray.wrap(gain_comb.reshape(nfreq, ninput, ntime), axis=0)
-        gain_data.gain[:] = gain_comb
 
-        # Keep a reference to these gains around for the next round
-        self._prev_gain = gain_data
+def generate_fluctuations(x, corrfunc, n, prev_x, prev_fluc):
+    """Generate correlated random streams.
 
-        return gain_data
+    Generates a Gaussian field from the given correlation function and (potentially)
+    correlated with prior data.
+
+    Parameters
+    ----------
+    x : np.ndarray[npoints]
+        Coordinates of samples in the new stream.
+    corrfunc : function
+        See documentation of `gaussian_realisation`.
+    prev_x : np.ndarray[npoints]
+        Coordinates of previous samples. Ignored if `prev_fluc` is None.
+    prev_fluc : np.ndarray[npoints]
+        Values of previous samples. If `None` the stream is initialised.
+    n : int
+        Number of realisations to generate.
+
+    Returns
+    -------
+    y : np.ndarray[n, npoints]
+        Realisations of the stream.
+    """
+    nx = len(x)
+
+    if prev_fluc is None:
+        fluctuations = gaussian_realisation(x, corrfunc, n).reshape(n, nx)
+
+    else:
+        fluctuations = constrained_gaussian_realisation(
+            x, corrfunc, n, prev_x, prev_fluc).reshape(n, nx)
+
+    return fluctuations
 
 
 def gaussian_realisation(x, corrfunc, n, rcond=1e-12):

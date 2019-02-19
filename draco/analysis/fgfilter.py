@@ -74,13 +74,15 @@ class SVDModeProject(_ProjectFilterBase):
 
         svdmodes = containers.SVDModes(mode=bt.ndofmax, axes_from=mmodes,
                                        attrs_from=mmodes)
+        svdmodes.vis[:] = 0.0
+
         mmodes.redistribute('m')
         svdmodes.redistribute('m')
 
         # Iterate over local m's, project mode and save to disk.
         for lm, mi in mmodes.vis[:].enumerate(axis=0):
 
-            tm = mmodes.vis[mi].reshape(tel.nfreq, 2 * tel.npairs)
+            tm = mmodes.vis[mi].transpose((1, 0, 2)).reshape(tel.nfreq, 2 * tel.npairs)
             svdm = bt.project_vector_telescope_to_svd(mi, tm)
 
             svdmodes.nmode[mi] = len(svdm)
@@ -176,6 +178,9 @@ class KLModeProject(_ProjectFilterBase):
         # Construct the container and redistribute
         klmodes = containers.KLModes(mode=bt.ndofmax, axes_from=svdmodes,
                                      attrs_from=svdmodes)
+
+        klmodes.vis[:] = 0.0
+
         klmodes.redistribute('m')
         svdmodes.redistribute('m')
 
