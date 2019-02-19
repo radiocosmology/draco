@@ -637,6 +637,13 @@ class GridBeam(ContainerBase):
             'initialise': True,
             'distributed': True,
             'distributed_axis': 'freq'
+        },
+        'gain': {
+            'axes': ['freq', 'input'],
+            'dtype': np.complex64,
+            'initialise': False,
+            'distributed': True,
+            'distributed_axis': 'freq'
         }
     }
 
@@ -651,7 +658,11 @@ class GridBeam(ContainerBase):
 
     @property
     def weight(self):
-        return self.datasets['vis_weight']
+        return self.datasets['weight']
+
+    @property
+    def gain(self):
+        return self.datasets['gain']
 
     @property
     def coords(self):
@@ -694,10 +705,17 @@ class TrackBeam(ContainerBase):
             'distributed': True,
             'distributed_axis': 'freq'
         },
-        'vis_weight': {
+        'weight': {
             'axes': ['freq', 'pol', 'input', 'pix'],
             'dtype': np.float32,
             'initialise': True,
+            'distributed': True,
+            'distributed_axis': 'freq'
+        },
+        'gain': {
+            'axes': ['freq', 'input'],
+            'dtype': np.complex64,
+            'initialise': False,
             'distributed': True,
             'distributed_axis': 'freq'
         }
@@ -729,7 +747,11 @@ class TrackBeam(ContainerBase):
 
     @property
     def weight(self):
-        return self.datasets['vis_weight']
+        return self.datasets['weight']
+
+    @property
+    def gain(self):
+        return self.datasets['gain']
 
     @property
     def coords(self):
