@@ -621,18 +621,18 @@ class GridBeam(ContainerBase):
         coordinates on a rectangular grid.
     """
 
-    _axes = ('freq', 'pol', 'feed', 'theta', 'phi')
+    _axes = ('freq', 'pol', 'input', 'theta', 'phi')
 
     _dataset_spec = {
         'beam': {
-            'axes': ['freq', 'pol', 'feed', 'theta', 'phi'],
+            'axes': ['freq', 'pol', 'input', 'theta', 'phi'],
             'dtype': np.complex64,
             'initialise': True,
             'distributed': True,
             'distributed_axis': 'freq'
         },
         'weight': {
-            'axes': ['freq', 'pol', 'feed', 'theta', 'phi'],
+            'axes': ['freq', 'pol', 'input', 'theta', 'phi'],
             'dtype': np.float32,
             'initialise': True,
             'distributed': True,
@@ -666,8 +666,8 @@ class GridBeam(ContainerBase):
         return self.index_map['pol']
 
     @property
-    def feed(self):
-        return self.index_map['feed']
+    def input(self):
+        return self.index_map['input']
 
     @property
     def theta(self):
@@ -684,18 +684,18 @@ class TrackBeam(ContainerBase):
         the numpy.dtype [('theta', np.float32), ('phi', np.float32)].
     """
 
-    _axes = ('freq', 'pol', 'feed', 'pix')
+    _axes = ('freq', 'pol', 'input', 'pix')
 
     _dataset_spec = {
         'beam': {
-            'axes': ['freq', 'pol', 'feed', 'pix'],
+            'axes': ['freq', 'pol', 'input', 'pix'],
             'dtype': np.complex64,
             'initialise': True,
             'distributed': True,
             'distributed_axis': 'freq'
         },
         'vis_weight': {
-            'axes': ['freq', 'pol', 'feed', 'pix'],
+            'axes': ['freq', 'pol', 'input', 'pix'],
             'dtype': np.float32,
             'initialise': True,
             'distributed': True,
@@ -706,21 +706,22 @@ class TrackBeam(ContainerBase):
     def __init__(self, theta=None, phi=None, coords='celestial',
                  track_type='drift', *args, **kwargs):
 
-        if (theta is None) != (phi is None):
+        if (theta is not None and phi is not None):
+            if len(theta) != len(phi):
+                raise RuntimeError("theta and phi axes must have same length: "
+                                   "({:d} != {:d})".format(len(theta), len(phi)))
+            else:
+                pix = np.zeros(len(theta), dtype=[('theta', np.float32), ('phi', np.float32)])
+                pix['theta'] = theta
+                pix['phi'] = phi
+                kwargs['pix'] = pix
+        elif (theta is None) != (phi is None):
             raise RuntimeError("Both theta and phi coordinates must be specified.")
-        elif len(theta) != len(phi):
-            raise RuntimeError("theta and phi axes must have same length: "
-                               "({:d} != {:d})".format(len(theta), len(phi)))
-        else:
-            pix = np.zeros(len(theta), dtype=[('theta', np.float32), ('phi', np.float32)])
-            pix['theta'] = theta
-            pix['phi'] = phi
-            super(TrackBeam, self).__init__(*args, pix=pix, **kwargs)
+
+        super(TrackBeam, self).__init__(*args, **kwargs)
 
         self.attrs['coords'] = coords
         self.attrs['track_type'] = track_type
-
-        super(TrackBeam, self).__init__(pix=pix, *args, **kwargs)
 
     @property
     def beam(self):
@@ -747,8 +748,8 @@ class TrackBeam(ContainerBase):
         return self.index_map['pol']
 
     @property
-    def feed(self):
-        return self.index_map['feed']
+    def input(self):
+        return self.index_map['input']
 
     @property
     def pix(self):
