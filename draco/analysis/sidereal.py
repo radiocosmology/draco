@@ -25,8 +25,8 @@ import numpy as np
 
 from caput import config, mpiutil, mpiarray, tod
 
-from ..core import task, containers
 from .transform import Regridder
+from ..core import task, containers, io
 
 
 class SiderealGrouper(task.SingleTask):
@@ -47,7 +47,7 @@ class SiderealGrouper(task.SingleTask):
         self._timestream_list = []
         self._current_lsd = None
 
-    def setup(self, observer):
+    def setup(self, manager):
         """Set the local observers position.
 
         Parameters
@@ -57,7 +57,8 @@ class SiderealGrouper(task.SingleTask):
             Note that :class:`~drift.core.TransitTelescope` instances are also
             Observers.
         """
-        self.observer = observer
+        # Need an observer object holding the geographic location of the telescope.
+        self.observer = io.get_telescope(manager)
 
     def process(self, tstream):
         """Load in each sidereal day.
@@ -91,7 +92,6 @@ class SiderealGrouper(task.SingleTask):
         # If this file ends during a later LSD then we need to process the
         # current list and restart the system
         if self._current_lsd < lsd_end:
-
             self.log.info("Concatenating files for LSD:%i", lsd_start)
 
             # Combine timestreams into a single container for the whole day this
@@ -165,7 +165,7 @@ class SiderealRegridder(Regridder):
         Ratio of signal covariance to noise covariance (used for Wiener filter).
     """
 
-    def setup(self, observer):
+    def setup(self, manager):
         """Set the local observers position.
 
         Parameters
@@ -175,7 +175,8 @@ class SiderealRegridder(Regridder):
             Note that :class:`~drift.core.TransitTelescope` instances are also
             Observers.
         """
-        self.observer = observer
+        # Need an Observer object holding the geographic location of the telescope.
+        self.observer = io.get_telescope(manager)
 
     def process(self, data):
         """Regrid the sidereal day.
@@ -211,8 +212,8 @@ class SiderealRegridder(Regridder):
         new_grid, sts, ni = self._regrid(vis_data, weight, timestamp_lsd)
 
         # Wrap to produce MPIArray
-        sts = mpiarray.MPIArray.wrap(sts, axis=data.vis.distributed_axis)
-        ni = mpiarray.MPIArray.wrap(ni, axis=data.vis.distributed_axis)
+        sts = mpiarray.MPIArray.wrap(sts, axis=0)
+        ni = mpiarray.MPIArray.wrap(ni, axis=0)
 
         # FYI this whole process creates an extra copy of the sidereal stack.
         # This could probably be optimised out with a little work.

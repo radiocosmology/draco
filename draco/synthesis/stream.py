@@ -232,21 +232,19 @@ class MakeTimeStream(task.SingleTask):
 
     _cur_time = 0.0  # Hold the current file start time
 
-    def setup(self, sstream, observer):
+    def setup(self, sstream, manager):
         """Get the sidereal stream to turn into files.
 
         Parameters
         ----------
         sstream : SiderealStream
             The sidereal data to use.
-        observer : :class:`~caput.time.Observer`
-            An Observer object holding the geographic location of the telescope.
-            Note that :class:`~drift.core.TransitTelescope` instances are also
-            Observers.
+        manager : ProductManager or BeamTransfer
+            Beam Transfer and telescope manager
         """
         self.sstream = sstream
-        self.observer = observer
-
+        # Need an Observer object holding the geographic location of the telescope.
+        self.observer = io.get_telescope(manager)
         # Initialise the current start time
         self._cur_time = self.start_time
 
@@ -263,7 +261,7 @@ class MakeTimeStream(task.SingleTask):
 
         # First check to see if we have reached the end of the requested time,
         # and if so stop the iteration.
-        if self._cur_time > self.end_time:
+        if self._cur_time >= self.end_time:
             raise pipeline.PipelineStopIteration
 
         time = self._next_time_axis()
