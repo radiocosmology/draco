@@ -227,6 +227,10 @@ class CollateProducts(task.SingleTask):
                              stack=bt_stack, reverse_map_stack=bt_rev,
                              axes_from=ss, attrs_from=ss, distributed=True, comm=ss.comm)
 
+        # Add gain dataset.
+        # if 'gain' in ss.datasets:
+        #     sp.add_dataset('gain')
+
         # Ensure all frequencies and products are on each node
         ss.redistribute(['ra', 'time'])
         sp.redistribute(['ra', 'time'])
@@ -235,9 +239,11 @@ class CollateProducts(task.SingleTask):
         sp.vis[:] = 0.0
         sp.weight[:] = 0.0
         sp.input_flags[:] = ss.input_flags[rev_input_ind, :]
-        if 'gain' in ss.datasets:
-            sp.add_dataset('gain')
-            sp.gain[:] = ss.gain[freq_ind][:, rev_input_ind, :]
+
+        # The gain transfer below fails when distributed over multiple nodes,
+        # have to debug.
+        # if 'gain' in ss.datasets:
+        #     sp.gain[:] = ss.gain[freq_ind][:, rev_input_ind, :]
 
         # Infer number of products that went into each stack
         if self.weight != 'inverse_variance':
@@ -249,6 +255,11 @@ class CollateProducts(task.SingleTask):
 
             if self.weight == 'uniform':
                 nprod_in_stack = (nprod_in_stack > 0).astype(np.float32)
+
+        # Find the local times (necessary because nprod_in_stack is not distributed)
+        ntt = ss.vis.local_shape[-1]
+        stt = ss.vis.local_offset[-1]
+        ett = stt + ntt
 
         # Create counter to increment during the stacking.
         # This will be used to normalize at the end.
@@ -277,7 +288,7 @@ class CollateProducts(task.SingleTask):
 
             else:
                 wss = (ss.weight[freq_ind, ss_pi] > 0.0).astype(np.float32)
-                wss *= nprod_in_stack[np.newaxis, ss_pi]
+                wss *= nprod_in_stack[np.newaxis, ss_pi, stt:ett]
 
             # Accumulate visibilities, conjugating if required
             if feedconj == conj:
@@ -369,6 +380,11 @@ class SelectFreq(task.SingleTask):
         # Create new container with subset of frequencies.
         newdata = containers.empty_like(data, freq=freq_map)
 
+        # Make sure all datasets are initialised
+        for name in data.datasets.keys():
+            if name not in newdata.datasets:
+                newdata.add_dataset(name)
+
         # Redistribute new container over ra or time.
         newdata.redistribute(['ra', 'time', 'pixel'])
 
@@ -378,9 +394,6 @@ class SelectFreq(task.SingleTask):
 
             for name, dset in data.datasets.iteritems():
 
-                if name not in newdata.datasets:
-                    newdata.add_dataset(name)
-
                 if 'freq' in dset.attrs['axis']:
                     slc = [slice(None)] * len(dset.shape)
                     slc[list(dset.attrs['axis']).index('freq')] = newindex
@@ -389,9 +402,11 @@ class SelectFreq(task.SingleTask):
                     newdata.datasets[name][:] = dset[:]
 
         else:
-            newdata.vis[:] = data.vis[newindex, :, :]
-            newdata.weight[:] = data.weight[newindex, :, :]
-            newdata.gain[:] = data.gain[newindex, :, :]
+            newdata.vis[:] = data.vis[newindex]
+            newdata.weight[:] = data.weight[newindex]
+            newdata.gain[:] = data.gain[newindex]
+
+            newdata.input_flags[:] = data.input_flags[:]
 
         # Switch back to frequency distribution
         data.redistribute('freq')
