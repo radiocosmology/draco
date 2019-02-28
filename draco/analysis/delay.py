@@ -42,7 +42,7 @@ class DelayFilter(task.SingleTask):
 
         ss.redistribute('prod')
 
-        freq = ss.freq['centre']
+        freq = ss.freq[:]
 
         for lbi, bi in ss.vis[:].enumerate(axis=1):
 
@@ -118,12 +118,12 @@ class DelaySpectrumEstimator(task.SingleTask):
 
         # ==== Figure out the frequency structure and delay values ====
         if self.freq_zero is None:
-            self.freq_zero = ss.freq['centre'][0]
+            self.freq_zero = ss.freq[0]
 
         if self.freq_spacing is None:
-            self.freq_spacing = np.abs(np.diff(ss.freq['centre'])).min()
+            self.freq_spacing = np.abs(np.diff(ss.freq[:])).min()
 
-        channel_ind = (np.abs(ss.freq['centre'] - self.freq_zero) /
+        channel_ind = (np.abs(ss.freq[:] - self.freq_zero) /
                        self.freq_spacing).astype(np.int)
 
         if self.nfreq is None:
