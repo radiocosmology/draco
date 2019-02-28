@@ -101,15 +101,28 @@ class CollateProducts(task.SingleTask):
     than are contained in the BeamTransfers, the converse is not true. That is,
     all the frequencies and feeds that are in the BeamTransfers must be found in
     the timestream object.
+
+    Parameters
+    ----------
+    weight : string ('natural', 'uniform', or 'inverse_variance')
+        How to weight the redundant baselines when stacking:
+            'natural' - each baseline weighted by its redundancy (default)
+            'uniform' - each baseline given equal weight
+            'inverse_variance' - each baseline weighted by the weight attribute
     """
 
+    weight = config.Property(proptype=str, default='natural')
+
     def setup(self, tel):
-        """Set the BeamTransfer instance to use.
+        """Set the Telescope instance to use.
 
         Parameters
         ----------
         tel : TransitTelescope
         """
+
+        if self.weight not in ['natural', 'uniform', 'inverse_variance']:
+            KeyError("Do not recognize weight = %s" % self.weight)
 
         self.telescope = io.get_telescope(tel)
 
@@ -126,14 +139,7 @@ class CollateProducts(task.SingleTask):
             Dataset containing only the required products.
         """
 
-        ss_keys = ss.index_map['input'][:]
-
-        # Figure the mapping between inputs for the beam transfers and the file
-        try:
-            bt_keys = self.telescope.input_index
-        except AttributeError:
-            bt_keys = np.arange(self.telescope.nfeed)
-
+        # Define two functions that are used below
         def find_key(key_list, key):
             try:
                 return map(tuple, list(key_list)).index(tuple(key))
@@ -142,33 +148,125 @@ class CollateProducts(task.SingleTask):
             except ValueError:
                 return None
 
-        input_ind = [ find_key(bt_keys, sk) for sk in ss_keys]
+        def pack_product_array(arr):
+
+            nfeed = arr.shape[0]
+            nprod = (nfeed * (nfeed+1)) // 2
+
+            ret = np.zeros(nprod, dtype=arr.dtype)
+            iout = 0
+
+            for i in xrange(nfeed):
+                ret[iout:(iout+nfeed-i)] = arr[i,i:]
+                iout += (nfeed-i)
+
+            return ret
+
+        # Determine current conjugation and product map.
+        match_sn = True
+        if 'stack' in ss.index_map:
+            match_sn = ss.index_map['stack'].size == ss.index_map['prod'].size
+            ss_conj = ss.index_map['stack']['conjugate']
+            ss_prod = ss.index_map['prod'][ss.index_map['stack']['prod']]
+        else:
+            ss_conj = np.zeros(ss.vis.shape[1], dtype=np.bool)
+            ss_prod = ss.index_map['prod']
+
+        # For each input in the file, find the corresponding index in the telescope instance
+        ss_keys = ss.index_map['input'][:]
+        try:
+            bt_keys = self.telescope.input_index
+        except AttributeError:
+            bt_keys = np.array(np.arange(self.telescope.nfeed), dtype=[('chan_id', 'u2')])
+            match_sn = False
+
+        field_to_match = 'correlator_input' if match_sn else 'chan_id'
+        input_ind = [find_key(bt_keys[field_to_match], sk) for sk in ss_keys[field_to_match]]
+
+        # Figure out the reverse mapping (i.e., for each input in the telescope instance,
+        # find the corresponding index in file)
+        rev_input_ind = [find_key(ss_keys[field_to_match], bk) for bk in bt_keys[field_to_match]]
+
+        if any([rv is None for rv in rev_input_ind]):
+            raise ValueError("All feeds in Telescope instance must exist in Timestream instance.")
 
         # Figure out mapping between the frequencies
-        bt_freq = self.telescope.frequencies
-        ss_freq = ss.freq['centre']
+        freq_ind = [find_key(ss.freq[:], bf) for bf in self.telescope.frequencies]
 
-        freq_ind = [ find_key(ss_freq, bf) for bf in bt_freq]
+        if any([fi is None for fi in freq_ind]):
+            raise ValueError("All frequencies in Telescope instance must exist in Timestream instance.")
 
-        sp_freq = ss.freq[freq_ind]
+        bt_freq = ss.index_map['freq'][freq_ind]
 
-        sp = containers.SiderealStream(
-            freq=sp_freq, input=len(bt_keys), prod=self.telescope.uniquepairs,
-            axes_from=ss, attrs_from=ss, distributed=True, comm=ss.comm
-        )
+        # Construct the equivalent prod and stack index_map for the telescope instance
+        bt_prod = np.array([(fi, fj) for fi in range(self.telescope.nfeed)
+                                     for fj in range(fi, self.telescope.nfeed)],
+                                     dtype=[('input_a', '<u2'), ('input_b', '<u2')])
+
+        bt_stack = np.array([(tools.cmap(upp[0], upp[1], self.telescope.nfeed), 0)
+                             if upp[0] <= upp[1] else
+                             (tools.cmap(upp[1], upp[0], self.telescope.nfeed), 1)
+                             for upp in self.telescope.uniquepairs],
+                             dtype=[('prod', '<u4'), ('conjugate', 'u1')])
+
+        # Construct the equivalent stack reverse_map for the telescope instance.  Note
+        # that we identify invalid products here using an index that is the size of the stack axis.
+        feedmask = pack_product_array(self.telescope.feedmask)
+        bt_rev = np.array(zip(
+                 np.where(feedmask, pack_product_array(self.telescope.feedmap), self.telescope.npairs),
+                 np.where(feedmask, pack_product_array(self.telescope.feedconj), 0)),
+                 dtype=[('stack', '<u4'), ('conjugate', 'u1')])
+
+        # Create output container
+        if isinstance(ss, containers.SiderealStream):
+            OutputContainer = containers.SiderealStream
+        else:
+            OutputContainer = containers.TimeStream
+
+        sp = OutputContainer(freq=bt_freq, input=bt_keys, prod=bt_prod,
+                             stack=bt_stack, reverse_map_stack=bt_rev,
+                             axes_from=ss, attrs_from=ss, distributed=True, comm=ss.comm)
+
+        # Add gain dataset.
+        # if 'gain' in ss.datasets:
+        #     sp.add_dataset('gain')
 
         # Ensure all frequencies and products are on each node
-        ss.redistribute('ra')
-        sp.redistribute('ra')
+        ss.redistribute(['ra', 'time'])
+        sp.redistribute(['ra', 'time'])
 
+        # Initialize datasets in output container
         sp.vis[:] = 0.0
         sp.weight[:] = 0.0
+        sp.input_flags[:] = ss.input_flags[rev_input_ind, :]
 
-        # Iterate over products in the sidereal stream
-        for ss_pi in range(len(ss.index_map['prod'])):
+        # The gain transfer below fails when distributed over multiple nodes,
+        # have to debug.
+        # if 'gain' in ss.datasets:
+        #     sp.gain[:] = ss.gain[freq_ind][:, rev_input_ind, :]
 
-            # Get the feed indices for this product
-            ii, ij = ss.index_map['prod'][ss_pi]
+        # Infer number of products that went into each stack
+        if self.weight != 'inverse_variance':
+
+            nprod_in_stack = tools.calculate_redundancy(ss.input_flags[:],
+                                                        ss.index_map['prod'][:],
+                                                        ss.reverse_map['stack']['stack'][:],
+                                                        ss.vis.shape[1])
+
+            if self.weight == 'uniform':
+                nprod_in_stack = (nprod_in_stack > 0).astype(np.float32)
+
+        # Find the local times (necessary because nprod_in_stack is not distributed)
+        ntt = ss.vis.local_shape[-1]
+        stt = ss.vis.local_offset[-1]
+        ett = stt + ntt
+
+        # Create counter to increment during the stacking.
+        # This will be used to normalize at the end.
+        counter = np.zeros_like(sp.weight[:])
+
+        # Iterate over products (stacked) in the sidereal stream
+        for ss_pi, ((ii, ij), conj) in enumerate(zip(ss_prod, ss_conj)):
 
             # Map the feed indices into ones for the Telescope class
             bi, bj = input_ind[ii], input_ind[ij]
@@ -184,17 +282,29 @@ class CollateProducts(task.SingleTask):
             if sp_pi < 0:
                 continue
 
-            # Accumulate visibilities, conjugating if required
-            if not feedconj:
-                sp.vis[:, sp_pi] += ss.weight[freq_ind, ss_pi] * ss.vis[freq_ind, ss_pi]
+            # Generate weight
+            if self.weight == 'inverse_variance':
+                wss = ss.weight[freq_ind, ss_pi]
+
             else:
-                sp.vis[:, sp_pi] += ss.weight[freq_ind, ss_pi] * ss.vis[freq_ind, ss_pi].conj()
+                wss = (ss.weight[freq_ind, ss_pi] > 0.0).astype(np.float32)
+                wss *= nprod_in_stack[np.newaxis, ss_pi, stt:ett]
 
-            # Accumulate weights
-            sp.weight[:, sp_pi] += ss.weight[freq_ind, ss_pi]
+            # Accumulate visibilities, conjugating if required
+            if feedconj == conj:
+                sp.vis[:, sp_pi] += wss * ss.vis[freq_ind, ss_pi]
+            else:
+                sp.vis[:, sp_pi] += wss * ss.vis[freq_ind, ss_pi].conj()
 
-        # Divide through by weights to get properly weighted visibility average
-        sp.vis[:] *= tools.invert_no_zero(sp.weight[:])
+            # Accumulate variances in quadrature.  Save in the weight dataset.
+            sp.weight[:, sp_pi] += wss**2 * tools.invert_no_zero(ss.weight[freq_ind, ss_pi])
+
+            # Increment counter
+            counter[:, sp_pi] += wss
+
+        # Divide through by counter to get properly weighted visibility average
+        sp.vis[:] *= tools.invert_no_zero(counter)
+        sp.weight[:] = counter**2 * tools.invert_no_zero(sp.weight[:])
 
         # Switch back to frequency distribution
         ss.redistribute('freq')
@@ -270,6 +380,11 @@ class SelectFreq(task.SingleTask):
         # Create new container with subset of frequencies.
         newdata = containers.empty_like(data, freq=freq_map)
 
+        # Make sure all datasets are initialised
+        for name in data.datasets.keys():
+            if name not in newdata.datasets:
+                newdata.add_dataset(name)
+
         # Redistribute new container over ra or time.
         newdata.redistribute(['ra', 'time', 'pixel'])
 
@@ -279,9 +394,6 @@ class SelectFreq(task.SingleTask):
 
             for name, dset in data.datasets.iteritems():
 
-                if name not in newdata.datasets:
-                    newdata.add_dataset(name)
-
                 if 'freq' in dset.attrs['axis']:
                     slc = [slice(None)] * len(dset.shape)
                     slc[list(dset.attrs['axis']).index('freq')] = newindex
@@ -290,9 +402,11 @@ class SelectFreq(task.SingleTask):
                     newdata.datasets[name][:] = dset[:]
 
         else:
-            newdata.vis[:] = data.vis[newindex, :, :]
-            newdata.weight[:] = data.weight[newindex, :, :]
-            newdata.gain[:] = data.gain[newindex, :, :]
+            newdata.vis[:] = data.vis[newindex]
+            newdata.weight[:] = data.weight[newindex]
+            newdata.gain[:] = data.gain[newindex]
+
+            newdata.input_flags[:] = data.input_flags[:]
 
         # Switch back to frequency distribution
         data.redistribute('freq')
@@ -306,15 +420,6 @@ class MModeTransform(task.SingleTask):
 
     Currently ignores any noise weighting.
     """
-    def setup(self, manager):
-
-        """Set the telescope instance.
-
-        Parameters
-        ----------
-        manager :  ProductManager or BeamTransfer
-        """
-        self.telescope = io.get_telescope(manager)
 
     def process(self, sstream):
         """Perform the m-mode transform.
@@ -336,11 +441,11 @@ class MModeTransform(task.SingleTask):
         weight_sum = sstream.weight[:].sum(axis=-1)
 
         # Construct the array of m-modes
-        mmax = self.telescope.mmax
-        marray = _make_marray(sstream.vis[:], mmax)
+        marray = _make_marray(sstream.vis[:])
         marray = mpiarray.MPIArray.wrap(marray[:], axis=2, comm=sstream.comm)
 
         # Create the container to store the modes in
+        mmax = marray.shape[0] - 1
         ma = containers.MModes(mmax=mmax, axes_from=sstream, comm=sstream.comm)
         ma.redistribute('freq')
 
@@ -353,10 +458,10 @@ class MModeTransform(task.SingleTask):
         return ma
 
 
-def _make_marray(ts, mmax):
+def _make_marray(ts):
     # Construct an array of m-modes from a sidereal time stream
     mmodes = np.fft.fft(ts, axis=-1) / ts.shape[-1]
-    marray = _pack_marray(mmodes, mmax)
+    marray = _pack_marray(mmodes)
 
     return marray
 
