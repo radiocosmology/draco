@@ -111,13 +111,14 @@ class BaseMapMaker(task.SingleTask):
                 if self.basis == 'svdmodes':
                     v = m_array[mi, :].view(np.ndarray)
                     Ni = m_weight[mi, :].view(np.ndarray)
+                    f = fi
                 else:
                     v = m_array[mi, :, fi].view(np.ndarray)
                     Ni = m_weight[mi, :, fi].view(np.ndarray)
-
+                    f = freq_ind[fi]
                 a = alm[fi, ..., mi].view(np.ndarray)
 
-                a[:] = self._solve_m(m, freq_ind[fi], v, Ni)
+                a[:] = self._solve_m(m, f, v, Ni)
 
             self.bt_cache = None
 

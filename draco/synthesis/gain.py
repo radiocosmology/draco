@@ -53,24 +53,15 @@ class BaseGains(task.SingleTask):
         gain_data = containers.GainData(time=time, axes_from=data)
         gain_data.redistribute('input')
 
-        ninput = gain_data.gain.local_shape[1]
+        self.ninput_local = gain_data.gain.local_shape[1]
+        self.ninput_global = gain_data.gain.global_shape[1]
         freq = data.index_map['freq']['centre'][:]
 
-        gain_amp = 1.0
-        gain_phase = 0.0
-
-        if self.amp:
-            gain_amp = self._generate_amp(time, freq, ninput)
-
-        if self.phase:
-            gain_phase = self._generate_phase(time, freq, ninput)
-
-        # Combine into an overall gain fluctuation
-        gain_comb = gain_amp * np.exp(1.0J * gain_phase)
+        gain = self._generate_gain(time, freq)
 
         # Copy the gain entries into the output container
-        gain_comb = mpiarray.MPIArray.wrap(gain_comb, axis=1)
-        gain_data.gain[:] = gain_comb
+        gain = mpiarray.MPIArray.wrap(gain, axis=1)
+        gain_data.gain[:] = gain
 
         # Keep a reference to time around for the next round
         self._prev_time = time
@@ -93,8 +84,9 @@ class BaseGains(task.SingleTask):
 
         return _cf
 
-    def _generate_amp(self, time, freq, ninput):
-        """Generate phase gain errors.
+    def _generate_gain(self, time, freq):
+        """Generate gain errors. Wrapper function for _generate_amp
+        and _generate_phase.
 
         This implementation is blank. Must be overriden.
 
@@ -104,12 +96,15 @@ class BaseGains(task.SingleTask):
             Generate amplitude fluctuations for this time period.
         freq : np.ndarray
              Frequencies from data for which to generate gain fluctuations.
-        ninput : float
-            Number of inputs to generate fluctuations for.
+
+        Returns
+        -------
+        gain : np.ndarray
+            Generated gain.
         """
         pass
 
-    def _generate_phase(self,  time, freq, ninput):
+    def _generate_amp(self, time, freq):
         """Generate phase gain errors.
 
         This implementation is blank. Must be overriden.
@@ -117,11 +112,23 @@ class BaseGains(task.SingleTask):
         Parameters:
         -----------
         time : np.ndarray
-               Generate phase fluctuations for this time period.
+            Generate amplitude fluctuations for this time period.
         freq : np.ndarray
-             Frequencies from data for which to generate gain fluctuations.
-        ninput : float
-            Number of inputs to generate fluctuations for.
+            Frequencies from data for which to generate gain fluctuations.
+            """
+        pass
+
+    def _generate_phase(self,  time, freq):
+        """Generate phase gain errors.
+
+        This implementation is blank. Must be overriden.
+
+        Parameters:
+        -----------
+        time : np.ndarray
+           Generate phase fluctuations for this time period.
+        freq : np.ndarray
+            Frequencies from data for which to generate gain fluctuations.
         """
         pass
 
@@ -162,10 +169,27 @@ class RandomGains(BaseGains):
     _prev_amp = None
     _prev_phase = None
 
-    def _generate_amp(self, time, freq, ninput):
+    def _generate_gain(self, time, freq):
+        print "Calling generate_gain"
+        gain_amp = 1.0
+        gain_phase = 0.0
+
+        if self.amp:
+            gain_amp = self._generate_amp(time, freq)
+
+        if self.phase:
+            gain_phase = self._generate_phase(time, freq)
+
+        # Combine into an overall gain fluctuation
+        gain_comb = gain_amp * np.exp(1.0J * gain_phase)
+
+        return gain_comb
+
+    def _generate_amp(self, time, freq):
 
         # Generate the correlation function
         cf_amp = self._corr_func(self.corr_length_amp, self.sigma_amp)
+        ninput = self.ninput_local
         num_realisations = len(freq) * ninput
         ntime = len(time)
 
@@ -176,15 +200,15 @@ class RandomGains(BaseGains):
         self._prev_amp = gain_amp
 
         gain_amp = gain_amp.reshape((len(freq), ninput, ntime))
-
         gain_amp = 1.0 + gain_amp
 
         return gain_amp
 
-    def _generate_phase(self, time, freq, ninput):
+    def _generate_phase(self, time, freq):
 
         # Generate the correlation function
         cf_phase = self._corr_func(self.corr_length_phase, self.sigma_phase)
+        ninput = self.input_local
         num_realisations = len(freq) * ninput
         ntime = len(time)
 
