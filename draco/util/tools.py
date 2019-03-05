@@ -177,3 +177,65 @@ def extract_diagonal(utmat, axis=1):
     diag_array = utmat[sl]
 
     return diag_array
+
+
+def calculate_redundancy(input_flags, prod_map, stack_index, nstack):
+    """Calculates the number of redundant baselines that were stacked
+    to form each unique baseline, accounting for the fact that some fraction
+    of the inputs are flagged as bad at any given time.
+
+    Parameters
+    ----------
+    input_flags : np.ndarray [ninput, ntime]
+        Array indicating which inputs were good at each time.
+        Non-zero value indicates that an input was good.
+
+    prod_map: np.ndarray[nprod]
+        The products that were included in the stack.
+        Typically found in the `index_map['prod']` attribute of the
+        `containers.TimeStream` or `containers.SiderealStream` object.
+
+    stack_index: np.ndarray[nprod]
+        The index of the stack axis that each product went into.
+        Typically found in `reverse_map['stack']['stack']` attribute
+        of the `containers.Timestream` or `containers.SiderealStream` object.
+
+    nstack: int
+        Total number of unique baselines.
+
+    Returns
+    -------
+    redundancy : np.ndarray[nstack, ntime]
+        Array indicating the total number of redundant baselines
+        with good inputs that were stacked into each unique baseline.
+
+    """
+
+    from collections import Counter
+
+    ninput, ntime = input_flags.shape
+    redundancy = np.zeros((nstack, ntime), dtype=np.float32)
+
+    # Check if we were actually setting the input flags.
+    if np.any(input_flags):
+
+        # Loop over all products
+        for istack, prod in zip(stack_index, prod_map):
+
+            # Make sure stack index is positive and less than the number of unique baselines.
+            # Negative index or index with large value can indicate a product was
+            # not included in the stack.
+            if (istack >= 0) and (istack < nstack):
+
+                # Increment the redundancy counter for this unique baseline if both inputs good
+                redundancy[istack, :] += np.minimum(input_flags[prod[0], :], input_flags[prod[1], :])
+
+    else:
+
+        # Input flags were not being set at this time.  Assume all inputs are good.
+        for istack, count in Counter(stack_index).iteritems():
+
+            if (istack >= 0) and (istack < nstack):
+                redundancy[istack, :] = count
+
+    return redundancy
