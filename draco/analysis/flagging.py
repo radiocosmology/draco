@@ -15,6 +15,7 @@ Tasks
     RadiometerWeight
 """
 import numpy as np
+from scipy.ndimage import median_filter
 
 from caput import config
 
@@ -257,3 +258,54 @@ class RadiometerWeight(task.SingleTask):
 
         # Return timestream with updated weights
         return stream
+
+
+class SmoothVisWeight(task.SingleTask):
+    """Smooth the visibility weights with a median filter.
+
+    Attributes
+    ----------
+    kernel_size : int
+        Size of the kernel for the median filter in time points.
+        Default is 31, corresponding to ~5 minutes window for 10s cadence data.
+
+    """
+
+    # 31 time points correspond to ~ 5min in 10s cadence
+    kernel_size = config.Property(proptype=int, default=31)
+
+    def process(self, data):
+        """Smooth the weights with a median filter.
+
+        Parameters
+        ----------
+        data : :class:`andata.CorrData` or :class:`containers.TimeStream` object
+            Data containing the weights to be smoothed
+
+        Returns
+        -------
+        data : :class:`andata.CorrData` object
+            Data object containing the same data as the input, but with the
+            weights substituted by the smoothed ones.
+        """
+
+        # Ensure data is distributed in frequency:
+        data.redistribute('freq')
+        # Full slice reutrns an MPIArray
+        weight = data.weight[:]
+        # Data will be distributed in frequency.
+        # So a frequency loop will not be too large.
+        for lfi, gfi in weight.enumerate(axis=0):
+
+            # MPIArray takes the local index, returns a local np.ndarray
+            # Find values equal to zero to preserve them in final weights
+            zeromask = (weight[lfi] == 0.)
+            # Median filter. Mode='nearest' to prevent steps close to
+            # the end from being washed
+            weight[lfi] = median_filter(
+                weight[lfi], size=(1, self.kernel_size), mode='nearest')
+            # Ensure zero values are zero
+            weight[lfi][zeromask] = 0.
+
+        return data
+
