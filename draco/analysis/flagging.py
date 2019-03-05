@@ -262,6 +262,8 @@ class RadiometerWeight(task.SingleTask):
 
 class SmoothVisWeight(task.SingleTask):
     """Smooth the visibility weights with a median filter.
+    
+    This is done in-place.
 
     Attributes
     ----------
@@ -299,13 +301,14 @@ class SmoothVisWeight(task.SingleTask):
 
             # MPIArray takes the local index, returns a local np.ndarray
             # Find values equal to zero to preserve them in final weights
-            zeromask = (weight[lfi] == 0.)
+            zeromask = (weight[lfi] == 0.0)
             # Median filter. Mode='nearest' to prevent steps close to
             # the end from being washed
             weight[lfi] = median_filter(
-                weight[lfi], size=(1, self.kernel_size), mode='nearest')
+                weight[lfi], size=(1, self.kernel_size), mode='nearest'
+            )
             # Ensure zero values are zero
-            weight[lfi][zeromask] = 0.
+            weight[lfi][zeromask] = 0.0
 
         return data
 
