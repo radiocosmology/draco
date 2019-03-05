@@ -284,7 +284,7 @@ class SmoothVisWeight(task.SingleTask):
 
         Returns
         -------
-        data : :class:`andata.CorrData` object
+        data : Same object as data
             Data object containing the same data as the input, but with the
             weights substituted by the smoothed ones.
         """
