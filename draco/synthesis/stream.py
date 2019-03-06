@@ -137,9 +137,14 @@ class SimulateSidereal(task.SingleTask):
         except AttributeError:
             feed_index = tel.nfeed
 
+        # Construct a product map
+        prod_map = np.zeros(tel.uniquepairs.shape[0], dtype=[('input_a', int), ('input_b', int)])
+        prod_map['input_a'] = tel.uniquepairs[:, 0]
+        prod_map['input_b'] = tel.uniquepairs[:, 1]
+
         # Construct container and set visibility data
         sstream = containers.SiderealStream(freq=freqmap, ra=ntime, input=feed_index,
-                                            prod=tel.uniquepairs, distributed=True, comm=map_.comm)
+                                            prod=prod_map, distributed=True, comm=map_.comm)
         sstream.vis[:] = mpiarray.MPIArray.wrap(vis_stream, axis=0)
         sstream.weight[:] = 1.0
 
