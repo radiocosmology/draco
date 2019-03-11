@@ -184,17 +184,15 @@ class ExpandProducts(task.SingleTask):
         sstream.redistribute('freq')
 
         ninput = len(sstream.input)
+        prod = np.array([(fi, fj) for fi in range(ninput) for fj in range(fi, ninput)], dtype=[('input_a', int), ('input_b', int)])
 
-        prod = np.array([ (fi, fj) for fi in range(ninput) for fj in range(fi, ninput)])
-
-        new_stream = containers.SiderealStream(prod=prod, axes_from=sstream)
+        new_stream = containers.SiderealStream(prod=prod, stack=None, axes_from=sstream)
         new_stream.redistribute('freq')
         new_stream.vis[:] = 0.0
         new_stream.weight[:] = 0.0
 
         # Iterate over all feed pairs and work out which is the correct index in the sidereal stack.
         for pi, (fi, fj) in enumerate(prod):
-
             unique_ind = self.telescope.feedmap[fi, fj]
             conj = self.telescope.feedconj[fi, fj]
 
