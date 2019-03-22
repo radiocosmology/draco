@@ -53,8 +53,8 @@ class QuasarStack(task.SingleTask):
                 np.zeros(self.nstack, dtype='complex64'), axis=0)
 
 
-#    def process(self, data):
-    def process(self):
+    def process(self, data):
+#    def process(self):
         """Smooth the weights with a median filter.
 
         Parameters
@@ -68,30 +68,39 @@ class QuasarStack(task.SingleTask):
             Data object containing the same data as the input, but with the
             weights substituted by the smoothed ones.
         """
-#        # Ensure data is distributed in vis-stack axis
-#        data.redistribute('stack')
+        # Ensure data is distributed in vis-stack axis
+        # TODO: This is not working. I checked and it actually calls
+        # memh5.BasicCont.redistribute and, inside that function,
+        # the effects take place on the datasets!!! Very crazy!
+        data.redistribute(1)
+        print 'Hu', type(data), data['vis'], data['vis'].local_shape, data['vis'].global_shape, data['vis'].local_offset, data['vis'].distributed_axis
 
-#        nvis = len(data['index_map']['stack'])
-        nvis = 20  # TODO: delete
+        nfreq = len(data.index_map['freq'])
+        nvis = len(data.index_map['stack'])
+#        nvis = 20  # TODO: delete
 
-#        # Find where each Quasar falls in the RA axis
-#        # Assume equal spacing in RA axis.
-#        ra_width = np.mean(data['index_map']['ra'][1:]
-#                         -data['index_map']['ra'][:-1])
-#        # Normaly I would set the RAs as the center of the bins. 
-#        # But these start at 0 and end at 360 - ra_width. 
-#        # So they are the left edge of the bin here...
-#        ra_bins = np.insert(arr=ra+ra_width,values=0.,obj=0)
-#        # Bin Quasars in RA axis. Need -1 due to the way np.digitize works.
-#        qso_ra_indices = np.digitize(self._qcat['position']['ra'],ra_bins) - 1
-#        if not ((qso_ra_indices>=0) & (qso_ra_indices<len(ra))).all()
+        # Find where each Quasar falls in the RA axis
+        # Assume equal spacing in RA axis.
+        ra_width = np.mean(data.index_map['ra'][1:]
+                         -data.index_map['ra'][:-1])
+        # Normaly I would set the RAs as the center of the bins. 
+        # But these start at 0 and end at 360 - ra_width. 
+        # So they are the left edge of the bin here...
+        ra_bins = np.insert(arr=data.index_map['ra'][:] + ra_width,
+                                                      values=0.,obj=0)
+        # Bin Quasars in RA axis. Need -1 due to the way np.digitize works.
+        qso_ra_indices = np.digitize(self._qcat['position']['ra'],ra_bins) - 1
+        if not ((qso_ra_indices>=0) 
+              & (qso_ra_indices<len(data.index_map['ra']))).all():
+            # TODO: raise an error?
+            pass
 
         # Compute all baseline vectors.
         # Baseline vectors in meters. Mpiarray is created distributed in the
         # 0th axis by default. Argument is global shape.
         bvec_m = mpiarray.MPIArray((nvis,2),dtype=np.float64)  
         nvis_local = bvec_m.shape[0]  # Local number of visibilities
-        xx_indices, yy_indices = [], []  # Indices of co-polarization products
+        xx_indices, yy_indices = [], []  # Indices (local) of co-pol products
 
         ## TODO: delete. To show slicing works.
         #print mpiutil.rank, bvec_m.shape, bvec_m.global_shape, type(bvec_m)
@@ -101,78 +110,83 @@ class QuasarStack(task.SingleTask):
         #print bb[:,[1,2,3],0].shape, type(bb[:,[1,2,3],0])
         
 
-#        for lvi, gvi in bvec_m.enumerate(axis=0):
-#
-#            gpi = data['index_map']['stack'][gvi][0]  # Global product index
-#            conj = data['index_map']['stack'][gvi][1]  # Product conjugation
-#            # Inputs that go into this product
-#            ipt0 = data['index_map']['input']['chan_id'][
-#                                data['index_map']['prod'][gpi][0]]
-#            ipt1 = data['index_map']['input']['chan_id'][
-#                                data['index_map']['prod'][gpi][1]]
-#
-#            # Get position and polarization of each input
-#            pos0, pol0 = self._pos_pol(ipt0)
-#            pos1, pol1 = self._pos_pol(ipt1)
-#
-#            if ((pol0==0) and (pol1==0)):
-#                xx_indices.append(lvi)
-#            if ((pol0==1) and (pol1==1)):
-#                yy_indices.append(lvi)
-#
-#            # Beseline vector in meters
-#            bvec_m[lvi] = self._baseline(pos0,pos1,conj=conj)
+        for lvi, gvi in bvec_m.enumerate(axis=0):
 
-#        #for qq in range(self.nqso):
-#        for qq in [8,10]:  # This are quasars in this reduced frequency range.
-#            dec = self._qcat['position']['dec'][qq]
-#            qso_z = self._qcat['redshift']['z'][qq]
-#            ra_index = qso_ra_indices[qq]
-#
-#            # Frequency of Quasar
-#            qso_f = NU21/(qso_z + 1.)  # MHz.
-#            # Index of closest frequency
-#            qso_findex = np.argmin(abs(
-#                    data['index_map']['freq']['centre'] - qso_f))
-#        
-#            # Pick only frequencies around the quasar (50 on each side)
-#            # Indices to be processed in full frequency axis
-#            lowindex = np.amax((0, qso_findex - self.freqside))
-#            upindex = np.amin((nfreq, qso_findex + self.freqside + 1))
-#            f_slice = np.s_[lowindex:upindex]
-#            # Corresponding indices in quasar stack array
-#            lowindex = lowindex - qso_findex + self.freqside
-#            upindex = upindex - qso_findex + self.freqside
-#            qs_slice = np.s_[lowindex:upindex]
-#        
-#            # Pick a polarization.
-#            # TODO: How do I add polarizations later? In quadrature?
-#            pol_indices = xx_indices
-#
-#            nu = data['index_map']['freq']['centre'][f_slice]
-#            # Baseline vectors in wavelengths. Shape (nstack, nvis_local, 2)
-#            bvec = bvec_m[np.newaxis,:,:] * nu[:,np.newaxis,np.newaxis] * 1E6 / C
-#            
-#            # Complex corrections to be multiplied by the visibilities to make them real.
-#            correc = tools.fringestop_phase(ha=0., lat=np.deg2rad(ephemeris.CHIMELATITUDE),
-#                                                dec=np.deg2rad(dec),
-#                                                u=bvec[:,pol_indices,0],
-#                                                v=bvec[:,pol_indices,1])
-#
-#            # This is done in a slightly weird order: adding visibility subsets
-#            # for different quasars in each rank first and then co-adding accross visibilities
-#            # and finally taking the real part: Real( Sum_j Sum_i [ qso_i_vissubset_j ] )
-#
-#            # Fringestop and sum.
-#            # TODO: this corresponds to Uniform weighting, not Natural.
-#            # Need to figure out the multiplicity of each visibility stack.
-#            self.quasar_stack[qs_slice] += np.sum(
-#                data['vis'][f_slice, pol_indices, ra_index] * correc, axis=1)
-#            # Increment wheight for the appropriate quasar stack indices.
-#            quasar_stack_wheight[qs_slice] += 1.
-#
-#        # TODO take real part after summing over stack visibilities accross ranks.
-#        # Have tp call Gather here.
+            gpi = data.index_map['stack'][gvi][0]  # Global product index
+            conj = data.index_map['stack'][gvi][1]  # Product conjugation
+            # Inputs that go into this product
+            ipt0 = data.index_map['input']['chan_id'][
+                                data.index_map['prod'][gpi][0]]
+            ipt1 = data.index_map['input']['chan_id'][
+                                data.index_map['prod'][gpi][1]]
+
+            # Get position and polarization of each input
+            pos0, pol0 = self._pos_pol(ipt0)
+            pos1, pol1 = self._pos_pol(ipt1)
+
+            if ((pol0==0) and (pol1==0)):
+                xx_indices.append(lvi)
+            if ((pol0==1) and (pol1==1)):
+                yy_indices.append(lvi)
+
+            # Beseline vector in meters
+            # TODO: I am actually computing the baseline vector
+            # for all products here, even cross-pol. If it is slow
+            # I should change this.
+            bvec_m[lvi] = self._baseline(pos0,pos1,conj=conj)
+
+        #for qq in range(self.nqso):
+        for qq in [8,10]:  # This are quasars in this reduced frequency range.
+            dec = self._qcat['position']['dec'][qq]
+            qso_z = self._qcat['redshift']['z'][qq]
+            ra_index = qso_ra_indices[qq]
+
+            # Frequency of Quasar
+            qso_f = NU21/(qso_z + 1.)  # MHz.
+            # Index of closest frequency
+            qso_findex = np.argmin(abs(
+                    data.index_map['freq']['centre'] - qso_f))
+        
+            # Pick only frequencies around the quasar (50 on each side)
+            # Indices to be processed in full frequency axis
+            lowindex = np.amax((0, qso_findex - self.freqside))
+            upindex = np.amin((nfreq, qso_findex + self.freqside + 1))
+            f_slice = np.s_[lowindex:upindex]
+            # Corresponding indices in quasar stack array
+            lowindex = lowindex - qso_findex + self.freqside
+            upindex = upindex - qso_findex + self.freqside
+            qs_slice = np.s_[lowindex:upindex]
+        
+            # Pick a polarization.
+            # TODO: How do I add polarizations later? In quadrature?
+            pol_indices = xx_indices
+
+            nu = data.index_map['freq']['centre'][f_slice]
+            # Baseline vectors in wavelengths. Shape (nstack, nvis_local, 2)
+            bvec = bvec_m[np.newaxis,:,:] * nu[:,np.newaxis,np.newaxis] * 1E6 / C
+            
+            # Complex corrections to be multiplied by the visibilities to make them real.
+            correc = tools.fringestop_phase(ha=0., lat=np.deg2rad(ephemeris.CHIMELATITUDE),
+                                                dec=np.deg2rad(dec),
+                                                u=bvec[:,pol_indices,0],
+                                                v=bvec[:,pol_indices,1])
+
+            # This is done in a slightly weird order: adding visibility subsets
+            # for different quasars in each rank first and then co-adding accross visibilities
+            # and finally taking the real part: Real( Sum_j Sum_i [ qso_i_vissubset_j ] )
+
+            # Fringestop and sum.
+            # TODO: this corresponds to Uniform weighting, not Natural.
+            # Need to figure out the multiplicity of each visibility stack.
+            print 'Hi', correc.shape, bvec.shape, data['vis'].shape
+
+            self.quasar_stack[qs_slice] += np.sum(
+                data['vis'][f_slice, pol_indices, ra_index] * correc, axis=1)
+            # Increment wheight for the appropriate quasar stack indices.
+            quasar_stack_wheight[qs_slice] += 1.
+
+        # TODO take real part after summing over stack visibilities accross ranks.
+        # Have tp call Gather here.
 
 
 
