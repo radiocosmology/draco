@@ -128,8 +128,8 @@ class QuasarStack(task.SingleTask):
             # I should change this.
             bvec_m[lvi] = self._baseline(pos0,pos1,conj=conj)
 
-        #for qq in range(self.nqso):
-        for qq in [8,10]:  # This are quasars in this reduced frequency range.
+        for qq in range(self.nqso):
+            
             dec = self._qcat['position']['dec'][qq]
             qso_z = self._qcat['redshift']['z'][qq]
             ra_index = qso_ra_indices[qq]
@@ -189,17 +189,21 @@ class QuasarStack(task.SingleTask):
         # Gather quasar stack for all ranks. Each contains the sum
         # over a different subset of visibilities. Add them all to
         # get the beamformed values.
-        quasar_stack_full = None
-        #if mpiutil.rank == 0:
         quasar_stack_full = np.zeros(mpiutil.size*self.nstack,
                                      dtype=self.quasar_stack.dtype)
         # Gather all ranks
         mpiutil.world.Allgather(self.quasar_stack,
                                 quasar_stack_full)
-        # Summ across ranks and take real part to complete the FT
-        self.quasar_stack = np.sum(quasar_stack_full.reshape(
+        # Construct frequency offset axis
+        freq_offset = data.index_map['freq'][int(nfreq/2)-self.freqside:int(nfreq/2)+self.freqside+1]
+        freq_offset['centre'] = freq_offset['centre']-freq_offset['centre'][self.freqside]
+        # Container to hold the stack
+        qstack = containers.FrequencyStack(freq=freq_offset)
+        # Sum across ranks and take real part to complete the FT
+        qstack.stack[:] = np.sum(quasar_stack_full.reshape(
                                     mpiutil.size,self.nstack), axis=0).real
 
+        return qstack
 
 
     # TODO: the next two functions are temporary hacks. The information

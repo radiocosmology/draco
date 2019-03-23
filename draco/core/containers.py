@@ -1334,6 +1334,29 @@ class SVDSpectrum(ContainerBase):
     def spectrum(self):
         return self.datasets["spectrum"]
 
+class FrequencyStack(ContainerBase):
+    """Container for a frequency stack.
+    """
+    
+    _axes = ('freq',)
+
+    _dataset_spec = {
+        'stack': {
+            'axes': ['freq'],
+            'dtype': np.float64,
+            'initialise': True,
+            'distributed': False
+        }
+    }
+
+    @property
+    def stack(self):
+        return self.datasets['stack']
+
+    @property
+    def freq(self):
+        return self.index_map['freq']['centre']
+
 
 class SourceCatalog(TableBase):
     """A basic container for holding astronomical source catalogs.
