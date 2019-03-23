@@ -54,7 +54,6 @@ class QuasarStack(task.SingleTask):
 
 
     def process(self, data):
-#    def process(self):
         """Smooth the weights with a median filter.
 
         Parameters
@@ -69,15 +68,9 @@ class QuasarStack(task.SingleTask):
             weights substituted by the smoothed ones.
         """
         # Ensure data is distributed in vis-stack axis
-        # TODO: This is not working. I checked and it actually calls
-        # memh5.BasicCont.redistribute and, inside that function,
-        # the effects take place on the datasets!!! Very crazy!
         data.redistribute(1)
-        print 'Hu', type(data), data['vis'], data['vis'].local_shape, data['vis'].global_shape, data['vis'].local_offset, data['vis'].distributed_axis
-
         nfreq = len(data.index_map['freq'])
         nvis = len(data.index_map['stack'])
-#        nvis = 20  # TODO: delete
 
         # Find where each Quasar falls in the RA axis
         # Assume equal spacing in RA axis.
@@ -159,6 +152,7 @@ class QuasarStack(task.SingleTask):
         
             # Pick a polarization.
             # TODO: How do I add polarizations later? In quadrature?
+            #pol_indices = np.array(xx_indices).astype(int)
             pol_indices = xx_indices
 
             nu = data.index_map['freq']['centre'][f_slice]
@@ -166,32 +160,46 @@ class QuasarStack(task.SingleTask):
             bvec = bvec_m[np.newaxis,:,:] * nu[:,np.newaxis,np.newaxis] * 1E6 / C
             
             # Complex corrections to be multiplied by the visibilities to make them real.
-            correc = tools.fringestop_phase(ha=0., lat=np.deg2rad(ephemeris.CHIMELATITUDE),
-                                                dec=np.deg2rad(dec),
-                                                u=bvec[:,pol_indices,0],
-                                                v=bvec[:,pol_indices,1])
+            correc = tools.fringestop_phase(ha=0.,
+                                lat=np.deg2rad(ephemeris.CHIMELATITUDE),
+                                dec=np.deg2rad(dec),
+                                u=bvec[:,pol_indices,0],
+                                v=bvec[:,pol_indices,1])
 
             # This is done in a slightly weird order: adding visibility subsets
-            # for different quasars in each rank first and then co-adding accross visibilities
-            # and finally taking the real part: Real( Sum_j Sum_i [ qso_i_vissubset_j ] )
+            # for different quasars in each rank first and then co-adding 
+            # accross visibilities and finally taking the real part: 
+            # Real( Sum_j Sum_i [ qso_i_vissubset_j ] )
+            # Notice that data['vis'] is distributed in axis=1 ('stack'), 
+            # while quasar_stack is distributed in axis=0 (it's a 1d array).
 
             # Fringestop and sum.
             # TODO: this corresponds to Uniform weighting, not Natural.
             # Need to figure out the multiplicity of each visibility stack.
-            print 'Hi', correc.shape, bvec.shape, data['vis'].shape
-
             self.quasar_stack[qs_slice] += np.sum(
-                data['vis'][f_slice, pol_indices, ra_index] * correc, axis=1)
+              data['vis'][f_slice][:, pol_indices, ra_index] * correc, axis=1)
             # Increment wheight for the appropriate quasar stack indices.
-            quasar_stack_wheight[qs_slice] += 1.
+            self.quasar_stack_wheight[qs_slice] += 1.
 
-        # TODO take real part after summing over stack visibilities accross ranks.
-        # Have tp call Gather here.
+        # TODO: Here I gather to all ranks and do the summing and real part
+        # in each rank. I end up with the same stack in all ranks, but there
+        # might be slight differences due to rounding errors. Should I gather
+        # to rank 0, do the operations there, and then scatter to all ranks?
 
+        # Gather quasar stack for all ranks. Each contains the sum
+        # over a different subset of visibilities. Add them all to
+        # get the beamformed values.
+        quasar_stack_full = None
+        #if mpiutil.rank == 0:
+        quasar_stack_full = np.zeros(mpiutil.size*self.nstack,
+                                     dtype=self.quasar_stack.dtype)
+        # Gather all ranks
+        mpiutil.world.Allgather(self.quasar_stack,
+                                quasar_stack_full)
+        # Summ across ranks and take real part to complete the FT
+        self.quasar_stack = np.sum(quasar_stack_full.reshape(
+                                    mpiutil.size,self.nstack), axis=0).real
 
-
-
-        raise pipeline.PipelineStopIteration() 
 
 
     # TODO: the next two functions are temporary hacks. The information
