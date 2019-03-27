@@ -75,11 +75,11 @@ import healpy as hp
 from cora.signal import corr21cm
 from cora.util import units
 from caput import config
-from caput import mpiarray
+from caput import mpiarray, mpiutil
 from ..core import task, containers
 
 # For easy access to MPI namespace
-MPI_ = mpiarray.mpiutil.MPI
+MPI_ = mpiutil.MPI
 
 
 # Pipeline tasks
@@ -497,8 +497,14 @@ class MockQCatGenerator(task.SingleTask):
         # Global values for redshift bins:
         z = _freq_to_z(self.pdf.freq)
 
-        mock_zs = []
-        mock_angular = []
+        # Number of quasars in each rank
+        nqso_rank = np.sum([len(idxs[ii]) for ii in range(len(idxs))])
+        # Local arrays to hold the informations on 
+        # quasars in the local frequency range
+        mock_zs = np.empty(nqso_rank,dtype=np.float64)
+        mock_ra = np.empty(nqso_rank,dtype=np.float64)
+        mock_dec = np.empty(nqso_rank,dtype=np.float64)
+        qso_count = 0
         for ii in range(len(idxs)):# For each local redshift bin
             for jj in range(len(idxs[ii])): # For each quasar in in z-bin ii
                 decbase, RAbase = _pix_to_radec(idxs[ii][jj],self._nside)
@@ -508,31 +514,49 @@ class MockQCatGenerator(task.SingleTask):
                 z_value = ( z['width'][global_z_index]
                           * rz[ii][jj]
                           + z['centre'][global_z_index] )
-                # There is a provision for z-error. Zero here:
-                mock_zs.append( (z_value, 0.) )
-                mock_angular.append( ( RAbase + ang_size*rtheta[ii][jj],
-                                        decbase + ang_size*rphi[ii][jj] ) )
+                # Populate local arrays
+                mock_zs[qso_count] = z_value
+                mock_ra[qso_count] = RAbase + ang_size*rtheta[ii][jj]
+                mock_dec[qso_count] = decbase + ang_size*rphi[ii][jj]
+                qso_count += 1
 
-        # Gather quasars in rank 0. Ordering is irrelevant, 
-        # so using lower case version of :meth::gather.
-        mock_zs_list = self.comm_.allgather(mock_zs)
-        mock_angular_list = self.comm_.allgather(mock_angular)
+        # Arrays to hold the whole quasar set information
+        mock_zs_full = np.empty(self.nqsos,dtype=mock_zs.dtype)
+        mock_ra_full = np.empty(self.nqsos,dtype=mock_ra.dtype)
+        mock_dec_full = np.empty(self.nqsos,dtype=mock_dec.dtype)
 
-        # the result of allgather is a list containing
-        # each rank's lists. Concatenate lists:
-        mock_zs, mock_angular = [], []
-        for list_ in mock_zs_list:
-            mock_zs.extend(list_)
-        for list_ in mock_angular_list:
-            mock_angular.extend(list_)
+        # The counts and displacement arguments of Allgatherv are tuples!
+        # Tuple (not list!) of number of QSOs in each rank
+        nqso_tuple = tuple(self.comm_.allgather(nqso_rank))
+        # Tuple (not list!) of displacements of each rank array in full array
+        dspls = tuple(np.insert(arr=np.cumsum(nqso_tuple)[:-1],
+                     obj=0,values=0.))
+        # Gather redshifts
+        recvbuf = [mock_zs_full,nqso_tuple,dspls,MPI_.DOUBLE]
+        sendbuf = [mock_zs,len(mock_zs)]
+        self.comm_.Allgatherv(sendbuf,recvbuf)
+        # Gather theta
+        recvbuf = [mock_ra_full,nqso_tuple,dspls,MPI_.DOUBLE]
+        sendbuf = [mock_ra,len(mock_ra)]
+        self.comm_.Allgatherv(sendbuf,recvbuf)
+        # Gather phi
+        recvbuf = [mock_dec_full,nqso_tuple,dspls,MPI_.DOUBLE]
+        sendbuf = [mock_dec,len(mock_dec)]
+        self.comm_.Allgatherv(sendbuf,recvbuf)
 
-        # Put data in catalog container:
+        # Create catalog container
         mock_catalog = containers.SpectroscopicCatalog(
                         object_id=np.arange(self.nqsos,dtype=np.uint64))
-        mock_catalog['position'][:] = np.array( mock_angular,
-                                    dtype=[('ra', '<f8'), ('dec', '<f8')] )
-        mock_catalog['redshift'][:] = np.array( mock_zs,
-                                dtype=[('z', '<f8'), ('z_error', '<f8')] )
+        mock_catalog['position'][:] = np.empty(self.nqsos,
+                    dtype=[('ra', mock_ra.dtype), ('dec', mock_dec.dtype)])
+        mock_catalog['redshift'][:] = np.empty(self.nqsos,
+                    dtype=[('z', mock_zs.dtype), ('z_error', mock_zs.dtype)])
+        # Assign data to catalog container
+        mock_catalog['position']['ra'][:] = mock_ra_full
+        mock_catalog['position']['dec'][:] = mock_dec_full
+        mock_catalog['redshift']['z'][:] = mock_zs_full
+        # There is a provision for z-error. Zero here.
+        mock_catalog['redshift']['z_error'][:] = 0.
 
         if self._count == self.ncats-1:
             self.done = True
