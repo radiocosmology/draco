@@ -1346,12 +1346,22 @@ class FrequencyStack(ContainerBase):
             'dtype': np.float64,
             'initialise': True,
             'distributed': False
+        },
+        'weight': {
+            'axes': ['freq'],
+            'dtype': np.float64,
+            'initialise': True,
+            'distributed': False
         }
     }
 
     @property
     def stack(self):
         return self.datasets['stack']
+
+    @property
+    def weight(self):
+        return self.datasets['weight']
 
     @property
     def freq(self):

@@ -1,9 +1,8 @@
 import h5py
 import numpy as np
 from caput import mpiarray, config, mpiutil
-from ..core import task, containers#, io
+from ..core import task, containers
 from cora.util import units
-#from ..util import tools
 from ch_util import tools, andata, ephemeris
 
 from caput import pipeline
@@ -35,7 +34,6 @@ class QuasarStack(task.SingleTask):
     def setup(self):
         """Load quasar catalog and initialize the stack array.
         """
-
         # Load base quasar catalog from file (Not distributed)
         self._qcat = containers.SpectroscopicCatalog.from_file(
                                                     self.qcat_path)
@@ -49,10 +47,12 @@ class QuasarStack(task.SingleTask):
                 np.zeros(self.nstack, dtype='complex64'), axis=0)
         # Keep track of number of quasars added to each frequency bin 
         # in the quasar stack array
-        self.quasar_stack_wheight = mpiarray.MPIArray.wrap(
+        self.quasar_weight = mpiarray.MPIArray.wrap(
                 np.zeros(self.nstack, dtype='complex64'), axis=0)
 
-
+    #TODO: Should data be an argument to process or init?
+    # In other words: will we receive a sideral stream a single time
+    # or multiple times to add up in the stack?
     def process(self, data):
         """Smooth the weights with a median filter.
 
@@ -88,21 +88,25 @@ class QuasarStack(task.SingleTask):
             # TODO: raise an error?
             pass
 
+        # Find which quasars are in the frequency range of the data.
+        # Frequency of quasars
+        qso_freq = NU21/(self._qcat['redshift']['z'] + 1.)  # MHz.
+        # Sidereal stream frequency bin edges
+        freqbins = (data.index_map['freq']['centre']
+              + 0.5*data.index_map['freq']['width'])
+        freqbins = np.append(freqbins,data.index_map['freq']['centre'][-1]
+                                - 0.5*data.index_map['freq']['width'][-1])   
+        # Frequency index of quasars (-1 due to np.digitize behaviour)
+        qso_findex = np.digitize(qso_freq,freqbins) - 1
+        # Only quasars in the frequency range of the data.
+        qso_selection = np.where((qso_findex >= 0) & (qso_findex < nfreq))[0]
+
         # Compute all baseline vectors.
         # Baseline vectors in meters. Mpiarray is created distributed in the
         # 0th axis by default. Argument is global shape.
         bvec_m = mpiarray.MPIArray((nvis,2),dtype=np.float64)  
         nvis_local = bvec_m.shape[0]  # Local number of visibilities
         xx_indices, yy_indices = [], []  # Indices (local) of co-pol products
-
-        ## TODO: delete. To show slicing works.
-        #print mpiutil.rank, bvec_m.shape, bvec_m.global_shape, type(bvec_m)
-        #aa = np.ones(7,dtype=float)
-        #bb = aa[:,np.newaxis,np.newaxis] * bvec_m[np.newaxis,:,:]
-        #print bb.shape#, bb.global_shape, type(bb)
-        #print bb[:,[1,2,3],0].shape, type(bb[:,[1,2,3],0])
-        
-
         for lvi, gvi in bvec_m.enumerate(axis=0):
 
             gpi = data.index_map['stack'][gvi][0]  # Global product index
@@ -124,32 +128,26 @@ class QuasarStack(task.SingleTask):
 
             # Beseline vector in meters
             # TODO: I am actually computing the baseline vector
-            # for all products here, even cross-pol. If it is slow
-            # I should change this.
+            # for all products here, even cross-pol. This seems to
+            # be fast though, so not too worried.
             bvec_m[lvi] = self._baseline(pos0,pos1,conj=conj)
 
-        for qq in range(self.nqso):
-            
+        # For each quasar in the frequency range of the data
+        for qq in qso_selection:
+
             dec = self._qcat['position']['dec'][qq]
-            qso_z = self._qcat['redshift']['z'][qq]
             ra_index = qso_ra_indices[qq]
 
-            # Frequency of Quasar
-            qso_f = NU21/(qso_z + 1.)  # MHz.
-            # Index of closest frequency
-            qso_findex = np.argmin(abs(
-                    data.index_map['freq']['centre'] - qso_f))
-        
             # Pick only frequencies around the quasar (50 on each side)
             # Indices to be processed in full frequency axis
-            lowindex = np.amax((0, qso_findex - self.freqside))
-            upindex = np.amin((nfreq, qso_findex + self.freqside + 1))
+            lowindex = np.amax((0, qso_findex[qq] - self.freqside))
+            upindex = np.amin((nfreq, qso_findex[qq] + self.freqside + 1))
             f_slice = np.s_[lowindex:upindex]
             # Corresponding indices in quasar stack array
-            lowindex = lowindex - qso_findex + self.freqside
-            upindex = upindex - qso_findex + self.freqside
+            lowindex = lowindex - qso_findex[qq] + self.freqside
+            upindex = upindex - qso_findex[qq] + self.freqside
             qs_slice = np.s_[lowindex:upindex]
-        
+
             # Pick a polarization.
             # TODO: How do I add polarizations later? In quadrature?
             #pol_indices = np.array(xx_indices).astype(int)
@@ -159,7 +157,7 @@ class QuasarStack(task.SingleTask):
             # Baseline vectors in wavelengths. Shape (nstack, nvis_local, 2)
             bvec = bvec_m[np.newaxis,:,:] * nu[:,np.newaxis,np.newaxis] * 1E6 / C
             
-            # Complex corrections to be multiplied by the visibilities to make them real.
+            # Complex corrections. Multiply by visibilities to make them real.
             correc = tools.fringestop_phase(ha=0.,
                                 lat=np.deg2rad(ephemeris.CHIMELATITUDE),
                                 dec=np.deg2rad(dec),
@@ -179,9 +177,9 @@ class QuasarStack(task.SingleTask):
             self.quasar_stack[qs_slice] += np.sum(
               data['vis'][f_slice][:, pol_indices, ra_index] * correc, axis=1)
             # Increment wheight for the appropriate quasar stack indices.
-            self.quasar_stack_wheight[qs_slice] += 1.
+            self.quasar_weight[qs_slice] += 1.
 
-        # TODO: Here I gather to all ranks and do the summing and real part
+        # TODO: In what follows I gather to all ranks and do the summing
         # in each rank. I end up with the same stack in all ranks, but there
         # might be slight differences due to rounding errors. Should I gather
         # to rank 0, do the operations there, and then scatter to all ranks?
@@ -195,21 +193,24 @@ class QuasarStack(task.SingleTask):
         mpiutil.world.Allgather(self.quasar_stack,
                                 quasar_stack_full)
         # Construct frequency offset axis
-        freq_offset = data.index_map['freq'][int(nfreq/2)-self.freqside:int(nfreq/2)+self.freqside+1]
-        freq_offset['centre'] = freq_offset['centre']-freq_offset['centre'][self.freqside]
+        freq_offset = data.index_map['freq'][int(nfreq/2) - self.freqside
+                                            :int(nfreq/2) + self.freqside + 1]
+        freq_offset['centre'] = (freq_offset['centre']
+                               - freq_offset['centre'][self.freqside])
         # Container to hold the stack
         qstack = containers.FrequencyStack(freq=freq_offset)
         # Sum across ranks and take real part to complete the FT
         qstack.stack[:] = np.sum(quasar_stack_full.reshape(
                                     mpiutil.size,self.nstack), axis=0).real
+        qstack.weight[:] = self.quasar_weight  # The same for all ranks.
 
         return qstack
 
 
     # TODO: the next two functions are temporary hacks. The information
-    # should either be obtained from a TransitTelescope object in the 
-    # pipeline or these functions, if still useful, should be moved to
-    # some appropriate place like ch_util.tools.
+    # should either be obtained from a TransitTelescope object in the
+    # pipeline. Also these functions, if still useful, should be moved to
+    # some appropriate place like ch_util.tools?
 
     # TODO: This is a temporary hack.
     def _pos_pol(self, chan_id, nfeeds_percyl = 64, ncylinders = 2):
@@ -225,10 +226,10 @@ class QuasarStack(task.SingleTask):
             Number of cylinders
         """
 
-        cylpol = chan_id//nfeeds_percyl
-        cyl = cylpol//ncylinders
-        pol = cylpol%ncylinders
-        pos = chan_id%nfeeds_percyl
+        cylpol = chan_id // nfeeds_percyl
+        cyl = cylpol // ncylinders
+        pol = cylpol % ncylinders
+        pos = chan_id % nfeeds_percyl
 
         return (cyl, pos), pol
 
