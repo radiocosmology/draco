@@ -25,8 +25,8 @@ import numpy as np
 
 from caput import config, mpiutil, mpiarray, tod
 
+from .transform import Regridder
 from ..core import task, containers, io
-from ..util import regrid
 
 
 class SiderealGrouper(task.SingleTask):
@@ -148,7 +148,7 @@ class SiderealGrouper(task.SingleTask):
         return ts
 
 
-class SiderealRegridder(task.SingleTask):
+class SiderealRegridder(Regridder):
     """Take a sidereal days worth of data, and put onto a regular grid.
 
     Uses a maximum-likelihood inverse of a Lanczos interpolation to do the
@@ -161,10 +161,9 @@ class SiderealRegridder(task.SingleTask):
         Number of samples across the sidereal day.
     lanczos_width : int
         Width of the Lanczos interpolation kernel.
+    snr_cov: float
+        Ratio of signal covariance to noise covariance (used for Wiener filter).
     """
-
-    samples = config.Property(proptype=int, default=1024)
-    lanczos_width = config.Property(proptype=int, default=5)
 
     def setup(self, manager):
         """Set the local observers position.
@@ -201,37 +200,16 @@ class SiderealRegridder(task.SingleTask):
         # Convert data timestamps into LSDs
         timestamp_lsd = self.observer.unix_to_lsd(data.time)
 
-        # Fetch which LSD this is
-        lsd = data.attrs['lsd']
+        # Fetch which LSD this is to set bounds
+        self.start = data.attrs['lsd']
+        self.end = self.start + 1
 
-        # Create a regular grid in LSD, padded at either end to supress interpolation issues
-        pad = 5 * self.lanczos_width
-        lsd_grid = lsd + np.arange(-pad, self.samples + pad, dtype=np.float64) / self.samples
-
-        # Construct regridding matrix
-        lzf = regrid.lanczos_forward_matrix(lsd_grid, timestamp_lsd, self.lanczos_width).T.copy()
-
-        # Mask data
-        imask = data.weight[:].view(np.ndarray)
+        # Get view of data
+        weight = data.weight[:].view(np.ndarray)
         vis_data = data.vis[:].view(np.ndarray)
 
-        # Reshape data
-        vr = vis_data.reshape(-1, vis_data.shape[-1])
-        nr = imask.reshape(-1, vis_data.shape[-1])
-
-        # Construct a signal 'covariance'
-        Si = np.ones_like(lsd_grid) * 1e-8
-
-        # Calculate the interpolated data and a noise weight at the points in the padded grid
-        sts, ni = regrid.band_wiener(lzf, nr, Si, vr, 2 * self.lanczos_width - 1)
-
-        # Throw away the padded ends
-        sts = sts[:, pad:-pad].copy()
-        ni = ni[:, pad:-pad].copy()
-
-        # Reshape to the correct shape
-        sts = sts.reshape(vis_data.shape[:-1] + (self.samples,))
-        ni = ni.reshape(vis_data.shape[:-1] + (self.samples,))
+        # perform regridding
+        new_grid, sts, ni = self._regrid(vis_data, weight, timestamp_lsd)
 
         # Wrap to produce MPIArray
         sts = mpiarray.MPIArray.wrap(sts, axis=0)
@@ -243,8 +221,8 @@ class SiderealRegridder(task.SingleTask):
         sdata.redistribute('freq')
         sdata.vis[:] = sts
         sdata.weight[:] = ni
-        sdata.attrs['lsd'] = lsd
-        sdata.attrs['tag'] = 'lsd_%i' % lsd
+        sdata.attrs['lsd'] = self.start
+        sdata.attrs['tag'] = 'lsd_%i' % self.start
 
         return sdata
 
