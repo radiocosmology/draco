@@ -17,6 +17,8 @@ from caput import config, mpiarray
 
 from ..core import containers, task
 
+SOLAR_SEC_PER_DAY = 86400.
+
 
 class BaseGains(task.SingleTask):
     """Rudimentary class to generate gain timestreams.
@@ -68,6 +70,26 @@ class BaseGains(task.SingleTask):
 
         return gain_data
 
+    def _generate_gain(self, time, freq):
+
+        def _gain_hook(self):
+            """This can be implemented in child classes"""
+            pass
+
+        gain_amp = 1.0
+        gain_phase = 0.0
+
+        if self.amp:
+            gain_amp = self._generate_amp(time, freq)
+
+        if self.phase:
+            gain_phase = self._generate_phase(time, freq)
+
+        # Combine into an overall gain fluctuation
+        gain_comb = gain_amp * np.exp(1.0J * gain_phase)
+
+        return gain_comb
+
     def _corr_func(self, zeta, amp):
         """This generates the correlation function
 
@@ -84,26 +106,6 @@ class BaseGains(task.SingleTask):
 
         return _cf
 
-    def _generate_gain(self, time, freq):
-        """Generate gain errors. Wrapper function for _generate_amp
-        and _generate_phase.
-
-        This implementation is blank. Must be overriden.
-
-        Parameters:
-        -----------
-        time : np.ndarray
-            Generate amplitude fluctuations for this time period.
-        freq : np.ndarray
-             Frequencies from data for which to generate gain fluctuations.
-
-        Returns
-        -------
-        gain : np.ndarray
-            Generated gain.
-        """
-        pass
-
     def _generate_amp(self, time, freq):
         """Generate phase gain errors.
 
@@ -116,7 +118,7 @@ class BaseGains(task.SingleTask):
         freq : np.ndarray
             Frequencies from data for which to generate gain fluctuations.
             """
-        pass
+        raise NotImplementedError
 
     def _generate_phase(self,  time, freq):
         """Generate phase gain errors.
@@ -130,7 +132,106 @@ class BaseGains(task.SingleTask):
         freq : np.ndarray
             Frequencies from data for which to generate gain fluctuations.
         """
-        pass
+        raise NotImplementedError
+
+
+class SiderealGains(BaseGains):
+    """Task for simulating sidereal gains
+
+    Attributes
+    ----------
+    start_time, end_time : float or datetime
+        Start and end times of the timestream to simulate. Needs to be either a
+        `float` (UNIX time) or a `datetime` objects in UTC.
+    approx_integration_time : float
+        The integration time in solar seconds you are aiming for. Based on this
+        information the task will calculate the number of samples per file
+        within a sidereal day.
+    """
+
+    start_time = config.utc_time()
+    end_time = config.utc_time()
+    approx_integration_time = config.Property(proptype=float, default=60.)
+
+    def setup(self, bt, sstream):
+        """Set up the sidereal gain errors task
+
+        Parameters
+        ----------
+        bt : BeamTransfer
+        sstream : SiderealStream
+        """
+        self.observer = io.get_telescope(bt)
+        self.lsd_start = self.observer.unix_to_lsd(self.start_time)
+        self.lsd_end = self.observer.unix_to_lsd(self.end_time)
+
+        sid_sec_per_day = SOLAR_SEC_PER_DAY *  ephemeris.SIDEREAL_S
+        self.samples_per_file = int(sid_sec_per_day / self.approx_integration_time)
+        self.integration_time = sid_sec_per_day / self.samples_per_file
+
+        print("Sidereal period requested for this simulation",
+               int(self.lsd_start), int(self.lsd_end))
+        # Initialize the current lsd time
+        self._current_lsd = None
+        self.sstream = sstream
+
+    def process(self):
+        """Generate a gain timestream for the inputs and times in `data`.
+
+        Parameters
+        ----------
+        data : :class:`containers.SiderealStream`
+            Generate complex gains for this sidereal stream.
+
+        Returns
+        -------
+        gain : :class:`containers.SiderealGainData`
+        """
+        # If current_lsd is None then this is the first time we've run
+        if self._current_lsd is None:
+            # Check if lsd is an integer, if not add an lsd
+            if isinstance(self.lsd_start, int):
+                self._current_lsd = int(self.lsd_start)
+            else:
+                self._current_lsd = int(self.lsd_start + 1)
+
+        # Check if we have reached the end of the requested time
+        if self._current_lsd >= self.lsd_end:
+            raise pipeline.PipelineStopIteration
+
+        # Convert the current lsd day to unix time
+        unix_start = self.observer.lsd_to_unix(self._current_lsd)
+        unix_end = self.observer.lsd_to_unix(self._current_lsd + 1)
+
+        # Distribute the sidereal data and create a time array
+        data = self.sstream
+        data.redistribute('prod')
+        freq = data.index_map['freq']['centre'][:]
+        ra = np.linspace(0.0, 360.0, self.samples_per_file, endpoint=False)
+        time = np.linspace(unix_start, unix_end, self.samples_per_file)
+
+        # Make a sidereal gain data container
+        gain_data = containers.SiderealGainData(axes_from=data, ra=ra)
+        gain_data.redistribute('input')
+
+        self.ninput_local = gain_data.gain.local_shape[1]
+        self.ninput_global = gain_data.gain.global_shape[1]
+
+        gain = self._generate_gain(time, freq)
+
+        # Copy the gain entries into the output container
+        gain = mpiarray.MPIArray.wrap(gain, axis=1)
+        gain_data.gain[:] = gain
+        gain_data.attrs['lsd'] = self._current_lsd
+        gain_data.attrs['tag'] = 'lsd_%i' % self._current_lsd
+        gain_data.attrs['int_time'] = self.integration_time
+
+        self._current_lsd += 1
+
+        # Keep a reference to time around for the next round
+        self._prev_time = time
+
+        return gain_data
 
 
 class RandomGains(BaseGains):
@@ -168,21 +269,6 @@ class RandomGains(BaseGains):
 
     _prev_amp = None
     _prev_phase = None
-
-    def _generate_gain(self, time, freq):
-        gain_amp = 1.0
-        gain_phase = 0.0
-
-        if self.amp:
-            gain_amp = self._generate_amp(time, freq)
-
-        if self.phase:
-            gain_phase = self._generate_phase(time, freq)
-
-        # Combine into an overall gain fluctuation
-        gain_comb = gain_amp * np.exp(1.0J * gain_phase)
-
-        return gain_comb
 
     def _generate_amp(self, time, freq):
 
@@ -222,6 +308,101 @@ class RandomGains(BaseGains):
         gain_phase_fluc = gain_phase_fluc.reshape((len(freq), ninput, ntime))
 
         return gain_phase_fluc
+
+
+class GainStacker(task.SingleTask):
+    """Take sidereal gain data, make products and stack them up"""
+
+    gain_stack = None
+    lsd_list = None
+
+    def setup(self, stream):
+        #stream could be sstream or tstream
+        print("Setting up GainStacker")
+        self.stream = stream
+
+    def process(self, gain):
+        """Make sidereal gain products and stack them up.
+
+        Parameters
+        ----------
+        gain : containers.SiderealGainData or containers.GainData
+            Individual sidereal or time ordered gain data
+        """
+
+        stream = self.stream
+        stream.redistribute('freq')
+        gain.redistribute('freq')
+        prod = stream.index_map['prod']
+
+        if 'lsd' in gain.attrs:
+            input_lsd = gain.attrs['lsd']
+        else:
+            input_lsd = -1
+
+        print("Stacking input lsd %i" % input_lsd)
+        input_lsd = _ensure_list(input_lsd)
+
+        # If gain_stack is None create an MPIArray to hold the product expanded
+        # gain data redistribute over all freq
+        if self.gain_stack is None:
+
+            self.gain_stack = containers.empty_like(stream)
+            self.gain_stack.redistribute('freq')
+
+            for pi, (fi, fj) in enumerate(prod):
+                self.gain_stack.vis[:, pi] = gain.gain[:, fi] * np.conjugate(gain.gain[:, fj])
+
+            self.gain_stack.weight[:] = np.ones(self.gain_stack.vis.global_shape)
+
+            self.lsd_list = input_lsd
+
+            self.log.info("Starting gain stack with LSD:%i", input_lsd)
+
+            return
+
+        # Keep gains around for next round, save current lsd to list, log
+        self.log.info("Adding LSD:%i to gain stack", gain.attrs['lsd'])
+        # Calculate the gain products
+        for pi, (fi, fj) in enumerate(prod):
+            self.gain_stack.vis[:, pi] += (gain.gain[:, fi] * np.conjugate(gain.gain[:, fj]))
+
+        self.gain_stack.weight[:] += np.ones(self.gain_stack.vis.global_shape)
+
+        self.lsd_list += input_lsd
+
+    def process_finish(self):
+        """Multiply summed gain with sidereal streamself.
+
+        Returns
+        -------
+        data : containers.SiderealStream or containers.TimeStream
+            Stack of sidereal data with gain applied.
+        """
+
+        data = containers.empty_like(self.stream)
+        data.redistribute('freq')
+
+        for ii in range(0, data.vis.shape[1], 128):
+            self.gain_stack.vis[:, ii:ii + 128] = (self.gain_stack.vis[:, ii:ii + 128] / self.gain_stack.weight[:, ii:ii + 128])
+            data.vis[:, ii:ii + 128] = self.stream.vis[:, ii:ii + 128] * self.gain_stack.vis[:, ii:ii + 128]
+
+        data.attrs['lsd'] = np.array(self.lsd_list)
+        data.attrs['tag'] = 'gain_error_stack'
+
+        print("Finishing task Gainstacker")
+
+        return data
+
+
+def _ensure_list(x):
+
+    if hasattr(x, '__iter__'):
+        y = [xx for xx in x]
+    else:
+        y = [x]
+
+    return y
 
 
 def generate_fluctuations(x, corrfunc, n, prev_x, prev_fluc):
