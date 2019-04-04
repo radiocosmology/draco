@@ -723,6 +723,168 @@ class TimeStream(TODContainer):
         return self.index_map['stack']['conjugate']
 
 
+class GridBeam(ContainerBase):
+    """ Generic container for representing the 2-d beam in spherical
+        coordinates on a rectangular grid.
+    """
+
+    _axes = ('freq', 'pol', 'input', 'theta', 'phi')
+
+    _dataset_spec = {
+        'beam': {
+            'axes': ['freq', 'pol', 'input', 'theta', 'phi'],
+            'dtype': np.complex64,
+            'initialise': True,
+            'distributed': True,
+            'distributed_axis': 'freq'
+        },
+        'weight': {
+            'axes': ['freq', 'pol', 'input', 'theta', 'phi'],
+            'dtype': np.float32,
+            'initialise': True,
+            'distributed': True,
+            'distributed_axis': 'freq'
+        },
+        'gain': {
+            'axes': ['freq', 'input'],
+            'dtype': np.complex64,
+            'initialise': False,
+            'distributed': True,
+            'distributed_axis': 'freq'
+        }
+    }
+
+    def __init__(self, coords='celestial', *args, **kwargs):
+
+        self.attrs['coords'] = coords
+        super(GridBeam, self).__init__(*args, **kwargs)
+
+    @property
+    def beam(self):
+        return self.datasets['beam']
+
+    @property
+    def weight(self):
+        return self.datasets['weight']
+
+    @property
+    def gain(self):
+        return self.datasets['gain']
+
+    @property
+    def coords(self):
+        return self.attrs['coords']
+
+    @property
+    def freq(self):
+        return self.index_map['freq']
+
+    @property
+    def pol(self):
+        return self.index_map['pol']
+
+    @property
+    def input(self):
+        return self.index_map['input']
+
+    @property
+    def theta(self):
+        return self.index_map['theta']
+
+    @property
+    def phi(self):
+        return self.index_map['phi']
+
+
+class TrackBeam(ContainerBase):
+    """ Container for a sequence of beam samples at arbitrary locations
+        on the sphere. The axis of the beam samples is 'pix', defined by
+        the numpy.dtype [('theta', np.float32), ('phi', np.float32)].
+    """
+
+    _axes = ('freq', 'pol', 'input', 'pix')
+
+    _dataset_spec = {
+        'beam': {
+            'axes': ['freq', 'pol', 'input', 'pix'],
+            'dtype': np.complex64,
+            'initialise': True,
+            'distributed': True,
+            'distributed_axis': 'freq'
+        },
+        'weight': {
+            'axes': ['freq', 'pol', 'input', 'pix'],
+            'dtype': np.float32,
+            'initialise': True,
+            'distributed': True,
+            'distributed_axis': 'freq'
+        },
+        'gain': {
+            'axes': ['freq', 'input'],
+            'dtype': np.complex64,
+            'initialise': False,
+            'distributed': True,
+            'distributed_axis': 'freq'
+        }
+    }
+
+    def __init__(self, theta=None, phi=None, coords='celestial',
+                 track_type='drift', *args, **kwargs):
+
+        if (theta is not None and phi is not None):
+            if len(theta) != len(phi):
+                raise RuntimeError("theta and phi axes must have same length: "
+                                   "({:d} != {:d})".format(len(theta), len(phi)))
+            else:
+                pix = np.zeros(len(theta), dtype=[('theta', np.float32), ('phi', np.float32)])
+                pix['theta'] = theta
+                pix['phi'] = phi
+                kwargs['pix'] = pix
+        elif (theta is None) != (phi is None):
+            raise RuntimeError("Both theta and phi coordinates must be specified.")
+
+        super(TrackBeam, self).__init__(*args, **kwargs)
+
+        self.attrs['coords'] = coords
+        self.attrs['track_type'] = track_type
+
+    @property
+    def beam(self):
+        return self.datasets['beam']
+
+    @property
+    def weight(self):
+        return self.datasets['weight']
+
+    @property
+    def gain(self):
+        return self.datasets['gain']
+
+    @property
+    def coords(self):
+        return self.attrs['coords']
+
+    @property
+    def track_type(self):
+        return self.attrs['track_type']
+
+    @property
+    def freq(self):
+        return self.index_map['freq']
+
+    @property
+    def pol(self):
+        return self.index_map['pol']
+
+    @property
+    def input(self):
+        return self.index_map['input']
+
+    @property
+    def pix(self):
+        return self.index_map['pix']
+
+
 class MModes(ContainerBase):
     """Parallel container for holding m-mode data.
 
