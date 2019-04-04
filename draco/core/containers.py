@@ -682,7 +682,7 @@ class TimeStream(TODContainer):
             nfeed = inputs if isinstance(inputs, int) else len(inputs)
             kwargs['prod'] = np.array([[fi, fj] for fi in range(nfeed) for fj in range(fi, nfeed)])
 
-        if stack is None:
+        if stack is None and prod is not None:
             stack = np.empty_like(prod, dtype=[('prod', '<u4'), ('conjugate', 'u1')])
             stack['prod'][:] = np.arange(len(prod))
             stack['conjugate'] = 0
