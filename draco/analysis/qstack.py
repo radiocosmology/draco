@@ -106,7 +106,7 @@ class QuasarStack(task.SingleTask):
         # 0th axis by default. Argument is global shape.
         bvec_m = mpiarray.MPIArray((nvis,2),dtype=np.float64)  
         nvis_local = bvec_m.shape[0]  # Local number of visibilities
-        xx_indices, yy_indices = [], []  # Indices (local) of co-pol products
+        copol_indices = []  # Indices (local) of co-pol products
         for lvi, gvi in bvec_m.enumerate(axis=0):
 
             gpi = data.index_map['stack'][gvi][0]  # Global product index
@@ -121,16 +121,15 @@ class QuasarStack(task.SingleTask):
             pos0, pol0 = self._pos_pol(ipt0)
             pos1, pol1 = self._pos_pol(ipt1)
 
-            if ((pol0==0) and (pol1==0)):
-                xx_indices.append(lvi)
-            if ((pol0==1) and (pol1==1)):
-                yy_indices.append(lvi)
+            if (((pol0==0) and (pol1==0)) or
+                ((pol0==1) and (pol1==1))):
+                copol_indices.append(lvi)
 
-            # Beseline vector in meters
-            # TODO: I am actually computing the baseline vector
-            # for all products here, even cross-pol. This seems to
-            # be fast though, so not too worried.
-            bvec_m[lvi] = self._baseline(pos0,pos1,conj=conj)
+                # Beseline vector in meters
+                # I am only computing the baseline vector
+                # for co-pol products, but the array has the full shape.
+                # Cross-pol entries should be junk.
+                bvec_m[lvi] = self._baseline(pos0,pos1,conj=conj)
 
         # For each quasar in the frequency range of the data
         for qq in qso_selection:
@@ -148,11 +147,6 @@ class QuasarStack(task.SingleTask):
             upindex = upindex - qso_findex[qq] + self.freqside
             qs_slice = np.s_[lowindex:upindex]
 
-            # Pick a polarization.
-            # TODO: How do I add polarizations later? In quadrature?
-            #pol_indices = np.array(xx_indices).astype(int)
-            pol_indices = xx_indices
-
             nu = data.index_map['freq']['centre'][f_slice]
             # Baseline vectors in wavelengths. Shape (nstack, nvis_local, 2)
             bvec = bvec_m[np.newaxis,:,:] * nu[:,np.newaxis,np.newaxis] * 1E6 / C
@@ -161,8 +155,8 @@ class QuasarStack(task.SingleTask):
             correc = tools.fringestop_phase(ha=0.,
                                 lat=np.deg2rad(ephemeris.CHIMELATITUDE),
                                 dec=np.deg2rad(dec),
-                                u=bvec[:,pol_indices,0],
-                                v=bvec[:,pol_indices,1])
+                                u=bvec[:,copol_indices,0],
+                                v=bvec[:,copol_indices,1])
 
             # This is done in a slightly weird order: adding visibility subsets
             # for different quasars in each rank first and then co-adding 
@@ -175,7 +169,7 @@ class QuasarStack(task.SingleTask):
             # TODO: this corresponds to Uniform weighting, not Natural.
             # Need to figure out the multiplicity of each visibility stack.
             self.quasar_stack[qs_slice] += np.sum(
-              data['vis'][f_slice][:, pol_indices, ra_index] * correc, axis=1)
+              data['vis'][f_slice][:, copol_indices, ra_index] * correc, axis=1)
             # Increment wheight for the appropriate quasar stack indices.
             self.quasar_weight[qs_slice] += 1.
 
