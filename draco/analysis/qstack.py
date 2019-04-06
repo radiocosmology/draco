@@ -1,7 +1,7 @@
 import h5py
 import numpy as np
 from caput import mpiarray, config, mpiutil
-from ..core import task, containers
+from ..core import task, containers, io
 from cora.util import units
 from ch_util import tools, andata, ephemeris
 
@@ -31,8 +31,14 @@ class QuasarStack(task.SingleTask):
     # Pick only frequencies around the quasar (50 on each side)
     freqside = config.Property(proptype=int, default=50)
 
-    def setup(self):
+    def setup(self, manager):
         """Load quasar catalog and initialize the stack array.
+
+        Parameters
+        ----------
+        manager : either `ProductManager`, `BeamTransfer` or `TransitTelescope`
+            Contains a TransitTelescope object describing the telescope.
+
         """
         # Load base quasar catalog from file (Not distributed)
         self._qcat = containers.SpectroscopicCatalog.from_file(
@@ -49,6 +55,9 @@ class QuasarStack(task.SingleTask):
         # in the quasar stack array
         self.quasar_weight = mpiarray.MPIArray.wrap(
                 np.zeros(self.nstack, dtype='complex64'), axis=0)
+
+        # Get the TransitTelescope object
+        self.telescope = io.get_telescope(manager)
 
     # TODO: Should data be an argument to process or init?
     # In other words: will we receive a sideral stream a single time
@@ -120,9 +129,9 @@ class QuasarStack(task.SingleTask):
             pos0, pol0 = self._pos_pol(ipt0)
             pos1, pol1 = self._pos_pol(ipt1)
 
-            iscopol = (((pol0 == 0) and (pol1 == 0)) or
+            is_copol = (((pol0 == 0) and (pol1 == 0)) or
                        ((pol0 == 1) and (pol1 == 1)))
-            if iscopol:
+            if is_copol:
                 copol_indices.append(lvi)
 
                 # Beseline vector in meters
@@ -130,6 +139,8 @@ class QuasarStack(task.SingleTask):
                 # for co-pol products, but the array has the full shape.
                 # Cross-pol entries should be junk.
                 bvec_m[lvi] = self._baseline(pos0, pos1, conj=conj)
+
+        copol_indices = np.array(copol_indices, dtype=int)
 
         # For each quasar in the frequency range of the data
         for qq in qso_selection:
@@ -166,13 +177,18 @@ class QuasarStack(task.SingleTask):
             # Notice that data['vis'] is distributed in axis=1 ('stack'),
             # while quasar_stack is distributed in axis=0 (it's a 1d array).
 
-            # Fringestop and sum.
-            # TODO: this corresponds to Uniform weighting, not Natural.
-            # Need to figure out the multiplicity of each visibility stack.
+            # Multiply phase corrections by multiplicity to get
+            # fringestopped, natural wheighted visibilities.
+            # `correc` now encodes fringestopping corrections in the phase
+            # and multiplicity corrections in the magnitude.
+            gci = copol_indices + bvec_m.local_offset[0]  # Global copol index
+            correc *= self.telescope.redundancy[gci][np.newaxis,:].astype(float)
+
+            # Fringestop, apply weight and sum.
             self.quasar_stack[qs_slice] += np.sum(
-              data['vis'][f_slice][:, copol_indices, ra_index] * correc, axis=1)
+              data.vis[f_slice][:, copol_indices, ra_index] * correc, axis=1)
             # Increment wheight for the appropriate quasar stack indices.
-            self.quasar_weight[qs_slice] += 1.
+            self.quasar_weight[qs_slice] += np.sum(abs(correc), axis=1)
 
         # TODO: In what follows I gather to all ranks and do the summing
         # in each rank. I end up with the same stack in all ranks, but there
