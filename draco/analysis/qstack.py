@@ -118,27 +118,23 @@ class QuasarStack(task.SingleTask):
         for lvi, gvi in bvec_m.enumerate(axis=0):
 
             gpi = data.index_map['stack'][gvi][0]  # Global product index
-            conj = data.index_map['stack'][gvi][1]  # Product conjugation
             # Inputs that go into this product
             ipt0 = data.index_map['input']['chan_id'][
                                 data.index_map['prod'][gpi][0]]
             ipt1 = data.index_map['input']['chan_id'][
                                 data.index_map['prod'][gpi][1]]
 
-            # Get position and polarization of each input
-            pos0, pol0 = self._pos_pol(ipt0)
-            pos1, pol1 = self._pos_pol(ipt1)
-
-            is_copol = (((pol0 == 0) and (pol1 == 0)) or
-                       ((pol0 == 1) and (pol1 == 1)))
-            if is_copol:
+            if self._is_array_copol(ipt0, ipt1):
                 copol_indices.append(lvi)
 
                 # Beseline vector in meters
                 # I am only computing the baseline vector
                 # for co-pol products, but the array has the full shape.
                 # Cross-pol entries should be junk.
-                bvec_m[lvi] = self._baseline(pos0, pos1, conj=conj)
+                unique_index = self.telescope.feedmap[ipt0, ipt1]
+                bvec_m[lvi] = self.telescope.baselines[unique_index]
+                if self.telescope.feedconj[ipt0, ipt1]:
+                    bvec_m[lvi] *= -1.
 
         copol_indices = np.array(copol_indices, dtype=int)
 
@@ -182,7 +178,7 @@ class QuasarStack(task.SingleTask):
             # `correc` now encodes fringestopping corrections in the phase
             # and multiplicity corrections in the magnitude.
             gci = copol_indices + bvec_m.local_offset[0]  # Global copol index
-            correc *= self.telescope.redundancy[gci][np.newaxis,:].astype(float)
+            correc *= self.telescope.redundancy[gci][np.newaxis, :].astype(float)
 
             # Fringestop, apply weight and sum.
             self.quasar_stack[qs_slice] += np.sum(
@@ -217,69 +213,17 @@ class QuasarStack(task.SingleTask):
 
         return qstack
 
-    # TODO: the next two functions are temporary hacks. The information
-    # should either be obtained from a TransitTelescope object in the
-    # pipeline. Also these functions, if still useful, should be moved to
-    # some appropriate place like ch_util.tools?
-
-    # TODO: This is a temporary hack.
-    def _pos_pol(self, chan_id, nfeeds_percyl=64, ncylinders=2):
-        """ This is a temporary hack. The pipeline will have a
-        drift.core.telescope.TransitTelescope object with all of this
-        information in it. I have to look up how to use it.
-
-        Parameters
-        ----------
-        nfeeds_percyl : int
-            Number of feeds per cylinder
-        ncylinders : int
-            Number of cylinders
+    def _is_array_copol(self, ipt0, ipt1):
         """
+        """
+        result = (tools.is_array_on(self.telescope._feeds[ipt0]) and
+                  tools.is_array_on(self.telescope._feeds[ipt1]))
+        if result:
+            # Test for co-polarization
+            is_copol = (((self.telescope._feeds[ipt0].pol in ['S', 'N']) and
+                         (self.telescope._feeds[ipt1].pol in ['S', 'N'])) or
+                        ((self.telescope._feeds[ipt0].pol in ['E', 'W']) and
+                         (self.telescope._feeds[ipt1].pol in ['E', 'W'])))
+            result = result and is_copol
 
-        cylpol = chan_id // nfeeds_percyl
-        cyl = cylpol // ncylinders
-        pol = cylpol % ncylinders
-        pos = chan_id % nfeeds_percyl
-
-        return (cyl, pos), pol
-
-    # TODO: This is a temporary hack.
-    def _baseline(self, pos0, pos1, nu=None, conj=1):
-        """ Computes the vector sepparation between two positions
-        given in cylinder index and feed position index.
-        The vector goes from pos1 to pos0. This gives the right visibility
-        phase for CHIME: phi_0_1 = 2pi baseline_0_1 * \hat{n}.
-
-        +X is due East and +Y is due North.
-
-        Parameters
-        ----------
-        pos0, pos1 : tuple or array-like (cyl, pos)
-            cylinder number (W to E) and position in f.l. N to S.
-        nu : float
-            Frequency in MHz
-        conj : int or bool
-            If 1 (True) Multiply the final vector by -1
-            to account for conjugation of the product.
-
-        Returns
-        -------
-        Baseline vector in meters (if nu is None)
-        or wavelengths (if nu is not None).
-       """
-        cylinder_sepparation = 22.  # In meters
-        feed_sepparation = 0.3048  # In meters
-
-        # -1 is to convert NS feed number (which runs South)
-        # into Y coordinates (which point North)
-        baseline_vec = np.array([cylinder_sepparation*float(pos0[0]-pos1[0]),
-                                 feed_sepparation*float(pos0[1]-pos1[1])*(-1.)])
-
-        if nu is not None:
-            nu = float(nu)*1E6
-            baseline_vec *= nu / C
-
-        if conj:
-            return (-1.)*baseline_vec
-        else:
-            return baseline_vec
+        return result
