@@ -137,9 +137,14 @@ class SimulateSidereal(task.SingleTask):
         except AttributeError:
             feed_index = tel.nfeed
 
+        # Construct a product map
+        prod_map = np.zeros(tel.uniquepairs.shape[0], dtype=[('input_a', int), ('input_b', int)])
+        prod_map['input_a'] = tel.uniquepairs[:, 0]
+        prod_map['input_b'] = tel.uniquepairs[:, 1]
+
         # Construct container and set visibility data
         sstream = containers.SiderealStream(freq=freqmap, ra=ntime, input=feed_index,
-                                            prod=tel.uniquepairs, distributed=True, comm=map_.comm)
+                                            prod=prod_map, distributed=True, comm=map_.comm)
         sstream.vis[:] = mpiarray.MPIArray.wrap(vis_stream, axis=0)
         sstream.weight[:] = 1.0
 
@@ -179,17 +184,15 @@ class ExpandProducts(task.SingleTask):
         sstream.redistribute('freq')
 
         ninput = len(sstream.input)
+        prod = np.array([(fi, fj) for fi in range(ninput) for fj in range(fi, ninput)], dtype=[('input_a', int), ('input_b', int)])
 
-        prod = np.array([ (fi, fj) for fi in range(ninput) for fj in range(fi, ninput)])
-
-        new_stream = containers.SiderealStream(prod=prod, axes_from=sstream)
+        new_stream = containers.SiderealStream(prod=prod, stack=None, axes_from=sstream)
         new_stream.redistribute('freq')
         new_stream.vis[:] = 0.0
         new_stream.weight[:] = 0.0
 
         # Iterate over all feed pairs and work out which is the correct index in the sidereal stack.
         for pi, (fi, fj) in enumerate(prod):
-
             unique_ind = self.telescope.feedmap[fi, fj]
             conj = self.telescope.feedconj[fi, fj]
 
