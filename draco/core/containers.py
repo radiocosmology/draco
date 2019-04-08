@@ -148,13 +148,13 @@ class ContainerBase(memh5.BasicCont):
         elif axes_from is not None and 'stack' in axes_from.reverse_map:
             reverse_map_stack = axes_from.reverse_map['stack']
 
-        # Set the reverse_map['stack'] if we have a definition, 
-        # otherwise do NOT throw an error, errors are thrown in 
+        # Set the reverse_map['stack'] if we have a definition,
+        # otherwise do NOT throw an error, errors are thrown in
         # classes that actually need a reverse stack
         if reverse_map_stack is not None:
             self.create_reverse_map('stack', reverse_map_stack)
 
-        
+
         # Iterate over datasets and initialise any that specify it
         for name, spec in self.dataset_spec.items():
             if 'initialise' in spec and spec['initialise']:
@@ -682,7 +682,7 @@ class TimeStream(TODContainer):
             nfeed = inputs if isinstance(inputs, int) else len(inputs)
             kwargs['prod'] = np.array([[fi, fj] for fi in range(nfeed) for fj in range(fi, nfeed)])
 
-        if stack is None:
+        if stack is None and prod is not None:
             stack = np.empty_like(prod, dtype=[('prod', '<u4'), ('conjugate', 'u1')])
             stack['prod'][:] = np.arange(len(prod))
             stack['conjugate'] = 0

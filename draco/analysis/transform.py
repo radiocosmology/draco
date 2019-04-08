@@ -14,6 +14,7 @@ Tasks
 """
 import numpy as np
 from caput import mpiarray, config
+from caput import mpiutil
 
 from ..core import containers, task, io
 from ..util import tools
@@ -127,6 +128,14 @@ class CollateProducts(task.SingleTask):
 
         self.telescope = io.get_telescope(tel)
 
+        # Precalculate the stack properties
+        self.bt_stack = np.array([(tools.cmap(upp[0], upp[1], self.telescope.nfeed), 0)
+                                  if upp[0] <= upp[1] else
+                                  (tools.cmap(upp[1], upp[0], self.telescope.nfeed), 1)
+                                  for upp in self.telescope.uniquepairs],
+                                  dtype=[('prod', '<u4'), ('conjugate', 'u1')])
+
+
     def process(self, ss):
         """Select and reorder the products.
 
@@ -200,15 +209,8 @@ class CollateProducts(task.SingleTask):
         bt_freq = ss.index_map['freq'][freq_ind]
 
         # Construct the equivalent prod and stack index_map for the telescope instance
-        bt_prod = np.array([(fi, fj) for fi in range(self.telescope.nfeed)
-                                     for fj in range(fi, self.telescope.nfeed)],
-                                     dtype=[('input_a', '<u2'), ('input_b', '<u2')])
-
-        bt_stack = np.array([(tools.cmap(upp[0], upp[1], self.telescope.nfeed), 0)
-                             if upp[0] <= upp[1] else
-                             (tools.cmap(upp[1], upp[0], self.telescope.nfeed), 1)
-                             for upp in self.telescope.uniquepairs],
-                             dtype=[('prod', '<u4'), ('conjugate', 'u1')])
+        dt_prod = np.dtype([('input_a', '<u2'), ('input_b', '<u2')])
+        bt_prod = np.array(np.triu_indices(self.telescope.nfeed)).astype('<u2').T.copy().view(dt_prod).reshape(-1)
 
         # Construct the equivalent stack reverse_map for the telescope instance.  Note
         # that we identify invalid products here using an index that is the size of the stack axis.
@@ -225,7 +227,7 @@ class CollateProducts(task.SingleTask):
             OutputContainer = containers.TimeStream
 
         sp = OutputContainer(freq=bt_freq, input=bt_keys, prod=bt_prod,
-                             stack=bt_stack, reverse_map_stack=bt_rev,
+                             stack=self.bt_stack, reverse_map_stack=bt_rev,
                              axes_from=ss, attrs_from=ss, distributed=True, comm=ss.comm)
 
         # Add gain dataset.
@@ -249,10 +251,12 @@ class CollateProducts(task.SingleTask):
         # Infer number of products that went into each stack
         if self.weight != 'inverse_variance':
 
-            nprod_in_stack = tools.calculate_redundancy(ss.input_flags[:],
-                                                        ss.index_map['prod'][:],
-                                                        ss.reverse_map['stack']['stack'][:],
-                                                        ss.vis.shape[1])
+            ssi = ss.input_flags[:]
+            ssp = ss.index_map['prod'][:]
+            sss = ss.reverse_map['stack']['stack'][:]
+            nstack = ss.vis.shape[1]
+
+            nprod_in_stack = tools.calculate_redundancy(ssi, ssp, sss, nstack)
 
             if self.weight == 'uniform':
                 nprod_in_stack = (nprod_in_stack > 0).astype(np.float32)
@@ -265,6 +269,12 @@ class CollateProducts(task.SingleTask):
         # Create counter to increment during the stacking.
         # This will be used to normalize at the end.
         counter = np.zeros_like(sp.weight[:])
+
+        # Dereference the global slices now, there's a hidden MPI call in the [:] operation.
+        spv = sp.vis[:]
+        ssv = ss.vis[:]
+        spw = sp.weight[:]
+        ssw = ss.weight[:]
 
         # Iterate over products (stacked) in the sidereal stream
         for ss_pi, ((ii, ij), conj) in enumerate(zip(ss_prod, ss_conj)):
@@ -285,20 +295,20 @@ class CollateProducts(task.SingleTask):
 
             # Generate weight
             if self.weight == 'inverse_variance':
-                wss = ss.weight[freq_ind, ss_pi]
+                wss = ssw[freq_ind, ss_pi]
 
             else:
-                wss = (ss.weight[freq_ind, ss_pi] > 0.0).astype(np.float32)
+                wss = (ssw[freq_ind, ss_pi] > 0.0).astype(np.float32)
                 wss *= nprod_in_stack[np.newaxis, ss_pi, stt:ett]
 
             # Accumulate visibilities, conjugating if required
             if feedconj == conj:
-                sp.vis[:, sp_pi] += wss * ss.vis[freq_ind, ss_pi]
+                spv[:, sp_pi] += wss * ssv[freq_ind, ss_pi]
             else:
-                sp.vis[:, sp_pi] += wss * ss.vis[freq_ind, ss_pi].conj()
+                spv[:, sp_pi] += wss * ssv[freq_ind, ss_pi].conj()
 
             # Accumulate variances in quadrature.  Save in the weight dataset.
-            sp.weight[:, sp_pi] += wss**2 * tools.invert_no_zero(ss.weight[freq_ind, ss_pi])
+            spw[:, sp_pi] += wss**2 * tools.invert_no_zero(ssw[freq_ind, ss_pi])
 
             # Increment counter
             counter[:, sp_pi] += wss
