@@ -236,7 +236,6 @@ class QuasarStackFromMaps(task.SingleTask):
     map_path : str
             Full path to map to stack on.
 
-
     """
     # TODO: Change the map from a config parameter to
     # an object loaded with another task and passed as an 
@@ -300,7 +299,9 @@ class QuasarStackFromMaps(task.SingleTask):
         # For each quasar assigned to this rank
         for ii in range(local_size):
 
-            qq = ii + local_offset
+            #if ii%1000==0:
+            #    print mpiutil.rank, ii, ii+local_offset
+            qq = qso_selection[ii + local_offset]
             ra = self._qcat['position']['ra'][qq]
             dec = self._qcat['position']['dec'][qq]
             pix = self.radec2pix(ra, dec)
@@ -341,7 +342,7 @@ class QuasarStackFromMaps(task.SingleTask):
 
         # This is needed because there is no argument to proecess()
         # Once I implement the map as an argument this will not be necessary any more.
-        raise pipeline.PipelineStopIteration()
+        self.done = True
 
         return qstack
 
