@@ -14,13 +14,15 @@ cdef inline int int_max(int a, int b) nogil: return a if a >= b else b
 
 # A routine for quickly calculating the noise part of the banded
 # covariance matrix for the Wiener filter.
+@cython.wraparound(False)
 @cython.boundscheck(False)
-cpdef _band_wiener_covariance(double [:, ::1] Rn, double [::1] Ni, int bw):
+cpdef _band_wiener_covariance(double [:, ::1] Rn, double [::1] Ni,
+                              int[::1] start_ind, int[::1] end_ind, int bw):
 
     cdef double [:, ::1] Ci = np.zeros((bw+1, Rn.shape[0]), dtype=np.float64)
 
-    cdef unsigned int N, M
-    cdef unsigned int alpha, beta, betap, j, alpha_start
+    cdef int N, M
+    cdef int alpha, beta, betap, j, alpha_start, si, ei
 
     cdef double t
 
@@ -34,10 +36,13 @@ cpdef _band_wiener_covariance(double [:, ::1] Rn, double [::1] Ni, int bw):
         # Calculate alphas to start at
         alpha_start = int_max(0, bw - beta)
 
+        si = start_ind[beta]
+        ei = end_ind[beta]
+
         for alpha in range(alpha_start, bw+1):
             betap = alpha + beta - bw
             t = 0.0
-            for j in range(M):
+            for j in range(si, ei + 1):
                 t = t + Rn[betap, j] * Rn[beta, j] * Ni[j]
             Ci[alpha, beta] = t
 
