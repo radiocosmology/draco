@@ -135,6 +135,12 @@ class CollateProducts(task.SingleTask):
                                   for upp in self.telescope.uniquepairs],
                                   dtype=[('prod', '<u4'), ('conjugate', 'u1')])
 
+        # Construct the equivalent prod and stack index_map for the telescope instance
+        dt_prod = np.dtype([('input_a', '<u2'), ('input_b', '<u2')])
+        self.bt_prod = (np.array(np.triu_indices(self.telescope.nfeed))
+                        .astype('<u2').T.copy().view(dt_prod).reshape(-1))
+
+
 
     def process(self, ss):
         """Select and reorder the products.
@@ -208,10 +214,6 @@ class CollateProducts(task.SingleTask):
 
         bt_freq = ss.index_map['freq'][freq_ind]
 
-        # Construct the equivalent prod and stack index_map for the telescope instance
-        dt_prod = np.dtype([('input_a', '<u2'), ('input_b', '<u2')])
-        bt_prod = np.array(np.triu_indices(self.telescope.nfeed)).astype('<u2').T.copy().view(dt_prod).reshape(-1)
-
         # Construct the equivalent stack reverse_map for the telescope instance.  Note
         # that we identify invalid products here using an index that is the size of the stack axis.
         feedmask = pack_product_array(self.telescope.feedmask)
@@ -226,7 +228,7 @@ class CollateProducts(task.SingleTask):
         else:
             OutputContainer = containers.TimeStream
 
-        sp = OutputContainer(freq=bt_freq, input=bt_keys, prod=bt_prod,
+        sp = OutputContainer(freq=bt_freq, input=bt_keys, prod=self.bt_prod,
                              stack=self.bt_stack, reverse_map_stack=bt_rev,
                              axes_from=ss, attrs_from=ss, distributed=True, comm=ss.comm)
 
