@@ -5,6 +5,8 @@ Miscellaneous tasks should be placed in :module:`draco.core.misc`.
 
 import numpy as np
 
+from ._fast_tools import _calc_redundancy
+
 
 def cmap(i, j, n):
     """Given a pair of feed indices, return the pair index.
@@ -210,32 +212,18 @@ def calculate_redundancy(input_flags, prod_map, stack_index, nstack):
         with good inputs that were stacked into each unique baseline.
 
     """
-
-    from collections import Counter
-
     ninput, ntime = input_flags.shape
     redundancy = np.zeros((nstack, ntime), dtype=np.float32)
 
-    # Check if we were actually setting the input flags.
-    if np.any(input_flags):
+    if not np.any(input_flags):
+        input_flags = np.ones_like(input_flags)
 
-        # Loop over all products
-        for istack, prod in zip(stack_index, prod_map):
+    input_flags = np.ascontiguousarray(input_flags)
+    pm = np.ascontiguousarray(prod_map.view(np.int16).reshape(-1, 2))
+    stack_index = np.ascontiguousarray(stack_index)
 
-            # Make sure stack index is positive and less than the number of unique baselines.
-            # Negative index or index with large value can indicate a product was
-            # not included in the stack.
-            if (istack >= 0) and (istack < nstack):
-
-                # Increment the redundancy counter for this unique baseline if both inputs good
-                redundancy[istack, :] += np.minimum(input_flags[prod[0], :], input_flags[prod[1], :])
-
-    else:
-
-        # Input flags were not being set at this time.  Assume all inputs are good.
-        for istack, count in Counter(stack_index).iteritems():
-
-            if (istack >= 0) and (istack < nstack):
-                redundancy[istack, :] = count
+    # Call fast cython function to do calculation
+    _calc_redundancy(input_flags, pm, stack_index.copy(), nstack, redundancy)
 
     return redundancy
+

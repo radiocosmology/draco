@@ -7,6 +7,8 @@ cimport cython
 import numpy as np
 cimport numpy as np
 
+from libc.stdint cimport int16_t, uint32_t
+
 cdef inline int int_max(int a, int b) nogil: return a if a >= b else b
 
 
@@ -80,3 +82,68 @@ def _unpack_product_array_fast(cython.numeric[::1] utv, cython.numeric[:, ::1] m
             pi = (nfeed * (nfeed+1) / 2) - ((nfeed-fi) * (nfeed-fi + 1) / 2) + (fj - fi)
 
             mat[i, j] = utv[pi].conjugate()
+
+
+
+@cython.boundscheck(False)
+@cython.wraparound(False)
+def _calc_redundancy(float[:, ::1] input_flags, int16_t[:, ::1] prod_map, uint32_t[::1] stack_index,
+                     int nstack, float[:, ::1] redundancy):
+    """Quickly calculate redundancy.
+
+    Parameters
+    ----------
+    input_flags : np.ndarray[input, time]
+        The input flags. Must be zeros or ones.
+    prod_map : np.ndarray[prod, 2]
+        The product map.
+    stack_index : np.ndarray[prod]
+        The stack map.
+    nstack : int
+        Number of stacks.
+    redundancy : np.ndarray[nstack, ntime]
+        Array in which to fill out the redundancy of each stack.
+    """
+    
+    cdef int istack
+    cdef int ia, ib
+    cdef int ii, jj
+    
+    cdef int ninput = input_flags.shape[0]
+    cdef int ntime = input_flags.shape[1]
+
+    cdef int nt
+    
+    # Check the array shapes
+    # Need to construct rshape as redundancy.shape, has extra entries as it's of a memoryview
+    rshape = (redundancy.shape[0], redundancy.shape[1])
+    if rshape != (nstack, ntime):
+        raise RuntimeError("redundancy array shape %s incorrect, expected %s" %
+                           (repr(rshape), repr((nstack, ntime))))
+        
+    # Check that we don't index out of bounds from the prod_map
+    if np.min(prod_map) < 0 or np.max(prod_map) >= ninput:
+        raise RuntimeError("Input index in prod_map out of bounds.")
+
+    with nogil:
+
+        # Loop over all products
+        for ii in range(prod_map.shape[0]):
+
+            istack = stack_index[ii]
+            ia = prod_map[ii, 0]
+            ib = prod_map[ii, 1]
+
+            # Make sure stack index is positive and less than the number of unique baselines.
+            # Negative index or index with large value can indicate a product was
+            # not included in the stack.
+            if not ((istack >= 0) and (istack < nstack)):
+                continue
+
+            # Fill out the redundancy array
+            # This loop could be OpenMP parallelised, but ntime is typically so small the overhead isn't worth it.
+            for jj in range(ntime):
+
+                # Increment the redundancy counter for this unique baseline if both inputs good
+                redundancy[istack, jj] += input_flags[ia, jj] * input_flags[ib, jj]
+
