@@ -13,9 +13,10 @@ Tasks
 
 import numpy as np
 
-from caput import config, mpiarray
+from caput import config, mpiarray, pipeline
+from ch_util import ephemeris
 
-from ..core import containers, task
+from ..core import containers, task, io
 
 SOLAR_SEC_PER_DAY = 86400.
 
@@ -72,9 +73,7 @@ class BaseGains(task.SingleTask):
 
     def _generate_gain(self, time, freq):
 
-        def _gain_hook(self):
-            """This can be implemented in child classes"""
-            pass
+        self._gain_hook(time)
 
         gain_amp = 1.0
         gain_phase = 0.0
@@ -89,6 +88,18 @@ class BaseGains(task.SingleTask):
         gain_comb = gain_amp * np.exp(1.0J * gain_phase)
 
         return gain_comb
+
+    def _gain_hook(self, time):
+        """This hook function is intended to be able to generate stuff for
+        both amplitude and phase. Can be implemented in child classes but must not.
+
+        Parameters:
+        -----------
+        time : np.ndarray
+            Generate whatever you need for both amplitude and phase for time
+            period given.
+        """
+        pass
 
     def _corr_func(self, zeta, amp):
         """This generates the correlation function
@@ -311,14 +322,31 @@ class RandomGains(BaseGains):
 
 
 class GainStacker(task.SingleTask):
-    """Take sidereal gain data, make products and stack them up"""
+    r"""Take sidereal gain data, make products and stack them up.
+
+    Attributes
+    ----------
+    only_gains : bool
+        Whether to return only the stacked gains or the stacked gains
+        mulitplied with the vis. Default: False.
+
+    Notes
+    -----
+    This task generates products of gain time streams for every day and stacks
+    them up.
+
+    Gain stack
+
+    .. math::
+        G_{ij} = \sum_{a} g_{i}(t)^{a} g_j(t)^{*a}
+    """
+
+    only_gains = config.Property(default=False, proptype=bool)
 
     gain_stack = None
     lsd_list = None
 
     def setup(self, stream):
-        #stream could be sstream or tstream
-        print("Setting up GainStacker")
         self.stream = stream
 
     def process(self, gain):
@@ -328,6 +356,11 @@ class GainStacker(task.SingleTask):
         ----------
         gain : containers.SiderealGainData or containers.GainData
             Individual sidereal or time ordered gain data
+
+        Returns
+        -------
+        gain_stack : containers.TimeStream or containers.SiderealStream
+            Stacked products of gains.
         """
 
         stream = self.stream
@@ -344,16 +377,17 @@ class GainStacker(task.SingleTask):
         input_lsd = _ensure_list(input_lsd)
 
         # If gain_stack is None create an MPIArray to hold the product expanded
-        # gain data redistribute over all freq
+        # gain data and redistribute over all freq
         if self.gain_stack is None:
 
             self.gain_stack = containers.empty_like(stream)
             self.gain_stack.redistribute('freq')
 
             for pi, (fi, fj) in enumerate(prod):
-                self.gain_stack.vis[:, pi] = gain.gain[:, fi] * np.conjugate(gain.gain[:, fj])
+                self.gain_stack.vis[:, pi, :] = gain.gain[:, fi, :] * np.conjugate(gain.gain[:, fj, :])
 
-            self.gain_stack.weight[:] = np.ones(self.gain_stack.vis.global_shape)
+            # Creating a counter to increment during stacking
+            self.counter = np.ones(self.gain_stack.vis.local_shape)
 
             self.lsd_list = input_lsd
 
@@ -363,34 +397,44 @@ class GainStacker(task.SingleTask):
 
         # Keep gains around for next round, save current lsd to list, log
         self.log.info("Adding LSD:%i to gain stack", gain.attrs['lsd'])
+
         # Calculate the gain products
         for pi, (fi, fj) in enumerate(prod):
             self.gain_stack.vis[:, pi] += (gain.gain[:, fi] * np.conjugate(gain.gain[:, fj]))
 
-        self.gain_stack.weight[:] += np.ones(self.gain_stack.vis.global_shape)
+        self.counter += np.ones(self.gain_stack.vis.local_shape)
 
         self.lsd_list += input_lsd
 
     def process_finish(self):
-        """Multiply summed gain with sidereal streamself.
+        """Multiply summed gain with sidereal stream.
 
         Returns
         -------
         data : containers.SiderealStream or containers.TimeStream
             Stack of sidereal data with gain applied.
         """
+        # If requested, or shapes of visibilties and gain stack don't match
+        # just return stack
+        if (self.stream.vis[:].shape[-1] != self.gain_stack.vis[:].shape[-1]) or self.only_gains:
+            self.log.info("Saving only gain stack - either by request or shapes of visibilites and gain stack do not match")
+
+            self.gain_stack.vis[:] = (self.gain_stack.vis[:] / self.counter)
+
+            return self.gain_stack
 
         data = containers.empty_like(self.stream)
         data.redistribute('freq')
 
-        for ii in range(0, data.vis.shape[1], 128):
-            self.gain_stack.vis[:, ii:ii + 128] = (self.gain_stack.vis[:, ii:ii + 128] / self.gain_stack.weight[:, ii:ii + 128])
-            data.vis[:, ii:ii + 128] = self.stream.vis[:, ii:ii + 128] * self.gain_stack.vis[:, ii:ii + 128]
+        self.gain_stack.vis[:] = (self.gain_stack.vis[:] / self.counter)
+        data.vis[:] = self.stream.vis[:] * self.gain_stack.vis[:]
 
-        data.attrs['lsd'] = np.array(self.lsd_list)
-        data.attrs['tag'] = 'gain_error_stack'
+        # for ii in range(0, data.vis.shape[1], 128):
+        #    self.gain_stack.vis[:, ii:ii + 128] = (self.gain_stack.vis[:, ii:ii + 128] / self.counter[:, ii:ii + 128])
+        #    data.vis[:, ii:ii + 128] = self.stream.vis[:, ii:ii + 128] * self.gain_stack.vis[:, ii:ii + 128]
 
-        print("Finishing task Gainstacker")
+        data.attrs['tag'] = 'gain_stack'
+        data.attrs['counter'] = self.counter
 
         return data
 
