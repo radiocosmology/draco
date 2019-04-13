@@ -49,6 +49,8 @@ import numpy as np
 
 from caput import memh5, tod
 
+import bitshuffle.h5
+
 
 class ContainerBase(memh5.BasicCont):
     """A base class for pipeline containers.
@@ -103,10 +105,11 @@ class ContainerBase(memh5.BasicCont):
     def __init__(self, *args, **kwargs):
 
         # Pull out the values of needed arguments
-        axes_from = kwargs.pop("axes_from", None)
-        attrs_from = kwargs.pop("attrs_from", None)
-        dist = kwargs.pop("distributed", True)
-        comm = kwargs.pop("comm", None)
+        axes_from = kwargs.pop('axes_from', None)
+        attrs_from = kwargs.pop('attrs_from', None)
+        dist = kwargs.pop('distributed', True)
+        comm = kwargs.pop('comm', None)
+        self.allow_chunked = kwargs.pop('allow_chunked', False)
 
         # Run base initialiser
         memh5.BasicCont.__init__(self, distributed=dist, comm=comm)
@@ -207,8 +210,13 @@ class ContainerBase(memh5.BasicCont):
         dspec = self.dataset_spec[name]
 
         # Fetch dataset properties
-        axes = dspec["axes"]
-        dtype = dspec["dtype"]
+        axes = dspec['axes']
+        dtype = dspec['dtype']
+        chunks, compression, compression_opts = None, None, None
+        if self.allow_chunked:
+            chunks = dspec.get('chunks', None)
+            compression = dspec.get('compression', None)
+            compression_opts = dspec.get('compression_opts', None)
 
         # Get distribution properties
         dist = (
@@ -234,10 +242,17 @@ class ContainerBase(memh5.BasicCont):
         )
         dist_axis = list(axes).index(dist_axis)
 
+        # Check chunk dimensions are consistent with axis
+        if chunks is not None:
+            final_chunks = ()
+            for i, l in enumerate(shape):
+                final_chunks += (min(chunks[i], l),)
+            chunks = final_chunks
+
         # Create dataset
-        dset = self.create_dataset(
-            name, shape=shape, dtype=dtype, distributed=dist, distributed_axis=dist_axis
-        )
+        dset = self.create_dataset(name, shape=shape, dtype=dtype, distributed=dist,
+                                   distributed_axis=dist_axis, chunks=chunks,
+                                   compression=compression, compression_opts=compression_opts)
 
         dset.attrs["axis"] = np.array(axes)
 
@@ -517,12 +532,15 @@ class SiderealStream(ContainerBase):
     _axes = ("freq", "prod", "stack", "input", "ra")
 
     _dataset_spec = {
-        "vis": {
-            "axes": ["freq", "stack", "ra"],
-            "dtype": np.complex64,
-            "initialise": True,
-            "distributed": True,
-            "distributed_axis": "freq",
+        'vis': {
+            'axes': ['freq', 'stack', 'ra'],
+            'dtype': np.complex64,
+            'initialise': True,
+            'distributed': True,
+            'distributed_axis': 'freq',
+            'compression': bitshuffle.h5.H5FILTER,
+            'compression_opts': (0, bitshuffle.h5.H5_COMPRESS_LZ4),
+            'chunks': (64, 256, 128)
         },
         "vis_weight": {
             "axes": ["freq", "stack", "ra"],
@@ -822,12 +840,15 @@ class TrackBeam(ContainerBase):
     _axes = ("freq", "pol", "input", "pix")
 
     _dataset_spec = {
-        "beam": {
-            "axes": ["freq", "pol", "input", "pix"],
-            "dtype": np.complex64,
-            "initialise": True,
-            "distributed": True,
-            "distributed_axis": "freq",
+        'beam': {
+            'axes': ['freq', 'pol', 'input', 'pix'],
+            'dtype': np.complex64,
+            'initialise': True,
+            'distributed': True,
+            'distributed_axis': 'freq',
+            'compression': bitshuffle.h5.H5FILTER,
+            'compression_opts': (0, bitshuffle.h5.H5_COMPRESS_LZ4),
+            'chunks': (128, 2, 128, 128)
         },
         "weight": {
             "axes": ["freq", "pol", "input", "pix"],
