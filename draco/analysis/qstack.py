@@ -358,7 +358,7 @@ class QuasarStack(task.SingleTask):
         def _sig(pp, freq, dec):
             """
             """
-            sig_amps = [14.71659607, 9.77384199]
+            sig_amps = [14.87857614, 9.95746878]
             return sig_amps[pp]/freq/np.cos(dec)
     
         def _amp(pp, dec, zenith):
@@ -367,18 +367,18 @@ class QuasarStack(task.SingleTask):
             def _flat_top_gauss6(x, A, sig, x0):
                 """Flat-top gaussian. Power of 6."""
                 return A*np.exp(-abs((x-x0)/sig)**6)
-            def _flat_top_gauss4(x, A, sig, x0):
-                """Flat-top gaussian. Power of 4."""
+            def _flat_top_gauss3(x, A, sig, x0):
+                """Flat-top gaussian. Power of 3."""
                 return A*np.exp(-abs((x-x0)/sig)**3)
-   
-            prm_ns_x = np.array([9.97981768e-01, 1.29544939e+00, -2.97276017e-10])
-            prm_ns_y = np.array([9.86421042e-01, 8.10213318e-01, 5.02940049e-08])
+
+            prm_ns_x = np.array([9.97981768e-01, 1.29544939e+00, 0.])
+            prm_ns_y = np.array([9.86421047e-01, 8.10213326e-01, 0.])
 
             if pp==0:
                 return _flat_top_gauss6(dec - (0.5 * np.pi - zenith), *prm_ns_x)
             else:
-                return _flat_top_gauss4(dec - (0.5 * np.pi - zenith), *prm_ns_y)
-        
+                return _flat_top_gauss3(dec - (0.5 * np.pi - zenith), *prm_ns_y)
+
         ha0 = 0.
         return _amp(pol, dec, zenith)*np.exp(-((ha-ha0)/_sig(pol, freq, dec))**2)
 
