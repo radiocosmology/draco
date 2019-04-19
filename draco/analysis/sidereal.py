@@ -39,7 +39,7 @@ class SiderealGrouper(task.SingleTask):
         getting rid of interpolation artifacts.
     """
 
-    padding = config.Property(proptype=float, default=0.005)
+    padding = config.Property(proptype=float, default=0.)
 
     def __init__(self):
         super(SiderealGrouper, self).__init__()
@@ -76,15 +76,15 @@ class SiderealGrouper(task.SingleTask):
         """
 
         # Get the start and end LSDs of the file
-        lsd_start = int(self.observer.unix_to_lsd(tstream.time[0]))
-        lsd_end = int(self.observer.unix_to_lsd(tstream.time[-1]))
+        lsd_start = int(self.observer.unix_to_lsd(tstream.time[0] - self.padding))
+        lsd_end = int(self.observer.unix_to_lsd(tstream.time[-1] + self.padding))
 
         # If current_lsd is None then this is the first time we've run
         if self._current_lsd is None:
             self._current_lsd = lsd_start
 
         # If this file started during the current lsd add it onto the list
-        if self._current_lsd == lsd_start:
+        if self._current_lsd  == lsd_start:
             self._timestream_list.append(tstream)
 
         self.log.info("Adding file into group for LSD:%i", lsd_start)

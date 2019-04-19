@@ -180,8 +180,9 @@ class SiderealGains(BaseGains):
         self.samples_per_file = int(sid_sec_per_day / self.approx_integration_time)
         self.integration_time = sid_sec_per_day / self.samples_per_file
 
-        print("Sidereal period requested for this simulation",
-               int(self.lsd_start), int(self.lsd_end))
+        self.log.info("Sidereal period requested for this simulation",
+                       int(self.lsd_start), int(self.lsd_end))
+
         # Initialize the current lsd time
         self._current_lsd = None
         self.sstream = sstream
@@ -373,7 +374,6 @@ class GainStacker(task.SingleTask):
         else:
             input_lsd = -1
 
-        print("Stacking input lsd %i" % input_lsd)
         input_lsd = _ensure_list(input_lsd)
 
         # If gain_stack is None create an MPIArray to hold the product expanded
@@ -387,7 +387,8 @@ class GainStacker(task.SingleTask):
                 self.gain_stack.vis[:, pi, :] = gain.gain[:, fi, :] * np.conjugate(gain.gain[:, fj, :])
 
             # Creating a counter to increment during stacking
-            self.counter = np.ones(self.gain_stack.vis.local_shape)
+            # self.counter = np.ones(self.gain_stack.vis.local_shape)
+            self.gain_stack.weight[:] = np.ones(self.gain_stack.vis.local_shape)
 
             self.lsd_list = input_lsd
 
@@ -402,7 +403,8 @@ class GainStacker(task.SingleTask):
         for pi, (fi, fj) in enumerate(prod):
             self.gain_stack.vis[:, pi] += (gain.gain[:, fi] * np.conjugate(gain.gain[:, fj]))
 
-        self.counter += np.ones(self.gain_stack.vis.local_shape)
+        # self.counter += np.ones(self.gain_stack.vis.local_shape)
+        self.gain_stack.weight[:] += np.ones(self.gain_stack.vis.local_shape)
 
         self.lsd_list += input_lsd
 
@@ -419,14 +421,14 @@ class GainStacker(task.SingleTask):
         if (self.stream.vis[:].shape[-1] != self.gain_stack.vis[:].shape[-1]) or self.only_gains:
             self.log.info("Saving only gain stack - either by request or shapes of visibilites and gain stack do not match")
 
-            self.gain_stack.vis[:] = (self.gain_stack.vis[:] / self.counter)
+            self.gain_stack.vis[:] = (self.gain_stack.vis[:] / self.gain_stack.weight[:])
 
             return self.gain_stack
 
         data = containers.empty_like(self.stream)
         data.redistribute('freq')
 
-        self.gain_stack.vis[:] = (self.gain_stack.vis[:] / self.counter)
+        self.gain_stack.vis[:] = (self.gain_stack.vis[:] / self.gain_stack.weight[:])
         data.vis[:] = self.stream.vis[:] * self.gain_stack.vis[:]
 
         # for ii in range(0, data.vis.shape[1], 128):
@@ -434,7 +436,7 @@ class GainStacker(task.SingleTask):
         #    data.vis[:, ii:ii + 128] = self.stream.vis[:, ii:ii + 128] * self.gain_stack.vis[:, ii:ii + 128]
 
         data.attrs['tag'] = 'gain_stack'
-        data.attrs['counter'] = self.counter
+        # data.attrs['counter'] = self.counter
 
         return data
 
