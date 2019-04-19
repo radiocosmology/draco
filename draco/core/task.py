@@ -11,10 +11,11 @@ Tasks
     ReturnFirstInputOnFinish
 """
 import os
-
-from caput import pipeline, config
-
 import logging
+
+import numpy as np
+
+from caput import pipeline, config, memh5
 
 
 class MPILogFilter(logging.Filter):
@@ -239,6 +240,12 @@ class SingleTask(MPILoggedTask, pipeline.BasicContMixin):
     output_root : string
         Pipeline settable parameter giving the first part of the output path.
         If set to 'None' no output is written.
+    nan_check : bool
+        Check the output for NaNs (and infs) logging if they are present.
+    nan_dump : bool
+        If NaN's are found, dump the container to disk.
+    nan_skip : bool
+        If NaN's are found, don't pass on the output.
 
     Methods
     -------
@@ -254,6 +261,10 @@ class SingleTask(MPILoggedTask, pipeline.BasicContMixin):
 
     save = config.Property(default=False, proptype=bool)
     output_root = config.Property(default='', proptype=str)
+
+    nan_check = config.Property(default=True, proptype=bool)
+    nan_skip = config.Property(default=True, proptype=bool)
+    nan_dump = config.Property(default=True, proptype=bool)
 
     _count = 0
 
@@ -312,6 +323,9 @@ class SingleTask(MPILoggedTask, pipeline.BasicContMixin):
         if 'tag' not in output.attrs and len(input) > 0 and 'tag' in input[0].attrs:
             output.attrs['tag'] = input[0].attrs['tag']
 
+        # Check for NaN's etc
+        output = self._nan_process_output(output)
+
         # Write the output if needed
         self._save_output(output)
 
@@ -330,6 +344,9 @@ class SingleTask(MPILoggedTask, pipeline.BasicContMixin):
 
         try:
             output = self.process_finish()
+
+            # Check for NaN's etc
+            output = self._nan_process_output(output)
 
             # Write the output if needed
             self._save_output(output)
@@ -357,7 +374,76 @@ class SingleTask(MPILoggedTask, pipeline.BasicContMixin):
             outfile = os.path.expanduser(outfile)
             outfile = os.path.expandvars(outfile)
 
+            self.log.debug("Writing output %s to disk.", outfile)
             self.write_output(outfile, output)
+
+
+    def _nan_process_output(self, output):
+        # Process the output to check for NaN's
+        # Returns the output or, None if it should be skipped
+
+        if self.nan_check:
+            nan_found = self._nan_check_walk(output)
+
+            if nan_found and self.nan_dump:
+
+                # Construct the filename
+                tag = output.attrs['tag'] if 'tag' in output.attrs else self._count
+                outfile = "nandump_" + self.__class__.__name__ + "_" +  str(tag) + '.h5'
+                self.log.debug("NaN found. Dumping %s", outfile)
+                self.write_output(outfile, output)
+
+            if nan_found and self.nan_skip:
+                self.log.debug("NaN found. Skipping output.")
+                return None
+
+        return output
+
+    def _nan_check_walk(self, cont):
+        # Walk through a memh5 container and check for NaN's and Inf's.
+        # Logs any issues found and returns True if there were any found.
+        from mpi4py import MPI
+
+        if isinstance(cont, memh5.MemDiskGroup):
+            cont = cont._data
+
+        stack = [cont]
+        found = False
+
+        # Walk over the container tree...
+        while stack:
+            n = stack.pop()
+
+            # Check the dataset for non-finite numbers
+            if isinstance(n, memh5.MemDataset):
+
+                # Try to test for NaN's and infs. This will fail for compound datatypes...
+                arr = n[:]
+                try:
+                    is_nan = np.isnan(arr)
+                    is_inf = np.isinf(arr)
+                    arr = n[:]
+                except TypeError:
+                    continue
+
+                if is_nan.any():
+                    self.log.info("NaN's found in dataset %s [%i of %i elements]",
+                                  n.name, is_nan.sum(), arr.size)
+                    found = True
+
+                if is_inf.any():
+                    self.log.info("Inf's found in dataset %s [%i of %i elements]",
+                                  n.name, is_inf.sum(), arr.size)
+                    found = True
+
+            elif isinstance(n, (memh5.MemGroup, memh5.MemDiskGroup)):
+                for item in n.values():
+                    stack.append(item)
+
+        # All ranks need to know if any rank found a NaN/Inf
+        found = self.comm.allreduce(found, op=MPI.MAX)
+
+        return found
 
 
 class ReturnLastInputOnFinish(SingleTask):
