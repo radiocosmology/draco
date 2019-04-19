@@ -41,7 +41,7 @@ mock catalogs. Below is an example of yaml file to generate mock catalogs:
 ...             out:    selfunc
 ... 
 ...         -   type:     draco.synthesis.mockcatalog.PdfGenerator
-...             params:   h1_params
+...             params:   pdf_params
 ...             requires: selfunc
 ...             out:      pdf_map
 ... 
@@ -54,8 +54,8 @@ mock catalogs. Below is an example of yaml file to generate mock catalogs:
 ...     bqcat_path: '/bg01/homescinet/k/krs/jrs65/sdss_quasar_catalog.h5'
 ...     nside: 16
 ... 
-... h1_params:
-...     h1maps_path: '/scratch/k/krs/fandino/xcorrSDSS/sim21cm/21cmmap.hdf5'
+... pdf_params:
+...     qsomaps_path: '/scratch/k/krs/fandino/xcorrSDSS/sim21cm/21cmmap.hdf5'
 ... 
 ... mqcat_params:
 ...     nqsos: 200000
@@ -77,9 +77,7 @@ from cora.util import units
 from caput import config
 from caput import mpiarray, mpiutil
 from ..core import task, containers
-
-# For easy access to MPI namespace
-MPI_ = mpiutil.MPI
+from mpi4py import MPI
 
 
 # Pipeline tasks
@@ -219,63 +217,58 @@ class SelFuncEstimator(task.SingleTask):
 
 
 class PdfGenerator(task.SingleTask):
-    """Take a quasar catalog selection function and simulated HI maps
-    and return a PDF map correlated with the HI maps and the selection
-    function. This PDF maps can be used by the task 
-    :class:`MockQCatGenerator` to draw mock catalogs.
+    """Take a quasar catalog selection function and simulated Quasar
+    (biased density) maps and return a PDF map correlated with the 
+    density maps and the selection function. This PDF map can be used 
+    by the task :class:`MockQCatGenerator` to draw mock catalogs.
 
     Attributes
     ----------
-    h1maps_path : str
-        Full path to simulated HI maps.
-    qso_bias_prm : float
-        Quasar bias. So far only suports a single bias parameter for
-        all redshifts.
-    
+    qsomaps_path : str
+        Full path to simulated QSO maps.
+    random_catalog : bool
+        Is True generate random catalogs, not correlated with the maps.
+        Default is False.
+
     """
 
-    h1maps_path = config.Property(proptype=str)
-    qso_bias_prm = config.Property(proptype=float, default=1.)
+    qsomaps_path = config.Property(proptype=str)
+    random_catalog = config.Property(proptype=bool, default=False)
 
     def setup(self,selfunc):
         """
         """
         self.selfunc = selfunc
 
-        # Load H1 CORA maps from file:
-        h1maps = containers.Map.from_file(self.h1maps_path,distributed=True)
-	# To make a random (not correlated) catalog
-	#h1maps.map[:] = np.zeros_like(h1maps.map)
+        # Load QSO CORA maps from file:
+        qsomaps = containers.Map.from_file(self.qsomaps_path,distributed=True)
+        if self.random_catalog:
+            # To make a random (not correlated) catalog
+	    qsomaps.map[:] = np.zeros_like(qsomaps.map)
 
-        n_px = h1maps.map.shape[2]
-        n_side = hp.pixelfunc.npix2nside(n_px) # NSIDE of CORA maps
-        freq = h1maps.freq
-        ls = h1maps.map.local_shape[0]
-        lo = h1maps.map.local_offset[0]
-
-        self.h1maps = h1maps # Setter sets other parameters too
+        self.qsomaps = qsomaps # Setter sets other parameters too
 
         # For easy access to communicator:
-        self.comm_ = self.h1maps.comm
+        self.comm_ = self.qsomaps.comm
         self.rank = self.comm_.Get_rank() # Unused for now
 
     def process(self):
         """
         """
         # From frequency to redshift:
-        z = _freq_to_z(self.h1maps.freq)
+        z = _freq_to_z(self.qsomaps.freq)
         n_z = len(z)
     
         # Freq to redshift of selection function:
         z_selfunc = _freq_to_z(self.selfunc.freq)
 
         # Re-distribute maps in pixels:
-        self.h1maps.redistribute(dist_axis=2)
+        self.qsomaps.redistribute(dist_axis=2)
 
 
         # TODO: Change h1maps for something more generic, like density_maps
 
-        rho_m = mpiarray.MPIArray.wrap(self.h1maps.map[:,0,:]+1.,axis=1)
+        rho_m = mpiarray.MPIArray.wrap(self.qsomaps.map[:,0,:]+1.,axis=1)
  
 
         # Re-distribute in frequencies before normalizing 
@@ -288,7 +281,7 @@ class PdfGenerator(task.SingleTask):
         rho_m = mpiarray.MPIArray.wrap( rho_m 
                         / np.mean(rho_m,axis=1)[:,np.newaxis],axis=0)
 
-        # Resizing the selection function to match the voxel size of the H1
+        # Resizing the selection function to match the voxel size of the
         # CORA maps by hand. Result is distributed in axis 0.
         resized_selfunc = self._resize_map(self.selfunc.map[:,0,:],
                                   rho_m.global_shape,z,z_selfunc)
@@ -316,7 +309,7 @@ class PdfGenerator(task.SingleTask):
 
         # Put PDF in a map container:
         pdf_map = containers.Map(nside=self._nside,
-                             polarisation=False,freq=self.h1maps.freq)
+                             polarisation=False,freq=self.qsomaps.freq)
 
         # I am not sure I need this test every time:
         if pdf_map['map'].local_offset[0] == pdf.local_offset[0] :
@@ -371,27 +364,27 @@ class PdfGenerator(task.SingleTask):
 
 
     @property
-    def h1maps(self):
-        return self._h1maps
+    def qsomaps(self):
+        return self._qsomaps
 
-    @h1maps.setter
-    def h1maps(self,h1maps):
+    @qsomaps.setter
+    def qsomaps(self,qsomaps):
         """
-        Setter for h1maps
+        Setter for qsomaps
         Also set the attributes:
-            self._npix : Number of pixels in CORA H1maps 
-            self._nside : NSIDE of CORA H1 maps
+            self._npix : Number of pixels in CORA QSO maps 
+            self._nside : NSIDE of CORA QSO maps
 
         """
-        if isinstance(h1maps,containers.Map):
-            self._h1maps = h1maps
-            self._npix = len(self._h1maps.index_map['pixel'])
+        if isinstance(qsomaps,containers.Map):
+            self._qsomaps = qsomaps
+            self._npix = len(self._qsomaps.index_map['pixel'])
             self._nside = hp.pixelfunc.npix2nside(self._npix)
         else:
             msg = (
-                "h1maps is not an instance of "
+                "qsomaps is not an instance of "
                 + "draco.core.containers.Map\n"
-                + "Value for _h1maps not set." )
+                + "Value for _qsomaps not set." )
             print msg
 
 
@@ -441,7 +434,7 @@ class MockQCatGenerator(task.SingleTask):
         # Gather z_wheights on rank 0 (necessary to draw a redshift 
         # distribution of quasars):
         self.comm_.Gatherv(z_wheights,[self.global_z_wheights,
-                tuple(self.ls_list),tuple(self.lo_list),MPI_.DOUBLE],root=0)
+                tuple(self.ls_list),tuple(self.lo_list),MPI.DOUBLE],root=0)
 
         # CDF to draw quasars from:
         self.cdf = np.cumsum(self.pdf.map[:,0,:],axis=1)
@@ -467,7 +460,7 @@ class MockQCatGenerator(task.SingleTask):
         # Need to pass tuples. For some reason lists don't work.
         # qso_numbers has shape (self.ls)
         self.comm_.Scatterv([global_qso_numbers,tuple(self.ls_list),
-                                tuple(self.lo_list),MPI_.DOUBLE], qso_numbers)
+                                tuple(self.lo_list),MPI.DOUBLE], qso_numbers)
 
         # Generate random numbers to assign voxels. 
         # Shape: [self.ls=local # of z-bins][# of qsos in each z-bin]
@@ -532,15 +525,15 @@ class MockQCatGenerator(task.SingleTask):
         dspls = tuple(np.insert(arr=np.cumsum(nqso_tuple)[:-1],
                      obj=0,values=0.))
         # Gather redshifts
-        recvbuf = [mock_zs_full,nqso_tuple,dspls,MPI_.DOUBLE]
+        recvbuf = [mock_zs_full,nqso_tuple,dspls,MPI.DOUBLE]
         sendbuf = [mock_zs,len(mock_zs)]
         self.comm_.Allgatherv(sendbuf,recvbuf)
         # Gather theta
-        recvbuf = [mock_ra_full,nqso_tuple,dspls,MPI_.DOUBLE]
+        recvbuf = [mock_ra_full,nqso_tuple,dspls,MPI.DOUBLE]
         sendbuf = [mock_ra,len(mock_ra)]
         self.comm_.Allgatherv(sendbuf,recvbuf)
         # Gather phi
-        recvbuf = [mock_dec_full,nqso_tuple,dspls,MPI_.DOUBLE]
+        recvbuf = [mock_dec_full,nqso_tuple,dspls,MPI.DOUBLE]
         sendbuf = [mock_dec,len(mock_dec)]
         self.comm_.Allgatherv(sendbuf,recvbuf)
 
