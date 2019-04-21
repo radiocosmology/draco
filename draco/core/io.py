@@ -69,11 +69,11 @@ def _list_or_glob(files):
 
     if isinstance(files, str):
         files = sorted(glob.glob(files))
-        print files
     elif isinstance(files, list):
         pass
     else:
-        raise RuntimeError('Must be list or glob pattern.')
+        raise ValueError('Argument must be list or glob pattern, got %s'
+                         % repr(files))
 
     return files
 
