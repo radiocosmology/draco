@@ -569,7 +569,7 @@ class Regridder(task.SingleTask):
             self.start = times[0]
         if self.end is None:
             self.end = times[-1]
-        if (self.start < times[0] or self.end > times[1]):
+        if (self.start < times[0] or self.end > times[-1]):
             msg = "Start or end points for regridder fall outside bounds of input data."
             self.log.error(msg)
             raise RuntimeError(msg)

@@ -130,7 +130,7 @@ class GaussianNoise(task.SingleTask):
         # Construct and set the correct weights in place
         if self.set_weights:
             for lfi, fi in visdata.enumerate(0):
-                data.weight[lfi] = 0.5 / std**2
+                data.weight[fi] = 0.5 / std**2
 
         return data
 
