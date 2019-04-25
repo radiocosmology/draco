@@ -901,11 +901,11 @@ class MModes(ContainerBase):
         Array of weights for each point.
     """
 
-    _axes = ('m', 'msign', 'freq', 'prod', 'input')
+    _axes = ('m', 'msign', 'freq', 'prod', 'stack', 'input')
 
     _dataset_spec = {
         'vis': {
-            'axes': ['m', 'msign', 'freq', 'prod'],
+            'axes': ['m', 'msign', 'freq', 'stack'],
             'dtype': np.complex128,
             'initialise': True,
             'distributed': True,
@@ -913,7 +913,7 @@ class MModes(ContainerBase):
         },
 
         'vis_weight': {
-            'axes': ['m', 'msign', 'freq', 'prod'],
+            'axes': ['m', 'msign', 'freq', 'stack'],
             'dtype': np.float64,
             'initialise': True,
             'distributed': True,
