@@ -237,7 +237,8 @@ class QuasarStack(task.SingleTask):
         """
         onfeeds = (tools.is_array_on(self.telescope._feeds[ipt0]) and
                    tools.is_array_on(self.telescope._feeds[ipt1]))
-        if onfeeds:
+        # Do not include autos
+        if onfeeds and (ipt0!=ipt1):
             # Test for co-polarization
             xpol = (tools.is_array_x(self.telescope._feeds[ipt0]) and
                     tools.is_array_x(self.telescope._feeds[ipt1]))
