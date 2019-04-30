@@ -49,7 +49,8 @@ class BaseGains(task.SingleTask):
         -------
         gain : :class:`containers.GainData`
         """
-        data.redistribute('prod')
+        # Get input time grid
+        data.redistribute('freq')
 
         time = data.time
 
@@ -58,48 +59,28 @@ class BaseGains(task.SingleTask):
 
         self.ninput_local = gain_data.gain.local_shape[1]
         self.ninput_global = gain_data.gain.global_shape[1]
-        freq = data.index_map['freq']['centre'][:]
+        self.freq = data.index_map['freq']['centre'][:]
 
-        gain = self._generate_gain(time, freq)
+        gain_amp = 1.0
+        gain_phase = 0.0
+
+        if self.amp:
+            gain_amp = self._generate_amp(time)
+
+        if self.phase:
+            gain_phase = self._generate_phase(time)
+
+        # Combine into an overall gain fluctuation
+        gain_comb = gain_amp * np.exp(1.0J * gain_phase)
 
         # Copy the gain entries into the output container
-        gain = mpiarray.MPIArray.wrap(gain, axis=1)
+        gain = mpiarray.MPIArray.wrap(gain_comb, axis=1)
         gain_data.gain[:] = gain
 
         # Keep a reference to time around for the next round
         self._prev_time = time
 
         return gain_data
-
-    def _generate_gain(self, time, freq):
-
-        self._gain_hook(time)
-
-        gain_amp = 1.0
-        gain_phase = 0.0
-
-        if self.amp:
-            gain_amp = self._generate_amp(time, freq)
-
-        if self.phase:
-            gain_phase = self._generate_phase(time, freq)
-
-        # Combine into an overall gain fluctuation
-        gain_comb = gain_amp * np.exp(1.0J * gain_phase)
-
-        return gain_comb
-
-    def _gain_hook(self, time):
-        """This hook function is intended to be able to generate stuff for
-        both amplitude and phase. Can be implemented in child classes but must not.
-
-        Parameters:
-        -----------
-        time : np.ndarray
-            Generate whatever you need for both amplitude and phase for time
-            period given.
-        """
-        pass
 
     def _corr_func(self, zeta, amp):
         """This generates the correlation function
@@ -117,7 +98,7 @@ class BaseGains(task.SingleTask):
 
         return _cf
 
-    def _generate_amp(self, time, freq):
+    def _generate_amp(self, time):
         """Generate phase gain errors.
 
         This implementation is blank. Must be overriden.
@@ -126,12 +107,10 @@ class BaseGains(task.SingleTask):
         -----------
         time : np.ndarray
             Generate amplitude fluctuations for this time period.
-        freq : np.ndarray
-            Frequencies from data for which to generate gain fluctuations.
             """
         raise NotImplementedError
 
-    def _generate_phase(self,  time, freq):
+    def _generate_phase(self,  time):
         """Generate phase gain errors.
 
         This implementation is blank. Must be overriden.
@@ -140,8 +119,6 @@ class BaseGains(task.SingleTask):
         -----------
         time : np.ndarray
            Generate phase fluctuations for this time period.
-        freq : np.ndarray
-            Frequencies from data for which to generate gain fluctuations.
         """
         raise NotImplementedError
 
@@ -218,9 +195,9 @@ class SiderealGains(BaseGains):
         # Distribute the sidereal data and create a time array
         data = self.sstream
         data.redistribute('prod')
-        freq = data.index_map['freq']['centre'][:]
+        self.freq = data.index_map['freq']['centre'][:]
         ra = np.linspace(0.0, 360.0, self.samples_per_file, endpoint=False)
-        time = np.linspace(unix_start, unix_end, self.samples_per_file)
+        time = np.linspace(unix_start, unix_end, self.samples_per_file, endpoint=False)
 
         # Make a sidereal gain data container
         gain_data = containers.SiderealGainData(axes_from=data, ra=ra)
@@ -229,10 +206,20 @@ class SiderealGains(BaseGains):
         self.ninput_local = gain_data.gain.local_shape[1]
         self.ninput_global = gain_data.gain.global_shape[1]
 
-        gain = self._generate_gain(time, freq)
+        gain_amp = 1.0
+        gain_phase = 0.0
+
+        if self.amp:
+            gain_amp = self._generate_amp(time)
+
+        if self.phase:
+            gain_phase = self._generate_phase(time)
+
+        # Combine into an overall gain fluctuation
+        gain_comb = gain_amp * np.exp(1.0J * gain_phase)
 
         # Copy the gain entries into the output container
-        gain = mpiarray.MPIArray.wrap(gain, axis=1)
+        gain = mpiarray.MPIArray.wrap(gain_comb, axis=1)
         gain_data.gain[:] = gain
         gain_data.attrs['lsd'] = self._current_lsd
         gain_data.attrs['tag'] = 'lsd_%i' % self._current_lsd
@@ -282,12 +269,12 @@ class RandomGains(BaseGains):
     _prev_amp = None
     _prev_phase = None
 
-    def _generate_amp(self, time, freq):
+    def _generate_amp(self, time):
 
         # Generate the correlation function
         cf_amp = self._corr_func(self.corr_length_amp, self.sigma_amp)
         ninput = self.ninput_local
-        num_realisations = len(freq) * ninput
+        num_realisations = len(self.freq) * ninput
         ntime = len(time)
 
         # Generate amplitude fluctuations
@@ -297,17 +284,17 @@ class RandomGains(BaseGains):
         # Save amplitude fluctuations to instannce
         self._prev_amp = gain_amp
 
-        gain_amp = gain_amp.reshape((len(freq), ninput, ntime))
+        gain_amp = gain_amp.reshape((len(self.freq), ninput, ntime))
         gain_amp = 1.0 + gain_amp
 
         return gain_amp
 
-    def _generate_phase(self, time, freq):
+    def _generate_phase(self, time):
 
         # Generate the correlation function
         cf_phase = self._corr_func(self.corr_length_phase, self.sigma_phase)
         ninput = self.input_local
-        num_realisations = len(freq) * ninput
+        num_realisations = len(self.freq) * ninput
         ntime = len(time)
 
         # Generate phase fluctuations
@@ -317,7 +304,7 @@ class RandomGains(BaseGains):
         # Save phase fluctuations to instannce
         self._prev_phase = gain_phase_fluc
         # Reshape to correct size
-        gain_phase_fluc = gain_phase_fluc.reshape((len(freq), ninput, ntime))
+        gain_phase_fluc = gain_phase_fluc.reshape((len(self.freq), ninput, ntime))
 
         return gain_phase_fluc
 
@@ -365,8 +352,7 @@ class GainStacker(task.SingleTask):
         """
 
         stream = self.stream
-        stream.redistribute('freq')
-        gain.redistribute('freq')
+
         prod = stream.index_map['prod']
 
         if 'lsd' in gain.attrs:
@@ -382,9 +368,13 @@ class GainStacker(task.SingleTask):
 
             self.gain_stack = containers.empty_like(stream)
             self.gain_stack.redistribute('freq')
+            gain.redistribute('freq')
 
-            for pi, (fi, fj) in enumerate(prod):
-                self.gain_stack.vis[:, pi, :] = gain.gain[:, fi, :] * np.conjugate(gain.gain[:, fj, :])
+            gsv = self.gain_stack.vis[:]
+            g = gain.gain[:]
+
+            for pi, (ii, jj) in enumerate(prod):
+                gsv[:, pi, :] = (g[:, ii] * np.conjugate(g[:, jj]))
 
             # Creating a counter to increment during stacking
             # self.counter = np.ones(self.gain_stack.vis.local_shape)
@@ -399,9 +389,13 @@ class GainStacker(task.SingleTask):
         # Keep gains around for next round, save current lsd to list, log
         self.log.info("Adding LSD:%i to gain stack", gain.attrs['lsd'])
 
+        gain.redistribute('freq')
+        gsv = self.gain_stack.vis[:]
+        g = gain.gain[:]
+
         # Calculate the gain products
-        for pi, (fi, fj) in enumerate(prod):
-            self.gain_stack.vis[:, pi] += (gain.gain[:, fi] * np.conjugate(gain.gain[:, fj]))
+        for pi, (ii, jj) in enumerate(prod):
+            gsv[:, pi] += (g[:, ii] * np.conjugate(g[:, jj]))
 
         # self.counter += np.ones(self.gain_stack.vis.local_shape)
         self.gain_stack.weight[:] += np.ones(self.gain_stack.vis.local_shape)
@@ -430,10 +424,7 @@ class GainStacker(task.SingleTask):
 
         self.gain_stack.vis[:] = (self.gain_stack.vis[:] / self.gain_stack.weight[:])
         data.vis[:] = self.stream.vis[:] * self.gain_stack.vis[:]
-
-        # for ii in range(0, data.vis.shape[1], 128):
-        #    self.gain_stack.vis[:, ii:ii + 128] = (self.gain_stack.vis[:, ii:ii + 128] / self.counter[:, ii:ii + 128])
-        #    data.vis[:, ii:ii + 128] = self.stream.vis[:, ii:ii + 128] * self.gain_stack.vis[:, ii:ii + 128]
+        data.weight[:] = self.stream.weight[:]
 
         data.attrs['tag'] = 'gain_stack'
         # data.attrs['counter'] = self.counter
