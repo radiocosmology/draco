@@ -432,7 +432,18 @@ class MModeTransform(task.SingleTask):
     """Transform a sidereal stream to m-modes.
 
     Currently ignores any noise weighting.
+
+    Attributes
+    ----------
+    set_telmmax : bool
+        Whether to slice the data at the maximum m the telescope can resolve
+        after fourier transforming. Default : false.
     """
+    set_telmmax = config.Property(proptype=bool, default=False)
+
+    def setup(self, manager):
+
+        self.telescope = io.get_telescope(manager)
 
     def process(self, sstream):
         """Perform the m-mode transform.
@@ -453,8 +464,13 @@ class MModeTransform(task.SingleTask):
         # variance for the m-modes
         weight_sum = sstream.weight[:].sum(axis=-1)
 
+        if self.set_telmmax is True:
+            setmmax = self.telescope.mmax
+        else:
+            setmmax = None
+
         # Construct the array of m-modes
-        marray = _make_marray(sstream.vis[:])
+        marray = _make_marray(sstream.vis[:], setmmax)
         marray = mpiarray.MPIArray.wrap(marray[:], axis=2, comm=sstream.comm)
 
         # Create the container to store the modes in
@@ -471,10 +487,10 @@ class MModeTransform(task.SingleTask):
         return ma
 
 
-def _make_marray(ts):
+def _make_marray(ts, mmax):
     # Construct an array of m-modes from a sidereal time stream
     mmodes = np.fft.fft(ts, axis=-1) / ts.shape[-1]
-    marray = _pack_marray(mmodes)
+    marray = _pack_marray(mmodes, mmax)
 
     return marray
 
