@@ -39,7 +39,7 @@ class SiderealGrouper(task.SingleTask):
         getting rid of interpolation artifacts.
     """
 
-    padding = config.Property(proptype=float, default=0.005)
+    padding = config.Property(proptype=float, default=0.)
 
     def __init__(self):
         super(SiderealGrouper, self).__init__()
@@ -75,9 +75,12 @@ class SiderealGrouper(task.SingleTask):
             the last file, otherwise returns :obj:`None`.
         """
 
-        # Get the start and end LSDs of the file
-        lsd_start = int(self.observer.unix_to_lsd(tstream.time[0]))
-        lsd_end = int(self.observer.unix_to_lsd(tstream.time[-1]))
+        # This is the start and the end of the LSDs of the file only if padding
+        # is chosen to be 0 (default). If padding is set to some value then 'lsd_start'
+        # will actually correspond to the start of of the requested time frame (incl
+        # padding)
+        lsd_start = int(self.observer.unix_to_lsd(tstream.time[0] - self.padding))
+        lsd_end = int(self.observer.unix_to_lsd(tstream.time[-1] + self.padding))
 
         # If current_lsd is None then this is the first time we've run
         if self._current_lsd is None:
