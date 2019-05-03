@@ -158,7 +158,8 @@ class DelaySpectrumEstimator(task.SingleTask):
 
             # Mask out data with completely zero'd weights and generate time
             # averaged weights
-            data = data * (weight.T > 1e-2)  # TODO: don't hard code this.
+            weight_cut = 1e-4 * weight.mean()  # Use approx threshold to ignore small weights
+            data = data * (weight.T > weight_cut)
             weight = np.mean(weight, axis=1)
 
             if (data == 0.0).all():

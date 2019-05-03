@@ -210,7 +210,7 @@ class LoadFilesFromParams(task.SingleTask):
 
         self.log.info("Loading file %s" % file_)
 
-        cont = memh5.BasicCont.from_file(file_, distributed=self.distributed)
+        cont = memh5.BasicCont.from_file(file_, distributed=self.distributed, comm=self.comm)
 
         if 'tag' not in cont.attrs:
             # Get the first part of the actual filename and use it as the tag

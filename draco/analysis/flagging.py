@@ -15,7 +15,7 @@ Tasks
     RadiometerWeight
 """
 import numpy as np
-from scipy.ndimage import median_filter
+from scipy.ndimage import median_filter, uniform_filter
 
 from caput import config
 
@@ -262,7 +262,7 @@ class RadiometerWeight(task.SingleTask):
 
 class SmoothVisWeight(task.SingleTask):
     """Smooth the visibility weights with a median filter.
-    
+
     This is done in-place.
 
     Attributes
@@ -312,3 +312,324 @@ class SmoothVisWeight(task.SingleTask):
 
         return data
 
+
+class RFIMask(task.SingleTask):
+    """Crappy RFI masking.
+
+    Attributes
+    ----------
+    sigma : float, optional
+        The false positive rate of the flagger given as sigma value assuming
+        the non-RFI samples are Gaussian.
+    tv_fraction : float, optional
+        Number of bad samples in a digital TV channel that cause the whole
+        channel to be flagged.
+    stack_ind : int
+        Which stack to process to derive flags for the whole dataset.
+    """
+
+    sigma = config.Property(proptype=float, default=5.0)
+    tv_fraction = config.Property(proptype=float, default=0.5)
+    stack_ind = config.Property(proptype=int)
+
+    def process(self, sstream):
+        """Apply a day time mask.
+
+        Parameters
+        ----------
+        sstream : containers.SiderealStream
+            Unmasked sidereal stack.
+
+        Returns
+        -------
+        mstream : containers.SiderealStream
+            Masked sidereal stream.
+        """
+
+        sstream.redistribute('stack')
+
+        ssv = sstream.vis[:]
+        ssw = sstream.weight[:]
+
+        # Figure out which rank actually has the requested index
+        lstart = ssv.local_offset[1]
+        lstop = lstart + ssv.local_shape[1]
+        has_ind = (self.stack_ind >= lstart) and (self.stack_ind < lstop)
+        has_ind_list = sstream.comm.allgather(has_ind)
+        rank_with_ind = has_ind_list.index(True)
+        self.log.debug("Rank %i has the requested index %i", rank_with_ind, self.stack_ind)
+
+        newmask = np.zeros((ssv.shape[0], ssv.shape[2]), dtype=np.bool)
+
+        # Get the rank with stack to create the new mask
+        if sstream.comm.rank == rank_with_ind:
+
+            # Cut out the right section
+            wf = ssv[:, self.stack_ind - lstart].view(np.ndarray)
+            ww = ssw[:, self.stack_ind - lstart].view(np.ndarray)
+
+            # Generate an initial mask and calculate the scaled deviations
+            weight_cut = 1e-4 * ww.mean()  # Ignore samples with small weights
+            wm = (ww < weight_cut)
+            maddev = mad(wf, wm)
+
+            # Reflag for scattered TV emission
+            tvmask = tv_channels_flag(maddev, sigma=self.sigma, f=self.tv_fraction)
+
+            # Construct the new mask
+            newmask[:] = tvmask | (maddev > self.sigma)
+
+        # Broadcat the new flags to all ranks and then apply
+        sstream.comm.Bcast(newmask, root=rank_with_ind)
+        ssw[:] *= (~newmask)[:, np.newaxis, :]
+
+        # Remove the time average of the data. Should probably do this elsewhere to be honest
+        ssv[:] = destripe(ssv, ssw > weight_cut)
+
+        return sstream
+
+
+def meanfilt(x, mask, size):
+    """Apply a moving mean filter to masked data.
+
+    Parameters
+    ----------
+    x : np.ndarray
+        Data to filter.
+    mask : np.ndarray
+        Mask of data to filter out.
+    size : tuple
+        Size of the window in each dimension.
+
+    Returns
+    -------
+    y : np.ndarray
+        The masked data. Data within the mask is undefined.
+    """
+
+    a = uniform_filter(x)
+    b = uniform_filter((~mask).astype(np.float))
+
+    return a * tools.invert_no_zero(b)
+
+
+def medfilt_iter(x, mask, size=(5, 5), niter=3):
+    """Apply a moving median filter to masked data.
+
+    The application is done by iterative filling to
+    overcome the fact we don't have an actual implementation
+    of a nanmedian.
+
+    Parameters
+    ----------
+    x : np.ndarray
+        Data to filter.
+    mask : np.ndarray
+        Mask of data to filter out.
+    size : tuple
+        Size of the window in each dimension.
+    niter : int
+        Number of iterations to perform.
+
+    Returns
+    -------
+    y : np.ndarray
+        The masked data. Data within the mask is undefined.
+    """
+
+    if np.iscomplexobj(x):
+        return (medfilt_iter(x.real, mask, size=size, niter=niter) +
+                1.0J * medfilt_iter(x.imag, mask, size=size, niter=niter))
+
+    # Copy and do initial masking
+    x = x.copy()
+    x[mask] = meanfilt(x, mask, size)[mask]
+
+    for i in range(niter):
+        xm = median_filter(x, size=size)
+        x[mask] = xm[mask]
+
+    return xm
+
+
+def mad(x, mask, base_size=(5, 5), mad_size=(20, 400),
+        debug=False, sigma=True):
+    """Calculate the MAD of freq-time data.
+
+    Parameters
+    ----------
+    x : np.ndarray
+        Data to filter.
+    mask : np.ndarray
+        Initial mask.
+    base_size : tuple
+        Size of the window to use in (freq, time) when
+        estimating the baseline.
+    mad_size : tuple
+        Size of the window to use in (freq, time) when
+        estimating the MAD.
+    sigma : bool, optional
+        Rescale the output into units of Gaussian sigmas.
+
+    Returns
+    -------
+    mad : np.ndarray
+        Size of deviation at each point in MAD units.
+    """
+
+    xs = medfilt_iter(x, mask, size=base_size)
+    dev = np.abs(x - xs)
+
+    nf, nt = mad_size
+    mad = medfilt_iter(dev, mask, size=(nf, 1), niter=1)
+    mad = medfilt_iter(mad, mask, size=(1, nt), niter=1)
+
+    if sigma:
+        mad *= 1.4826  # apply the conversion from MAD->sigma
+
+    if debug:
+        return dev / mad, dev, mad
+
+    return dev / mad
+
+
+def inverse_binom_cdf_prob(k, N, F):
+    """Calculate the trial probability that gives the CDF.
+
+    This gets the trial probability that gives an overall cumulative
+    probability for Pr(X < k; N, p) = F
+
+    Parameters
+    ----------
+    k : int
+        Number of successes.
+    N : int
+        Total number of trials.
+    F : float
+        The cumulative probability for (k, N).
+
+    Returns
+    -------
+    p : float
+        The trial probability.
+    """
+    # This uses the result that we can write the cumulative probability of a
+    # binomial in terms of an incomplete beta function
+
+    import scipy.special as sp
+
+    return sp.betaincinv(k + 1, N - k, 1 - F)
+
+
+def sigma_to_p(sigma):
+    """Get the probability of an excursion larger than sigma for a Gaussian."""
+    import scipy.stats as ss
+    return 2 * ss.norm.sf(sigma)
+
+
+def p_to_sigma(p):
+    """Get the sigma exceeded by the tails of a Gaussian with probability p."""
+    import scipy.stats as ss
+    return ss.norm.isf(p / 2)
+
+
+def tv_channels_flag(x, sigma=5, f=0.5, debug=False):
+    """Perform a higher sensitivity flagging for the TV stations.
+
+    This flags a whole TV station band if more than fraction f of the samples
+    within a station band exceed a given threshold. The threshold is calculated
+    by wanting a fixed false positive rate (as described by sigma) for fraction
+    f of samples exceeding the threshold
+
+    Parameters
+    ----------
+    x : np.ndarray[freq, time]
+        Deviations of data in sigma units.
+    freq : np.ndarray[freq]
+        Frequency of samples in MHz.
+    sigma : float
+        The probability of a false positive given as a sigma of a Gaussian.
+    f : float
+        Fraction of bad samples within each channel before flagging the whole thing.
+
+    Returns
+    -------
+    mask : np.ndarray[bool]
+        Mask of the input data.
+    """
+
+    p_false = sigma_to_p(sigma)
+    frac = np.ones_like(x, dtype=np.float)
+
+    tvstart_freq = 398
+    tvwidth_freq = 6
+
+    for i in range(67):
+
+
+        fs = tvstart_freq + i * tvwidth_freq
+        fe = fs + tvwidth_freq
+        sel = (freq >= fs) & (freq < fe)
+
+        # Calculate the threshold to apply
+        N = sel.sum()
+        k = int(f * N)
+        t = p_to_sigma(inverse_binom_cdf_prob(k, N, p_false))
+
+        frac[sel] = (x[sel] > t).mean(axis=0)[np.newaxis, :]
+
+    mask = frac > f
+
+    if debug:
+        return mask, frac
+
+    return mask
+
+
+def complex_med(x, *args, **kwargs):
+    """Complex median, done by applying to the real/imag parts individually.
+
+    Parameters
+    ----------
+    x : np.ndarray
+        Array to apply to.
+    *args, **kwargs : list, dict
+        Passed straight through to `np.nanmedian`
+
+    Returns
+    -------
+    m : np.ndarray
+        Median.
+    """
+    return (np.nanmedian(x.real, *args, **kwargs)
+            + 1j * np.nanmedian(x.imag, *args, **kwargs))
+
+
+def destripe(x, w, axis=1):
+    """Subtract the median along a specified axis.
+
+    Parameters
+    ----------
+    x : np.ndarray
+        Array to destripe.
+    w : np.ndarray
+        Mask array for points to include (True) or ignore (False).
+    axis : int, optional
+        Axis to apply destriping along.
+
+    Returns
+    -------
+    y : np.ndarray
+        Destriped array.
+    """
+
+    # Calculate the average along the axis
+    stripe = complex_med(np.where(w, x, np.nan), axis=axis)
+    stripe = np.nan_to_num(stripe)
+
+    # Construct a slice to broadcast back along the axis
+    bsel = [slice(None)] * x.ndim
+    bsel[axis] = None
+    bsel = tuple(bsel)
+
+    return (x - stripe[bsel])
