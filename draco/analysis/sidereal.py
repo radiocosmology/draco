@@ -39,7 +39,7 @@ class SiderealGrouper(task.SingleTask):
         getting rid of interpolation artifacts.
     """
 
-    padding = config.Property(proptype=float, default=0.)
+    padding = config.Property(proptype=float, default=0.0)
 
     def __init__(self):
         super(SiderealGrouper, self).__init__()
