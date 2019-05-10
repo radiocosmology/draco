@@ -99,6 +99,10 @@ class QuasarStack(task.SingleTask):
                 self._qcat['position']['ra'][np.newaxis, :]),
             axis=0)
 
+        # Ensure data is distributed in something other than frequency (0)
+        data.redistribute(1)
+        bad_freq_mask = np.invert(np.all(data.vis[:]==0., axis=(1,2)))
+
         # Number of RA bins to track the quasars at each side of transit 
         ha_side = self._ha_side(len(data.index_map['ra']))
 
@@ -211,8 +215,10 @@ class QuasarStack(task.SingleTask):
                 # so it amounts to an overall multiplication factor in the weight
                 # that can be dropped. I add the beams to the weights because
                 # they differ from quasar to quasar and frequency to frequency.
+                this_qs_weight = (np.sum(beam, axis=1) *
+                                 bad_freq_mask[f_mask[qq]].astype(np.float))
                 self.quasar_weight += np.bincount(qs_indices[qq][f_mask[qq]],
-                                        weights=np.sum(beam, axis=1),
+                                        weights=this_qs_weight,
                                         minlength=self.nstack)
 
         # TODO: In what follows I gather to all ranks and do the summing
