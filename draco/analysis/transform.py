@@ -432,18 +432,13 @@ class MModeTransform(task.SingleTask):
     """Transform a sidereal stream to m-modes.
 
     Currently ignores any noise weighting.
-
-    Attributes
-    ----------
-    set_telmmax : bool
-        Whether to slice the data at the maximum m the telescope can resolve
-        after fourier transforming. Default : false.
     """
-    set_telmmax = config.Property(proptype=bool, default=False)
+    def setup(self, manager=None):
 
-    def setup(self, manager):
-
-        self.telescope = io.get_telescope(manager)
+        if manager is not None:
+            self.telescope = io.get_telescope(manager)
+        else:
+            self.telescope = None
 
     def process(self, sstream):
         """Perform the m-mode transform.
@@ -464,7 +459,7 @@ class MModeTransform(task.SingleTask):
         # variance for the m-modes
         weight_sum = sstream.weight[:].sum(axis=-1)
 
-        if self.set_telmmax is True:
+        if self.telescope is not None:
             setmmax = self.telescope.mmax
         else:
             setmmax = None
