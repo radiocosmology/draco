@@ -434,7 +434,14 @@ class MModeTransform(task.SingleTask):
     Currently ignores any noise weighting.
     """
     def setup(self, manager=None):
+        """Set the telescope instance if a manager object is given.
 
+        Parameters
+        ----------
+        manager : manager.ProductManager (optional)
+            If the ProductManager is not None it returns an instance of a
+            drift.core.TransitTelescope object.
+        """
         if manager is not None:
             self.telescope = io.get_telescope(manager)
         else:
@@ -460,12 +467,12 @@ class MModeTransform(task.SingleTask):
         weight_sum = sstream.weight[:].sum(axis=-1)
 
         if self.telescope is not None:
-            setmmax = self.telescope.mmax
+            mmax = self.telescope.mmax
         else:
-            setmmax = None
+            mmax = None
 
         # Construct the array of m-modes
-        marray = _make_marray(sstream.vis[:], setmmax)
+        marray = _make_marray(sstream.vis[:], mmax)
         marray = mpiarray.MPIArray.wrap(marray[:], axis=2, comm=sstream.comm)
 
         # Create the container to store the modes in
