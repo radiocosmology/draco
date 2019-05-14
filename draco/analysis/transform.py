@@ -432,15 +432,20 @@ class MModeTransform(task.SingleTask):
     """Transform a sidereal stream to m-modes.
 
     Currently ignores any noise weighting.
+
+    The maximum m used in the container is derived from the number of
+    time samples, or if a manager is supplied `telescope.mmax` is used.
     """
     def setup(self, manager=None):
         """Set the telescope instance if a manager object is given.
+        
+        This is used to set the `mmax` used in the transform.
 
         Parameters
         ----------
-        manager : manager.ProductManager (optional)
-            If the ProductManager is not None it returns an instance of a
-            drift.core.TransitTelescope object.
+        manager : manager.ProductManager, optional
+            The telescope/manager used to set the `mmax`. If not set, `mmax`
+            is derived from the timestream.
         """
         if manager is not None:
             self.telescope = io.get_telescope(manager)
