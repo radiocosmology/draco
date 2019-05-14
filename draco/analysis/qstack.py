@@ -179,7 +179,7 @@ class QuasarStack(task.SingleTask):
                 # (nstack (or this quasar's slice), nvis_local, 2)
                 bvec = (bvec_m[pp][np.newaxis, :, :] *
                         nu[:, np.newaxis, np.newaxis] * 1E6 / C)
-                # Complex corrections. Multiply by vis to make them real.
+                # Complex corrections. Multiply by visibility to correct.
                 correc = tools.fringestop_phase(
                                 ha=ha_array,
                                 lat=np.deg2rad(ephemeris.CHIMELATITUDE),
@@ -301,8 +301,9 @@ class QuasarStack(task.SingleTask):
                 # Cross-pol entries should be junk.
                 unique_index = self.telescope.feedmap[ipt0, ipt1]
                 bvec_m[vi] = self.telescope.baselines[unique_index]
-                if self.telescope.feedconj[ipt0, ipt1]:
-                    bvec_m[vi] *= -1.
+                # No need to conjugate. Already done in telescope.baselines.
+                #if self.telescope.feedconj[ipt0, ipt1]:
+                #    bvec_m[vi] *= -1.
 
         return bvec_m, pol_array
 
