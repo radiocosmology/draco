@@ -4,6 +4,7 @@
 import numpy as np
 import scipy.linalg as la
 import scipy.stats as st
+from randomgen import RandomGenerator
 
 from caput import mpiarray, config
 
@@ -140,7 +141,7 @@ class DelaySpectrumEstimator(task.SingleTask):
 
         # Initialise the spectrum container
         delay_spec = containers.DelaySpectrum(baseline=baselines, delay=delays)
-        delay_spec.redistribute('baselines')
+        delay_spec.redistribute('baseline')
         delay_spec.spectrum[:] = 0.0
 
         initial_S = np.ones_like(delays) * 1e1
@@ -151,9 +152,14 @@ class DelaySpectrumEstimator(task.SingleTask):
             self.log.debug("Delay transforming baseline %i/%i",
                            bi, len(baselines))
 
+            # Get the local selections
             data = vis_I[lbi].view(np.ndarray).T
             weight = vis_weight[lbi].view(np.ndarray)
-            weight = np.median(weight, axis=1)
+
+            # Mask out data with completely zero'd weights and generate time
+            # averaged weights
+            data = data * (weight.T > 1e-2)  # TODO: don't hard code this.
+            weight = np.mean(weight, axis=1)
 
             if (data == 0.0).all():
                 continue
@@ -202,6 +208,8 @@ def stokes_I(sstream, tel):
 
     # Iterate over products to construct the Stokes I vis
     # TODO: this should be updated when driftscan gains a concept of polarisation
+    ssv = sstream.vis[:]
+    ssw = sstream.weight[:]
     for ii, ui in enumerate(uinv):
 
         # Skip if not all polarisations were included
@@ -217,8 +225,8 @@ def stokes_I(sstream, tel):
             continue
 
         if bi == bj:
-            vis_I[ui] += sstream.vis[:, ii]
-            vis_weight[ui] += sstream.weight[:, ii]
+            vis_I[ui] += ssv[:, ii]
+            vis_weight[ui] += ssw[:, ii]
 
     vis_I = mpiarray.MPIArray.wrap(vis_I, axis=1, comm=sstream.comm)
     vis_I = vis_I.redistribute(axis=0)
@@ -331,6 +339,9 @@ def fourier_matrix_c2r(N, fsel=None):
     return Fr
 
 
+# RNG used for delay estimation
+_delay_rng = RandomGenerator()
+
 def delay_spectrum_gibbs(data, N, Ni, initial_S, window=True, fsel=None, niter=20):
     """Estimate the delay spectrum by Gibbs sampling.
 
@@ -361,6 +372,11 @@ def delay_spectrum_gibbs(data, N, Ni, initial_S, window=True, fsel=None, niter=2
     spec : list
         List of spectrum samples.
     """
+
+    # Get reference to RNG
+    # TODO: do something smarter here
+    # TODO: multithread RNG generation
+    rng = _delay_rng
 
     spec = []
 
@@ -396,8 +412,11 @@ def delay_spectrum_gibbs(data, N, Ni, initial_S, window=True, fsel=None, niter=2
     Ni_r[1::2] = np.where(is_real_freq, 0.0, Ni / 2**0.5)
 
     # Create the Hermitian conjugate weighted by the noise (this is used multiple times)
-    FTNi = F.T * Ni_r[np.newaxis, :]
-    FTNiF = np.dot(FTNi, F)
+    FTNih = F.T * Ni_r[np.newaxis, :]**0.5
+    FTNiF = np.dot(FTNih, FTNih.T)
+
+    # Pre-whiten the data to save doing it repeatedly
+    data = data * Ni_r[:, np.newaxis]**0.5
 
     # Set the initial starting points
     S_samp = initial_S
@@ -415,13 +434,12 @@ def delay_spectrum_gibbs(data, N, Ni, initial_S, window=True, fsel=None, niter=2
         Ci = np.diag(Si) + FTNiF
 
         # Draw random vectors that form the perturbations
-        w1 = np.random.standard_normal((N, data.shape[1]))
-        w2 = np.random.standard_normal(data.shape)
+        w1 = rng.standard_normal((N, data.shape[1]))
+        w2 = rng.standard_normal(data.shape)
 
         # Construct the random signal sample by forming a perturbed vector and
         # then doing a matrix solve
-        y = (np.dot(FTNi, data) + Si[:, np.newaxis]**0.5 * w1 +
-             np.dot(F.T, Ni_r[:, np.newaxis]**0.5 * w2))
+        y = np.dot(FTNih, data + w2) + Si[:, np.newaxis]**0.5 * w1
 
         return la.solve(Ci, y, sym_pos=True)
 
@@ -433,7 +451,7 @@ def delay_spectrum_gibbs(data, N, Ni, initial_S, window=True, fsel=None, niter=2
         S_hat = d.var(axis=1)
 
         df = d.shape[1]
-        chi2 = st.chi2.rvs(df, size=d.shape[0])
+        chi2 = rng.chisquare(df, size=d.shape[0])
 
         S_samp = S_hat * df / chi2
 
@@ -489,7 +507,6 @@ def null_delay_filter(freq, max_delay, mask, num_delay=200, tol=1e-8, window=Tru
     u, sig, vh = la.svd(F)
     nmodes = np.sum(sig > tol * sig.max())
     p = u[:, :nmodes]
-    print "Removing %i modes" % nmodes
 
     # Construct a projection matrix for the filter
     proj = np.identity(len(freq)) - np.dot(p, p.T.conj())
