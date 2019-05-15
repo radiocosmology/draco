@@ -92,13 +92,6 @@ class QuasarStack(task.SingleTask):
         """
         nfreq = len(data.index_map['freq']['centre'])
 
-        # RA bins each quasar is closest to. 
-        # Phasing will actually be done at quasar position.
-        qso_ra_index = np.argmin(
-            abs(data.index_map['ra'][:, np.newaxis] -
-                self._qcat['position']['ra'][np.newaxis, :]),
-            axis=0)
-
         # Ensure data is distributed in something other than frequency (0)
         data.redistribute(1)
         bad_freq_mask = np.invert(np.all(data.vis[:]==0., axis=(1,2)))
@@ -165,10 +158,16 @@ class QuasarStack(task.SingleTask):
             # Declination of this quasar
             dec = self._qcat['position']['dec'][qq]
 
+            # RA bin this quasar is closest to.
+            # Phasing will actually be done at quasar position.
+            qso_ra_index = np.argmin(
+                abs(data.index_map['ra'][:, np.newaxis] -
+                    self._qcat['position']['ra'][qq]))
+
             # Compute hour angle array
             ha_array, ra_index_range = self._ha_array(
                                         data,
-                                        qso_ra_index[qq],
+                                        qso_ra_index,
                                         self._qcat['position']['ra'][qq],
                                         ha_side)
 
