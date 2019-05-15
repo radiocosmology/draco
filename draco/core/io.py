@@ -197,6 +197,11 @@ class LoadFilesFromParams(task.SingleTask):
 
         from caput import memh5
 
+        # Garbage collect to workaround leaking memory from containers.
+        # TODO: find actual source of leak
+        import gc
+        gc.collect()
+
         if len(self.files) == 0:
             raise pipeline.PipelineStopIteration
 
