@@ -40,17 +40,19 @@ class DelayFilter(task.SingleTask):
         if self.update_weight:
             raise NotImplemented("Weight updating is not implemented.")
 
-        ss.redistribute('prod')
+        ss.redistribute(['input', 'prod', 'stack'])
 
         freq = ss.freq[:]
 
+        ssv = ss.vis[:].view(np.ndarray)
+        ssw = ss.weight[:].view(np.ndarray)
+
         for lbi, bi in ss.vis[:].enumerate(axis=1):
 
-            freq_weight = np.median(ss.weight[:, bi], axis=1)
-
+            freq_weight = np.median(ssw[:, lbi], axis=1)
             NF = null_delay_filter(freq, self.delay_cut, freq_weight)
 
-            ss.vis[:, bi] = np.dot(NF, ss.vis[:, bi])
+            ssv[:, lbi] = np.dot(NF, ssv[:, lbi])
 
         return ss
 
