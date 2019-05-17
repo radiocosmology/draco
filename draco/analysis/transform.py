@@ -432,7 +432,25 @@ class MModeTransform(task.SingleTask):
     """Transform a sidereal stream to m-modes.
 
     Currently ignores any noise weighting.
+
+    The maximum m used in the container is derived from the number of
+    time samples, or if a manager is supplied `telescope.mmax` is used.
     """
+    def setup(self, manager=None):
+        """Set the telescope instance if a manager object is given.
+        
+        This is used to set the `mmax` used in the transform.
+
+        Parameters
+        ----------
+        manager : manager.ProductManager, optional
+            The telescope/manager used to set the `mmax`. If not set, `mmax`
+            is derived from the timestream.
+        """
+        if manager is not None:
+            self.telescope = io.get_telescope(manager)
+        else:
+            self.telescope = None
 
     def process(self, sstream):
         """Perform the m-mode transform.
@@ -453,8 +471,13 @@ class MModeTransform(task.SingleTask):
         # variance for the m-modes
         weight_sum = sstream.weight[:].sum(axis=-1)
 
+        if self.telescope is not None:
+            mmax = self.telescope.mmax
+        else:
+            mmax = None
+
         # Construct the array of m-modes
-        marray = _make_marray(sstream.vis[:])
+        marray = _make_marray(sstream.vis[:], mmax)
         marray = mpiarray.MPIArray.wrap(marray[:], axis=2, comm=sstream.comm)
 
         # Create the container to store the modes in
@@ -471,10 +494,10 @@ class MModeTransform(task.SingleTask):
         return ma
 
 
-def _make_marray(ts):
+def _make_marray(ts, mmax):
     # Construct an array of m-modes from a sidereal time stream
     mmodes = np.fft.fft(ts, axis=-1) / ts.shape[-1]
-    marray = _pack_marray(mmodes)
+    marray = _pack_marray(mmodes, mmax)
 
     return marray
 
@@ -569,7 +592,7 @@ class Regridder(task.SingleTask):
             self.start = times[0]
         if self.end is None:
             self.end = times[-1]
-        if (self.start < times[0] or self.end > times[1]):
+        if (self.start < times[0] or self.end > times[-1]):
             msg = "Start or end points for regridder fall outside bounds of input data."
             self.log.error(msg)
             raise RuntimeError(msg)
