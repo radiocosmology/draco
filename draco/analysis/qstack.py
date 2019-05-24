@@ -14,105 +14,119 @@ C = units.c
 
 
 class QuasarStack(task.SingleTask):
-    """Blah.
+    """
 
     Attributes
     ----------
-    qcat_path : str
-            Full path to quasar catalog to stack on.
     freqside : int
             Number of frequency bins to keep on each side of quasar
             when stacking.
     """
 
-    # Full path to quasar catalog to stack on
-    qcat_path = config.Property(proptype=str)
-
     # Number of frequencies to keep on each side of quasar RA
     # Pick only frequencies around the quasar (50 on each side)
     freqside = config.Property(proptype=int, default=50)
 
-    def setup(self, manager):
+    def setup(self, manager, sstream):
         """Load quasar catalog and initialize the stack array.
 
         Parameters
         ----------
         manager : either `ProductManager`, `BeamTransfer` or `TransitTelescope`
             Contains a TransitTelescope object describing the telescope.
+        sstream : :class:`containers.SiderealStream`
+            Data to stack on.
 
         """
-        # Load base quasar catalog from file (Not distributed)
-        self._qcat = containers.SpectroscopicCatalog.from_file(
-                                                    self.qcat_path)
-        self.nqso = len(self._qcat['position'])
+        # Extract data info
+        self.ra = sstream.index_map['ra']
+        self.freq = sstream.index_map['freq']['centre']
+        self.nfreq = len(self.freq)
+        self.latitude = np.deg2rad(ephemeris.CHIMELATITUDE)
+        # Get the TransitTelescope object
+        self.telescope = io.get_telescope(manager)
+
+        # Ensure data is distributed in something other than
+        # frequency (0) to create bad frequency mask.
+        sstream.redistribute(1)
+        self.bad_freq_mask = np.invert(np.all(
+                        sstream.vis[:] == 0., axis=(1, 2)))
+        # Number of RA bins to track the quasars at each side of transit
+        self.ha_side = self._ha_side(len(self.ra))
+
+        # Compute baselines and map visibilities polarization
+        self.bvec_m, pol_array = self._bvec_m(sstream)
+
+        # Ensure data is distributed in freq axis, to extract
+        # copol producs.
+        sstream.redistribute(0)
+        # Reduced visibility data. Co-polarization only:
+        # This increases the amount kept in memory by less than
+        # a factor of 2 since it only copies co-pol visibilities.
+        self.copol_vis = [sstream.vis[:, pol_array == 1, :],
+                          sstream.vis[:, pol_array == 2, :]]  # [x-pol, y-pol]
+        # List to store indices (in global full visibility axis)
+        # of local visibility bins [x-pol, y-pol]
+        full_pol_index = []
+        # For each polarization
+        for pp in range(2):
+            # Swap order of product(1) and RA(2) axes, to reduce striding
+            # through memory later on.
+            self.copol_vis[pp] = np.moveaxis(self.copol_vis[pp], 1, 2)
+            # Wrap each polarization visibility in an MPI array
+            # distributed in frequency (axis 0).
+            self.copol_vis[pp] = mpiarray.MPIArray.wrap(
+                                        self.copol_vis[pp], axis=0)
+            # Re-distribute data in vis-stack (prod) axis (which is now #2!).
+            self.copol_vis[pp] = self.copol_vis[pp].redistribute(axis=2)
+            # Indices (in global full vis axis) of local vis:
+            global_range = np.s_[self.copol_vis[pp].local_offset[2]:
+                                 self.copol_vis[pp].local_offset[2] +
+                                 self.copol_vis[pp].local_shape[2]]
+            full_pol_index.append(np.where(pol_array == pp+1)[0][global_range])
+
+        # Reduce bvec_m to local visibility indices [pol-x, pol-y]:
+        self.bvec_m = [self.bvec_m[:, full_pol_index[0]],
+                       self.bvec_m[:, full_pol_index[1]]]
+        # Compute redundancy [pol-x, pol-y]:
+        self.redundancy = [self.telescope.redundancy[full_pol_index[0]].
+                           astype(np.float64),
+                           self.telescope.redundancy[full_pol_index[1]].
+                           astype(np.float64)]
+
+        # Construct frequency offset axis (for qstack container)
+        self.stack_axis = np.copy(sstream.index_map['freq'][
+                int(self.nfreq/2)-self.freqside:
+                int(self.nfreq/2)+self.freqside + 1])
+        self.stack_axis['centre'] = (
+                self.stack_axis['centre'] -
+                self.stack_axis['centre'][self.freqside])
 
         # Size of quasar stack array
         self.nstack = 2 * self.freqside + 1
 
-        # Quasar stack array.
-        self.quasar_stack = mpiarray.MPIArray.wrap(
-                np.zeros(self.nstack, dtype=np.float), axis=0)
-        # Keep track of number of quasars added to each frequency bin
-        # in the quasar stack array
-        self.quasar_weight = mpiarray.MPIArray.wrap(
-                np.zeros(self.nstack, dtype=np.float), axis=0)
-
-        # Get the TransitTelescope object
-        self.telescope = io.get_telescope(manager)
-
-        # TODO: New stuff for applying bincount method
-        # This is a hack, to have it work quickly with the sims
-        # and data. Should have the default be 50/0.39... and
-        # anything different should be passed as an array in the config?
-        self.stackside = int(self.nstack)//int(2)
-        self.stack_axis = np.zeros(
-            self.nstack, dtype=[('centre', np.float), ('width', np.float)])
-        if self.freqside == 50:
-            self.stack_axis['width'][:] = 0.390625
-            self.stack_axis['centre'][:] = np.linspace(
-                50.*0.390625, -50.*0.390625, self.nstack, endpoint=True)
-        else:
-            self.stack_axis['width'][:] = 1.5625
-            self.stack_axis['centre'][:] = np.linspace(
-                12.*1.5625, -12.*1.5625, self.nstack, endpoint=True)
-
-    # TODO: Should data be an argument to process or init?
-    # I think data should be an argument to process() such that we could
-    # keep stacking multiple data files in the same stack.
-    # The final stack should be returned by the finish() method then,
-    # But how does it work with the `save` parameter?
-    def process(self, data):
+    def process(self, qcat):
         """
 
         Parameters
         ----------
-        data : :class:`containers.SiderealStream`
+        qcat : :class:`containers.SpectroscopicCatalog`
+            Quasar catalog to stack on.
 
         Returns
         -------
         qstack : :class:`containers.FrequencyStack`
             Quasar redshift stack
         """
-        ra = data.index_map['ra']
-        freq = data.index_map['freq']['centre']
-        nfreq = len(freq)
-        latitude = np.deg2rad(ephemeris.CHIMELATITUDE)
-
-        quasar_dec = self._qcat['position']['dec']
-        quasar_ra = self._qcat['position']['ra']
-
-        # Ensure data is distributed in something other than frequency (0)
-        data.redistribute(1)
-        bad_freq_mask = np.invert(np.all(data.vis[:] == 0., axis=(1, 2)))
-
-        # Number of RA bins to track the quasars at each side of transit
-        ha_side = self._ha_side(len(ra))
+        # Quasars RA and Dec
+        quasar_dec = qcat['position']['dec']
+        quasar_ra = qcat['position']['ra']
 
         # Find which quasars are in the frequency range of the data.
         # Frequency of quasars
-        qso_freq = NU21/(self._qcat['redshift']['z'] + 1.)  # MHz.
+        qso_freq = NU21/(qcat['redshift']['z'] + 1.)  # MHz.
         # Get f_mask and qs_indices
-        freqdiff = freq[np.newaxis, :] - qso_freq[:, np.newaxis]
+        freqdiff = self.freq[np.newaxis, :] - qso_freq[:, np.newaxis]
         # Stack axis bin edges to digitize each quasar at.
         stackbins = (self.stack_axis['centre'] +
                      0.5 * self.stack_axis['width'])
@@ -125,43 +139,13 @@ class QuasarStack(task.SingleTask):
         # Only quasars in the frequency range of the data.
         qso_selection = np.where(np.sum(f_mask, axis=1) > 0)[0]
 
-        # Compute baselines and map visibilities polarization
-        bvec_m, pol_array = self._bvec_m(data)
-
-        # Ensure data is distributed in freq axis
-        data.redistribute(0)
-        # Reduced visibility data. Co-polarization only:
-        # This increases the amount kept in memory by less than
-        # a factor of 2 since it only copies co-pol visibilities.
-        copol_vis = [data.vis[:, pol_array == 1, :],
-                     data.vis[:, pol_array == 2, :]]  # [x-pol, y-pol]
-        # List to store indices (in global full visibility axis)
-        # of local visibility bins [x-pol, y-pol]
-        full_pol_index = []
-        # For each polarization
-        for pp in range(2):
-            # Swap order of product(1) and RA(2) axes, to reduce striding
-            # through memory later on.
-            copol_vis[pp] = np.moveaxis(copol_vis[pp], 1, 2)
-            # Wrap each polarization visibility in an MPI array
-            # distributed in frequency (axis 0).
-            copol_vis[pp] = mpiarray.MPIArray.wrap(copol_vis[pp], axis=0)
-            # Re-distribute data in vis-stack (prod) axis (which is now #2!).
-            copol_vis[pp] = copol_vis[pp].redistribute(axis=2)
-            # Indices (in global full vis axis) of local vis:
-            global_range = np.s_[copol_vis[pp].local_offset[2]:
-                                 copol_vis[pp].local_offset[2] +
-                                 copol_vis[pp].local_shape[2]]
-            full_pol_index.append(np.where(pol_array == pp+1)[0][global_range])
-
-        # Reduce bvec_m to local visibility indices [pol-x, pol-y]:
-        bvec_m = [bvec_m[:, full_pol_index[0]],
-                  bvec_m[:, full_pol_index[1]]]
-        # Compute redundancy [pol-x, pol-y]:
-        redundancy = [self.telescope.redundancy[full_pol_index[0]].
-                      astype(np.float64),
-                      self.telescope.redundancy[full_pol_index[1]].
-                      astype(np.float64)]
+        # Quasar stack array.
+        quasar_stack = mpiarray.MPIArray.wrap(
+                np.zeros(self.nstack, dtype=np.float), axis=0)
+        # Keep track of number of quasars added to each frequency bin
+        # in the quasar stack array
+        quasar_weight = mpiarray.MPIArray.wrap(
+                np.zeros(self.nstack, dtype=np.float), axis=0)
 
         qcount = 0  # Quasar counter
         # For each quasar in the frequency range of the data
@@ -172,28 +156,27 @@ class QuasarStack(task.SingleTask):
 
             # RA bin this quasar is closest to.
             # Phasing will actually be done at quasar position.
-            qso_ra_index = np.searchsorted(ra, quasar_ra[qq])
+            qso_ra_index = np.searchsorted(self.ra, quasar_ra[qq])
 
             # Compute hour angle array
             ha_array, ra_index_range = self._ha_array(
-                    ra, qso_ra_index, quasar_ra[qq], ha_side)
+                    self.ra, qso_ra_index, quasar_ra[qq], self.ha_side)
 
-            # TODO: Might want to rethink freq slicing from
-            # the definition of f_mask, to have less steps?
-            f_indices = np.arange(nfreq, dtype=np.int32)[f_mask[qq]]
+            # Indices and slice for frequencies included in the stack.
+            f_indices = np.arange(self.nfreq, dtype=np.int32)[f_mask[qq]]
             f_slice = np.s_[np.amin(f_indices):np.amax(f_indices)+1]
-            nu = freq[f_slice]
+            nu = self.freq[f_slice]
             # For each polarization
             for pp in range(2):
                 # Baseline vectors in wavelengths. Shape:
                 # (2, nstack (or this quasar's slice), nvis_local)
-                bvec = (bvec_m[pp][:, np.newaxis, :] *
+                bvec = (self.bvec_m[pp][:, np.newaxis, :] *
                         nu[np.newaxis, :, np.newaxis] * 1E6 / C).copy()
                 # Fringestop and sum over products
                 formed_beam = beamform(
-                        copol_vis[pp],
-                        redundancy[pp], dec,
-                        latitude, np.cos(ha_array), np.sin(ha_array),
+                        self.copol_vis[pp],
+                        self.redundancy[pp], dec,
+                        self.latitude, np.cos(ha_array), np.sin(ha_array),
                         bvec[0], bvec[1], f_indices, ra_index_range)
 
                 # Beams to be used in the weighting
@@ -207,7 +190,7 @@ class QuasarStack(task.SingleTask):
                 this_stack = np.bincount(qs_indices[qq][f_slice],
                                          weights=this_stack,
                                          minlength=self.nstack)
-                self.quasar_stack += this_stack
+                quasar_stack += this_stack
 
                 # Increment wheight for the appropriate quasar stack indices.
                 # The redundancy is the same for all frequencies and quasars,
@@ -215,10 +198,10 @@ class QuasarStack(task.SingleTask):
                 # that can be dropped. I add the beams to the weights because
                 # they differ from quasar to quasar and frequency to frequency.
                 this_qs_weight = (np.sum(beam, axis=1) *
-                                  bad_freq_mask[f_slice].astype(np.float))
-                self.quasar_weight += np.bincount(qs_indices[qq][f_slice],
-                                                  weights=this_qs_weight,
-                                                  minlength=self.nstack)
+                                  self.bad_freq_mask[f_slice].astype(np.float))
+                quasar_weight += np.bincount(qs_indices[qq][f_slice],
+                                             weights=this_qs_weight,
+                                             minlength=self.nstack)
 
         # TODO: In what follows I gather to all ranks and do the summing
         # in each rank. I end up with the same stack in all ranks, but there
@@ -229,21 +212,17 @@ class QuasarStack(task.SingleTask):
         # over a different subset of visibilities. Add them all to
         # get the beamformed values.
         quasar_stack_full = np.zeros(mpiutil.size*self.nstack,
-                                     dtype=self.quasar_stack.dtype)
+                                     dtype=quasar_stack.dtype)
         quasar_weight_full = np.zeros(mpiutil.size*self.nstack,
-                                      dtype=self.quasar_weight.dtype)
+                                      dtype=quasar_weight.dtype)
         # Gather all ranks
-        mpiutil.world.Allgather(self.quasar_stack,
+        mpiutil.world.Allgather(quasar_stack,
                                 quasar_stack_full)
-        mpiutil.world.Allgather(self.quasar_weight,
+        mpiutil.world.Allgather(quasar_weight,
                                 quasar_weight_full)
-        # Construct frequency offset axis
-        freq_offset = data.index_map['freq'][int(nfreq/2) - self.freqside:
-                                             int(nfreq/2) + self.freqside + 1]
-        freq_offset['centre'] = (freq_offset['centre'] -
-                                 freq_offset['centre'][self.freqside])
+
         # Container to hold the stack
-        qstack = containers.FrequencyStack(freq=freq_offset)
+        qstack = containers.FrequencyStack(freq=self.stack_axis)
         # Sum across ranks to complete the FT
         qstack.stack[:] = np.sum(quasar_stack_full.reshape(
                                  mpiutil.size, self.nstack), axis=0)
