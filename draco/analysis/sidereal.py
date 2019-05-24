@@ -87,7 +87,7 @@ class SiderealGrouper(task.SingleTask):
             self._current_lsd = lsd_start
 
         # If this file started during the current lsd add it onto the list
-        if self._current_lsd  == lsd_start:
+        if self._current_lsd == lsd_start:
             self._timestream_list.append(tstream)
 
         self.log.info("Adding file into group for LSD:%i", lsd_start)
