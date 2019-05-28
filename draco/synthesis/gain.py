@@ -6,6 +6,7 @@ Tasks
 .. autosummary::
     :toctree:
 
+    SiderealGains
     RandomGains
     GainStacker
 """
