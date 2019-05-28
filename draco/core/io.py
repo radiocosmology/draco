@@ -180,10 +180,12 @@ class LoadFilesFromParams(task.SingleTask):
     ----------
     files : glob pattern, or list
         Can either be a glob pattern, or lists of actual files.
+    distributed : bool, optional
+        Whether the file should be loaded distributed across ranks.
     """
 
     files = config.Property(proptype=_list_or_glob)
-    distribute = config.Property(proptype=bool, default=True)
+    distributed = config.Property(proptype=bool, default=True)
 
     def process(self):
         """Load the given files in turn and pass on.
@@ -203,7 +205,7 @@ class LoadFilesFromParams(task.SingleTask):
 
         self.log.info("Loading file %s" % file_)
 
-        cont = memh5.BasicCont.from_file(file_, distributed=self.distribute)
+        cont = memh5.BasicCont.from_file(file_, distributed=self.distributed)
 
         if 'tag' not in cont.attrs:
             # Get the first part of the actual filename and use it as the tag
