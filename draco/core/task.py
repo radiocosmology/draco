@@ -9,6 +9,7 @@ Tasks
     SingleTask
     ReturnLastInputOnFinish
     ReturnFirstInputOnFinish
+    Delete
 """
 # === Start Python 2/3 compatibility
 from __future__ import (absolute_import, division,
@@ -385,7 +386,6 @@ class SingleTask(MPILoggedTask, pipeline.BasicContMixin):
             self.log.debug("Writing output %s to disk.", outfile)
             self.write_output(outfile, output)
 
-
     def _nan_process_output(self, output):
         # Process the output to check for NaN's
         # Returns the output or, None if it should be skipped
@@ -397,7 +397,7 @@ class SingleTask(MPILoggedTask, pipeline.BasicContMixin):
 
                 # Construct the filename
                 tag = output.attrs['tag'] if 'tag' in output.attrs else self._count
-                outfile = "nandump_" + self.__class__.__name__ + "_" +  str(tag) + '.h5'
+                outfile = "nandump_" + self.__class__.__name__ + "_" + str(tag) + '.h5'
                 self.log.debug("NaN found. Dumping %s", outfile)
                 self.write_output(outfile, output)
 
@@ -509,3 +509,22 @@ class ReturnFirstInputOnFinish(SingleTask):
             Last input to process.
         """
         return self.x
+
+
+class Delete(SingleTask):
+    """Delete pipeline products to free memory."""
+
+    def process(self, x):
+        """Delete the input and collect garbage.
+
+        Parameters
+        ----------
+        x : object
+            The object to be deleted.
+        """
+        import gc
+
+        del x
+        gc.collect()
+
+        return None
