@@ -1363,6 +1363,38 @@ class SpectroscopicCatalog(SourceCatalog):
     }
 
 
+class FormedBeam(ContainerBase):
+    """Container for formed beams.
+    """
+    
+    _axes = ('object_id', 'pol', 'freq')
+
+    _dataset_spec = {
+        'fbeam': {
+            'axes': ['object_id', 'pol', 'freq'],
+            'dtype': np.float64,
+            'initialise': True,
+            'distributed': False
+        }
+    }
+
+    @property
+    def fbeam(self):
+        return self.datasets['fbeam']
+
+    @property
+    def freq(self):
+        return self.index_map['freq']['centre']
+
+    @property
+    def id(self):
+        return self.index_map['object_id']
+
+    @property
+    def pol(self):
+        return self.index_map['pol']
+
+
 def empty_like(obj, **kwargs):
     """Create an empty container like `obj`.
 
