@@ -16,172 +16,6 @@ class BeamFormBase(task.SingleTask):
         Only defines a few useful methods.
         Neither setup() nor process() are defined.
     """
-
-
-
-
-
-class BeamForm(task.SingleTask):
-    """
-
-    Attributes
-    ----------
-    """
-
-
-    def setup(self, manager, sstream):
-        """Load quasar catalog and initialize the stack array.
-
-        Parameters
-        ----------
-        manager : either `ProductManager`, `BeamTransfer` or `TransitTelescope`
-            Contains a TransitTelescope object describing the telescope.
-        sstream : :class:`containers.SiderealStream`
-            Data to beamform on.
-
-        """
-        # Extract data info
-        self.ra = sstream.index_map['ra']
-        self.freq = sstream.index_map['freq']['centre']
-        self.nfreq = len(self.freq)
-        self.latitude = np.deg2rad(ephemeris.CHIMELATITUDE)
-        # Get the TransitTelescope object
-        self.telescope = io.get_telescope(manager)
-
-        # Ensure data is distributed in something other than
-        # frequency (0) to create bad frequency mask.
-        sstream.redistribute(1)
-        self.bad_freq_mask = np.invert(np.all(
-                        sstream.vis[:] == 0., axis=(1, 2)))
-
-        # Number of RA bins to track each source at each side of transit
-        # TODO: Should make this declination dependent to ensure going 
-        # well beyond the primary beam.
-        self.ha_side = self._ha_side(len(self.ra))
-
-        # Everything under this line needs to be generalysed for any
-        # Particular polarization XX, YY, XY, YX.
-        # Compute baselines and map visibilities polarization
-        self.bvec_m, pol_array = self._bvec_m(sstream)
-
-        # Ensure data is distributed in freq axis, to extract
-        # copol producs.
-        sstream.redistribute(0)
-        # Reduced visibility data. Co-polarization only:
-        # This increases the amount kept in memory by less than
-        # a factor of 2 since it only copies co-pol visibilities.
-        self.copol_vis = [sstream.vis[:, pol_array == 1, :],
-                          sstream.vis[:, pol_array == 2, :]]  # [x-pol, y-pol]
-        # List to store indices (in global full visibility axis)
-        # of local visibility bins [x-pol, y-pol]
-        full_pol_index = []
-        # For each polarization
-        for pp in range(2):
-            # Swap order of product(1) and RA(2) axes, to reduce striding
-            # through memory later on.
-            self.copol_vis[pp] = np.moveaxis(self.copol_vis[pp], 1, 2)
-            # Wrap each polarization visibility in an MPI array
-            # distributed in frequency (axis 0).
-            self.copol_vis[pp] = mpiarray.MPIArray.wrap(
-                                        self.copol_vis[pp], axis=0)
-            # Re-distribute data in vis-stack (prod) axis (which is now #2!).
-            self.copol_vis[pp] = self.copol_vis[pp].redistribute(axis=2)
-            # Indices (in global full vis axis) of local vis:
-            global_range = np.s_[self.copol_vis[pp].local_offset[2]:
-                                 self.copol_vis[pp].local_offset[2] +
-                                 self.copol_vis[pp].local_shape[2]]
-            full_pol_index.append(np.where(pol_array == pp+1)[0][global_range])
-
-        # Reduce bvec_m to local visibility indices [pol-x, pol-y]
-        # and multiply by freq to get vector inwavelengths.
-        # Shape: (2, nfreq, nvis_local) for each pol.
-        self.bvec = [(self.bvec_m[:, np.newaxis, full_pol_index[pol]] *
-                      self.freq[np.newaxis, :, np.newaxis] * 1E6 / C).copy()
-                     for pol in range(2)]
-
-        # Compute redundancy [pol-x, pol-y]:
-        self.redundancy = [self.telescope.redundancy[full_pol_index[0]].
-                           astype(np.float64),
-                           self.telescope.redundancy[full_pol_index[1]].
-                           astype(np.float64)]
-
-    def process(self, source_cat):
-        """
-
-        Parameters
-        ----------
-        source_cat : :class:`containers.SourceCatalog`
-            Catalog of points to beamform at.
-
-        Returns
-        -------
-        """
-        print 'Hau', source_cat.keys()
-        # Number of poinytings
-        nsource = len(source_cat['position'])
-        # Pointings RA and Dec
-        sdec = source_cat['position']['dec']
-        sra = source_cat['position']['ra']
-        # Number of polarizations. This should be generalized to be a parameter
-        npol = 2
-
-
-        # Container to hold the formed beams
-        #formed_beam = np.zeros((nsource, npol, self.nfreq), dtype=float)
-        #pol = np.array(['I', 'Q', 'U', 'V']), pol = np.array(['I'])
-        formed_beam = containers.FormedBeam(freq=self.freq, object_id=source_cat.index_map['object_id'], pol=np.array(['X','Y']))
-
-        # For each source
-        for src in range(nsource):
-            # Declination of this src
-            dec = np.deg2rad(sdec[src])
-
-            # RA bin this src is closest to.
-            # Phasing will actually be done at src position.
-            sra_index = np.searchsorted(self.ra, sra[src])
-
-            # Compute hour angle array
-            # TODO: I could have a calculation here to have the array go
-            # until the beam drop to some fraction of the maximum value.
-            ha_array, ra_index_range = self._ha_array(
-                    self.ra, sra_index, sra[src], self.ha_side)
-
-            # Indices of full frequency axis. Needed for the way beamform() works.
-            f_indices = np.arange(self.nfreq, dtype=np.int32)
-            # For each polarization
-            for pol in range(2):
-
-                # Fringestop and sum over products
-                this_formed_beam = beamform(
-                        self.copol_vis[pol],
-                        self.redundancy[pol],
-                        dec, self.latitude,
-                        np.cos(ha_array), np.sin(ha_array),
-                        self.bvec[pol][0], self.bvec[pol][1],
-                        f_indices, ra_index_range)
-
-                # Beams to be used in the weighting
-                # TODO: I could have a calculation here to have the array go
-                # until the beam drop to some fraction of the maximum value.
-                beam = self._beamfunc(ha_array[np.newaxis, :], pol,
-                                      self.freq[:, np.newaxis], dec)
-                # Sum over RA
-                this_formed_beam = np.sum(this_formed_beam * beam, axis=1)
-
-                # Gather all ranks. Each contains the sum over a 
-                # different subset of visibilities. Add them all to
-                # get the beamformed values.
-                formed_beam_full = np.zeros(mpiutil.size*self.nfreq,
-                                             dtype=float)
-                # Gather all ranks
-                mpiutil.world.Allgather(this_formed_beam,
-                                        formed_beam_full)
-                # Sum across ranks to complete the FT
-                formed_beam.fbeam[src, pol, :] = np.sum(formed_beam_full.reshape(
-                                         mpiutil.size, self.nfreq), axis=0)
-
-        return formed_beam
-
     def _get_pol(self, ipt0, ipt1):
         """ Returns 1 for co-pol X, 2 for co-pol Y, and 0 otherwise.
         """
@@ -348,4 +182,284 @@ class BeamForm(task.SingleTask):
         return _amp(pol, dec, zenith)*np.exp(
                                     -((ha-ha0)/_sig(pol, freq, dec))**2)
 
+
+    def beamform_source(self, src, formed_beam):
+        """
+        """
+            # Declination of this src
+            dec = np.deg2rad(self.sdec[src])
+
+            # RA bin this src is closest to.
+            # Phasing will actually be done at src position.
+            sra_index = np.searchsorted(self.ra, self.sra[src])
+
+            # Compute hour angle array
+            # TODO: I could have a calculation here to have the array go
+            # until the beam drop to some fraction of the maximum value.
+            ha_array, ra_index_range = self._ha_array(
+                    self.ra, sra_index, self.sra[src], self.ha_side)
+
+            # Indices of full frequency axis. Needed for the way beamform() works.
+            f_indices = np.arange(self.nfreq, dtype=np.int32)
+            # For each polarization
+            for pol in range(self.npol):
+
+                # Fringestop and sum over products
+                this_formed_beam = beamform(
+                        self.copol_vis[pol],
+                        self.redundancy[pol],
+                        dec, self.latitude,
+                        np.cos(ha_array), np.sin(ha_array),
+                        self.bvec[pol][0], self.bvec[pol][1],
+                        f_indices, ra_index_range)
+
+                # Beams to be used in the weighting
+                # TODO: I could have a calculation here to have the array go
+                # until the beam drop to some fraction of the maximum value.
+                beam = self._beamfunc(ha_array[np.newaxis, :], pol,
+                                      self.freq[:, np.newaxis], dec)
+                # Sum over RA
+                this_formed_beam = np.sum(this_formed_beam * beam, axis=1)
+
+                # Gather all ranks. Each contains the sum over a 
+                # different subset of visibilities. Add them all to
+                # get the beamformed values.
+                formed_beam_full = np.zeros(mpiutil.size*self.nfreq,
+                                             dtype=float)
+                # Gather all ranks
+                mpiutil.world.Allgather(this_formed_beam,
+                                        formed_beam_full)
+                # Sum across ranks to complete the FT
+                formed_beam.fbeam[src, pol, :] = np.sum(formed_beam_full.reshape(
+                                         mpiutil.size, self.nfreq), axis=0)
+
+
+class BeamForm(BeamFormBase):
+    """ Version of BeamForm aimed at beamforming a single source catalog
+        for a list of diffent datasets.
+
+    """
+
+    def setup(self, manager, source_cat):
+        """
+
+        Parameters
+        ----------
+        manager : either `ProductManager`, `BeamTransfer` or `TransitTelescope`
+            Contains a TransitTelescope object describing the telescope.
+        source_cat : :class:`containers.SourceCatalog`
+            Catalog of points to beamform at.
+
+        """
+        self.latitude = np.deg2rad(ephemeris.CHIMELATITUDE)
+        # Get the TransitTelescope object
+        self.telescope = io.get_telescope(manager)
+
+        #
+        self.source_cat = source_cat
+        # Number of poinytings
+        self.nsource = len(self.source_cat['position'])
+        # Pointings RA and Dec
+        self.sdec = self.source_cat['position']['dec']
+        self.sra = self.source_cat['position']['ra']
+        # Number of polarizations. This should be generalized to be a parameter
+        self.npol = 2
+
+    def process(self, sstream):
+        """
+
+        Parameters
+        ----------
+        sstream : :class:`containers.SiderealStream`
+            Data to beamform on.
+
+        Returns
+        -------
+        """
+        # Extract data info
+        self.ra = sstream.index_map['ra']
+        self.freq = sstream.index_map['freq']['centre']
+        self.nfreq = len(self.freq)
+
+        # Ensure data is distributed in something other than
+        # frequency (0) to create bad frequency mask.
+        sstream.redistribute(1)
+        self.bad_freq_mask = np.invert(np.all(
+                        sstream.vis[:] == 0., axis=(1, 2)))
+
+        # Number of RA bins to track each source at each side of transit
+        # TODO: Should make this declination dependent to ensure going 
+        # well beyond the primary beam.
+        self.ha_side = self._ha_side(len(self.ra))
+
+        # Everything under this line needs to be generalysed for any
+        # Particular polarization XX, YY, XY, YX.
+        # Compute baselines and map visibilities polarization
+        self.bvec_m, pol_array = self._bvec_m(sstream)
+
+        # Ensure data is distributed in freq axis, to extract
+        # copol producs.
+        sstream.redistribute(0)
+        # Reduced visibility data. Co-polarization only:
+        # This increases the amount kept in memory by less than
+        # a factor of 2 since it only copies co-pol visibilities.
+        self.copol_vis = [sstream.vis[:, pol_array == 1, :],
+                          sstream.vis[:, pol_array == 2, :]]  # [x-pol, y-pol]
+        # List to store indices (in global full visibility axis)
+        # of local visibility bins [x-pol, y-pol]
+        full_pol_index = []
+        # For each polarization
+        for pp in range(self.npol):
+            # Swap order of product(1) and RA(2) axes, to reduce striding
+            # through memory later on.
+            self.copol_vis[pp] = np.moveaxis(self.copol_vis[pp], 1, 2)
+            # Wrap each polarization visibility in an MPI array
+            # distributed in frequency (axis 0).
+            self.copol_vis[pp] = mpiarray.MPIArray.wrap(
+                                        self.copol_vis[pp], axis=0)
+            # Re-distribute data in vis-stack (prod) axis (which is now #2!).
+            self.copol_vis[pp] = self.copol_vis[pp].redistribute(axis=2)
+            # Indices (in global full vis axis) of local vis:
+            global_range = np.s_[self.copol_vis[pp].local_offset[2]:
+                                 self.copol_vis[pp].local_offset[2] +
+                                 self.copol_vis[pp].local_shape[2]]
+            full_pol_index.append(np.where(pol_array == pp+1)[0][global_range])
+
+        # Reduce bvec_m to local visibility indices [pol-x, pol-y]
+        # and multiply by freq to get vector inwavelengths.
+        # Shape: (2, nfreq, nvis_local) for each pol.
+        self.bvec = [(self.bvec_m[:, np.newaxis, full_pol_index[pol]] *
+                      self.freq[np.newaxis, :, np.newaxis] * 1E6 / C).copy()
+                     for pol in range(self.npol)]
+
+        # Compute redundancy [pol-x, pol-y]:
+        self.redundancy = [self.telescope.redundancy[full_pol_index[0]].
+                           astype(np.float64),
+                           self.telescope.redundancy[full_pol_index[1]].
+                           astype(np.float64)]
+
+        # Container to hold the formed beams
+        #formed_beam = np.zeros((nsource, npol, self.nfreq), dtype=float)
+        #pol = np.array(['I', 'Q', 'U', 'V']), pol = np.array(['I'])
+        formed_beam = containers.FormedBeam(freq=self.freq, object_id=self.source_cat.index_map['object_id'], pol=np.array(['X','Y']))
+
+        # For each source
+        for src in range(self.nsource):
+            self.beamform_source(src, formed_beam)
+
+        return formed_beam
+
+
+
+class BeamFormCat(BeamFormBase):
+    """ Version of BeamForm aimed at beamforming at a list of different source
+        catalogs in a single dataset.
+
+    """
+
+    def setup(self, manager, sstream):
+        """
+
+        Parameters
+        ----------
+        manager : either `ProductManager`, `BeamTransfer` or `TransitTelescope`
+            Contains a TransitTelescope object describing the telescope.
+        sstream : :class:`containers.SiderealStream`
+            Data to beamform on.
+
+        """
+        # Extract data info
+        self.ra = sstream.index_map['ra']
+        self.freq = sstream.index_map['freq']['centre']
+        self.nfreq = len(self.freq)
+        self.npol = 2
+        self.latitude = np.deg2rad(ephemeris.CHIMELATITUDE)
+        # Get the TransitTelescope object
+        self.telescope = io.get_telescope(manager)
+
+        # Ensure data is distributed in something other than
+        # frequency (0) to create bad frequency mask.
+        sstream.redistribute(1)
+        self.bad_freq_mask = np.invert(np.all(
+                        sstream.vis[:] == 0., axis=(1, 2)))
+
+        # Number of RA bins to track each source at each side of transit
+        # TODO: Should make this declination dependent to ensure going 
+        # well beyond the primary beam.
+        self.ha_side = self._ha_side(len(self.ra))
+
+        # Everything under this line needs to be generalysed for any
+        # Particular polarization XX, YY, XY, YX.
+        # Compute baselines and map visibilities polarization
+        self.bvec_m, pol_array = self._bvec_m(sstream)
+
+        # Ensure data is distributed in freq axis, to extract
+        # copol producs.
+        sstream.redistribute(0)
+        # Reduced visibility data. Co-polarization only:
+        # This increases the amount kept in memory by less than
+        # a factor of 2 since it only copies co-pol visibilities.
+        self.copol_vis = [sstream.vis[:, pol_array == 1, :],
+                          sstream.vis[:, pol_array == 2, :]]  # [x-pol, y-pol]
+        # List to store indices (in global full visibility axis)
+        # of local visibility bins [x-pol, y-pol]
+        full_pol_index = []
+        # For each polarization
+        for pp in range(self.npol):
+            # Swap order of product(1) and RA(2) axes, to reduce striding
+            # through memory later on.
+            self.copol_vis[pp] = np.moveaxis(self.copol_vis[pp], 1, 2)
+            # Wrap each polarization visibility in an MPI array
+            # distributed in frequency (axis 0).
+            self.copol_vis[pp] = mpiarray.MPIArray.wrap(
+                                        self.copol_vis[pp], axis=0)
+            # Re-distribute data in vis-stack (prod) axis (which is now #2!).
+            self.copol_vis[pp] = self.copol_vis[pp].redistribute(axis=2)
+            # Indices (in global full vis axis) of local vis:
+            global_range = np.s_[self.copol_vis[pp].local_offset[2]:
+                                 self.copol_vis[pp].local_offset[2] +
+                                 self.copol_vis[pp].local_shape[2]]
+            full_pol_index.append(np.where(pol_array == pp+1)[0][global_range])
+
+        # Reduce bvec_m to local visibility indices [pol-x, pol-y]
+        # and multiply by freq to get vector inwavelengths.
+        # Shape: (2, nfreq, nvis_local) for each pol.
+        self.bvec = [(self.bvec_m[:, np.newaxis, full_pol_index[pol]] *
+                      self.freq[np.newaxis, :, np.newaxis] * 1E6 / C).copy()
+                     for pol in range(self.npol)]
+
+        # Compute redundancy [pol-x, pol-y]:
+        self.redundancy = [self.telescope.redundancy[full_pol_index[0]].
+                           astype(np.float64),
+                           self.telescope.redundancy[full_pol_index[1]].
+                           astype(np.float64)]
+
+    def process(self, source_cat):
+        """
+
+        Parameters
+        ----------
+        source_cat : :class:`containers.SourceCatalog`
+            Catalog of points to beamform at.
+
+        Returns
+        -------
+        """
+        # Number of poinytings
+        self.nsource = len(source_cat['position'])
+        # Pointings RA and Dec
+        self.sdec = source_cat['position']['dec']
+        self.sra = source_cat['position']['ra']
+        # Number of polarizations. This should be generalized to be a parameter
+
+        # Container to hold the formed beams
+        #formed_beam = np.zeros((nsource, npol, self.nfreq), dtype=float)
+        #pol = np.array(['I', 'Q', 'U', 'V']), pol = np.array(['I'])
+        formed_beam = containers.FormedBeam(freq=self.freq, object_id=source_cat.index_map['object_id'], pol=np.array(['X','Y']))
+
+        # For each source
+        for src in range(self.nsource):
+            self.beamform_source(src, formed_beam)
+
+        return formed_beam
 
