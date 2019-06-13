@@ -8,6 +8,8 @@ import numpy as np
 cimport numpy as np
 
 from libc.stdint cimport int16_t, uint32_t
+from libc.math cimport sin
+from libc.math cimport cos
 
 cdef inline int int_max(int a, int b) nogil: return a if a >= b else b
 
@@ -152,3 +154,51 @@ def _calc_redundancy(float[:, ::1] input_flags, int16_t[:, ::1] prod_map, uint32
                 # Increment the redundancy counter for this unique baseline if both inputs good
                 redundancy[istack, jj] += input_flags[ia, jj] * input_flags[ib, jj]
 
+
+cdef extern from "complex.h" nogil:
+    double complex cexp(double complex)
+
+@cython.wraparound(False)
+@cython.boundscheck(False)
+cpdef beamform(float complex [:,:,::1] vis,
+               double[::1] redundancy,
+               double dec, double lat,
+               double[::1] cosha, double[::1] sinha,
+               double[:,::1] u, double[:,::1] v,
+               int[::1] f_index, int[::1] ra_index):
+    """
+    """
+
+    cdef double cosdec, sindec, coslat, sinlat
+    cdef double fsphase
+    cdef int nfreq, nra, nprod
+    cdef int ii, jj, kk
+    cdef int fi, ri
+    cdef double pi
+    nfreq, nra, nprod = len(f_index), len(ra_index), vis.shape[2]
+    cdef double[:, ::1] formed_beam = np.zeros((nfreq, nra), dtype=np.float64)
+    cdef double phase, ut, vt, st, ct
+
+    pi = np.pi
+    cosdec, sindec = cos(dec), sin(dec)
+    coslat, sinlat = cos(lat), sin(lat)
+
+    for ii in prange(nfreq, nogil=True):
+        fi = f_index[ii]
+
+        for jj in range(nra):
+
+            ri = ra_index[jj]
+
+            formed_beam[ii, jj] = 0.0
+
+            ut = 2.0 * pi * cosdec * sinha[jj]
+            vt = -2.0 * pi * (coslat * sindec - sinlat * cosdec * cosha[jj])
+
+            for kk in range(nprod):
+                phase = u[ii, kk] * ut + v[ii, kk] * vt
+                st = sin(phase)
+                ct = cos(phase)
+                formed_beam[ii, jj] += redundancy[kk] * (vis[fi, ri, kk] * (ct + 1j * st)).real
+
+    return np.asarray(formed_beam)
