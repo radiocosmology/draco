@@ -1347,6 +1347,63 @@ class FormedBeam(ContainerBase):
         return self.index_map['pol']
 
 
+class FormedBeamHA(FormedBeam):
+    """Container for formed beams.
+       These have not been collapsed in the hour angle (HA) axis
+    """
+    
+    _axes = ('object_id', 'pol', 'freq', 'ha')
+
+    _dataset_spec = {
+        'fbeam': {
+            'axes': ['object_id', 'pol', 'freq', 'ha'],
+            'dtype': np.float64,
+            'initialise': True,
+            'distributed': False
+        },
+        'hour_angle': {
+            'axes': ['object_id', 'ha'],
+            'dtype': np.float64,
+            'initialise': True,
+            'distributed': False
+        }
+    }
+
+    @property
+    def ha(self):
+        return self['hour_angle']
+        #return self.index_map['ha']
+
+
+class FormedBeamTime(FormedBeam):
+    """Container for formed beams.
+       These have not been collapsed in the time axis
+       Time axis represent not timestamp but time offset
+       from transit.
+    """
+
+    _axes = ('object_id', 'pol', 'freq', 'time')
+
+    _dataset_spec = {
+        'fbeam': {
+            'axes': ['object_id', 'pol', 'freq', 'time'],
+            'dtype': np.float64,
+            'initialise': True,
+            'distributed': False
+        },
+        'time_offset': {
+            'axes': ['object_id', 'time'],
+            'dtype': np.float64,
+            'initialise': True,
+            'distributed': False
+        }
+    }
+
+    @property
+    def time(self):
+        return self['time_offset']
+
+
 def empty_like(obj, **kwargs):
     """Create an empty container like `obj`.
 

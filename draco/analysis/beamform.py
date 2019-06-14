@@ -15,7 +15,17 @@ class BeamFormBase(task.SingleTask):
     """ Base class for beam forming tasks.
         Only defines a few useful methods.
         Neither setup() nor process() are defined.
+
+    Attributes
+    ----------
+    collapse_ha : bool
+        Wether or not to sum over hour-angle/time to complete
+        the beamforming. Default is True, which sums over.
     """
+
+    collapse_ha = config.Property(proptype=bool, default=True)
+
+
     def _get_pol(self, ipt0, ipt1):
         """ Returns 1 for co-pol X, 2 for co-pol Y, and 0 otherwise.
         """
@@ -186,33 +196,34 @@ class BeamFormBase(task.SingleTask):
     def beamform_source(self, src, formed_beam):
         """
         """
-            # Declination of this src
-            dec = np.deg2rad(self.sdec[src])
+        # Declination of this src
+        dec = np.deg2rad(self.sdec[src])
 
-            # RA bin this src is closest to.
-            # Phasing will actually be done at src position.
-            sra_index = np.searchsorted(self.ra, self.sra[src])
+        # RA bin this src is closest to.
+        # Phasing will actually be done at src position.
+        sra_index = np.searchsorted(self.ra, self.sra[src])
 
-            # Compute hour angle array
-            # TODO: I could have a calculation here to have the array go
-            # until the beam drop to some fraction of the maximum value.
-            ha_array, ra_index_range = self._ha_array(
-                    self.ra, sra_index, self.sra[src], self.ha_side)
+        # Compute hour angle array
+        # TODO: I could have a calculation here to have the array go
+        # until the beam drop to some fraction of the maximum value.
+        ha_array, ra_index_range = self._ha_array(
+                self.ra, sra_index, self.sra[src], self.ha_side)
 
-            # Indices of full frequency axis. Needed for the way beamform() works.
-            f_indices = np.arange(self.nfreq, dtype=np.int32)
-            # For each polarization
-            for pol in range(self.npol):
+        # Indices of full frequency axis. Needed for the way beamform() works.
+        f_indices = np.arange(self.nfreq, dtype=np.int32)
+        # For each polarization
+        for pol in range(self.npol):
 
-                # Fringestop and sum over products
-                this_formed_beam = beamform(
-                        self.copol_vis[pol],
-                        self.redundancy[pol],
-                        dec, self.latitude,
-                        np.cos(ha_array), np.sin(ha_array),
-                        self.bvec[pol][0], self.bvec[pol][1],
-                        f_indices, ra_index_range)
+            # Fringestop and sum over products
+            this_formed_beam = beamform(
+                    self.copol_vis[pol],
+                    self.redundancy[pol],
+                    dec, self.latitude,
+                    np.cos(ha_array), np.sin(ha_array),
+                    self.bvec[pol][0], self.bvec[pol][1],
+                    f_indices, ra_index_range)
 
+            if self.collapse_ha:
                 # Beams to be used in the weighting
                 # TODO: I could have a calculation here to have the array go
                 # until the beam drop to some fraction of the maximum value.
@@ -220,7 +231,6 @@ class BeamFormBase(task.SingleTask):
                                       self.freq[:, np.newaxis], dec)
                 # Sum over RA
                 this_formed_beam = np.sum(this_formed_beam * beam, axis=1)
-
                 # Gather all ranks. Each contains the sum over a 
                 # different subset of visibilities. Add them all to
                 # get the beamformed values.
@@ -230,8 +240,25 @@ class BeamFormBase(task.SingleTask):
                 mpiutil.world.Allgather(this_formed_beam,
                                         formed_beam_full)
                 # Sum across ranks to complete the FT
-                formed_beam.fbeam[src, pol, :] = np.sum(formed_beam_full.reshape(
-                                         mpiutil.size, self.nfreq), axis=0)
+                formed_beam.fbeam[src, pol, :] = np.sum(
+                        formed_beam_full.reshape(
+                            mpiutil.size, self.nfreq), axis=0)
+
+            else:
+                # Gather all ranks. Each contains the sum over a 
+                # different subset of visibilities. Add them all to
+                # get the beamformed values.
+                formed_beam_full = np.zeros(
+                        (mpiutil.size*self.nfreq, self.nha), dtype=float)
+                # Gather all ranks
+                mpiutil.world.Allgather(this_formed_beam,
+                                        formed_beam_full)
+                # Sum across ranks to complete the FT
+                formed_beam.fbeam[src, pol, :] = np.sum(
+                        formed_beam_full.reshape(
+                            mpiutil.size, self.nfreq, self.nha), axis=0)
+
+                formed_beam.ha[:] = ha_array
 
 
 class BeamForm(BeamFormBase):
@@ -291,6 +318,7 @@ class BeamForm(BeamFormBase):
         # TODO: Should make this declination dependent to ensure going 
         # well beyond the primary beam.
         self.ha_side = self._ha_side(len(self.ra))
+        self.nha = 2 * self.ha_side  + 1
 
         # Everything under this line needs to be generalysed for any
         # Particular polarization XX, YY, XY, YX.
@@ -338,17 +366,25 @@ class BeamForm(BeamFormBase):
                            self.telescope.redundancy[full_pol_index[1]].
                            astype(np.float64)]
 
-        # Container to hold the formed beams
-        #formed_beam = np.zeros((nsource, npol, self.nfreq), dtype=float)
-        #pol = np.array(['I', 'Q', 'U', 'V']), pol = np.array(['I'])
-        formed_beam = containers.FormedBeam(freq=self.freq, object_id=self.source_cat.index_map['object_id'], pol=np.array(['X','Y']))
+        if self.collapse_ha:
+            # Container to hold the formed beams
+            #pol = np.array(['I', 'Q', 'U', 'V']), pol = np.array(['I'])
+            formed_beam = containers.FormedBeam(
+                    freq=self.freq,
+                    object_id=self.source_cat.index_map['object_id'],
+                    pol=np.array(['X','Y']))
+        else:
+            # Container to hold the formed beams
+            formed_beam = containers.FormedBeamHA(
+                    freq=self.freq, ha=np.arange(self.nha, dtype=int),
+                    object_id=self.source_cat.index_map['object_id'],
+                    pol=np.array(['X','Y']))
 
-        # For each source
+        # For each source, beamform and populate container.
         for src in range(self.nsource):
             self.beamform_source(src, formed_beam)
 
         return formed_beam
-
 
 
 class BeamFormCat(BeamFormBase):
@@ -387,6 +423,7 @@ class BeamFormCat(BeamFormBase):
         # TODO: Should make this declination dependent to ensure going 
         # well beyond the primary beam.
         self.ha_side = self._ha_side(len(self.ra))
+        self.nha = 2 * self.ha_side  + 1
 
         # Everything under this line needs to be generalysed for any
         # Particular polarization XX, YY, XY, YX.
@@ -452,10 +489,19 @@ class BeamFormCat(BeamFormBase):
         self.sra = source_cat['position']['ra']
         # Number of polarizations. This should be generalized to be a parameter
 
-        # Container to hold the formed beams
-        #formed_beam = np.zeros((nsource, npol, self.nfreq), dtype=float)
-        #pol = np.array(['I', 'Q', 'U', 'V']), pol = np.array(['I'])
-        formed_beam = containers.FormedBeam(freq=self.freq, object_id=source_cat.index_map['object_id'], pol=np.array(['X','Y']))
+        if self.collapse_ha:
+            # Container to hold the formed beams
+            #pol = np.array(['I', 'Q', 'U', 'V']), pol = np.array(['I'])
+            formed_beam = containers.FormedBeam(
+                    freq=self.freq,
+                    object_id=self.source_cat.index_map['object_id'],
+                    pol=np.array(['X','Y']))
+        else:
+            # Container to hold the formed beams
+            formed_beam = containers.FormedBeamHA(
+                    freq=self.freq, ha=np.arange(self.nha, dtype=int),
+                    object_id=self.source_cat.index_map['object_id'],
+                    pol=np.array(['X','Y']))
 
         # For each source
         for src in range(self.nsource):
