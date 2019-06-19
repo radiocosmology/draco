@@ -14,7 +14,6 @@ Tasks
 import numpy as np
 
 from caput import config, mpiarray, pipeline
-from ch_util import ephemeris
 
 from ..core import containers, task, io
 
