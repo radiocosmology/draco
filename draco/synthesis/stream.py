@@ -1,3 +1,4 @@
+
 """Tasks for simulating sidereal and time stream data.
 
 A typical pattern would be to turn a map into a
@@ -182,7 +183,6 @@ class ExpandProducts(task.SingleTask):
         """
 
         sstream.redistribute('freq')
-
         ninput = len(sstream.input)
         prod = np.array([(fi, fj) for fi in range(ninput) for fj in range(fi, ninput)], dtype=[('input_a', int), ('input_b', int)])
 
