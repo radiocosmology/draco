@@ -5,6 +5,7 @@ from cora.util import units
 from ch_util import tools, ephemeris
 from drift.telescope import cylbeam
 from ..util._fast_tools import beamform
+from mpi4py import MPI
 
 # Constants
 NU21 = units.nu21
@@ -249,14 +250,14 @@ class BeamFormBase(task.SingleTask):
                 self.ra, sra_index, self.sra[src],
                 self.ha_side, self.is_sstream)
 
-        # Indices of full frequency axis. Needed for the way beamform() works.
-        f_indices = np.arange(self.nfreq, dtype=np.int32)
+        # Indices of local frequency axis. Needed for the way beamform() works.
+        f_indices = np.arange(self.ls, dtype=np.int32)
         # For each polarization
         for pol in range(self.npol):
 
             # Fringestop and sum over products
             this_formed_beam = beamform(
-                    self.copol_vis[pol],
+                    self.vis[pol],
                     self.redundancy[pol],
                     dec, self.latitude,
                     np.cos(ha_array), np.sin(ha_array),
@@ -268,21 +269,22 @@ class BeamFormBase(task.SingleTask):
                 # TODO: I could have a calculation here to have the array go
                 # until the beam drop to some fraction of the maximum value.
                 beam = self._beamfunc(ha_array[np.newaxis, :], pol,
-                                      self.freq[:, np.newaxis], dec)
+                                      self.freq_local[:, np.newaxis], dec)
                 # Sum over RA
                 this_formed_beam = np.sum(this_formed_beam * beam, axis=1)
                 # Gather all ranks. Each contains the sum over a 
                 # different subset of visibilities. Add them all to
                 # get the beamformed values.
-                formed_beam_full = np.zeros(mpiutil.size*self.nfreq,
-                                             dtype=float)
+                formed_beam_full = np.zeros(self.nfreq,
+                                            dtype=np.float64)
                 # Gather all ranks
-                mpiutil.world.Allgather(this_formed_beam,
-                                        formed_beam_full)
-                # Sum across ranks to complete the FT
-                formed_beam.fbeam[src, pol, :] = np.sum(
-                        formed_beam_full.reshape(
-                            mpiutil.size, self.nfreq), axis=0)
+                mpiutil.world.Allgatherv(this_formed_beam,
+                                         [formed_beam_full,
+                                          self.fsize, 
+                                          self.foffset, 
+                                          mpiutil.DOUBLE])
+                # Populate container.
+                formed_beam.fbeam[src, pol, :] = formed_beam_full
 
             else:
                 # The length of the HA axis might not be equal to 
@@ -293,24 +295,25 @@ class BeamFormBase(task.SingleTask):
                 nha = len(ha_array)
                 # Gather all ranks
                 formed_beam_full = np.zeros(
-                        (mpiutil.size*self.nfreq, nha), dtype=float)
-                mpiutil.world.Allgather(this_formed_beam,
-                                        formed_beam_full)
-                # Sum across ranks to complete the FT
+                        (self.nfreq*nha), dtype=np.float64)
+                # Reshape to perform Allgartherv
+                mpiutil.world.Allgatherv(
+                        this_formed_beam.flatten(),
+                        [formed_beam_full,
+                         tuple(np.array(self.fsize)*nha),
+                         tuple(np.array(self.foffset)*nha),
+                         mpiutil.DOUBLE])
+                # Reshape result
+                formed_beam_full = formed_beam_full.reshape(self.nfreq, nha)
+                # Populate container
                 if self.is_sstream:
-                    formed_beam.fbeam[src, pol, :] = np.sum(
-                            formed_beam_full.reshape(
-                                mpiutil.size, self.nfreq, nha), axis=0)
+                    formed_beam.fbeam[src, pol, :] = formed_beam_full
                     formed_beam.ha[src, :] = ha_array
 
                 else:
                     # Populate only where ha_mask is true.
                     # The arrays have been initialized to zeros.
-                    print 'Haa', mpiutil.size, nha, formed_beam_full.shape
-                    print 'Huu', formed_beam.fbeam[src, pol].shape, formed_beam.fbeam[src, pol, :, ha_mask].shape
-                    formed_beam.fbeam[src, pol][:, ha_mask] = np.sum(
-                            formed_beam_full.reshape(
-                                mpiutil.size, self.nfreq, nha), axis=0)
+                    formed_beam.fbeam[src, pol][:, ha_mask] = formed_beam_full
                     formed_beam.ha[src, ha_mask] = ha_array
 
 
@@ -385,50 +388,43 @@ class BeamForm(BeamFormBase):
         # Compute baselines and map visibilities polarization
         self.bvec_m, pol_array = self._bvec_m(data)
 
-        # Ensure data is distributed in freq axis, to extract
-        # copol producs.
+        # Ensure data is distributed in freq axis
         data.redistribute(0)
-        # Reduced visibility data. Co-polarization only:
-        # This increases the amount kept in memory by less than
-        # a factor of 2 since it only copies co-pol visibilities.
-        self.copol_vis = [data.vis[:, pol_array == 1, :],
-                          data.vis[:, pol_array == 2, :]]  # [x-pol, y-pol]
-        # List to store indices (in global full visibility axis)
-        # of local visibility bins [x-pol, y-pol]
-        full_pol_index = []
-        # For each polarization
-        for pp in range(self.npol):
+
+        # MPI distribution values
+        self.lo = data.vis.local_offset[0]
+        self.ls = data.vis.local_shape[0]
+        self.freq_local = self.freq[self.lo:self.lo+self.ls]
+        # These are to be used when gathering results in the end.
+        # The counts and displacement arguments of Allgatherv are tuples!
+        # Tuple (not list!) of number of frequencies in each rank
+        self.fsize = tuple(mpiutil.world.allgather(self.ls))
+        # Tuple (not list!) of displacements of each rank array in full array
+        self.foffset = tuple(mpiutil.world.allgather(self.lo))
+
+        # Save subsets of the data for each polarization, changing
+        # the ordering to 'C' (needed for the cython part).
+        # This doubles the memory usage.
+        self.vis, self.bvec, self.redundancy = [], [], []
+        for pol in range(self.npol):
+            polmask = (pol_array == 1+pol)
             # Swap order of product(1) and RA(2) axes, to reduce striding
             # through memory later on.
-            self.copol_vis[pp] = np.moveaxis(self.copol_vis[pp], 1, 2)
-            # Wrap each polarization visibility in an MPI array
-            # distributed in frequency (axis 0).
-            self.copol_vis[pp] = mpiarray.MPIArray.wrap(
-                                        self.copol_vis[pp], axis=0)
-            # Re-distribute data in vis-stack (prod) axis (which is now #2!).
-            self.copol_vis[pp] = self.copol_vis[pp].redistribute(axis=2)
-            # Indices (in global full vis axis) of local vis:
-            global_range = np.s_[self.copol_vis[pp].local_offset[2]:
-                                 self.copol_vis[pp].local_offset[2] +
-                                 self.copol_vis[pp].local_shape[2]]
-            full_pol_index.append(np.where(pol_array == pp+1)[0][global_range])
-
-        # Reduce bvec_m to local visibility indices [pol-x, pol-y]
-        # and multiply by freq to get vector inwavelengths.
-        # Shape: (2, nfreq, nvis_local) for each pol.
-        self.bvec = [(self.bvec_m[:, np.newaxis, full_pol_index[pol]] *
-                      self.freq[np.newaxis, :, np.newaxis] * 1E6 / C).copy()
-                     for pol in range(self.npol)]
-
-        # Compute redundancy [pol-x, pol-y]:
-        self.redundancy = [self.telescope.redundancy[full_pol_index[0]].
-                           astype(np.float64),
-                           self.telescope.redundancy[full_pol_index[1]].
-                           astype(np.float64)]
+            self.vis.append(np.copy(np.moveaxis(
+                data.vis[:, polmask, :], 1, 2), order='C'))
+            # Multiply bvec_m by frequencies to get vector in wavelengths.
+            # Shape: (2, nfreq_local, nvis), for each pol.
+            self.bvec.append(np.copy(
+                    self.bvec_m[:, np.newaxis, polmask] *
+                    self.freq_local[np.newaxis, :, np.newaxis] *
+                    1E6 / C, order='C'))
+            # Store redundancy as float
+            self.redundancy.append(np.copy(
+                self.telescope.redundancy[polmask].astype(np.float64),
+                order='C'))
 
         if self.collapse_ha:
             # Container to hold the formed beams
-            #pol = np.array(['I', 'Q', 'U', 'V']), pol = np.array(['I'])
             formed_beam = containers.FormedBeam(
                     freq=self.freq,
                     object_id=self.source_cat.index_map['object_id'],
@@ -467,6 +463,9 @@ class BeamFormCat(BeamFormBase):
             Data to beamform on.
 
         """
+        # Get the TransitTelescope object
+        self.telescope = io.get_telescope(manager)
+
         # Extract data info
         if 'ra' in data.index_map.keys():
             self.is_sstream = True
@@ -479,8 +478,6 @@ class BeamFormCat(BeamFormBase):
         self.nfreq = len(self.freq)
         self.npol = 2
         self.latitude = np.deg2rad(ephemeris.CHIMELATITUDE)
-        # Get the TransitTelescope object
-        self.telescope = io.get_telescope(manager)
 
         # Ensure data is distributed in something other than
         # frequency (0) to create bad frequency mask.
@@ -499,46 +496,40 @@ class BeamFormCat(BeamFormBase):
         # Compute baselines and map visibilities polarization
         self.bvec_m, pol_array = self._bvec_m(data)
 
-        # Ensure data is distributed in freq axis, to extract
-        # copol producs.
+        # Ensure data is distributed in freq axis
         data.redistribute(0)
-        # Reduced visibility data. Co-polarization only:
-        # This increases the amount kept in memory by less than
-        # a factor of 2 since it only copies co-pol visibilities.
-        self.copol_vis = [data.vis[:, pol_array == 1, :],
-                          data.vis[:, pol_array == 2, :]]  # [x-pol, y-pol]
-        # List to store indices (in global full visibility axis)
-        # of local visibility bins [x-pol, y-pol]
-        full_pol_index = []
-        # For each polarization
-        for pp in range(self.npol):
+
+        # MPI distribution values
+        self.lo = data.vis.local_offset[0]
+        self.ls = data.vis.local_shape[0]
+        self.freq_local = self.freq[self.lo:self.lo+self.ls]
+        # These are to be used when gathering results in the end.
+        # The counts and displacement arguments of Allgatherv are tuples!
+        # Tuple (not list!) of number of frequencies in each rank
+        self.fsize = tuple(mpiutil.world.allgather(self.ls))
+        # Tuple (not list!) of displacements of each rank array in full array
+        self.foffset = tuple(mpiutil.world.allgather(self.lo))
+
+        # Save subsets of the data for each polarization, changing
+        # the ordering to 'C' (needed for the cython part).
+        # This doubles the memory usage.
+        self.vis, self.bvec, self.redundancy = [], [], []
+        for pol in range(self.npol):
+            polmask = (pol_array == 1+pol)
             # Swap order of product(1) and RA(2) axes, to reduce striding
             # through memory later on.
-            self.copol_vis[pp] = np.moveaxis(self.copol_vis[pp], 1, 2)
-            # Wrap each polarization visibility in an MPI array
-            # distributed in frequency (axis 0).
-            self.copol_vis[pp] = mpiarray.MPIArray.wrap(
-                                        self.copol_vis[pp], axis=0)
-            # Re-distribute data in vis-stack (prod) axis (which is now #2!).
-            self.copol_vis[pp] = self.copol_vis[pp].redistribute(axis=2)
-            # Indices (in global full vis axis) of local vis:
-            global_range = np.s_[self.copol_vis[pp].local_offset[2]:
-                                 self.copol_vis[pp].local_offset[2] +
-                                 self.copol_vis[pp].local_shape[2]]
-            full_pol_index.append(np.where(pol_array == pp+1)[0][global_range])
-
-        # Reduce bvec_m to local visibility indices [pol-x, pol-y]
-        # and multiply by freq to get vector inwavelengths.
-        # Shape: (2, nfreq, nvis_local) for each pol.
-        self.bvec = [(self.bvec_m[:, np.newaxis, full_pol_index[pol]] *
-                      self.freq[np.newaxis, :, np.newaxis] * 1E6 / C).copy()
-                     for pol in range(self.npol)]
-
-        # Compute redundancy [pol-x, pol-y]:
-        self.redundancy = [self.telescope.redundancy[full_pol_index[0]].
-                           astype(np.float64),
-                           self.telescope.redundancy[full_pol_index[1]].
-                           astype(np.float64)]
+            self.vis.append(np.copy(np.moveaxis(
+                data.vis[:, polmask, :], 1, 2), order='C'))
+            # Multiply bvec_m by frequencies to get vector in wavelengths.
+            # Shape: (2, nfreq_local, nvis), for each pol.
+            self.bvec.append(np.copy(
+                    self.bvec_m[:, np.newaxis, polmask] *
+                    self.freq_local[np.newaxis, :, np.newaxis] *
+                    1E6 / C, order='C'))
+            # Store redundancy as float
+            self.redundancy.append(np.copy(
+                self.telescope.redundancy[polmask].astype(np.float64),
+                order='C'))
 
     def process(self, source_cat):
         """
@@ -560,16 +551,15 @@ class BeamFormCat(BeamFormBase):
 
         if self.collapse_ha:
             # Container to hold the formed beams
-            #pol = np.array(['I', 'Q', 'U', 'V']), pol = np.array(['I'])
             formed_beam = containers.FormedBeam(
                     freq=self.freq,
-                    object_id=self.source_cat.index_map['object_id'],
+                    object_id=source_cat.index_map['object_id'],
                     pol=np.array(['X','Y']))
         else:
             # Container to hold the formed beams
             formed_beam = containers.FormedBeamHA(
                     freq=self.freq, ha=np.arange(self.nha, dtype=int),
-                    object_id=self.source_cat.index_map['object_id'],
+                    object_id=source_cat.index_map['object_id'],
                     pol=np.array(['X','Y']))
             # Initialize container to zeros. 
             formed_beam.fbeam[:] = 0.
