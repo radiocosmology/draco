@@ -10,6 +10,7 @@ from future.builtins.disabled import *  # noqa  pylint: disable=W0401, W0614
 # === End Python 2/3 compatibility
 
 import numpy as np
+from ch_util import tools
 
 from ._fast_tools import _calc_redundancy
 
