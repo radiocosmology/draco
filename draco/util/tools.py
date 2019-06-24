@@ -104,7 +104,7 @@ def apply_gain(vis, gain, axis=1, out=None, prod_map=None):
         raise Exception("Output array is wrong shape.")
 
     # Define slices for use in gain & vis selection & combination
-    gain_vis_slice = [slice(None) for i in range(axis)]
+    gain_vis_slice = tuple(slice(None) for i in range(axis))
 
     # Iterate over input pairs and set gains
     for pp in range(nprod):
@@ -113,11 +113,11 @@ def apply_gain(vis, gain, axis=1, out=None, prod_map=None):
         ii, ij = prod_map[pp]
 
         # Fetch the gains
-        gi = gain[gain_vis_slice + [ii]]
-        gj = gain[gain_vis_slice + [ij]].conj()
+        gi = gain[gain_vis_slice + (ii,)]
+        gj = gain[gain_vis_slice + (ij,)].conj()
 
         # Apply the gains and save into the output array.
-        out[gain_vis_slice + [pp]] = vis[gain_vis_slice + [pp]] * gi * gj
+        out[gain_vis_slice + (pp,)] = vis[gain_vis_slice + (pp,)] * gi * gj
 
 
     return out

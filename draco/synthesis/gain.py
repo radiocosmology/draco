@@ -14,7 +14,6 @@ Tasks
 import numpy as np
 
 from caput import config, mpiarray, pipeline
-from ch_util import ephemeris
 
 from ..core import containers, task, io
 
@@ -271,8 +270,8 @@ class RandomGains(BaseGains):
         ntime = len(time)
 
         # Generate amplitude fluctuations
-        gain_amp = generate_fluctuations(time, cf_amp, self._prev_time,
-                                         self._prev_amp, num_realisations)
+        gain_amp = generate_fluctuations(time, cf_amp, num_realisations,
+                                         self._prev_time, self._prev_amp)
 
         # Save amplitude fluctuations to instannce
         self._prev_amp = gain_amp
@@ -286,13 +285,13 @@ class RandomGains(BaseGains):
 
         # Generate the correlation function
         cf_phase = self._corr_func(self.corr_length_phase, self.sigma_phase)
-        ninput = self.input_local
+        ninput = self.ninput_local
         num_realisations = len(self.freq) * ninput
         ntime = len(time)
 
         # Generate phase fluctuations
-        gain_phase_fluc = generate_fluctuations(time, cf_phase, self._prev_time,
-                                                self._prev_phase, num_realisations)
+        gain_phase_fluc = generate_fluctuations(time, cf_phase, num_realisations,
+                                                self._prev_time, self._prev_phase)
 
         # Save phase fluctuations to instannce
         self._prev_phase = gain_phase_fluc

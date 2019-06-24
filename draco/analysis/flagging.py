@@ -374,7 +374,8 @@ class RFIMask(task.SingleTask):
             maddev = mad(wf, wm)
 
             # Reflag for scattered TV emission
-            tvmask = tv_channels_flag(maddev, sigma=self.sigma, f=self.tv_fraction)
+            tvmask = tv_channels_flag(maddev, sstream.freq,
+                                      sigma=self.sigma, f=self.tv_fraction)
 
             # Construct the new mask
             newmask[:] = tvmask | (maddev > self.sigma)
@@ -384,6 +385,7 @@ class RFIMask(task.SingleTask):
         ssw[:] *= (~newmask)[:, np.newaxis, :]
 
         # Remove the time average of the data. Should probably do this elsewhere to be honest
+        weight_cut = 1e-4 * ssw.mean()  # Ignore samples with small weights
         ssv[:] = destripe(ssv, ssw > weight_cut)
 
         return sstream
@@ -533,7 +535,7 @@ def p_to_sigma(p):
     return ss.norm.isf(p / 2)
 
 
-def tv_channels_flag(x, sigma=5, f=0.5, debug=False):
+def tv_channels_flag(x, freq, sigma=5, f=0.5, debug=False):
     """Perform a higher sensitivity flagging for the TV stations.
 
     This flags a whole TV station band if more than fraction f of the samples
@@ -547,10 +549,13 @@ def tv_channels_flag(x, sigma=5, f=0.5, debug=False):
         Deviations of data in sigma units.
     freq : np.ndarray[freq]
         Frequency of samples in MHz.
-    sigma : float
+    sigma : float, optional
         The probability of a false positive given as a sigma of a Gaussian.
-    f : float
-        Fraction of bad samples within each channel before flagging the whole thing.
+    f : float, optional
+        Fraction of bad samples within each channel before flagging the whole
+        thing.
+    debug : bool, optional
+        Returns (mask, fraction) instead to give extra debugging info.
 
     Returns
     -------
@@ -565,7 +570,6 @@ def tv_channels_flag(x, sigma=5, f=0.5, debug=False):
     tvwidth_freq = 6
 
     for i in range(67):
-
 
         fs = tvstart_freq + i * tvwidth_freq
         fe = fs + tvwidth_freq
