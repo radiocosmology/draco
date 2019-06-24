@@ -227,3 +227,121 @@ def calculate_redundancy(input_flags, prod_map, stack_index, nstack):
 
     return redundancy
 
+
+def polarization_map(index_map, telescope, exclude_autos=True):
+    """ Map the visibilities corresponding to entries in
+        pol = ['XX', 'YY', 'XY', 'YX'].
+
+        Parameters
+        ----------
+        index_map : h5py.group or dict
+            Index map to map into polarizations. Must contain a `stack`
+            entry and an `input` entry.
+        telescope : :class: `drift.core.telescope`
+            Telescope object containing feed information.
+        exclude_autos: bool
+            If True (default), auto-correlations are set to -1.
+
+        Returns
+        -------
+        polmap : array of int
+            Array of size `nstack`. Each entry is the index to the
+            corresponding polarization in pol = ['XX', 'YY', 'XY', 'YX']
+
+    """
+    pol = ['XX', 'YY', 'XY', 'YX']
+    nstack = len(index_map['stack'])
+    # polmap: indices of each vis product in
+    # polarization list: ['XX', 'YY', 'XY', 'YX']
+    polmap = np.zeros(nstack, dtype=int)
+    # For each entry in stack
+    for vi in range(nstack):
+        # Product index
+        pi = index_map['stack'][vi][0]
+        # Inputs that go into this product
+        ipt0 = index_map['input']['chan_id'][
+                            index_map['prod'][pi][0]]
+        ipt1 = index_map['input']['chan_id'][
+                            index_map['prod'][pi][1]]
+
+        # Exclude autos if exclude_autos == True
+        if (exclude_autos and (ipt0 == ipt1)):
+            polmap[vi] = -1
+            continue
+
+        # Are feeds on?
+        onfeeds = (tools.is_array_on(telescope._feeds[ipt0]) and
+                   tools.is_array_on(telescope._feeds[ipt1]))
+        # Feeds are off, exclude from polmap
+        if not onfeeds:
+            polmap[vi] = -1
+            continue
+
+        # If feeds are on, find both polarizations and populate polmap
+        if onfeeds:
+            # Find polarization of first input
+            if tools.is_array_x(telescope._feeds[ipt0]):
+                polstring = 'X'
+            elif tools.is_array_y(telescope._feeds[ipt0]):
+                polstring = 'Y'
+            else:
+                # We should not get to this case.
+                polmap[vi] = -1
+                continue
+            # Find polarization of second input and add it to polstring
+            if tools.is_array_x(telescope._feeds[ipt1]):
+                polstring += 'X'
+            elif tools.is_array_y(telescope._feeds[ipt1]):
+                polstring += 'Y'
+            else:
+                # We should not get to this case.
+                polmap[vi] = -1
+                continue
+            # If conjugate, flip polstring ('XY -> 'YX)
+            if telescope.feedconj[ipt0, ipt1]:
+                polstring = polstring[::-1]
+            # Populate polmap
+            polmap[vi] = pol.index(polstring)
+
+    return polmap
+
+
+def baseline_vector(index_map, telescope):
+    """ Baseline vectors in meters.
+
+        Parameters
+        ----------
+        index_map : h5py.group or dict
+            Index map to map into polarizations. Must contain a `stack`
+            entry and an `input` entry.
+        telescope : :class: `drift.core.telescope`
+            Telescope object containing feed information.
+
+        Returns
+        -------
+        bvec_m : array
+            Array of shape (2, nstack). The 2D baseline vector
+            (in meters) for each visibility in index_map['stack']
+    """
+    nstack = len(index_map['stack'])
+    # Baseline vectors in meters.
+    bvec_m = np.zeros((2, nstack), dtype=np.float64)
+    # Compute all baseline vectors.
+    for vi in range(nstack):
+        # Product index
+        pi = index_map['stack'][vi][0]
+        # Inputs that go into this product
+        ipt0 = index_map['input']['chan_id'][
+                            index_map['prod'][pi][0]]
+        ipt1 = index_map['input']['chan_id'][
+                            index_map['prod'][pi][1]]
+
+        # Beseline vector in meters
+        unique_index = telescope.feedmap[ipt0, ipt1]
+        bvec_m[:, vi] = telescope.baselines[unique_index]
+        # No need to conjugate. Already done in telescope.baselines.
+        #if telescope.feedconj[ipt0, ipt1]:
+        #    bvec_m[:, vi] *= -1.
+
+    return bvec_m
+
