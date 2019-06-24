@@ -5,6 +5,7 @@ from cora.util import units
 from ch_util import tools, ephemeris
 from drift.telescope import cylbeam
 from ..util._fast_tools import beamform
+from ..util.tools import polarization_map, baseline_vector
 from mpi4py import MPI
 
 # Constants
@@ -14,78 +15,205 @@ C = units.c
 
 class BeamFormBase(task.SingleTask):
     """ Base class for beam forming tasks.
-        Only defines a few useful methods.
-        Neither setup() nor process() are defined.
+        Defines a few useful methods. Not to be used directly
+        but as parent class for BeamForm and BeamFormCat.
 
     Attributes
     ----------
     collapse_ha : bool
         Wether or not to sum over hour-angle/time to complete
         the beamforming. Default is True, which sums over.
+    polarization : string
+        One of:
+        'I' : Stokes I only.
+        'full' : 'XX', 'YY', 'XY' and 'YX' in this order.
+        'copol' : 'XX' and 'YY' only.
+        'stokes' : 'I', 'Q', 'U' and 'V' in this order. Not implemented.
+    timetrack : float
+        How long (in seconds) to track sources at each side of transit.
+        Total transit time will be ~ 2 * timetrack.
     """
 
     collapse_ha = config.Property(proptype=bool, default=True)
+    polarization = config.Property(proptype=str, default='full')
+    timetrack = config.Property(proptype=float, default=900.)
 
+    def setup(self, manager):
+        """ Generic setup method. To be complemented by specific
+            setup methods in daughter tasks.
 
-    def _get_pol(self, ipt0, ipt1):
-        """ Returns 1 for co-pol X, 2 for co-pol Y, and 0 otherwise.
-        """
-        onfeeds = (tools.is_array_on(self.telescope._feeds[ipt0]) and
-                   tools.is_array_on(self.telescope._feeds[ipt1]))
-        # Do not include autos
-        if onfeeds and (ipt0 != ipt1):
-            # Test for co-polarization
-            xpol = (tools.is_array_x(self.telescope._feeds[ipt0]) and
-                    tools.is_array_x(self.telescope._feeds[ipt1]))
-            if xpol:
-                return 1
-            else:
-                ypol = (tools.is_array_y(self.telescope._feeds[ipt0]) and
-                        tools.is_array_y(self.telescope._feeds[ipt1]))
-                if ypol:
-                    return 2
-        # Default, return 0. Cross-pol or Off.
-        # Notice there is no else clause here.
-        return 0
-
-    def _bvec_m(self, data):
-        """ Baseline vector in meters.
-        """
-        nvis = len(data.index_map['stack'])
-        # pol_array: 1 for copol X, 2 for copol Y, 0 otherwise.
-        pol_array = np.zeros(nvis, dtype=int)
-        # Baseline vectors in meters.
-        bvec_m = np.zeros((2, nvis), dtype=np.float64)
-        # Compute all baseline vectors.
-        for vi in range(nvis):
-            # Product index
-            pi = data.index_map['stack'][vi][0]
-            # Inputs that go into this product
-            ipt0 = data.index_map['input']['chan_id'][
-                                data.index_map['prod'][pi][0]]
-            ipt1 = data.index_map['input']['chan_id'][
-                                data.index_map['prod'][pi][1]]
-            # Populate pol_array
-            pol_array[vi] = self._get_pol(ipt0, ipt1)
-            if pol_array[vi] > 0:
-                # Beseline vector in meters
-                # I am only computing the baseline vector
-                # for co-pol products, but the array has the full shape.
-                # Cross-pol entries should be junk.
-                unique_index = self.telescope.feedmap[ipt0, ipt1]
-                bvec_m[:, vi] = self.telescope.baselines[unique_index]
-                # No need to conjugate. Already done in telescope.baselines.
-                #if self.telescope.feedconj[ipt0, ipt1]:
-                #    bvec_m[:, vi] *= -1.
-
-        return bvec_m, pol_array
-
-    def _ha_side(self, data, timetrack=900.):
-        """
         Parameters
         ----------
-        nra : int
-            Number of RA bins in a sidereal day.
+        manager : either `ProductManager`, `BeamTransfer` or `TransitTelescope`
+            Contains a TransitTelescope object describing the telescope.
+        """
+        # Get the TransitTelescope object
+        self.telescope = io.get_telescope(manager)
+        # Polarizations.
+        if self.polarization == 'I':
+            self.process_pol = ['XX', 'YY']
+            self.return_pol = ['I']
+        elif self.polarization == 'full':
+            self.process_pol = ['XX', 'YY', 'XY', 'YX']
+            self.return_pol = self.process_pol
+        elif self.polarization == 'copol':
+            self.process_pol = ['XX', 'YY']
+            self.return_pol = self.process_pol
+        elif self.polarization == 'stokes':
+            self.process_pol = ['XX', 'YY', 'XY', 'YX']
+            self.return_pol = ['I', 'Q', 'U', 'V']
+            msg = 'Stokes parameters are not implemented'
+            raise RuntimeError(msg)
+        else:
+            msg = 'Invalid polarization parameter: {0}'
+            msg = msg.format(self.polarization)
+            raise ValueError(msg)
+        # Number of polarizations to process
+        self.npol = len(self.process_pol)
+        self.latitude = np.deg2rad(ephemeris.CHIMELATITUDE)
+
+    def process(self):
+        """ Generic process method. Performs all the beamforming,
+            but not the data parsing. To be complemented by specific
+            process methods in daughter tasks.
+
+        Returns
+        -------
+        formed_beam : `containers.FormedBeam` or `containers.FormedBeamHA`
+            Formed beams at each source. Shape depends on parameter
+            `collapse_ha`.
+        """
+        # Contruct containers for formed beams
+        if self.collapse_ha:
+            # Container to hold the formed beams
+            formed_beam = containers.FormedBeam(
+                    freq=self.freq,
+                    object_id=self.source_cat.index_map['object_id'],
+                    pol=np.array(self.return_pol))
+        else:
+            # Container to hold the formed beams
+            formed_beam = containers.FormedBeamHA(
+                    freq=self.freq, ha=np.arange(self.nha, dtype=int),
+                    object_id=self.source_cat.index_map['object_id'],
+                    pol=np.array(self.return_pol))
+            # Initialize container to zeros.
+            formed_beam.fbeam[:] = 0.
+            formed_beam.ha[:] = 0.  # TODO: Should this be np.nan instead?
+
+        # Indices of local frequency axis. Needed because in principle
+        # beamform() allows a subset of frequencies to be processed.
+        f_local_indices = np.arange(len(self.freq_local), dtype=np.int32)
+
+        # For each source, beamform and populate container.
+        for src in range(self.nsource):
+
+            # Declination of this source
+            dec = self.sdec[src]
+
+            # Get RA bin this source is closest to.
+            # Phasing will actually be done at src position.
+            if self.is_sstream:
+                sra_index = np.searchsorted(self.ra, self.sra[src])
+                # Compute hour angle array
+                ha_array, ra_index_range = self._ha_array(
+                    self.ra, sra_index, self.sra[src],
+                    self.ha_side, self.is_sstream)
+            else:
+                # Cannot use searchsorted, because RA might not be
+                # monotonically increasing. Slower.
+                # Notice: in case there is more than one transit,
+                # this pick a single transit quasy-randomly!
+                transit_diff = abs(self.ra - self.sra[src])
+                sra_index = np.argmin(transit_diff)
+                # For now, skip sources that do not transit in the data
+                ra_cadence = self.ra[1]-self.ra[0]
+                if transit_diff[sra_index] > 1.5 * ra_cadence:
+                    continue
+                # Compute hour angle array
+                ha_array, ra_index_range, ha_mask = self._ha_array(
+                    self.ra, sra_index, self.sra[src],
+                    self.ha_side, self.is_sstream)
+
+            # The length of the HA axis might not be equal to
+            # self.nha for all sources in case self.is_sstream
+            # is False. It could be smaller if some HA are
+            # outside the range of the data.
+            nha = len(ha_array)
+            formed_beam_full = np.zeros(
+                (self.npol, self.nfreq, self.nha), dtype=np.float64)
+
+            # For each polarization
+            for pol in range(self.npol):
+
+                # Fringestop and sum over products
+                this_formed_beam = beamform(
+                        self.vis[pol],
+                        self.redundancy[pol],
+                        dec, self.latitude,
+                        np.cos(ha_array), np.sin(ha_array),
+                        self.bvec[pol][0], self.bvec[pol][1],
+                        f_local_indices, ra_index_range)
+
+                if self.collapse_ha:
+                    # Beams to be used in the weighting
+                    beam = self._beamfunc(ha_array[np.newaxis, :], pol,
+                                          self.freq_local[:, np.newaxis], dec)
+                    # Sum over RA
+                    this_formed_beam = np.sum(this_formed_beam * beam, axis=1)
+                    # Gather all ranks.
+                    formed_beam_gather = np.zeros(self.nfreq,
+                                                  dtype=np.float64)
+                    # Gather all ranks
+                    mpiutil.world.Allgatherv(this_formed_beam,
+                                             [formed_beam_gather,
+                                              self.fsize,
+                                              self.foffset,
+                                              mpiutil.DOUBLE])
+                    formed_beam_full[pol, :] = formed_beam_gather
+                else:
+                    # Gather all ranks
+                    formed_beam_gather = np.zeros(
+                            (self.nfreq*nha), dtype=np.float64)
+                    # Reshape to perform Allgartherv
+                    mpiutil.world.Allgatherv(
+                            this_formed_beam.flatten(),
+                            [formed_beam_gather,
+                             tuple(np.array(self.fsize)*nha),
+                             tuple(np.array(self.foffset)*nha),
+                             mpiutil.DOUBLE])
+                    # Reshape result and add to formed_beam_full
+                    # Populate only where ha_mask is true.
+                    formed_beam_full[pol][:, ha_mask] = formed_beam_gather.reshape(
+                                                                   self.nfreq, nha)
+
+            # Combine polarizations if needed.
+            if self.polarization == 'I':
+                formed_beam_full = np.reshape(
+                        np.sum(formed_beam_full, axis=0),
+                        (1, self.nfreq, self.nha))
+            elif self.polarization == 'stokes':
+                # Not implemented
+                pass
+
+            # Populate container.
+            formed_beam.fbeam[src, :] = formed_beam_full
+            if not self.collapse_ha:
+                if self.is_sstream:
+                    formed_beam.ha[src, :] = ha_array
+                else:
+                    # Populate only where ha_mask is true.
+                    formed_beam.ha[src, ha_mask] = ha_array
+
+        return formed_beam
+
+    def _ha_side(self, data, timetrack=900.):
+        """ Number of RA/time bins to track the source at each side of
+            transit from a time window.
+
+        Parameters
+        ----------
+        data : `containers.SiderealStream` or `containers.TimeStream`
+            Data to read time from.
         timetrack : float
             Time in seconds to track at each side of transit.
             Default is 15 minutes.
@@ -95,17 +223,22 @@ class BeamFormBase(task.SingleTask):
         ha_side : int
             Number of RA bins to track the source at each side of transit.
         """
-        if self.is_sstream:
-            approx_time_perbin = 24. * 3600. / float(len(self.ra))  # seconds
+        # TODO: Instead of a fixed time for transit, I could have a minimum
+        # drop in the beam at a conventional distance from the NCP.
+        if 'ra' in data.index_map.keys():
+            # In seconds
+            approx_time_perbin = 24. * 3600. / float(len(data.index_map['ra']))
         else:
             approx_time_perbin = data.time[1] - data.time[0]
 
-        # Track for 15 min at each side of transit
+        # Track for `timetrack` seconds at each side of transit
         return int(timetrack / approx_time_perbin)
 
-    def _ha_array(self, ra, source_ra_index, source_ra, 
+    def _ha_array(self, ra, source_ra_index, source_ra,
                   ha_side, is_sstream=True):
-        """
+        """ Returns the hour angle for each RA/time bin to be processed
+            around the source transit. Also return the indices of these
+            RA/time bins in the full RA/time axis.
 
         Parameters
         ----------
@@ -119,7 +252,6 @@ class BeamFormBase(task.SingleTask):
             Number of RA/HA bins on each side of transit.
         is_sstream : bool
             True if data is sidereal stream. Flase if time stream
-
 
         Returns
         -------
@@ -135,8 +267,6 @@ class BeamFormBase(task.SingleTask):
                                    dtype=np.int32)
         # Number of RA bins in data.
         nra = len(ra)
-        # Number of HA bins to fringestop to.
-        nha = 2 * ha_side  + 1
 
         if is_sstream:
             # Wrap RA indices around edges.
@@ -162,7 +292,8 @@ class BeamFormBase(task.SingleTask):
             return ha_array, ra_index_range, ha_mask
 
     def _beamfunc(self, ha, pol, freq, dec, zenith=0.70999994):
-        """
+        """ Simple and fast beam model to be used as beamforming weights.
+
         Parameters
         ----------
         ha : array or float
@@ -171,8 +302,8 @@ class BeamFormBase(task.SingleTask):
             Frequency in MHz
         dec : array or float
             Declination in radians
-        pp : int
-            Polarization index. X : 0, Y :1
+        pol : int
+            Polarization index. 0: X, 1: Y, >2: XY
         zenith : float
             Polar angle of the telescope zenith in radians.
             Equal to pi/2 - latitude
@@ -213,143 +344,109 @@ class BeamFormBase(task.SingleTask):
                                         *prm_ns_y)
 
         ha0 = 0.
-        return _amp(pol, dec, zenith)*np.exp(
+        if pol < 2:
+            # XX or YY
+            return _amp(pol, dec, zenith)*np.exp(
                                     -((ha-ha0)/_sig(pol, freq, dec))**2)
-
-
-    def beamform_source(self, src, formed_beam):
-        """
-        """
-        # Declination of this src
-        dec = np.deg2rad(self.sdec[src])
-
-        # RA bin this src is closest to.
-        # Phasing will actually be done at src position.
-        if self.is_sstream:
-            sra_index = np.searchsorted(self.ra, self.sra[src])
-            # Compute hour angle array
-            # TODO: I could have a calculation here to have the array go
-            # until the beam drop to some fraction of the maximum value.
-            ha_array, ra_index_range = self._ha_array(
-                self.ra, sra_index, self.sra[src],
-                self.ha_side, self.is_sstream)
         else:
-            # Cannot use searchsorted, because RA might not be
-            # monotonically increasing. Slower.
-            # TODO: It would be nice to check that the choice of 
-            # sra_index is the one closest to the centre of the 
-            # data (in case there are two transits).
-            transit_diff = abs(self.ra - self.sra[src])
-            sra_index = np.argmin(transit_diff)
-            # For now, skip sources that do not transit in the data
-            ra_cadence = self.ra[1]-self.ra[0]
-            if transit_diff[sra_index] > 1.5 * ra_cadence:
-                return 0
-            # Compute hour angle array
-            ha_array, ra_index_range, ha_mask = self._ha_array(
-                self.ra, sra_index, self.sra[src],
-                self.ha_side, self.is_sstream)
+            # XY or YX
+            return (_amp(0, dec, zenith)*np.exp(
+                                -((ha-ha0)/_sig(0, freq, dec))**2) *
+                    _amp(1, dec, zenith)*np.exp(
+                                -((ha-ha0)/_sig(1, freq, dec))**2))**0.5
 
-        # Indices of local frequency axis. Needed for the way beamform() works.
-        f_indices = np.arange(self.ls, dtype=np.int32)
-        # For each polarization
+    def _process_data(self, data):
+        """ Store code for parsing and formating data
+            priot to beamforming.
+        """
+        # Extract data info
+        if 'ra' in data.index_map.keys():
+            self.is_sstream = True
+            self.ra = data.index_map['ra']
+        else:
+            self.is_sstream = False
+            # Convert data timestamps into LSAs (degrees)
+            self.ra = self.telescope.unix_to_lsa(data.time)
+
+        self.freq = data.index_map['freq']['centre']
+        self.nfreq = len(self.freq)
+
+        # Ensure data is distributed in freq axis
+        data.redistribute(0)
+
+        # Number of RA bins to track each source at each side of transit
+        self.ha_side = self._ha_side(data, self.timetrack)
+        self.nha = 2 * self.ha_side + 1
+
+        # polmap: indices of each vis product in
+        # polarization list: ['XX', 'YY', 'XY', 'YX']
+        polmap = polarization_map(data.index_map, self.telescope)
+        # Baseline vectors in meters
+        bvec_m = baseline_vector(data.index_map, self.telescope)
+
+        # MPI distribution values
+        lo = data.vis.local_offset[0]
+        ls = data.vis.local_shape[0]
+        self.freq_local = self.freq[lo:lo+ls]
+        # These are to be used when gathering results in the end.
+        # Tuple (not list!) of number of frequencies in each rank
+        self.fsize = tuple(mpiutil.world.allgather(ls))
+        # Tuple (not list!) of displacements of each rank array in full array
+        self.foffset = tuple(mpiutil.world.allgather(lo))
+
+        # Save subsets of the data for each polarization, changing
+        # the ordering to 'C' (needed for the cython part).
+        # This doubles the memory usage.
+        self.vis, self.bvec, self.redundancy = [], [], []
         for pol in range(self.npol):
-
-            # Fringestop and sum over products
-            this_formed_beam = beamform(
-                    self.vis[pol],
-                    self.redundancy[pol],
-                    dec, self.latitude,
-                    np.cos(ha_array), np.sin(ha_array),
-                    self.bvec[pol][0], self.bvec[pol][1],
-                    f_indices, ra_index_range)
-
-            if self.collapse_ha:
-                # Beams to be used in the weighting
-                # TODO: I could have a calculation here to have the array go
-                # until the beam drop to some fraction of the maximum value.
-                beam = self._beamfunc(ha_array[np.newaxis, :], pol,
-                                      self.freq_local[:, np.newaxis], dec)
-                # Sum over RA
-                this_formed_beam = np.sum(this_formed_beam * beam, axis=1)
-                # Gather all ranks. Each contains the sum over a 
-                # different subset of visibilities. Add them all to
-                # get the beamformed values.
-                formed_beam_full = np.zeros(self.nfreq,
-                                            dtype=np.float64)
-                # Gather all ranks
-                mpiutil.world.Allgatherv(this_formed_beam,
-                                         [formed_beam_full,
-                                          self.fsize, 
-                                          self.foffset, 
-                                          mpiutil.DOUBLE])
-                # Populate container.
-                formed_beam.fbeam[src, pol, :] = formed_beam_full
-
-            else:
-                # The length of the HA axis might not be equal to 
-                # self.nha for all sources in case self.is_sstream 
-                # is False. It could be smaller if some HA are
-                # outside the range of the data. I need this number
-                # explicitly to gather ranks.
-                nha = len(ha_array)
-                # Gather all ranks
-                formed_beam_full = np.zeros(
-                        (self.nfreq*nha), dtype=np.float64)
-                # Reshape to perform Allgartherv
-                mpiutil.world.Allgatherv(
-                        this_formed_beam.flatten(),
-                        [formed_beam_full,
-                         tuple(np.array(self.fsize)*nha),
-                         tuple(np.array(self.foffset)*nha),
-                         mpiutil.DOUBLE])
-                # Reshape result
-                formed_beam_full = formed_beam_full.reshape(self.nfreq, nha)
-                # Populate container
-                if self.is_sstream:
-                    formed_beam.fbeam[src, pol, :] = formed_beam_full
-                    formed_beam.ha[src, :] = ha_array
-
-                else:
-                    # Populate only where ha_mask is true.
-                    # The arrays have been initialized to zeros.
-                    formed_beam.fbeam[src, pol][:, ha_mask] = formed_beam_full
-                    formed_beam.ha[src, ha_mask] = ha_array
+            polmask = (polmap == pol)
+            # Swap order of product(1) and RA(2) axes, to reduce striding
+            # through memory later on.
+            self.vis.append(np.copy(np.moveaxis(
+                data.vis[:, polmask, :], 1, 2), order='C'))
+            # Multiply bvec_m by frequencies to get vector in wavelengths.
+            # Shape: (2, nfreq_local, nvis), for each pol.
+            self.bvec.append(np.copy(
+                    bvec_m[:, np.newaxis, polmask] *
+                    self.freq_local[np.newaxis, :, np.newaxis] *
+                    1E6 / C, order='C'))
+            # Store redundancy as float
+            self.redundancy.append(np.copy(
+                self.telescope.redundancy[polmask].astype(np.float64),
+                order='C'))
 
 
 class BeamForm(BeamFormBase):
     """ Version of BeamForm aimed at beamforming a single source catalog
-        for a list of diffent datasets.
+        for a list of diffent visibility datasets.
 
     """
 
     def setup(self, manager, source_cat):
-        """
+        """ Parse the source catalog and performs the generic setup.
 
         Parameters
         ----------
         manager : either `ProductManager`, `BeamTransfer` or `TransitTelescope`
             Contains a TransitTelescope object describing the telescope.
+
         source_cat : :class:`containers.SourceCatalog`
             Catalog of points to beamform at.
 
         """
-        self.latitude = np.deg2rad(ephemeris.CHIMELATITUDE)
-        # Get the TransitTelescope object
-        self.telescope = io.get_telescope(manager)
+        super(BeamForm, self).setup(manager)
 
-        #
+        # Extract source catalog information
         self.source_cat = source_cat
         # Number of poinytings
         self.nsource = len(self.source_cat['position'])
         # Pointings RA and Dec
-        self.sdec = self.source_cat['position']['dec']
+        self.sdec = np.deg2rad(self.source_cat['position']['dec'][:])
         self.sra = self.source_cat['position']['ra']
-        # Number of polarizations. This should be generalized to be a parameter
-        self.npol = 2
 
     def process(self, data):
-        """
+        """ Parse the visibility data and beamforms each source in
+            the generic process().
 
         Parameters
         ----------
@@ -358,181 +455,42 @@ class BeamForm(BeamFormBase):
 
         Returns
         -------
+        formed_beam : `containers.FormedBeam` or `containers.FormedBeamHA`
+            Formed beams at each source.
         """
-        # Extract data info
-        if 'ra' in data.index_map.keys():
-            self.is_sstream = True
-            self.ra = data.index_map['ra']
-        else:
-            self.is_sstream = False
-            # Convert data timestamps into LSAs (degrees)
-            self.ra = self.telescope.unix_to_lsa(data.time)
+        # Process and make available various data
+        self._process_data(data)
 
-        self.freq = data.index_map['freq']['centre']
-        self.nfreq = len(self.freq)
-
-        # Ensure data is distributed in something other than
-        # frequency (0) to create bad frequency mask.
-        data.redistribute(1)
-        self.bad_freq_mask = np.invert(np.all(
-                        data.vis[:] == 0., axis=(1, 2)))
-
-        # Number of RA bins to track each source at each side of transit
-        # TODO: Should make this declination dependent to ensure going 
-        # well beyond the primary beam.
-        self.ha_side = self._ha_side(data)
-        self.nha = 2 * self.ha_side + 1
-
-        # Everything under this line needs to be generalysed for any
-        # Particular polarization XX, YY, XY, YX.
-        # Compute baselines and map visibilities polarization
-        self.bvec_m, pol_array = self._bvec_m(data)
-
-        # Ensure data is distributed in freq axis
-        data.redistribute(0)
-
-        # MPI distribution values
-        self.lo = data.vis.local_offset[0]
-        self.ls = data.vis.local_shape[0]
-        self.freq_local = self.freq[self.lo:self.lo+self.ls]
-        # These are to be used when gathering results in the end.
-        # The counts and displacement arguments of Allgatherv are tuples!
-        # Tuple (not list!) of number of frequencies in each rank
-        self.fsize = tuple(mpiutil.world.allgather(self.ls))
-        # Tuple (not list!) of displacements of each rank array in full array
-        self.foffset = tuple(mpiutil.world.allgather(self.lo))
-
-        # Save subsets of the data for each polarization, changing
-        # the ordering to 'C' (needed for the cython part).
-        # This doubles the memory usage.
-        self.vis, self.bvec, self.redundancy = [], [], []
-        for pol in range(self.npol):
-            polmask = (pol_array == 1+pol)
-            # Swap order of product(1) and RA(2) axes, to reduce striding
-            # through memory later on.
-            self.vis.append(np.copy(np.moveaxis(
-                data.vis[:, polmask, :], 1, 2), order='C'))
-            # Multiply bvec_m by frequencies to get vector in wavelengths.
-            # Shape: (2, nfreq_local, nvis), for each pol.
-            self.bvec.append(np.copy(
-                    self.bvec_m[:, np.newaxis, polmask] *
-                    self.freq_local[np.newaxis, :, np.newaxis] *
-                    1E6 / C, order='C'))
-            # Store redundancy as float
-            self.redundancy.append(np.copy(
-                self.telescope.redundancy[polmask].astype(np.float64),
-                order='C'))
-
-        if self.collapse_ha:
-            # Container to hold the formed beams
-            formed_beam = containers.FormedBeam(
-                    freq=self.freq,
-                    object_id=self.source_cat.index_map['object_id'],
-                    pol=np.array(['X','Y']))
-        else:
-            # Container to hold the formed beams
-            formed_beam = containers.FormedBeamHA(
-                    freq=self.freq, ha=np.arange(self.nha, dtype=int),
-                    object_id=self.source_cat.index_map['object_id'],
-                    pol=np.array(['X','Y']))
-            # Initialize container to zeros. 
-            formed_beam.fbeam[:] = 0.
-            formed_beam.ha[:] = 0.  # TODO: Should this be np.nan instead?
-
-        # For each source, beamform and populate container.
-        for src in range(self.nsource):
-            self.beamform_source(src, formed_beam)
-
-        return formed_beam
+        # Call generic process method.
+        return super(BeamForm, self).process()
 
 
 class BeamFormCat(BeamFormBase):
     """ Version of BeamForm aimed at beamforming at a list of different source
-        catalogs in a single dataset.
+        catalogs for a single visibility dataset.
 
     """
 
     def setup(self, manager, data):
-        """
+        """ Parse the visibility data and performs the generic setup.
 
         Parameters
         ----------
         manager : either `ProductManager`, `BeamTransfer` or `TransitTelescope`
             Contains a TransitTelescope object describing the telescope.
+
         data : `containers.SiderealStream` or `containers.TimeStream`
             Data to beamform on.
 
         """
-        # Get the TransitTelescope object
-        self.telescope = io.get_telescope(manager)
+        super(BeamFormCat, self).setup(manager)
 
-        # Extract data info
-        if 'ra' in data.index_map.keys():
-            self.is_sstream = True
-            self.ra = data.index_map['ra']
-        else:
-            self.is_sstream = False
-            # Convert data timestamps into LSAs (degrees)
-            self.ra = self.telescope.unix_to_lsa(data.time)
-        self.freq = data.index_map['freq']['centre']
-        self.nfreq = len(self.freq)
-        self.npol = 2
-        self.latitude = np.deg2rad(ephemeris.CHIMELATITUDE)
-
-        # Ensure data is distributed in something other than
-        # frequency (0) to create bad frequency mask.
-        data.redistribute(1)
-        self.bad_freq_mask = np.invert(np.all(
-                        data.vis[:] == 0., axis=(1, 2)))
-
-        # Number of RA bins to track each source at each side of transit
-        # TODO: Should make this declination dependent to ensure going 
-        # well beyond the primary beam.
-        self.ha_side = self._ha_side(data)
-        self.nha = 2 * self.ha_side  + 1
-
-        # Everything under this line needs to be generalysed for any
-        # Particular polarization XX, YY, XY, YX.
-        # Compute baselines and map visibilities polarization
-        self.bvec_m, pol_array = self._bvec_m(data)
-
-        # Ensure data is distributed in freq axis
-        data.redistribute(0)
-
-        # MPI distribution values
-        self.lo = data.vis.local_offset[0]
-        self.ls = data.vis.local_shape[0]
-        self.freq_local = self.freq[self.lo:self.lo+self.ls]
-        # These are to be used when gathering results in the end.
-        # The counts and displacement arguments of Allgatherv are tuples!
-        # Tuple (not list!) of number of frequencies in each rank
-        self.fsize = tuple(mpiutil.world.allgather(self.ls))
-        # Tuple (not list!) of displacements of each rank array in full array
-        self.foffset = tuple(mpiutil.world.allgather(self.lo))
-
-        # Save subsets of the data for each polarization, changing
-        # the ordering to 'C' (needed for the cython part).
-        # This doubles the memory usage.
-        self.vis, self.bvec, self.redundancy = [], [], []
-        for pol in range(self.npol):
-            polmask = (pol_array == 1+pol)
-            # Swap order of product(1) and RA(2) axes, to reduce striding
-            # through memory later on.
-            self.vis.append(np.copy(np.moveaxis(
-                data.vis[:, polmask, :], 1, 2), order='C'))
-            # Multiply bvec_m by frequencies to get vector in wavelengths.
-            # Shape: (2, nfreq_local, nvis), for each pol.
-            self.bvec.append(np.copy(
-                    self.bvec_m[:, np.newaxis, polmask] *
-                    self.freq_local[np.newaxis, :, np.newaxis] *
-                    1E6 / C, order='C'))
-            # Store redundancy as float
-            self.redundancy.append(np.copy(
-                self.telescope.redundancy[polmask].astype(np.float64),
-                order='C'))
+        # Process and make available various data
+        self._process_data(data)
 
     def process(self, source_cat):
-        """
+        """ Parse the source catalog and beamforms each source in
+            the generic process().
 
         Parameters
         ----------
@@ -541,33 +499,17 @@ class BeamFormCat(BeamFormBase):
 
         Returns
         -------
+        formed_beam : `containers.FormedBeam` or `containers.FormedBeamHA`
+            Formed beams at each source.
         """
+        # Source catalog to beamform at
+        self.source_cat = source_cat
         # Number of poinytings
-        self.nsource = len(source_cat['position'])
+        self.nsource = len(self.source_cat['position'])
         # Pointings RA and Dec
-        self.sdec = source_cat['position']['dec']
-        self.sra = source_cat['position']['ra']
-        # Number of polarizations. This should be generalized to be a parameter
+        self.sdec = np.deg2rad(self.source_cat['position']['dec'][:])
+        self.sra = self.source_cat['position']['ra']
 
-        if self.collapse_ha:
-            # Container to hold the formed beams
-            formed_beam = containers.FormedBeam(
-                    freq=self.freq,
-                    object_id=source_cat.index_map['object_id'],
-                    pol=np.array(['X','Y']))
-        else:
-            # Container to hold the formed beams
-            formed_beam = containers.FormedBeamHA(
-                    freq=self.freq, ha=np.arange(self.nha, dtype=int),
-                    object_id=source_cat.index_map['object_id'],
-                    pol=np.array(['X','Y']))
-            # Initialize container to zeros. 
-            formed_beam.fbeam[:] = 0.
-            formed_beam.ha[:] = 0.  # TODO: Should this be np.nan instead?
-
-        # For each source
-        for src in range(self.nsource):
-            self.beamform_source(src, formed_beam)
-
-        return formed_beam
+        # Call generic process method.
+        return super(BeamFormCat, self).process()
 
