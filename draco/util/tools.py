@@ -4,6 +4,7 @@ Miscellaneous tasks should be placed in :module:`draco.core.misc`.
 """
 
 import numpy as np
+from ch_util import tools
 
 from ._fast_tools import _calc_redundancy
 
