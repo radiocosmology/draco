@@ -1370,7 +1370,13 @@ class FormedBeam(ContainerBase):
     _axes = ('object_id', 'pol', 'freq')
 
     _dataset_spec = {
-        'fbeam': {
+        'beam': {
+            'axes': ['object_id', 'pol', 'freq'],
+            'dtype': np.float64,
+            'initialise': True,
+            'distributed': False
+        },
+        'weight': {
             'axes': ['object_id', 'pol', 'freq'],
             'dtype': np.float64,
             'initialise': True,
@@ -1379,8 +1385,12 @@ class FormedBeam(ContainerBase):
     }
 
     @property
-    def fbeam(self):
-        return self.datasets['fbeam']
+    def beam(self):
+        return self.datasets['beam']
+
+    @property
+    def weight(self):
+        return self.datasets['weight']
 
     @property
     def freq(self):
@@ -1403,7 +1413,13 @@ class FormedBeamHA(FormedBeam):
     _axes = ('object_id', 'pol', 'freq', 'ha')
 
     _dataset_spec = {
-        'fbeam': {
+        'beam': {
+            'axes': ['object_id', 'pol', 'freq', 'ha'],
+            'dtype': np.float64,
+            'initialise': True,
+            'distributed': False
+        },
+        'weight': {
             'axes': ['object_id', 'pol', 'freq', 'ha'],
             'dtype': np.float64,
             'initialise': True,
