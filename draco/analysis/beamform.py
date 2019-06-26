@@ -222,8 +222,12 @@ class BeamFormBase(task.SingleTask):
                              mpiutil.DOUBLE])
                     # Reshape result and add to formed_beam_full
                     # Populate only where ha_mask is true.
-                    formed_beam_full[pol][:, ha_mask] = formed_beam_gather.reshape(
-                                                                   self.nfreq, nha)
+                    if self.is_sstream:
+                        formed_beam_full[pol][:] = formed_beam_gather.reshape(
+                                                              self.nfreq, nha)
+                    else:
+                        formed_beam_full[pol][:, ha_mask] = formed_beam_gather.reshape(
+                                                                       self.nfreq, nha)
                     # Weight dataset. Only for valid HAs. Zero otherwise
                     weight_gather = np.zeros(
                             (self.nfreq*nha), dtype=np.float64)
@@ -233,7 +237,11 @@ class BeamFormBase(task.SingleTask):
                              tuple(np.array(self.fsize)*nha),
                              tuple(np.array(self.foffset)*nha),
                              mpiutil.DOUBLE])
-                    weight_full[pol][:, ha_mask] = weight_gather.reshape(
+                    if self.is_sstream:
+                        weight_full[pol][:] = weight_gather.reshape(
+                                                         self.nfreq, nha)
+                    else:
+                        weight_full[pol][:, ha_mask] = weight_gather.reshape(
                                                          self.nfreq, nha)
 
             # Combine polarizations if needed.
@@ -243,10 +251,14 @@ class BeamFormBase(task.SingleTask):
                         np.sum(formed_beam_full, axis=0),
                         (1, self.nfreq, self.nha))
                 zeromask = (weight_full == 0.)
-                weight_full = np.reshape(
-                        np.sum(weight_full**(-1), axis=0),
-                        (1, self.nfreq, self.nha))**(-1)
+                weight_full = weight_full**(-1)
                 weight_full[zeromask] = 0.
+                weight_full = np.sum(weight_full, axis=0)
+                zeromask = (weight_full == 0.)
+                weight_full = weight_full**(-1)
+                weight_full[zeromask] = 0.
+                weight_full = np.reshape(weight_full,
+                                         (1, self.nfreq, self.nha))
             elif self.polarization == 'stokes':
                 # Not implemented
                 pass
@@ -333,6 +345,7 @@ class BeamFormBase(task.SingleTask):
             # For later convenience it is better if `ha_array` is
             # in the range -pi to pi instead of 0 to 2pi.
             ha_array = (ha_array + np.pi) % (2.*np.pi) - np.pi
+  
             return ha_array, ra_index_range
 
         else:
@@ -467,8 +480,9 @@ class BeamFormBase(task.SingleTask):
             # through memory later on.
             self.vis.append(np.copy(np.moveaxis(
                 data.vis[:, polmask, :], 1, 2), order='C'))
-            self.visweight.append(np.copy(np.moveaxis(
-                data.weight[:, polmask, :], 1, 2), order='C'))
+            self.visweight.append(
+                np.copy(np.moveaxis(data.weight[:, polmask, :], 1, 2)
+                        .astype(np.float64), order='C'))
             # Multiply bvec_m by frequencies to get vector in wavelengths.
             # Shape: (2, nfreq_local, nvis), for each pol.
             self.bvec.append(np.copy(
