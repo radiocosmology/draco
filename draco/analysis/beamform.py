@@ -1,12 +1,12 @@
 import numpy as np
-from caput import mpiarray, config, mpiutil, pipeline
-from ..core import task, containers, io
-from cora.util import units
-from ch_util import tools, ephemeris
-from drift.telescope import cylbeam
-from ..util._fast_tools import beamform
-from ..util.tools import polarization_map, baseline_vector
 from mpi4py import MPI
+
+from caput import config, mpiutil
+from cora.util import units
+
+from ..core import task, containers, io
+from ..util._fast_tools import beamform
+from ..util.tools import baseline_vector, polarization_map
 
 # Constants
 NU21 = units.nu21
@@ -15,8 +15,9 @@ C = units.c
 
 class BeamFormBase(task.SingleTask):
     """ Base class for beam forming tasks.
-        Defines a few useful methods. Not to be used directly
-        but as parent class for BeamForm and BeamFormCat.
+
+    Defines a few useful methods. Not to be used directly
+    but as parent class for BeamForm and BeamFormCat.
 
     Attributes
     ----------
@@ -26,7 +27,7 @@ class BeamFormBase(task.SingleTask):
     polarization : string
         One of:
         'I' : Stokes I only.
-        'full' : 'XX', 'YY', 'XY' and 'YX' in this order.
+        'full' : 'XX', 'XY', 'YX' and 'YY' in this order.
         'copol' : 'XX' and 'YY' only.
         'stokes' : 'I', 'Q', 'U' and 'V' in this order. Not implemented.
     timetrack : float
@@ -35,12 +36,15 @@ class BeamFormBase(task.SingleTask):
     """
 
     collapse_ha = config.Property(proptype=bool, default=True)
-    polarization = config.Property(proptype=str, default='full')
+    polarization = config.enum(['I', 'full', 'copol', 'stokes'],
+                                             default='full')
     timetrack = config.Property(proptype=float, default=900.)
 
     def setup(self, manager):
-        """ Generic setup method. To be complemented by specific
-            setup methods in daughter tasks.
+        """ Generic setup method.
+        
+        To be complemented by specific
+        setup methods in daughter tasks.
 
         Parameters
         ----------
@@ -54,28 +58,31 @@ class BeamFormBase(task.SingleTask):
             self.process_pol = ['XX', 'YY']
             self.return_pol = ['I']
         elif self.polarization == 'full':
-            self.process_pol = ['XX', 'YY', 'XY', 'YX']
+            self.process_pol = ['XX', 'XY', 'YX', 'YY']
             self.return_pol = self.process_pol
         elif self.polarization == 'copol':
             self.process_pol = ['XX', 'YY']
             self.return_pol = self.process_pol
         elif self.polarization == 'stokes':
-            self.process_pol = ['XX', 'YY', 'XY', 'YX']
+            self.process_pol = ['XX', 'XY', 'YX', 'YY']
             self.return_pol = ['I', 'Q', 'U', 'V']
             msg = 'Stokes parameters are not implemented'
             raise RuntimeError(msg)
         else:
+            # This should never happen. config.enum should bark first.
             msg = 'Invalid polarization parameter: {0}'
             msg = msg.format(self.polarization)
             raise ValueError(msg)
         # Number of polarizations to process
         self.npol = len(self.process_pol)
-        self.latitude = np.deg2rad(ephemeris.CHIMELATITUDE)
+        self.latitude = np.deg2rad(self.telescope.latitude)
 
     def process(self):
-        """ Generic process method. Performs all the beamforming,
-            but not the data parsing. To be complemented by specific
-            process methods in daughter tasks.
+        """ Generic process method.
+        
+        Performs all the beamforming,
+        but not the data parsing. To be complemented by specific
+        process methods in daughter tasks.
 
         Returns
         -------
@@ -97,8 +104,10 @@ class BeamFormBase(task.SingleTask):
                     object_id=self.source_cat.index_map['object_id'],
                     pol=np.array(self.return_pol))
             # Initialize container to zeros.
-            formed_beam.fbeam[:] = 0.
-            formed_beam.ha[:] = 0.  # TODO: Should this be np.nan instead?
+            formed_beam.ha[:] = 0.
+        # Initialize container to zeros.
+        formed_beam.beam[:] = 0.
+        formed_beam.weight[:] = 0.
 
         # Indices of local frequency axis. Needed because in principle
         # beamform() allows a subset of frequencies to be processed.
@@ -134,6 +143,13 @@ class BeamFormBase(task.SingleTask):
                     self.ra, sra_index, self.sra[src],
                     self.ha_side, self.is_sstream)
 
+            # Compute primary beams if needed.
+            if self.collapse_ha:
+                # Beams to be used in the weighting
+                beam = self._beamfunc(ha_array[np.newaxis, :],
+                                      self.process_pol[pol],
+                                      self.freq_local[:, np.newaxis], dec)
+
             # The length of the HA axis might not be equal to
             # self.nha for all sources in case self.is_sstream
             # is False. It could be smaller if some HA are
@@ -141,7 +157,8 @@ class BeamFormBase(task.SingleTask):
             nha = len(ha_array)
             formed_beam_full = np.zeros(
                 (self.npol, self.nfreq, self.nha), dtype=np.float64)
-
+            weight_full = np.zeros(
+                (self.npol, self.nfreq, self.nha), dtype=np.float64)
             # For each polarization
             for pol in range(self.npol):
 
@@ -155,22 +172,44 @@ class BeamFormBase(task.SingleTask):
                         f_local_indices, ra_index_range)
 
                 if self.collapse_ha:
-                    # Beams to be used in the weighting
-                    beam = self._beamfunc(ha_array[np.newaxis, :], pol,
-                                          self.freq_local[:, np.newaxis], dec)
                     # Sum over RA
                     this_formed_beam = np.sum(this_formed_beam * beam, axis=1)
+                    this_weight = np.sum(
+                        beam[:, :, np.newaxis] *
+                        self.visweight[pol][:, ra_index_range], axis=(1,2))
+                    zeromask = (this_weight == 0.)
+                    this_formed_beam /= this_weight
+                    this_formed_beam[zeromask] = 0.
+
                     # Gather all ranks.
                     formed_beam_gather = np.zeros(self.nfreq,
                                                   dtype=np.float64)
-                    # Gather all ranks
                     mpiutil.world.Allgatherv(this_formed_beam,
                                              [formed_beam_gather,
                                               self.fsize,
                                               self.foffset,
                                               mpiutil.DOUBLE])
                     formed_beam_full[pol, :] = formed_beam_gather
+
+                    # Write down weight dataset
+                    this_weight = this_weight**2 / np.sum(
+                        beam[:, :, np.newaxis]**2 *
+                        self.visweight[pol][:, ra_index_range], axis=(1,2))
+                    this_weight[zeromask] = 0.
+                    weight_gather = np.zeros(self.nfreq, dtype=np.float64)
+                    mpiutil.world.Allgatherv(this_weight,
+                                             [weight_gather,
+                                              self.fsize,
+                                              self.foffset,
+                                              mpiutil.DOUBLE])
+                    weight_full[pol, :] = weight_gather
                 else:
+                    this_weight = np.sum(
+                        self.visweight[pol][:, ra_index_range], axis=2)
+                    zeromask = (this_weight == 0.)
+                    this_formed_beam /= this_weight
+                    this_formed_beam[zeromask] = 0.
+
                     # Gather all ranks
                     formed_beam_gather = np.zeros(
                             (self.nfreq*nha), dtype=np.float64)
@@ -185,18 +224,36 @@ class BeamFormBase(task.SingleTask):
                     # Populate only where ha_mask is true.
                     formed_beam_full[pol][:, ha_mask] = formed_beam_gather.reshape(
                                                                    self.nfreq, nha)
+                    # Weight dataset. Only for valid HAs. Zero otherwise
+                    weight_gather = np.zeros(
+                            (self.nfreq*nha), dtype=np.float64)
+                    mpiutil.world.Allgatherv(
+                            this_weight.flatten(),
+                            [weight_gather,
+                             tuple(np.array(self.fsize)*nha),
+                             tuple(np.array(self.foffset)*nha),
+                             mpiutil.DOUBLE])
+                    weight_full[pol][:, ha_mask] = weight_gather.reshape(
+                                                         self.nfreq, nha)
 
             # Combine polarizations if needed.
             if self.polarization == 'I':
+                # TODO: Do I inverse-variance weight this sum too?
                 formed_beam_full = np.reshape(
                         np.sum(formed_beam_full, axis=0),
                         (1, self.nfreq, self.nha))
+                zeromask = (weight_full == 0.)
+                weight_full = np.reshape(
+                        np.sum(weight_full**(-1), axis=0),
+                        (1, self.nfreq, self.nha))**(-1)
+                weight_full[zeromask] = 0.
             elif self.polarization == 'stokes':
                 # Not implemented
                 pass
 
             # Populate container.
-            formed_beam.fbeam[src, :] = formed_beam_full
+            formed_beam.beam[src, :] = formed_beam_full
+            formed_beam.weight[src, :] = weight_full
             if not self.collapse_ha:
                 if self.is_sstream:
                     formed_beam.ha[src, :] = ha_array
@@ -207,8 +264,7 @@ class BeamFormBase(task.SingleTask):
         return formed_beam
 
     def _ha_side(self, data, timetrack=900.):
-        """ Number of RA/time bins to track the source at each side of
-            transit from a time window.
+        """ Number of RA/time bins to track the source at each side of transit.
 
         Parameters
         ----------
@@ -236,9 +292,9 @@ class BeamFormBase(task.SingleTask):
 
     def _ha_array(self, ra, source_ra_index, source_ra,
                   ha_side, is_sstream=True):
-        """ Returns the hour angle for each RA/time bin to be processed
-            around the source transit. Also return the indices of these
-            RA/time bins in the full RA/time axis.
+        """ Hour angle for each RA/time bin to be processed.
+            
+        Also return the indices of these bins in the full RA/time axis.
 
         Parameters
         ----------
@@ -302,8 +358,9 @@ class BeamFormBase(task.SingleTask):
             Frequency in MHz
         dec : array or float
             Declination in radians
-        pol : int
-            Polarization index. 0: X, 1: Y, >2: XY
+        pol : int or string
+            Polarization index. 0: X, 1: Y, >=2: XY
+            or one of 'XX', 'XY', 'YX', 'YY'
         zenith : float
             Polar angle of the telescope zenith in radians.
             Equal to pi/2 - latitude
@@ -316,6 +373,11 @@ class BeamFormBase(task.SingleTask):
             voltage squared. To get the beam voltage, take the
             square root.
         """
+
+        pollist = ['XX', 'YY', 'XY', 'YX']
+        if pol in pollist:
+            pol = pollist.index(pol)
+
         def _sig(pp, freq, dec):
             """
             """
@@ -356,8 +418,7 @@ class BeamFormBase(task.SingleTask):
                                 -((ha-ha0)/_sig(1, freq, dec))**2))**0.5
 
     def _process_data(self, data):
-        """ Store code for parsing and formating data
-            priot to beamforming.
+        """ Store code for parsing and formating data prior to beamforming.
         """
         # Extract data info
         if 'ra' in data.index_map.keys():
@@ -379,7 +440,7 @@ class BeamFormBase(task.SingleTask):
         self.nha = 2 * self.ha_side + 1
 
         # polmap: indices of each vis product in
-        # polarization list: ['XX', 'YY', 'XY', 'YX']
+        # polarization list: ['XX', 'XY', 'YX', 'YY']
         polmap = polarization_map(data.index_map, self.telescope)
         # Baseline vectors in meters
         bvec_m = baseline_vector(data.index_map, self.telescope)
@@ -394,16 +455,20 @@ class BeamFormBase(task.SingleTask):
         # Tuple (not list!) of displacements of each rank array in full array
         self.foffset = tuple(mpiutil.world.allgather(lo))
 
+        fullpol = ['XX', 'XY', 'YX', 'YY']
         # Save subsets of the data for each polarization, changing
         # the ordering to 'C' (needed for the cython part).
         # This doubles the memory usage.
-        self.vis, self.bvec, self.redundancy = [], [], []
-        for pol in range(self.npol):
+        self.vis, self.visweight, self.bvec, self.redundancy = [], [], [], []
+        for pol in self.process_pol:
+            pol = fullpol.index(pol)
             polmask = (polmap == pol)
             # Swap order of product(1) and RA(2) axes, to reduce striding
             # through memory later on.
             self.vis.append(np.copy(np.moveaxis(
                 data.vis[:, polmask, :], 1, 2), order='C'))
+            self.visweight.append(np.copy(np.moveaxis(
+                data.weight[:, polmask, :], 1, 2), order='C'))
             # Multiply bvec_m by frequencies to get vector in wavelengths.
             # Shape: (2, nfreq_local, nvis), for each pol.
             self.bvec.append(np.copy(
@@ -417,8 +482,7 @@ class BeamFormBase(task.SingleTask):
 
 
 class BeamForm(BeamFormBase):
-    """ Version of BeamForm aimed at beamforming a single source catalog
-        for a list of diffent visibility datasets.
+    """ BeamForm for a single source catalog and multiple visibility datasets.
 
     """
 
@@ -438,15 +502,14 @@ class BeamForm(BeamFormBase):
 
         # Extract source catalog information
         self.source_cat = source_cat
-        # Number of poinytings
+        # Number of pointings
         self.nsource = len(self.source_cat['position'])
         # Pointings RA and Dec
         self.sdec = np.deg2rad(self.source_cat['position']['dec'][:])
         self.sra = self.source_cat['position']['ra']
 
     def process(self, data):
-        """ Parse the visibility data and beamforms each source in
-            the generic process().
+        """ Parse the visibility data and beamforms all sources.
 
         Parameters
         ----------
@@ -466,8 +529,7 @@ class BeamForm(BeamFormBase):
 
 
 class BeamFormCat(BeamFormBase):
-    """ Version of BeamForm aimed at beamforming at a list of different source
-        catalogs for a single visibility dataset.
+    """ BeamForm for multiple source catalogs and a single visibility dataset.
 
     """
 
@@ -489,8 +551,7 @@ class BeamFormCat(BeamFormBase):
         self._process_data(data)
 
     def process(self, source_cat):
-        """ Parse the source catalog and beamforms each source in
-            the generic process().
+        """ Parse the source catalog and beamforms all sources.
 
         Parameters
         ----------
@@ -504,7 +565,7 @@ class BeamFormCat(BeamFormBase):
         """
         # Source catalog to beamform at
         self.source_cat = source_cat
-        # Number of poinytings
+        # Number of pointings
         self.nsource = len(self.source_cat['position'])
         # Pointings RA and Dec
         self.sdec = np.deg2rad(self.source_cat['position']['dec'][:])

@@ -4,7 +4,6 @@ Miscellaneous tasks should be placed in :module:`draco.core.misc`.
 """
 
 import numpy as np
-from ch_util import tools
 
 from ._fast_tools import _calc_redundancy
 
@@ -231,7 +230,7 @@ def calculate_redundancy(input_flags, prod_map, stack_index, nstack):
 
 def polarization_map(index_map, telescope, exclude_autos=True):
     """ Map the visibilities corresponding to entries in
-        pol = ['XX', 'YY', 'XY', 'YX'].
+        pol = ['XX', 'XY', 'YX', 'YY'].
 
         Parameters
         ----------
@@ -247,10 +246,14 @@ def polarization_map(index_map, telescope, exclude_autos=True):
         -------
         polmap : array of int
             Array of size `nstack`. Each entry is the index to the
-            corresponding polarization in pol = ['XX', 'YY', 'XY', 'YX']
+            corresponding polarization in pol = ['XX', 'XY', 'YX', 'YY']
 
     """
-    pol = ['XX', 'YY', 'XY', 'YX']
+    if not (telescope.stack_type == 'redundant'):
+        msg = "Telescope stack type needs to be 'redundant'. Is {0}"
+        raise RuntimeError(msg.format(telescope.stack_type))
+
+    pol = ['XX', 'XY', 'YX', 'YY']
     nstack = len(index_map['stack'])
     # polmap: indices of each vis product in
     # polarization list: ['XX', 'YY', 'XY', 'YX']
@@ -270,39 +273,29 @@ def polarization_map(index_map, telescope, exclude_autos=True):
             polmap[vi] = -1
             continue
 
-        # Are feeds on?
-        onfeeds = (tools.is_array_on(telescope._feeds[ipt0]) and
-                   tools.is_array_on(telescope._feeds[ipt1]))
-        # Feeds are off, exclude from polmap
-        if not onfeeds:
+        # Find polarization of first input
+        if (telescope.beamclass[ipt0] == 0):
+            polstring = 'X'
+        elif (telescope.beamclass[ipt0] == 1):
+            polstring = 'Y'
+        else:
+            # Not a CHIME feed or not On. Ignore.
             polmap[vi] = -1
             continue
-
-        # If feeds are on, find both polarizations and populate polmap
-        if onfeeds:
-            # Find polarization of first input
-            if tools.is_array_x(telescope._feeds[ipt0]):
-                polstring = 'X'
-            elif tools.is_array_y(telescope._feeds[ipt0]):
-                polstring = 'Y'
-            else:
-                # We should not get to this case.
-                polmap[vi] = -1
-                continue
-            # Find polarization of second input and add it to polstring
-            if tools.is_array_x(telescope._feeds[ipt1]):
-                polstring += 'X'
-            elif tools.is_array_y(telescope._feeds[ipt1]):
-                polstring += 'Y'
-            else:
-                # We should not get to this case.
-                polmap[vi] = -1
-                continue
-            # If conjugate, flip polstring ('XY -> 'YX)
-            if telescope.feedconj[ipt0, ipt1]:
-                polstring = polstring[::-1]
-            # Populate polmap
-            polmap[vi] = pol.index(polstring)
+        # Find polarization of second input and add it to polstring
+        if (telescope.beamclass[ipt1] == 0):
+            polstring += 'X'
+        elif (telescope.beamclass[ipt1] == 1):
+            polstring += 'Y'
+        else:
+            # Not a CHIME feed or not On. Ignore.
+            polmap[vi] = -1
+            continue
+        # If conjugate, flip polstring ('XY -> 'YX)
+        if telescope.feedconj[ipt0, ipt1]:
+            polstring = polstring[::-1]
+        # Populate polmap
+        polmap[vi] = pol.index(polstring)
 
     return polmap
 
