@@ -6,7 +6,8 @@ from cora.util import units
 
 from ..core import task, containers, io
 from ..util._fast_tools import beamform
-from ..util.tools import baseline_vector, polarization_map
+from ..util.tools import baseline_vector, polarization_map, invert_no_zero
+from ..util.tools import calculate_redundancy
 
 # Constants
 NU21 = units.nu21
@@ -30,6 +31,11 @@ class BeamFormBase(task.SingleTask):
         'full' : 'XX', 'XY', 'YX' and 'YY' in this order.
         'copol' : 'XX' and 'YY' only.
         'stokes' : 'I', 'Q', 'U' and 'V' in this order. Not implemented.
+    weight : string ('natural', 'uniform', or 'inverse_variance')
+        How to weight the redundant baselines when adding:
+            'natural' - each baseline weighted by its redundancy (default)
+            'uniform' - each baseline given equal weight
+            'inverse_variance' - each baseline weighted by the weight attribute
     timetrack : float
         How long (in seconds) to track sources at each side of transit.
         Total transit time will be ~ 2 * timetrack.
@@ -38,6 +44,8 @@ class BeamFormBase(task.SingleTask):
     collapse_ha = config.Property(proptype=bool, default=True)
     polarization = config.enum(['I', 'full', 'copol', 'stokes'],
                                              default='full')
+    weight = config.enum(['natural', 'uniform', 'inverse_variance'],
+                                             default='natural')
     timetrack = config.Property(proptype=float, default=900.)
 
     def setup(self, manager):
@@ -131,7 +139,7 @@ class BeamFormBase(task.SingleTask):
                 # Cannot use searchsorted, because RA might not be
                 # monotonically increasing. Slower.
                 # Notice: in case there is more than one transit,
-                # this pick a single transit quasy-randomly!
+                # this will pick a single transit quasy-randomly!
                 transit_diff = abs(self.ra - self.sra[src])
                 sra_index = np.argmin(transit_diff)
                 # For now, skip sources that do not transit in the data
@@ -143,44 +151,68 @@ class BeamFormBase(task.SingleTask):
                     self.ra, sra_index, self.sra[src],
                     self.ha_side, self.is_sstream)
 
-            # Compute primary beams if needed.
-            if self.collapse_ha:
-                # Beams to be used in the weighting
-                beam = self._beamfunc(ha_array[np.newaxis, :],
-                                      self.process_pol[pol],
-                                      self.freq_local[:, np.newaxis], dec)
-
             # The length of the HA axis might not be equal to
             # self.nha for all sources in case self.is_sstream
             # is False. It could be smaller if some HA are
             # outside the range of the data.
             nha = len(ha_array)
-            formed_beam_full = np.zeros(
-                (self.npol, self.nfreq, self.nha), dtype=np.float64)
-            weight_full = np.zeros(
-                (self.npol, self.nfreq, self.nha), dtype=np.float64)
+            if self.collapse_ha:
+                formed_beam_full = np.zeros(
+                    (self.npol, self.nfreq), dtype=np.float64)
+                weight_full = np.zeros(
+                    (self.npol, self.nfreq), dtype=np.float64)
+            else:
+                formed_beam_full = np.zeros(
+                    (self.npol, self.nfreq, self.nha), dtype=np.float64)
+                weight_full = np.zeros(
+                    (self.npol, self.nfreq, self.nha), dtype=np.float64)
             # For each polarization
             for pol in range(self.npol):
 
+                # Compute primary beams to be used in the weighting
+                primary_beam = self._beamfunc(ha_array[np.newaxis, :],
+                                      self.process_pol[pol],
+                                      self.freq_local[:, np.newaxis], dec)
+
                 # Fringestop and sum over products
+                # 'beamform' does not normalize sum.
                 this_formed_beam = beamform(
                         self.vis[pol],
-                        self.redundancy[pol],
+                        self.sumweight[pol],
                         dec, self.latitude,
                         np.cos(ha_array), np.sin(ha_array),
                         self.bvec[pol][0], self.bvec[pol][1],
                         f_local_indices, ra_index_range)
 
-                if self.collapse_ha:
-                    # Sum over RA
-                    this_formed_beam = np.sum(this_formed_beam * beam, axis=1)
-                    this_weight = np.sum(
-                        beam[:, :, np.newaxis] *
-                        self.visweight[pol][:, ra_index_range], axis=(1,2))
-                    zeromask = (this_weight == 0.)
-                    this_formed_beam /= this_weight
-                    this_formed_beam[zeromask] = 0.
+                sumweight_inrange = self.sumweight[pol][:, ra_index_range, :]
+                visweight_inrange = self.visweight[pol][:, ra_index_range, :]
 
+                if self.collapse_ha:
+                    # Sum over RA. Does not multiply by weights because
+                    # this_formed_beam was never normalized (this avoids
+                    # re-work and makes code more efficient).
+                    this_sumweight = np.sum(
+                        np.sum(sumweight_inrange, axis=-1) * 
+                        primary_beam, axis=1)
+
+                    this_formed_beam = (
+                        np.sum(this_formed_beam * primary_beam, axis=1) *
+                        invert_no_zero(this_sumweight))
+
+                    if self.weight != 'inverse_variance':
+                        this_weight2 = np.sum(
+                            np.sum(sumweight_inrange**2 *
+                            invert_no_zero(visweight_inrange), axis=-1) *
+                            primary_beam**2, axis=1)
+                    else:
+                        this_weight2 = np.sum(
+                            np.sum(sumweight_inrange, axis=-1) *
+                            primary_beam**2, axis=1)
+
+                    this_weight = this_sumweight**2 * invert_no_zero(this_weight2)
+
+                    # TODO: This will disappear when distribute my
+                    # container in freq.
                     # Gather all ranks.
                     formed_beam_gather = np.zeros(self.nfreq,
                                                   dtype=np.float64)
@@ -191,11 +223,6 @@ class BeamFormBase(task.SingleTask):
                                               mpiutil.DOUBLE])
                     formed_beam_full[pol, :] = formed_beam_gather
 
-                    # Write down weight dataset
-                    this_weight = this_weight**2 / np.sum(
-                        beam[:, :, np.newaxis]**2 *
-                        self.visweight[pol][:, ra_index_range], axis=(1,2))
-                    this_weight[zeromask] = 0.
                     weight_gather = np.zeros(self.nfreq, dtype=np.float64)
                     mpiutil.world.Allgatherv(this_weight,
                                              [weight_gather,
@@ -204,12 +231,23 @@ class BeamFormBase(task.SingleTask):
                                               mpiutil.DOUBLE])
                     weight_full[pol, :] = weight_gather
                 else:
-                    this_weight = np.sum(
-                        self.visweight[pol][:, ra_index_range], axis=2)
-                    zeromask = (this_weight == 0.)
-                    this_formed_beam /= this_weight
-                    this_formed_beam[zeromask] = 0.
+                    # Need to divide by weight here for proper 
+                    # normalization because it is not done in
+                    # beamform()
+                    this_sumweight = np.sum(
+                        sumweight_inrange, axis=-1)
+                    this_formed_beam = (
+                        this_formed_beam * invert_no_zero(this_sumweight))
+                    if self.weight != 'inverse_variance':
+                        this_weight2 = np.sum(
+                            sumweight_inrange**2 *
+                            invert_no_zero(visweight_inrange), axis=-1)
+                        this_weight = this_sumweight**2 * invert_no_zero(this_weight2)
+                    else:
+                        this_weight = this_sumweight 
 
+                    # TODO: This will disappear when distribute my
+                    # container in freq.
                     # Gather all ranks
                     formed_beam_gather = np.zeros(
                             (self.nfreq*nha), dtype=np.float64)
@@ -220,14 +258,6 @@ class BeamFormBase(task.SingleTask):
                              tuple(np.array(self.fsize)*nha),
                              tuple(np.array(self.foffset)*nha),
                              mpiutil.DOUBLE])
-                    # Reshape result and add to formed_beam_full
-                    # Populate only where ha_mask is true.
-                    if self.is_sstream:
-                        formed_beam_full[pol][:] = formed_beam_gather.reshape(
-                                                              self.nfreq, nha)
-                    else:
-                        formed_beam_full[pol][:, ha_mask] = formed_beam_gather.reshape(
-                                                                       self.nfreq, nha)
                     # Weight dataset. Only for valid HAs. Zero otherwise
                     weight_gather = np.zeros(
                             (self.nfreq*nha), dtype=np.float64)
@@ -237,28 +267,37 @@ class BeamFormBase(task.SingleTask):
                              tuple(np.array(self.fsize)*nha),
                              tuple(np.array(self.foffset)*nha),
                              mpiutil.DOUBLE])
+                    # Reshape result and add to formed_beam_full
+                    # Populate only where ha_mask is true.
                     if self.is_sstream:
+                        formed_beam_full[pol][:] = formed_beam_gather.reshape(
+                                                              self.nfreq, nha)
                         weight_full[pol][:] = weight_gather.reshape(
                                                          self.nfreq, nha)
                     else:
+                        formed_beam_full[pol][:, ha_mask] = formed_beam_gather.reshape(
+                                                                       self.nfreq, nha)
                         weight_full[pol][:, ha_mask] = weight_gather.reshape(
                                                          self.nfreq, nha)
 
             # Combine polarizations if needed.
+            # TODO: For now I am ignoring differences in the X and
+            # Y beams and just adding them as is.
             if self.polarization == 'I':
-                # TODO: Do I inverse-variance weight this sum too?
-                formed_beam_full = np.reshape(
-                        np.sum(formed_beam_full, axis=0),
-                        (1, self.nfreq, self.nha))
-                zeromask = (weight_full == 0.)
-                weight_full = weight_full**(-1)
-                weight_full[zeromask] = 0.
+                formed_beam_full = ( 
+                    np.sum(formed_beam_full * weight_full, axis=0) *
+                    invert_no_zero(np.sum(weight_full, axis=0)))
                 weight_full = np.sum(weight_full, axis=0)
-                zeromask = (weight_full == 0.)
-                weight_full = weight_full**(-1)
-                weight_full[zeromask] = 0.
-                weight_full = np.reshape(weight_full,
-                                         (1, self.nfreq, self.nha))
+                if self.collapse_ha:
+                    formed_beam_full = np.reshape(formed_beam_full,
+                        (1, self.nfreq))
+                    weight_full = np.reshape(weight_full,
+                        (1, self.nfreq))
+                else:
+                    formed_beam_full = np.reshape(formed_beam_full,
+                        (1, self.nfreq, self.nha))
+                    weight_full = np.reshape(weight_full,
+                        (1, self.nfreq, self.nha))
             elif self.polarization == 'stokes':
                 # Not implemented
                 pass
@@ -472,7 +511,7 @@ class BeamFormBase(task.SingleTask):
         # Save subsets of the data for each polarization, changing
         # the ordering to 'C' (needed for the cython part).
         # This doubles the memory usage.
-        self.vis, self.visweight, self.bvec, self.redundancy = [], [], [], []
+        self.vis, self.visweight, self.bvec, self.sumweight = [], [], [], []
         for pol in self.process_pol:
             pol = fullpol.index(pol)
             polmask = (polmap == pol)
@@ -480,20 +519,37 @@ class BeamFormBase(task.SingleTask):
             # through memory later on.
             self.vis.append(np.copy(np.moveaxis(
                 data.vis[:, polmask, :], 1, 2), order='C'))
-            self.visweight.append(
-                np.copy(np.moveaxis(data.weight[:, polmask, :], 1, 2)
-                        .astype(np.float64), order='C'))
+            # Restrict visweight to the local frequencies
+            self.visweight.append(np.copy(np.moveaxis(
+                data.weight[lo:lo+ls][:, polmask, :], 1, 2)
+                .astype(np.float64), order='C'))
             # Multiply bvec_m by frequencies to get vector in wavelengths.
             # Shape: (2, nfreq_local, nvis), for each pol.
             self.bvec.append(np.copy(
                     bvec_m[:, np.newaxis, polmask] *
                     self.freq_local[np.newaxis, :, np.newaxis] *
                     1E6 / C, order='C'))
-            # Store redundancy as float
-            self.redundancy.append(np.copy(
-                self.telescope.redundancy[polmask].astype(np.float64),
-                order='C'))
-
+            if self.weight == 'inverse_variance':
+                # Weights for sum are just the visibility weights
+                self.sumweight.append(self.visweight[-1])
+            else:
+                # Ensure zero visweights result in zero sumweights
+                this_sumweight = (self.visweight[-1] > 0.0).astype(np.float64)
+                ssi = data.input_flags[:]
+                ssp = data.index_map['prod'][:]
+                sss = data.reverse_map['stack']['stack'][:]
+                nstack = data.vis.shape[1]
+                # this redundancy takes into account input flags.
+                # It has shape (nstack, ntime)
+                redundancy = np.moveaxis(calculate_redundancy(
+                    ssi, ssp, sss, nstack)[polmask].astype(np.float64),
+                    0, 1)[np.newaxis, :, :]
+                #redundancy = (self.telescope.redundancy[polmask].
+                #        astype(np.float64)[np.newaxis, np.newaxis, :])
+                this_sumweight *= redundancy
+                if self.weight == 'uniform':
+                    this_sumweight = (this_sumweight > 0.0).astype(np.float64)
+                self.sumweight.append(np.copy(this_sumweight, order='C'))
 
 class BeamForm(BeamFormBase):
     """ BeamForm for a single source catalog and multiple visibility datasets.
