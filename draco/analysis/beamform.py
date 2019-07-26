@@ -1,7 +1,7 @@
 import numpy as np
 from mpi4py import MPI
 
-from caput import config, mpiutil
+from caput import config, mpiutil, mpiarray
 from cora.util import units
 
 from ..core import task, containers, io
@@ -104,18 +104,22 @@ class BeamFormBase(task.SingleTask):
             formed_beam = containers.FormedBeam(
                     freq=self.freq,
                     object_id=self.source_cat.index_map['object_id'],
-                    pol=np.array(self.return_pol))
+                    pol=np.array(self.return_pol),
+                    distributed = True)
         else:
             # Container to hold the formed beams
             formed_beam = containers.FormedBeamHA(
                     freq=self.freq, ha=np.arange(self.nha, dtype=int),
                     object_id=self.source_cat.index_map['object_id'],
-                    pol=np.array(self.return_pol))
+                    pol=np.array(self.return_pol),
+                    distributed = True)
             # Initialize container to zeros.
             formed_beam.ha[:] = 0.
         # Initialize container to zeros.
         formed_beam.beam[:] = 0.
         formed_beam.weight[:] = 0.
+        # Ensure container is distributed in frequency
+        formed_beam.redistribute('freq')
 
         # Indices of local frequency axis. Needed because in principle
         # beamform() allows a subset of frequencies to be processed.
@@ -131,10 +135,6 @@ class BeamFormBase(task.SingleTask):
             # Phasing will actually be done at src position.
             if self.is_sstream:
                 sra_index = np.searchsorted(self.ra, self.sra[src])
-                # Compute hour angle array
-                ha_array, ra_index_range = self._ha_array(
-                    self.ra, sra_index, self.sra[src],
-                    self.ha_side, self.is_sstream)
             else:
                 # Cannot use searchsorted, because RA might not be
                 # monotonically increasing. Slower.
@@ -146,26 +146,27 @@ class BeamFormBase(task.SingleTask):
                 ra_cadence = self.ra[1]-self.ra[0]
                 if transit_diff[sra_index] > 1.5 * ra_cadence:
                     continue
-                # Compute hour angle array
-                ha_array, ra_index_range, ha_mask = self._ha_array(
-                    self.ra, sra_index, self.sra[src],
-                    self.ha_side, self.is_sstream)
+
+            # Compute hour angle array
+            ha_array, ra_index_range, ha_mask = self._ha_array(
+                self.ra, sra_index, self.sra[src],
+                self.ha_side, self.is_sstream)
 
             # The length of the HA axis might not be equal to
             # self.nha for all sources in case self.is_sstream
             # is False. It could be smaller if some HA are
-            # outside the range of the data.
+            # outside the range of the data. nha is the actual size.
             nha = len(ha_array)
             if self.collapse_ha:
                 formed_beam_full = np.zeros(
-                    (self.npol, self.nfreq), dtype=np.float64)
+                    (self.npol, self.local_nfreq), dtype=np.float64)
                 weight_full = np.zeros(
-                    (self.npol, self.nfreq), dtype=np.float64)
+                    (self.npol, self.local_nfreq), dtype=np.float64)
             else:
                 formed_beam_full = np.zeros(
-                    (self.npol, self.nfreq, self.nha), dtype=np.float64)
+                    (self.npol, self.local_nfreq, self.nha), dtype=np.float64)
                 weight_full = np.zeros(
-                    (self.npol, self.nfreq, self.nha), dtype=np.float64)
+                    (self.npol, self.local_nfreq, self.nha), dtype=np.float64)
             # For each polarization
             for pol in range(self.npol):
 
@@ -195,7 +196,7 @@ class BeamFormBase(task.SingleTask):
                         np.sum(sumweight_inrange, axis=-1) * 
                         primary_beam, axis=1)
 
-                    this_formed_beam = (
+                    formed_beam_full[pol] = (
                         np.sum(this_formed_beam * primary_beam, axis=1) *
                         invert_no_zero(this_sumweight))
 
@@ -209,76 +210,25 @@ class BeamFormBase(task.SingleTask):
                             np.sum(sumweight_inrange, axis=-1) *
                             primary_beam**2, axis=1)
 
-                    this_weight = this_sumweight**2 * invert_no_zero(this_weight2)
-
-                    # TODO: This will disappear when distribute my
-                    # container in freq.
-                    # Gather all ranks.
-                    formed_beam_gather = np.zeros(self.nfreq,
-                                                  dtype=np.float64)
-                    mpiutil.world.Allgatherv(this_formed_beam,
-                                             [formed_beam_gather,
-                                              self.fsize,
-                                              self.foffset,
-                                              mpiutil.DOUBLE])
-                    formed_beam_full[pol, :] = formed_beam_gather
-
-                    weight_gather = np.zeros(self.nfreq, dtype=np.float64)
-                    mpiutil.world.Allgatherv(this_weight,
-                                             [weight_gather,
-                                              self.fsize,
-                                              self.foffset,
-                                              mpiutil.DOUBLE])
-                    weight_full[pol, :] = weight_gather
+                    weight_full[pol] = this_sumweight**2 * invert_no_zero(this_weight2)
                 else:
                     # Need to divide by weight here for proper 
                     # normalization because it is not done in
                     # beamform()
                     this_sumweight = np.sum(
                         sumweight_inrange, axis=-1)
-                    this_formed_beam = (
+                    # Populate only where ha_mask is true. Zero otherwise.
+                    formed_beam_full[pol][:, ha_mask] = (
                         this_formed_beam * invert_no_zero(this_sumweight))
                     if self.weight != 'inverse_variance':
                         this_weight2 = np.sum(
                             sumweight_inrange**2 *
                             invert_no_zero(visweight_inrange), axis=-1)
-                        this_weight = this_sumweight**2 * invert_no_zero(this_weight2)
+                        # Populate only where ha_mask is true. Zero otherwise.
+                        weight_full[pol][:, ha_mask] = (this_sumweight**2 *
+                                invert_no_zero(this_weight2))
                     else:
-                        this_weight = this_sumweight 
-
-                    # TODO: This will disappear when distribute my
-                    # container in freq.
-                    # Gather all ranks
-                    formed_beam_gather = np.zeros(
-                            (self.nfreq*nha), dtype=np.float64)
-                    # Reshape to perform Allgartherv
-                    mpiutil.world.Allgatherv(
-                            this_formed_beam.flatten(),
-                            [formed_beam_gather,
-                             tuple(np.array(self.fsize)*nha),
-                             tuple(np.array(self.foffset)*nha),
-                             mpiutil.DOUBLE])
-                    # Weight dataset. Only for valid HAs. Zero otherwise
-                    weight_gather = np.zeros(
-                            (self.nfreq*nha), dtype=np.float64)
-                    mpiutil.world.Allgatherv(
-                            this_weight.flatten(),
-                            [weight_gather,
-                             tuple(np.array(self.fsize)*nha),
-                             tuple(np.array(self.foffset)*nha),
-                             mpiutil.DOUBLE])
-                    # Reshape result and add to formed_beam_full
-                    # Populate only where ha_mask is true.
-                    if self.is_sstream:
-                        formed_beam_full[pol][:] = formed_beam_gather.reshape(
-                                                              self.nfreq, nha)
-                        weight_full[pol][:] = weight_gather.reshape(
-                                                         self.nfreq, nha)
-                    else:
-                        formed_beam_full[pol][:, ha_mask] = formed_beam_gather.reshape(
-                                                                       self.nfreq, nha)
-                        weight_full[pol][:, ha_mask] = weight_gather.reshape(
-                                                         self.nfreq, nha)
+                        weight_full[pol][:, ha_mask] = this_sumweight 
 
             # Combine polarizations if needed.
             # TODO: For now I am ignoring differences in the X and
@@ -288,23 +238,31 @@ class BeamFormBase(task.SingleTask):
                     np.sum(formed_beam_full * weight_full, axis=0) *
                     invert_no_zero(np.sum(weight_full, axis=0)))
                 weight_full = np.sum(weight_full, axis=0)
+                # Add an axis for the polarization
                 if self.collapse_ha:
                     formed_beam_full = np.reshape(formed_beam_full,
-                        (1, self.nfreq))
+                        (1, self.local_nfreq))
                     weight_full = np.reshape(weight_full,
-                        (1, self.nfreq))
+                        (1, self.local_nfreq))
                 else:
                     formed_beam_full = np.reshape(formed_beam_full,
-                        (1, self.nfreq, self.nha))
+                        (1, self.local_nfreq, self.nha))
                     weight_full = np.reshape(weight_full,
-                        (1, self.nfreq, self.nha))
+                        (1, self.local_nfreq, self.nha))
             elif self.polarization == 'stokes':
-                # Not implemented
+                # TODO: Not implemented
                 pass
 
+            # Wrap beam and weights to be assigned to
+            # distributed container.
+            formed_beam_full = mpiarray.MPIArray.wrap(
+                        formed_beam_full, axis=1, comm=self.comm_)
+            weight_full = mpiarray.MPIArray.wrap(
+                        weight_full, axis=1, comm=self.comm_)
+
             # Populate container.
-            formed_beam.beam[src, :] = formed_beam_full
-            formed_beam.weight[src, :] = weight_full
+            formed_beam.beam[src] = formed_beam_full
+            formed_beam.weight[src] = weight_full
             if not self.collapse_ha:
                 if self.is_sstream:
                     formed_beam.ha[src, :] = ha_array
@@ -384,9 +342,8 @@ class BeamFormBase(task.SingleTask):
             # For later convenience it is better if `ha_array` is
             # in the range -pi to pi instead of 0 to 2pi.
             ha_array = (ha_array + np.pi) % (2.*np.pi) - np.pi
-  
-            return ha_array, ra_index_range
-
+            # In this case the ha_mask is trivial
+            ha_mask = np.ones(len(ra_index_range), dtype=bool)
         else:
             # Mask-out indices out of range
             ha_mask = (ra_index_range >= 0) & (ra_index_range < nra)
@@ -397,7 +354,8 @@ class BeamFormBase(task.SingleTask):
             # For later convenience it is better if `ha_array` is
             # in the range -pi to pi instead of 0 to 2pi.
             ha_array = (ha_array + np.pi) % (2.*np.pi) - np.pi
-            return ha_array, ra_index_range, ha_mask
+
+        return ha_array, ra_index_range, ha_mask
 
     def _beamfunc(self, ha, pol, freq, dec, zenith=0.70999994):
         """ Simple and fast beam model to be used as beamforming weights.
@@ -472,6 +430,9 @@ class BeamFormBase(task.SingleTask):
     def _process_data(self, data):
         """ Store code for parsing and formating data prior to beamforming.
         """
+        # Easy access to communicator
+        self.comm_ = data.comm
+
         # Extract data info
         if 'ra' in data.index_map.keys():
             self.is_sstream = True
@@ -501,6 +462,7 @@ class BeamFormBase(task.SingleTask):
         lo = data.vis.local_offset[0]
         ls = data.vis.local_shape[0]
         self.freq_local = self.freq[lo:lo+ls]
+        self.local_nfreq = ls
         # These are to be used when gathering results in the end.
         # Tuple (not list!) of number of frequencies in each rank
         self.fsize = tuple(mpiutil.world.allgather(ls))
