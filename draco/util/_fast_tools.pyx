@@ -160,13 +160,23 @@ cdef extern from "complex.h" nogil:
 
 @cython.wraparound(False)
 @cython.boundscheck(False)
-cpdef beamform(float complex [:,:,::1] vis,
-               double[::1] redundancy,
+cpdef beamform(float complex [:, :, ::1] vis,
+               double[:, :, ::1] weight,
                double dec, double lat,
                double[::1] cosha, double[::1] sinha,
-               double[:,::1] u, double[:,::1] v,
+               double[:, ::1] u, double[:, ::1] v,
                int[::1] f_index, int[::1] ra_index):
-    """
+    """ CAUTION! For efficiency reasons this routine does not
+    normalize the sum over products. This is to avoid dividing
+    here and multiplyig again for further stacking in the time
+    axis later on.
+
+    If no stacking in the time axis is made further in your code
+    you should do 
+
+                    formed_beam / np.sum(weight, axis=-1)
+    
+    to get a proper normalization.
     """
 
     cdef double cosdec, sindec, coslat, sinlat
@@ -176,7 +186,9 @@ cpdef beamform(float complex [:,:,::1] vis,
     cdef int fi, ri
     cdef double pi
     nfreq, nra, nprod = len(f_index), len(ra_index), vis.shape[2]
-    cdef double[:, ::1] formed_beam = np.zeros((nfreq, nra), dtype=np.float64)
+    # To store the formed beams. Will only be populated at f_index 
+    # frequency entries. Zero otherwise.
+    cdef double[:, ::1] formed_beam = np.zeros((vis.shape[0], nra), dtype=np.float64)
     cdef double phase, ut, vt, st, ct
 
     pi = np.pi
@@ -190,15 +202,16 @@ cpdef beamform(float complex [:,:,::1] vis,
 
             ri = ra_index[jj]
 
-            formed_beam[ii, jj] = 0.0
+            formed_beam[fi, jj] = 0.0
 
             ut = 2.0 * pi * cosdec * sinha[jj]
             vt = -2.0 * pi * (coslat * sindec - sinlat * cosdec * cosha[jj])
 
             for kk in range(nprod):
-                phase = u[ii, kk] * ut + v[ii, kk] * vt
+                phase = u[fi, kk] * ut + v[fi, kk] * vt
                 st = sin(phase)
                 ct = cos(phase)
-                formed_beam[ii, jj] += redundancy[kk] * (vis[fi, ri, kk] * (ct + 1j * st)).real
+                formed_beam[fi, jj] += weight[fi, ri, kk] * (vis[fi, ri, kk] * (ct + 1j * st)).real
 
     return np.asarray(formed_beam)
+
