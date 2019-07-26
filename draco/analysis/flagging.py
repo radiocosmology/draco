@@ -166,10 +166,20 @@ class MaskBaselines(task.SingleTask):
         Mask out baselines longer than a given distance in the N/S direction.
     mask_short : float
         Mask out baselines shorter than a given distance.
+    mask_short_ew : float
+        Mask out baselines shorter then a given distance in the East-West
+        direction. Usefull for masking out intra-cylinder baselines for
+        North-South oriented cylindrical telescopes.
+    zero_data : bool, optional
+        Zero the data in addition to modifying the noise weights
+        (default is False).
     """
 
     mask_long_ns = config.Property(proptype=float, default=None)
     mask_short = config.Property(proptype=float, default=None)
+    mask_short_ew = config.Property(proptype=float, default=None)
+
+    zero_data = config.Property(proptype=bool, default=False)
 
     def setup(self, telescope):
         """Set the telescope model.
@@ -193,14 +203,25 @@ class MaskBaselines(task.SingleTask):
         ss.redistribute('freq')
 
         baselines = self.telescope.baselines
+        mask = np.ones_like(ss.weight[:], dtype=bool)
 
         if self.mask_long_ns is not None:
-            long_ns_mask = np.abs(baselines[:, 1]) < self.mask_long_ns
-            ss.weight[:] *= long_ns_mask[np.newaxis, :, np.newaxis]
+            long_ns_mask = (np.abs(baselines[:, 1]) < self.mask_long_ns)
+            mask *= long_ns_mask[np.newaxis, :, np.newaxis]
 
         if self.mask_short is not None:
-            short_mask = np.sum(baselines**2, axis=1) > self.mask_short
-            ss.weight[:] *= short_mask[np.newaxis, :, np.newaxis]
+            short_mask = (np.sum(baselines**2, axis=1) > self.mask_short)
+            mask *= short_mask[np.newaxis, :, np.newaxis]
+
+        if self.mask_short_ew is not None:
+            short_ew_mask = (baselines[:, 0] > self.mask_short_ew)
+            mask *= short_ew_mask[np.newaxis, :, np.newaxis] 
+
+        # Apply the mask to the weight
+        ss.weight[:] *= mask
+        # Apply the mask to the data
+        if self.zero_data:
+            ss.vis[:] *= mask
 
         return ss
 
