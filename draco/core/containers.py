@@ -1374,13 +1374,15 @@ class FormedBeam(ContainerBase):
             'axes': ['object_id', 'pol', 'freq'],
             'dtype': np.float64,
             'initialise': True,
-            'distributed': False
+            'distributed': True,
+            'distributed_axis': 'freq'
         },
         'weight': {
             'axes': ['object_id', 'pol', 'freq'],
             'dtype': np.float64,
             'initialise': True,
-            'distributed': False
+            'distributed': True,
+            'distributed_axis': 'freq'
         }
     }
 
@@ -1417,13 +1419,15 @@ class FormedBeamHA(FormedBeam):
             'axes': ['object_id', 'pol', 'freq', 'ha'],
             'dtype': np.float64,
             'initialise': True,
-            'distributed': False
+            'distributed': True,
+            'distributed_axis': 'freq'
         },
         'weight': {
             'axes': ['object_id', 'pol', 'freq', 'ha'],
             'dtype': np.float64,
             'initialise': True,
-            'distributed': False
+            'distributed': True,
+            'distributed_axis': 'freq'
         },
         'hour_angle': {
             'axes': ['object_id', 'ha'],
