@@ -1366,7 +1366,6 @@ class SpectroscopicCatalog(SourceCatalog):
 class FormedBeam(ContainerBase):
     """Container for formed beams.
     """
-    
     _axes = ('object_id', 'pol', 'freq')
 
     _dataset_spec = {
@@ -1383,6 +1382,18 @@ class FormedBeam(ContainerBase):
             'initialise': True,
             'distributed': True,
             'distributed_axis': 'freq'
+        },
+        'position': {
+            'axes': ['object_id'],
+            'dtype': np.dtype([('ra', np.float64), ('dec', np.float64)]),
+            'initialise': True,
+            'distributed': False
+        },
+        'redshift': {
+            'axes': ['object_id'],
+            'dtype': np.dtype([('z', np.float64), ('z_error', np.float64)]),
+            'initialise': True,
+            'distributed': False
         }
     }
 
@@ -1411,7 +1422,6 @@ class FormedBeamHA(FormedBeam):
     """Container for formed beams.
        These have not been collapsed in the hour angle (HA) axis
     """
-    
     _axes = ('object_id', 'pol', 'freq', 'ha')
 
     _dataset_spec = {
@@ -1434,7 +1444,20 @@ class FormedBeamHA(FormedBeam):
             'dtype': np.float64,
             'initialise': True,
             'distributed': False
+        },
+        'position': {
+            'axes': ['object_id'],
+            'dtype': np.dtype([('ra', np.float64), ('dec', np.float64)]),
+            'initialise': True,
+            'distributed': False
+        },
+        'redshift': {
+            'axes': ['object_id'],
+            'dtype': np.dtype([('z', np.float64), ('z_error', np.float64)]),
+            'initialise': True,
+            'distributed': False
         }
+
     }
 
     @property
