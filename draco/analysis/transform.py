@@ -12,6 +12,13 @@ Tasks
     CollateProducts
     MModeTransform
 """
+# === Start Python 2/3 compatibility
+from __future__ import (absolute_import, division,
+                        print_function, unicode_literals)
+from future.builtins import *  # noqa  pylint: disable=W0401, W0614
+from future.builtins.disabled import *  # noqa  pylint: disable=W0401, W0614
+# === End Python 2/3 compatibility
+
 import numpy as np
 from caput import mpiarray, config
 from caput import mpiutil
@@ -74,7 +81,7 @@ class FrequencyRebin(task.SingleTask):
         for fi in range(len(ss.freq)):
 
             # Calculate rebinned index
-            ri = fi / self.channel_bin
+            ri = fi // self.channel_bin
 
             sb.vis[ri] += ss.vis[fi] * ss.weight[fi]
             sb.gain[ri] += ss.gain[fi] / self.channel_bin  # Don't do weighted average for the moment
@@ -172,7 +179,7 @@ class CollateProducts(task.SingleTask):
             ret = np.zeros(nprod, dtype=arr.dtype)
             iout = 0
 
-            for i in xrange(nfeed):
+            for i in range(nfeed):
                 ret[iout:(iout+nfeed-i)] = arr[i,i:]
                 iout += (nfeed-i)
 
@@ -217,9 +224,9 @@ class CollateProducts(task.SingleTask):
         # Construct the equivalent stack reverse_map for the telescope instance.  Note
         # that we identify invalid products here using an index that is the size of the stack axis.
         feedmask = pack_product_array(self.telescope.feedmask)
-        bt_rev = np.array(zip(
+        bt_rev = np.array(list(zip(
                  np.where(feedmask, pack_product_array(self.telescope.feedmap), self.telescope.npairs),
-                 np.where(feedmask, pack_product_array(self.telescope.feedconj), 0)),
+                 np.where(feedmask, pack_product_array(self.telescope.feedconj), 0))),
                  dtype=[('stack', '<u4'), ('conjugate', 'u1')])
 
         # Create output container
@@ -405,7 +412,7 @@ class SelectFreq(task.SingleTask):
         # then we only copy over the subset.
         if isinstance(data, containers.ContainerBase):
 
-            for name, dset in data.datasets.iteritems():
+            for name, dset in data.datasets.items():
 
                 if 'freq' in dset.attrs['axis']:
                     slc = [slice(None)] * len(dset.shape)
@@ -507,7 +514,7 @@ def _pack_marray(mmodes, mmax=None):
     # baseline])
 
     if mmax is None:
-        mmax = mmodes.shape[-1] / 2
+        mmax = mmodes.shape[-1] // 2
 
     shape = mmodes.shape[:-1]
 
@@ -515,7 +522,7 @@ def _pack_marray(mmodes, mmax=None):
 
     marray[0, 0] = mmodes[..., 0]
 
-    mlimit = min(mmax, mmodes.shape[-1] / 2)  # So as not to run off the end of the array
+    mlimit = min(mmax, mmodes.shape[-1] // 2)  # So as not to run off the end of the array
     for mi in range(1, mlimit - 1):
         marray[mi, 0] = mmodes[..., mi]
         marray[mi, 1] = mmodes[..., -mi].conj()

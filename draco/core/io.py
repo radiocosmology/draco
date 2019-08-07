@@ -35,6 +35,12 @@ Several tasks accept groups of files as arguments. These are specified in the YA
     single_group:
         files: ['file1.h5', 'file2.h5']
 """
+# === Start Python 2/3 compatibility
+from __future__ import (absolute_import, division,
+                        print_function, unicode_literals)
+from future.builtins import *  # noqa  pylint: disable=W0401, W0614
+from future.builtins.disabled import *  # noqa  pylint: disable=W0401, W0614
+# === End Python 2/3 compatibility
 
 import os.path
 
@@ -123,7 +129,7 @@ class LoadMaps(pipeline.TaskBase):
 
     maps = config.Property(proptype=_list_of_filegroups)
 
-    def next(self):
+    def __next__(self):
         """Load the groups of maps from disk and pass them on.
 
         Returns
@@ -312,7 +318,7 @@ class Print(pipeline.TaskBase):
 
     def next(self, input_):
 
-        print input_
+        print(input_)
 
         return input_
 

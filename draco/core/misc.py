@@ -4,6 +4,13 @@ Tasks should be proactively moved out of here when there is a thematically
 appropriate module, or enough related tasks end up in here such that they can
 all be moved out into their own module.
 """
+# === Start Python 2/3 compatibility
+from __future__ import (absolute_import, division,
+                        print_function, unicode_literals)
+from future.builtins import *  # noqa  pylint: disable=W0401, W0614
+from future.builtins.disabled import *  # noqa  pylint: disable=W0401, W0614
+# === End Python 2/3 compatibility
+
 
 import numpy as np
 
@@ -67,7 +74,7 @@ class ApplyGain(task.SingleTask):
                 samp = int(np.ceil(self.smoothing_length / tdiff))
 
                 # Ensure smoothing length is odd
-                l = 2 * (samp / 2) + 1
+                l = 2 * (samp // 2) + 1
 
                 # Turn into 2D array (required by smoothing routines)
                 gain_r = gain_arr.reshape(-1, gain_arr.shape[-1])

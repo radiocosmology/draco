@@ -14,6 +14,13 @@ Tasks
     MaskBaselines
     RadiometerWeight
 """
+# === Start Python 2/3 compatibility
+from __future__ import (absolute_import, division,
+                        print_function, unicode_literals)
+from future.builtins import *  # noqa  pylint: disable=W0401, W0614
+from future.builtins.disabled import *  # noqa  pylint: disable=W0401, W0614
+# === End Python 2/3 compatibility
+
 import numpy as np
 from scipy.ndimage import median_filter, uniform_filter
 
@@ -236,7 +243,7 @@ class RadiometerWeight(task.SingleTask):
         ninput = len(stream.index_map['input'])
         nprod = len(stream.index_map['prod'])
 
-        if nprod != (ninput * (ninput + 1) / 2):
+        if nprod != (ninput * (ninput + 1) // 2):
             raise RuntimeError('Must have a input stream with the full correlation triangle.')
 
         freq_width = np.median(stream.index_map['freq']['width'])

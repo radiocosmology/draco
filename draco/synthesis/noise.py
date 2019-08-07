@@ -14,6 +14,12 @@ Tasks
     ReceiverTemperature
     SampleNoise
 """
+# === Start Python 2/3 compatibility
+from __future__ import (absolute_import, division,
+                        print_function, unicode_literals)
+from future.builtins import *  # noqa  pylint: disable=W0401, W0614
+from future.builtins.disabled import *  # noqa  pylint: disable=W0401, W0614
+# === End Python 2/3 compatibility
 
 import contextlib
 
@@ -250,8 +256,8 @@ def standard_complex_wishart(m, n):
 
     # Fill in normal variables in the lower triangle
     T = np.zeros((m, m), dtype=np.complex128)
-    T[np.tril_indices(m, k=-1)] = (np.random.standard_normal(m * (m - 1) / 2) +
-                                   1.0J * np.random.standard_normal(m * (m - 1) / 2)) / 2**0.5
+    T[np.tril_indices(m, k=-1)] = (np.random.standard_normal(m * (m - 1) // 2) +
+                                   1.0J * np.random.standard_normal(m * (m - 1) // 2)) / 2**0.5
 
     # Gamma variables on the diagonal
     for i in range(m):

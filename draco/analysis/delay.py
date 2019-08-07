@@ -1,5 +1,11 @@
 """Delay space spectrum estimation and filtering.
 """
+# === Start Python 2/3 compatibility
+from __future__ import (absolute_import, division,
+                        print_function, unicode_literals)
+from future.builtins import *  # noqa  pylint: disable=W0401, W0614
+from future.builtins.disabled import *  # noqa  pylint: disable=W0401, W0614
+# === End Python 2/3 compatibility
 
 import numpy as np
 import scipy.linalg as la
@@ -170,7 +176,7 @@ class DelaySpectrumEstimator(task.SingleTask):
 
             # Take an average over the last half of the delay spectrum samples
             # (presuming that removes the burn-in)
-            spec_av = np.median(spec[-(self.nsamp / 2):], axis=0)
+            spec_av = np.median(spec[-(self.nsamp // 2):], axis=0)
             delay_spec.spectrum[bi] = np.fft.fftshift(spec_av)
 
         return delay_spec
@@ -288,7 +294,7 @@ def fourier_matrix_r2c(N, fsel=None):
     """
 
     if fsel is None:
-        fa = np.arange(N / 2 + 1)
+        fa = np.arange(N // 2 + 1)
     else:
         fa = np.array(fsel)
 
@@ -322,13 +328,13 @@ def fourier_matrix_c2r(N, fsel=None):
     """
 
     if fsel is None:
-        fa = np.arange(N / 2 + 1)
+        fa = np.arange(N // 2 + 1)
     else:
         fa = np.array(fsel)
 
     fa = fa[np.newaxis, :]
 
-    mul = np.where((fa == 0) | (fa == N / 2), 1.0, 2.0) / N
+    mul = np.where((fa == 0) | (fa == N // 2), 1.0, 2.0) / N
 
     ta = np.arange(N)[:, np.newaxis]
 
@@ -381,7 +387,7 @@ def delay_spectrum_gibbs(data, N, Ni, initial_S, window=True, fsel=None, niter=2
 
     spec = []
 
-    total_freq = N / 2 + 1
+    total_freq = N // 2 + 1
 
     if fsel is None:
         fsel = np.arange(total_freq)
@@ -404,7 +410,7 @@ def delay_spectrum_gibbs(data, N, Ni, initial_S, window=True, fsel=None, niter=2
         F *= w[:, np.newaxis]
         data *= w[:, np.newaxis]
 
-    is_real_freq = (fsel == 0) | (fsel == N / 2)
+    is_real_freq = (fsel == 0) | (fsel == N // 2)
 
     # Construct the Noise inverse array for the real and imaginary parts (taking
     # into account that the zero and Nyquist frequencies are strictly real)

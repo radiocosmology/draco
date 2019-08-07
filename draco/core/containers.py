@@ -35,6 +35,12 @@ their own custom container types.
     empty_like
     empty_timestream
 """
+# === Start Python 2/3 compatibility
+from __future__ import (absolute_import, division,
+                        print_function, unicode_literals)
+from future.builtins import *  # noqa  pylint: disable=W0401, W0614
+from future.builtins.disabled import *  # noqa  pylint: disable=W0401, W0614
+# === End Python 2/3 compatibility
 
 import inspect
 
@@ -245,7 +251,7 @@ class ContainerBase(memh5.BasicCont):
 
         """
         out = {}
-        for name, value in self._data.iteritems():
+        for name, value in self._data.items():
             if not memh5.is_group(value):
                 out[name] = value
         return memh5.ro_dict(out)

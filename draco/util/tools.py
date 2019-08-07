@@ -2,6 +2,12 @@
 
 Miscellaneous tasks should be placed in :module:`draco.core.misc`.
 """
+# === Start Python 2/3 compatibility
+from __future__ import (absolute_import, division,
+                        print_function, unicode_literals)
+from future.builtins import *  # noqa  pylint: disable=W0401, W0614
+from future.builtins.disabled import *  # noqa  pylint: disable=W0401, W0614
+# === End Python 2/3 compatibility
 
 import numpy as np
 
@@ -24,7 +30,7 @@ def cmap(i, j, n):
         Pair index.
     """
     if i <= j:
-        return (n * (n + 1) / 2) - ((n - i) * (n - i + 1) / 2) + (j - i)
+        return (n * (n + 1) // 2) - ((n - i) * (n - i + 1) // 2) + (j - i)
     else:
         return cmap(j, i, n)
 
@@ -85,7 +91,7 @@ def apply_gain(vis, gain, axis=1, out=None, prod_map=None):
     nprod = vis.shape[axis]
     ninput = gain.shape[axis]
 
-    if prod_map is None and nprod != (ninput * (ninput + 1) / 2):
+    if prod_map is None and nprod != (ninput * (ninput + 1) // 2):
         raise Exception("Number of inputs does not match the number of products.")
 
     if prod_map is not None:
@@ -162,7 +168,7 @@ def extract_diagonal(utmat, axis=1):
     nside = int((2 * utmat.shape[axis])**0.5)
 
     # Check that this nside is correct
-    if utmat.shape[axis] != (nside * (nside + 1) / 2):
+    if utmat.shape[axis] != (nside * (nside + 1) // 2):
         msg = ('Array length (%i) of axis %i does not correspond upper triangle\
                 of square matrix' % (utmat.shape[axis], axis))
         raise RuntimeError(msg)
