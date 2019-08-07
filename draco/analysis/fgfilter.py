@@ -1,5 +1,12 @@
 """Tasks for foreground filtering data.
 """
+# === Start Python 2/3 compatibility
+from __future__ import (absolute_import, division,
+                        print_function, unicode_literals)
+from future.builtins import *  # noqa  pylint: disable=W0401, W0614
+from future.builtins.disabled import *  # noqa  pylint: disable=W0401, W0614
+# === End Python 2/3 compatibility
+
 
 import numpy as np
 
@@ -171,7 +178,7 @@ class KLModeProject(_ProjectFilterBase):
         if self.klname not in self.product_manager.kltransforms:
             raise RuntimeError(
                 'Requested KL basis %s not available (options are %s)' %
-                (self.klname, repr(self.product_manager.kltransforms.items()))
+                (self.klname, repr(list(self.product_manager.kltransforms.items())))
             )
         kl = self.product_manager.kltransforms[self.klname]
 
@@ -209,7 +216,7 @@ class KLModeProject(_ProjectFilterBase):
         if self.klname not in self.product_manager.kltransforms:
             raise RuntimeError(
                 'Requested KL basis %s not available (options are %s)' %
-                (self.klname, repr(self.product_manager.kltransforms.items()))
+                (self.klname, repr(list(self.product_manager.kltransforms.items())))
             )
         kl = self.product_manager.kltransforms[self.klname]
 
