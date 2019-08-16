@@ -145,3 +145,21 @@ class AccumulateList(task.MPILoggedTask):
         del self._items
 
         return items
+
+
+class WaitUntil(task.MPILoggedTask):
+    """Wait until the the requires before forwarding inputs.
+
+    This simple synchronization task will forward on whatever inputs it gets, however, it won't do
+    this until it receives any requirement to it's setup method. This allows certain parts of the
+    pipeline to be delayed until a piece of data further up has been generated.
+    """
+
+    def setup(self, input_):
+        """Accept, but don't save any input."""
+        self.log.info("Received the requirement, starting to forward inputs")
+        pass
+
+    def next(self, input_):
+        """Immediately forward any input."""
+        return input_
