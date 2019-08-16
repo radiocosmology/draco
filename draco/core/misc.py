@@ -125,3 +125,23 @@ class ApplyGain(task.SingleTask):
             tstream.weight[:] *= gain_weight[:, np.newaxis, :]
 
         return tstream
+
+
+class AccumulateList(task.MPILoggedTask):
+    """Accumulate the inputs into a list and return when the task *finishes*."""
+
+    def __init__(self):
+        super(AccumulateList, self).__init__()
+        self._items = []
+
+    def next(self, input_):
+        self._items.append(input_)
+
+    def finish(self):
+
+        # Remove the internal reference to the items so they don't hang around after the task
+        # finishes
+        items = self._items
+        del self._items
+
+        return items
