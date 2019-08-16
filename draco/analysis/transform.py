@@ -224,7 +224,7 @@ class CollateProducts(task.SingleTask):
         # Construct the equivalent stack reverse_map for the telescope instance.  Note
         # that we identify invalid products here using an index that is the size of the stack axis.
         feedmask = pack_product_array(self.telescope.feedmask)
-        bt_rev = np.array(list(zip(
+        bt_rev = np.fromiter(zip(
                  np.where(feedmask, pack_product_array(self.telescope.feedmap), self.telescope.npairs),
                  np.where(feedmask, pack_product_array(self.telescope.feedconj), 0))),
                  dtype=[('stack', '<u4'), ('conjugate', 'u1')])
