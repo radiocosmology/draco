@@ -226,7 +226,7 @@ class CollateProducts(task.SingleTask):
         feedmask = pack_product_array(self.telescope.feedmask)
         bt_rev = np.fromiter(zip(
                  np.where(feedmask, pack_product_array(self.telescope.feedmap), self.telescope.npairs),
-                 np.where(feedmask, pack_product_array(self.telescope.feedconj), 0))),
+                 np.where(feedmask, pack_product_array(self.telescope.feedconj), 0)),
                  dtype=[('stack', '<u4'), ('conjugate', 'u1')])
 
         # Create output container
