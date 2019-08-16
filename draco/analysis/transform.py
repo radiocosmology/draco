@@ -165,7 +165,7 @@ class CollateProducts(task.SingleTask):
         # Define two functions that are used below
         def find_key(key_list, key):
             try:
-                return map(tuple, list(key_list)).index(tuple(key))
+                return [tuple(x) for x in key_list].index(tuple(key))
             except TypeError:
                 return list(key_list).index(key)
             except ValueError:
@@ -445,7 +445,7 @@ class MModeTransform(task.SingleTask):
     """
     def setup(self, manager=None):
         """Set the telescope instance if a manager object is given.
-        
+
         This is used to set the `mmax` used in the transform.
 
         Parameters
