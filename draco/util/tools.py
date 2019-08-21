@@ -249,9 +249,25 @@ def polarization_map(index_map, telescope, exclude_autos=True):
             corresponding polarization in pol = ['XX', 'XY', 'YX', 'YY']
 
     """
-    if not (telescope.stack_type == 'redundant'):
-        msg = "Telescope stack type needs to be 'redundant'. Is {0}"
-        raise RuntimeError(msg.format(telescope.stack_type))
+    # Old versions of telescope object don't have the `stack_type`
+    # attribute. Assume those are of type `redundant`.
+    try:
+        teltype = telescope.stack_type
+    except AttributeError:
+        teltype = None
+        msg = ("Telescope object does not have a `stack_type` attribute.\n"
+               + "Assuming it is of type `redundant`")
+
+    if teltype is not None:
+        if not (teltype == 'redundant'):
+            msg = "Telescope stack type needs to be 'redundant'. Is {0}"
+            raise RuntimeError(msg.format(telescope.stack_type))
+
+    # Older data's input map has a simpler dtype
+    try:
+        input_map = index_map['input']['chan_id'][:]
+    except IndexError:
+        input_map = index_map['input'][:]
 
     pol = ['XX', 'XY', 'YX', 'YY']
     nstack = len(index_map['stack'])
@@ -263,10 +279,8 @@ def polarization_map(index_map, telescope, exclude_autos=True):
         # Product index
         pi = index_map['stack'][vi][0]
         # Inputs that go into this product
-        ipt0 = index_map['input']['chan_id'][
-                            index_map['prod'][pi][0]]
-        ipt1 = index_map['input']['chan_id'][
-                            index_map['prod'][pi][1]]
+        ipt0 = input_map[index_map['prod'][pi][0]]
+        ipt1 = input_map[index_map['prod'][pi][1]]
 
         # Exclude autos if exclude_autos == True
         if (exclude_autos and (ipt0 == ipt1)):
@@ -320,15 +334,19 @@ def baseline_vector(index_map, telescope):
     nstack = len(index_map['stack'])
     # Baseline vectors in meters.
     bvec_m = np.zeros((2, nstack), dtype=np.float64)
+    # Older data's input map has a simpler dtype
+    try:
+        input_map = index_map['input']['chan_id'][:]
+    except IndexError:
+        input_map = index_map['input'][:]
+
     # Compute all baseline vectors.
     for vi in range(nstack):
         # Product index
         pi = index_map['stack'][vi][0]
         # Inputs that go into this product
-        ipt0 = index_map['input']['chan_id'][
-                            index_map['prod'][pi][0]]
-        ipt1 = index_map['input']['chan_id'][
-                            index_map['prod'][pi][1]]
+        ipt0 = input_map[index_map['prod'][pi][0]]
+        ipt1 = input_map[index_map['prod'][pi][1]]
 
         # Beseline vector in meters
         unique_index = telescope.feedmap[ipt0, ipt1]
