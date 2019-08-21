@@ -1410,6 +1410,10 @@ class FormedBeam(ContainerBase):
         return self.index_map['freq']['centre']
 
     @property
+    def frequency(self):
+        return self.index_map['freq']
+
+    @property
     def id(self):
         return self.index_map['object_id']
 
@@ -1442,18 +1446,6 @@ class FormedBeamHA(FormedBeam):
         'hour_angle': {
             'axes': ['object_id', 'ha'],
             'dtype': np.float64,
-            'initialise': True,
-            'distributed': False
-        },
-        'position': {
-            'axes': ['object_id'],
-            'dtype': np.dtype([('ra', np.float64), ('dec', np.float64)]),
-            'initialise': True,
-            'distributed': False
-        },
-        'redshift': {
-            'axes': ['object_id'],
-            'dtype': np.dtype([('z', np.float64), ('z_error', np.float64)]),
             'initialise': True,
             'distributed': False
         }
