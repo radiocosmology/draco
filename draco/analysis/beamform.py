@@ -162,6 +162,8 @@ class BeamFormBase(task.SingleTask):
                 # TODO: In principle I should be able to skip
                 # sources that have no indices to be processed
                 # in this rank. I am getting a NaN error, however.
+                # I may need an mpiutil.barrier() call before the
+                # return statement.
                 #if f_mask.all():
                 #    # If there are no indices to be processed in
                 #    #the local frequency range, skip source.
@@ -296,13 +298,6 @@ class BeamFormBase(task.SingleTask):
             elif self.polarization == 'stokes':
                 # TODO: Not implemented
                 pass
-
-            # Wrap beam and weights to be assigned to
-            # distributed container.
-            formed_beam_full = mpiarray.MPIArray.wrap(
-                        formed_beam_full, axis=1, comm=self.comm_)
-            weight_full = mpiarray.MPIArray.wrap(
-                        weight_full, axis=1, comm=self.comm_)
 
             # Populate container.
             formed_beam.beam[src] = formed_beam_full
