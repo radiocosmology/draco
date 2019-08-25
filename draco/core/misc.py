@@ -125,3 +125,41 @@ class ApplyGain(task.SingleTask):
             tstream.weight[:] *= gain_weight[:, np.newaxis, :]
 
         return tstream
+
+
+class AccumulateList(task.MPILoggedTask):
+    """Accumulate the inputs into a list and return when the task *finishes*."""
+
+    def __init__(self):
+        super(AccumulateList, self).__init__()
+        self._items = []
+
+    def next(self, input_):
+        self._items.append(input_)
+
+    def finish(self):
+
+        # Remove the internal reference to the items so they don't hang around after the task
+        # finishes
+        items = self._items
+        del self._items
+
+        return items
+
+
+class WaitUntil(task.MPILoggedTask):
+    """Wait until the the requires before forwarding inputs.
+
+    This simple synchronization task will forward on whatever inputs it gets, however, it won't do
+    this until it receives any requirement to it's setup method. This allows certain parts of the
+    pipeline to be delayed until a piece of data further up has been generated.
+    """
+
+    def setup(self, input_):
+        """Accept, but don't save any input."""
+        self.log.info("Received the requirement, starting to forward inputs")
+        pass
+
+    def next(self, input_):
+        """Immediately forward any input."""
+        return input_
