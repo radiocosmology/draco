@@ -40,6 +40,7 @@ from __future__ import (absolute_import, division,
                         print_function, unicode_literals)
 from future.builtins import *  # noqa  pylint: disable=W0401, W0614
 from future.builtins.disabled import *  # noqa  pylint: disable=W0401, W0614
+from past.builtins import basestring
 # === End Python 2/3 compatibility
 
 import os.path
@@ -58,7 +59,7 @@ def _list_of_filelists(files):
 
     for filelist in files:
 
-        if isinstance(filelist, str):
+        if isinstance(filelist, basestring):
             filelist = glob.glob(filelist)
         elif isinstance(filelist, list):
             pass
@@ -73,7 +74,7 @@ def _list_or_glob(files):
     # Take in a list of lists/glob patterns of filenames
     import glob
 
-    if isinstance(files, str):
+    if isinstance(files, basestring):
         files = sorted(glob.glob(files))
     elif isinstance(files, list):
         pass
