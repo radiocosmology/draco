@@ -39,8 +39,21 @@ class ApplyGain(task.SingleTask):
     smoothing_length = config.Property(proptype=float, default=None)
 
     def process(self, tstream, gain):
-        """ There is support for sidereal streams now.
-            But not for smooting_length on sidereal streams.
+        """Apply gains to the given timestream.
+        
+        Smoothing the gains is not supported for SiderealStreams.
+        
+        Parameters
+        ----------
+        tstream : TimeStream like or SiderealStream
+            Time stream to apply gains to. The gains are applied in place.
+        gain : StaticGainData, GainData or SiderealGainData
+            Gains to apply.
+            
+        Returns
+        -------
+        tstream : TimeStream or SiderealStream
+            The timestream with the gains applied.
         """
         tstream.redistribute('freq')
         gain.redistribute('freq')
