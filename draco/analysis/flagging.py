@@ -24,7 +24,7 @@ from future.builtins.disabled import *  # noqa  pylint: disable=W0401, W0614
 import numpy as np
 from scipy.ndimage import median_filter, uniform_filter
 
-from caput import config
+from caput import config, weighted_median
 
 from ..core import task, containers, io
 from ..util import tools
@@ -376,9 +376,14 @@ class RFIMask(task.SingleTask):
             ww = ssw[:, self.stack_ind - lstart].view(np.ndarray)
 
             # Generate an initial mask and calculate the scaled deviations
+            # TODO: replace this magic threshold
             weight_cut = 1e-4 * ww.mean()  # Ignore samples with small weights
             wm = (ww < weight_cut)
             maddev = mad(wf, wm)
+
+            # Replace any NaNs (where too much data is missing) with a large enough value to always
+            # be flagged
+            maddev = np.where(np.isnan(maddev), 2 * sigma, maddev)
 
             # Reflag for scattered TV emission
             tvmask = tv_channels_flag(maddev, sstream.freq,
@@ -398,31 +403,7 @@ class RFIMask(task.SingleTask):
         return sstream
 
 
-def meanfilt(x, mask, size):
-    """Apply a moving mean filter to masked data.
-
-    Parameters
-    ----------
-    x : np.ndarray
-        Data to filter.
-    mask : np.ndarray
-        Mask of data to filter out.
-    size : tuple
-        Size of the window in each dimension.
-
-    Returns
-    -------
-    y : np.ndarray
-        The masked data. Data within the mask is undefined.
-    """
-
-    a = uniform_filter(x)
-    b = uniform_filter((~mask).astype(np.float))
-
-    return a * tools.invert_no_zero(b)
-
-
-def medfilt_iter(x, mask, size=(5, 5), niter=3):
+def medfilt(x, mask, size, *args):
     """Apply a moving median filter to masked data.
 
     The application is done by iterative filling to
@@ -437,8 +418,6 @@ def medfilt_iter(x, mask, size=(5, 5), niter=3):
         Mask of data to filter out.
     size : tuple
         Size of the window in each dimension.
-    niter : int
-        Number of iterations to perform.
 
     Returns
     -------
@@ -447,21 +426,16 @@ def medfilt_iter(x, mask, size=(5, 5), niter=3):
     """
 
     if np.iscomplexobj(x):
-        return (medfilt_iter(x.real, mask, size=size, niter=niter) +
-                1.0J * medfilt_iter(x.imag, mask, size=size, niter=niter))
+        return (medfilt(x.real, mask, size) + 1.0J * medfilt(x.imag, mask, size))
 
     # Copy and do initial masking
-    x = x.copy()
-    x[mask] = meanfilt(x, mask, size)[mask]
+    x = np.ascontiguousarray(x.astype(np.float64))
+    w = np.ascontiguousarray((~mask).astype(np.float64))
 
-    for i in range(niter):
-        xm = median_filter(x, size=size)
-        x[mask] = xm[mask]
-
-    return xm
+    return weighted_median.moving_weighted_median(x, w, size, *args)
 
 
-def mad(x, mask, base_size=(5, 5), mad_size=(20, 400),
+def mad(x, mask, base_size=(11, 3), mad_size=(21, 21),
         debug=False, sigma=True):
     """Calculate the MAD of freq-time data.
 
@@ -486,12 +460,10 @@ def mad(x, mask, base_size=(5, 5), mad_size=(20, 400),
         Size of deviation at each point in MAD units.
     """
 
-    xs = medfilt_iter(x, mask, size=base_size)
+    xs = medfilt(x, mask, size=base_size)
     dev = np.abs(x - xs)
 
-    nf, nt = mad_size
-    mad = medfilt_iter(dev, mask, size=(nf, 1), niter=1)
-    mad = medfilt_iter(mad, mask, size=(1, nt), niter=1)
+    mad = medfilt(dev, mask, size=mad_size)
 
     if sigma:
         mad *= 1.4826  # apply the conversion from MAD->sigma
