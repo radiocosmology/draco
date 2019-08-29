@@ -333,11 +333,14 @@ class RFIMask(task.SingleTask):
         channel to be flagged.
     stack_ind : int
         Which stack to process to derive flags for the whole dataset.
+    destripe : bool, optional
+        Deprecated option to remove the striping.
     """
 
     sigma = config.Property(proptype=float, default=5.0)
     tv_fraction = config.Property(proptype=float, default=0.5)
     stack_ind = config.Property(proptype=int)
+    destripe = config.Property(proptype=bool, default=False)
 
     def process(self, sstream):
         """Apply a day time mask.
@@ -383,7 +386,7 @@ class RFIMask(task.SingleTask):
 
             # Replace any NaNs (where too much data is missing) with a large enough value to always
             # be flagged
-            maddev = np.where(np.isnan(maddev), 2 * sigma, maddev)
+            maddev = np.where(np.isnan(maddev), 2 * self.sigma, maddev)
 
             # Reflag for scattered TV emission
             tvmask = tv_channels_flag(maddev, sstream.freq,
@@ -396,9 +399,14 @@ class RFIMask(task.SingleTask):
         sstream.comm.Bcast(newmask, root=rank_with_ind)
         ssw[:] *= (~newmask)[:, np.newaxis, :]
 
+        self.log.info("Flagging %0.2f%% of data due to RFI." %
+                      (100.0 * np.sum(newmask) / float(newmask.size)))
+
         # Remove the time average of the data. Should probably do this elsewhere to be honest
-        weight_cut = 1e-4 * ssw.mean()  # Ignore samples with small weights
-        ssv[:] = destripe(ssv, ssw > weight_cut)
+        if self.destripe:
+            self.log.info("Destriping the data. This option is deprecated.")
+            weight_cut = 1e-4 * ssw.mean()  # Ignore samples with small weights
+            ssv[:] = destripe(ssv, ssw > weight_cut)
 
         return sstream
 
