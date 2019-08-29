@@ -281,7 +281,8 @@ class ContainerBase(memh5.BasicCont):
         # Add in any _dataset_spec found on the instance
         ddict.update(self.__dict__.get('_dataset_spec', {}))
 
-        return ddict
+        # Ensure that the dataset_spec is the same order on all ranks
+        return {k: ddict[k] for k in sorted(ddict)}
 
     @property
     def axes(self):
@@ -302,7 +303,9 @@ class ContainerBase(memh5.BasicCont):
         # Add in any axes found on the instance
         axes |= set(self.__dict__.get('_axes', []))
 
-        return tuple(axes)
+        # This must be the same order on all ranks, so we need to explicitly sort to get around the
+        # hash randomization
+        return tuple(sorted(axes))
 
 
 class TableBase(ContainerBase):
