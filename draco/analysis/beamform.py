@@ -396,6 +396,7 @@ class BeamFormBase(task.SingleTask):
 
         return ha_array, ra_index_range, ha_mask
 
+    # TODO: This is very CHIME specific. Should probably be moved somewhere else.
     def _beamfunc(self, ha, pol, freq, dec, zenith=0.70999994):
         """ Simple and fast beam model to be used as beamforming weights.
 

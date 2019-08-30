@@ -166,7 +166,9 @@ cpdef beamform(float complex [:, :, ::1] vis,
                double[::1] cosha, double[::1] sinha,
                double[:, ::1] u, double[:, ::1] v,
                int[::1] f_index, int[::1] ra_index):
-    """ CAUTION! For efficiency reasons this routine does not
+    """ Fringestop visibility data and sum over products.
+    
+    CAUTION! For efficiency reasons this routine does not
     normalize the sum over products. This is to avoid dividing
     here and multiplyig again for further stacking in the time
     axis later on.
@@ -177,6 +179,30 @@ cpdef beamform(float complex [:, :, ::1] vis,
                     formed_beam / np.sum(weight, axis=-1)
     
     to get a proper normalization.
+
+    Parameters
+    ----------
+    vis : complex np.ndarray[freq, RA/time, product/stack]
+        Visibility data. Notice this is not in the usual order.
+        This order reduces data striding.
+    weight : double np.ndarray[freq, RA/time, product/stack]
+        The weights to be used for adding products.
+    dec : double
+        Source declination.
+    lat : double
+        Latitude of observation.
+    cosha : double np.ndarray[HA]
+        Cosine of hour angle array
+    sinha : double np.ndarray[HA]
+        Sine of hour angle array
+    u : double np.ndarray[freq, product/stack]
+        X-direction (EW) baseline in wavelengths
+    v : double np.ndarray[freq, product/stack]
+        Y-direction (NS) baseline in wavelengths
+    f_index : int np.ndarray[freq_to_process]
+        Indices in the frequencies to process
+    ra_index : int np.ndarray[HA]
+        Indicies in the RA axis of the HA in cosha, sinha
     """
 
     cdef double cosdec, sindec, coslat, sinlat
