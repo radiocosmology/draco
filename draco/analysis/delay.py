@@ -21,13 +21,6 @@ from ..core import containers, task, io
 class DelayFilter(task.SingleTask):
     """Remove delays less than a given threshold.
 
-    Note: The baseline-dependent delay threshold take in
-    consideration only the Y (NS) component of the baseline.
-    This is the correct thing to do for a cylindrical transit
-    telescope oriented in the NS direction. For dish type
-    reflectors, this might need to be changed to use the full
-    baseline length.
-
     Attributes
     ----------
     delay_cut : float
@@ -43,12 +36,18 @@ class DelayFilter(task.SingleTask):
     weight_tol : float
         Maximum weight kept in the masked data, as a fraction of
         the largest weight in the original dataset.
+    telescope_orientation : one of ('NS', 'EW', 'none')
+        Determines if the baseline-dependent delay cut is based on
+        the north-south component, the east-west component or the full
+        baseline length. For cylindrical telescopes oriented in the
+        NS direction (like CHIME) use 'NS'. The default is 'NS'.
     """
 
     delay_cut = config.Property(proptype=float, default=0.1)
     za_cut = config.Property(proptype=float, default=1.)
     update_weight = config.Property(proptype=bool, default=False)
     weight_tol = config.Property(proptype=float, default=1E-4)
+    telescope_orientation = config.enum(['NS', 'EW', 'none'], default='NS')
 
     def setup(self, telescope):
         """Set the telescope needed to obtain baselines.
@@ -91,8 +90,15 @@ class DelayFilter(task.SingleTask):
         ubase = ubase.view(np.float64).reshape(-1, 2)
 
         for lbi, bi in ss.vis[:].enumerate(axis=1):
-            # Y baseline
-            baseline = abs(ubase[uinv[bi], 1])
+
+            # Select the baseline length to use
+            baseline = ubase[uinv[bi]]
+            if self.telescope_orientation == 'NS':
+                baseline = abs(baseline[1])  # Y baseline
+            elif self.telescope_orientation == 'EW':
+                baseline = abs(baseline[0])  # X baseline
+            else:
+                baseline = np.linalg.norm(baseline)  # Norm
             # In micro seconds
             baseline_delay_cut = self.za_cut * baseline / units.c * 1E6
             delay_cut = np.amax([baseline_delay_cut, self.delay_cut])
