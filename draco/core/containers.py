@@ -1443,7 +1443,7 @@ class FormedBeamHA(FormedBeam):
             'distributed': True,
             'distributed_axis': 'freq'
         },
-        'hour_angle': {
+        'object_ha': {
             'axes': ['object_id', 'ha'],
             'dtype': np.float64,
             'initialise': True,
@@ -1454,7 +1454,7 @@ class FormedBeamHA(FormedBeam):
 
     @property
     def ha(self):
-        return self['hour_angle']
+        return self.datasets['object_ha']
 
 
 def empty_like(obj, **kwargs):
