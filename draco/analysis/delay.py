@@ -28,8 +28,8 @@ class DelayFilter(task.SingleTask):
     za_cut : float
         Sine of the maximum zenith angle included in
         baseline-dependent delay filtering. Default is 1
-        which corresponds to the horizon which filters
-        out all zenith angles. Setting to zero turns off
+        which corresponds to the horizon (ie: filters
+        out all zenith angles). Setting to zero turns off
         baseline dependent cut.
     update_weight : bool
         Not implemented.
