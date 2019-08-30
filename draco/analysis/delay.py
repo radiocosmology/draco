@@ -21,6 +21,13 @@ from ..core import containers, task, io
 class DelayFilter(task.SingleTask):
     """Remove delays less than a given threshold.
 
+    Note: The baseline-dependent delay threshold take in
+    consideration only the Y (NS) component of the baseline.
+    This is the correct thing to do for a cylindrical transit
+    telescope oriented in the NS direction. For dish type
+    reflectors, this might need to be changed to use the full
+    baseline length.
+
     Attributes
     ----------
     delay_cut : float
