@@ -34,6 +34,7 @@ from caput import config, mpiutil, mpiarray, tod
 
 from .transform import Regridder
 from ..core import task, containers, io
+from ..util import tools
 
 
 class SiderealGrouper(task.SingleTask):
@@ -44,9 +45,18 @@ class SiderealGrouper(task.SingleTask):
     padding : float
         Extra amount of a sidereal day to pad each timestream by. Useful for
         getting rid of interpolation artifacts.
+    offset : float
+        Time in seconds to subtract before determining the LSD.  Useful if the
+        desired output is not a full sideral stream, but rather a narrow window
+        around source transits on different sideral days.  In that case, one
+        should set this quantity to `240 * (source_ra - 180)`.
+    min_day_length : float
+        Require at least this fraction of a full sidereal day to process.
     """
 
     padding = config.Property(proptype=float, default=0.0)
+    offset = config.Property(proptype=float, default=0.0)
+    min_day_length = config.Property(proptype=float, default=0.10)
 
     def __init__(self):
         super(SiderealGrouper, self).__init__()
@@ -86,8 +96,8 @@ class SiderealGrouper(task.SingleTask):
         # is chosen to be 0 (default). If padding is set to some value then 'lsd_start'
         # will actually correspond to the start of of the requested time frame (incl
         # padding)
-        lsd_start = int(self.observer.unix_to_lsd(tstream.time[0] - self.padding))
-        lsd_end = int(self.observer.unix_to_lsd(tstream.time[-1] + self.padding))
+        lsd_start = int(self.observer.unix_to_lsd(tstream.time[0] - self.padding - self.offset))
+        lsd_end = int(self.observer.unix_to_lsd(tstream.time[-1] + self.padding - self.offset))
 
         # If current_lsd is None then this is the first time we've run
         if self._current_lsd is None:
@@ -102,7 +112,7 @@ class SiderealGrouper(task.SingleTask):
         # If this file ends during a later LSD then we need to process the
         # current list and restart the system
         if self._current_lsd < lsd_end:
-            self.log.info("Concatenating files for LSD:%i", lsd_start)
+            self.log.info("Concatenating files for LSD:%i", self._current_lsd)
 
             # Combine timestreams into a single container for the whole day this
             # could get returned as None if there wasn't enough data
@@ -142,7 +152,7 @@ class SiderealGrouper(task.SingleTask):
         day_length = min(end, lsd + 1) - max(start, lsd)
 
         # If the amount of data for this day is too small, then just skip
-        if day_length < 0.1:
+        if day_length < self.min_day_length:
             return None
 
         self.log.info("Constructing LSD:%i [%i files]",
@@ -305,9 +315,7 @@ class SiderealStacker(task.SingleTask):
         self.stack.attrs['tag'] = 'stack'
         self.stack.attrs['lsd'] = np.array(self.lsd_list)
 
-        self.stack.vis[:] = np.where(self.stack.weight[:] == 0,
-                                     0.0,
-                                     self.stack.vis[:] / self.stack.weight[:])
+        self.stack.vis[:] *= tools.invert_no_zero(self.stack.weight[:])
 
         return self.stack
 
