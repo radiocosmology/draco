@@ -13,6 +13,9 @@ Tasks
     MaskData
     MaskBaselines
     RadiometerWeight
+    SmoothVisWeight
+    ThresholdVisWeight
+    RFIMask
 """
 # === Start Python 2/3 compatibility
 from __future__ import (absolute_import, division,
@@ -339,6 +342,53 @@ class SmoothVisWeight(task.SingleTask):
             weight[lfi][zeromask] = 0.0
 
         return data
+
+
+class ThresholdVisWeight(task.SingleTask):
+    """Set any weight less than the user specified threshold equal to zero.
+
+    Threshold is determined as `maximum(absolute_threshold, relative_threshold * mean(weight))`.
+
+    Parameters
+    ----------
+    absolute_threshold : float
+        Any weights with values less than this number will be set to zero.
+    relative_threshold : float
+        Any weights with values less than this number times the average weight
+        will be set to zero.
+    """
+
+    absolute_threshold = config.Property(proptype=float, default=1e-7)
+    relative_threshold = config.Property(proptype=float, default=0.0)
+
+    def process(self, timestream):
+        """Apply threshold to `weight` dataset.
+
+        Parameters
+        ----------
+        timestream : `.core.container` with `weight` attribute
+
+        Returns
+        -------
+        timestream : same as input timestream
+            The input container with modified weights.
+        """
+        weight = timestream.weight[:]
+
+        threshold = self.absolute_threshold
+        if self.relative_threshold > 0.0:
+            sum_weight = self.comm.allreduce(np.sum(weight))
+            mean_weight = sum_weight / float(np.prod(weight.global_shape))
+            threshold = np.maximum(threshold,  self.relative_threshold * mean_weight)
+
+        keep = weight > threshold
+
+        self.log.info("%0.5f%% of data is below the weight threshold of %0.1e." %
+                      (100.0 * (1.0 - np.sum(keep) / float(keep.size)), threshold))
+
+        timestream.weight[:] = np.where(keep, weight, 0.0)
+
+        return timestream
 
 
 class RFIMask(task.SingleTask):
