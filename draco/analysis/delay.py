@@ -13,6 +13,7 @@ import scipy.stats as st
 from randomgen import RandomGenerator
 
 from caput import mpiarray, config
+from cora.util import units
 
 from ..core import containers, task, io
 
@@ -24,11 +25,38 @@ class DelayFilter(task.SingleTask):
     ----------
     delay_cut : float
         Delay value to filter at in seconds.
+    za_cut : float
+        Sine of the maximum zenith angle included in
+        baseline-dependent delay filtering. Default is 1
+        which corresponds to the horizon (ie: filters
+        out all zenith angles). Setting to zero turns off
+        baseline dependent cut.
+    update_weight : bool
+        Not implemented.
+    weight_tol : float
+        Maximum weight kept in the masked data, as a fraction of
+        the largest weight in the original dataset.
+    telescope_orientation : one of ('NS', 'EW', 'none')
+        Determines if the baseline-dependent delay cut is based on
+        the north-south component, the east-west component or the full
+        baseline length. For cylindrical telescopes oriented in the
+        NS direction (like CHIME) use 'NS'. The default is 'NS'.
     """
 
     delay_cut = config.Property(proptype=float, default=0.1)
-
+    za_cut = config.Property(proptype=float, default=1.)
     update_weight = config.Property(proptype=bool, default=False)
+    weight_tol = config.Property(proptype=float, default=1E-4)
+    telescope_orientation = config.enum(['NS', 'EW', 'none'], default='NS')
+
+    def setup(self, telescope):
+        """Set the telescope needed to obtain baselines.
+
+        Parameters
+        ----------
+        telescope : TransitTelescope
+        """
+        self.telescope = io.get_telescope(telescope)
 
     def process(self, ss):
         """Filter out delays from a SiderealStream or TimeStream.
@@ -43,6 +71,7 @@ class DelayFilter(task.SingleTask):
         ss_filt : containers.SiderealStream
             Filtered dataset.
         """
+        tel = self.telescope
 
         if self.update_weight:
             raise NotImplemented("Weight updating is not implemented.")
@@ -54,10 +83,31 @@ class DelayFilter(task.SingleTask):
         ssv = ss.vis[:].view(np.ndarray)
         ssw = ss.weight[:].view(np.ndarray)
 
+        ubase, uinv = np.unique(
+            tel.baselines[:, 0] + 1.0J * tel.baselines[:, 1],
+            return_inverse=True
+        )
+        ubase = ubase.view(np.float64).reshape(-1, 2)
+
         for lbi, bi in ss.vis[:].enumerate(axis=1):
 
-            freq_weight = np.median(ssw[:, lbi], axis=1)
-            NF = null_delay_filter(freq, self.delay_cut, freq_weight)
+            # Select the baseline length to use
+            baseline = ubase[uinv[bi]]
+            if self.telescope_orientation == 'NS':
+                baseline = abs(baseline[1])  # Y baseline
+            elif self.telescope_orientation == 'EW':
+                baseline = abs(baseline[0])  # X baseline
+            else:
+                baseline = np.linalg.norm(baseline)  # Norm
+            # In micro seconds
+            baseline_delay_cut = self.za_cut * baseline / units.c * 1E6
+            delay_cut = np.amax([baseline_delay_cut, self.delay_cut])
+
+            weight_mask = np.median(ssw[:, lbi], axis=1)
+            weight_mask = (weight_mask >
+                           (self.weight_tol*weight_mask.max())
+                           ).astype(np.float64)
+            NF = null_delay_filter(freq, delay_cut, weight_mask)
 
             ssv[:, lbi] = np.dot(NF, ssv[:, lbi])
 
