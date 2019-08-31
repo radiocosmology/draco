@@ -524,6 +524,7 @@ class Delete(SingleTask):
         """
         import gc
 
+        self.log.info("Deleting %s" % type(x))
         del x
         gc.collect()
 
