@@ -115,7 +115,7 @@ def _list_of_filegroups(groups):
     return groups
 
 
-class LoadMaps(pipeline.TaskBase):
+class LoadMaps(task.MPILoggedTask):
     """Load a series of maps from files given in the tasks parameters.
 
     Maps are given as one, or a list of `File Groups` (see
@@ -130,7 +130,7 @@ class LoadMaps(pipeline.TaskBase):
 
     maps = config.Property(proptype=_list_of_filegroups)
 
-    def __next__(self):
+    def next(self):
         """Load the groups of maps from disk and pass them on.
 
         Returns
@@ -151,6 +151,8 @@ class LoadMaps(pipeline.TaskBase):
         # Iterate over all the files in the group, load them into a Map
         # container and add them all together
         for mfile in group['files']:
+
+            self.log.debug("Loading file %s", mfile)
 
             current_map = containers.Map.from_file(mfile, distributed=True)
             current_map.redistribute('freq')
