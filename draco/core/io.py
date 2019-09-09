@@ -36,11 +36,11 @@ Several tasks accept groups of files as arguments. These are specified in the YA
         files: ['file1.h5', 'file2.h5']
 """
 # === Start Python 2/3 compatibility
-from __future__ import (absolute_import, division,
-                        print_function, unicode_literals)
+from __future__ import absolute_import, division, print_function, unicode_literals
 from future.builtins import *  # noqa  pylint: disable=W0401, W0614
 from future.builtins.disabled import *  # noqa  pylint: disable=W0401, W0614
 from past.builtins import basestring
+
 # === End Python 2/3 compatibility
 
 import os.path
@@ -64,7 +64,7 @@ def _list_of_filelists(files):
         elif isinstance(filelist, list):
             pass
         else:
-            raise Exception('Must be list or glob pattern.')
+            raise Exception("Must be list or glob pattern.")
         f2.append(filelist)
 
     return f2
@@ -79,8 +79,7 @@ def _list_or_glob(files):
     elif isinstance(files, list):
         pass
     else:
-        raise ValueError('Argument must be list or glob pattern, got %s'
-                         % repr(files))
+        raise ValueError("Argument must be list or glob pattern, got %s" % repr(files))
 
     return files
 
@@ -97,10 +96,10 @@ def _list_of_filegroups(groups):
     # through glob
     for gi, group in enumerate(groups):
 
-        files = group['files']
+        files = group["files"]
 
-        if 'tag' not in group:
-            group['tag'] = 'group_%i' % gi
+        if "tag" not in group:
+            group["tag"] = "group_%i" % gi
 
         flist = []
 
@@ -108,9 +107,9 @@ def _list_of_filegroups(groups):
             flist += glob.glob(fname)
 
         if not len(flist):
-            raise RuntimeError('No files in group exist (%s).' % files)
+            raise RuntimeError("No files in group exist (%s)." % files)
 
-        group['files'] = flist
+        group["files"] = flist
 
     return groups
 
@@ -150,12 +149,12 @@ class LoadMaps(task.MPILoggedTask):
 
         # Iterate over all the files in the group, load them into a Map
         # container and add them all together
-        for mfile in group['files']:
+        for mfile in group["files"]:
 
             self.log.debug("Loading file %s", mfile)
 
             current_map = containers.Map.from_file(mfile, distributed=True)
-            current_map.redistribute('freq')
+            current_map.redistribute("freq")
 
             # Start the stack if needed
             if map_stack is None:
@@ -166,18 +165,20 @@ class LoadMaps(task.MPILoggedTask):
             else:
 
                 if (current_map.freq != map_stack.freq).all():
-                    raise RuntimeError('Maps do not have consistent frequencies.')
+                    raise RuntimeError("Maps do not have consistent frequencies.")
 
-                if (current_map.index_map['pol'] != map_stack.index_map['pol']).all():
-                    raise RuntimeError('Maps do not have the same polarisations.')
+                if (current_map.index_map["pol"] != map_stack.index_map["pol"]).all():
+                    raise RuntimeError("Maps do not have the same polarisations.")
 
-                if (current_map.index_map['pixel'] != map_stack.index_map['pixel']).all():
-                    raise RuntimeError('Maps do not have the same pixelisation.')
+                if (
+                    current_map.index_map["pixel"] != map_stack.index_map["pixel"]
+                ).all():
+                    raise RuntimeError("Maps do not have the same pixelisation.")
 
                 map_stack.map[:] += current_map.map[:]
 
         # Assign a tag to the stack of maps
-        map_stack.attrs['tag'] = group['tag']
+        map_stack.attrs["tag"] = group["tag"]
 
         return map_stack
 
@@ -209,6 +210,7 @@ class LoadFilesFromParams(task.SingleTask):
         # Garbage collect to workaround leaking memory from containers.
         # TODO: find actual source of leak
         import gc
+
         gc.collect()
 
         if len(self.files) == 0:
@@ -219,13 +221,15 @@ class LoadFilesFromParams(task.SingleTask):
 
         self.log.info("Loading file %s" % file_)
 
-        cont = memh5.BasicCont.from_file(file_, distributed=self.distributed, comm=self.comm)
+        cont = memh5.BasicCont.from_file(
+            file_, distributed=self.distributed, comm=self.comm
+        )
 
-        if 'tag' not in cont.attrs:
+        if "tag" not in cont.attrs:
             # Get the first part of the actual filename and use it as the tag
             tag = os.path.splitext(os.path.basename(file_))[0]
 
-            cont.attrs['tag'] = tag
+            cont.attrs["tag"] = tag
 
         return cont
 
@@ -249,7 +253,7 @@ class FindFiles(pipeline.TaskBase):
         """ Return list of files specified in the parameters.
         """
         if not isinstance(self.files, (list, tuple)):
-            raise RuntimeError('Argument must be list of files.')
+            raise RuntimeError("Argument must be list of files.")
 
         return self.files
 
@@ -270,7 +274,7 @@ class LoadFiles(LoadFilesFromParams):
         files : list
         """
         if not isinstance(files, (list, tuple)):
-            raise RuntimeError('Argument must be list of files.')
+            raise RuntimeError("Argument must be list of files.")
 
         self.files = files
 
@@ -302,13 +306,13 @@ class Save(pipeline.TaskBase):
             Data to write out.
         """
 
-        if 'tag' not in data.attrs:
+        if "tag" not in data.attrs:
             tag = self.count
             self.count += 1
         else:
-            tag = data.attrs['tag']
+            tag = data.attrs["tag"]
 
-        fname = '%s_%s.h5' % (self.root, str(tag))
+        fname = "%s_%s.h5" % (self.root, str(tag))
 
         data.to_hdf5(fname)
 
@@ -355,7 +359,7 @@ class LoadBeamTransfer(pipeline.TaskBase):
         from drift.core import beamtransfer
 
         if not os.path.exists(self.product_directory):
-            raise RuntimeError('BeamTransfers do not exist.')
+            raise RuntimeError("BeamTransfers do not exist.")
 
         bt = beamtransfer.BeamTransfer(self.product_directory)
 
@@ -393,7 +397,7 @@ class LoadProductManager(pipeline.TaskBase):
         from drift.core import manager
 
         if not os.path.exists(self.product_directory):
-            raise RuntimeError('Products do not exist.')
+            raise RuntimeError("Products do not exist.")
 
         # Load ProductManager and Timestream
         pm = manager.ProductManager.from_config(self.product_directory)

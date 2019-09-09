@@ -15,10 +15,10 @@ Tasks
     SampleNoise
 """
 # === Start Python 2/3 compatibility
-from __future__ import (absolute_import, division,
-                        print_function, unicode_literals)
+from __future__ import absolute_import, division, print_function, unicode_literals
 from future.builtins import *  # noqa  pylint: disable=W0401, W0614
 from future.builtins.disabled import *  # noqa  pylint: disable=W0401, W0614
+
 # === End Python 2/3 compatibility
 
 import contextlib
@@ -30,6 +30,7 @@ from caput import config
 from ..core import task, containers
 from ..util import tools
 from caput.time import STELLAR_S
+
 
 class ReceiverTemperature(task.SingleTask):
     """Add a basic receiver temperature term into the data.
@@ -45,12 +46,13 @@ class ReceiverTemperature(task.SingleTask):
     recv_temp : float
         The receiver temperature in Kelvin.
     """
+
     recv_temp = config.Property(proptype=float, default=0.0)
 
     def process(self, data):
 
         # Iterate over the products to find the auto-correlations and add the noise into them
-        for pi, prod in enumerate(data.index_map['prod']):
+        for pi, prod in enumerate(data.index_map["prod"]):
 
             # Great an auto!
             if prod[0] == prod[1]:
@@ -76,8 +78,9 @@ class GaussianNoise(task.SingleTask):
     recv_temp : bool
         The temperature of the noise to add.
     """
+
     recv_temp = config.Property(proptype=float, default=50.0)
-    ndays = config.Property(proptype=float, default=733.)
+    ndays = config.Property(proptype=float, default=733.0)
     seed = config.Property(proptype=int, default=None)
     set_weights = config.Property(proptype=bool, default=True)
 
@@ -96,7 +99,7 @@ class GaussianNoise(task.SingleTask):
             The sampled (i.e. noisy) visibility dataset.
         """
 
-        data.redistribute('freq')
+        data.redistribute("freq")
 
         visdata = data.vis[:]
 
@@ -109,9 +112,9 @@ class GaussianNoise(task.SingleTask):
             ntime = len(data.time)
 
         # TODO: this assumes uniform channels
-        df = data.index_map['freq']['width'][0] * 1e6
+        df = data.index_map["freq"]["width"][0] * 1e6
         nfreq = data.vis.local_shape[0]
-        nprod = len(data.index_map['prod'])
+        nprod = len(data.index_map["prod"])
 
         # Calculate the number of samples
         nsamp = int(self.ndays * dt * df)
@@ -123,11 +126,11 @@ class GaussianNoise(task.SingleTask):
 
         # TODO: make this work with stacked data
         # Iterate over the products to find the auto-correlations and add the noise into them
-        for pi, prod in enumerate(data.index_map['prod']):
+        for pi, prod in enumerate(data.index_map["prod"]):
 
             # Auto: multiply by sqrt(2) because auto has twice the variance
             if prod[0] == prod[1]:
-                visdata[:, pi].real += (np.sqrt(2) * noise_real[:, pi])
+                visdata[:, pi].real += np.sqrt(2) * noise_real[:, pi]
 
             else:
                 visdata[:, pi].real += noise_real[:, pi]
@@ -136,7 +139,7 @@ class GaussianNoise(task.SingleTask):
         # Construct and set the correct weights in place
         if self.set_weights:
             for lfi, fi in visdata.enumerate(0):
-                data.weight[fi] = 0.5 / std**2
+                data.weight[fi] = 0.5 / std ** 2
 
         return data
 
@@ -186,9 +189,9 @@ class SampleNoise(task.SingleTask):
         from caput.time import STELLAR_S
         from ..util import _fast_tools
 
-        data_exp.redistribute('freq')
+        data_exp.redistribute("freq")
 
-        nfeed = len(data_exp.index_map['input'])
+        nfeed = len(data_exp.index_map["input"])
 
         # Get a reference to the base MPIArray. Attempting to do this in the
         # loop fails if not all ranks enter the loop (as there is an implied MPI
@@ -207,7 +210,7 @@ class SampleNoise(task.SingleTask):
             for lfi, fi in vis_data.enumerate(0):
 
                 # Get the frequency interval
-                df = data_exp.index_map['freq']['width'][fi] * 1e6
+                df = data_exp.index_map["freq"]["width"][fi] * 1e6
 
                 # Calculate the number of samples
                 nsamp = int(self.sample_frac * dt * df)
@@ -218,7 +221,9 @@ class SampleNoise(task.SingleTask):
                     # Unpack visibilites into full matrix
                     vis_utv = vis_data[lfi, :, lti].view(np.ndarray).copy()
                     vis_mat = np.zeros((nfeed, nfeed), dtype=vis_utv.dtype)
-                    _fast_tools._unpack_product_array_fast(vis_utv, vis_mat, np.arange(nfeed), nfeed)
+                    _fast_tools._unpack_product_array_fast(
+                        vis_utv, vis_mat, np.arange(nfeed), nfeed
+                    )
 
                     vis_samp = draw_complex_wishart(vis_mat, nsamp) / nsamp
 
@@ -227,11 +232,11 @@ class SampleNoise(task.SingleTask):
                 # Construct and set the correct weights in place
                 if self.set_weights:
                     autos = tools.extract_diagonal(vis_data[lfi], axis=0).real
-                    weight_fac = nsamp**0.5 / autos
+                    weight_fac = nsamp ** 0.5 / autos
                     tools.apply_gain(
                         data_exp.weight[fi][np.newaxis, ...],
                         weight_fac[np.newaxis, ...],
-                        out=data_exp.weight[fi][np.newaxis, ...]
+                        out=data_exp.weight[fi][np.newaxis, ...],
                     )
 
         return data_exp
@@ -256,12 +261,14 @@ def standard_complex_wishart(m, n):
 
     # Fill in normal variables in the lower triangle
     T = np.zeros((m, m), dtype=np.complex128)
-    T[np.tril_indices(m, k=-1)] = (np.random.standard_normal(m * (m - 1) // 2) +
-                                   1.0J * np.random.standard_normal(m * (m - 1) // 2)) / 2**0.5
+    T[np.tril_indices(m, k=-1)] = (
+        np.random.standard_normal(m * (m - 1) // 2)
+        + 1.0j * np.random.standard_normal(m * (m - 1) // 2)
+    ) / 2 ** 0.5
 
     # Gamma variables on the diagonal
     for i in range(m):
-        T[i, i] = gamma.rvs(n - i)**0.5
+        T[i, i] = gamma.rvs(n - i) ** 0.5
 
     # Return the square to get the Wishart matrix
     return np.dot(T, T.T.conj())
@@ -321,7 +328,7 @@ def mpi_random_seed(seed, extra=0):
 
     # Just choose a random number per process as the seed if nothing was set.
     if seed is None:
-        seed = np.random.randint(2**30)
+        seed = np.random.randint(2 ** 30)
 
     # Construct the new process specific seed
     new_seed = seed + mpiutil.rank + 4096 * extra

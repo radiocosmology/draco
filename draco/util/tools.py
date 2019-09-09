@@ -3,10 +3,10 @@
 Miscellaneous tasks should be placed in :module:`draco.core.misc`.
 """
 # === Start Python 2/3 compatibility
-from __future__ import (absolute_import, division,
-                        print_function, unicode_literals)
+from __future__ import absolute_import, division, print_function, unicode_literals
 from future.builtins import *  # noqa  pylint: disable=W0401, W0614
 from future.builtins.disabled import *  # noqa  pylint: disable=W0401, W0614
+
 # === End Python 2/3 compatibility
 
 import numpy as np
@@ -96,8 +96,7 @@ def apply_gain(vis, gain, axis=1, out=None, prod_map=None):
 
     if prod_map is not None:
         if len(prod_map) != nprod:
-            msg = ("Length of *prod_map* does not match number of input"
-                   " products.")
+            msg = "Length of *prod_map* does not match number of input" " products."
             raise ValueError(msg)
         # Could check prod_map contents as well, but the loop should give a
         # sensible error if this is wrong, and checking is expensive.
@@ -125,7 +124,6 @@ def apply_gain(vis, gain, axis=1, out=None, prod_map=None):
         # Apply the gains and save into the output array.
         out[gain_vis_slice + (pp,)] = vis[gain_vis_slice + (pp,)] * gi * gj
 
-
     return out
 
 
@@ -144,7 +142,7 @@ def invert_no_zero(x):
     r : np.ndarray
         Return the reciprocal of x.
     """
-    with np.errstate(divide='ignore', invalid='ignore'):
+    with np.errstate(divide="ignore", invalid="ignore"):
         return np.where(x == 0, 0.0, 1.0 / x)
 
 
@@ -165,12 +163,15 @@ def extract_diagonal(utmat, axis=1):
     """
 
     # Estimate nside from the array shape
-    nside = int((2 * utmat.shape[axis])**0.5)
+    nside = int((2 * utmat.shape[axis]) ** 0.5)
 
     # Check that this nside is correct
     if utmat.shape[axis] != (nside * (nside + 1) // 2):
-        msg = ('Array length (%i) of axis %i does not correspond upper triangle\
-                of square matrix' % (utmat.shape[axis], axis))
+        msg = (
+            "Array length (%i) of axis %i does not correspond upper triangle\
+                of square matrix"
+            % (utmat.shape[axis], axis)
+        )
         raise RuntimeError(msg)
 
     # Find indices of the diagonal
@@ -232,4 +233,3 @@ def calculate_redundancy(input_flags, prod_map, stack_index, nstack):
     _calc_redundancy(input_flags, pm, stack_index.copy(), nstack, redundancy)
 
     return redundancy
-

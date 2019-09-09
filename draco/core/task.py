@@ -12,11 +12,11 @@ Tasks
     Delete
 """
 # === Start Python 2/3 compatibility
-from __future__ import (absolute_import, division,
-                        print_function, unicode_literals)
+from __future__ import absolute_import, division, print_function, unicode_literals
 from future.builtins import *  # noqa  pylint: disable=W0401, W0614
 from future.builtins.disabled import *  # noqa  pylint: disable=W0401, W0614
 from past.builtins import basestring
+
 # === End Python 2/3 compatibility
 
 import os
@@ -43,8 +43,9 @@ class MPILogFilter(logging.Filter):
         Log level for messages from all other ranks.
     """
 
-    def __init__(self, add_mpi_info=True, level_rank0=logging.INFO,
-                 level_all=logging.WARN):
+    def __init__(
+        self, add_mpi_info=True, level_rank0=logging.INFO, level_all=logging.WARN
+    ):
 
         from mpi4py import MPI
 
@@ -69,8 +70,9 @@ class MPILogFilter(logging.Filter):
         record.elapsedTime = record.relativeCreated * 1e-3
 
         # Return whether we should filter the record or not.
-        return ((record.mpi_rank == 0 and record.levelno >= self.level_rank0) or
-                (record.mpi_rank > 0 and record.levelno >= self.level_all))
+        return (record.mpi_rank == 0 and record.levelno >= self.level_rank0) or (
+            record.mpi_rank > 0 and record.levelno >= self.level_all
+        )
 
 
 def _log_level(x):
@@ -88,12 +90,12 @@ def _log_level(x):
     """
 
     level_dict = {
-        'DEBUG': logging.DEBUG,
-        'INFO': logging.INFO,
-        'WARN': logging.WARN,
-        'WARNING': logging.WARN,
-        'ERROR': logging.ERROR,
-        'CRITICAL': logging.CRITICAL
+        "DEBUG": logging.DEBUG,
+        "INFO": logging.INFO,
+        "WARN": logging.WARN,
+        "WARNING": logging.WARN,
+        "ERROR": logging.ERROR,
+        "CRITICAL": logging.CRITICAL,
     }
 
     if isinstance(x, int):
@@ -101,7 +103,7 @@ def _log_level(x):
     elif isinstance(x, basestring) and x in level_dict:
         return level_dict[x.upper()]
     else:
-        raise ValueError('Logging level %s not understood' % repr(x))
+        raise ValueError("Logging level %s not understood" % repr(x))
 
 
 class SetMPILogging(pipeline.TaskBase):
@@ -138,8 +140,9 @@ class SetMPILogging(pipeline.TaskBase):
         ch.addFilter(filt)
 
         formatter = logging.Formatter(
-            "%(elapsedTime)8.1fs " + mpi_fmt +
-            " - %(levelname)-8s %(name)s: %(message)s"
+            "%(elapsedTime)8.1fs "
+            + mpi_fmt
+            + " - %(levelname)-8s %(name)s: %(message)s"
         )
 
         ch.setFormatter(formatter)
@@ -154,8 +157,7 @@ class LoggedTask(pipeline.TaskBase):
     def __init__(self):
 
         # Get the logger for this task
-        self._log = logging.getLogger("%s.%s" %
-                                      (__name__, self.__class__.__name__))
+        self._log = logging.getLogger("%s.%s" % (__name__, self.__class__.__name__))
 
         # Set the log level for this task if specified
         if self.log_level is not None:
@@ -196,11 +198,11 @@ class _AddRankLogAdapter(logging.LoggerAdapter):
 
     def process(self, msg, kwargs):
 
-        if 'extra' not in kwargs:
-            kwargs['extra'] = {}
+        if "extra" not in kwargs:
+            kwargs["extra"] = {}
 
-        kwargs['extra']['mpi_rank'] = self.calling_obj.comm.rank
-        kwargs['extra']['mpi_size'] = self.calling_obj.comm.size
+        kwargs["extra"]["mpi_rank"] = self.calling_obj.comm.rank
+        kwargs["extra"]["mpi_size"] = self.calling_obj.comm.size
 
         return msg, kwargs
 
@@ -269,7 +271,7 @@ class SingleTask(MPILoggedTask, pipeline.BasicContMixin):
     """
 
     save = config.Property(default=False, proptype=bool)
-    output_root = config.Property(default='', proptype=str)
+    output_root = config.Property(default="", proptype=str)
 
     nan_check = config.Property(default=True, proptype=bool)
     nan_skip = config.Property(default=True, proptype=bool)
@@ -292,8 +294,10 @@ class SingleTask(MPILoggedTask, pipeline.BasicContMixin):
         n_args = len(pro_argspec.args) - 1
 
         if pro_argspec.varargs or pro_argspec.keywords or pro_argspec.defaults:
-            msg = ("`process` method may not have variable length or optional"
-                   " arguments.")
+            msg = (
+                "`process` method may not have variable length or optional"
+                " arguments."
+            )
             raise pipeline.PipelineConfigError(msg)
 
         if n_args == 0:
@@ -329,8 +333,8 @@ class SingleTask(MPILoggedTask, pipeline.BasicContMixin):
             return
 
         # Set a tag in output if needed
-        if 'tag' not in output.attrs and len(input) > 0 and 'tag' in input[0].attrs:
-            output.attrs['tag'] = input[0].attrs['tag']
+        if "tag" not in output.attrs and len(input) > 0 and "tag" in input[0].attrs:
+            output.attrs["tag"] = input[0].attrs["tag"]
 
         # Check for NaN's etc
         output = self._nan_process_output(output)
@@ -374,10 +378,10 @@ class SingleTask(MPILoggedTask, pipeline.BasicContMixin):
         if self.save and output is not None:
 
             # Create a tag for the output file name
-            tag = output.attrs['tag'] if 'tag' in output.attrs else self._count
+            tag = output.attrs["tag"] if "tag" in output.attrs else self._count
 
             # Construct the filename
-            outfile = self.output_root + str(tag) + '.h5'
+            outfile = self.output_root + str(tag) + ".h5"
 
             # Expand any variables in the path
             outfile = os.path.expanduser(outfile)
@@ -396,8 +400,8 @@ class SingleTask(MPILoggedTask, pipeline.BasicContMixin):
             if nan_found and self.nan_dump:
 
                 # Construct the filename
-                tag = output.attrs['tag'] if 'tag' in output.attrs else self._count
-                outfile = "nandump_" + self.__class__.__name__ + "_" + str(tag) + '.h5'
+                tag = output.attrs["tag"] if "tag" in output.attrs else self._count
+                outfile = "nandump_" + self.__class__.__name__ + "_" + str(tag) + ".h5"
                 self.log.debug("NaN found. Dumping %s", outfile)
                 self.write_output(outfile, output)
 
@@ -435,13 +439,21 @@ class SingleTask(MPILoggedTask, pipeline.BasicContMixin):
                     continue
 
                 if is_nan.any():
-                    self.log.info("NaN's found in dataset %s [%i of %i elements]",
-                                  n.name, is_nan.sum(), arr.size)
+                    self.log.info(
+                        "NaN's found in dataset %s [%i of %i elements]",
+                        n.name,
+                        is_nan.sum(),
+                        arr.size,
+                    )
                     found = True
 
                 if is_inf.any():
-                    self.log.info("Inf's found in dataset %s [%i of %i elements]",
-                                  n.name, is_inf.sum(), arr.size)
+                    self.log.info(
+                        "Inf's found in dataset %s [%i of %i elements]",
+                        n.name,
+                        is_inf.sum(),
+                        arr.size,
+                    )
                     found = True
 
             elif isinstance(n, (memh5.MemGroup, memh5.MemDiskGroup)):
@@ -460,6 +472,7 @@ class ReturnLastInputOnFinish(SingleTask):
     This caches its input on every call to `process` and then returns
     the last one for a finish call.
     """
+
     x = None
 
     def process(self, x):
@@ -488,6 +501,7 @@ class ReturnFirstInputOnFinish(SingleTask):
     This caches its input on the first call to `process` and
     then returns it for a finish call.
     """
+
     x = None
 
     def process(self, x):

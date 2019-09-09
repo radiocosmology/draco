@@ -18,10 +18,10 @@ Tasks
     RFIMask
 """
 # === Start Python 2/3 compatibility
-from __future__ import (absolute_import, division,
-                        print_function, unicode_literals)
+from __future__ import absolute_import, division, print_function, unicode_literals
 from future.builtins import *  # noqa  pylint: disable=W0401, W0614
 from future.builtins.disabled import *  # noqa  pylint: disable=W0401, W0614
+
 # === End Python 2/3 compatibility
 
 import numpy as np
@@ -73,7 +73,7 @@ class DayMask(task.SingleTask):
             Masked sidereal stream.
         """
 
-        sstream.redistribute('freq')
+        sstream.redistribute("freq")
 
         ra_shift = (sstream.ra[:] - self.start) % 360.0
         end_shift = (self.end - self.start) % 360.0
@@ -82,20 +82,27 @@ class DayMask(task.SingleTask):
         mask_bool = ra_shift > end_shift
 
         # Put in the transition at the start of the day
-        mask = np.where(ra_shift < self.width,
-                        0.5 * (1 + np.cos(np.pi * (ra_shift / self.width))),
-                        mask_bool)
+        mask = np.where(
+            ra_shift < self.width,
+            0.5 * (1 + np.cos(np.pi * (ra_shift / self.width))),
+            mask_bool,
+        )
 
         # Put the transition at the end of the day
-        mask = np.where(np.logical_and(ra_shift > end_shift - self.width, ra_shift <= end_shift),
-                        0.5 * (1 + np.cos(np.pi * ((ra_shift - end_shift) / self.width))),
-                        mask)
+        mask = np.where(
+            np.logical_and(ra_shift > end_shift - self.width, ra_shift <= end_shift),
+            0.5 * (1 + np.cos(np.pi * ((ra_shift - end_shift) / self.width))),
+            mask,
+        )
 
         if self.remove_average:
             # Estimate the mean level from unmasked data
             import scipy.stats
 
-            nanvis = sstream.vis[:] * np.where(mask_bool, 1.0, np.nan)[np.newaxis, np.newaxis, :]
+            nanvis = (
+                sstream.vis[:]
+                * np.where(mask_bool, 1.0, np.nan)[np.newaxis, np.newaxis, :]
+            )
             average = scipy.stats.nanmedian(nanvis, axis=-1)[:, :, np.newaxis]
             sstream.vis[:] -= average
 
@@ -104,7 +111,7 @@ class DayMask(task.SingleTask):
             sstream.vis[:] *= mask
 
         # Modify the noise weights
-        sstream.weight[:] *= mask**2
+        sstream.weight[:] *= mask ** 2
 
         return sstream
 
@@ -143,7 +150,7 @@ class MaskData(task.SingleTask):
 
         # Exclude auto correlations if set
         if not self.auto_correlations:
-            for pi, (fi, fj) in enumerate(mmodes.index_map['prod']):
+            for pi, (fi, fj) in enumerate(mmodes.index_map["prod"]):
                 if fi == fj:
                     mmodes.weight[..., pi] = 0.0
 
@@ -203,22 +210,22 @@ class MaskBaselines(task.SingleTask):
             Data to mask. Applied in place.
         """
 
-        ss.redistribute('freq')
+        ss.redistribute("freq")
 
         baselines = self.telescope.baselines
         mask = np.ones_like(ss.weight[:], dtype=bool)
 
         if self.mask_long_ns is not None:
-            long_ns_mask = (np.abs(baselines[:, 1]) < self.mask_long_ns)
+            long_ns_mask = np.abs(baselines[:, 1]) < self.mask_long_ns
             mask *= long_ns_mask[np.newaxis, :, np.newaxis]
 
         if self.mask_short is not None:
-            short_mask = (np.sum(baselines**2, axis=1) > self.mask_short)
+            short_mask = np.sum(baselines ** 2, axis=1) > self.mask_short
             mask *= short_mask[np.newaxis, :, np.newaxis]
 
         if self.mask_short_ew is not None:
-            short_ew_mask = (baselines[:, 0] > self.mask_short_ew)
-            mask *= short_ew_mask[np.newaxis, :, np.newaxis] 
+            short_ew_mask = baselines[:, 0] > self.mask_short_ew
+            mask *= short_ew_mask[np.newaxis, :, np.newaxis]
 
         # Apply the mask to the weight
         ss.weight[:] *= mask
@@ -262,29 +269,31 @@ class RadiometerWeight(task.SingleTask):
         from caput.time import STELLAR_S
 
         # Redistribute over the frequency direction
-        stream.redistribute('freq')
+        stream.redistribute("freq")
 
-        ninput = len(stream.index_map['input'])
-        nprod = len(stream.index_map['prod'])
+        ninput = len(stream.index_map["input"])
+        nprod = len(stream.index_map["prod"])
 
         if nprod != (ninput * (ninput + 1) // 2):
-            raise RuntimeError('Must have a input stream with the full correlation triangle.')
+            raise RuntimeError(
+                "Must have a input stream with the full correlation triangle."
+            )
 
-        freq_width = np.median(stream.index_map['freq']['width'])
+        freq_width = np.median(stream.index_map["freq"]["width"])
 
         if isinstance(stream, containers.SiderealStream):
             RA_S = 240 * STELLAR_S  # SI seconds in 1 deg of RA change
             int_time = np.median(np.abs(np.diff(stream.ra))) / RA_S
         else:
-            int_time = np.median(np.abs(np.diff(stream.index_map['time'])))
+            int_time = np.median(np.abs(np.diff(stream.index_map["time"])))
 
         if self.replace:
             stream.weight[:] = 1.0
 
         # Construct and set the correct weights in place
-        nsamp = (1e6 * freq_width * int_time)
+        nsamp = 1e6 * freq_width * int_time
         autos = tools.extract_diagonal(stream.vis[:]).real
-        weight_fac = nsamp**0.5 / autos
+        weight_fac = nsamp ** 0.5 / autos
         tools.apply_gain(stream.weight[:], weight_fac, out=stream.weight[:])
 
         # Return timestream with updated weights
@@ -323,7 +332,7 @@ class SmoothVisWeight(task.SingleTask):
         """
 
         # Ensure data is distributed in frequency:
-        data.redistribute('freq')
+        data.redistribute("freq")
         # Full slice reutrns an MPIArray
         weight = data.weight[:]
         # Data will be distributed in frequency.
@@ -332,11 +341,11 @@ class SmoothVisWeight(task.SingleTask):
 
             # MPIArray takes the local index, returns a local np.ndarray
             # Find values equal to zero to preserve them in final weights
-            zeromask = (weight[lfi] == 0.0)
+            zeromask = weight[lfi] == 0.0
             # Median filter. Mode='nearest' to prevent steps close to
             # the end from being washed
             weight[lfi] = median_filter(
-                weight[lfi], size=(1, self.kernel_size), mode='nearest'
+                weight[lfi], size=(1, self.kernel_size), mode="nearest"
             )
             # Ensure zero values are zero
             weight[lfi][zeromask] = 0.0
@@ -379,12 +388,14 @@ class ThresholdVisWeight(task.SingleTask):
         if self.relative_threshold > 0.0:
             sum_weight = self.comm.allreduce(np.sum(weight))
             mean_weight = sum_weight / float(np.prod(weight.global_shape))
-            threshold = np.maximum(threshold,  self.relative_threshold * mean_weight)
+            threshold = np.maximum(threshold, self.relative_threshold * mean_weight)
 
         keep = weight > threshold
 
-        self.log.info("%0.5f%% of data is below the weight threshold of %0.1e." %
-                      (100.0 * (1.0 - np.sum(keep) / float(keep.size)), threshold))
+        self.log.info(
+            "%0.5f%% of data is below the weight threshold of %0.1e."
+            % (100.0 * (1.0 - np.sum(keep) / float(keep.size)), threshold)
+        )
 
         timestream.weight[:] = np.where(keep, weight, 0.0)
 
@@ -427,7 +438,7 @@ class RFIMask(task.SingleTask):
             Masked sidereal stream.
         """
 
-        sstream.redistribute('stack')
+        sstream.redistribute("stack")
 
         ssv = sstream.vis[:]
         ssw = sstream.weight[:]
@@ -438,7 +449,9 @@ class RFIMask(task.SingleTask):
         has_ind = (self.stack_ind >= lstart) and (self.stack_ind < lstop)
         has_ind_list = sstream.comm.allgather(has_ind)
         rank_with_ind = has_ind_list.index(True)
-        self.log.debug("Rank %i has the requested index %i", rank_with_ind, self.stack_ind)
+        self.log.debug(
+            "Rank %i has the requested index %i", rank_with_ind, self.stack_ind
+        )
 
         newmask = np.zeros((ssv.shape[0], ssv.shape[2]), dtype=np.bool)
 
@@ -452,7 +465,7 @@ class RFIMask(task.SingleTask):
             # Generate an initial mask and calculate the scaled deviations
             # TODO: replace this magic threshold
             weight_cut = 1e-4 * ww.mean()  # Ignore samples with small weights
-            wm = (ww < weight_cut)
+            wm = ww < weight_cut
             maddev = mad(wf, wm)
 
             # Replace any NaNs (where too much data is missing) with a large enough value to always
@@ -460,8 +473,9 @@ class RFIMask(task.SingleTask):
             maddev = np.where(np.isnan(maddev), 2 * self.sigma, maddev)
 
             # Reflag for scattered TV emission
-            tvmask = tv_channels_flag(maddev, sstream.freq,
-                                      sigma=self.sigma, f=self.tv_fraction)
+            tvmask = tv_channels_flag(
+                maddev, sstream.freq, sigma=self.sigma, f=self.tv_fraction
+            )
 
             # Construct the new mask
             newmask[:] = tvmask | (maddev > self.sigma)
@@ -470,8 +484,10 @@ class RFIMask(task.SingleTask):
         sstream.comm.Bcast(newmask, root=rank_with_ind)
         ssw[:] *= (~newmask)[:, np.newaxis, :]
 
-        self.log.info("Flagging %0.2f%% of data due to RFI." %
-                      (100.0 * np.sum(newmask) / float(newmask.size)))
+        self.log.info(
+            "Flagging %0.2f%% of data due to RFI."
+            % (100.0 * np.sum(newmask) / float(newmask.size))
+        )
 
         # Remove the time average of the data. Should probably do this elsewhere to be honest
         if self.destripe:
@@ -505,7 +521,7 @@ def medfilt(x, mask, size, *args):
     """
 
     if np.iscomplexobj(x):
-        return (medfilt(x.real, mask, size) + 1.0J * medfilt(x.imag, mask, size))
+        return medfilt(x.real, mask, size) + 1.0j * medfilt(x.imag, mask, size)
 
     # Copy and do initial masking
     x = np.ascontiguousarray(x.astype(np.float64))
@@ -514,8 +530,7 @@ def medfilt(x, mask, size, *args):
     return weighted_median.moving_weighted_median(x, w, size, *args)
 
 
-def mad(x, mask, base_size=(11, 3), mad_size=(21, 21),
-        debug=False, sigma=True):
+def mad(x, mask, base_size=(11, 3), mad_size=(21, 21), debug=False, sigma=True):
     """Calculate the MAD of freq-time data.
 
     Parameters
@@ -584,12 +599,14 @@ def inverse_binom_cdf_prob(k, N, F):
 def sigma_to_p(sigma):
     """Get the probability of an excursion larger than sigma for a Gaussian."""
     import scipy.stats as ss
+
     return 2 * ss.norm.sf(sigma)
 
 
 def p_to_sigma(p):
     """Get the sigma exceeded by the tails of a Gaussian with probability p."""
     import scipy.stats as ss
+
     return ss.norm.isf(p / 2)
 
 
@@ -667,8 +684,9 @@ def complex_med(x, *args, **kwargs):
     m : np.ndarray
         Median.
     """
-    return (np.nanmedian(x.real, *args, **kwargs)
-            + 1j * np.nanmedian(x.imag, *args, **kwargs))
+    return np.nanmedian(x.real, *args, **kwargs) + 1j * np.nanmedian(
+        x.imag, *args, **kwargs
+    )
 
 
 def destripe(x, w, axis=1):
@@ -698,4 +716,4 @@ def destripe(x, w, axis=1):
     bsel[axis] = None
     bsel = tuple(bsel)
 
-    return (x - stripe[bsel])
+    return x - stripe[bsel]

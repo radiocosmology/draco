@@ -1,8 +1,8 @@
 # === Start Python 2/3 compatibility
-from __future__ import (absolute_import, division,
-                        print_function)
+from __future__ import absolute_import, division, print_function
 from future.builtins import *  # noqa  pylint: disable=W0401, W0614
 from future.builtins.disabled import *  # noqa  pylint: disable=W0401, W0614
+
 # === End Python 2/3 compatibility
 
 import sys
@@ -15,12 +15,12 @@ import numpy as np
 import draco
 
 # Enable OpenMP support if available
-if sys.platform == 'darwin':
+if sys.platform == "darwin":
     compile_args = []
     link_args = []
 else:
-    compile_args = ['-fopenmp']
-    link_args = ['-fopenmp']
+    compile_args = ["-fopenmp"]
+    link_args = ["-fopenmp"]
 
 # Cython module for fast operations
 fast_ext = Extension(
@@ -32,17 +32,20 @@ fast_ext = Extension(
 )
 
 setup(
-    name='draco',
+    name="draco",
     version=draco.__version__,
-    license='MIT',
-
+    license="MIT",
     packages=find_packages(),
-
     ext_modules=cythonize([fast_ext]),
-
-    install_requires=['Cython>0.18', 'numpy>=1.7', 'scipy>=0.10', 'RandomGen',
-                      'caput>=0.4', 'cora', 'driftscan>=1.2'],
-
+    install_requires=[
+        "Cython>0.18",
+        "numpy>=1.7",
+        "scipy>=0.10",
+        "RandomGen",
+        "caput>=0.4",
+        "cora",
+        "driftscan>=1.2",
+    ],
     author="Richard Shaw",
     author_email="richard@phas.ubc.ca",
     description="Analysis and simulation tools for driftscan radio interferometers.",
