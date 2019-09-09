@@ -36,11 +36,11 @@ their own custom container types.
     empty_timestream
 """
 # === Start Python 2/3 compatibility
-from __future__ import (absolute_import, division,
-                        print_function, unicode_literals)
+from __future__ import absolute_import, division, print_function, unicode_literals
 from future.builtins import *  # noqa  pylint: disable=W0401, W0614
 from future.builtins.disabled import *  # noqa  pylint: disable=W0401, W0614
 from past.builtins import basestring
+
 # === End Python 2/3 compatibility
 
 import inspect
@@ -103,10 +103,10 @@ class ContainerBase(memh5.BasicCont):
     def __init__(self, *args, **kwargs):
 
         # Pull out the values of needed arguments
-        axes_from = kwargs.pop('axes_from', None)
-        attrs_from = kwargs.pop('attrs_from', None)
-        dist = kwargs.pop('distributed', True)
-        comm = kwargs.pop('comm', None)
+        axes_from = kwargs.pop("axes_from", None)
+        attrs_from = kwargs.pop("attrs_from", None)
+        dist = kwargs.pop("distributed", True)
+        comm = kwargs.pop("comm", None)
 
         # Run base initialiser
         memh5.BasicCont.__init__(self, distributed=dist, comm=comm)
@@ -115,7 +115,7 @@ class ContainerBase(memh5.BasicCont):
         # memh5.MemDiskGroup would have been. If it is, we're probably trying to
         # create a bare container, so don't initialise any datasets. This
         # behaviour is needed to support tod.concatenate
-        if len(args) or 'data_group' in kwargs:
+        if len(args) or "data_group" in kwargs:
             return
 
         # Create axis entries
@@ -140,31 +140,30 @@ class ContainerBase(memh5.BasicCont):
             if axis_map is not None:
                 self.create_index_map(axis, axis_map)
             else:
-                raise RuntimeError('No definition of axis %s supplied.' % axis)
+                raise RuntimeError("No definition of axis %s supplied." % axis)
 
         reverse_map_stack = None
         # Create reverse map
-        if 'reverse_map_stack' in kwargs:
+        if "reverse_map_stack" in kwargs:
             # If axis is an integer, turn into an arange as a default definition
-            if isinstance(kwargs['reverse_map_stack'], int):
-                reverse_map_stack = np.arange(kwargs['reverse_map_stack'])
+            if isinstance(kwargs["reverse_map_stack"], int):
+                reverse_map_stack = np.arange(kwargs["reverse_map_stack"])
             else:
-                reverse_map_stack = kwargs['reverse_map_stack']
+                reverse_map_stack = kwargs["reverse_map_stack"]
 
         # If not set in the arguments copy from another object if set
-        elif axes_from is not None and 'stack' in axes_from.reverse_map:
-            reverse_map_stack = axes_from.reverse_map['stack']
+        elif axes_from is not None and "stack" in axes_from.reverse_map:
+            reverse_map_stack = axes_from.reverse_map["stack"]
 
         # Set the reverse_map['stack'] if we have a definition,
         # otherwise do NOT throw an error, errors are thrown in
         # classes that actually need a reverse stack
         if reverse_map_stack is not None:
-            self.create_reverse_map('stack', reverse_map_stack)
-
+            self.create_reverse_map("stack", reverse_map_stack)
 
         # Iterate over datasets and initialise any that specify it
         for name, spec in self.dataset_spec.items():
-            if 'initialise' in spec and spec['initialise']:
+            if "initialise" in spec and spec["initialise"]:
                 self.add_dataset(name)
 
         # Copy over attributes
@@ -176,14 +175,15 @@ class ContainerBase(memh5.BasicCont):
             # Copy attributes over from any common datasets
             for name in self.dataset_spec.keys():
                 if name in self.datasets and name in attrs_from.datasets:
-                    memh5.copyattrs(attrs_from.datasets[name].attrs,
-                                    self.datasets[name].attrs)
+                    memh5.copyattrs(
+                        attrs_from.datasets[name].attrs, self.datasets[name].attrs
+                    )
 
             # Make sure that the __memh5_subclass attribute is accurate
-            clspath = self.__class__.__module__ + '.' + self.__class__.__name__
-            clsattr = self.attrs.get('__memh5_subclass', None)
+            clspath = self.__class__.__module__ + "." + self.__class__.__name__
+            clsattr = self.attrs.get("__memh5_subclass", None)
             if clsattr and (clsattr != clspath):
-                self.attrs['__memh5_subclass'] = clspath
+                self.attrs["__memh5_subclass"] = clspath
 
     def add_dataset(self, name):
         """Create an empty dataset.
@@ -202,16 +202,18 @@ class ContainerBase(memh5.BasicCont):
 
         # Dataset must be specified
         if name not in self.dataset_spec:
-            raise RuntimeError('Dataset name not known.')
+            raise RuntimeError("Dataset name not known.")
 
         dspec = self.dataset_spec[name]
 
         # Fetch dataset properties
-        axes = dspec['axes']
-        dtype = dspec['dtype']
+        axes = dspec["axes"]
+        dtype = dspec["dtype"]
 
         # Get distribution properties
-        dist = dspec['distributed'] if 'distributed' in dspec else self._data._distributed
+        dist = (
+            dspec["distributed"] if "distributed" in dspec else self._data._distributed
+        )
         shape = ()
 
         # Check that all the specified axes are defined, and fetch their lengths
@@ -220,21 +222,24 @@ class ContainerBase(memh5.BasicCont):
                 if isinstance(axis, int):
                     l = axis
                 else:
-                    raise RuntimeError('Axis not defined in index_map')
+                    raise RuntimeError("Axis not defined in index_map")
             else:
                 l = len(self.index_map[axis])
 
             shape += (l,)
 
         # Fetch distributed axis, and turn into axis index
-        dist_axis = dspec['distributed_axis'] if 'distributed_axis' in dspec else axes[0]
+        dist_axis = (
+            dspec["distributed_axis"] if "distributed_axis" in dspec else axes[0]
+        )
         dist_axis = list(axes).index(dist_axis)
 
         # Create dataset
-        dset = self.create_dataset(name, shape=shape, dtype=dtype, distributed=dist,
-                                   distributed_axis=dist_axis)
+        dset = self.create_dataset(
+            name, shape=shape, dtype=dtype, distributed=dist, distributed_axis=dist_axis
+        )
 
-        dset.attrs['axis'] = np.array(axes)
+        dset.attrs["axis"] = np.array(axes)
 
         return dset
 
@@ -279,7 +284,7 @@ class ContainerBase(memh5.BasicCont):
                 pass
 
         # Add in any _dataset_spec found on the instance
-        ddict.update(self.__dict__.get('_dataset_spec', {}))
+        ddict.update(self.__dict__.get("_dataset_spec", {}))
 
         # Ensure that the dataset_spec is the same order on all ranks
         return {k: ddict[k] for k in sorted(ddict)}
@@ -301,7 +306,7 @@ class ContainerBase(memh5.BasicCont):
                 pass
 
         # Add in any axes found on the instance
-        axes |= set(self.__dict__.get('_axes', []))
+        axes |= set(self.__dict__.get("_axes", []))
 
         # This must be the same order on all ranks, so we need to explicitly sort to get around the
         # hash randomization
@@ -372,24 +377,24 @@ class TableBase(ContainerBase):
 
         # Get the dataset specifiction for this class (not any base classes), or
         # an empty dictionary if it does not exist. Do the same for the axes entry..
-        dspec = self.__class__.__dict__.get('_dataset_spec', {})
-        axes = self.__class__.__dict__.get('_axes', ())
+        dspec = self.__class__.__dict__.get("_dataset_spec", {})
+        axes = self.__class__.__dict__.get("_axes", ())
 
         # Iterate over all table_spec entries and construct dataset specifications for them.
         for name, spec in self.table_spec.items():
 
             # Get the specifieid axis or if not present create a unique one for
             # this table entry
-            axis = spec.get('axis', name + '_index')
+            axis = spec.get("axis", name + "_index")
 
-            dtype = self._create_dtype(spec['columns'])
+            dtype = self._create_dtype(spec["columns"])
 
             _dataset = {
-                'axes': [axis],
-                'dtype': dtype,
-                'initialise': spec.get('initialise', True),
-                'distributed': spec.get('distributed', False),
-                'distributed_axis': axis
+                "axes": [axis],
+                "dtype": dtype,
+                "initialise": spec.get("initialise", True),
+                "distributed": spec.get("distributed", False),
+                "distributed_axis": axis,
             }
 
             dspec[name] = _dataset
@@ -445,11 +450,11 @@ class TODContainer(ContainerBase, tod.TOData):
     @property
     def time(self):
         try:
-            return self.index_map['time'][:]['ctime']
+            return self.index_map["time"][:]["ctime"]
         # Need to check for both types as different numpy versions return
         # different exceptions.
         except (IndexError, ValueError):
-            return self.index_map['time'][:]
+            return self.index_map["time"][:]
 
 
 class Map(ContainerBase):
@@ -467,15 +472,15 @@ class Map(ContainerBase):
         stored.
     """
 
-    _axes = ('freq', 'pol', 'pixel')
+    _axes = ("freq", "pol", "pixel")
 
     _dataset_spec = {
-        'map': {
-            'axes': ['freq', 'pol', 'pixel'],
-            'dtype': np.float64,
-            'initialise': True,
-            'distributed': True,
-            'distributed_axis': 'freq'
+        "map": {
+            "axes": ["freq", "pol", "pixel"],
+            "dtype": np.float64,
+            "initialise": True,
+            "distributed": True,
+            "distributed_axis": "freq",
         }
     }
 
@@ -483,19 +488,21 @@ class Map(ContainerBase):
 
         # Set up axes from passed arguments
         if nside is not None:
-            kwargs['pixel'] = 12 * nside**2
+            kwargs["pixel"] = 12 * nside ** 2
 
-        kwargs['pol'] = np.array(['I', 'Q', 'U', 'V']) if polarisation else np.array(['I'])
+        kwargs["pol"] = (
+            np.array(["I", "Q", "U", "V"]) if polarisation else np.array(["I"])
+        )
 
         super(Map, self).__init__(*args, **kwargs)
 
     @property
     def freq(self):
-        return self.index_map['freq']['centre']
+        return self.index_map["freq"]["centre"]
 
     @property
     def map(self):
-        return self.datasets['map']
+        return self.datasets["map"]
 
 
 class SiderealStream(ContainerBase):
@@ -507,39 +514,36 @@ class SiderealStream(ContainerBase):
         The number of points to divide the RA axis up into.
     """
 
-    _axes = ('freq', 'prod', 'stack', 'input', 'ra')
+    _axes = ("freq", "prod", "stack", "input", "ra")
 
     _dataset_spec = {
-        'vis': {
-            'axes': ['freq', 'stack', 'ra'],
-            'dtype': np.complex64,
-            'initialise': True,
-            'distributed': True,
-            'distributed_axis': 'freq'
+        "vis": {
+            "axes": ["freq", "stack", "ra"],
+            "dtype": np.complex64,
+            "initialise": True,
+            "distributed": True,
+            "distributed_axis": "freq",
         },
-
-        'vis_weight': {
-            'axes': ['freq', 'stack', 'ra'],
-            'dtype': np.float32,
-            'initialise': True,
-            'distributed': True,
-            'distributed_axis': 'freq'
+        "vis_weight": {
+            "axes": ["freq", "stack", "ra"],
+            "dtype": np.float32,
+            "initialise": True,
+            "distributed": True,
+            "distributed_axis": "freq",
         },
-
-        'input_flags': {
-            'axes': ['input', 'ra'],
-            'dtype': np.float32,
-            'initialise': True,
-            'distributed': False
+        "input_flags": {
+            "axes": ["input", "ra"],
+            "dtype": np.float32,
+            "initialise": True,
+            "distributed": False,
         },
-
-        'gain': {
-            'axes': ['freq', 'input', 'ra'],
-            'dtype': np.complex64,
-            'initialise': False,
-            'distributed': True,
-            'distributed_axis': 'freq'
-        }
+        "gain": {
+            "axes": ["freq", "input", "ra"],
+            "dtype": np.complex64,
+            "initialise": False,
+            "distributed": True,
+            "distributed_axis": "freq",
+        },
     }
 
     def __init__(self, ra=None, *args, **kwargs):
@@ -548,81 +552,81 @@ class SiderealStream(ContainerBase):
         if ra is not None:
             if isinstance(ra, int):
                 ra = np.linspace(0.0, 360.0, ra, endpoint=False)
-            kwargs['ra'] = ra
+            kwargs["ra"] = ra
 
         # Resolve product map
         prod = None
-        if 'prod' in kwargs:
-            prod = kwargs['prod']
-        elif ('axes_from' in kwargs) and ('prod' in kwargs['axes_from'].index_map):
-            prod = kwargs['axes_from'].index_map['prod']
+        if "prod" in kwargs:
+            prod = kwargs["prod"]
+        elif ("axes_from" in kwargs) and ("prod" in kwargs["axes_from"].index_map):
+            prod = kwargs["axes_from"].index_map["prod"]
 
         # Resolve input map
         inputs = None
-        if 'input' in kwargs:
-            inputs = kwargs['input']
-        elif ('axes_from' in kwargs) and ('input' in kwargs['axes_from'].index_map):
-            inputs = kwargs['axes_from'].index_map['input']
+        if "input" in kwargs:
+            inputs = kwargs["input"]
+        elif ("axes_from" in kwargs) and ("input" in kwargs["axes_from"].index_map):
+            inputs = kwargs["axes_from"].index_map["input"]
 
         # Resolve stack map
         stack = None
-        if 'stack' in kwargs:
-            stack = kwargs['stack']
-        elif ('axes_from' in kwargs) and ('stack' in kwargs['axes_from'].index_map):
-            stack = kwargs['axes_from'].index_map['stack']
+        if "stack" in kwargs:
+            stack = kwargs["stack"]
+        elif ("axes_from" in kwargs) and ("stack" in kwargs["axes_from"].index_map):
+            stack = kwargs["axes_from"].index_map["stack"]
 
         # Automatically construct product map from inputs if not given
         if prod is None and inputs is not None:
             nfeed = inputs if isinstance(inputs, int) else len(inputs)
-            kwargs['prod'] = np.array(
+            kwargs["prod"] = np.array(
                 [(fi, fj) for fi in range(nfeed) for fj in range(fi, nfeed)],
-                dtype=[('input_a', np.int16), ('input_b', np.int16)]
+                dtype=[("input_a", np.int16), ("input_b", np.int16)],
             )
-            prod = kwargs['prod']
+            prod = kwargs["prod"]
 
         if stack is None:
-            stack = np.empty_like(prod, dtype=[('prod', '<u4'), ('conjugate', 'u1')])
-            stack['prod'][:] = np.arange(len(prod))
-            stack['conjugate'] = 0
-            kwargs['stack'] = stack
+            stack = np.empty_like(prod, dtype=[("prod", "<u4"), ("conjugate", "u1")])
+            stack["prod"][:] = np.arange(len(prod))
+            stack["conjugate"] = 0
+            kwargs["stack"] = stack
 
         super(SiderealStream, self).__init__(*args, **kwargs)
 
     @property
     def vis(self):
-        return self.datasets['vis']
+        return self.datasets["vis"]
 
     @property
     def gain(self):
-        return self.datasets['gain']
+        return self.datasets["gain"]
 
     @property
     def weight(self):
-        return self.datasets['vis_weight']
+        return self.datasets["vis_weight"]
 
     @property
     def input_flags(self):
-        return self.datasets['input_flags']
+        return self.datasets["input_flags"]
 
     @property
     def ra(self):
-        return self.index_map['ra']
+        return self.index_map["ra"]
 
     @property
     def freq(self):
-        return self.index_map['freq']['centre']
+        return self.index_map["freq"]["centre"]
 
     @property
     def input(self):
-        return self.index_map['input']
+        return self.index_map["input"]
 
     @property
     def prod(self):
-        return self.index_map['prod'][:][self.index_map['stack']['prod']]
+        return self.index_map["prod"][:][self.index_map["stack"]["prod"]]
 
     @property
     def conjugate(self):
-        return self.index_map['stack']['conjugate']
+        return self.index_map["stack"]["conjugate"]
 
 
 class TimeStream(TODContainer):
@@ -633,108 +637,107 @@ class TimeStream(TODContainer):
     interchangably in most cases.
     """
 
-    _axes = ('freq', 'prod', 'stack', 'input', 'time')
+    _axes = ("freq", "prod", "stack", "input", "time")
 
     _dataset_spec = {
-        'vis': {
-            'axes': ['freq', 'stack', 'time'],
-            'dtype': np.complex64,
-            'initialise': True,
-            'distributed': True,
-            'distributed_axis': 'freq'
+        "vis": {
+            "axes": ["freq", "stack", "time"],
+            "dtype": np.complex64,
+            "initialise": True,
+            "distributed": True,
+            "distributed_axis": "freq",
         },
-
-        'vis_weight': {
-            'axes': ['freq', 'stack', 'time'],
-            'dtype': np.float32,
-            'initialise': True,
-            'distributed': True,
-            'distributed_axis': 'freq'
+        "vis_weight": {
+            "axes": ["freq", "stack", "time"],
+            "dtype": np.float32,
+            "initialise": True,
+            "distributed": True,
+            "distributed_axis": "freq",
         },
-
-        'input_flags': {
-            'axes': ['input', 'time'],
-            'dtype': np.float32,
-            'initialise': True,
-            'distributed': False
+        "input_flags": {
+            "axes": ["input", "time"],
+            "dtype": np.float32,
+            "initialise": True,
+            "distributed": False,
         },
-
-        'gain': {
-            'axes': ['freq', 'input', 'time'],
-            'dtype': np.complex64,
-            'initialise': False,
-            'distributed': True,
-            'distributed_axis': 'freq'
-        }
+        "gain": {
+            "axes": ["freq", "input", "time"],
+            "dtype": np.complex64,
+            "initialise": False,
+            "distributed": True,
+            "distributed_axis": "freq",
+        },
     }
 
     def __init__(self, *args, **kwargs):
 
         # Resolve product map
         prod = None
-        if 'prod' in kwargs:
-            prod = kwargs['prod']
-        elif ('axes_from' in kwargs) and ('prod' in kwargs['axes_from'].index_map):
-            prod = kwargs['axes_from'].index_map['prod']
+        if "prod" in kwargs:
+            prod = kwargs["prod"]
+        elif ("axes_from" in kwargs) and ("prod" in kwargs["axes_from"].index_map):
+            prod = kwargs["axes_from"].index_map["prod"]
 
         # Resolve input map
         inputs = None
-        if 'input' in kwargs:
-            inputs = kwargs['input']
-        elif ('axes_from' in kwargs) and ('input' in kwargs['axes_from'].index_map):
-            inputs = kwargs['axes_from'].index_map['input']
+        if "input" in kwargs:
+            inputs = kwargs["input"]
+        elif ("axes_from" in kwargs) and ("input" in kwargs["axes_from"].index_map):
+            inputs = kwargs["axes_from"].index_map["input"]
 
         # Resolve stack map
         stack = None
-        if 'stack' in kwargs:
-            stack = kwargs['stack']
-        elif ('axes_from' in kwargs) and ('stack' in kwargs['axes_from'].index_map):
-            stack = kwargs['axes_from'].index_map['stack']
+        if "stack" in kwargs:
+            stack = kwargs["stack"]
+        elif ("axes_from" in kwargs) and ("stack" in kwargs["axes_from"].index_map):
+            stack = kwargs["axes_from"].index_map["stack"]
 
         # Automatically construct product map from inputs if not given
         if prod is None and inputs is not None:
             nfeed = inputs if isinstance(inputs, int) else len(inputs)
-            kwargs['prod'] = np.array([[fi, fj] for fi in range(nfeed) for fj in range(fi, nfeed)])
+            kwargs["prod"] = np.array(
+                [[fi, fj] for fi in range(nfeed) for fj in range(fi, nfeed)]
+            )
 
         if stack is None and prod is not None:
-            stack = np.empty_like(prod, dtype=[('prod', '<u4'), ('conjugate', 'u1')])
-            stack['prod'][:] = np.arange(len(prod))
-            stack['conjugate'] = 0
-            kwargs['stack'] = stack
+            stack = np.empty_like(prod, dtype=[("prod", "<u4"), ("conjugate", "u1")])
+            stack["prod"][:] = np.arange(len(prod))
+            stack["conjugate"] = 0
+            kwargs["stack"] = stack
 
         super(TimeStream, self).__init__(*args, **kwargs)
 
     @property
     def vis(self):
-        return self.datasets['vis']
+        return self.datasets["vis"]
 
     @property
     def gain(self):
-        return self.datasets['gain']
+        return self.datasets["gain"]
 
     @property
     def weight(self):
-        return self.datasets['vis_weight']
+        return self.datasets["vis_weight"]
 
     @property
     def input_flags(self):
-        return self.datasets['input_flags']
+        return self.datasets["input_flags"]
 
     @property
     def freq(self):
-        return self.index_map['freq']['centre']
+        return self.index_map["freq"]["centre"]
 
     @property
     def input(self):
-        return self.index_map['input']
+        return self.index_map["input"]
 
     @property
     def prod(self):
-        return self.index_map['prod'][:][self.index_map['stack']['prod']]
+        return self.index_map["prod"][:][self.index_map["stack"]["prod"]]
 
     @property
     def conjugate(self):
-        return self.index_map['stack']['conjugate']
+        return self.index_map["stack"]["conjugate"]
 
 
 class GridBeam(ContainerBase):
@@ -742,72 +745,72 @@ class GridBeam(ContainerBase):
         coordinates on a rectangular grid.
     """
 
-    _axes = ('freq', 'pol', 'input', 'theta', 'phi')
+    _axes = ("freq", "pol", "input", "theta", "phi")
 
     _dataset_spec = {
-        'beam': {
-            'axes': ['freq', 'pol', 'input', 'theta', 'phi'],
-            'dtype': np.complex64,
-            'initialise': True,
-            'distributed': True,
-            'distributed_axis': 'freq'
+        "beam": {
+            "axes": ["freq", "pol", "input", "theta", "phi"],
+            "dtype": np.complex64,
+            "initialise": True,
+            "distributed": True,
+            "distributed_axis": "freq",
         },
-        'weight': {
-            'axes': ['freq', 'pol', 'input', 'theta', 'phi'],
-            'dtype': np.float32,
-            'initialise': True,
-            'distributed': True,
-            'distributed_axis': 'freq'
+        "weight": {
+            "axes": ["freq", "pol", "input", "theta", "phi"],
+            "dtype": np.float32,
+            "initialise": True,
+            "distributed": True,
+            "distributed_axis": "freq",
         },
-        'gain': {
-            'axes': ['freq', 'input'],
-            'dtype': np.complex64,
-            'initialise': False,
-            'distributed': True,
-            'distributed_axis': 'freq'
-        }
+        "gain": {
+            "axes": ["freq", "input"],
+            "dtype": np.complex64,
+            "initialise": False,
+            "distributed": True,
+            "distributed_axis": "freq",
+        },
     }
 
-    def __init__(self, coords='celestial', *args, **kwargs):
+    def __init__(self, coords="celestial", *args, **kwargs):
 
-        self.attrs['coords'] = coords
+        self.attrs["coords"] = coords
         super(GridBeam, self).__init__(*args, **kwargs)
 
     @property
     def beam(self):
-        return self.datasets['beam']
+        return self.datasets["beam"]
 
     @property
     def weight(self):
-        return self.datasets['weight']
+        return self.datasets["weight"]
 
     @property
     def gain(self):
-        return self.datasets['gain']
+        return self.datasets["gain"]
 
     @property
     def coords(self):
-        return self.attrs['coords']
+        return self.attrs["coords"]
 
     @property
     def freq(self):
-        return self.index_map['freq']
+        return self.index_map["freq"]
 
     @property
     def pol(self):
-        return self.index_map['pol']
+        return self.index_map["pol"]
 
     @property
     def input(self):
-        return self.index_map['input']
+        return self.index_map["input"]
 
     @property
     def theta(self):
-        return self.index_map['theta']
+        return self.index_map["theta"]
 
     @property
     def phi(self):
-        return self.index_map['phi']
+        return self.index_map["phi"]
 
 
 class TrackBeam(ContainerBase):
@@ -816,87 +819,98 @@ class TrackBeam(ContainerBase):
         the numpy.dtype [('theta', np.float32), ('phi', np.float32)].
     """
 
-    _axes = ('freq', 'pol', 'input', 'pix')
+    _axes = ("freq", "pol", "input", "pix")
 
     _dataset_spec = {
-        'beam': {
-            'axes': ['freq', 'pol', 'input', 'pix'],
-            'dtype': np.complex64,
-            'initialise': True,
-            'distributed': True,
-            'distributed_axis': 'freq'
+        "beam": {
+            "axes": ["freq", "pol", "input", "pix"],
+            "dtype": np.complex64,
+            "initialise": True,
+            "distributed": True,
+            "distributed_axis": "freq",
         },
-        'weight': {
-            'axes': ['freq', 'pol', 'input', 'pix'],
-            'dtype': np.float32,
-            'initialise': True,
-            'distributed': True,
-            'distributed_axis': 'freq'
+        "weight": {
+            "axes": ["freq", "pol", "input", "pix"],
+            "dtype": np.float32,
+            "initialise": True,
+            "distributed": True,
+            "distributed_axis": "freq",
         },
-        'gain': {
-            'axes': ['freq', 'input'],
-            'dtype': np.complex64,
-            'initialise': False,
-            'distributed': True,
-            'distributed_axis': 'freq'
-        }
+        "gain": {
+            "axes": ["freq", "input"],
+            "dtype": np.complex64,
+            "initialise": False,
+            "distributed": True,
+            "distributed_axis": "freq",
+        },
     }
 
-    def __init__(self, theta=None, phi=None, coords='celestial',
-                 track_type='drift', *args, **kwargs):
+    def __init__(
+        self,
+        theta=None,
+        phi=None,
+        coords="celestial",
+        track_type="drift",
+        *args,
+        **kwargs
+    ):
 
-        if (theta is not None and phi is not None):
+        if theta is not None and phi is not None:
             if len(theta) != len(phi):
-                raise RuntimeError("theta and phi axes must have same length: "
-                                   "({:d} != {:d})".format(len(theta), len(phi)))
+                raise RuntimeError(
+                    "theta and phi axes must have same length: "
+                    "({:d} != {:d})".format(len(theta), len(phi))
+                )
             else:
-                pix = np.zeros(len(theta), dtype=[('theta', np.float32), ('phi', np.float32)])
-                pix['theta'] = theta
-                pix['phi'] = phi
-                kwargs['pix'] = pix
+                pix = np.zeros(
+                    len(theta), dtype=[("theta", np.float32), ("phi", np.float32)]
+                )
+                pix["theta"] = theta
+                pix["phi"] = phi
+                kwargs["pix"] = pix
         elif (theta is None) != (phi is None):
             raise RuntimeError("Both theta and phi coordinates must be specified.")
 
         super(TrackBeam, self).__init__(*args, **kwargs)
 
-        self.attrs['coords'] = coords
-        self.attrs['track_type'] = track_type
+        self.attrs["coords"] = coords
+        self.attrs["track_type"] = track_type
 
     @property
     def beam(self):
-        return self.datasets['beam']
+        return self.datasets["beam"]
 
     @property
     def weight(self):
-        return self.datasets['weight']
+        return self.datasets["weight"]
 
     @property
     def gain(self):
-        return self.datasets['gain']
+        return self.datasets["gain"]
 
     @property
     def coords(self):
-        return self.attrs['coords']
+        return self.attrs["coords"]
 
     @property
     def track_type(self):
-        return self.attrs['track_type']
+        return self.attrs["track_type"]
 
     @property
     def freq(self):
-        return self.index_map['freq']
+        return self.index_map["freq"]
 
     @property
     def pol(self):
-        return self.index_map['pol']
+        return self.index_map["pol"]
 
     @property
     def input(self):
-        return self.index_map['input']
+        return self.index_map["input"]
 
     @property
     def pix(self):
-        return self.index_map['pix']
+        return self.index_map["pix"]
 
 
 class MModes(ContainerBase):
@@ -915,50 +929,49 @@ class MModes(ContainerBase):
         Array of weights for each point.
     """
 
-    _axes = ('m', 'msign', 'freq', 'prod', 'stack', 'input')
+    _axes = ("m", "msign", "freq", "prod", "stack", "input")
 
     _dataset_spec = {
-        'vis': {
-            'axes': ['m', 'msign', 'freq', 'stack'],
-            'dtype': np.complex128,
-            'initialise': True,
-            'distributed': True,
-            'distributed_axis': 'm'
+        "vis": {
+            "axes": ["m", "msign", "freq", "stack"],
+            "dtype": np.complex128,
+            "initialise": True,
+            "distributed": True,
+            "distributed_axis": "m",
         },
-
-        'vis_weight': {
-            'axes': ['m', 'msign', 'freq', 'stack'],
-            'dtype': np.float64,
-            'initialise': True,
-            'distributed': True,
-            'distributed_axis': 'm'
+        "vis_weight": {
+            "axes": ["m", "msign", "freq", "stack"],
+            "dtype": np.float64,
+            "initialise": True,
+            "distributed": True,
+            "distributed_axis": "m",
         },
     }
 
     @property
     def vis(self):
-        return self.datasets['vis']
+        return self.datasets["vis"]
 
     @property
     def weight(self):
-        return self.datasets['vis_weight']
+        return self.datasets["vis_weight"]
 
     @property
     def freq(self):
-        return self.index_map['freq']['centre']
+        return self.index_map["freq"]["centre"]
 
     @property
     def input(self):
-        return self.index_map['input']
+        return self.index_map["input"]
 
     def __init__(self, mmax=None, *args, **kwargs):
 
         # Set up axes from passed arguments
         if mmax is not None:
-            kwargs['m'] = mmax + 1
+            kwargs["m"] = mmax + 1
 
         # Ensure the sign axis is set correctly
-        kwargs['msign'] = np.array(['+', '-'])
+        kwargs["msign"] = np.array(["+", "-"])
 
         super(MModes, self).__init__(*args, **kwargs)
 
@@ -979,51 +992,49 @@ class SVDModes(ContainerBase):
         Array of weights for each point.
     """
 
-    _axes = ('m', 'mode')
+    _axes = ("m", "mode")
 
     _dataset_spec = {
-        'vis': {
-            'axes': ['m', 'mode'],
-            'dtype': np.complex128,
-            'initialise': True,
-            'distributed': True,
-            'distributed_axis': 'm'
+        "vis": {
+            "axes": ["m", "mode"],
+            "dtype": np.complex128,
+            "initialise": True,
+            "distributed": True,
+            "distributed_axis": "m",
         },
-
-        'vis_weight': {
-            'axes': ['m', 'mode'],
-            'dtype': np.float64,
-            'initialise': True,
-            'distributed': True,
-            'distributed_axis': 'm'
+        "vis_weight": {
+            "axes": ["m", "mode"],
+            "dtype": np.float64,
+            "initialise": True,
+            "distributed": True,
+            "distributed_axis": "m",
         },
-
-        'nmode': {
-            'axes': ['m'],
-            'dtype': np.int32,
-            'initialise': True,
-            'distributed': True,
-            'distributed_axis': 'm'
-        }
+        "nmode": {
+            "axes": ["m"],
+            "dtype": np.int32,
+            "initialise": True,
+            "distributed": True,
+            "distributed_axis": "m",
+        },
     }
 
     @property
     def vis(self):
-        return self.datasets['vis']
+        return self.datasets["vis"]
 
     @property
     def nmode(self):
-        return self.datasets['nmode']
+        return self.datasets["nmode"]
 
     @property
     def weight(self):
-        return self.datasets['vis_weight']
+        return self.datasets["vis_weight"]
 
     def __init__(self, mmax=None, *args, **kwargs):
 
         # Set up axes from passed arguments
         if mmax is not None:
-            kwargs['m'] = mmax + 1
+            kwargs["m"] = mmax + 1
 
         super(SVDModes, self).__init__(*args, **kwargs)
 
@@ -1043,6 +1054,7 @@ class KLModes(SVDModes):
     weight : mpidataset.MPIArray
         Array of weights for each point.
     """
+
     pass
 
 
@@ -1050,151 +1062,151 @@ class GainData(TODContainer):
     """Parallel container for holding gain data.
     """
 
-    _axes = ('freq', 'input', 'time')
+    _axes = ("freq", "input", "time")
 
     _dataset_spec = {
-        'gain': {
-            'axes': ['freq', 'input', 'time'],
-            'dtype': np.complex128,
-            'initialise': True,
-            'distributed': True,
-            'distributed_axis': 'freq'
+        "gain": {
+            "axes": ["freq", "input", "time"],
+            "dtype": np.complex128,
+            "initialise": True,
+            "distributed": True,
+            "distributed_axis": "freq",
         },
-        'weight': {
-            'axes': ['freq', 'time'],
-            'dtype': np.float64,
-            'initialise': False,
-            'distributed': True,
-            'distributed_axis': 'freq'
-        }
+        "weight": {
+            "axes": ["freq", "time"],
+            "dtype": np.float64,
+            "initialise": False,
+            "distributed": True,
+            "distributed_axis": "freq",
+        },
     }
 
     @property
     def gain(self):
-        return self.datasets['gain']
+        return self.datasets["gain"]
 
     @property
     def weight(self):
         try:
-            return self.datasets['weight']
+            return self.datasets["weight"]
         except KeyError:
             return None
 
     @property
     def freq(self):
-        return self.index_map['freq']['centre']
+        return self.index_map["freq"]["centre"]
 
     @property
     def input(self):
-        return self.index_map['input']
+        return self.index_map["input"]
 
 
 class SiderealGainData(ContainerBase):
     """Parallel container for holding sidereal gain data.
     """
 
-    _axes = ('freq', 'input', 'ra')
+    _axes = ("freq", "input", "ra")
 
     _dataset_spec = {
-        'gain': {
-            'axes': ['freq', 'input', 'ra'],
-            'dtype': np.complex128,
-            'initialise': True,
-            'distributed': True,
-            'distributed_axis': 'freq'
+        "gain": {
+            "axes": ["freq", "input", "ra"],
+            "dtype": np.complex128,
+            "initialise": True,
+            "distributed": True,
+            "distributed_axis": "freq",
         },
-        'weight': {
-            'axes': ['freq', 'ra'],
-            'dtype': np.float64,
-            'initialise': False,
-            'distributed': True,
-            'distributed_axis': 'freq'
-        }
+        "weight": {
+            "axes": ["freq", "ra"],
+            "dtype": np.float64,
+            "initialise": False,
+            "distributed": True,
+            "distributed_axis": "freq",
+        },
     }
 
     @property
     def gain(self):
-        return self.datasets['gain']
+        return self.datasets["gain"]
 
     @property
     def weight(self):
         try:
-            return self.datasets['weight']
+            return self.datasets["weight"]
         except KeyError:
             return None
 
     @property
     def freq(self):
-        return self.index_map['freq']
+        return self.index_map["freq"]
 
     @property
     def input(self):
-        return self.index_map['input']
+        return self.index_map["input"]
 
     @property
     def ra(self):
-        return self.index_map['ra']
+        return self.index_map["ra"]
 
 
 class StaticGainData(ContainerBase):
     """Parallel container for holding static gain data (i.e. non time varying).
     """
 
-    _axes = ('freq', 'input')
+    _axes = ("freq", "input")
 
     _dataset_spec = {
-        'gain': {
-            'axes': ['freq', 'input'],
-            'dtype': np.complex128,
-            'initialise': True,
-            'distributed': True,
-            'distributed_axis': 'freq'
+        "gain": {
+            "axes": ["freq", "input"],
+            "dtype": np.complex128,
+            "initialise": True,
+            "distributed": True,
+            "distributed_axis": "freq",
         },
-        'weight': {
-            'axes': ['freq'],
-            'dtype': np.float64,
-            'initialise': False,
-            'distributed': True,
-            'distributed_axis': 'freq'
-        }
+        "weight": {
+            "axes": ["freq"],
+            "dtype": np.float64,
+            "initialise": False,
+            "distributed": True,
+            "distributed_axis": "freq",
+        },
     }
 
     @property
     def gain(self):
-        return self.datasets['gain']
+        return self.datasets["gain"]
 
     @property
     def weight(self):
-        return self.datasets['weight']
+        return self.datasets["weight"]
 
     @property
     def freq(self):
-        return self.index_map['freq']['centre']
+        return self.index_map["freq"]["centre"]
 
     @property
     def input(self):
-        return self.index_map['input']
+        return self.index_map["input"]
 
 
 class DelaySpectrum(ContainerBase):
     """Container for a delay spectrum.
     """
 
-    _axes = ('baseline', 'delay')
+    _axes = ("baseline", "delay")
 
     _dataset_spec = {
-        'spectrum': {
-            'axes': ['baseline', 'delay'],
-            'dtype': np.float64,
-            'initialise': True,
-            'distributed': True,
-            'distributed_axis': 'baseline'
+        "spectrum": {
+            "axes": ["baseline", "delay"],
+            "dtype": np.float64,
+            "initialise": True,
+            "distributed": True,
+            "distributed_axis": "baseline",
         }
     }
 
     @property
     def spectrum(self):
-        return self.datasets['spectrum']
+        return self.datasets["spectrum"]
 
 
 class Powerspectrum2D(ContainerBase):
@@ -1221,22 +1233,21 @@ class Powerspectrum2D(ContainerBase):
         Array of the power spectrum bin boundaries.
     """
 
-    _axes = ('kperp', 'kpar')
+    _axes = ("kperp", "kpar")
 
     _dataset_spec = {
-        'powerspectrum': {
-            'axes': ['kperp', 'kpar'],
-            'dtype': np.float64,
-            'initialise': True,
-            'distributed': False
+        "powerspectrum": {
+            "axes": ["kperp", "kpar"],
+            "dtype": np.float64,
+            "initialise": True,
+            "distributed": False,
         },
-
-        'C_inv': {
-            'axes': ['kperp', 'kpar', 'kperp', 'kpar'],
-            'dtype': np.float64,
-            'initialise': True,
-            'distributed': False
-        }
+        "C_inv": {
+            "axes": ["kperp", "kpar", "kperp", "kpar"],
+            "dtype": np.float64,
+            "initialise": True,
+            "distributed": False,
+        },
     }
 
     def __init__(self, kperp_edges=None, kpar_edges=None, *args, **kwargs):
@@ -1246,8 +1257,8 @@ class Powerspectrum2D(ContainerBase):
             centre = 0.5 * (kperp_edges[1:] + kperp_edges[:-1])
             width = kperp_edges[1:] - kperp_edges[:-1]
 
-            kwargs['kperp'] = np.rec.fromarrays(
-                [centre, width], names=['centre', 'width']
+            kwargs["kperp"] = np.rec.fromarrays(
+                [centre, width], names=["centre", "width"]
             ).view(np.ndarray)
 
         # Construct the kpar axis from the bin edges
@@ -1255,40 +1266,40 @@ class Powerspectrum2D(ContainerBase):
             centre = 0.5 * (kpar_edges[1:] + kpar_edges[:-1])
             width = kpar_edges[1:] - kpar_edges[:-1]
 
-            kwargs['kpar'] = np.rec.fromarrays(
-                [centre, width], names=['centre', 'width']
+            kwargs["kpar"] = np.rec.fromarrays(
+                [centre, width], names=["centre", "width"]
             ).view(np.ndarray)
 
         super(Powerspectrum2D, self).__init__(*args, **kwargs)
 
     @property
     def powerspectrum(self):
-        return self.datasets['powerspectrum']
+        return self.datasets["powerspectrum"]
 
     @property
     def C_inv(self):
-        return self.datasets['C_inv']
+        return self.datasets["C_inv"]
 
 
 class SVDSpectrum(ContainerBase):
     """Container for an m-mode SVD spectrum.
     """
 
-    _axes = ('m', 'singularvalue')
+    _axes = ("m", "singularvalue")
 
     _dataset_spec = {
-        'spectrum': {
-            'axes': ['m', 'singularvalue'],
-            'dtype': np.float64,
-            'initialise': True,
-            'distributed': True,
-            'distributed_axis': 'm'
+        "spectrum": {
+            "axes": ["m", "singularvalue"],
+            "dtype": np.float64,
+            "initialise": True,
+            "distributed": True,
+            "distributed_axis": "m",
         }
     }
 
     @property
     def spectrum(self):
-        return self.datasets['spectrum']
+        return self.datasets["spectrum"]
 
 
 class SourceCatalog(TableBase):
@@ -1300,12 +1311,9 @@ class SourceCatalog(TableBase):
     """
 
     _table_spec = {
-        'position': {
-            'columns': [
-                ['ra', np.float64],
-                ['dec', np.float64]
-            ],
-            'axis': 'object_id'
+        "position": {
+            "columns": [["ra", np.float64], ["dec", np.float64]],
+            "axis": "object_id",
         }
     }
 
@@ -1315,12 +1323,9 @@ class SpectroscopicCatalog(SourceCatalog):
     """
 
     _table_spec = {
-        'redshift': {
-            'columns': [
-                ['z', np.float64],
-                ['z_error', np.float64]
-            ],
-            'axis': 'object_id'
+        "redshift": {
+            "columns": [["z", np.float64], ["z_error", np.float64]],
+            "axis": "object_id",
         }
     }
 
@@ -1346,7 +1351,9 @@ def empty_like(obj, **kwargs):
     if isinstance(obj, ContainerBase):
         return obj.__class__(axes_from=obj, attrs_from=obj, **kwargs)
     else:
-        raise RuntimeError("I don't know how to deal with data type %s" % obj.__class__.__name__)
+        raise RuntimeError(
+            "I don't know how to deal with data type %s" % obj.__class__.__name__
+        )
 
 
 def empty_timestream(**kwargs):

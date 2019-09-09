@@ -5,10 +5,10 @@ appropriate module, or enough related tasks end up in here such that they can
 all be moved out into their own module.
 """
 # === Start Python 2/3 compatibility
-from __future__ import (absolute_import, division,
-                        print_function, unicode_literals)
+from __future__ import absolute_import, division, print_function, unicode_literals
 from future.builtins import *  # noqa  pylint: disable=W0401, W0614
 from future.builtins.disabled import *  # noqa  pylint: disable=W0401, W0614
+
 # === End Python 2/3 compatibility
 
 
@@ -55,8 +55,8 @@ class ApplyGain(task.SingleTask):
         tstream : TimeStream or SiderealStream
             The timestream with the gains applied.
         """
-        tstream.redistribute('freq')
-        gain.redistribute('freq')
+        tstream.redistribute("freq")
+        gain.redistribute("freq")
 
         if isinstance(gain, containers.StaticGainData):
 
@@ -64,7 +64,9 @@ class ApplyGain(task.SingleTask):
             gain_arr = gain.gain[:][..., np.newaxis]
 
             # Get the weight array if it's there
-            weight_arr = gain.weight[:][..., np.newaxis] if gain.weight is not None else None
+            weight_arr = (
+                gain.weight[:][..., np.newaxis] if gain.weight is not None else None
+            )
 
         elif isinstance(gain, (containers.GainData, containers.SiderealGainData)):
 
@@ -81,14 +83,18 @@ class ApplyGain(task.SingleTask):
 
                 # Check that we are defined at the same RA samples
                 if (gain.ra != tstream.ra).any():
-                    raise RuntimeError('Gain data and sidereal stream defined at different RA samples.')
+                    raise RuntimeError(
+                        "Gain data and sidereal stream defined at different RA samples."
+                    )
 
             else:
                 # We are using a time stream
 
                 # Check that we are defined at the same time samples
                 if (gain.time != tstream.time).any():
-                    raise RuntimeError('Gain data and timestream defined at different time samples.')
+                    raise RuntimeError(
+                        "Gain data and timestream defined at different time samples."
+                    )
 
                 # Smooth the gain data if required
                 if self.smoothing_length is not None:
@@ -109,7 +115,7 @@ class ApplyGain(task.SingleTask):
                     smooth_phase = ss.medfilt2d(np.angle(gain_r), kernel_size=[1, l])
 
                     # Recombine and reshape back to original shape
-                    gain_arr = smooth_amp * np.exp(1.0J * smooth_phase)
+                    gain_arr = smooth_amp * np.exp(1.0j * smooth_phase)
                     gain_arr = gain_arr.reshape(gain.gain[:].shape)
 
                     # Smooth weight array if it exists
@@ -117,7 +123,7 @@ class ApplyGain(task.SingleTask):
                         weight_arr = ss.medfilt2d(weight_arr, kernel_size=[1, l])
 
         else:
-            raise RuntimeError('Format of `gain` argument is unknown.')
+            raise RuntimeError("Format of `gain` argument is unknown.")
 
         # Regularise any crazy entries
         gain_arr = np.nan_to_num(gain_arr)
@@ -131,25 +137,31 @@ class ApplyGain(task.SingleTask):
         gvis = inverse_gain_arr if self.inverse else gain_arr
         if isinstance(gain, containers.SiderealGainData):
             # Need a prod_map for sidereal streams
-            tools.apply_gain(tstream.vis[:], gvis, out=tstream.vis[:], prod_map=tstream.prod)
+            tools.apply_gain(
+                tstream.vis[:], gvis, out=tstream.vis[:], prod_map=tstream.prod
+            )
         else:
             tools.apply_gain(tstream.vis[:], gvis, out=tstream.vis[:])
-
 
         # Apply gains to the weights
         if self.update_weight:
             self.log.info("Applying gain to weight.")
-            gweight = np.abs(gain_arr if self.inverse else inverse_gain_arr)**2
+            gweight = np.abs(gain_arr if self.inverse else inverse_gain_arr) ** 2
             if isinstance(gain, containers.SiderealGainData):
                 # Need a prod_map for sidereal streams
-                tools.apply_gain(tstream.weight[:], gweight, out=tstream.weight[:], prod_map=tstream.prod)
+                tools.apply_gain(
+                    tstream.weight[:],
+                    gweight,
+                    out=tstream.weight[:],
+                    prod_map=tstream.prod,
+                )
             else:
                 tools.apply_gain(tstream.weight[:], gweight, out=tstream.weight[:])
 
         # Update units if thet were specified
-        convert_units_to = gain.gain.attrs.get('convert_units_to')
+        convert_units_to = gain.gain.attrs.get("convert_units_to")
         if convert_units_to is not None:
-            tstream.vis.attrs['units'] = convert_units_to
+            tstream.vis.attrs["units"] = convert_units_to
 
         # Modify the weight array according to the gain weights
         if weight_arr is not None:
