@@ -542,12 +542,16 @@ class SiderealStream(ContainerBase):
             'compression_opts': (0, bitshuffle.h5.H5_COMPRESS_LZ4),
             'chunks': (64, 256, 128)
         },
-        "vis_weight": {
-            "axes": ["freq", "stack", "ra"],
-            "dtype": np.float32,
-            "initialise": True,
-            "distributed": True,
-            "distributed_axis": "freq",
+
+        'vis_weight': {
+            'axes': ['freq', 'stack', 'ra'],
+            'dtype': np.float32,
+            'initialise': True,
+            'distributed': True,
+            'distributed_axis': 'freq',
+            'compression': bitshuffle.h5.H5FILTER,
+            'compression_opts': (0, bitshuffle.h5.H5_COMPRESS_LZ4),
+            'chunks': (64, 256, 128)
         },
         "input_flags": {
             "axes": ["input", "ra"],
@@ -658,19 +662,26 @@ class TimeStream(TODContainer):
     _axes = ("freq", "prod", "stack", "input", "time")
 
     _dataset_spec = {
-        "vis": {
-            "axes": ["freq", "stack", "time"],
-            "dtype": np.complex64,
-            "initialise": True,
-            "distributed": True,
-            "distributed_axis": "freq",
+        'vis': {
+            'axes': ['freq', 'stack', 'time'],
+            'dtype': np.complex64,
+            'initialise': True,
+            'distributed': True,
+            'distributed_axis': 'freq',
+            'compression': bitshuffle.h5.H5FILTER,
+            'compression_opts': (0, bitshuffle.h5.H5_COMPRESS_LZ4),
+            'chunks': (64, 256, 128)
         },
-        "vis_weight": {
-            "axes": ["freq", "stack", "time"],
-            "dtype": np.float32,
-            "initialise": True,
-            "distributed": True,
-            "distributed_axis": "freq",
+
+        'vis_weight': {
+            'axes': ['freq', 'stack', 'time'],
+            'dtype': np.float32,
+            'initialise': True,
+            'distributed': True,
+            'distributed_axis': 'freq',
+            'compression': bitshuffle.h5.H5FILTER,
+            'compression_opts': (0, bitshuffle.h5.H5_COMPRESS_LZ4),
+            'chunks': (64, 256, 128)
         },
         "input_flags": {
             "axes": ["input", "time"],
@@ -850,19 +861,15 @@ class TrackBeam(ContainerBase):
             'compression_opts': (0, bitshuffle.h5.H5_COMPRESS_LZ4),
             'chunks': (128, 2, 128, 128)
         },
-        "weight": {
-            "axes": ["freq", "pol", "input", "pix"],
-            "dtype": np.float32,
-            "initialise": True,
-            "distributed": True,
-            "distributed_axis": "freq",
-        },
-        "gain": {
-            "axes": ["freq", "input"],
-            "dtype": np.complex64,
-            "initialise": False,
-            "distributed": True,
-            "distributed_axis": "freq",
+        'weight': {
+            'axes': ['freq', 'pol', 'input', 'pix'],
+            'dtype': np.float32,
+            'initialise': True,
+            'distributed': True,
+            'distributed_axis': 'freq',
+            'compression': bitshuffle.h5.H5FILTER,
+            'compression_opts': (0, bitshuffle.h5.H5_COMPRESS_LZ4),
+            'chunks': (128, 2, 128, 128)
         },
     }
 
