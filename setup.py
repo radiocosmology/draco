@@ -31,12 +31,20 @@ fast_ext = Extension(
     extra_link_args=link_args,
 )
 
+trunc_ext = Extension(
+    "draco.util.truncate",
+    ["draco/util/truncate.pyx"],
+    include_dirs=[np.get_include()],
+    extra_compile_args=compile_args,
+    extra_link_args=link_args,
+)
+
 setup(
     name="draco",
     version=draco.__version__,
     license="MIT",
     packages=find_packages(),
-    ext_modules=cythonize([fast_ext]),
+    ext_modules=cythonize([fast_ext, trunc_ext]),
     install_requires=[
         "Cython>0.18",
         "numpy>=1.7",

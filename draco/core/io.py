@@ -44,11 +44,36 @@ from past.builtins import basestring
 # === End Python 2/3 compatibility
 
 import os.path
+import numpy as np
 
 from caput import pipeline
 from caput import config
 
 from . import task
+from ..util.truncate import bit_truncate_weights, bit_truncate_fixed
+from .containers import SiderealStream, TimeStream, TrackBeam
+
+
+TRUNC_SPEC = {
+    SiderealStream: {
+        "dataset": ["vis", "vis_weight"],
+        "weight_dataset": ["vis_weight", None],
+        "fixed_precision": 1e-4,
+        "variance_increase": 1e-3,
+    },
+    TimeStream: {
+        "dataset": ["vis", "vis_weight"],
+        "weight_dataset": ["vis_weight", None],
+        "fixed_precision": 1e-4,
+        "variance_increase": 1e-3,
+    },
+    TrackBeam: {
+        "dataset": ["beam", "weight"],
+        "weight_dataset": ["weight", None],
+        "fixed_precision": 1e-4,
+        "variance_increase": 1e-3,
+    },
+}
 
 
 def _list_of_filelists(files):
@@ -403,6 +428,129 @@ class LoadProductManager(pipeline.TaskBase):
         pm = manager.ProductManager.from_config(self.product_directory)
 
         return pm
+
+
+class Truncate(task.SingleTask):
+    """Precision truncate data prior to saving with bitshuffle compression.
+
+    If no configuration is provided, will look for preset values for the
+    input container. Any properties defined in the config will override the
+    presets.
+
+    If available, each specified dataset will be truncated relative to a
+    (specified) weight dataset with the truncation increasing the variance up
+    to the specified maximum in `variance_increase`. If there is no specified
+    weight dataset then the truncation falls back to using the
+    `fixed_precision`.
+
+    Attributes
+    ----------
+    dataset : list of str
+        Datasets to truncate.
+    weight_dataset : list of str
+        Datasets to use as inverse variance for truncation precision.
+    fixed_precision : float
+        Relative precision to truncate to (default 1e-4).
+    variance_increase : float
+        Maximum fractional increase in variance from numerical truncation.
+    """
+
+    dataset = config.Property(proptype=list, default=None)
+    weight_dataset = config.Property(proptype=list, default=None)
+    fixed_precision = config.Property(proptype=float, default=None)
+    variance_increase = config.Property(proptype=float, default=None)
+
+    def _get_params(self, container):
+        """Load truncation parameters from config or container defaults."""
+        if container in TRUNC_SPEC:
+            self.log.info("Truncating from preset for container {}".format(container))
+            for key in [
+                "dataset",
+                "weight_dataset",
+                "fixed_precision",
+                "variance_increase",
+            ]:
+                attr = getattr(self, key)
+                if attr is None:
+                    setattr(self, key, TRUNC_SPEC[container][key])
+                else:
+                    self.log.info("Overriding container default for '{}'.".format(key))
+        else:
+            if (
+                self.dataset is None
+                or self.fixed_precision is None
+                or self.variance_increase is None
+            ):
+                raise pipeline.PipelineConfigError(
+                    "Container {} has no preset values. You must define all of 'dataset', "
+                    "'fixed_precision', and 'variance_increase' properties.".format(
+                        container
+                    )
+                )
+        # Factor of 3 for variance over uniform distribution of truncation errors
+        self.variance_increase *= 3
+
+    def process(self, data):
+        """Truncate the incoming data.
+
+        The truncation is done *in place*.
+
+        Parameters
+        ----------
+        data : containers.ContainerBase
+            Data to truncate.
+
+        Returns
+        -------
+        truncated_data : containers.ContainerBase
+            Truncated data.
+        """
+        # get truncation parameters from config or container defaults
+        self._get_params(type(data))
+
+        if self.weight_dataset is None:
+            self.weight_dataset = [None] * len(self.dataset)
+
+        for dset, wgt in zip(self.dataset, self.weight_dataset):
+            old_shape = data[dset].local_shape
+            val = np.ndarray.reshape(data[dset][:], data[dset][:].size)
+            if wgt is None:
+                if np.iscomplexobj(data[dset]):
+                    data[dset][:].real = bit_truncate_fixed(
+                        val.real, self.fixed_precision
+                    ).reshape(old_shape)
+                    data[dset][:].imag = bit_truncate_fixed(
+                        val.imag, self.fixed_precision
+                    ).reshape(old_shape)
+                else:
+                    data[dset][:] = bit_truncate_fixed(
+                        val, self.fixed_precision
+                    ).reshape(old_shape)
+            else:
+                if data[dset][:].shape != data[wgt][:].shape:
+                    raise pipeline.PipelineRuntimeError(
+                        "Dataset and weight arrays must have same shape ({} != {})".format(
+                            data[dset].shape, data[wgt].shape
+                        )
+                    )
+                invvar = np.ndarray.reshape(data[wgt][:], data[dset][:].size)
+                if np.iscomplexobj(data[dset]):
+                    data[dset][:].real = bit_truncate_weights(
+                        val.real,
+                        invvar * 2.0 / self.variance_increase,
+                        self.fixed_precision,
+                    ).reshape(old_shape)
+                    data[dset][:].imag = bit_truncate_weights(
+                        val.imag,
+                        invvar * 2.0 / self.variance_increase,
+                        self.fixed_precision,
+                    ).reshape(old_shape)
+                else:
+                    data[dset][:] = bit_truncate_weights(
+                        val, invvar / self.variance_increase, self.fixed_precision
+                    ).reshape(old_shape)
+
+        return data
 
 
 def get_telescope(obj):
