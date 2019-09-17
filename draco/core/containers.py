@@ -772,6 +772,31 @@ class SystemSensitivity(TODContainer):
         return self.index_map["pol"]
 
 
+class RFIMask(TODContainer):
+    """A container for holding RFI mask.
+    """
+
+    _axes = ("freq",)
+
+    _dataset_spec = {
+        "mask": {
+            "axes": ["freq", "time"],
+            "dtype": bool,
+            "initialise": True,
+            "distributed": False,
+            "distributed_axis": "freq",
+        }
+    }
+
+    @property
+    def mask(self):
+        return self.datasets["mask"]
+
+    @property
+    def freq(self):
+        return self.index_map["freq"]["centre"]
+
+
 class TimeStream(VisContainer, TODContainer):
     """A container for holding a visibility dataset in time.
 
