@@ -1,3 +1,10 @@
+# === Start Python 2/3 compatibility
+from __future__ import (absolute_import, division,
+                        print_function, unicode_literals)
+from future.builtins import *  # noqa  pylint: disable=W0401, W0614
+from future.builtins.disabled import *  # noqa  pylint: disable=W0401, W0614
+# === End Python 2/3 compatibility
+
 import numpy as np
 from mpi4py import MPI
 
@@ -113,7 +120,7 @@ class BeamFormBase(task.SingleTask):
             # Container to hold the formed beams
             formed_beam = containers.FormedBeamHA(
                 freq=self.freq,
-                ha=np.arange(self.nha, dtype=int),
+                ha=np.arange(self.nha, dtype=np.int),
                 object_id=self.source_cat.index_map["object_id"],
                 pol=np.array(self.return_pol),
                 distributed=True,
@@ -126,7 +133,7 @@ class BeamFormBase(task.SingleTask):
         formed_beam.weight[:] = 0.0
         # Copy catalog information
         formed_beam["position"][:] = self.source_cat["position"][:]
-        if "redshift" in self.source_cat.keys():
+        if "redshift" in self.source_cat:
             formed_beam["redshift"][:] = self.source_cat["redshift"][:]
         else:
             # TODO: If there is not redshift information,
@@ -339,7 +346,7 @@ class BeamFormBase(task.SingleTask):
         """
         # TODO: Instead of a fixed time for transit, I could have a minimum
         # drop in the beam at a conventional distance from the NCP.
-        if "ra" in data.index_map.keys():
+        if "ra" in data.index_map:
             # In seconds
             approx_time_perbin = 24.0 * 3600.0 / float(len(data.index_map["ra"]))
         else:
@@ -485,7 +492,7 @@ class BeamFormBase(task.SingleTask):
         self.comm_ = data.comm
 
         # Extract data info
-        if "ra" in data.index_map.keys():
+        if "ra" in data.index_map:
             self.is_sstream = True
             self.ra = data.index_map["ra"]
         else:
