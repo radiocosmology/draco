@@ -290,7 +290,6 @@ class ContainerBase(memh5.BasicCont):
                 self._data._storage_root[dset].compression_opts = self.dataset_spec[dset][
                     "compression_opts"
                 ]
-                print(self[dset].chunks, self[dset].compression, self[dset].compression_opts)
 
     @property
     def datasets(self):
