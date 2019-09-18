@@ -1366,95 +1366,96 @@ class SpectroscopicCatalog(SourceCatalog):
 class FormedBeam(ContainerBase):
     """Container for formed beams.
     """
-    _axes = ('object_id', 'pol', 'freq')
+
+    _axes = ("object_id", "pol", "freq")
 
     _dataset_spec = {
-        'beam': {
-            'axes': ['object_id', 'pol', 'freq'],
-            'dtype': np.float64,
-            'initialise': True,
-            'distributed': True,
-            'distributed_axis': 'freq'
+        "beam": {
+            "axes": ["object_id", "pol", "freq"],
+            "dtype": np.float64,
+            "initialise": True,
+            "distributed": True,
+            "distributed_axis": "freq",
         },
-        'weight': {
-            'axes': ['object_id', 'pol', 'freq'],
-            'dtype': np.float64,
-            'initialise': True,
-            'distributed': True,
-            'distributed_axis': 'freq'
+        "weight": {
+            "axes": ["object_id", "pol", "freq"],
+            "dtype": np.float64,
+            "initialise": True,
+            "distributed": True,
+            "distributed_axis": "freq",
         },
-        'position': {
-            'axes': ['object_id'],
-            'dtype': np.dtype([('ra', np.float64), ('dec', np.float64)]),
-            'initialise': True,
-            'distributed': False
+        "position": {
+            "axes": ["object_id"],
+            "dtype": np.dtype([("ra", np.float64), ("dec", np.float64)]),
+            "initialise": True,
+            "distributed": False,
         },
-        'redshift': {
-            'axes': ['object_id'],
-            'dtype': np.dtype([('z', np.float64), ('z_error', np.float64)]),
-            'initialise': True,
-            'distributed': False
-        }
+        "redshift": {
+            "axes": ["object_id"],
+            "dtype": np.dtype([("z", np.float64), ("z_error", np.float64)]),
+            "initialise": True,
+            "distributed": False,
+        },
     }
 
     @property
     def beam(self):
-        return self.datasets['beam']
+        return self.datasets["beam"]
 
     @property
     def weight(self):
-        return self.datasets['weight']
+        return self.datasets["weight"]
 
     @property
     def freq(self):
-        return self.index_map['freq']['centre']
+        return self.index_map["freq"]["centre"]
 
     @property
     def frequency(self):
-        return self.index_map['freq']
+        return self.index_map["freq"]
 
     @property
     def id(self):
-        return self.index_map['object_id']
+        return self.index_map["object_id"]
 
     @property
     def pol(self):
-        return self.index_map['pol']
+        return self.index_map["pol"]
 
 
 class FormedBeamHA(FormedBeam):
     """Container for formed beams.
        These have not been collapsed in the hour angle (HA) axis
     """
-    _axes = ('object_id', 'pol', 'freq', 'ha')
+
+    _axes = ("object_id", "pol", "freq", "ha")
 
     _dataset_spec = {
-        'beam': {
-            'axes': ['object_id', 'pol', 'freq', 'ha'],
-            'dtype': np.float64,
-            'initialise': True,
-            'distributed': True,
-            'distributed_axis': 'freq'
+        "beam": {
+            "axes": ["object_id", "pol", "freq", "ha"],
+            "dtype": np.float64,
+            "initialise": True,
+            "distributed": True,
+            "distributed_axis": "freq",
         },
-        'weight': {
-            'axes': ['object_id', 'pol', 'freq', 'ha'],
-            'dtype': np.float64,
-            'initialise': True,
-            'distributed': True,
-            'distributed_axis': 'freq'
+        "weight": {
+            "axes": ["object_id", "pol", "freq", "ha"],
+            "dtype": np.float64,
+            "initialise": True,
+            "distributed": True,
+            "distributed_axis": "freq",
         },
-        'object_ha': {
-            'axes': ['object_id', 'ha'],
-            'dtype': np.float64,
-            'initialise': True,
-            'distributed': False
-        }
-
+        "object_ha": {
+            "axes": ["object_id", "ha"],
+            "dtype": np.float64,
+            "initialise": True,
+            "distributed": False,
+        },
     }
 
     @property
     def ha(self):
-        return self.datasets['object_ha']
+        return self.datasets["object_ha"]
 
 
 def empty_like(obj, **kwargs):
