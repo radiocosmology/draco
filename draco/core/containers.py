@@ -265,6 +265,33 @@ class ContainerBase(memh5.BasicCont):
 
         return dset
 
+    def chunkify(self):
+        """Ensure datasets that have chunk/compression specs are chunked.
+
+        For every dataset, check if chunks and compression are set, and
+        if not set them to dataset_spec values.
+        """
+        for dset in self.dataset_spec:
+            if "chunks" in self.dataset_spec[dset] and self[dset].chunks is None:
+                # ensure chunks aren't larger than dataset shape
+                chunks = ()
+                for i, l in enumerate(self[dset].shape):
+                    chunks += (min(self.dataset_spec[dset]["chunks"][i], l),)
+                self._data._storage_root[dset].chunks = chunks
+            if (
+                "compression" in self.dataset_spec[dset]
+                and self[dset].compression is None
+            ):
+                self._data._storage_root[dset].compression = self.dataset_spec[dset]["compression"]
+            if (
+                "compression_opts" in self.dataset_spec[dset]
+                and self[dset].compression_opts is None
+            ):
+                self._data._storage_root[dset].compression_opts = self.dataset_spec[dset][
+                    "compression_opts"
+                ]
+                print(self[dset].chunks, self[dset].compression, self[dset].compression_opts)
+
     @property
     def datasets(self):
         """Return the datasets in this container.

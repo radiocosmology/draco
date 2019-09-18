@@ -453,12 +453,15 @@ class Truncate(task.SingleTask):
         Relative precision to truncate to (default 1e-4).
     variance_increase : float
         Maximum fractional increase in variance from numerical truncation.
+    ensure_chunked : bool
+        If True, ensure datasets are chunked according to their dataset_spec.
     """
 
     dataset = config.Property(proptype=list, default=None)
     weight_dataset = config.Property(proptype=list, default=None)
     fixed_precision = config.Property(proptype=float, default=None)
     variance_increase = config.Property(proptype=float, default=None)
+    ensure_chunked = config.Property(proptype=bool, default=True)
 
     def _get_params(self, container):
         """Load truncation parameters from config or container defaults."""
@@ -507,6 +510,9 @@ class Truncate(task.SingleTask):
         """
         # get truncation parameters from config or container defaults
         self._get_params(type(data))
+
+        if self.ensure_chunked:
+            data.chunkify()
 
         if self.weight_dataset is None:
             self.weight_dataset = [None] * len(self.dataset)
