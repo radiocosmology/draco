@@ -8,6 +8,8 @@ import numpy as np
 cimport numpy as np
 
 from libc.stdint cimport int16_t, uint32_t
+from libc.math cimport sin
+from libc.math cimport cos
 
 cdef inline int int_max(int a, int b) nogil: return a if a >= b else b
 
@@ -151,4 +153,91 @@ def _calc_redundancy(float[:, ::1] input_flags, int16_t[:, ::1] prod_map, uint32
 
                 # Increment the redundancy counter for this unique baseline if both inputs good
                 redundancy[istack, jj] += input_flags[ia, jj] * input_flags[ib, jj]
+
+
+cdef extern from "complex.h" nogil:
+    double complex cexp(double complex)
+
+@cython.wraparound(False)
+@cython.boundscheck(False)
+cpdef beamform(float complex [:, :, ::1] vis,
+               double[:, :, ::1] weight,
+               double dec, double lat,
+               double[::1] cosha, double[::1] sinha,
+               double[:, ::1] u, double[:, ::1] v,
+               int[::1] f_index, int[::1] ra_index):
+    """ Fringestop visibility data and sum over products.
+    
+    CAUTION! For efficiency reasons this routine does not
+    normalize the sum over products. This is to avoid dividing
+    here and multiplyig again for further stacking in the time
+    axis later on.
+
+    If no stacking in the time axis is made further in your code
+    you should do 
+
+                    formed_beam / np.sum(weight, axis=-1)
+    
+    to get a proper normalization.
+
+    Parameters
+    ----------
+    vis : complex np.ndarray[freq, RA/time, product/stack]
+        Visibility data. Notice this is not in the usual order.
+        This order reduces data striding.
+    weight : double np.ndarray[freq, RA/time, product/stack]
+        The weights to be used for adding products.
+    dec : double
+        Source declination.
+    lat : double
+        Latitude of observation.
+    cosha : double np.ndarray[HA]
+        Cosine of hour angle array
+    sinha : double np.ndarray[HA]
+        Sine of hour angle array
+    u : double np.ndarray[freq, product/stack]
+        X-direction (EW) baseline in wavelengths
+    v : double np.ndarray[freq, product/stack]
+        Y-direction (NS) baseline in wavelengths
+    f_index : int np.ndarray[freq_to_process]
+        Indices in the frequencies to process
+    ra_index : int np.ndarray[HA]
+        Indicies in the RA axis of the HA in cosha, sinha
+    """
+
+    cdef double cosdec, sindec, coslat, sinlat
+    cdef double fsphase
+    cdef int nfreq, nra, nprod
+    cdef int ii, jj, kk
+    cdef int fi, ri
+    cdef double pi
+    nfreq, nra, nprod = len(f_index), len(ra_index), vis.shape[2]
+    # To store the formed beams. Will only be populated at f_index 
+    # frequency entries. Zero otherwise.
+    cdef double[:, ::1] formed_beam = np.zeros((vis.shape[0], nra), dtype=np.float64)
+    cdef double phase, ut, vt, st, ct
+
+    pi = np.pi
+    cosdec, sindec = cos(dec), sin(dec)
+    coslat, sinlat = cos(lat), sin(lat)
+
+    for ii in prange(nfreq, nogil=True):
+        fi = f_index[ii]
+
+        for jj in range(nra):
+
+            ri = ra_index[jj]
+
+            formed_beam[fi, jj] = 0.0
+
+            ut = 2.0 * pi * cosdec * sinha[jj]
+            vt = -2.0 * pi * (coslat * sindec - sinlat * cosdec * cosha[jj])
+
+            for kk in range(nprod):
+                phase = u[fi, kk] * ut + v[fi, kk] * vt
+                st = sin(phase)
+                ct = cos(phase)
+                formed_beam[fi, jj] += weight[fi, ri, kk] * (vis[fi, ri, kk] * (ct + 1j * st)).real
+
+    return np.asarray(formed_beam)
 

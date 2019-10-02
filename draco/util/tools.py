@@ -233,3 +233,135 @@ def calculate_redundancy(input_flags, prod_map, stack_index, nstack):
     _calc_redundancy(input_flags, pm, stack_index.copy(), nstack, redundancy)
 
     return redundancy
+
+
+def polarization_map(index_map, telescope, exclude_autos=True):
+    """ Map the visibilities corresponding to entries in
+        pol = ['XX', 'XY', 'YX', 'YY'].
+
+        Parameters
+        ----------
+        index_map : h5py.group or dict
+            Index map to map into polarizations. Must contain a `stack`
+            entry and an `input` entry.
+        telescope : :class: `drift.core.telescope`
+            Telescope object containing feed information.
+        exclude_autos: bool
+            If True (default), auto-correlations are set to -1.
+
+        Returns
+        -------
+        polmap : array of int
+            Array of size `nstack`. Each entry is the index to the
+            corresponding polarization in pol = ['XX', 'XY', 'YX', 'YY']
+
+    """
+    # Old versions of telescope object don't have the `stack_type`
+    # attribute. Assume those are of type `redundant`.
+    try:
+        teltype = telescope.stack_type
+    except AttributeError:
+        teltype = None
+        msg = (
+            "Telescope object does not have a `stack_type` attribute.\n"
+            + "Assuming it is of type `redundant`"
+        )
+
+    if teltype is not None:
+        if not (teltype == "redundant"):
+            msg = "Telescope stack type needs to be 'redundant'. Is {0}"
+            raise RuntimeError(msg.format(telescope.stack_type))
+
+    # Older data's input map has a simpler dtype
+    try:
+        input_map = index_map["input"]["chan_id"][:]
+    except IndexError:
+        input_map = index_map["input"][:]
+
+    pol = ["XX", "XY", "YX", "YY"]
+    nstack = len(index_map["stack"])
+    # polmap: indices of each vis product in
+    # polarization list: ['XX', 'YY', 'XY', 'YX']
+    polmap = np.zeros(nstack, dtype=int)
+    # For each entry in stack
+    for vi in range(nstack):
+        # Product index
+        pi = index_map["stack"][vi][0]
+        # Inputs that go into this product
+        ipt0 = input_map[index_map["prod"][pi][0]]
+        ipt1 = input_map[index_map["prod"][pi][1]]
+
+        # Exclude autos if exclude_autos == True
+        if exclude_autos and (ipt0 == ipt1):
+            polmap[vi] = -1
+            continue
+
+        # Find polarization of first input
+        if telescope.beamclass[ipt0] == 0:
+            polstring = "X"
+        elif telescope.beamclass[ipt0] == 1:
+            polstring = "Y"
+        else:
+            # Not a CHIME feed or not On. Ignore.
+            polmap[vi] = -1
+            continue
+        # Find polarization of second input and add it to polstring
+        if telescope.beamclass[ipt1] == 0:
+            polstring += "X"
+        elif telescope.beamclass[ipt1] == 1:
+            polstring += "Y"
+        else:
+            # Not a CHIME feed or not On. Ignore.
+            polmap[vi] = -1
+            continue
+        # If conjugate, flip polstring ('XY -> 'YX)
+        if telescope.feedconj[ipt0, ipt1]:
+            polstring = polstring[::-1]
+        # Populate polmap
+        polmap[vi] = pol.index(polstring)
+
+    return polmap
+
+
+def baseline_vector(index_map, telescope):
+    """ Baseline vectors in meters.
+
+        Parameters
+        ----------
+        index_map : h5py.group or dict
+            Index map to map into polarizations. Must contain a `stack`
+            entry and an `input` entry.
+        telescope : :class: `drift.core.telescope`
+            Telescope object containing feed information.
+
+        Returns
+        -------
+        bvec_m : array
+            Array of shape (2, nstack). The 2D baseline vector
+            (in meters) for each visibility in index_map['stack']
+    """
+    nstack = len(index_map["stack"])
+    # Baseline vectors in meters.
+    bvec_m = np.zeros((2, nstack), dtype=np.float64)
+    # Older data's input map has a simpler dtype
+    try:
+        input_map = index_map["input"]["chan_id"][:]
+    except IndexError:
+        input_map = index_map["input"][:]
+
+    # Compute all baseline vectors.
+    for vi in range(nstack):
+        # Product index
+        pi = index_map["stack"][vi][0]
+        # Inputs that go into this product
+        ipt0 = input_map[index_map["prod"][pi][0]]
+        ipt1 = input_map[index_map["prod"][pi][1]]
+
+        # Beseline vector in meters
+        unique_index = telescope.feedmap[ipt0, ipt1]
+        bvec_m[:, vi] = telescope.baselines[unique_index]
+        # No need to conjugate. Already done in telescope.baselines.
+        # if telescope.feedconj[ipt0, ipt1]:
+        #    bvec_m[:, vi] *= -1.
+
+    return bvec_m
