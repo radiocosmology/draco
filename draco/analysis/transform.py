@@ -258,8 +258,10 @@ class CollateProducts(task.SingleTask):
         # Create output container
         if isinstance(ss, containers.SiderealStream):
             OutputContainer = containers.SiderealStream
+            output_kwargs = {"ra": ss.ra[:]}
         else:
             OutputContainer = containers.TimeStream
+            output_kwargs = {"time": ss.time[:]}
 
         sp = OutputContainer(
             freq=bt_freq,
@@ -271,6 +273,7 @@ class CollateProducts(task.SingleTask):
             attrs_from=ss,
             distributed=True,
             comm=ss.comm,
+            **output_kwargs,
         )
 
         # Add gain dataset.
