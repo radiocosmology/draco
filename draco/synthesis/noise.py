@@ -30,6 +30,7 @@ from caput import config
 from ..core import task, containers
 from ..util import tools
 from caput.time import STELLAR_S
+import randomgen
 
 
 class ReceiverTemperature(task.SingleTask):
@@ -57,6 +58,35 @@ class ReceiverTemperature(task.SingleTask):
             # Great an auto!
             if prod[0] == prod[1]:
                 data.vis[:, pi] += self.recv_temp
+
+        return data
+
+class GaussianInPlace(task.SingleTask):
+    '''Generates a Gaussian distributed noise dataset using the
+    the noise estimates of an existing dataset.
+
+    Attributes
+    ----------
+    Related to distinguishing different container types
+    We need to be able to support both draco and CHIME timestream types
+    '''
+
+    def process(self, data):
+        '''Generates a noise dataset, given the provided dataset's visibility weights'''
+        data.redistribute("freq")
+
+        vis = data.vis[:]
+        vis_weight = np.copy(data.weight)
+
+        # vis_weight elements are inverse variances
+        # we want the standard deviation
+        vis_weight_std = np.sqrt(1. / vis_weight)
+
+        with mpi_random_seed(self.seed):
+            noise_real = randomgen.generator.Generator.normal(scale=vis_weight_std)
+
+        for pi, prod in enumerate(data.index_map["prod"]):
+            vis[:, pi] = noise_real[:, pi]
 
         return data
 
