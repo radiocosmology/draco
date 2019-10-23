@@ -81,9 +81,10 @@ class GaussianInPlace(task.SingleTask):
         # vis_weight elements are inverse variances
         # we want the standard deviation
         vis_weight_std = np.sqrt(1. / vis_weight)
+        rg = randomgen.generator.RandomGenerator()
 
-        with mpi_random_seed(self.seed):
-            noise_real = randomgen.generator.Generator.normal(scale=vis_weight_std)
+        with randomgen_mpi_random_seed(self.seed, rg) as rg:
+            noise_real = rg.normal(scale=vis_weight_std)
 
         for pi, prod in enumerate(data.index_map["prod"]):
             vis[:, pi] = noise_real[:, pi]
@@ -369,3 +370,40 @@ def mpi_random_seed(seed, extra=0):
         yield
     finally:
         np.random.set_state(old_state)
+
+@contextlib.contextmanager
+def randomgen_mpi_random_seed(seed, gen):
+    """Use a specific random seed for the context, and return to the original state on exit.
+
+    This is designed to work for MPI computations, incrementing the actual seed
+    of each process by the MPI rank. Overall each process gets the numpy seed:
+    `numpy_seed = seed + mpi_rank + 4096 * extra`.
+
+    Parameters
+    ----------
+    seed : int
+        Base seed to set. If seed is :obj:`None`, re-seed randomly.
+    extra : int, optional
+        An extra part of the seed, which should be changed for calculations
+        using the same seed, but that want different random sequences.
+    """
+
+    import numpy as np
+    from caput import mpiutil
+
+    # Copy the old state for restoration later.
+    old_state = gen.state
+
+    # Just choose a random number per process as the seed if nothing was set.
+    if seed is None:
+        seed = np.random.randint(2 ** 30)
+
+    # Construct the new process specific seed
+    new_seed = seed + mpiutil.rank + 4096 * extra
+    gen.seed(new_seed)
+
+    # Enter the context block, and reset the state on exit.
+    try:
+        yield gen
+    finally:
+        gen.state = old_state
