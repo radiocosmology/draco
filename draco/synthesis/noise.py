@@ -1,9 +1,12 @@
 """Add the effects of instrumental noise into the simulation.
 
-This is separated out into two tasks. The first, :class:`ReceiverTemperature`
+This is separated out into multiple tasks. The first, :class:`ReceiverTemperature`
 adds in the effects of instrumental noise bias into the data. The second,
 :class:`SampleNoise`, takes a timestream which is assumed to be the expected (or
-average) value and returns an observed time stream.
+average) value and returns an observed time stream. The :class: `GaussianNoise`
+adds in the effects of a Gaussian distributed noise into visibility data.
+The :class: `GaussianInPlace` replaces visibility data with Gaussian distributed noise,
+using the variance of the noise estimate in the existing data.
 
 Tasks
 =====
@@ -12,6 +15,8 @@ Tasks
     :toctree:
 
     ReceiverTemperature
+    GaussianInPlace
+    GaussianNoise
     SampleNoise
 """
 # === Start Python 2/3 compatibility
@@ -23,14 +28,14 @@ from future.builtins.disabled import *  # noqa  pylint: disable=W0401, W0614
 
 import contextlib
 
+import randomgen
 import numpy as np
 
 from caput import config
-
-from ..core import task, containers
-from ..util import tools
 from caput.time import STELLAR_S
-import randomgen
+
+from ..util import tools
+from ..core import task, containers
 
 
 class ReceiverTemperature(task.SingleTask):
@@ -61,29 +66,49 @@ class ReceiverTemperature(task.SingleTask):
 
         return data
 
+
 class GaussianInPlace(task.SingleTask):
-    '''Generates a Gaussian distributed noise dataset using the
+    """Generates a Gaussian distributed noise dataset using the
     the noise estimates of an existing dataset.
 
     Attributes
     ----------
-    Related to distinguishing different container types
-    We need to be able to support both draco and CHIME timestream types
-    '''
+    seed : int
+        Random seed for the noise generation.
+    """
+
+    seed = config.Property(proptype=int, default=None)
 
     def process(self, data):
-        '''Generates a noise dataset, given the provided dataset's visibility weights'''
+        """Generates a Gaussian distributed noise dataset,
+        given the provided dataset's visibility weights
+
+        Parameters
+        ----------
+        data : :class:`containers`
+            Any dataset which contains a vis and weight attribute.
+            Note the modification is done in place.
+
+        Returns
+        -------
+        data_noise : same as :param:`data`
+            The previous dataset with the visibility replaced with
+            a Gaussian distributed noise realisation.
+
+        """
+
         data.redistribute("freq")
 
         vis = data.vis[:]
-        vis_weight = np.copy(data.weight)
 
-        # vis_weight elements are inverse variances
+        # data.weight elements are inverse variances
         # we want the standard deviation
-        vis_weight_std = np.sqrt(1. / vis_weight)
+        vis_weight_std = np.sqrt(1.0 / np.copy(data.weight))
+
+        # create a random generator, and create a local seed state
         rg = randomgen.generator.RandomGenerator()
 
-        with randomgen_mpi_random_seed(self.seed, rg) as rg:
+        with randomgen_mpi_random_seed(rg, self.seed) as rg:
             noise_real = rg.normal(scale=vis_weight_std)
 
         for pi, prod in enumerate(data.index_map["prod"]):
@@ -336,7 +361,7 @@ def draw_complex_wishart(C, n):
 
 @contextlib.contextmanager
 def mpi_random_seed(seed, extra=0):
-    """Use a specific random seed for the context, and return to the original state on exit.
+    """Use a specific random seed for the numpy.random context, and return to the original state on exit.
 
     This is designed to work for MPI computations, incrementing the actual seed
     of each process by the MPI rank. Overall each process gets the numpy seed:
@@ -371,9 +396,10 @@ def mpi_random_seed(seed, extra=0):
     finally:
         np.random.set_state(old_state)
 
+
 @contextlib.contextmanager
-def randomgen_mpi_random_seed(seed, gen):
-    """Use a specific random seed for the context, and return to the original state on exit.
+def randomgen_mpi_random_seed(gen, seed, extra=0):
+    """Use a specific random seed for the RandomGen context, and return to the original state on exit.
 
     This is designed to work for MPI computations, incrementing the actual seed
     of each process by the MPI rank. Overall each process gets the numpy seed:
@@ -381,6 +407,9 @@ def randomgen_mpi_random_seed(seed, gen):
 
     Parameters
     ----------
+    gen: :class: `Generator`
+        A RandomGen bit_generator whose internal seed state we are going to
+        influence.
     seed : int
         Base seed to set. If seed is :obj:`None`, re-seed randomly.
     extra : int, optional
