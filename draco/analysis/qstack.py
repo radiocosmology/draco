@@ -15,6 +15,7 @@ from cora.util import units
 from ch_util import tools, ephemeris
 from drift.telescope import cylbeam
 
+from ..util.tools import invert_no_zero
 from ..util._fast_tools import beamform
 from ..core import task, containers, io
 
@@ -136,7 +137,7 @@ class QuasarStack(task.SingleTask):
         )
         qstack.stack[:] = (
             np.sum(quasar_stack_full.reshape(mpiutil.size, self.nstack), axis=0)
-            / qstack.weight[:]
+            * invert_no_zero(qstack.weight[:])
         )
 
         # Gather all ranks of qcount. Report number of quasars stacked
