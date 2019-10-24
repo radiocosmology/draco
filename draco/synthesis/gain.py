@@ -162,7 +162,7 @@ class SiderealGains(BaseGains):
         self.lsd_end = self.observer.unix_to_lsd(self.end_time)
 
         self.log.info(
-            "Sidereal period requested: ", int(self.lsd_start), int(self.lsd_end)
+            "Sidereal period requested: LSD=%i to LSD=%i", int(self.lsd_start), int(self.lsd_end)
         )
 
         # Initialize the current lsd time
@@ -389,7 +389,7 @@ class GainStacker(task.SingleTask):
 
             self.lsd_list = input_lsd
 
-            self.log.info("Starting gain stack with LSD:%i", input_lsd)
+            self.log.info("Starting gain stack with LSD:%i", input_lsd[0])
 
             return
 
