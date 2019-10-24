@@ -313,6 +313,14 @@ class RandomGains(BaseGains):
         return gain_phase_fluc
 
 
+class RandomSiderealGains(RandomGains, SiderealGains):
+    """Generate random gains on a Sidereal grid.
+
+    See the documentation for `RandomGains` and `SiderealGains` for more detail.
+    """
+    pass
+
+
 class GainStacker(task.SingleTask):
     r"""Take sidereal gain data, make products and stack them up.
 
