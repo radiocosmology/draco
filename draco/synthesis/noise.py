@@ -5,7 +5,7 @@ adds in the effects of instrumental noise bias into the data. The second,
 :class:`SampleNoise`, takes a timestream which is assumed to be the expected (or
 average) value and returns an observed time stream. The :class: `GaussianNoise`
 adds in the effects of a Gaussian distributed noise into visibility data.
-The :class: `GaussianInPlace` replaces visibility data with Gaussian distributed noise,
+The :class: `GaussianNoiseDataset` replaces visibility data with Gaussian distributed noise,
 using the variance of the noise estimate in the existing data.
 
 Tasks
@@ -15,7 +15,7 @@ Tasks
     :toctree:
 
     ReceiverTemperature
-    GaussianInPlace
+    GaussianNoiseDataset
     GaussianNoise
     SampleNoise
 """
@@ -67,7 +67,7 @@ class ReceiverTemperature(task.SingleTask):
         return data
 
 
-class GaussianInPlace(task.SingleTask):
+class GaussianNoiseDataset(task.SingleTask):
     """Generates a Gaussian distributed noise dataset using the
     the noise estimates of an existing dataset.
 
