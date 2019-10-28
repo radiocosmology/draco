@@ -97,13 +97,11 @@ class GaussianNoiseDataset(task.SingleTask):
 
         """
 
-        data.redistribute("freq")
-
         vis = data.vis[:]
 
         # data.weight elements are inverse variances
         # we want the standard deviation
-        vis_weight_std = np.sqrt(1.0 / np.copy(data.weight))
+        vis_weight_std = np.sqrt(tools.invert_no_zero(data.weight))
 
         # create a random generator, and create a local seed state
         rg = randomgen.generator.RandomGenerator()
