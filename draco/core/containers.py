@@ -1091,6 +1091,193 @@ class KLModes(SVDModes):
     pass
 
 
+class VisGridStream(ContainerBase):
+    """Visibilities gridded into a 2D array.
+
+    Only makes sense for an array which is a cartesian grid.
+    """
+
+    _axes = ("pol", "freq", "ew", "ns", "ra")
+
+    _dataset_spec = {
+        "vis": {
+            "axes": ["pol", "freq", "ew", "ns", "ra"],
+            "dtype": np.complex64,
+            "initialise": True,
+            "distributed": True,
+            "distributed_axis": "freq",
+        },
+        "vis_weight": {
+            "axes": ["pol", "freq", "ew", "ns", "ra"],
+            "dtype": np.float32,
+            "initialise": True,
+            "distributed": True,
+            "distributed_axis": "freq",
+        },
+    }
+
+    @property
+    def vis(self):
+        return self.datasets["vis"]
+
+    @property
+    def weight(self):
+        return self.datasets["vis_weight"]
+
+
+class HybridVisStream(ContainerBase):
+    """Visibilities gridded into a 2D array.
+
+    Only makes sense for an array which is a cartesian grid.
+    """
+
+    _axes = ("pol", "freq", "ew", "el", "ra")
+
+    _dataset_spec = {
+        "vis": {
+            "axes": ["pol", "freq", "ew", "el", "ra"],
+            "dtype": np.complex64,
+            "initialise": True,
+            "distributed": True,
+            "distributed_axis": "freq",
+        },
+        "vis_weight": {
+            "axes": ["pol", "freq", "ew", "el", "ra"],
+            "dtype": np.float32,
+            "initialise": True,
+            "distributed": True,
+            "distributed_axis": "freq",
+        },
+    }
+
+    @property
+    def vis(self):
+        return self.datasets["vis"]
+
+    @property
+    def weight(self):
+        return self.datasets["vis_weight"]
+
+
+class HybridVisMModes(ContainerBase):
+    """Visibilities gridded into a 2D array.
+
+    Only makes sense for an array which is a cartesian grid.
+    """
+
+    _axes = ("pol", "freq", "ew", "el", "m", "msign")
+
+    _dataset_spec = {
+        "vis": {
+            "axes": ["m", "msign", "pol", "freq", "ew", "el"],
+            "dtype": np.complex64,
+            "initialise": True,
+            "distributed": True,
+            "distributed_axis": "freq",
+        },
+        "vis_weight": {
+            "axes": ["m", "msign", "pol", "freq", "ew", "el"],
+            "dtype": np.float32,
+            "initialise": True,
+            "distributed": True,
+            "distributed_axis": "freq",
+        },
+    }
+
+    def __init__(self, mmax=None, *args, **kwargs):
+
+        # Set up axes from passed arguments
+        if mmax is not None:
+            kwargs["m"] = mmax + 1
+
+        # Ensure the sign axis is set correctly
+        kwargs["msign"] = np.array(["+", "-"])
+
+        super(HybridVisMModes, self).__init__(*args, **kwargs)
+
+    @property
+    def vis(self):
+        return self.datasets["vis"]
+
+    @property
+    def weight(self):
+        return self.datasets["vis_weight"]
+
+
+class RingMap(ContainerBase):
+    """Container for holding multifrequency ring maps.
+
+    The maps are packed in format `[freq, pol, ra, EW beam, el]` where
+    the polarisations are Stokes I, Q, U and V.
+
+    Parameters
+    ----------
+    nside : int
+        The nside of the Healpix maps.
+    polarisation : bool, optional
+        If `True` all Stokes parameters are stored, if `False` only Stokes I is
+        stored.
+    """
+
+    _axes = ("freq", "pol", "ra", "beam", "el")
+
+    _dataset_spec = {
+        "map": {
+            "axes": ["beam", "pol", "freq", "ra", "el"],
+            "dtype": np.float64,
+            "initialise": True,
+            "distributed": True,
+            "distributed_axis": "freq",
+        },
+        "dirty_beam": {
+            "axes": ["beam", "pol", "freq", "ra", "el"],
+            "dtype": np.float64,
+            "initialise": False,
+            "distributed": True,
+            "distributed_axis": "freq",
+        },
+        "rms": {
+            "axes": ["pol", "freq", "ra"],
+            "dtype": np.float64,
+            "initialise": False,
+            "distributed": True,
+            "distributed_axis": "freq",
+        },
+    }
+
+    def __init__(self, *args, **kwargs):
+
+        super(RingMap, self).__init__(*args, **kwargs)
+
+    @property
+    def freq(self):
+        return self.index_map["freq"]
+
+    @property
+    def pol(self):
+        return self.index_map["pol"]
+
+    @property
+    def ra(self):
+        return self.index_map["ra"]
+
+    @property
+    def el(self):
+        return self.index_map["el"]
+
+    @property
+    def map(self):
+        return self.datasets["map"]
+
+    @property
+    def rms(self):
+        return self.datasets["rms"]
+
+    @property
+    def dirty_beam(self):
+        return self.datasets["dirty_beam"]
+
+
 class GainData(TODContainer):
     """Parallel container for holding gain data.
     """
