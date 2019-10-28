@@ -1,5 +1,23 @@
 """A set of tasks for SVD filtering the m-modes.
+
+These tasks perform a separate SVD for each m, representing the visibilities
+as a (nfreq,msign+nprod) [e.g., frequency vs. baseline and sign of m] matrix.
+SVDFilter can return the m-modes with the largest modes filtered out, with
+the option to save the SVD basis (modes and singular values) to disk for later
+use.
+
+Tasks
+=====
+
+.. autosummary::
+    :toctree:
+
+    SVDSpectrumEstimator
+    SVDFilter
+    svd_em
 """
+
+
 # === Start Python 2/3 compatibility
 from __future__ import absolute_import, division, print_function, unicode_literals
 from future.builtins import *  # noqa  pylint: disable=W0401, W0614
