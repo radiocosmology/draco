@@ -7,10 +7,15 @@ from future.builtins.disabled import *  # noqa  pylint: disable=W0401, W0614
 
 # === End Python 2/3 compatibility
 
+import os
+
 import numpy as np
 import scipy.linalg as la
 
-from caput import config
+import h5py
+
+from caput import config, mpiutil
+from drift.util import util
 
 from draco.core import task, containers
 
@@ -83,11 +88,24 @@ class SVDFilter(task.SingleTask):
     global_threshold : float
         Remove modes with singular value higher than `global_threshold` times the
         largest mode on any m
+    basis_output_dir : string, optional
+        Directory to write SVD basis to, if desired
+    save_basis_only : bool, optional
+        Whether to compute and save SVD basis, without actually filtering
+        the input m-modes (default: False)
     """
 
     niter = config.Property(proptype=int, default=5)
     global_threshold = config.Property(proptype=float, default=1e-3)
     local_threshold = config.Property(proptype=float, default=1e-2)
+    basis_output_dir = config.Property(proptype=str, default=None)
+    save_basis_only = config.Property(proptype=bool, default=False)
+
+    def _svdfile(self, m, mmax):
+        """Filename for SVD basis for single m-mode.
+        """
+        pat = os.path.join(self.basis_output_dir, "m" + util.natpattern(mmax) + ".hdf5")
+        return pat % m
 
     def process(self, mmodes):
         """Filter MModes using an SVD.
@@ -108,28 +126,44 @@ class SVDFilter(task.SingleTask):
         vis = mmodes.vis[:]
         weight = mmodes.weight[:]
 
+        # Dirty way to get mmax: number of m's on each rank, times number of
+        # ranks. Is there a better way?
+        mmax = vis.shape[0]*mpiutil.size
+
         sv_max = 0.0
+
+        # Make directory for SVD basis files
+        if mpiutil.rank0 and self.basis_output_dir is not None:
+            if not os.path.exists(self.basis_output_dir):
+                os.makedirs(self.basis_output_dir)
+                self.log.debug("Created directory %s" % self.basis_output_dir)
 
         # TODO: this should be changed such that it does all the computation in
         # a single SVD pass.
 
-        # Do a quick first pass calculation of all the singular values to get the max on this rank.
-        for mi, m in vis.enumerate(axis=0):
+        if not self.save_basis_only:
 
-            vis_m = (
-                vis[mi].view(np.ndarray).transpose((1, 0, 2)).reshape(vis.shape[2], -1)
-            )
-            weight_m = (
-                weight[mi]
-                .view(np.ndarray)
-                .transpose((1, 0, 2))
-                .reshape(vis.shape[2], -1)
-            )
-            mask_m = weight_m == 0.0
+            # Do a quick first pass calculation of all the singular values to get the max on this rank.
+            for mi, m in vis.enumerate(axis=0):
 
-            u, sig, vh = svd_em(vis_m, mask_m, niter=self.niter)
+                vis_m = (
+                    vis[mi].view(np.ndarray).transpose((1, 0, 2)).reshape(vis.shape[2], -1)
+                )
+                weight_m = (
+                    weight[mi]
+                    .view(np.ndarray)
+                    .transpose((1, 0, 2))
+                    .reshape(vis.shape[2], -1)
+                )
+                mask_m = weight_m == 0.0
 
-            sv_max = max(sig[0], sv_max)
+                u, sig, vh = svd_em(vis_m, mask_m, niter=self.niter)
+
+                sv_max = max(sig[0], sv_max)
+
+                # self.log.debug("m=%g, vis_m.shape=%s, u.shape=%s, sig.shape=%s, vh.shape=%s",
+                #                 m, str(vis_m.shape), str(u.shape), str(sig.shape),
+                #                 str(vh.shape))
 
         # Reduce to get the global max.
         global_max = mmodes.comm.allreduce(sv_max, op=MPI.MAX)
@@ -142,6 +176,9 @@ class SVDFilter(task.SingleTask):
         # Loop over all m's and remove modes below the combined cut
         for mi, m in vis.enumerate(axis=0):
 
+            # Transpose vis and weight arrays for a given m from
+            # [msign,freq,nprod] to [freq,msign,nprod], and reshape into
+            # [freq,msign+nprod]
             vis_m = (
                 vis[mi].view(np.ndarray).transpose((1, 0, 2)).reshape(vis.shape[2], -1)
             )
@@ -153,19 +190,34 @@ class SVDFilter(task.SingleTask):
             )
             mask_m = weight_m == 0.0
 
+            # Do SVD. u is matrix of freq singular vectors,
+            # vh is matrix of msign+nprod singular vectors
             u, sig, vh = svd_em(vis_m, mask_m, niter=self.niter)
 
-            # Zero out singular values below the combined mode cut
-            global_cut = (sig > self.global_threshold * global_max).sum()
-            local_cut = (sig > self.local_threshold * sig[0]).sum()
-            cut = max(global_cut, local_cut)
-            sig[:cut] = 0.0
+            # If desired, save complete SVD basis to disk.
+            # TODO: Should we use HDF5 chunking or compression here?
+            if self.basis_output_dir is not None:
 
-            # Recombine the matrix
-            vis_m = np.dot(u, sig[:, np.newaxis] * vh)
+                f = h5py.File(self._svdfile(m, mmax), "w")
+                dset_u = f.create_dataset('u', data=u)
+                dset_sig = f.create_dataset('sig', data=sig)
+                dset_vh = f.create_dataset('vh', data=vh)
+                f.close()
+                self.log.info("Wrote SVD basis for m=%g to disk", m)
 
-            # Reshape and write back into the mmodes container
-            vis[mi] = vis_m.reshape(vis.shape[2], 2, -1).transpose((1, 0, 2))
+            if not self.save_basis_only:
+
+                # Zero out singular values below the combined mode cut
+                global_cut = (sig > self.global_threshold * global_max).sum()
+                local_cut = (sig > self.local_threshold * sig[0]).sum()
+                cut = max(global_cut, local_cut)
+                sig[:cut] = 0.0
+
+                # Recombine the matrix
+                vis_m = np.dot(u, sig[:, np.newaxis] * vh)
+
+                # Reshape and write back into the mmodes container
+                vis[mi] = vis_m.reshape(vis.shape[2], 2, -1).transpose((1, 0, 2))
 
         return mmodes
 
