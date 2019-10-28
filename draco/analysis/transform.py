@@ -458,13 +458,23 @@ class MModeTransform(task.SingleTask):
 
         Parameters
         ----------
-        sstream : containers.SiderealStream
+        sstream : containers.SiderealStream or containers.HybridVisStream
             The input sidereal stream.
 
         Returns
         -------
         mmodes : containers.MModes
         """
+
+        contmap = {
+            containers.SiderealStream: containers.MModes,
+            containers.HybridVisStream: containers.HybridVisMModes,
+        }
+
+        # Get the output container and figure out at which position is it's
+        # frequency axis
+        out_cont = contmap[sstream.__class__]
+        freq_axis = out_cont._dataset_spec["vis"]["axes"].index("freq")
 
         sstream.redistribute("freq")
 
@@ -479,11 +489,11 @@ class MModeTransform(task.SingleTask):
 
         # Construct the array of m-modes
         marray = _make_marray(sstream.vis[:], mmax)
-        marray = mpiarray.MPIArray.wrap(marray[:], axis=2, comm=sstream.comm)
+        marray = mpiarray.MPIArray.wrap(marray[:], axis=freq_axis, comm=sstream.comm)
 
         # Create the container to store the modes in
         mmax = marray.shape[0] - 1
-        ma = containers.MModes(mmax=mmax, axes_from=sstream, comm=sstream.comm)
+        ma = out_cont(mmax=mmax, axes_from=sstream, comm=sstream.comm)
         ma.redistribute("freq")
 
         # Assign the visibilities and weights into the container

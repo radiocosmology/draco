@@ -538,3 +538,35 @@ class Delete(SingleTask):
         gc.collect()
 
         return None
+
+
+def group_tasks(*tasks):
+    """Create a Task that groups a bunch of tasks together.
+
+    This method creates a class that inherits from all the subtasks, and
+    calls each `process` method in sequence, passing the output of one to the
+    input of the next.
+
+    This should be used like:
+
+    >>> class SuperTask(group_tasks(SubTask1, SubTask2)):
+    >>>     pass
+
+    At the moment if the ensemble has more than one setup method, the
+    SuperTask will need to implement an override that correctly calls each.
+    """
+
+    class TaskGroup(*tasks):
+
+        # TODO: figure out how to make the setup work at the moment it just picks the first in MRO
+        # def setup(self, x): pass
+
+        def process(self, x):
+
+            for t in tasks:
+                self.log.debug("Calling process for subtask %s", t.__name__)
+                x = t.process(self, x)
+
+            return x
+
+    return TaskGroup
