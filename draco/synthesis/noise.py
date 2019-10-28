@@ -108,9 +108,11 @@ class GaussianNoiseDataset(task.SingleTask):
 
         with randomgen_mpi_random_seed(rg, self.seed) as rg:
             noise_real = rg.normal(scale=vis_weight_std)
+            noise_imag = rg.normal(scale=vis_weight_std)
 
         for pi, prod in enumerate(data.index_map["prod"]):
-            vis[:, pi] = noise_real[:, pi]
+            vis[:, pi].real = noise_real[:, pi]
+            vis[:, pi].imag = noise_imag[:, pi]
 
         return data
 
