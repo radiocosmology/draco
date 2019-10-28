@@ -312,22 +312,25 @@ class BeamformEW(task.SingleTask):
         # Loop over local frequencies and fill ring map
         for lfi, fi in hstream.vis[:].enumerate(axis=1):
 
-            w = hvw[:, lfi].view(np.ndarray).copy()
+            # TODO: make m a broadcastable rather than full size array
+            v = hvv[:, lfi]
+            w = hvw[:, lfi]
+            m = np.ones_like(w)
 
             # Exclude the in cylinder baselines if requested (EW = 0)
             if self.exclude_intracyl:
-                w[:, :, 0] = 0.0
+                m[:, 0] = 0.0
 
             # Perform  inverse fast fourier transform in x-direction
             if self.single_beam:
                 # Only need the 0th term of the irfft, equivalent to summing in
                 # then EW direction
-                w[:, :, 1:] *= 2.0  # Factor to include negative elements in sum below
-                bfm = np.sum(hvv[:, lfi], axis=1).real[:, :, np.newaxis, ...]
-                sb = np.sum(w, axis=1).real[:, :, np.newaxis, ...]
+                m[:, :, 1:] *= 2.0  # Factor to include negative elements in sum below
+                bfm = np.sum(v * m, axis=1).real[:, :, np.newaxis, ...]
+                sb = np.sum(w * m, axis=1).real[:, :, np.newaxis, ...]
             else:
-                bfm = np.fft.irfft(hvv[:, lfi], nbeam, axis=1) * nbeam
-                sb = np.fft.irfft(w, nbeam, axis=1) * nbeam
+                bfm = np.fft.irfft(v * m, nbeam, axis=1) * nbeam
+                sb = np.fft.irfft(w * m, nbeam, axis=1) * nbeam
 
             # Save to container (shifting to the final axis ordering)
             rmm[:, :, lfi] = bfm.transpose(1, 0, 3, 2)
