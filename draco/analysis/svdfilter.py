@@ -67,6 +67,8 @@ class SVDSpectrumEstimator(task.SingleTask):
         vis = mmodes.vis[:]
         weight = mmodes.weight[:]
 
+        # The number of modes is the minimum of msign*nprod
+        # and nfreq
         nmode = min(vis.shape[1] * vis.shape[3], vis.shape[2])
 
         spec = containers.SVDSpectrum(singularvalue=nmode, axes_from=mmodes)
@@ -75,17 +77,23 @@ class SVDSpectrumEstimator(task.SingleTask):
         for mi, m in vis.enumerate(axis=0):
             self.log.debug("Calculating SVD spectrum of m=%i", m)
 
+            # Transpose vis and weight arrays for a given m from
+            # [msign,freq,nprod] to [freq,msign,nprod], reshape into
+            # [freq,msign+nprod], and transpose again to [msign+nprod,freq]
             vis_m = (
-                vis[mi].view(np.ndarray).transpose((1, 0, 2)).reshape(vis.shape[2], -1)
+                vis[mi].view(np.ndarray).transpose((1, 0, 2)).reshape(vis.shape[2], -1).transpose((1,0))
             )
             weight_m = (
                 weight[mi]
                 .view(np.ndarray)
                 .transpose((1, 0, 2))
                 .reshape(vis.shape[2], -1)
+                .transpose((1,0))
             )
             mask_m = weight_m == 0.0
 
+            # Do SVD. u is matrix of msign+nprod singular vectors,
+            # vh is matrix of freq singular vectors
             u, sig, vh = svd_em(vis_m, mask_m, niter=self.niter)
 
             spec.spectrum[m] = sig
@@ -164,24 +172,26 @@ class SVDFilter(task.SingleTask):
             # Do a quick first pass calculation of all the singular values to get the max on this rank.
             for mi, m in vis.enumerate(axis=0):
 
+                # Transpose vis and weight arrays for a given m from
+                # [msign,freq,nprod] to [freq,msign,nprod], reshape into
+                # [freq,msign+nprod], and transpose again to [msign+nprod,freq]
                 vis_m = (
-                    vis[mi].view(np.ndarray).transpose((1, 0, 2)).reshape(vis.shape[2], -1)
+                    vis[mi].view(np.ndarray).transpose((1, 0, 2)).reshape(vis.shape[2], -1).transpose((1,0))
                 )
                 weight_m = (
                     weight[mi]
                     .view(np.ndarray)
                     .transpose((1, 0, 2))
                     .reshape(vis.shape[2], -1)
+                    .transpose((1,0))
                 )
                 mask_m = weight_m == 0.0
 
+                # Do SVD. u is matrix of msign+nprod singular vectors,
+                # vh is matrix of freq singular vectors
                 u, sig, vh = svd_em(vis_m, mask_m, niter=self.niter)
 
                 sv_max = max(sig[0], sv_max)
-
-                # self.log.debug("m=%g, vis_m.shape=%s, u.shape=%s, sig.shape=%s, vh.shape=%s",
-                #                 m, str(vis_m.shape), str(u.shape), str(sig.shape),
-                #                 str(vh.shape))
 
         # Reduce to get the global max.
         global_max = mmodes.comm.allreduce(sv_max, op=MPI.MAX)
@@ -195,21 +205,22 @@ class SVDFilter(task.SingleTask):
         for mi, m in vis.enumerate(axis=0):
 
             # Transpose vis and weight arrays for a given m from
-            # [msign,freq,nprod] to [freq,msign,nprod], and reshape into
-            # [freq,msign+nprod]
+            # [msign,freq,nprod] to [freq,msign,nprod], reshape into
+            # [freq,msign+nprod], and transpose again to [msign+nprod,freq]
             vis_m = (
-                vis[mi].view(np.ndarray).transpose((1, 0, 2)).reshape(vis.shape[2], -1)
+                vis[mi].view(np.ndarray).transpose((1, 0, 2)).reshape(vis.shape[2], -1).transpose((1,0))
             )
             weight_m = (
                 weight[mi]
                 .view(np.ndarray)
                 .transpose((1, 0, 2))
                 .reshape(vis.shape[2], -1)
+                .transpose((1,0))
             )
             mask_m = weight_m == 0.0
 
-            # Do SVD. u is matrix of freq singular vectors,
-            # vh is matrix of msign+nprod singular vectors
+            # Do SVD. u is matrix of msign+nprod singular vectors,
+            # vh is matrix of freq singular vectors
             u, sig, vh = svd_em(vis_m, mask_m, niter=self.niter)
 
             # If desired, save complete SVD basis to disk.
@@ -235,7 +246,7 @@ class SVDFilter(task.SingleTask):
                 vis_m = np.dot(u, sig[:, np.newaxis] * vh)
 
                 # Reshape and write back into the mmodes container
-                vis[mi] = vis_m.reshape(vis.shape[2], 2, -1).transpose((1, 0, 2))
+                vis[mi] = vis_m.transpose((1,0)).reshape(vis.shape[2], 2, -1).transpose((1, 0, 2))
 
         return mmodes
 
