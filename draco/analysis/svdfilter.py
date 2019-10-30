@@ -130,8 +130,7 @@ class SVDFilter(task.SingleTask):
     def _svdfile(self, m, mmax):
         """Filename for SVD basis for single m-mode.
         """
-        pat = os.path.join(self.basis_output_dir, "m" + util.natpattern(mmax) + ".hdf5")
-        return pat % m
+        return external_svdfile(self.basis_output_dir, m, mmax)
 
     def process(self, mmodes):
         """Filter MModes using an SVD.
@@ -250,6 +249,26 @@ class SVDFilter(task.SingleTask):
 
         return mmodes
 
+def external_svdfile(dir, m, mmax):
+    """Filename of file containing external SVD basis for a given m.
+
+    Parameters
+    ----------
+    dir : string
+        Directory containing files with SVD basis.
+    m : int
+        m of desired files
+    mmax : int
+        mmax of telescope (doesn't need to be exact, only the correct
+        power of 10)
+
+    Returns
+    -------
+    filename : string
+        Desired filename.
+    """
+    pat = os.path.join(dir, "m" + util.natpattern(mmax) + ".hdf5")
+    return pat % m
 
 def svd_em(A, mask, niter=5, rank=5, full_matrices=False):
     """Perform an SVD with missing entries using Expectation-Maximisation.
