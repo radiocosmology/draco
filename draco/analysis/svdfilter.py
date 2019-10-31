@@ -220,7 +220,7 @@ class SVDFilter(task.SingleTask):
 
             # Do SVD. u is matrix of msign+nprod singular vectors,
             # vh is matrix of freq singular vectors
-            u, sig, vh = svd_em(vis_m, mask_m, niter=self.niter)
+            u, sig, vh = svd_em(vis_m, mask_m, niter=self.niter, full_matrices=True)
 
             # If desired, save complete SVD basis to disk.
             # TODO: Should we use HDF5 chunking or compression here?
@@ -242,7 +242,7 @@ class SVDFilter(task.SingleTask):
                 sig[:cut] = 0.0
 
                 # Recombine the matrix
-                vis_m = np.dot(u, sig[:, np.newaxis] * vh)
+                vis_m = np.dot(u, np.dot(la.diagsvd(sig, u.shape[1], vh.shape[0]), vh))
 
                 # Reshape and write back into the mmodes container
                 vis[mi] = vis_m.transpose((1,0)).reshape(vis.shape[2], 2, -1).transpose((1, 0, 2))
