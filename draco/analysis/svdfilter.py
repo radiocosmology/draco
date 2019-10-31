@@ -308,6 +308,8 @@ def svd_em(A, mask, niter=5, rank=5, full_matrices=False):
 
         u, sig, vh = la.svd(A, full_matrices=full_matrices, overwrite_a=False)
 
+        rank = min(rank,sig.shape[0])
+
         low_rank_A = np.dot(u[:, :rank] * sig[:rank], vh[:rank])
         A[mask] = low_rank_A[mask]
 
