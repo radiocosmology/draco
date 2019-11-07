@@ -27,7 +27,7 @@ import numpy as np
 
 from caput import config
 
-from ..core import task, containers
+from ..core import task, containers, io
 from ..util import tools
 from caput.time import STELLAR_S
 
@@ -84,6 +84,23 @@ class GaussianNoise(task.SingleTask):
     seed = config.Property(proptype=int, default=None)
     set_weights = config.Property(proptype=bool, default=True)
 
+    def setup(self, manager=None):
+        """Set the telescope instance if a manager object is given.
+
+        This is used to simulate noise for visibilities that are stacked
+        over redundant baselines.
+
+        Parameters
+        ----------
+        manager : manager.ProductManager, optional
+            The telescope/manager used to set the `redundancy`. If not set,
+            `redundancy` is derived from the data.
+        """
+        if manager is not None:
+            self.telescope = io.get_telescope(manager)
+        else:
+            self.telescope = None
+
     def process(self, data):
         """Generate a noisy dataset.
 
@@ -115,16 +132,24 @@ class GaussianNoise(task.SingleTask):
         df = data.index_map["freq"]["width"][0] * 1e6
         nfreq = data.vis.local_shape[0]
         nprod = len(data.index_map["prod"])
+        ninput = len(data.index_map["input"])
 
-        # Calculate the number of samples
-        nsamp = int(self.ndays * dt * df)
+        # Consider if this data is stacked over redundant baselines or not.
+        if (self.telescope is not None) and (nprod == self.telescope.nbase):
+            redundancy = self.telescope.redundancy
+        elif (nprod == nfeed * (nfeed + 1) / 2):
+            redundancy = np.ones(nprod)
+        else:
+            raise ValueError("Unexpected number of products")
+
+        # Calculate the number of samples, this is a 1D array for the prod axis.
+        nsamp = int(self.ndays * dt * df) * redundancy
         std = self.recv_temp / np.sqrt(2 * nsamp)
 
         with mpi_random_seed(self.seed):
-            noise_real = std * np.random.standard_normal((nfreq, nprod, ntime))
-            noise_imag = std * np.random.standard_normal((nfreq, nprod, ntime))
+            noise_real = std[np.newaxis, :, np.newaxis] * np.random.standard_normal((nfreq, nprod, ntime))
+            noise_imag = std[np.newaxis, :, np.newaxis] * np.random.standard_normal((nfreq, nprod, ntime))
 
-        # TODO: make this work with stacked data
         # Iterate over the products to find the auto-correlations and add the noise into them
         for pi, prod in enumerate(data.index_map["prod"]):
 
@@ -139,7 +164,7 @@ class GaussianNoise(task.SingleTask):
         # Construct and set the correct weights in place
         if self.set_weights:
             for lfi, fi in visdata.enumerate(0):
-                data.weight[fi] = 0.5 / std ** 2
+                data.weight[fi] = 0.5 / std[:, np.newaxis] ** 2
 
         return data
 
