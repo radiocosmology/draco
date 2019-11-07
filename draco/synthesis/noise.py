@@ -137,7 +137,7 @@ class GaussianNoise(task.SingleTask):
         # Consider if this data is stacked over redundant baselines or not.
         if (self.telescope is not None) and (nprod == self.telescope.nbase):
             redundancy = self.telescope.redundancy
-        elif (nprod == nfeed * (nfeed + 1) / 2):
+        elif nprod == nfeed * (nfeed + 1) / 2:
             redundancy = np.ones(nprod)
         else:
             raise ValueError("Unexpected number of products")
@@ -147,8 +147,12 @@ class GaussianNoise(task.SingleTask):
         std = self.recv_temp / np.sqrt(2 * nsamp)
 
         with mpi_random_seed(self.seed):
-            noise_real = std[np.newaxis, :, np.newaxis] * np.random.standard_normal((nfreq, nprod, ntime))
-            noise_imag = std[np.newaxis, :, np.newaxis] * np.random.standard_normal((nfreq, nprod, ntime))
+            noise_real = std[np.newaxis, :, np.newaxis] * np.random.standard_normal(
+                (nfreq, nprod, ntime)
+            )
+            noise_imag = std[np.newaxis, :, np.newaxis] * np.random.standard_normal(
+                (nfreq, nprod, ntime)
+            )
 
         # Iterate over the products to find the auto-correlations and add the noise into them
         for pi, prod in enumerate(data.index_map["prod"]):
