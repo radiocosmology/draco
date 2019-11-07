@@ -26,10 +26,11 @@ import contextlib
 import numpy as np
 
 from caput import config
+from caput.time import STELLAR_S
+from cora.util import nputil
 
 from ..core import task, containers, io
 from ..util import tools
-from caput.time import STELLAR_S
 
 
 class ReceiverTemperature(task.SingleTask):
@@ -137,34 +138,34 @@ class GaussianNoise(task.SingleTask):
         # Consider if this data is stacked over redundant baselines or not.
         if (self.telescope is not None) and (nprod == self.telescope.nbase):
             redundancy = self.telescope.redundancy
-        elif (nprod == nfeed * (nfeed + 1) / 2):
+        elif nprod == nfeed * (nfeed + 1) / 2:
             redundancy = np.ones(nprod)
         else:
             raise ValueError("Unexpected number of products")
 
         # Calculate the number of samples, this is a 1D array for the prod axis.
         nsamp = int(self.ndays * dt * df) * redundancy
-        std = self.recv_temp / np.sqrt(2 * nsamp)
+        std = self.recv_temp / np.sqrt(nsamp)
 
         with mpi_random_seed(self.seed):
-            noise_real = std[np.newaxis, :, np.newaxis] * np.random.standard_normal((nfreq, nprod, ntime))
-            noise_imag = std[np.newaxis, :, np.newaxis] * np.random.standard_normal((nfreq, nprod, ntime))
+            noise = std[np.newaxis, :, np.newaxis] * nputil.complex_std_normal(
+                (nfreq, nprod, ntime)
+            )
 
         # Iterate over the products to find the auto-correlations and add the noise into them
         for pi, prod in enumerate(data.index_map["prod"]):
 
             # Auto: multiply by sqrt(2) because auto has twice the variance
             if prod[0] == prod[1]:
-                visdata[:, pi].real += np.sqrt(2) * noise_real[:, pi]
+                visdata[:, pi].real += np.sqrt(2) * noise[:, pi].real
 
             else:
-                visdata[:, pi].real += noise_real[:, pi]
-                visdata[:, pi].imag += noise_imag[:, pi]
+                visdata[:, pi] += noise[:, pi]
 
         # Construct and set the correct weights in place
         if self.set_weights:
             for lfi, fi in visdata.enumerate(0):
-                data.weight[fi] = 0.5 / std[:, np.newaxis] ** 2
+                data.weight[fi] = 1.0 / std[:, np.newaxis] ** 2
 
         return data
 
