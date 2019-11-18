@@ -192,12 +192,12 @@ class SVDFilter(task.SingleTask):
 
                 sv_max = max(sig[0], sv_max)
 
-        # Reduce to get the global max.
-        global_max = mmodes.comm.allreduce(sv_max, op=MPI.MAX)
+            # Reduce to get the global max.
+            global_max = mmodes.comm.allreduce(sv_max, op=MPI.MAX)
 
-        self.log.debug("Global maximum singular value=%.2g", global_max)
+            self.log.debug("Global maximum singular value=%.2g", global_max)
+
         import sys
-
         sys.stdout.flush()
 
         # Loop over all m's and remove modes below the combined cut
