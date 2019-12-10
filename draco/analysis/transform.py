@@ -149,44 +149,22 @@ class CollateProducts(task.SingleTask):
         )
 
         # Construct the equivalent prod and stack index_map for the telescope instance
+        triu = np.triu_indices(self.telescope.nfeed)
         dt_prod = np.dtype([("input_a", "<u2"), ("input_b", "<u2")])
-        self.bt_prod = (
-            np.array(np.triu_indices(self.telescope.nfeed))
-            .astype("<u2")
-            .T.copy()
-            .view(dt_prod)
-            .reshape(-1)
-        )
+        self.bt_prod = np.array(triu).astype("<u2").T.copy().view(dt_prod).reshape(-1)
 
         # Construct the equivalent reverse_map stack for the telescope instance.
         # Note that we identify invalid products here using an index that is the
         # size of the stack axis.
-        def pack_product_array(arr):
+        feedmask = self.telescope.feedmask[triu]
 
-            nfeed = arr.shape[0]
-            nprod = (nfeed * (nfeed + 1)) // 2
-
-            ret = np.zeros(nprod, dtype=arr.dtype)
-            iout = 0
-
-            for i in range(nfeed):
-                ret[iout : (iout + nfeed - i)] = arr[i, i:]
-                iout += nfeed - i
-
-            return ret
-
-        feedmask = pack_product_array(self.telescope.feedmask)
-        self.bt_rev = np.fromiter(
-            zip(
-                np.where(
-                    feedmask,
-                    pack_product_array(self.telescope.feedmap),
-                    self.telescope.npairs,
-                ),
-                np.where(feedmask, pack_product_array(self.telescope.feedconj), 0),
-            ),
-            dtype=[("stack", "<u4"), ("conjugate", "u1")],
+        self.bt_rev = np.empty(
+            feedmask.size, dtype=[("stack", "<u4"), ("conjugate", "u1")]
         )
+        self.bt_rev["stack"] = np.where(
+            feedmask, self.telescope.feedmap[triu], self.telescope.npairs
+        )
+        self.bt_rev["conjugate"] = np.where(feedmask, self.telescope.feedconj[triu], 0)
 
     def process(self, ss):
         """Select and reorder the products.
