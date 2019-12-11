@@ -40,16 +40,16 @@ class ApplyGain(task.SingleTask):
 
     def process(self, tstream, gain):
         """Apply gains to the given timestream.
-        
+
         Smoothing the gains is not supported for SiderealStreams.
-        
+
         Parameters
         ----------
         tstream : TimeStream like or SiderealStream
             Time stream to apply gains to. The gains are applied in place.
         gain : StaticGainData, GainData or SiderealGainData
             Gains to apply.
-            
+
         Returns
         -------
         tstream : TimeStream or SiderealStream
@@ -57,6 +57,9 @@ class ApplyGain(task.SingleTask):
         """
         tstream.redistribute("freq")
         gain.redistribute("freq")
+
+        if tstream.is_stacked:
+            raise ValueError("Cannot apply gains to stacked data: %s" % tstream)
 
         if isinstance(gain, containers.StaticGainData):
 
