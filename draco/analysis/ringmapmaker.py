@@ -325,9 +325,9 @@ class BeamformEW(task.SingleTask):
             if self.single_beam:
                 # Only need the 0th term of the irfft, equivalent to summing in
                 # then EW direction
-                m[:, :, 1:] *= 2.0  # Factor to include negative elements in sum below
-                bfm = np.sum(v * m, axis=1).real[:, :, np.newaxis, ...]
-                sb = np.sum(w * m, axis=1).real[:, :, np.newaxis, ...]
+                m[:, 1:] *= 2.0  # Factor to include negative elements in sum below
+                bfm = np.sum(v * m, axis=1).real[:, np.newaxis, ...]
+                sb = np.sum(w * m, axis=1).real[:, np.newaxis, ...]
             else:
                 bfm = np.fft.irfft(v * m, nbeam, axis=1) * nbeam
                 sb = np.fft.irfft(w * m, nbeam, axis=1) * nbeam
