@@ -1337,6 +1337,10 @@ class SVDSpectrum(ContainerBase):
 
 class FrequencyStack(ContainerBase):
     """Container for a frequency stack.
+
+    In general used to hold the product of `draco.analysis.SourceStack`
+    The stacked signal of frequency slices of the data in the direction
+    of sources of interest.
     """
 
     _axes = ("freq",)

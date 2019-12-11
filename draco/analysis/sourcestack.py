@@ -10,7 +10,7 @@ import numpy as np
 import healpy as hp
 from mpi4py import MPI
 
-from caput import mpiarray, config, mpiutil, pipeline
+from caput import mpiarray, config, pipeline
 from cora.util import units
 from ch_util import tools, ephemeris
 from drift.telescope import cylbeam
@@ -24,8 +24,10 @@ NU21 = units.nu21
 C = units.c
 
 
-class QuasarStack(task.SingleTask):
-    """
+class SourceStack(task.SingleTask):
+    """ Stack the product of `draco.analysis.BeamForm` accross sources.
+
+    For this to work BeamForm must have been run with `collapse_ha = True` (default).
 
     Attributes
     ----------
@@ -39,8 +41,21 @@ class QuasarStack(task.SingleTask):
     freqside = config.Property(proptype=int, default=50)
 
     def process(self, formed_beam):
+        """ Receives a formed beam object and stack across sources.
+
+        Parameters
+        ----------
+        formed_beam : `containers.FormedBeam` object
+            Formed beams to stack over sources.
+
+        Returns
+        -------
+        qstack : `containers.FrequencyStack` object
+            The stack of sources.
         """
-        """
+        # Get communicator
+        comm = formed_beam.comm
+
         # Ensure formed_beam is distributed in sources
         formed_beam.redistribute("object_id")
         # local shape and offset
@@ -116,33 +131,32 @@ class QuasarStack(task.SingleTask):
                 minlength=self.nstack,
             )
 
-            # mpiutil.barrier()  # TODO: I am not sure I need a barrier here.
         # Gather quasar stack for all ranks. Each contains the sum
         # over a different subset of quasars.
         quasar_stack_full = np.zeros(
-            mpiutil.size * self.nstack, dtype=quasar_stack.dtype
+            comm.size * self.nstack, dtype=quasar_stack.dtype
         )
         quasar_weight_full = np.zeros(
-            mpiutil.size * self.nstack, dtype=quasar_weight.dtype
+            comm.size * self.nstack, dtype=quasar_weight.dtype
         )
         # Gather all ranks
-        mpiutil.world.Allgather(quasar_stack, quasar_stack_full)
-        mpiutil.world.Allgather(quasar_weight, quasar_weight_full)
+        comm.Allgather(quasar_stack, quasar_stack_full)
+        comm.Allgather(quasar_weight, quasar_weight_full)
 
         # Container to hold the stack
         qstack = containers.FrequencyStack(freq=self.stack_axis)
         # Sum across ranks
         qstack.weight[:] = np.sum(
-            quasar_weight_full.reshape(mpiutil.size, self.nstack), axis=0
+            quasar_weight_full.reshape(comm.size, self.nstack), axis=0
         )
         qstack.stack[:] = (
-            np.sum(quasar_stack_full.reshape(mpiutil.size, self.nstack), axis=0)
+            np.sum(quasar_stack_full.reshape(comm.size, self.nstack), axis=0)
             * invert_no_zero(qstack.weight[:])
         )
 
         # Gather all ranks of qcount. Report number of quasars stacked
-        full_qcount = mpiutil.world.reduce(qcount, op=MPI.SUM, root=0)
-        if mpiutil.rank == 0:
+        full_qcount = comm.reduce(qcount, op=MPI.SUM, root=0)
+        if comm.rank == 0:
             self.log.info("Number of quasars stacked: {0}".format(full_qcount))
 
         return qstack
