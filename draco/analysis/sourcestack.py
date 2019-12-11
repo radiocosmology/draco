@@ -133,9 +133,7 @@ class SourceStack(task.SingleTask):
 
         # Gather quasar stack for all ranks. Each contains the sum
         # over a different subset of quasars.
-        quasar_stack_full = np.zeros(
-            comm.size * self.nstack, dtype=quasar_stack.dtype
-        )
+        quasar_stack_full = np.zeros(comm.size * self.nstack, dtype=quasar_stack.dtype)
         quasar_weight_full = np.zeros(
             comm.size * self.nstack, dtype=quasar_weight.dtype
         )
@@ -149,10 +147,9 @@ class SourceStack(task.SingleTask):
         qstack.weight[:] = np.sum(
             quasar_weight_full.reshape(comm.size, self.nstack), axis=0
         )
-        qstack.stack[:] = (
-            np.sum(quasar_stack_full.reshape(comm.size, self.nstack), axis=0)
-            * invert_no_zero(qstack.weight[:])
-        )
+        qstack.stack[:] = np.sum(
+            quasar_stack_full.reshape(comm.size, self.nstack), axis=0
+        ) * invert_no_zero(qstack.weight[:])
 
         # Gather all ranks of qcount. Report number of quasars stacked
         full_qcount = comm.reduce(qcount, op=MPI.SUM, root=0)
