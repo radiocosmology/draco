@@ -96,23 +96,26 @@ class GaussianNoiseDataset(task.SingleTask):
             a Gaussian distributed noise realisation.
 
         """
-
+        # Distribute in something other than `stack`
+        data.redistribute("freq")
+        # Visibility to be replaced by noise
         vis = data.vis[:]
-
-        # data.weight elements are inverse variances
-        # we want the standard deviation
-        vis_weight_std = np.sqrt(tools.invert_no_zero(data.weight))
 
         # create a random generator, and create a local seed state
         rg = randomgen.generator.RandomGenerator()
 
         with randomgen_mpi_random_seed(rg, self.seed) as rg:
-            noise_real = rg.normal(scale=vis_weight_std)
-            noise_imag = rg.normal(scale=vis_weight_std)
+            noise = rg.normal(
+                    scale = np.sqrt(tools.invert_no_zero(data.weight[:])/2),
+                    size = (2,) + data.weight[:].shape)
+            vis[:] = noise[0] + 1j * noise[1]
 
-        for pi, prod in enumerate(data.index_map["prod"]):
-            vis[:, pi].real = noise_real[:, pi]
-            vis[:, pi].imag = noise_imag[:, pi]
+        for si, prod in enumerate(data.index_map["stack"]["prod"]):
+            prod_inputs = data.index_map["prod"][prod]
+            if (prod_inputs[0]==prod_inputs[1]):
+                # This is an auto-correlation
+                vis[:, si].real *= 2**0.5
+                vis[:, si].imag = 0.
 
         return data
 
