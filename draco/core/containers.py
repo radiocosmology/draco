@@ -1335,6 +1335,44 @@ class SVDSpectrum(ContainerBase):
         return self.datasets["spectrum"]
 
 
+class FrequencyStack(ContainerBase):
+    """Container for a frequency stack.
+
+    In general used to hold the product of `draco.analysis.SourceStack`
+    The stacked signal of frequency slices of the data in the direction
+    of sources of interest.
+    """
+
+    _axes = ("freq",)
+
+    _dataset_spec = {
+        "stack": {
+            "axes": ["freq"],
+            "dtype": np.float64,
+            "initialise": True,
+            "distributed": False,
+        },
+        "weight": {
+            "axes": ["freq"],
+            "dtype": np.float64,
+            "initialise": True,
+            "distributed": False,
+        },
+    }
+
+    @property
+    def stack(self):
+        return self.datasets["stack"]
+
+    @property
+    def weight(self):
+        return self.datasets["weight"]
+
+    @property
+    def freq(self):
+        return self.index_map["freq"]["centre"]
+
+
 class SourceCatalog(TableBase):
     """A basic container for holding astronomical source catalogs.
 
