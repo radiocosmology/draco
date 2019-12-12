@@ -590,9 +590,11 @@ def _pack_marray(mmodes, mmax=None):
 
     marray = np.zeros((mmax + 1, 2) + shape, dtype=np.complex128)
 
-    marray[:mlim+1, 0] = mmodes[:mlim+1] # Non-negative modes
+    # Non-negative modes
+    marray[:mlim+1, 0] = np.rollaxis(mmodes[..., :mlim+1], -1, 0)
     # Negative modes
-    marray[1:mlim_neg+1, 1] = mmodes[-1:-(mlim_neg+1):-1].conj()
+    marray[1:mlim_neg+1, 1] = np.rollaxis(
+        mmodes[..., -1:-(mlim_neg+1):-1].conj(), -1, 0)
 
     return marray
 
