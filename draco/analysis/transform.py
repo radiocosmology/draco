@@ -574,21 +574,25 @@ def _pack_marray(mmodes, mmax=None):
     # Pack an FFT into the correct format for the m-modes (i.e. [m, freq, +/-,
     # baseline])
 
+    N = mmodes.shape[-1] # Total number of modes
+    N_pos_mmodes = N // 2 # Total number of positive modes
     if mmax is None:
-        mmax = mmodes.shape[-1] // 2
+        mmax = mlim = N_pos_mmodes
+        mlim_neg = mlim - 1 + N%2 # Index for negative modes
+    elif mmax >= N_pos_mmodes: # Modes larger than N_pos_mmodes set to 0.
+        mlim = N_pos_mmodes
+        mlim_neg = mlim - 1 + N%2
+    else:
+        mlim = mmax
+        mlim_neg = mlim
 
     shape = mmodes.shape[:-1]
 
     marray = np.zeros((mmax + 1, 2) + shape, dtype=np.complex128)
 
-    marray[0, 0] = mmodes[..., 0]
-
-    mlimit = min(
-        mmax, mmodes.shape[-1] // 2
-    )  # So as not to run off the end of the array
-    for mi in range(1, mlimit - 1):
-        marray[mi, 0] = mmodes[..., mi]
-        marray[mi, 1] = mmodes[..., -mi].conj()
+    marray[:mlim+1, 0] = mmodes[:mlim+1] # Non-negative modes
+    # Negative modes
+    marray[1:mlim_neg+1, 1] = mmodes[-1:-(mlim_neg+1):-1].conj()
 
     return marray
 
