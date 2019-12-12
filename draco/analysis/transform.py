@@ -149,14 +149,22 @@ class CollateProducts(task.SingleTask):
         )
 
         # Construct the equivalent prod and stack index_map for the telescope instance
+        triu = np.triu_indices(self.telescope.nfeed)
         dt_prod = np.dtype([("input_a", "<u2"), ("input_b", "<u2")])
-        self.bt_prod = (
-            np.array(np.triu_indices(self.telescope.nfeed))
-            .astype("<u2")
-            .T.copy()
-            .view(dt_prod)
-            .reshape(-1)
+        self.bt_prod = np.array(triu).astype("<u2").T.copy().view(dt_prod).reshape(-1)
+
+        # Construct the equivalent reverse_map stack for the telescope instance.
+        # Note that we identify invalid products here using an index that is the
+        # size of the stack axis.
+        feedmask = self.telescope.feedmask[triu]
+
+        self.bt_rev = np.empty(
+            feedmask.size, dtype=[("stack", "<u4"), ("conjugate", "u1")]
         )
+        self.bt_rev["stack"] = np.where(
+            feedmask, self.telescope.feedmap[triu], self.telescope.npairs
+        )
+        self.bt_rev["conjugate"] = np.where(feedmask, self.telescope.feedconj[triu], 0)
 
     def process(self, ss):
         """Select and reorder the products.
@@ -180,29 +188,9 @@ class CollateProducts(task.SingleTask):
             except ValueError:
                 return None
 
-        def pack_product_array(arr):
-
-            nfeed = arr.shape[0]
-            nprod = (nfeed * (nfeed + 1)) // 2
-
-            ret = np.zeros(nprod, dtype=arr.dtype)
-            iout = 0
-
-            for i in range(nfeed):
-                ret[iout : (iout + nfeed - i)] = arr[i, i:]
-                iout += nfeed - i
-
-            return ret
-
-        # Determine current conjugation and product map.
         match_sn = True
         if "stack" in ss.index_map:
             match_sn = ss.index_map["stack"].size == ss.index_map["prod"].size
-            ss_conj = ss.index_map["stack"]["conjugate"]
-            ss_prod = ss.index_map["prod"][ss.index_map["stack"]["prod"]]
-        else:
-            ss_conj = np.zeros(ss.vis.shape[1], dtype=np.bool)
-            ss_prod = ss.index_map["prod"]
 
         # For each input in the file, find the corresponding index in the telescope instance
         ss_keys = ss.index_map["input"][:]
@@ -240,20 +228,44 @@ class CollateProducts(task.SingleTask):
 
         bt_freq = ss.index_map["freq"][freq_ind]
 
-        # Construct the equivalent stack reverse_map for the telescope instance.  Note
-        # that we identify invalid products here using an index that is the size of the stack axis.
-        feedmask = pack_product_array(self.telescope.feedmask)
-        bt_rev = np.fromiter(
-            zip(
-                np.where(
-                    feedmask,
-                    pack_product_array(self.telescope.feedmap),
-                    self.telescope.npairs,
-                ),
-                np.where(feedmask, pack_product_array(self.telescope.feedconj), 0),
-            ),
-            dtype=[("stack", "<u4"), ("conjugate", "u1")],
-        )
+        # Determine the input product map and conjugation.
+        # If the input timestream is already stacked, then attempt to redefine
+        # its representative products so that they contain only feeds that exist
+        # and are not masked in the telescope instance.
+        if ("stack" in ss.index_map) and (
+            ss.index_map["stack"].size < ss.index_map["prod"].size
+        ):
+
+            available_prod = ss.index_map["prod"]
+            chosen_prod = available_prod[ss.index_map["stack"]["prod"]]
+            rev_stack = ss.reverse_map["stack"]
+
+            stack_new = ss.index_map["stack"].copy()
+            for sind, (ii, ij) in enumerate(chosen_prod):
+
+                bi, bj = input_ind[ii], input_ind[ij]
+                if (bi is None) or (bj is None) or not self.telescope.feedmask[bi, bj]:
+
+                    this_stack = np.flatnonzero(rev_stack["stack"] == sind)
+
+                    for ts in this_stack:
+                        tp = available_prod[ts]
+                        tbi, tbj = input_ind[tp[0]], input_ind[tp[1]]
+                        if (
+                            (tbi is not None)
+                            and (tbj is not None)
+                            and self.telescope.feedmask[tbi, tbj]
+                        ):
+                            stack_new[sind]["prod"] = ts
+                            stack_new[sind]["conjugate"] = rev_stack[ts]["conjugate"]
+                            break
+
+            ss_conj = stack_new["conjugate"]
+            ss_prod = available_prod[stack_new["prod"]]
+
+        else:
+            ss_conj = np.zeros(ss.vis.shape[1], dtype=np.bool)
+            ss_prod = ss.index_map["prod"]
 
         # Create output container
         if isinstance(ss, containers.SiderealStream):
@@ -268,7 +280,7 @@ class CollateProducts(task.SingleTask):
             input=bt_keys,
             prod=self.bt_prod,
             stack=self.bt_stack,
-            reverse_map_stack=bt_rev,
+            reverse_map_stack=self.bt_rev,
             axes_from=ss,
             attrs_from=ss,
             distributed=True,
