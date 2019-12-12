@@ -33,7 +33,6 @@ import numpy as np
 
 from caput import config
 from caput.time import STELLAR_S
-
 from cora.util import nputil
 
 from ..core import task, containers, io
@@ -87,7 +86,7 @@ class GaussianNoiseDataset(task.SingleTask):
 
         Parameters
         ----------
-        data : :class:`containers`
+        data : :class:`VisContainer`
             Any dataset which contains a vis and weight attribute.
             Note the modification is done in place.
 
@@ -112,8 +111,8 @@ class GaussianNoiseDataset(task.SingleTask):
                     size = (2,) + data.weight[:].shape)
             vis[:] = noise[0] + 1j * noise[1]
 
-        for si, prod in enumerate(data.index_map["stack"]["prod"]):
-            prod_inputs = data.index_map["prod"][prod]
+        for si, prod in enumerate(data.prodstack):
+            prod_inputs = data.prod[prod]
             if (prod_inputs[0]==prod_inputs[1]):
                 # This is an auto-correlation
                 vis[:, si].real *= 2**0.5
@@ -144,6 +143,23 @@ class GaussianNoise(task.SingleTask):
     ndays = config.Property(proptype=float, default=733.0)
     seed = config.Property(proptype=int, default=None)
     set_weights = config.Property(proptype=bool, default=True)
+
+    def setup(self, manager=None):
+        """Set the telescope instance if a manager object is given.
+
+        This is used to simulate noise for visibilities that are stacked
+        over redundant baselines.
+
+        Parameters
+        ----------
+        manager : manager.ProductManager, optional
+            The telescope/manager used to set the `redundancy`. If not set,
+            `redundancy` is derived from the data.
+        """
+        if manager is not None:
+            self.telescope = io.get_telescope(manager)
+        else:
+            self.telescope = None
 
     def process(self, data):
         """Generate a noisy dataset.
@@ -176,31 +192,39 @@ class GaussianNoise(task.SingleTask):
         df = data.index_map["freq"]["width"][0] * 1e6
         nfreq = data.vis.local_shape[0]
         nprod = len(data.index_map["prod"])
+        ninput = len(data.index_map["input"])
 
-        # Calculate the number of samples
-        nsamp = int(self.ndays * dt * df)
-        std = self.recv_temp / np.sqrt(2 * nsamp)
+        # Consider if this data is stacked over redundant baselines or not.
+        if (self.telescope is not None) and (nprod == self.telescope.nbase):
+            redundancy = self.telescope.redundancy
+        elif nprod == nfeed * (nfeed + 1) / 2:
+            redundancy = np.ones(nprod)
+        else:
+            raise ValueError("Unexpected number of products")
+
+        # Calculate the number of samples, this is a 1D array for the prod axis.
+        nsamp = int(self.ndays * dt * df) * redundancy
+        std = self.recv_temp / np.sqrt(nsamp)
 
         with mpi_random_seed(self.seed):
-            noise_real = std * np.random.standard_normal((nfreq, nprod, ntime))
-            noise_imag = std * np.random.standard_normal((nfreq, nprod, ntime))
+            noise = std[np.newaxis, :, np.newaxis] * nputil.complex_std_normal(
+                (nfreq, nprod, ntime)
+            )
 
-        # TODO: make this work with stacked data
         # Iterate over the products to find the auto-correlations and add the noise into them
         for pi, prod in enumerate(data.index_map["prod"]):
 
             # Auto: multiply by sqrt(2) because auto has twice the variance
             if prod[0] == prod[1]:
-                visdata[:, pi].real += np.sqrt(2) * noise_real[:, pi]
+                visdata[:, pi].real += np.sqrt(2) * noise[:, pi].real
 
             else:
-                visdata[:, pi].real += noise_real[:, pi]
-                visdata[:, pi].imag += noise_imag[:, pi]
+                visdata[:, pi] += noise[:, pi]
 
         # Construct and set the correct weights in place
         if self.set_weights:
             for lfi, fi in visdata.enumerate(0):
-                data.weight[fi] = 0.5 / std ** 2
+                data.weight[fi] = 1.0 / std[:, np.newaxis] ** 2
 
         return data
 
