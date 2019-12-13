@@ -198,10 +198,6 @@ class BeamformNS(task.SingleTask):
         gsv = gstream.vis[:]
         gsw = gstream.weight[:].copy()
 
-        # Remove auto-correlations
-        if not self.include_auto:
-            gsw[..., 0, 0] = 0.0
-
         # Construct phase array
         el = self.span * np.linspace(-1.0, 1.0, self.npix)
 
@@ -232,22 +228,34 @@ class BeamformNS(task.SingleTask):
             else:
                 vmax = nsmax / wv
 
-            x = 0.5 * (vpos / vmax + 1)
-            ns_weight = tools.window_generalised(x, window=self.weight)
+            if self.weight == "inverse_variance":
+                gw = gsw[:, lfi]
+            elif self.weight == "natural":
+                raise NotImplementedError("Natural weighting hasn't been implemented yet.")
+            else:
+                x = 0.5 * (vpos / vmax + 1)
+                ns_weight = tools.window_generalised(x, window=self.weight)
+                gw = (gsw[:, lfi] > 0) * ns_weight[np.newaxis,np.newaxis,:, np.newaxis]
+
+            # Remove auto-correlations
+            if not self.include_auto:
+                gw[..., 0, 0, :] = 0.0
+
+            # Normalize by sum of weights
+            norm = np.sum(gw, axis=-2)
+            gw *= tools.invert_no_zero(norm)[...,np.newaxis,:]
 
             # Create array that will be used for the inverse
             # discrete Fourier transform in y-direction
             phase = 2.0 * np.pi * nspos[np.newaxis, :] * el[:, np.newaxis] / wv
-            F = np.exp(-1.0j * phase) * ns_weight[np.newaxis, :]
+            F = np.exp(-1.0j * phase)
 
             # Calculate the hybrid visibilities
-            hvv[:, lfi] = np.dot(F, gsv[:, lfi]).transpose(1, 2, 0, 3)
+            hvv[:, lfi] = np.dot(F, gw * gsv[:, lfi]).transpose(1, 2, 0, 3)
 
             # Estimate the weights assuming that the errors are all uncorrelated
-            t = np.dot(F, tools.invert_no_zero(gsw[:, lfi]) ** 0.5).transpose(
-                1, 2, 0, 3
-            )
-            hvw[:, lfi] = tools.invert_no_zero(t.real) ** 2
+            t = np.sum(tools.invert_no_zero(gsw[:, lfi]) * gw**2, axis=-2)
+            hvw[:, lfi] = tools.invert_no_zero(t[..., np.newaxis, :])
 
         return hv
 
