@@ -65,7 +65,7 @@ class ApplyGain(task.SingleTask):
 
             # Get the weight array if it's there
             weight_arr = (
-                gain.weight[:][..., np.newaxis] if gain.weight is not None else None
+                gain.weight[:] if gain.weight is not None else None
             )
 
         elif isinstance(gain, (containers.GainData, containers.SiderealGainData)):
@@ -167,7 +167,7 @@ class ApplyGain(task.SingleTask):
         if weight_arr is not None:
 
             # Convert dynamic range to a binary weight and apply to data
-            gain_weight = (weight_arr[:] > 2.0).astype(np.float64)
+            gain_weight = (weight_arr[:] > 0.0).astype(np.float64)
             tstream.weight[:] *= gain_weight[:, np.newaxis, :]
 
         return tstream
