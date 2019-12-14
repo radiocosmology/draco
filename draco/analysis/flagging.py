@@ -147,22 +147,25 @@ class MaskData(task.SingleTask):
         -------
         mmodes : containers.MModes
         """
+        mmodes.redistribute('m')
+
+        mw = mmodes.weight[:]
 
         # Exclude auto correlations if set
         if not self.auto_correlations:
-            for pi, (fi, fj) in enumerate(mmodes.index_map["prod"]):
+            for pi, (fi, fj) in enumerate(mmodes.prodstack):
                 if fi == fj:
-                    mmodes.weight[..., pi] = 0.0
+                    mw[..., pi] = 0.0
 
         # Apply m based masks
         if not self.m_zero:
-            mmodes.weight[0] = 0.0
+            mw[0] = 0.0
 
         if not self.positive_m:
-            mmodes.weight[1:, 0] = 0.0
+            mw[1:, 0] = 0.0
 
         if not self.negative_m:
-            mmodes.weight[1:, 1] = 0.0
+            mw[1:, 1] = 0.0
 
         return mmodes
 
