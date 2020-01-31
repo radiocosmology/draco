@@ -215,15 +215,27 @@ class CollateProducts(task.SingleTask):
             match_sn = False
 
         field_to_match = "correlator_input" if match_sn else "chan_id"
-        input_ind = [
-            find_key(bt_keys[field_to_match], sk) for sk in ss_keys[field_to_match]
-        ]
+        ### SF HOTFIX: get around key error in ss_keys
+        try:
+            input_ind = [
+                find_key(bt_keys[field_to_match], sk) for sk in ss_keys[field_to_match]
+            ]
+        except IndexError:
+            input_ind = [
+                find_key(bt_keys[field_to_match], sk) for sk in ss_keys
+            ]
 
         # Figure out the reverse mapping (i.e., for each input in the telescope instance,
         # find the corresponding index in file)
-        rev_input_ind = [
-            find_key(ss_keys[field_to_match], bk) for bk in bt_keys[field_to_match]
-        ]
+        ### SF HOTFIX: get around key error in ss_keys
+        try:
+            rev_input_ind = [
+                find_key(ss_keys[field_to_match], bk) for bk in bt_keys[field_to_match]
+            ]
+        except IndexError:
+            rev_input_ind = [
+                find_key(ss_keys, bk) for bk in bt_keys[field_to_match]
+            ]
 
         if any([rv is None for rv in rev_input_ind]):
             raise ValueError(
