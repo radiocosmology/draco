@@ -119,6 +119,8 @@ class GaussianNoise(task.SingleTask):
 
         data.redistribute("freq")
 
+        nfeed = len(data.index_map["input"])
+        
         visdata = data.vis[:]
 
         # Get the time interval
