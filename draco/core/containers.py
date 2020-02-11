@@ -718,6 +718,60 @@ class SiderealStream(VisContainer):
         return self.index_map["ra"]
 
 
+class SystemSensitivity(TODContainer):
+    """A container for holding the total system sensitivity.
+
+    This should be averaged/collapsed in the stack/prod axis
+    to provide an overall summary of the system sensitivity.
+    Two datasets are available: the measured noise from the
+    visibility weights and the radiometric estimate of the
+    noise from the autocorrelations.
+    """
+
+    _axes = ("freq", "pol")
+
+    _dataset_spec = {
+        "measured": {
+            "axes": ["freq", "pol", "time"],
+            "dtype": np.float32,
+            "initialise": True,
+            "distributed": True,
+        },
+        "radiometer": {
+            "axes": ["freq", "pol", "time"],
+            "dtype": np.float32,
+            "initialise": True,
+            "distributed": True,
+        },
+        "weight": {
+            "axes": ["freq", "pol", "time"],
+            "dtype": np.float32,
+            "initialise": True,
+            "distributed": True,
+        },
+    }
+
+    @property
+    def measured(self):
+        return self.datasets["measured"]
+
+    @property
+    def radiometer(self):
+        return self.datasets["radiometer"]
+
+    @property
+    def weight(self):
+        return self.datasets["weight"]
+
+    @property
+    def freq(self):
+        return self.index_map["freq"]["centre"]
+
+    @property
+    def pol(self):
+        return self.index_map["pol"]
+
+
 class TimeStream(VisContainer, TODContainer):
     """A container for holding a visibility dataset in time.
 
