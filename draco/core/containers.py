@@ -933,7 +933,7 @@ class TrackBeam(ContainerBase):
         the numpy.dtype [('theta', np.float32), ('phi', np.float32)].
     """
 
-    _axes = ("freq", "pol", "input", "pix")
+    _axes = ("freq", "pol", "input", "pix", "components")
 
     _dataset_spec = {
         "beam": {
@@ -956,12 +956,30 @@ class TrackBeam(ContainerBase):
             "compression_opts": (0, bitshuffle.h5.H5_COMPRESS_LZ4),
             "chunks": (128, 2, 128, 128),
         },
+        "observed_variance": {
+            "axes": ["components", "freq", "pol", "input", "pix"],
+            "dtype": np.float32,
+            "initialise": False,
+            "distributed": True,
+            "distributed_axis": "freq",
+            "compression": bitshuffle.h5.H5FILTER,
+            "compression_opts": (0, bitshuffle.h5.H5_COMPRESS_LZ4),
+            "chunks": (3, 128, 2, 128, 128),
+        },
+        "number_of_observations": {
+            "axes": ["freq", "pol", "input", "pix"],
+            "dtype": np.int32,
+            "initialise": False,
+            "distributed": True,
+            "distributed_axis": "freq",
+        },
     }
 
     def __init__(
         self,
         theta=None,
         phi=None,
+        components=np.array(["rr", "ri", "ii"]),
         coords="celestial",
         track_type="drift",
         *args,
@@ -983,6 +1001,7 @@ class TrackBeam(ContainerBase):
                 kwargs["pix"] = pix
         elif (theta is None) != (phi is None):
             raise RuntimeError("Both theta and phi coordinates must be specified.")
+        kwargs["components"] = components
 
         super(TrackBeam, self).__init__(*args, **kwargs)
 
@@ -998,8 +1017,18 @@ class TrackBeam(ContainerBase):
         return self.datasets["weight"]
 
     @property
-    def gain(self):
-        return self.datasets["gain"]
+    def observed_variance(self):
+        if "observed_variance" in self.datasets:
+            return self.datasets["observed_variance"]
+        else:
+            raise KeyError("Dataset 'observed_variance' not initialised.")
+
+    @property
+    def number_of_observations(self):
+        if "number_of_observations" in self.datasets:
+            return self.datasets["number_of_observations"]
+        else:
+            raise KeyError("Dataset 'number_of_observations' not initialised.")
 
     @property
     def coords(self):
