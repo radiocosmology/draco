@@ -53,7 +53,7 @@ class ReceiverTemperature(task.SingleTask):
     def process(self, data):
 
         # Iterate over the products to find the auto-correlations and add the noise into them
-        for pi, prod in enumerate(data.index_map["prod"]):
+        for pi, prod in enumerate(data.prodstack):
 
             # Great an auto!
             if prod[0] == prod[1]:
