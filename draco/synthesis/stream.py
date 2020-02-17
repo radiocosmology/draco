@@ -212,11 +212,23 @@ class ExpandProducts(task.SingleTask):
             [(fi, fj) for fi in range(ninput) for fj in range(fi, ninput)],
             dtype=[("input_a", int), ("input_b", int)],
         )
+        nprod = len(prod)
 
         new_stream = containers.SiderealStream(prod=prod, stack=None, axes_from=sstream)
         new_stream.redistribute("freq")
         new_stream.vis[:] = 0.0
         new_stream.weight[:] = 0.0
+
+        # Create dummpy index and reverse map for the stack axis to match the behaviour
+        # of reading in an N^2 file through andata
+        fwd_stack = np.empty(nprod, dtype=[("prod", "<u4"), ("conjugate", "u1")])
+        fwd_stack["prod"] = np.arange(nprod)
+        fwd_stack["conjugate"] = False
+        new_stream.create_index_map("stack", fwd_stack)
+        rev_stack = np.empty(nprod, dtype=[("stack", "<u4"), ("conjugate", "u1")])
+        rev_stack["stack"] = np.arange(nprod)
+        rev_stack["conjugate"] = False
+        new_stream.create_reverse_map("stack", rev_stack)
 
         # Iterate over all feed pairs and work out which is the correct index in the sidereal stack.
         for pi, (fi, fj) in enumerate(prod):
