@@ -132,13 +132,13 @@ class GaussianNoise(task.SingleTask):
         # TODO: this assumes uniform channels
         df = data.index_map["freq"]["width"][0] * 1e6
         nfreq = data.vis.local_shape[0]
-        nprod = len(data.index_map["prod"])
+        nprod = len(data.prodstack)
         ninput = len(data.index_map["input"])
 
         # Consider if this data is stacked over redundant baselines or not.
         if (self.telescope is not None) and (nprod == self.telescope.nbase):
             redundancy = self.telescope.redundancy
-        elif nprod == nfeed * (nfeed + 1) / 2:
+        elif nprod == ninput * (ninput + 1) / 2:
             redundancy = np.ones(nprod)
         else:
             raise ValueError("Unexpected number of products")
@@ -153,7 +153,7 @@ class GaussianNoise(task.SingleTask):
             )
 
         # Iterate over the products to find the auto-correlations and add the noise into them
-        for pi, prod in enumerate(data.index_map["prod"]):
+        for pi, prod in enumerate(data.prodstack):
 
             # Auto: multiply by sqrt(2) because auto has twice the variance
             if prod[0] == prod[1]:
