@@ -12,7 +12,8 @@ from Cython.Build import cythonize
 
 import numpy as np
 
-import draco
+import versioneer
+
 
 # Enable OpenMP support if available
 if sys.platform == "darwin":
@@ -41,7 +42,8 @@ trunc_ext = Extension(
 
 setup(
     name="draco",
-    version=draco.__version__,
+    version=versioneer.get_version(),
+    cmdclass=versioneer.get_cmdclass(),
     license="MIT",
     packages=find_packages(),
     ext_modules=cythonize([fast_ext, trunc_ext]),
