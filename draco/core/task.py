@@ -250,13 +250,18 @@ class SingleTask(MPILoggedTask, pipeline.BasicContMixin):
         Whether to save the output to disk or not.
     output_root : string
         Pipeline settable parameter giving the first part of the output path.
-        If set to 'None' no output is written.
+        If set to 'None' no output is written..
     nan_check : bool
         Check the output for NaNs (and infs) logging if they are present.
     nan_dump : bool
         If NaN's are found, dump the container to disk.
     nan_skip : bool
         If NaN's are found, don't pass on the output.
+    versions : dict
+        Keys are module names (str) and values are their version strings. This is
+        attached to output metadata.
+    pipeline_config : dict
+        Global pipeline configuration. This is attached to output metadata.
 
     Methods
     -------
@@ -276,6 +281,10 @@ class SingleTask(MPILoggedTask, pipeline.BasicContMixin):
     nan_check = config.Property(default=True, proptype=bool)
     nan_skip = config.Property(default=True, proptype=bool)
     nan_dump = config.Property(default=True, proptype=bool)
+
+    # Metadata to get attached to the output
+    versions = config.Property(default={}, proptype=dict)
+    pipeline_config = config.Property(default={}, proptype=dict)
 
     _count = 0
 
@@ -374,8 +383,17 @@ class SingleTask(MPILoggedTask, pipeline.BasicContMixin):
 
     def _save_output(self, output):
         # Routine to write output if needed.
-
         if self.save and output is not None:
+
+            # add metadata to output
+            metadata = {
+                "versions_json": self.versions,
+                "config_json": self.pipeline_config
+            }
+            for key, value in metadata.items():
+                if key in output.attrs:
+                    raise RuntimeError("Can't write {} to output: it already exists.".format(key))
+                output.attrs[key] = value
 
             # Create a tag for the output file name
             tag = output.attrs["tag"] if "tag" in output.attrs else self._count
