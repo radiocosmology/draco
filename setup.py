@@ -52,7 +52,7 @@ setup(
         "RandomGen",
         "caput>=0.4",
         "cora",
-        "driftscan>=1.2",
+        "driftscan>=20.2",
     ],
     author="Richard Shaw",
     author_email="richard@phas.ubc.ca",

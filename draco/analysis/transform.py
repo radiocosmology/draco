@@ -179,28 +179,14 @@ class CollateProducts(task.SingleTask):
             Dataset containing only the required products.
         """
         # For each input in the file, find the corresponding index in the telescope instance
-        ss_keys = ss.input
-        try:
-            bt_keys = self.telescope.input_index
-        except AttributeError:
-            bt_keys = np.array(
-                np.arange(self.telescope.nfeed), dtype=[("chan_id", "u2")]
-            )
-            field_to_match = "chan_id"
-        else:
-            if "correlator_input" in ss_keys.dtype.fields:
-                field_to_match = "correlator_input"
-            else:
-                field_to_match = "chan_id"
-
-        input_ind = tools.find_keys(
-            bt_keys[field_to_match], ss_keys[field_to_match], require_match=False
+        input_ind = tools.find_inputs(
+            self.telescope.input_index, ss.input, require_match=False
         )
 
         # Figure out the reverse mapping (i.e., for each input in the telescope instance,
         # find the corresponding index in file)
-        rev_input_ind = tools.find_keys(
-            ss_keys[field_to_match], bt_keys[field_to_match], require_match=True
+        rev_input_ind = tools.find_inputs(
+            ss.input, self.telescope.input_index, require_match=True
         )
 
         # Figure out mapping between the frequencies
@@ -243,7 +229,7 @@ class CollateProducts(task.SingleTask):
 
         sp = OutputContainer(
             freq=bt_freq,
-            input=bt_keys,
+            input=self.telescope.input_index,
             prod=self.bt_prod,
             stack=self.bt_stack,
             reverse_map_stack=self.bt_rev,

@@ -85,21 +85,8 @@ class ComputeSystemSensitivity(task.SingleTask):
         prodstack["input_b"] = np.where(conj, ps["input_a"], ps["input_b"])
 
         # Figure out mapping between inputs in data file and inputs in telescope
-        try:
-            bt_keys = self.telescope.input_index
-        except AttributeError:
-            bt_keys = np.array(
-                np.arange(self.telescope.nfeed), dtype=[("chan_id", "u2")]
-            )
-            field_to_match = "chan_id"
-        else:
-            if "correlator_input" in data.input.dtype.fields:
-                field_to_match = "correlator_input"
-            else:
-                field_to_match = "chan_id"
-
-        tel_index = tools.find_keys(
-            bt_keys[field_to_match], data.input[field_to_match], require_match=False
+        tel_index = tools.find_inputs(
+            self.telescope.input_index, data.input, require_match=False
         )
 
         # Use the mapping to extract polarisation and EW position of each input
