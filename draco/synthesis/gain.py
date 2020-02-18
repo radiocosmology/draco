@@ -162,7 +162,9 @@ class SiderealGains(BaseGains):
         self.lsd_end = self.observer.unix_to_lsd(self.end_time)
 
         self.log.info(
-            "Sidereal period requested: LSD=%i to LSD=%i", int(self.lsd_start), int(self.lsd_end)
+            "Sidereal period requested: LSD=%i to LSD=%i",
+            int(self.lsd_start),
+            int(self.lsd_end),
         )
 
         # Initialize the current lsd time
@@ -318,6 +320,7 @@ class RandomSiderealGains(RandomGains, SiderealGains):
 
     See the documentation for `RandomGains` and `SiderealGains` for more detail.
     """
+
     pass
 
 

@@ -58,7 +58,7 @@ class SourceStack(task.SingleTask):
 
         # Ensure formed_beam is distributed in sources
         formed_beam.redistribute("object_id")
-        
+
         # local shape and offset
         loff = formed_beam.beam.local_offset[0]
         lshape = formed_beam.beam.local_shape[0]
@@ -66,7 +66,7 @@ class SourceStack(task.SingleTask):
         # Frequency axis
         freq = formed_beam.freq
         nfreq = len(freq)
-        
+
         # Frequency of quasars
         qso_freq = NU21 / (formed_beam["redshift"]["z"] + 1.0)  # MHz.
         # Size of quasar stack array
