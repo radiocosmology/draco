@@ -22,6 +22,7 @@ import numpy as np
 from caput import mpiarray, config
 
 from ..core import containers, task, io
+from ..util import tools
 
 
 class BaseMapMaker(task.SingleTask):
@@ -69,19 +70,11 @@ class BaseMapMaker(task.SingleTask):
         mmax = min(bt.telescope.mmax, len(mmodes.index_map["m"]) - 1)
         nfreq = len(mmodes.index_map["freq"])  # bt.telescope.nfreq
 
-        def find_key(key_list, key):
-            try:
-                return map(tuple, list(key_list)).index(tuple(key))
-            except TypeError:
-                return list(key_list).index(key)
-            except ValueError:
-                return None
-
         # Figure out mapping between the frequencies
         bt_freq = self.beamtransfer.telescope.frequencies
         mm_freq = mmodes.index_map["freq"]["centre"]
 
-        freq_ind = [find_key(bt_freq, mf) for mf in mm_freq]
+        freq_ind = tools.find_keys(bt_freq, mm_freq, require_match=True)
 
         # Trim off excess m-modes
         mmodes.redistribute("freq")
