@@ -119,6 +119,47 @@ def find_keys(key_list, keys, require_match=False):
         return index
 
 
+def find_inputs(input_index, inputs, require_match=False):
+    """Find the indices of inputs into a list of inputs.
+
+    This behaves similarly to `find_keys` but will automatically choose the key to
+    match on.
+
+    Parameters
+    ----------
+    input_index : np.ndarray
+    inputs : np.ndarray
+    require_match : bool
+        Require that `input_index` contain every element of `inputs`,
+        and if not, raise ValueError.
+
+    Returns
+    -------
+    indices : list of int or None
+        List of the same length as `inputs` containing
+        the indices of `inputs` in `input_inswx`.  If `require_match`
+        is False, then this can also contain None for inputs
+        that are not contained in `input_index`.
+    """
+    # Significantly faster than repeated calls to find_key
+
+    if "correlator_input" in input_index.dtype.fields:
+        field_to_match = "correlator_input"
+    elif "chan_id" in input_index.dtype.fields:
+        field_to_match = "chan_id"
+    else:
+        raise ValueError(
+            "`input_index` must have either a `chan_id` or `correlator_input` field."
+        )
+
+    if field_to_match not in inputs.dtype.fields:
+        raise ValueError("`inputs` array does not have a `%s` field." % field_to_match)
+
+    return find_keys(
+        input_index[field_to_match], inputs[field_to_match], require_match=require_match
+    )
+
+
 def apply_gain(vis, gain, axis=1, out=None, prod_map=None):
     """Apply per input gains to a set of visibilities packed in upper
     triangular format.
@@ -322,20 +363,7 @@ def redefine_stack_index_map(telescope, inputs, prod, stack, reverse_stack):
     """
     # Determine mapping between inputs in the index_map and
     # inputs in the telescope instance
-    try:
-        tel_inputs = telescope.input_index
-    except AttributeError:
-        tel_inputs = np.array(np.arange(telescope.nfeed), dtype=[("chan_id", "u2")])
-        field_to_match = "chan_id"
-    else:
-        if "correlator_input" in inputs.dtype.fields:
-            field_to_match = "correlator_input"
-        else:
-            field_to_match = "chan_id"
-
-    tel_index = find_keys(
-        tel_inputs[field_to_match], inputs[field_to_match], require_match=False
-    )
+    tel_index = find_inputs(telescope.input_index, inputs, require_match=False)
 
     # Create a copy of the stack axis
     stack_new = stack.copy()
