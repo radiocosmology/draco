@@ -581,10 +581,7 @@ class RFISensitivityMask(task.SingleTask):
             finalmask[:, madtimes] = madmask[:, madtimes]
 
         # Collect all parts of the mask onto rank 1 and then broadcast to all ranks
-        finalmask = mpiarray.MPIArray.wrap(finalmask[np.newaxis, ...], 1).redistribute(
-            axis=0
-        )
-        finalmask = sensitivity.comm.bcast(finalmask[0], root=0)
+        finalmask = mpiarray.MPIArray.wrap(finalmask, 0).allgather()
 
         # Apply scale invariant rank (SIR) operator, if asked for.
         if self.sir:
