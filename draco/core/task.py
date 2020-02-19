@@ -388,11 +388,13 @@ class SingleTask(MPILoggedTask, pipeline.BasicContMixin):
             # add metadata to output
             metadata = {
                 "versions_json": self.versions,
-                "config_json": self.pipeline_config
+                "config_json": self.pipeline_config,
             }
             for key, value in metadata.items():
                 if key in output.attrs:
-                    raise RuntimeError("Can't write {} to output: it already exists.".format(key))
+                    raise RuntimeError(
+                        "Can't write {} to output: it already exists.".format(key)
+                    )
                 output.attrs[key] = value
 
             # Create a tag for the output file name
