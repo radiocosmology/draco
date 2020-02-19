@@ -581,14 +581,14 @@ class MModeInverseTransform(task.SingleTask):
             The output sidereal stream.
         """
         # NOTE: If n_time is smaller than Nyquist sampling the m-mode axis then
-        # the m-modes get clipped. If it is larger, they get zero padded. This 
-        # is NOT passed directly as parameter 'n' to `numpy.fft.ifft`, as this 
+        # the m-modes get clipped. If it is larger, they get zero padded. This
+        # is NOT passed directly as parameter 'n' to `numpy.fft.ifft`, as this
         # would give unwanted behaviour (https://github.com/numpy/numpy/pull/7593).
-        
+
         # Ensure m-modes are distributed in frequency
         mmodes.redistribute("freq")
 
-        # Re-construct array of S-streams 
+        # Re-construct array of S-streams
         ssarray = _make_ssarray(mmodes.vis[:], n=self.n_time)
         ntime = ssarray.shape[-1]
         ssarray = mpiarray.MPIArray.wrap(ssarray[:], axis=0, comm=mmodes.comm)

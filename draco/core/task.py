@@ -399,10 +399,7 @@ class SingleTask(MPILoggedTask, pipeline.BasicContMixin):
         if self.save and output is not None:
 
             # add metadata to output
-            metadata = {
-                "versions": self.versions,
-                "config": self.pipeline_config,
-            }
+            metadata = {"versions": self.versions, "config": self.pipeline_config}
             for key, value in metadata.items():
                 if key in output.attrs:
                     raise RuntimeError(
