@@ -40,6 +40,12 @@ trunc_ext = Extension(
     extra_link_args=link_args,
 )
 
+
+# Load the PEP508 formatted requirements from the requirements.txt file. Needs
+# pip version > 19.0
+with open("requirements.txt", "r") as fh:
+    requires = fh.readlines()
+
 setup(
     name="draco",
     version=versioneer.get_version(),
@@ -47,15 +53,7 @@ setup(
     license="MIT",
     packages=find_packages(),
     ext_modules=cythonize([fast_ext, trunc_ext]),
-    install_requires=[
-        "Cython>0.18",
-        "numpy>=1.7",
-        "scipy>=0.10",
-        "RandomGen",
-        "caput>=0.4",
-        "cora",
-        "driftscan>=20.2",
-    ],
+    install_requires=requires,
     author="Richard Shaw",
     author_email="richard@phas.ubc.ca",
     description="Analysis and simulation tools for driftscan radio interferometers.",
