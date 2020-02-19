@@ -1,0 +1,8 @@
+driftscan @ git+https://github.com/radiocosmology/driftscan.git
+caput @ git+https://github.com/radiocosmology/caput.git
+cora @ git+https://github.com/radiocosmology/cora.git
+Cython>0.18
+numpy>=1.7
+scipy>=0.10
+RandomGen
+mpi4py
