@@ -159,15 +159,10 @@ class ApplyGain(task.SingleTask):
         if isinstance(gain, containers.SiderealGainData):
             # Need a prod_map for sidereal streams
             tools.apply_gain(
-                tstream.weight[:],
-                gweight,
-                out=tstream.weight[:],
-                prod_map=tstream.prod,
+                tstream.weight[:], gweight, out=tstream.weight[:], prod_map=tstream.prod
             )
         else:
-            tools.apply_gain(
-                tstream.weight[:], gweight, out=tstream.weight[:],
-            )
+            tools.apply_gain(tstream.weight[:], gweight, out=tstream.weight[:])
 
         # Update units if they were specified
         convert_units_to = gain.gain.attrs.get("convert_units_to")
