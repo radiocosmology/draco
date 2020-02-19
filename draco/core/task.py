@@ -248,9 +248,20 @@ class SingleTask(MPILoggedTask, pipeline.BasicContMixin):
     ----------
     save : bool
         Whether to save the output to disk or not.
+    output_name : string
+        A python format string used to construct the filename. Valid identifiers are:
+          - `count`: an integer giving which iteration of the task is this.
+          - `tag`: a string identifier for the output derived from the
+                   containers `tag` attribute. If that attribute is not present
+                   `count` is used instead.
+          - `key`: the name of the output key.
+          - `task`: the (unqualified) name of the task.
+          - `output_root`: the value of the output root argument. This is deprecated
+                           and is just used for legacy support. The default value of
+                           `output_name` means the previous behaviour works.
     output_root : string
         Pipeline settable parameter giving the first part of the output path.
-        If set to 'None' no output is written..
+        Deprecated in favour of `output_name`.
     nan_check : bool
         Check the output for NaNs (and infs) logging if they are present.
     nan_dump : bool
@@ -276,7 +287,9 @@ class SingleTask(MPILoggedTask, pipeline.BasicContMixin):
     """
 
     save = config.Property(default=False, proptype=bool)
+
     output_root = config.Property(default="", proptype=str)
+    output_name = config.Property(default="{output_root}{tag}.h5", proptype=str)
 
     nan_check = config.Property(default=True, proptype=bool)
     nan_skip = config.Property(default=True, proptype=bool)
@@ -401,7 +414,14 @@ class SingleTask(MPILoggedTask, pipeline.BasicContMixin):
             tag = output.attrs["tag"] if "tag" in output.attrs else self._count
 
             # Construct the filename
-            outfile = self.output_root + str(tag) + ".h5"
+            name_parts = {
+                "tag": tag,
+                "count": self._count,
+                "task": self.__class__.__name__,
+                "key": self._out_keys[0] if self._out_keys else "",
+                "output_root": self.output_root,
+            }
+            outfile = self.output_name.format(**name_parts)
 
             # Expand any variables in the path
             outfile = os.path.expanduser(outfile)
