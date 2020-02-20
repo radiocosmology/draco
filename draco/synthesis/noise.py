@@ -105,7 +105,7 @@ class GaussianNoiseDataset(task.SingleTask):
         # create a random generator, and create a local seed state
         rg = randomgen.generator.RandomGenerator()
 
-        with randomgen_mpi_random_seed(rg, self.seed) as rg:
+        with mpi_random_seed(self.seed, randomgen=rg) as rg:
             noise = rg.normal(
                 scale=np.sqrt(tools.invert_no_zero(data.weight[:]) / 2),
                 size=(2,) + data.weight[:].shape,
@@ -390,8 +390,8 @@ def draw_complex_wishart(C, n):
 
 
 @contextlib.contextmanager
-def mpi_random_seed(seed, extra=0):
-    """Use a specific random seed for the numpy.random context, and return to the original state on exit.
+def mpi_random_seed(seed, extra=0, randomgen=None):
+    """Use a specific random seed for the numpy.random context or for the RandomGen context, and return to the original state on exit.
 
     This is designed to work for MPI computations, incrementing the actual seed
     of each process by the MPI rank. Overall each process gets the numpy seed:
@@ -404,13 +404,20 @@ def mpi_random_seed(seed, extra=0):
     extra : int, optional
         An extra part of the seed, which should be changed for calculations
         using the same seed, but that want different random sequences.
+    gen: :class: `Generator`
+        A RandomGen bit_generator whose internal seed state we are going to
+        influence.
+
+    Yields
+    ------
+    If we are setting the numpy.random context, nothing is yielded.
+
+    :class: `Generator`
+        If we are setting the RandomGen bit_generator, it will be returned.
     """
 
     import numpy as np
     from caput import mpiutil
-
-    # Copy the old state for restoration later.
-    old_state = np.random.get_state()
 
     # Just choose a random number per process as the seed if nothing was set.
     if seed is None:
@@ -420,49 +427,24 @@ def mpi_random_seed(seed, extra=0):
     new_seed = seed + mpiutil.rank + 4096 * extra
     np.random.seed(new_seed)
 
-    # Enter the context block, and reset the state on exit.
-    try:
-        yield
-    finally:
-        np.random.set_state(old_state)
+    # we will be setting the numpy.random context
+    if randomgen is None:
+        # Copy the old state for restoration later.
+        old_state = np.random.get_state()
 
+        # Enter the context block, and reset the state on exit.
+        try:
+            yield
+        finally:
+            np.random.set_state(old_state)
 
-@contextlib.contextmanager
-def randomgen_mpi_random_seed(gen, seed, extra=0):
-    """Use a specific random seed for the RandomGen context, and return to the original state on exit.
+    # we will be setting the randomgen context
+    else:
+        # Copy the old state for restoration later.
+        old_state = gen.state
 
-    This is designed to work for MPI computations, incrementing the actual seed
-    of each process by the MPI rank. Overall each process gets the numpy seed:
-    `numpy_seed = seed + mpi_rank + 4096 * extra`.
-
-    Parameters
-    ----------
-    gen: :class: `Generator`
-        A RandomGen bit_generator whose internal seed state we are going to
-        influence.
-    seed : int
-        Base seed to set. If seed is :obj:`None`, re-seed randomly.
-    extra : int, optional
-        An extra part of the seed, which should be changed for calculations
-        using the same seed, but that want different random sequences.
-    """
-
-    import numpy as np
-    from caput import mpiutil
-
-    # Copy the old state for restoration later.
-    old_state = gen.state
-
-    # Just choose a random number per process as the seed if nothing was set.
-    if seed is None:
-        seed = np.random.randint(2 ** 30)
-
-    # Construct the new process specific seed
-    new_seed = seed + mpiutil.rank + 4096 * extra
-    gen.seed(new_seed)
-
-    # Enter the context block, and reset the state on exit.
-    try:
-        yield gen
-    finally:
-        gen.state = old_state
+        # Enter the context block, and reset the state on exit.
+        try:
+            yield gen
+        finally:
+            gen.state = old_state
