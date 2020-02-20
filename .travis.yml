@@ -10,6 +10,7 @@ python:
 addons:
     apt:
         packages:
+            - libhdf5-serial-dev
             - libopenmpi-dev
 
 before_install:
@@ -20,6 +21,15 @@ before_install:
   - pip install cython
 
 install:
+  # install h5py and bitshuffle
+  - pip install --no-binary=h5py h5py
+  - cd ..
+  - git clone https://github.com/kiyo-masui/bitshuffle.git
+  - cd bitshuffle
+  - python setup.py install #[--h5plugin [--h5plugin-dir=spam]]
+  - cd ../draco
+
+  # install draco
   - pip install -r requirements.txt
   - pip install -r doc/requirements.txt
   - pip install .
