@@ -202,7 +202,7 @@ class BeamformNS(task.SingleTask):
         el = self.span * np.linspace(-1.0, 1.0, self.npix)
 
         # Create empty ring map
-        hv = containers.HybridVisStream(el=el, axes_from=gstream, attrs_from=gstream)
+        hv = containers.HybridVisStream(el=el, axes_from=gstream)
         hv.redistribute("freq")
 
         # Dereference datasets
