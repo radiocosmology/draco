@@ -1,9 +1,12 @@
 """Add the effects of instrumental noise into the simulation.
 
-This is separated out into two tasks. The first, :class:`ReceiverTemperature`
+This is separated out into multiple tasks. The first, :class:`ReceiverTemperature`
 adds in the effects of instrumental noise bias into the data. The second,
 :class:`SampleNoise`, takes a timestream which is assumed to be the expected (or
-average) value and returns an observed time stream.
+average) value and returns an observed time stream. The :class: `GaussianNoise`
+adds in the effects of a Gaussian distributed noise into visibility data.
+The :class: `GaussianNoiseDataset` replaces visibility data with Gaussian distributed noise,
+using the variance of the noise estimate in the existing data.
 
 Tasks
 =====
@@ -12,6 +15,8 @@ Tasks
     :toctree:
 
     ReceiverTemperature
+    GaussianNoiseDataset
+    GaussianNoise
     SampleNoise
 """
 # === Start Python 2/3 compatibility
@@ -23,6 +28,7 @@ from future.builtins.disabled import *  # noqa  pylint: disable=W0401, W0614
 
 import contextlib
 
+import randomgen
 import numpy as np
 
 from caput import config
@@ -58,6 +64,60 @@ class ReceiverTemperature(task.SingleTask):
             # Great an auto!
             if prod[0] == prod[1]:
                 data.vis[:, pi] += self.recv_temp
+
+        return data
+
+
+class GaussianNoiseDataset(task.SingleTask):
+    """Generates a Gaussian distributed noise dataset using the
+    the noise estimates of an existing dataset.
+
+    Attributes
+    ----------
+    seed : int
+        Random seed for the noise generation.
+    """
+
+    seed = config.Property(proptype=int, default=None)
+
+    def process(self, data):
+        """Generates a Gaussian distributed noise dataset,
+        given the provided dataset's visibility weights
+
+        Parameters
+        ----------
+        data : :class:`VisContainer`
+            Any dataset which contains a vis and weight attribute.
+            Note the modification is done in place.
+
+        Returns
+        -------
+        data_noise : same as :param:`data`
+            The previous dataset with the visibility replaced with
+            a Gaussian distributed noise realisation.
+
+        """
+        # Distribute in something other than `stack`
+        data.redistribute("freq")
+        # Visibility to be replaced by noise
+        vis = data.vis[:]
+
+        # create a random generator, and create a local seed state
+        rg = randomgen.generator.RandomGenerator()
+
+        with mpi_random_seed(self.seed, randomgen=rg) as rg:
+            noise = rg.normal(
+                scale=np.sqrt(tools.invert_no_zero(data.weight[:]) / 2),
+                size=(2,) + data.weight[:].shape,
+            )
+            vis[:] = noise[0] + 1j * noise[1]
+
+        for si, prod in enumerate(data.prodstack):
+            prod_inputs = data.prod[prod]
+            if prod_inputs[0] == prod_inputs[1]:
+                # This is an auto-correlation
+                vis[:, si].real *= 2 ** 0.5
+                vis[:, si].imag = 0.0
 
         return data
 
@@ -330,8 +390,8 @@ def draw_complex_wishart(C, n):
 
 
 @contextlib.contextmanager
-def mpi_random_seed(seed, extra=0):
-    """Use a specific random seed for the context, and return to the original state on exit.
+def mpi_random_seed(seed, extra=0, randomgen=None):
+    """Use a specific random seed for the numpy.random context or for the RandomGen context, and return to the original state on exit.
 
     This is designed to work for MPI computations, incrementing the actual seed
     of each process by the MPI rank. Overall each process gets the numpy seed:
@@ -344,13 +404,20 @@ def mpi_random_seed(seed, extra=0):
     extra : int, optional
         An extra part of the seed, which should be changed for calculations
         using the same seed, but that want different random sequences.
+    gen: :class: `Generator`
+        A RandomGen bit_generator whose internal seed state we are going to
+        influence.
+
+    Yields
+    ------
+    If we are setting the numpy.random context, nothing is yielded.
+
+    :class: `Generator`
+        If we are setting the RandomGen bit_generator, it will be returned.
     """
 
     import numpy as np
     from caput import mpiutil
-
-    # Copy the old state for restoration later.
-    old_state = np.random.get_state()
 
     # Just choose a random number per process as the seed if nothing was set.
     if seed is None:
@@ -360,8 +427,24 @@ def mpi_random_seed(seed, extra=0):
     new_seed = seed + mpiutil.rank + 4096 * extra
     np.random.seed(new_seed)
 
-    # Enter the context block, and reset the state on exit.
-    try:
-        yield
-    finally:
-        np.random.set_state(old_state)
+    # we will be setting the numpy.random context
+    if randomgen is None:
+        # Copy the old state for restoration later.
+        old_state = np.random.get_state()
+
+        # Enter the context block, and reset the state on exit.
+        try:
+            yield
+        finally:
+            np.random.set_state(old_state)
+
+    # we will be setting the randomgen context
+    else:
+        # Copy the old state for restoration later.
+        old_state = gen.state
+
+        # Enter the context block, and reset the state on exit.
+        try:
+            yield gen
+        finally:
+            gen.state = old_state
