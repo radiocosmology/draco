@@ -387,8 +387,8 @@ class SingleTask(MPILoggedTask, pipeline.BasicContMixin):
 
             # add metadata to output
             metadata = {
-                "versions_json": self.versions,
-                "config_json": self.pipeline_config,
+                "versions": self.versions,
+                "config": self.pipeline_config,
             }
             for key, value in metadata.items():
                 if key in output.attrs:

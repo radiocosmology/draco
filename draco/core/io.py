@@ -45,6 +45,7 @@ from past.builtins import basestring
 
 import os.path
 import numpy as np
+from yaml import dump as yamldump
 
 from caput import pipeline
 from caput import config
@@ -551,6 +552,66 @@ class Truncate(task.SingleTask):
                     ).reshape(old_shape)
 
         return data
+
+
+class SaveModuleVersions(task.SingleTask):
+    """Write module versions to a YAML file.
+
+    The list of modules should be added to the configuration under key 'save_versions'.
+    The version strings are written to a YAML file.
+
+    Attributes
+    ----------
+    root : str
+        Root of the file name to output to.
+    """
+
+    root = config.Property(proptype=str)
+
+    done = True
+
+    def setup(self):
+        """Save module versions."""
+
+        fname = "{}_versions.yml".format(self.root)
+        f = open(fname, "w")
+        f.write(yamldump(self.versions))
+        f.close()
+        self.done = True
+
+    def process(self):
+        """Do nothing."""
+        self.done = True
+        return
+
+
+class SaveConfig(task.SingleTask):
+    """Write pipeline config to a text file.
+
+    Yaml configuration document is written to a text file.
+
+    Attributes
+    ----------
+    root : str
+        Root of the file name to output to.
+    """
+
+    root = config.Property(proptype=str)
+    done = True
+
+    def setup(self):
+        """Save module versions."""
+
+        fname = "{}_config.yml".format(self.root)
+        f = open(fname, "w")
+        f.write(yamldump(self.pipeline_config))
+        f.close()
+        self.done = True
+
+    def process(self):
+        """Do nothing."""
+        self.done = True
+        return
 
 
 def get_telescope(obj):
