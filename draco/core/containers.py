@@ -1126,7 +1126,7 @@ class VisGridStream(ContainerBase):
 
 
 class HybridVisStream(ContainerBase):
-    """Visibilities gridded into a 2D array.
+    """Container for beams on the meridian.
 
     Only makes sense for an array which is a cartesian grid.
     """
@@ -1158,9 +1158,42 @@ class HybridVisStream(ContainerBase):
     def weight(self):
         return self.datasets["vis_weight"]
 
+class HybridVisDelayStream(ContainerBase):
+    """Container for delay transform of beams on the meridian.
+
+    Only makes sense for an array which is a cartesian grid.
+    """
+
+    _axes = ("pol", "delay", "ew", "el", "ra")
+
+    _dataset_spec = {
+        "vis": {
+            "axes": ["pol", "delay", "ew", "el", "ra"],
+            "dtype": np.complex64,
+            "initialise": True,
+            "distributed": True,
+            "distributed_axis": "delay",
+        },
+        "vis_weight": {
+            "axes": ["pol", "delay", "ew", "el", "ra"],
+            "dtype": np.float32,
+            "initialise": True,
+            "distributed": True,
+            "distributed_axis": "delay",
+        },
+    }
+
+    @property
+    def vis(self):
+        return self.datasets["vis"]
+
+    @property
+    def weight(self):
+        return self.datasets["vis_weight"]
+
 
 class HybridVisMModes(ContainerBase):
-    """Visibilities gridded into a 2D array.
+    """Container for Mmodes of beams on the meridian.
 
     Only makes sense for an array which is a cartesian grid.
     """
@@ -1194,6 +1227,50 @@ class HybridVisMModes(ContainerBase):
         kwargs["msign"] = np.array(["+", "-"])
 
         super(HybridVisMModes, self).__init__(*args, **kwargs)
+
+    @property
+    def vis(self):
+        return self.datasets["vis"]
+
+    @property
+    def weight(self):
+        return self.datasets["vis_weight"]
+
+class HybridVisDelayMModes(ContainerBase):
+    """Container for Mmodes of beams on the meridian after delay transform.
+
+    Only makes sense for an array which is a cartesian grid.
+    """
+
+    _axes = ("pol", "delay", "ew", "el", "m", "msign")
+
+    _dataset_spec = {
+        "vis": {
+            "axes": ["m", "msign", "pol", "delay", "ew", "el"],
+            "dtype": np.complex64,
+            "initialise": True,
+            "distributed": True,
+            "distributed_axis": "delay",
+        },
+        "vis_weight": {
+            "axes": ["m", "msign", "pol", "delay", "ew", "el"],
+            "dtype": np.float32,
+            "initialise": True,
+            "distributed": True,
+            "distributed_axis": "delay",
+        },
+    }
+
+    def __init__(self, mmax=None, *args, **kwargs):
+
+        # Set up axes from passed arguments
+        if mmax is not None:
+            kwargs["m"] = mmax + 1
+
+        # Ensure the sign axis is set correctly
+        kwargs["msign"] = np.array(["+", "-"])
+
+        super(HybridVisDelayMModes, self).__init__(*args, **kwargs)
 
     @property
     def vis(self):

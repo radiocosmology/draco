@@ -513,7 +513,7 @@ class MModeTransform(task.SingleTask):
 
         Parameters
         ----------
-        sstream : containers.SiderealStream or containers.HybridVisStream
+        sstream : containers.SiderealStream, HybridVisStream or HybridVisDelayStream
             The input sidereal stream.
 
         Returns
@@ -524,17 +524,25 @@ class MModeTransform(task.SingleTask):
         contmap = {
             containers.SiderealStream: containers.MModes,
             containers.HybridVisStream: containers.HybridVisMModes,
+            containers.HybridVisDelayStream: containers.HybridVisDelayMModes,
+        }
+
+        dist_axis_map = {
+            containers.SiderealStream: "freq",
+            containers.HybridVisStream: "freq",
+            containers.HybridVisDelayStream: "delay",
         }
 
         # Get the output container and figure out at which position is it's
         # frequency axis
         out_cont = contmap[sstream.__class__]
-        freq_axis = out_cont._dataset_spec["vis"]["axes"].index("freq")
+        dist_axis = dist_axis_map[sstream.__class__]
+        dist_axis_index = out_cont._dataset_spec["vis"]["axes"].index(dist_axis)
 
-        sstream.redistribute("freq")
+        sstream.redistribute(dist_axis)
 
         # Sum the noise variance over time samples, this will become the noise
-        # variance for the m-modes
+        # variance for the m-modes. Assumes time/ra is the last axis
         weight_sum = sstream.weight[:].sum(axis=-1)
 
         if self.telescope is not None:
@@ -544,12 +552,12 @@ class MModeTransform(task.SingleTask):
 
         # Construct the array of m-modes
         marray = _make_marray(sstream.vis[:], mmax)
-        marray = mpiarray.MPIArray.wrap(marray[:], axis=freq_axis, comm=sstream.comm)
+        marray = mpiarray.MPIArray.wrap(marray[:], axis=dist_axis_index, comm=sstream.comm)
 
         # Create the container to store the modes in
         mmax = marray.shape[0] - 1
         ma = out_cont(mmax=mmax, axes_from=sstream, comm=sstream.comm)
-        ma.redistribute("freq")
+        ma.redistribute(dist_axis)
 
         # Assign the visibilities and weights into the container
         ma.vis[:] = marray
