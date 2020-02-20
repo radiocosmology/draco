@@ -107,16 +107,17 @@ class GaussianNoiseDataset(task.SingleTask):
 
         with randomgen_mpi_random_seed(rg, self.seed) as rg:
             noise = rg.normal(
-                    scale = np.sqrt(tools.invert_no_zero(data.weight[:])/2),
-                    size = (2,) + data.weight[:].shape)
+                scale=np.sqrt(tools.invert_no_zero(data.weight[:]) / 2),
+                size=(2,) + data.weight[:].shape,
+            )
             vis[:] = noise[0] + 1j * noise[1]
 
         for si, prod in enumerate(data.prodstack):
             prod_inputs = data.prod[prod]
-            if (prod_inputs[0]==prod_inputs[1]):
+            if prod_inputs[0] == prod_inputs[1]:
                 # This is an auto-correlation
-                vis[:, si].real *= 2**0.5
-                vis[:, si].imag = 0.
+                vis[:, si].real *= 2 ** 0.5
+                vis[:, si].imag = 0.0
 
         return data
 
