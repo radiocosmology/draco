@@ -222,7 +222,7 @@ class DelaySpectrumEstimator(task.SingleTask):
             if (data == 0.0).all():
                 continue
 
-            spec = delay_spectrum_gibbs(
+            spec, dtransform = delay_spectrum_gibbs(
                 data, ndelay, weight, initial_S, fsel=channel_ind, niter=self.nsamp
             )
 
@@ -361,6 +361,34 @@ def fourier_matrix_r2c(N, fsel=None):
 
     return Fr
 
+def fourier_matrix_c2c(N, fsel=None):
+    """Generate a Fourier matrix to represent a complex to complex FFT.
+
+    Parameters
+    ----------
+    N : integer
+        Length of timestream that we are transforming to.
+    fsel : array_like, optional
+        Indexes of the frequency channels to include in the transformation
+        matrix. By default, assume all channels.
+
+    Returns
+    -------
+    F : np.ndarray
+        An array performing the Fourier transform from a complex-valued time series
+        to frequencies.
+    """
+
+    if fsel is None:
+        fa = np.arange(N)
+    else:
+        fa = np.array(fsel)
+
+    fa = fa[:, np.newaxis]
+    ta = np.arange(N)[np.newaxis, :]
+
+    return np.exp(-2 * np.pi * ta * fa / N)
+
 
 def fourier_matrix_c2r(N, fsel=None):
     """Generate a Fourier matrix to represent a complex to real FFT.
@@ -403,10 +431,13 @@ def fourier_matrix_c2r(N, fsel=None):
 _delay_rng = RandomGenerator()
 
 
-def delay_spectrum_gibbs(data, N, Ni, initial_S, window=True, fsel=None, niter=20):
+def delay_spectrum_gibbs(data, N, Ni, initial_S, window=True, fsel=None, niter=20,
+    real_valued_output=True):
     """Estimate the delay spectrum by Gibbs sampling.
 
     This routine estimates the spectrum at the `N` delay samples conjugate to
+    the frequency spectrum of `N` channels. If the output signal is expected
+    to be real, it estimates the spectrum at the `N` delay samples conjugate to
     the frequency spectrum of ``N/2 + 1`` channels. A subset of these channels
     can be specified using the `fsel` argument.
 
@@ -415,8 +446,10 @@ def delay_spectrum_gibbs(data, N, Ni, initial_S, window=True, fsel=None, niter=2
     data : np.ndarray[:, freq]
         Data to estimate the delay spectrum of.
     N : int
-        The length of the output delay spectrum. There are assumed to `N/2 + 1`
-        total frequency channels.
+        The length of the output delay spectrum. If real_valued_output is True,
+        there are assumed to be `N/2 + 1` total frequency channels.
+        If real_valued_output is False, there are assumed to be `N` total
+        frequency channels.
     Ni : np.ndarray[freq]
         Inverse noise variance.
     initial_S : np.ndarray[delay]
@@ -427,11 +460,15 @@ def delay_spectrum_gibbs(data, N, Ni, initial_S, window=True, fsel=None, niter=2
         Indices of channels that we have data at. By default assume all channels.
     niter : int, optional
         Number of Gibbs samples to generate.
+    real_valued_output: bool, optional
+        Output signal is expected to be real valued. Default is True.
 
     Returns
     -------
-    spec : list
-        List of spectrum samples.
+    spec : np.ndarray[delay]
+        Array of spectrum samples.
+    dtransform : np.ndarray[iter, delay, :]
+        Array of delay transform samples.
     """
 
     # Get reference to RNG
@@ -440,17 +477,19 @@ def delay_spectrum_gibbs(data, N, Ni, initial_S, window=True, fsel=None, niter=2
     rng = _delay_rng
 
     spec = []
+    dtransform = []
 
-    total_freq = N // 2 + 1
+    total_freq = N // 2 + 1 if real_valued_output else N
 
     if fsel is None:
         fsel = np.arange(total_freq)
 
     # Construct the Fourier matrix
-    F = fourier_matrix_r2c(N, fsel)
+    F = fourier_matrix_r2c(N, fsel) if real_valued_output else fourier_matrix_c2c(N, fsel)
 
     # Construct a view of the data with alternating real and imaginary parts
-    data = data.astype(np.complex128, order="C").view(np.float64).T.copy()
+    data = (data.astype(np.complex128, order="C").view(np.float64).T.copy()
+            if real_valued_output else data.T.copy())
 
     # Window the frequency data
     if window:
@@ -458,19 +497,24 @@ def delay_spectrum_gibbs(data, N, Ni, initial_S, window=True, fsel=None, niter=2
         # Construct the window function
         x = fsel * 1.0 / total_freq
         w = window_generalised(x, window="nuttall")
-        w = np.repeat(w, 2)
+        if real_valued_output:
+            w = np.repeat(w, 2)
 
         # Apply to the projection matrix and the data
         F *= w[:, np.newaxis]
         data *= w[:, np.newaxis]
 
-    is_real_freq = (fsel == 0) | (fsel == N // 2)
+    # Construct the Noise inverse array
+    if real_valued_output:
+        is_real_freq = (fsel == 0) | (fsel == N // 2)
 
-    # Construct the Noise inverse array for the real and imaginary parts (taking
-    # into account that the zero and Nyquist frequencies are strictly real)
-    Ni_r = np.zeros(2 * Ni.shape[0])
-    Ni_r[0::2] = np.where(is_real_freq, Ni, Ni / 2 ** 0.5)
-    Ni_r[1::2] = np.where(is_real_freq, 0.0, Ni / 2 ** 0.5)
+        # Construct the Noise inverse array for the real and imaginary parts (taking
+        # into account that the zero and Nyquist frequencies are strictly real)
+        Ni_r = np.zeros(2 * Ni.shape[0])
+        Ni_r[0::2] = np.where(is_real_freq, Ni, Ni / 2 ** 0.5)
+        Ni_r[1::2] = np.where(is_real_freq, 0.0, Ni / 2 ** 0.5)
+    else:
+        Ni_r = Ni.copy()
 
     # Create the Hermitian conjugate weighted by the noise (this is used multiple times)
     FTNih = F.T * Ni_r[np.newaxis, :] ** 0.5
@@ -526,8 +570,11 @@ def delay_spectrum_gibbs(data, N, Ni, initial_S, window=True, fsel=None, niter=2
         S_samp = _draw_ps_sample(d_samp)
 
         spec.append(S_samp)
+        dtransform.append(d_samp)
 
-    return spec
+    spec = np.vstack(spec)
+    dtransform = np.stack(dtransform, axis=0)
+    return spec, dtransform
 
 
 def null_delay_filter(freq, max_delay, mask, num_delay=200, tol=1e-8, window=True):
