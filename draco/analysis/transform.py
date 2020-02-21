@@ -178,53 +178,21 @@ class CollateProducts(task.SingleTask):
         sp : SiderealStream
             Dataset containing only the required products.
         """
-
-        # Define two functions that are used below
-        def find_key(key_list, key):
-            try:
-                return [tuple(x) for x in key_list].index(tuple(key))
-            except TypeError:
-                return list(key_list).index(key)
-            except ValueError:
-                return None
-
-        match_sn = True
-        if "stack" in ss.index_map:
-            match_sn = ss.index_map["stack"].size == ss.index_map["prod"].size
-
         # For each input in the file, find the corresponding index in the telescope instance
-        ss_keys = ss.index_map["input"][:]
-        try:
-            bt_keys = self.telescope.input_index
-        except AttributeError:
-            bt_keys = np.array(
-                np.arange(self.telescope.nfeed), dtype=[("chan_id", "u2")]
-            )
-            match_sn = False
-
-        field_to_match = "correlator_input" if match_sn else "chan_id"
-        input_ind = [
-            find_key(bt_keys[field_to_match], sk) for sk in ss_keys[field_to_match]
-        ]
+        input_ind = tools.find_inputs(
+            self.telescope.input_index, ss.input, require_match=False
+        )
 
         # Figure out the reverse mapping (i.e., for each input in the telescope instance,
         # find the corresponding index in file)
-        rev_input_ind = [
-            find_key(ss_keys[field_to_match], bk) for bk in bt_keys[field_to_match]
-        ]
-
-        if any([rv is None for rv in rev_input_ind]):
-            raise ValueError(
-                "All feeds in Telescope instance must exist in Timestream instance."
-            )
+        rev_input_ind = tools.find_inputs(
+            ss.input, self.telescope.input_index, require_match=True
+        )
 
         # Figure out mapping between the frequencies
-        freq_ind = [find_key(ss.freq[:], bf) for bf in self.telescope.frequencies]
-
-        if any([fi is None for fi in freq_ind]):
-            raise ValueError(
-                "All frequencies in Telescope instance must exist in Timestream instance."
-            )
+        freq_ind = tools.find_keys(
+            ss.freq[:], self.telescope.frequencies, require_match=True
+        )
 
         bt_freq = ss.index_map["freq"][freq_ind]
 
@@ -232,40 +200,24 @@ class CollateProducts(task.SingleTask):
         # If the input timestream is already stacked, then attempt to redefine
         # its representative products so that they contain only feeds that exist
         # and are not masked in the telescope instance.
-        if ("stack" in ss.index_map) and (
-            ss.index_map["stack"].size < ss.index_map["prod"].size
-        ):
+        if ss.is_stacked:
 
-            available_prod = ss.index_map["prod"]
-            chosen_prod = available_prod[ss.index_map["stack"]["prod"]]
-            rev_stack = ss.reverse_map["stack"]
+            stack_new, stack_flag = tools.redefine_stack_index_map(
+                self.telescope, ss.input, ss.prod, ss.stack, ss.reverse_map["stack"]
+            )
 
-            stack_new = ss.index_map["stack"].copy()
-            for sind, (ii, ij) in enumerate(chosen_prod):
+            if not np.all(stack_flag):
+                self.log.warning(
+                    "There are %d stacked baselines that are masked "
+                    "in the telescope instance." % np.sum(~stack_flag)
+                )
 
-                bi, bj = input_ind[ii], input_ind[ij]
-                if (bi is None) or (bj is None) or not self.telescope.feedmask[bi, bj]:
-
-                    this_stack = np.flatnonzero(rev_stack["stack"] == sind)
-
-                    for ts in this_stack:
-                        tp = available_prod[ts]
-                        tbi, tbj = input_ind[tp[0]], input_ind[tp[1]]
-                        if (
-                            (tbi is not None)
-                            and (tbj is not None)
-                            and self.telescope.feedmask[tbi, tbj]
-                        ):
-                            stack_new[sind]["prod"] = ts
-                            stack_new[sind]["conjugate"] = rev_stack[ts]["conjugate"]
-                            break
-
+            ss_prod = ss.prod[stack_new["prod"]]
             ss_conj = stack_new["conjugate"]
-            ss_prod = available_prod[stack_new["prod"]]
 
         else:
-            ss_conj = np.zeros(ss.vis.shape[1], dtype=np.bool)
-            ss_prod = ss.index_map["prod"]
+            ss_prod = ss.prod
+            ss_conj = np.zeros(ss_prod.size, dtype=np.bool)
 
         # Create output container
         if isinstance(ss, containers.SiderealStream):
@@ -277,7 +229,7 @@ class CollateProducts(task.SingleTask):
 
         sp = OutputContainer(
             freq=bt_freq,
-            input=bt_keys,
+            input=self.telescope.input_index,
             prod=self.bt_prod,
             stack=self.bt_stack,
             reverse_map_stack=self.bt_rev,
@@ -285,7 +237,7 @@ class CollateProducts(task.SingleTask):
             attrs_from=ss,
             distributed=True,
             comm=ss.comm,
-            **output_kwargs,
+            **output_kwargs
         )
 
         # Add gain dataset.
@@ -574,14 +526,14 @@ def _pack_marray(mmodes, mmax=None):
     # Pack an FFT into the correct format for the m-modes (i.e. [m, freq, +/-,
     # baseline])
 
-    N = mmodes.shape[-1] # Total number of modes
-    N_pos_mmodes = N // 2 # Total number of positive modes
+    N = mmodes.shape[-1]  # Total number of modes
+    N_pos_mmodes = N // 2  # Total number of positive modes
     if mmax is None:
         mmax = mlim = N_pos_mmodes
-        mlim_neg = mlim - 1 + N%2 # Index for negative modes
-    elif mmax >= N_pos_mmodes: # Modes larger than N_pos_mmodes set to 0.
+        mlim_neg = mlim - 1 + N % 2  # Index for negative modes
+    elif mmax >= N_pos_mmodes:  # Modes larger than N_pos_mmodes set to 0.
         mlim = N_pos_mmodes
-        mlim_neg = mlim - 1 + N%2
+        mlim_neg = mlim - 1 + N % 2
     else:
         mlim = mmax
         mlim_neg = mlim
@@ -590,9 +542,12 @@ def _pack_marray(mmodes, mmax=None):
 
     marray = np.zeros((mmax + 1, 2) + shape, dtype=np.complex128)
 
-    marray[:mlim+1, 0] = mmodes[:mlim+1] # Non-negative modes
+    # Non-negative modes
+    marray[: mlim + 1, 0] = np.rollaxis(mmodes[..., : mlim + 1], -1, 0)
     # Negative modes
-    marray[1:mlim_neg+1, 1] = mmodes[-1:-(mlim_neg+1):-1].conj()
+    marray[1 : mlim_neg + 1, 1] = np.rollaxis(
+        mmodes[..., -1 : -(mlim_neg + 1) : -1].conj(), -1, 0
+    )
 
     return marray
 
