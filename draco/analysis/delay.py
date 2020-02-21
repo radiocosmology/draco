@@ -422,7 +422,7 @@ def fourier_matrix_c2r(N, fsel=None):
     Fr = np.zeros((N, 2 * fa.shape[1]), dtype=np.float64)
 
     Fr[:, 0::2] = np.cos(2 * np.pi * ta * fa / N) * mul
-    Fr[:, 1::2] = -np.sin(2 * np.pi * ta * fa / N) * mul
+    Fr[:, 1::2] = np.sin(2 * np.pi * ta * fa / N) * mul
 
     return Fr
 
