@@ -518,7 +518,7 @@ class MModeTransform(task.SingleTask):
 
         Returns
         -------
-        mmodes : containers.MModes
+        mmodes : containers.MModes, HybridVisMModes or HybridVisDelayMModes
         """
 
         contmap = {
