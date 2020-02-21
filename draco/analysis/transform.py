@@ -553,18 +553,43 @@ def _pack_marray(mmodes, mmax=None):
 
 
 class MModeInverseTransform(task.SingleTask):
-    def process(self, ma):
+    """Transform m-modes to sidereal stream.
 
-        ma.redistribute("freq")
-        ntime = ma.vis.shape[0] * 2 - 1
+    Currently ignores any noise weighting.
+
+    Attributes
+    ----------
+    n_time : int
+        Number of time bins in the output. Passed directly
+        as parameter 'n' to 'numpy.fft.ifft'. 
+    """
+
+    n_time = config.Property(proptype=int, default=None)
+
+    def process(self, mmodes):
+        """Perform the m-mode inverse transform.
+
+        Parameters
+        ----------
+        mmodes : containers.MModes
+            The input m-modes.
+
+        Returns
+        -------
+        sstream : containers.SiderealStream 
+            The output sidereal stream.
+        """
+        # Ensure m-modes are distributed in frequency.
+        mmodes.redistribute("freq")
 
         # Re-construct array of S-streams
-        ssarray = _make_ssarray(ma.vis[:])  # , mmax)
-        ssarray = mpiarray.MPIArray.wrap(ssarray[:], axis=0, comm=ma.comm)
+        ssarray = _make_ssarray(mmodes.vis[:], n=self.n_time)
+        ntime = ssarray.shape[-1]
+        ssarray = mpiarray.MPIArray.wrap(ssarray[:], axis=0, comm=mmodes.comm)
 
         # Construct container and set visibility data
         sstream = containers.SiderealStream(
-            ra=ntime, axes_from=ma, distributed=True, comm=ma.comm
+            ra=ntime, axes_from=mmodes, distributed=True, comm=mmodes.comm
         )
         sstream.redistribute("freq")
 
@@ -572,21 +597,20 @@ class MModeInverseTransform(task.SingleTask):
         sstream.vis[:] = ssarray
         # There is no way to recover time information for the weights.
         # Just assign the time average to each baseline and frequency.
-        sstream.weight[:] = ma.weight[0, 0, :, :][:, :, np.newaxis] / float(ntime)
+        sstream.weight[:] = mmodes.weight[0, 0, :, :][:, :, np.newaxis] / float(ntime)
 
         return sstream
 
 
-def _make_ssarray(ma):  # , mmax):
+def _make_ssarray(mmodes, n=None):
     # Construct an array of sidereal time streams from m-modes
-    #
-    marray = _unpack_marray(ma)
-    ssarray = np.fft.ifft(marray * marray.shape[-1], axis=-1)
+    marray = _unpack_marray(mmodes)
+    ssarray = np.fft.ifft(marray * marray.shape[-1], n=n, axis=-1)
 
     return ssarray
 
 
-def _unpack_marray(mmodes):  # , mmax=None):
+def _unpack_marray(mmodes):
     # Unpack m-modes into the correct format for an FFT
     # (i.e. from [m, +/-, freq, baseline] to [freq, baseline, time-FFT])
 
