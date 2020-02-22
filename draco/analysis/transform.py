@@ -560,8 +560,12 @@ class MModeInverseTransform(task.SingleTask):
     Attributes
     ----------
     n_time : int
-        Number of time bins in the output. Passed directly
-        as parameter 'n' to 'numpy.fft.ifft'. 
+        Number of time bins in the output.
+        If this is smaller than the m-mode axis the m-modes get cliped. 
+        If it is larger, they get zero padded.
+        This is NOT passed directly as parameter 'n' to 'numpy.fft.ifft',
+        as this would result in unwanted behaviour 
+        (see https://github.com/numpy/numpy/pull/7593). 
     """
 
     n_time = config.Property(proptype=int, default=None)
@@ -604,27 +608,44 @@ class MModeInverseTransform(task.SingleTask):
 
 def _make_ssarray(mmodes, n=None):
     # Construct an array of sidereal time streams from m-modes
-    marray = _unpack_marray(mmodes)
-    ssarray = np.fft.ifft(marray * marray.shape[-1], n=n, axis=-1)
+    marray = _unpack_marray(mmodes, n=n)
+    ssarray = np.fft.ifft(marray * marray.shape[-1], axis=-1)
 
     return ssarray
 
 
-def _unpack_marray(mmodes):
+def _unpack_marray(mmodes, n=None):
     # Unpack m-modes into the correct format for an FFT
     # (i.e. from [m, +/-, freq, baseline] to [freq, baseline, time-FFT])
 
     shape = mmodes.shape[2:]
-    n_mmodes = mmodes.shape[0]
-    ntimes = n_mmodes * 2 - 1
+    mmax_plus = mmodes.shape[0] - 1
+    if (mmodes[mmax_plus, 1, ...].flatten() == 0).all():
+        print("Had an even number os samples originally")
+        mmax_minus = mmax_plus - 1
+    else:
+        print("Had an odd number of samples originally")
+        mmax_minus = mmax_plus
 
+    if n is None:
+        ntimes = mmax_plus + mmax_minus + 1
+    else:
+        ntimes = n
+        mmax_plus = np.amin((ntimes // 2, mmax_plus))
+        mmax_minus = np.amin(((ntimes - 1) // 2, mmax_minus))
+
+    # Create array to contain mmodes
     marray = np.zeros(shape + (ntimes,), dtype=np.complex128)
-
+    # Add the DC bin
     marray[..., 0] = mmodes[0, 0]
-
-    for mi in range(1, n_mmodes):
+    # Add all m-modes up to mmax_minus
+    for mi in range(1, mmax_minus + 1):
         marray[..., mi] = mmodes[mi, 0]
         marray[..., -mi] = mmodes[mi, 1].conj()
+
+    if mmax_plus != mmax_minus:
+        # In case of even number of samples. Add the niquist frequency.
+        marray[..., mmax_plus] = mmodes[mmax_plus, 0]
 
     return marray
 
