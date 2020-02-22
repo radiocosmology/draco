@@ -560,12 +560,9 @@ class MModeInverseTransform(task.SingleTask):
     Attributes
     ----------
     n_time : int
-        Number of time bins in the output.
-        If this is smaller than the m-mode axis the m-modes get cliped. 
-        If it is larger, they get zero padded.
-        This is NOT passed directly as parameter 'n' to 'numpy.fft.ifft',
-        as this would result in unwanted behaviour 
-        (see https://github.com/numpy/numpy/pull/7593). 
+        Number of time bins in the output. Note that if
+        the number of samples does not Nyquist sample the
+        maximum m, information may be lost.
     """
 
     n_time = config.Property(proptype=int, default=None)
@@ -583,10 +580,15 @@ class MModeInverseTransform(task.SingleTask):
         sstream : containers.SiderealStream 
             The output sidereal stream.
         """
-        # Ensure m-modes are distributed in frequency.
+        # NOTE: If n_time is smaller than Nyquist sampling the m-mode axis then
+        # the m-modes get clipped. If it is larger, they get zero padded. This 
+        # is NOT passed directly as parameter 'n' to `numpy.fft.ifft`, as this 
+        # would give unwanted behaviour (https://github.com/numpy/numpy/pull/7593).
+        
+        # Ensure m-modes are distributed in frequency
         mmodes.redistribute("freq")
 
-        # Re-construct array of S-streams
+        # Re-construct array of S-streams 
         ssarray = _make_ssarray(mmodes.vis[:], n=self.n_time)
         ntime = ssarray.shape[-1]
         ssarray = mpiarray.MPIArray.wrap(ssarray[:], axis=0, comm=mmodes.comm)
@@ -601,7 +603,7 @@ class MModeInverseTransform(task.SingleTask):
         sstream.vis[:] = ssarray
         # There is no way to recover time information for the weights.
         # Just assign the time average to each baseline and frequency.
-        sstream.weight[:] = mmodes.weight[0, 0, :, :][:, :, np.newaxis] / float(ntime)
+        sstream.weight[:] = mmodes.weight[0, 0, :, :][:, :, np.newaxis] / ntime
 
         return sstream
 
@@ -644,7 +646,7 @@ def _unpack_marray(mmodes, n=None):
         marray[..., -mi] = mmodes[mi, 1].conj()
 
     if mmax_plus != mmax_minus:
-        # In case of even number of samples. Add the niquist frequency.
+        # In case of even number of samples. Add the Nyquist frequency.
         marray[..., mmax_plus] = mmodes[mmax_plus, 0]
 
     return marray
