@@ -552,6 +552,106 @@ def _pack_marray(mmodes, mmax=None):
     return marray
 
 
+class MModeInverseTransform(task.SingleTask):
+    """Transform m-modes to sidereal stream.
+
+    Currently ignores any noise weighting.
+
+    Attributes
+    ----------
+    n_time : int
+        Number of time bins in the output. Note that if
+        the number of samples does not Nyquist sample the
+        maximum m, information may be lost.
+    """
+
+    n_time = config.Property(proptype=int, default=None)
+
+    def process(self, mmodes):
+        """Perform the m-mode inverse transform.
+
+        Parameters
+        ----------
+        mmodes : containers.MModes
+            The input m-modes.
+
+        Returns
+        -------
+        sstream : containers.SiderealStream 
+            The output sidereal stream.
+        """
+        # NOTE: If n_time is smaller than Nyquist sampling the m-mode axis then
+        # the m-modes get clipped. If it is larger, they get zero padded. This 
+        # is NOT passed directly as parameter 'n' to `numpy.fft.ifft`, as this 
+        # would give unwanted behaviour (https://github.com/numpy/numpy/pull/7593).
+        
+        # Ensure m-modes are distributed in frequency
+        mmodes.redistribute("freq")
+
+        # Re-construct array of S-streams 
+        ssarray = _make_ssarray(mmodes.vis[:], n=self.n_time)
+        ntime = ssarray.shape[-1]
+        ssarray = mpiarray.MPIArray.wrap(ssarray[:], axis=0, comm=mmodes.comm)
+
+        # Construct container and set visibility data
+        sstream = containers.SiderealStream(
+            ra=ntime, axes_from=mmodes, distributed=True, comm=mmodes.comm
+        )
+        sstream.redistribute("freq")
+
+        # Assign the visibilities and weights into the container
+        sstream.vis[:] = ssarray
+        # There is no way to recover time information for the weights.
+        # Just assign the time average to each baseline and frequency.
+        sstream.weight[:] = mmodes.weight[0, 0, :, :][:, :, np.newaxis] / ntime
+
+        return sstream
+
+
+def _make_ssarray(mmodes, n=None):
+    # Construct an array of sidereal time streams from m-modes
+    marray = _unpack_marray(mmodes, n=n)
+    ssarray = np.fft.ifft(marray * marray.shape[-1], axis=-1)
+
+    return ssarray
+
+
+def _unpack_marray(mmodes, n=None):
+    # Unpack m-modes into the correct format for an FFT
+    # (i.e. from [m, +/-, freq, baseline] to [freq, baseline, time-FFT])
+
+    shape = mmodes.shape[2:]
+    mmax_plus = mmodes.shape[0] - 1
+    if (mmodes[mmax_plus, 1, ...].flatten() == 0).all():
+        print("Had an even number os samples originally")
+        mmax_minus = mmax_plus - 1
+    else:
+        print("Had an odd number of samples originally")
+        mmax_minus = mmax_plus
+
+    if n is None:
+        ntimes = mmax_plus + mmax_minus + 1
+    else:
+        ntimes = n
+        mmax_plus = np.amin((ntimes // 2, mmax_plus))
+        mmax_minus = np.amin(((ntimes - 1) // 2, mmax_minus))
+
+    # Create array to contain mmodes
+    marray = np.zeros(shape + (ntimes,), dtype=np.complex128)
+    # Add the DC bin
+    marray[..., 0] = mmodes[0, 0]
+    # Add all m-modes up to mmax_minus
+    for mi in range(1, mmax_minus + 1):
+        marray[..., mi] = mmodes[mi, 0]
+        marray[..., -mi] = mmodes[mi, 1].conj()
+
+    if mmax_plus != mmax_minus:
+        # In case of even number of samples. Add the Nyquist frequency.
+        marray[..., mmax_plus] = mmodes[mmax_plus, 0]
+
+    return marray
+
+
 class Regridder(task.SingleTask):
     """Interpolate time-ordered data onto a regular grid.
 
