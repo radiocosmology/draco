@@ -1,0 +1,112 @@
+from draco.core.containers import SiderealGainData
+
+from caput import mpiarray, mpiutil
+
+import pytest
+import glob
+import numpy as np
+import os
+
+
+comm = mpiutil.world
+rank, size = mpiutil.rank, mpiutil.size
+
+len_axis = 8
+
+dset1 = np.arange(len_axis * len_axis * len_axis)
+dset1 = dset1.reshape((len_axis, len_axis, len_axis))
+
+dset2 = np.arange(len_axis * len_axis)
+dset2 = dset2.reshape((len_axis, len_axis))
+
+freqs = np.arange(len_axis)
+inputs = np.arange(len_axis)
+ra = np.arange(len_axis)
+
+fsel = slice(5)
+isel = slice(1, 4)
+
+
+@pytest.fixture
+def container_on_disk():
+    fname = "tmp_test_memh5_select.h5"
+    container = SiderealGainData(freq=freqs, input=inputs, ra=ra)
+    container.create_dataset("gain", data=dset1.view())
+    container.create_dataset("weight", data=dset2.view())
+    container.save(fname)
+    yield fname
+
+    # tear down
+    file_names = glob.glob(fname + "*")
+    if rank == 0:
+        for fname in file_names:
+            os.remove(fname)
+
+
+local_from = int(len_axis / size * rank)
+local_to = int(len_axis / size * (rank + 1))
+global_data1 = np.arange(len_axis * len_axis * len_axis, dtype=np.float32)
+local_data1 = global_data1.reshape(len_axis, -1, len_axis)[local_from:local_to]
+d_array1 = mpiarray.MPIArray.wrap(local_data1, axis=0)
+global_data2 = np.arange(len_axis * len_axis, dtype=np.float32)
+local_data2 = global_data2.reshape(len_axis, -1)[local_from:local_to]
+d_array2 = mpiarray.MPIArray.wrap(local_data2, axis=0)
+
+
+@pytest.fixture
+def container_on_disk_distributed():
+    fname = "tmp_test_memh5_select_distributed.h5"
+    container = SiderealGainData(freq=freqs, input=inputs, ra=ra)
+    container.create_dataset("gain", data=d_array1)
+    container.create_dataset("weight", data=d_array2)
+    container.save(fname)
+
+    # load file and apply selection
+    md = SiderealGainData.from_file(
+        fname, freq_sel=fsel, input_sel=isel, distributed=True
+    )
+    # save it again
+    md.save(fname)
+    yield fname
+
+    # tear down
+    file_names = glob.glob(fname + "*")
+    if rank == 0:
+        for fname in file_names:
+            os.remove(fname)
+
+
+def test_H5FileSelect(container_on_disk):
+    """Tests that makes hdf5 objects and tests selecting on their axes."""
+
+    m = SiderealGainData.from_file(container_on_disk, freq_sel=fsel, input_sel=isel)
+    assert np.all(m["gain"][:] == dset1[(fsel, isel, slice(None))])
+    assert np.all(m["weight"][:] == dset2[(fsel, slice(None))])
+    assert np.all(m.index_map["freq"] == freqs[fsel])
+    assert np.all(m.index_map["input"] == inputs[isel])
+
+
+def test_H5FileSelect_distributed(container_on_disk):
+    """Load H5 into parallel container while down-selecting axes."""
+
+    m = SiderealGainData.from_file(
+        container_on_disk, freq_sel=fsel, input_sel=isel, distributed=True
+    )
+    assert np.all(m["gain"][:] == dset1[(fsel, isel, slice(None))])
+    assert np.all(m["weight"][:] == dset2[(fsel, slice(None))])
+    assert np.all(m.index_map["freq"] == freqs[fsel])
+    assert np.all(m.index_map["input"] == inputs[isel])
+
+
+def test_H5FileSelect_distributed_on_disk(container_on_disk_distributed):
+    """Load distributed H5 into parallel container while down-selecting axes."""
+
+    if rank == 0:
+        md = SiderealGainData.from_file(
+            container_on_disk_distributed, distributed=False
+        )
+
+        assert np.all(md["gain"][:] == dset1[(fsel, isel, slice(None))])
+        assert np.all(md["weight"][:] == dset2[(fsel, slice(None))])
+        assert np.all(md.index_map["freq"] == freqs[fsel])
+        assert np.all(md.index_map["input"] == inputs[isel])
