@@ -1024,11 +1024,90 @@ class TrackBeam(ContainerBase):
             raise KeyError("Dataset 'observed_variance' not initialised.")
 
     @property
+    def observed_variance_iq(self):
+        """Rotate the observed variance to the in-phase/quadrature basis
+
+        Returns
+        -------
+        C: np.ndarray[ncomponent, nfreq, npol, ninput, npix]
+            The `observed_variance` dataset in the in-phase/quadrature basis,
+            packed into upper triangle format such that the components axis
+            contains ['ii', 'iq', 'qq'].
+        """
+        if "observed_variance" not in self.datasets:
+            raise KeyError("Dataset 'observed_variance' not initialised.")
+
+        # Construct rotation coefficients from average beam angle
+        phi = np.angle(self.beam[:].view(np.ndarray))
+        cc = np.cos(phi) ** 2
+        cs = np.cos(phi) * np.sin(phi)
+        ss = np.sin(phi) ** 2
+
+        # Rotate the covariance matrix from real-imag to in-phase/quadrature
+        C = self.observed_variance[:].view(np.ndarray)
+
+        Cphi = np.zeros_like(C)
+        Cphi[0] = cc * C[0] + 2 * cs * C[1] + ss * C[2]
+        Cphi[1] = -cs * C[0] + (cc - ss) * C[1] + cs * C[2]
+        Cphi[2] = ss * C[0] - 2 * cs * C[1] + cc * C[2]
+
+        return Cphi
+
+    @property
+    def observed_variance_amp_phase(self):
+        """Calculate the amplitude/phase covariance
+
+        This interpretation is only valid if the fractional
+        variations in the amplitude and phase are small.
+
+        Returns
+        -------
+        C: np.ndarray[ncomponent, nfreq, npol, ninput, npix]
+            The observed amplitude/phase covariance matrix, packed
+            into upper triangle format such that the components axis
+            contains ['aa', 'ap', 'pp'].
+        """
+        if "observed_variance" not in self.datasets:
+            raise KeyError("Dataset 'observed_variance' not initialised.")
+
+        # Rotate to in-phase/quadrature basis and then
+        # normalize by squared amplitude to convert to
+        # fractional units (amplitude) and radians (phase).
+        return self.observed_variance_iq * tools.invert_no_zero(
+            np.abs(self.beam[:][np.newaxis, ...]) ** 2
+        )
+
+    @property
     def number_of_observations(self):
         if "number_of_observations" in self.datasets:
             return self.datasets["number_of_observations"]
         else:
             raise KeyError("Dataset 'number_of_observations' not initialised.")
+
+    @property
+    def observed_weight(self):
+        """Calculate the observed weight
+
+        Returns
+        -------
+        weight: np.ndarray[nfreq, npol, ninput, npix]
+            The largest eigenvalue of the `observed_variance` dataset
+            is used as a conservative estimate of the variance and
+            divided by the `number_of_observations` to yield the uncertainty
+            on the mean.  The inverse of this quantity is returned, and
+            can be compared directly to the `weight` dataset.
+        """
+        if "observed_variance" not in self.datasets:
+            raise KeyError("Dataset 'observed_variance' not initialised.")
+
+        # Calculate largest eigenvalue of the covariance matrix.
+        C = self.observed_variance[:].view(np.ndarray)
+        lmbda = 0.5 * (C[0] + C[2] + np.sqrt((C[0] - C[2]) ** 2 + 4.0 * C[1] ** 2))
+
+        # Return Nobs / (largest eigenvalue) as estimate of weight
+        Nobs = self.number_of_observations[:].view(np.ndarray)
+
+        return Nobs * tools.invert_no_zero(lmbda)
 
     @property
     def coords(self):
