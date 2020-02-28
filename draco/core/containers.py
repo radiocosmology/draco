@@ -1034,8 +1034,7 @@ class TrackBeam(ContainerBase):
             packed into upper triangle format such that the components axis
             contains ['ii', 'iq', 'qq'].
         """
-        if "observed_variance" not in self.datasets:
-            raise KeyError("Dataset 'observed_variance' not initialised.")
+        C = self.observed_variance[:].view(np.ndarray)
 
         # Construct rotation coefficients from average beam angle
         phi = np.angle(self.beam[:].view(np.ndarray))
@@ -1044,8 +1043,6 @@ class TrackBeam(ContainerBase):
         ss = np.sin(phi) ** 2
 
         # Rotate the covariance matrix from real-imag to in-phase/quadrature
-        C = self.observed_variance[:].view(np.ndarray)
-
         Cphi = np.zeros_like(C)
         Cphi[0] = cc * C[0] + 2 * cs * C[1] + ss * C[2]
         Cphi[1] = -cs * C[0] + (cc - ss) * C[1] + cs * C[2]
@@ -1067,9 +1064,6 @@ class TrackBeam(ContainerBase):
             into upper triangle format such that the components axis
             contains ['aa', 'ap', 'pp'].
         """
-        if "observed_variance" not in self.datasets:
-            raise KeyError("Dataset 'observed_variance' not initialised.")
-
         # Rotate to in-phase/quadrature basis and then
         # normalize by squared amplitude to convert to
         # fractional units (amplitude) and radians (phase).
@@ -1097,9 +1091,6 @@ class TrackBeam(ContainerBase):
             on the mean.  The inverse of this quantity is returned, and
             can be compared directly to the `weight` dataset.
         """
-        if "observed_variance" not in self.datasets:
-            raise KeyError("Dataset 'observed_variance' not initialised.")
-
         # Calculate largest eigenvalue of the covariance matrix.
         C = self.observed_variance[:].view(np.ndarray)
         lmbda = 0.5 * (C[0] + C[2] + np.sqrt((C[0] - C[2]) ** 2 + 4.0 * C[1] ** 2))
