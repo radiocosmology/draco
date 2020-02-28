@@ -103,6 +103,9 @@ class ContainerBase(memh5.BasicCont):
 
     _dataset_spec = {}
 
+    convert_attribute_strings = True
+    convert_dataset_strings = True
+
     def __init__(self, *args, **kwargs):
 
         # Pull out the values of needed arguments
