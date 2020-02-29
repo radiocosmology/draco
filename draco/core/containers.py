@@ -1085,20 +1085,16 @@ class TrackBeam(ContainerBase):
         Returns
         -------
         weight: np.ndarray[nfreq, npol, ninput, npix]
-            The largest eigenvalue of the `observed_variance` dataset
-            is used as a conservative estimate of the variance and
-            divided by the `number_of_observations` to yield the uncertainty
-            on the mean.  The inverse of this quantity is returned, and
-            can be compared directly to the `weight` dataset.
+            The trace of the `observed_variance` dataset is used
+            as an estimate of the total variance and divided by the
+            `number_of_observations` to yield the uncertainty on the mean.
+            The inverse of this quantity is returned, and can be compared
+            directly to the `weight` dataset.
         """
-        # Calculate largest eigenvalue of the covariance matrix.
         C = self.observed_variance[:].view(np.ndarray)
-        lmbda = 0.5 * (C[0] + C[2] + np.sqrt((C[0] - C[2]) ** 2 + 4.0 * C[1] ** 2))
+        nobs = self.number_of_observations[:].view(np.ndarray)
 
-        # Return Nobs / (largest eigenvalue) as estimate of weight
-        Nobs = self.number_of_observations[:].view(np.ndarray)
-
-        return Nobs * tools.invert_no_zero(lmbda)
+        return nobs * tools.invert_no_zero(C[0] + C[2])
 
     @property
     def coords(self):
