@@ -401,10 +401,9 @@ class SingleTask(MPILoggedTask, pipeline.BasicContMixin):
             # add metadata to output
             metadata = {"versions": self.versions, "config": self.pipeline_config}
             for key, value in metadata.items():
-                if key in output.attrs:
-                    raise RuntimeError(
-                        "Can't write {} to output: it already exists.".format(key)
-                    )
+                # NOTE: this will overwrite any existing metadata keys. This is probably the right
+                # thing to do for now, but really we should be using the `history` functionality for
+                # this.
                 output.attrs[key] = value
 
             # Create a tag for the output file name
