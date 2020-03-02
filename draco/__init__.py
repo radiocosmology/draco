@@ -5,5 +5,7 @@ from future.builtins.disabled import *  # noqa  pylint: disable=W0401, W0614
 
 # === End Python 2/3 compatibility
 
-# Specify version in Semantic style (with PEP 440 pre-release specification)
-__version__ = "0.2.0"
+from ._version import get_versions
+
+__version__ = get_versions()["version"]
+del get_versions

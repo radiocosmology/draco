@@ -1,8 +1,8 @@
 # === Start Python 2/3 compatibility
-from __future__ import (absolute_import, division,
-                        print_function, unicode_literals)
+from __future__ import absolute_import, division, print_function, unicode_literals
 from future.builtins import *  # noqa  pylint: disable=W0401, W0614
 from future.builtins.disabled import *  # noqa  pylint: disable=W0401, W0614
+
 # === End Python 2/3 compatibility
 
 import numpy as np
@@ -474,15 +474,15 @@ class BeamFormBase(task.SingleTask):
         if pol < 2:
             # XX or YY
             return _amp(pol, dec, zenith) * np.exp(
-                -((ha - ha0) / _sig(pol, freq, dec)) ** 2
+                -(((ha - ha0) / _sig(pol, freq, dec)) ** 2)
             )
         else:
             # XY or YX
             return (
                 _amp(0, dec, zenith)
-                * np.exp(-((ha - ha0) / _sig(0, freq, dec)) ** 2)
+                * np.exp(-(((ha - ha0) / _sig(0, freq, dec)) ** 2))
                 * _amp(1, dec, zenith)
-                * np.exp(-((ha - ha0) / _sig(1, freq, dec)) ** 2)
+                * np.exp(-(((ha - ha0) / _sig(1, freq, dec)) ** 2))
             ) ** 0.5
 
     def _process_data(self, data):

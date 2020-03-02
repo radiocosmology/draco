@@ -16,6 +16,7 @@ Tasks
     SmoothVisWeight
     ThresholdVisWeight
     RFIMask
+    RFISensitivityMask
 """
 # === Start Python 2/3 compatibility
 from __future__ import absolute_import, division, print_function, unicode_literals
@@ -25,12 +26,13 @@ from future.builtins.disabled import *  # noqa  pylint: disable=W0401, W0614
 # === End Python 2/3 compatibility
 
 import numpy as np
-from scipy.ndimage import median_filter, uniform_filter
+from scipy.ndimage import median_filter
 
-from caput import config, weighted_median
+from caput import config, weighted_median, mpiarray
 
 from ..core import task, containers, io
 from ..util import tools
+from ..util import rfi
 
 
 class DayMask(task.SingleTask):
@@ -147,22 +149,25 @@ class MaskData(task.SingleTask):
         -------
         mmodes : containers.MModes
         """
+        mmodes.redistribute("m")
+
+        mw = mmodes.weight[:]
 
         # Exclude auto correlations if set
         if not self.auto_correlations:
-            for pi, (fi, fj) in enumerate(mmodes.index_map["prod"]):
+            for pi, (fi, fj) in enumerate(mmodes.prodstack):
                 if fi == fj:
-                    mmodes.weight[..., pi] = 0.0
+                    mw[..., pi] = 0.0
 
         # Apply m based masks
         if not self.m_zero:
-            mmodes.weight[0] = 0.0
+            mw[0] = 0.0
 
         if not self.positive_m:
-            mmodes.weight[1:, 0] = 0.0
+            mw[1:, 0] = 0.0
 
         if not self.negative_m:
-            mmodes.weight[1:, 1] = 0.0
+            mw[1:, 1] = 0.0
 
         return mmodes
 
@@ -400,6 +405,268 @@ class ThresholdVisWeight(task.SingleTask):
         timestream.weight[:] = np.where(keep, weight, 0.0)
 
         return timestream
+
+
+class RFISensitivityMask(task.SingleTask):
+    """Slightly less crappy RFI masking.
+
+    Attributes
+    ----------
+    mask_type : string, optional
+        One of 'mad', 'sumthreshold' or 'combine'.
+        Default is combine, which uses the sumthreshold everywhere
+        except around the transits of the Sun, CasA and CygA where it
+        applies the MAD mask to avoid masking out the transits.
+    include_pol : list of strings, optional
+        The list of polarisations to include. Default is to use all
+        polarisations.
+    remove_median : bool, optional
+        Remove median accross times for each frequency?
+        Recomended. Default: True.
+    sir : bool, optional
+        Apply scale invariant rank (SIR) operator on top of final mask?
+        We find that this is advisable while we still haven't flagged
+        out all the static bands properly. Default: True.
+    sigma : float, optional
+        The false positive rate of the flagger given as sigma value assuming
+        the non-RFI samples are Gaussian.
+        Used for the MAD and TV station flaggers.
+    max_m : int, optional
+        Maximum size of the SumThreshold window to use.
+        The default (8) seems to work well with sensitivity data.
+    start_threshold_sigma : float, optional
+        The desired threshold for the SumThreshold algorythm at the
+        final window size (determined by max m) given as a
+        number of standard deviations (to be estimated from the
+        sensitivity map excluding weight and static masks).
+        The default (8) seems to work well with sensitivity data
+        using the default max_m.
+    tv_fraction : float, optional
+        Number of bad samples in a digital TV channel that cause the whole
+        channel to be flagged.
+    tv_base_size : [int, int]
+        The size of the region used to estimate the baseline for the TV channel
+        detection.
+    tv_mad_size : [int, int]
+        The size of the region used to estimate the MAD for the TV channel detection.
+    """
+
+    mask_type = config.enum(["mad", "sumthreshold", "combine"], default="combine")
+    include_pol = config.list_type(str, default=None)
+    remove_median = config.Property(proptype=bool, default=True)
+    sir = config.Property(proptype=bool, default=True)
+
+    sigma = config.Property(proptype=float, default=5.0)
+    max_m = config.Property(proptype=int, default=8)
+    start_threshold_sigma = config.Property(proptype=float, default=8)
+
+    tv_fraction = config.Property(proptype=float, default=0.5)
+    tv_base_size = config.list_type(int, length=2, default=(11, 3))
+    tv_mad_size = config.list_type(int, length=2, default=(201, 51))
+
+    def process(self, sensitivity):
+        """Derive an RFI mask from sensitivity data.
+
+        Parameters
+        ----------
+        sensitivity : containers.SystemSensitivity
+            Sensitivity data to derive the RFI mask from.
+
+        Returns
+        -------
+        rfimask : containers.RFIMask
+            RFI mask derived from sensitivity.
+        """
+        ## Constants
+        # Convert MAD to RMS
+        MAD_TO_RMS = 1.4826
+
+        # The difference between the exponents in the usual
+        # scaling of the RMS (n**0.5) and the scaling used
+        # in the sumthreshold algorithm (n**log2(1.5))
+        RMS_SCALING_DIFF = np.log2(1.5) - 0.5
+
+        # Distribute over polarisation as we need all times and frequencies
+        # available simultaneously
+        sensitivity.redistribute("pol")
+
+        # Divide sensitivity to get a radiometer test
+        radiometer = sensitivity.measured[:] * tools.invert_no_zero(
+            sensitivity.radiometer[:]
+        )
+        radiometer = mpiarray.MPIArray.wrap(radiometer, axis=1)
+
+        freq = sensitivity.freq
+        npol = len(sensitivity.pol)
+        nfreq = len(freq)
+
+        static_flag = ~self._static_rfi_mask_hook(freq)
+
+        madmask = mpiarray.MPIArray(
+            (npol, nfreq, len(sensitivity.time)), axis=0, dtype=np.bool
+        )
+        madmask[:] = False
+        stmask = mpiarray.MPIArray(
+            (npol, nfreq, len(sensitivity.time)), axis=0, dtype=np.bool
+        )
+        stmask[:] = False
+
+        for li, ii in madmask.enumerate(axis=0):
+
+            # Only process this polarisation if we should be including it,
+            # otherwise skip and let it be implicitly set to False (i.e. not
+            # masked)
+            if self.include_pol and sensitivity.pol[ii] not in self.include_pol:
+                continue
+
+            # Initial flag on weights equal to zero.
+            origflag = sensitivity.weight[:, ii] == 0.0
+
+            # Remove median at each frequency, if asked.
+            if self.remove_median:
+                for ff in range(nfreq):
+                    radiometer[ff, li] -= np.median(
+                        radiometer[ff, li][~origflag[ff]].view(np.ndarray)
+                    )
+
+            # Combine weights with static flag
+            start_flag = origflag | static_flag[:, None]
+
+            # Obtain MAD and TV masks
+            this_madmask, tvmask = self._mad_tv_mask(
+                radiometer[:, li], start_flag, freq
+            )
+
+            # combine MAD and TV masks
+            madmask[li] = this_madmask | tvmask
+
+            # Add TV channels to ST start flag.
+            start_flag = start_flag | tvmask
+
+            # Determine initial threshold
+            med = np.median(radiometer[:, li][~start_flag].view(np.ndarray))
+            mad = np.median(abs(radiometer[:, li][~start_flag].view(np.ndarray) - med))
+            threshold1 = (
+                mad
+                * MAD_TO_RMS
+                * self.start_threshold_sigma
+                * self.max_m ** RMS_SCALING_DIFF
+            )
+
+            # SumThreshold mask
+            stmask[li] = rfi.sumthreshold(
+                radiometer[:, li],
+                self.max_m,
+                start_flag=start_flag,
+                threshold1=threshold1,
+                correct_for_missing=True,
+            )
+
+        # Perform an OR (.any) along the pol axis and reform into an MPIArray
+        # along the freq axis
+        madmask = mpiarray.MPIArray.wrap(madmask.redistribute(1).any(0), 0)
+        stmask = mpiarray.MPIArray.wrap(stmask.redistribute(1).any(0), 0)
+
+        # Pick which of the MAD or SumThreshold mask to use (or blend them)
+        if self.mask_type == "mad":
+            finalmask = madmask
+
+        elif self.mask_type == "sumthreshold":
+            finalmask = stmask
+
+        else:
+            # Combine ST and MAD masks
+            madtimes = self._combine_st_mad_hook(sensitivity.time)
+            finalmask = stmask
+            finalmask[:, madtimes] = madmask[:, madtimes]
+
+        # Collect all parts of the mask onto rank 1 and then broadcast to all ranks
+        finalmask = mpiarray.MPIArray.wrap(finalmask, 0).allgather()
+
+        # Apply scale invariant rank (SIR) operator, if asked for.
+        if self.sir:
+            finalmask = self._apply_sir(finalmask, static_flag)
+
+        # Create container to hold mask
+        rfimask = containers.RFIMask(axes_from=sensitivity)
+        rfimask.mask[:] = finalmask
+
+        return rfimask
+
+    def _combine_st_mad_hook(self, times):
+        """Override this function to add a custom blending mask between the
+        SumThreshold and MAD flagged data.
+
+        This is useful to use the MAD algorithm around bright source
+        transits, where the SumThreshold begins to remove real signal.
+
+        Parameters
+        ----------
+        times : np.ndarray[ntime]
+            Times of the data at floating point UNIX time.
+
+        Returns
+        -------
+        combine : np.ndarray[ntime]
+            Mixing array as a function of time. If `True` that sample will be
+            filled from the MAD, if `False` use the SumThreshold algorithm.
+        """
+        return np.ones_like(times, dtype=np.bool)
+
+    def _static_rfi_mask_hook(self, freq):
+        """Override this function to apply a static RFI mask to the data.
+
+        Parameters
+        ----------
+        freq : np.ndarray[nfreq]
+            1D array of frequencies in the data (in MHz).
+
+        Returns
+        -------
+        mask : np.ndarray[nfreq]
+            Mask array. True will include a frequency channel, False masks it out.
+        """
+        return np.ones_like(freq, dtype=np.bool)
+
+    def _apply_sir(self, mask, baseflag, eta=0.2):
+        """Expand the mask with SIR."""
+
+        # Remove baseflag from mask and run SIR
+        nobaseflag = np.copy(mask)
+        nobaseflag[baseflag] = False
+        nobaseflagsir = rfi.sir(nobaseflag[:, np.newaxis, :], eta=eta)[:, 0, :]
+
+        # Make sure the original mask (including baseflag) is still masked
+        flagsir = nobaseflagsir | mask
+
+        return flagsir
+
+    def _mad_tv_mask(self, data, start_flag, freq):
+        """Use the specific scattered TV channel flagging.
+        """
+        # Make copy of data
+        data = np.copy(data)
+
+        # Calculate the scaled deviations
+        data[start_flag] = 0.0
+        maddev = mad(
+            data, start_flag, base_size=self.tv_base_size, mad_size=self.tv_mad_size
+        )
+
+        # Replace any NaNs (where too much data is missing) with a
+        # large enough value to always be flagged
+        maddev = np.where(np.isnan(maddev), 2 * self.sigma, maddev)
+
+        # Reflag for scattered TV emission
+        tvmask = tv_channels_flag(maddev, freq, sigma=self.sigma, f=self.tv_fraction)
+
+        # Create MAD mask
+        madmask = maddev > self.sigma
+
+        # Ensure start flag is masked
+        madmask = madmask | start_flag
+
+        return madmask, tvmask
 
 
 class RFIMask(task.SingleTask):

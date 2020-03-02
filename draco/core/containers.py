@@ -22,6 +22,7 @@ Container Base Classes
 
     ContainerBase
     TODContainer
+    VisContainer
 
 Helper Routines
 ---------------
@@ -144,25 +145,6 @@ class ContainerBase(memh5.BasicCont):
                 self.create_index_map(axis, axis_map)
             else:
                 raise RuntimeError("No definition of axis %s supplied." % axis)
-
-        reverse_map_stack = None
-        # Create reverse map
-        if "reverse_map_stack" in kwargs:
-            # If axis is an integer, turn into an arange as a default definition
-            if isinstance(kwargs["reverse_map_stack"], int):
-                reverse_map_stack = np.arange(kwargs["reverse_map_stack"])
-            else:
-                reverse_map_stack = kwargs["reverse_map_stack"]
-
-        # If not set in the arguments copy from another object if set
-        elif axes_from is not None and "stack" in axes_from.reverse_map:
-            reverse_map_stack = axes_from.reverse_map["stack"]
-
-        # Set the reverse_map['stack'] if we have a definition,
-        # otherwise do NOT throw an error, errors are thrown in
-        # classes that actually need a reverse stack
-        if reverse_map_stack is not None:
-            self.create_reverse_map("stack", reverse_map_stack)
 
         # Iterate over datasets and initialise any that specify it
         for name, spec in self.dataset_spec.items():
@@ -469,6 +451,8 @@ class TODContainer(ContainerBase, tod.TOData):
     instance.
     """
 
+    _axes = ("time",)
+
     @property
     def time(self):
         try:
@@ -477,6 +461,143 @@ class TODContainer(ContainerBase, tod.TOData):
         # different exceptions.
         except (IndexError, ValueError):
             return self.index_map["time"][:]
+
+
+class VisContainer(ContainerBase):
+    """A base container for holding a visibility dataset.
+
+    This works like a :class:`ContainerBase` container, with the
+    ability to create visibility specific axes, if they are not
+    passed as a kwargs parameter.
+
+    Additionally this container has visibility specific defined properties
+    such as 'vis', 'weight', 'freq', 'input', 'prod', 'stack',
+    'prodstack', 'conjugate'.
+
+    Parameters
+    ----------
+    axes_from : `memh5.BasicCont`, optional
+        Another container to copy axis definitions from. Must be supplied as
+        keyword argument.
+    attrs_from : `memh5.BasicCont`, optional
+        Another container to copy attributes from. Must be supplied as keyword
+        argument. This applies to attributes in default datasets too.
+    kwargs : dict
+        Should contain entries for all other axes.
+    """
+
+    _axes = ("freq", "input", "prod", "stack")
+
+    def __init__(self, *args, **kwargs):
+        # Resolve product map
+        prod = None
+        if "prod" in kwargs:
+            prod = kwargs["prod"]
+        elif ("axes_from" in kwargs) and ("prod" in kwargs["axes_from"].index_map):
+            prod = kwargs["axes_from"].index_map["prod"]
+
+        # Resolve input map
+        inputs = None
+        if "input" in kwargs:
+            inputs = kwargs["input"]
+        elif ("axes_from" in kwargs) and ("input" in kwargs["axes_from"].index_map):
+            inputs = kwargs["axes_from"].index_map["input"]
+
+        # Resolve stack map
+        stack = None
+        if "stack" in kwargs:
+            stack = kwargs["stack"]
+        elif ("axes_from" in kwargs) and ("stack" in kwargs["axes_from"].index_map):
+            stack = kwargs["axes_from"].index_map["stack"]
+
+        # Automatically construct product map from inputs if not given
+        if prod is None and inputs is not None:
+            nfeed = inputs if isinstance(inputs, int) else len(inputs)
+            kwargs["prod"] = np.array(
+                [[fi, fj] for fi in range(nfeed) for fj in range(fi, nfeed)]
+            )
+
+        if stack is None and prod is not None:
+            stack = np.empty_like(prod, dtype=[("prod", "<u4"), ("conjugate", "u1")])
+            stack["prod"][:] = np.arange(len(prod))
+            stack["conjugate"] = 0
+            kwargs["stack"] = stack
+
+        # Call initializer from `ContainerBase`
+        super(VisContainer, self).__init__(*args, **kwargs)
+
+        reverse_map_stack = None
+        # Create reverse map
+        if "reverse_map_stack" in kwargs:
+            # If axis is an integer, turn into an arange as a default definition
+            if isinstance(kwargs["reverse_map_stack"], int):
+                reverse_map_stack = np.arange(kwargs["reverse_map_stack"])
+            else:
+                reverse_map_stack = kwargs["reverse_map_stack"]
+        # If not set in the arguments copy from another object if set
+        elif ("axes_from" in kwargs) and ("stack" in kwargs["axes_from"].reverse_map):
+            reverse_map_stack = kwargs["axes_from"].reverse_map["stack"]
+
+        # Set the reverse_map['stack'] if we have a definition,
+        # otherwise do NOT throw an error, errors are thrown in
+        # classes that actually need a reverse stack
+        if reverse_map_stack is not None:
+            self.create_reverse_map("stack", reverse_map_stack)
+
+    @property
+    def vis(self):
+        """The visibility like dataset."""
+        return self.datasets["vis"]
+
+    @property
+    def weight(self):
+        """The visibility weights."""
+        return self.datasets["vis_weight"]
+
+    @property
+    def freq(self):
+        """The frequency axis."""
+        return self.index_map["freq"]["centre"]
+
+    @property
+    def input(self):
+        """The correlated inputs."""
+        return self.index_map["input"]
+
+    @property
+    def prod(self):
+        """All the pairwise products that are represented in the data."""
+        return self.index_map["prod"]
+
+    @property
+    def stack(self):
+        """The stacks definition as an index (and conjugation) of a member product."""
+        return self.index_map["stack"]
+
+    @property
+    def prodstack(self):
+        """A pair of input indices representative of those in the stack.
+
+        Note, these are correctly conjugated on return, and so calculations
+        of the baseline and polarisation can be done without additionally
+        looking up the stack conjugation.
+        """
+        if not self.is_stacked:
+            return self.prod
+
+        t = self.index_map["prod"][:][self.index_map["stack"]["prod"]]
+
+        prodmap = t.copy()
+        conj = self.stack["conjugate"]
+        prodmap["input_a"] = np.where(conj, t["input_b"], t["input_a"])
+        prodmap["input_b"] = np.where(conj, t["input_a"], t["input_b"])
+
+        return prodmap
+
+    @property
+    def is_stacked(self):
+        """Test if the data has been stacked or not."""
+        return len(self.stack) != len(self.prod)
 
 
 class Map(ContainerBase):
@@ -527,7 +648,7 @@ class Map(ContainerBase):
         return self.datasets["map"]
 
 
-class SiderealStream(ContainerBase):
+class SiderealStream(VisContainer):
     """A container for holding a visibility dataset in sidereal time.
 
     Parameters
@@ -536,7 +657,7 @@ class SiderealStream(ContainerBase):
         The number of points to divide the RA axis up into.
     """
 
-    _axes = ("freq", "prod", "stack", "input", "ra")
+    _axes = ("ra",)
 
     _dataset_spec = {
         "vis": {
@@ -582,55 +703,11 @@ class SiderealStream(ContainerBase):
                 ra = np.linspace(0.0, 360.0, ra, endpoint=False)
             kwargs["ra"] = ra
 
-        # Resolve product map
-        prod = None
-        if "prod" in kwargs:
-            prod = kwargs["prod"]
-        elif ("axes_from" in kwargs) and ("prod" in kwargs["axes_from"].index_map):
-            prod = kwargs["axes_from"].index_map["prod"]
-
-        # Resolve input map
-        inputs = None
-        if "input" in kwargs:
-            inputs = kwargs["input"]
-        elif ("axes_from" in kwargs) and ("input" in kwargs["axes_from"].index_map):
-            inputs = kwargs["axes_from"].index_map["input"]
-
-        # Resolve stack map
-        stack = None
-        if "stack" in kwargs:
-            stack = kwargs["stack"]
-        elif ("axes_from" in kwargs) and ("stack" in kwargs["axes_from"].index_map):
-            stack = kwargs["axes_from"].index_map["stack"]
-
-        # Automatically construct product map from inputs if not given
-        if prod is None and inputs is not None:
-            nfeed = inputs if isinstance(inputs, int) else len(inputs)
-            kwargs["prod"] = np.array(
-                [(fi, fj) for fi in range(nfeed) for fj in range(fi, nfeed)],
-                dtype=[("input_a", np.int16), ("input_b", np.int16)],
-            )
-            prod = kwargs["prod"]
-
-        if stack is None:
-            stack = np.empty_like(prod, dtype=[("prod", "<u4"), ("conjugate", "u1")])
-            stack["prod"][:] = np.arange(len(prod))
-            stack["conjugate"] = 0
-            kwargs["stack"] = stack
-
         super(SiderealStream, self).__init__(*args, **kwargs)
-
-    @property
-    def vis(self):
-        return self.datasets["vis"]
 
     @property
     def gain(self):
         return self.datasets["gain"]
-
-    @property
-    def weight(self):
-        return self.datasets["vis_weight"]
 
     @property
     def input_flags(self):
@@ -640,32 +717,93 @@ class SiderealStream(ContainerBase):
     def ra(self):
         return self.index_map["ra"]
 
+
+class SystemSensitivity(TODContainer):
+    """A container for holding the total system sensitivity.
+
+    This should be averaged/collapsed in the stack/prod axis
+    to provide an overall summary of the system sensitivity.
+    Two datasets are available: the measured noise from the
+    visibility weights and the radiometric estimate of the
+    noise from the autocorrelations.
+    """
+
+    _axes = ("freq", "pol")
+
+    _dataset_spec = {
+        "measured": {
+            "axes": ["freq", "pol", "time"],
+            "dtype": np.float32,
+            "initialise": True,
+            "distributed": True,
+        },
+        "radiometer": {
+            "axes": ["freq", "pol", "time"],
+            "dtype": np.float32,
+            "initialise": True,
+            "distributed": True,
+        },
+        "weight": {
+            "axes": ["freq", "pol", "time"],
+            "dtype": np.float32,
+            "initialise": True,
+            "distributed": True,
+        },
+    }
+
+    @property
+    def measured(self):
+        return self.datasets["measured"]
+
+    @property
+    def radiometer(self):
+        return self.datasets["radiometer"]
+
+    @property
+    def weight(self):
+        return self.datasets["weight"]
+
     @property
     def freq(self):
         return self.index_map["freq"]["centre"]
 
     @property
-    def input(self):
-        return self.index_map["input"]
+    def pol(self):
+        return self.index_map["pol"]
+
+
+class RFIMask(TODContainer):
+    """A container for holding RFI mask.
+    """
+
+    _axes = ("freq",)
+
+    _dataset_spec = {
+        "mask": {
+            "axes": ["freq", "time"],
+            "dtype": bool,
+            "initialise": True,
+            "distributed": False,
+            "distributed_axis": "freq",
+        }
+    }
 
     @property
-    def prod(self):
-        return self.index_map["prod"][:][self.index_map["stack"]["prod"]]
+    def mask(self):
+        return self.datasets["mask"]
 
     @property
-    def conjugate(self):
-        return self.index_map["stack"]["conjugate"]
+    def freq(self):
+        return self.index_map["freq"]["centre"]
 
 
-class TimeStream(TODContainer):
+class TimeStream(VisContainer, TODContainer):
     """A container for holding a visibility dataset in time.
 
     This should look similar enough to the CHIME
     :class:`~ch_util.andata.CorrData` container that they can be used
     interchangably in most cases.
     """
-
-    _axes = ("freq", "prod", "stack", "input", "time")
 
     _dataset_spec = {
         "vis": {
@@ -705,73 +843,15 @@ class TimeStream(TODContainer):
 
     def __init__(self, *args, **kwargs):
 
-        # Resolve product map
-        prod = None
-        if "prod" in kwargs:
-            prod = kwargs["prod"]
-        elif ("axes_from" in kwargs) and ("prod" in kwargs["axes_from"].index_map):
-            prod = kwargs["axes_from"].index_map["prod"]
-
-        # Resolve input map
-        inputs = None
-        if "input" in kwargs:
-            inputs = kwargs["input"]
-        elif ("axes_from" in kwargs) and ("input" in kwargs["axes_from"].index_map):
-            inputs = kwargs["axes_from"].index_map["input"]
-
-        # Resolve stack map
-        stack = None
-        if "stack" in kwargs:
-            stack = kwargs["stack"]
-        elif ("axes_from" in kwargs) and ("stack" in kwargs["axes_from"].index_map):
-            stack = kwargs["axes_from"].index_map["stack"]
-
-        # Automatically construct product map from inputs if not given
-        if prod is None and inputs is not None:
-            nfeed = inputs if isinstance(inputs, int) else len(inputs)
-            kwargs["prod"] = np.array(
-                [[fi, fj] for fi in range(nfeed) for fj in range(fi, nfeed)]
-            )
-
-        if stack is None and prod is not None:
-            stack = np.empty_like(prod, dtype=[("prod", "<u4"), ("conjugate", "u1")])
-            stack["prod"][:] = np.arange(len(prod))
-            stack["conjugate"] = 0
-            kwargs["stack"] = stack
-
         super(TimeStream, self).__init__(*args, **kwargs)
-
-    @property
-    def vis(self):
-        return self.datasets["vis"]
 
     @property
     def gain(self):
         return self.datasets["gain"]
 
     @property
-    def weight(self):
-        return self.datasets["vis_weight"]
-
-    @property
     def input_flags(self):
         return self.datasets["input_flags"]
-
-    @property
-    def freq(self):
-        return self.index_map["freq"]["centre"]
-
-    @property
-    def input(self):
-        return self.index_map["input"]
-
-    @property
-    def prod(self):
-        return self.index_map["prod"][:][self.index_map["stack"]["prod"]]
-
-    @property
-    def conjugate(self):
-        return self.index_map["stack"]["conjugate"]
 
 
 class GridBeam(ContainerBase):
@@ -946,7 +1026,7 @@ class TrackBeam(ContainerBase):
         return self.index_map["pix"]
 
 
-class MModes(ContainerBase):
+class MModes(VisContainer):
     """Parallel container for holding m-mode data.
 
     Parameters
@@ -962,7 +1042,7 @@ class MModes(ContainerBase):
         Array of weights for each point.
     """
 
-    _axes = ("m", "msign", "freq", "prod", "stack", "input")
+    _axes = ("m", "msign")
 
     _dataset_spec = {
         "vis": {
@@ -980,22 +1060,6 @@ class MModes(ContainerBase):
             "distributed_axis": "m",
         },
     }
-
-    @property
-    def vis(self):
-        return self.datasets["vis"]
-
-    @property
-    def weight(self):
-        return self.datasets["vis_weight"]
-
-    @property
-    def freq(self):
-        return self.index_map["freq"]["centre"]
-
-    @property
-    def input(self):
-        return self.index_map["input"]
 
     def __init__(self, mmax=None, *args, **kwargs):
 
@@ -1095,7 +1159,7 @@ class GainData(TODContainer):
     """Parallel container for holding gain data.
     """
 
-    _axes = ("freq", "input", "time")
+    _axes = ("freq", "input")
 
     _dataset_spec = {
         "gain": {
@@ -1196,7 +1260,7 @@ class StaticGainData(ContainerBase):
             "distributed_axis": "freq",
         },
         "weight": {
-            "axes": ["freq"],
+            "axes": ["freq", "input"],
             "dtype": np.float64,
             "initialise": False,
             "distributed": True,
@@ -1333,6 +1397,44 @@ class SVDSpectrum(ContainerBase):
     @property
     def spectrum(self):
         return self.datasets["spectrum"]
+
+
+class FrequencyStack(ContainerBase):
+    """Container for a frequency stack.
+
+    In general used to hold the product of `draco.analysis.SourceStack`
+    The stacked signal of frequency slices of the data in the direction
+    of sources of interest.
+    """
+
+    _axes = ("freq",)
+
+    _dataset_spec = {
+        "stack": {
+            "axes": ["freq"],
+            "dtype": np.float64,
+            "initialise": True,
+            "distributed": False,
+        },
+        "weight": {
+            "axes": ["freq"],
+            "dtype": np.float64,
+            "initialise": True,
+            "distributed": False,
+        },
+    }
+
+    @property
+    def stack(self):
+        return self.datasets["stack"]
+
+    @property
+    def weight(self):
+        return self.datasets["weight"]
+
+    @property
+    def freq(self):
+        return self.index_map["freq"]["centre"]
 
 
 class SourceCatalog(TableBase):
