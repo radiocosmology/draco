@@ -80,7 +80,7 @@ class SVDModeProject(_ProjectFilterBase):
         tel = bt.telescope
 
         svdmodes = containers.SVDModes(
-            mode=bt.ndofmax, axes_from=mmodes, attrs_from=mmodes
+            mode=bt.ndofmax, axes_from=mmodes
         )
         svdmodes.vis[:] = 0.0
 
@@ -127,7 +127,6 @@ class SVDModeProject(_ProjectFilterBase):
             freq=freqmap,
             prod=tel.uniquepairs,
             input=feed_index,
-            attrs_from=svdmodes,
             axes_from=svdmodes,
         )
         mmodes.redistribute("m")
