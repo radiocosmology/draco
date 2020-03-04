@@ -1274,6 +1274,16 @@ class HybridVisStream(ContainerBase):
         },
     }
 
+    def __init__(self, ra=None, *args, **kwargs):
+
+        # Generate RA axis
+        if ra is not None:
+            if isinstance(ra, int):
+                ra = np.linspace(0.0, 360.0, ra, endpoint=False)
+            kwargs["ra"] = ra
+
+        super(HybridVisStream, self).__init__(*args, **kwargs)
+
     @property
     def vis(self):
         return self.datasets["vis"]

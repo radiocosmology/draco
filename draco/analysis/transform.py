@@ -582,12 +582,12 @@ class MModeInverseTransform(task.SingleTask):
 
         Parameters
         ----------
-        mmodes : containers.MModes
+        mmodes : containers.MModes or containers.HybridVisMModes
             The input m-modes.
 
         Returns
         -------
-        sstream : containers.SiderealStream
+        sstream : containers.SiderealStream or containers.HybridVisStream
             The output sidereal stream.
         """
         # NOTE: If n_time is smaller than Nyquist sampling the m-mode axis then
@@ -595,16 +595,26 @@ class MModeInverseTransform(task.SingleTask):
         # is NOT passed directly as parameter 'n' to `numpy.fft.ifft`, as this
         # would give unwanted behaviour (https://github.com/numpy/numpy/pull/7593).
 
+        contmap = {
+            containers.MModes: containers.SiderealStream,
+            containers.HybridVisMModes: containers.HybridVisStream,
+        }
+
+        # Get the output container and figure out at which position is it's
+        # frequency axis
+        out_cont = contmap[mmodes.__class__]
+        freq_axis = out_cont._dataset_spec["vis"]["axes"].index("freq")
+
         # Ensure m-modes are distributed in frequency
         mmodes.redistribute("freq")
 
         # Re-construct array of S-streams
         ssarray = _make_ssarray(mmodes.vis[:], n=self.n_time)
         ntime = ssarray.shape[-1]
-        ssarray = mpiarray.MPIArray.wrap(ssarray[:], axis=0, comm=mmodes.comm)
+        ssarray = mpiarray.MPIArray.wrap(ssarray[:], axis=freq_axis, comm=mmodes.comm)
 
         # Construct container and set visibility data
-        sstream = containers.SiderealStream(
+        sstream = out_cont(
             ra=ntime, axes_from=mmodes, distributed=True, comm=mmodes.comm
         )
         sstream.redistribute("freq")
