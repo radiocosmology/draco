@@ -351,3 +351,67 @@ class RingMapMaker(task.group_tasks(MakeVisGrid, BeamformNS, BeamformEW)):
     """Make a ringmap from the data."""
 
     pass
+
+
+class UnbeamformNS(task.SingleTask):
+    """Attempt to undo the beamforming in the NS direction.
+
+    If the original beamforming step was unitary, this should recover the
+    visibilities, but the weights cannot be restored since we do not track
+    the full covariances.
+
+    Attributes
+    ----------
+    ny: int
+        The number of NS baselines to generate. If not specified, use the number
+        ofNS pixels.
+    ysep: float
+        The minimum baseline separation (m). Default 0.3048.
+    """
+
+    ny = config.Property(proptype=int, default=None)
+    # TODO: Should this be obtained from a telescope object instead?
+    ysep = config.Property(proptype=float, default=0.3048)
+
+    def process(self, bf):
+
+        bf.redistribute("freq")
+
+        el = bf.index_map["el"]
+        freq = bf.index_map["freq"]["centre"]
+
+        # reproduce baseline ordering from BeaformNS
+        if self.ny is None:
+            self.ny = el.shape[0]
+        if self.ny % 2 == 0:
+            self.ny += 1
+        ns = np.fft.fftfreq(self.ny, d=(1.0 / (self.ny * self.ysep)))
+        # create visibility grid container
+        vg = containers.VisGridStream(axes_from=bf, ns=ns, comm=bf.comm)
+        vg.redistribute("freq")
+
+        # Dereference datasets
+        bfv = bf.vis[:]
+        bfw = bf.weight[:]
+        vgv = vg.vis[:]
+        vgw = vg.weight[:]
+
+        # Iterate over local frequencies
+        for lfi, fi in bf.vis[:].enumerate(1):
+
+            # make phase weights
+            wv = scipy.constants.c * 1e-6 / freq[fi]
+            phase = 2.0 * np.pi * ns[:, np.newaxis] * el[np.newaxis, :] / wv
+            F = np.exp(1.0j * phase)
+            # exclude missing data
+            weight = (bfw[:, lfi] > 0).astype(float)
+
+            # Transform back into visibility grid. Only
+            vgv[:, lfi] = np.dot(F, weight * bfv[:, lfi]).transpose(1, 2, 0, 3)
+            # Estimate the noise weights assuming that the errors are all uncorrelated
+            # Because we don't track the full covariance matrix we can't recover
+            # the pre-transform weights here
+            t = np.sum(tools.invert_no_zero(bfw[:, lfi]) * weight**2, axis=-2)
+            vgw[:, lfi] = tools.invert_no_zero(t[..., np.newaxis, :])
+
+        return vg
