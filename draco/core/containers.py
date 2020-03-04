@@ -1328,6 +1328,30 @@ class HybridVisMModes(ContainerBase):
         return self.datasets["vis_weight"]
 
 
+class HybridVisSVDSpectrum(ContainerBase):
+    """Container for an m-mode SVD spectrum of visibilities
+    beamformed in the NS direction.
+
+    The SVD is performed on the 'freq' and 'el' axes.
+    """
+
+    _axes = ("pol", "ew", "m", "msign", "singularvalue")
+
+    _dataset_spec = {
+        "spectrum": {
+            "axes": ["m", "msign", "pol", "ew", "singularvalue"],
+            "dtype": np.float64,
+            "initialise": True,
+            "distributed": True,
+            "distributed_axis": "m",
+        }
+    }
+
+    @property
+    def spectrum(self):
+        return self.datasets["spectrum"]
+
+
 class RingMap(ContainerBase):
     """Container for holding multifrequency ring maps.
 

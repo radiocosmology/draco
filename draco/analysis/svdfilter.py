@@ -31,41 +31,49 @@ class SVDSpectrumEstimator(task.SingleTask):
 
         Parameters
         ----------
-        mmodes : containers.MModes
+        mmodes : containers.MModes or containers.HybridVisMModes
             MModes to find the spectrum of.
 
         Returns
         -------
-        spectrum : containers.SVDSpectrum
+        spectrum : containers.SVDSpectrum or containers.HybridVisSVDSpectrum
         """
+
+        contmap = {
+            containers.MModes: containers.SVDSpectrum,
+            containers.HybridVisMModes: containers.HybridVisSVDSpectrum,
+        }
 
         mmodes.redistribute("m")
 
         vis = mmodes.vis[:]
         weight = mmodes.weight[:]
 
-        nmode = min(vis.shape[1] * vis.shape[3], vis.shape[2])
+        # transform freq against baseline stack / beamformed pixel
+        f_ax = vis.attrs["axis"].index("freq")
+        nmode = min(vis.shape[-1], vis.shape[f_ax])
 
-        spec = containers.SVDSpectrum(singularvalue=nmode, axes_from=mmodes)
+        out_cont = contmap[mmodes.__class__]
+        spec = out_cont(singularvalue=nmode, axes_from=mmodes)
         spec.spectrum[:] = 0.0
 
         for mi, m in vis.enumerate(axis=0):
             self.log.debug("Calculating SVD spectrum of m=%i", m)
 
-            vis_m = (
-                vis[mi].view(np.ndarray).transpose((1, 0, 2)).reshape(vis.shape[2], -1)
-            )
-            weight_m = (
-                weight[mi]
-                .view(np.ndarray)
-                .transpose((1, 0, 2))
-                .reshape(vis.shape[2], -1)
-            )
+            vis_m = np.moveaxis(
+                vis[mi].view(np.ndarray), f_ax - 1, -2
+            ).reshape(-1, vis.shape[f_ax], vis.shape[-1])
+            weight_m = np.moveaxis(
+                weight[mi].view(np.ndarray), f_ax - 1, -2
+            ).reshape(-1, vis.shape[f_ax], vis.shape[-1])
             mask_m = weight_m == 0.0
 
-            u, sig, vh = svd_em(vis_m, mask_m, niter=self.niter)
+            sig_out = np.zeros((vis_m.shape[0], nmode), dtype=vis_m.dtype)
+            for i in range(vis_m.shape[0]):
+                u, sig, vh = svd_em(vis_m[i], mask_m[i], niter=self.niter)
+                sig_out[i] = sig
 
-            spec.spectrum[m] = sig
+            spec.spectrum[m] = sig_out.reshape(spec.spectrum.shape[1:])
 
         return spec
 
@@ -94,11 +102,11 @@ class SVDFilter(task.SingleTask):
 
         Parameters
         ----------
-        mmodes : container.MModes
+        mmodes : containers.MModes or containers.HybridVisMModes
 
         Returns
         -------
-        mmodes : container.MModes
+        mmodes : containers.MModes or containers.HybridVisMModes
         """
 
         from mpi4py import MPI
@@ -108,6 +116,8 @@ class SVDFilter(task.SingleTask):
         vis = mmodes.vis[:]
         weight = mmodes.weight[:]
 
+        f_ax = vis.attrs["axis"].index("freq")
+
         sv_max = 0.0
 
         # TODO: this should be changed such that it does all the computation in
@@ -116,20 +126,20 @@ class SVDFilter(task.SingleTask):
         # Do a quick first pass calculation of all the singular values to get the max on this rank.
         for mi, m in vis.enumerate(axis=0):
 
-            vis_m = (
-                vis[mi].view(np.ndarray).transpose((1, 0, 2)).reshape(vis.shape[2], -1)
-            )
-            weight_m = (
-                weight[mi]
-                .view(np.ndarray)
-                .transpose((1, 0, 2))
-                .reshape(vis.shape[2], -1)
-            )
+            # Reorder array to have frequency and baseline/pixel at the end
+            vis_m = np.moveaxis(
+                vis[mi].view(np.ndarray), f_ax - 1, -2
+            ).reshape(-1, vis.shape[f_ax], vis.shape[-1])
+            weight_m = np.moveaxis(
+                weight[mi].view(np.ndarray), f_ax - 1, -2
+            ).reshape(-1, vis.shape[f_ax], vis.shape[-1])
             mask_m = weight_m == 0.0
 
-            u, sig, vh = svd_em(vis_m, mask_m, niter=self.niter)
+            # Iterate over remaining axes
+            for i in range(vis_m.shape[0]):
+                u, sig, vh = svd_em(vis_m, mask_m, niter=self.niter)
 
-            sv_max = max(sig[0], sv_max)
+                sv_max = max(sig[0], sv_max)
 
         # Reduce to get the global max.
         global_max = mmodes.comm.allreduce(sv_max, op=MPI.MAX)
@@ -142,30 +152,33 @@ class SVDFilter(task.SingleTask):
         # Loop over all m's and remove modes below the combined cut
         for mi, m in vis.enumerate(axis=0):
 
-            vis_m = (
-                vis[mi].view(np.ndarray).transpose((1, 0, 2)).reshape(vis.shape[2], -1)
-            )
-            weight_m = (
-                weight[mi]
-                .view(np.ndarray)
-                .transpose((1, 0, 2))
-                .reshape(vis.shape[2], -1)
-            )
+            # Reorder array to have frequency and baseline/pixel at the end
+            vis_m = np.moveaxis(
+                vis[mi].view(np.ndarray), f_ax - 1, -2
+            ).reshape(-1, vis.shape[f_ax], vis.shape[-1])
+            weight_m = np.moveaxis(
+                weight[mi].view(np.ndarray), f_ax - 1, -2
+            ).reshape(-1, vis.shape[f_ax], vis.shape[-1])
             mask_m = weight_m == 0.0
 
-            u, sig, vh = svd_em(vis_m, mask_m, niter=self.niter)
+            # Iterate over remaining axes
+            for i in range(vis_m.shape[0]):
+                u, sig, vh = svd_em(vis_m[i], mask_m[i], niter=self.niter)
 
-            # Zero out singular values below the combined mode cut
-            global_cut = (sig > self.global_threshold * global_max).sum()
-            local_cut = (sig > self.local_threshold * sig[0]).sum()
-            cut = max(global_cut, local_cut)
-            sig[:cut] = 0.0
+                # Zero out singular values below the combined mode cut
+                global_cut = (sig > self.global_threshold * global_max).sum()
+                local_cut = (sig > self.local_threshold * sig[0]).sum()
+                cut = max(global_cut, local_cut)
+                sig[:cut] = 0.0
 
-            # Recombine the matrix
-            vis_m = np.dot(u, sig[:, np.newaxis] * vh)
+                # Recombine the matrix
+                vis_m[i] = np.dot(u, sig[:, np.newaxis] * vh)
 
+            # Reconstruct shape with freq axis second-to-last
+            sh = vis.shape
+            new_sh = sh[1:f_ax] + sh[f_ax + 1:-1] + (sh[f_ax], sh[-1])
             # Reshape and write back into the mmodes container
-            vis[mi] = vis_m.reshape(vis.shape[2], 2, -1).transpose((1, 0, 2))
+            vis[mi] = np.moveaxis(vis_m.reshape(new_sh), -2, f_ax - 1)
 
         return mmodes
 
