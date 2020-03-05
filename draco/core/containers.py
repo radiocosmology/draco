@@ -163,9 +163,12 @@ class ContainerBase(memh5.BasicCont):
             # Copy attributes over from any common datasets
             for name in self.dataset_spec.keys():
                 if name in self.datasets and name in attrs_from.datasets:
-                    memh5.copyattrs(
-                        attrs_from.datasets[name].attrs, self.datasets[name].attrs
-                    )
+                    attrs_no_axis = {
+                        k: v
+                        for k, v in attrs_from.datasets[name].attrs.items()
+                        if k != "axis"
+                    }
+                    memh5.copyattrs(attrs_no_axis, self.datasets[name].attrs)
 
             # Make sure that the __memh5_subclass attribute is accurate
             clspath = self.__class__.__module__ + "." + self.__class__.__name__
