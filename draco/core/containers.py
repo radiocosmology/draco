@@ -340,7 +340,7 @@ class ContainerBase(memh5.BasicCont):
                 raise RuntimeError("No '{}' axis found to select from.".format(axis))
 
         # Build selections dict
-        selections = {"index_map": {}}
+        selections = {}
         for name, dataset in self._dataset_spec.items():
             ds_axes = dataset["axes"]
             sel = []
@@ -349,11 +349,11 @@ class ContainerBase(memh5.BasicCont):
                     sel.append(sel_args[axis])
                 else:
                     sel.append(slice(None))
-            selections[name] = tuple(sel)
+            selections["/" + name] = tuple(sel)
 
         # add index maps selections
         for axis, sel in sel_args.items():
-            selections["index_map"][axis] = sel
+            selections["/index_map/" + axis] = sel
 
         return selections
 
