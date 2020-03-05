@@ -10,7 +10,13 @@ from future.builtins.disabled import *  # noqa  pylint: disable=W0401, W0614
 import numpy as np
 import scipy.linalg as la
 import scipy.stats as st
-from randomgen import RandomGenerator
+
+try:
+    # For backwards compatibility
+    from randomgen import RandomGenerator
+except ImportError:
+    from randomgen import Generator as RandomGenerator
+
 
 from caput import mpiarray, config
 from cora.util import units
