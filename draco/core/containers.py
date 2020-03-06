@@ -319,6 +319,50 @@ class ContainerBase(memh5.BasicCont):
         # hash randomization
         return tuple(sorted(axes))
 
+    def _make_selections(self, sel_args):
+        """
+        Match down-selection arguments to axes of datasets.
+
+        Parses sel_* argument and returns dict mapping dataset names to selections.
+
+        Parameters
+        ----------
+        sel_args : dict
+            Should contain valid numpy indexes as values and axis names (str) as keys.
+
+        Returns
+        -------
+        dict
+            Mapping of dataset names to numpy indexes for downselection of the data.
+            Also includes another dict under the key "index_map" that includes
+            the selections for those.
+        """
+        # Check if all those axes exist
+        for axis in sel_args.keys():
+            if axis not in self._axes:
+                raise RuntimeError("No '{}' axis found to select from.".format(axis))
+
+        # Build selections dict
+        selections = {}
+        for name, dataset in self._dataset_spec.items():
+            ds_axes = dataset["axes"]
+            sel = []
+            ds_relevant = False
+            for axis in ds_axes:
+                if axis in sel_args:
+                    sel.append(sel_args[axis])
+                    ds_relevant = True
+                else:
+                    sel.append(slice(None))
+            if ds_relevant:
+                selections["/" + name] = tuple(sel)
+
+        # add index maps selections
+        for axis, sel in sel_args.items():
+            selections["/index_map/" + axis] = sel
+
+        return selections
+
 
 class TableBase(ContainerBase):
     """A base class for containers holding tables of data.
