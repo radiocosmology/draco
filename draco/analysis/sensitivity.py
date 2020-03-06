@@ -78,8 +78,8 @@ class ComputeSystemSensitivity(task.SingleTask):
         # Calculate redundancy for each unique set of input flags
         cnt = tools.calculate_redundancy(
             uniq_inpflg.astype(np.float32),
-            data.prod[:],
-            data.reverse_map["stack"]["stack"][:],
+            data.prod,
+            data.reverse_map["stack"]["stack"],
             data.stack.size,
         )
 
