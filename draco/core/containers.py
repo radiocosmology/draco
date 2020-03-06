@@ -344,12 +344,15 @@ class ContainerBase(memh5.BasicCont):
         for name, dataset in self._dataset_spec.items():
             ds_axes = dataset["axes"]
             sel = []
+            ds_relevant = False
             for axis in ds_axes:
                 if axis in sel_args:
                     sel.append(sel_args[axis])
+                    ds_relevant = True
                 else:
                     sel.append(slice(None))
-            selections["/" + name] = tuple(sel)
+            if ds_relevant:
+                selections["/" + name] = tuple(sel)
 
         # add index maps selections
         for axis, sel in sel_args.items():
