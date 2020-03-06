@@ -59,12 +59,21 @@ class ComputeSystemSensitivity(task.SingleTask):
         nfreq, nstack, ntime = data.vis.local_shape
 
         # Calculate redundancy
-        cnt = tools.calculate_redundancy(
-            data.input_flags[:],
-            data.prod,
-            data.reverse_map["stack"]["stack"],
-            data.stack.size,
-        )
+        inpflg = data.input_flags[:].astype(np.bool)
+        niff, nift = 1, inpflg.shape[-1]
+        if 'gain' in data.datasets:
+            # Derive frequency dependent flags from gains
+            gainflg = (data.gain[:] != (1.0 + 0.0J))
+            inpflg = np.swapaxes(inpflg[np.newaxis, :, :] & gainflg, 0, 1)
+            niff, nift = inpflg.shape[1:]
+            inpflg = inpflg.reshape(inpflg.shape[0], -1)
+
+        uniq_inpflg, index_cnt = np.unique(inpflg, return_inverse=True, axis=1)
+
+        cnt = tools.calculate_redundancy(uniq_inpflg.astype(np.float32),
+                                         data.prod[:],
+                                         data.reverse_map['stack']['stack'][:],
+                                         data.stack.size)
 
         # Determine stack axis
         stack_new, stack_flag = tools.redefine_stack_index_map(
@@ -154,12 +163,15 @@ class ComputeSystemSensitivity(task.SingleTask):
             # Loop over frequencies to reduce memory usage
             for ff in range(nfreq):
 
+                fslc = slice((ff % niff) * nift, ((ff % niff) + 1) * nift)
+                pfcnt = pcnt[:, index_cnt[fslc]]
+
                 pvar = tools.invert_no_zero(bweight[ff, ipol, :])
                 pflag = bflag[ff, ipol, :].astype(np.float32)
 
-                var[ff, pp, :] = np.sum(pcnt ** 2 * pscale * pflag * pvar, axis=0)
+                var[ff, pp, :] = np.sum(pfcnt ** 2 * pscale * pflag * pvar, axis=0)
 
-                counter[ff, pp, :] = np.sum(pcnt * pscale * pflag, axis=0)
+                counter[ff, pp, :] = np.sum(pfcnt * pscale * pflag, axis=0)
 
         # Normalize
         var *= tools.invert_no_zero(counter ** 2)
@@ -169,9 +181,10 @@ class ComputeSystemSensitivity(task.SingleTask):
         auto_input = prodstack["input_a"][auto_stack_id]
         auto_pol = input_pol[auto_input]
 
-        num_feed = cnt[np.newaxis, auto_stack_id, :] * bflag[
-            :, auto_stack_id, :
-        ].astype(np.float32)
+        auto_cnt = cnt[auto_stack_id, :][:, index_cnt]
+        auto_cnt = np.swapaxes(auto_cnt.reshape(-1, niff, nift), 0, 1)
+        num_feed = auto_cnt * bflag[:, auto_stack_id, :].astype(np.float32)
+
         auto = data.vis[:, auto_stack_id, :].real
 
         # Construct the radiometric estimate of the noise by taking the sum
