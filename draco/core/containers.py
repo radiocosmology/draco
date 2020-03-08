@@ -796,6 +796,12 @@ class SystemSensitivity(TODContainer):
             "initialise": True,
             "distributed": True,
         },
+        "frac_lost": {
+            "axes": ["freq", "time"],
+            "dtype": np.float32,
+            "initialise": True,
+            "distributed": True,
+        },
     }
 
     @property
@@ -809,6 +815,10 @@ class SystemSensitivity(TODContainer):
     @property
     def weight(self):
         return self.datasets["weight"]
+
+    @property
+    def frac_lost(self):
+        return self.datasets["frac_lost"]
 
     @property
     def freq(self):

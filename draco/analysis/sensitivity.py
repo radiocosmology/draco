@@ -225,11 +225,11 @@ class ComputeSystemSensitivity(task.SingleTask):
         dnu = np.median(data.index_map["freq"]["width"]) * 1e6
 
         if ("flags" in data) and ("frac_lost" in data["flags"]):
-            frac_lost = data["flags"]["frac_lost"][:][:, np.newaxis, :]
+            frac_lost = data["flags"]["frac_lost"][:]
         else:
-            frac_lost = 0.0
+            frac_lost = np.zeros((1, 1), dtype=np.float32)
 
-        nint = dnu * tint * (1.0 - frac_lost)
+        nint = dnu * tint * (1.0 - frac_lost[:, np.newaxis, :])
 
         # Normalize by the number of independent samples
         # and the total number of baselines squared
@@ -256,5 +256,8 @@ class ComputeSystemSensitivity(task.SingleTask):
 
         # Save the total number of baselines that were averaged in the weight dataset
         metrics.weight[:] = counter
+
+        # Save the fraction of missing samples
+        metrics.frac_lost[:] = frac_lost
 
         return metrics
