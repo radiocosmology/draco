@@ -237,7 +237,7 @@ class ComputeSystemSensitivity(task.SingleTask):
 
         # Create output container
         metrics = containers.SystemSensitivity(
-            pol=np.array(pol_uniq, dtype=np.string_),
+            pol=np.array(pol_uniq, dtype="<U2"),
             time=data.time[:],
             axes_from=data,
             attrs_from=data,
