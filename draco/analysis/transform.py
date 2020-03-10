@@ -577,7 +577,7 @@ class MModeInverseTransform(task.SingleTask):
 
         Returns
         -------
-        sstream : containers.SiderealStream 
+        sstream : containers.SiderealStream
             The output sidereal stream.
         """
         # NOTE: If n_time is smaller than Nyquist sampling the m-mode axis then
@@ -623,10 +623,8 @@ def _unpack_marray(mmodes, n=None):
     shape = mmodes.shape[2:]
     mmax_plus = mmodes.shape[0] - 1
     if (mmodes[mmax_plus, 1, ...].flatten() == 0).all():
-        print("Had an even number os samples originally")
         mmax_minus = mmax_plus - 1
     else:
-        print("Had an odd number of samples originally")
         mmax_minus = mmax_plus
 
     if n is None:
