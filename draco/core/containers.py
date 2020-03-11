@@ -1086,6 +1086,57 @@ class TrackBeam(ContainerBase):
         return self.index_map["pix"]
 
 
+class ApertureBeam(ContainerBase):
+    """Parallel container aperture transform of holography transit.
+    """
+
+    _axes = ("freq", "pol", "input", "x")
+
+    _dataset_spec = {
+        "beam": {
+            "axes": ["freq", "pol", "input", "x"],
+            "dtype": np.complex64,
+            "initialise": True,
+            "distributed": True,
+            "distributed_axis": "freq",
+        },
+        "weight": {
+            "axes": ["freq", "pol", "input", "x"],
+            "dtype": np.float32,
+            "initialise": True,
+            "distributed": True,
+            "distributed_axis": "freq",
+        },
+    }
+
+    @property
+    def beam(self):
+        return self.datasets["beam"]
+
+    @property
+    def weight(self):
+        return self.datasets["weight"]
+
+    @property
+    def freq(self):
+        if self.index_map["freq"].dtype.fields is None:
+            return self.index_map["freq"]
+        else:
+            return self.index_map["freq"]["centre"]
+
+    @property
+    def pol(self):
+        return self.index_map["pol"]
+
+    @property
+    def input(self):
+        return self.index_map["input"]
+
+    @property
+    def x(self):
+        return self.index_map["x"]
+
+
 class MModes(VisContainer):
     """Parallel container for holding m-mode data.
 
