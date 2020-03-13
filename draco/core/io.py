@@ -218,7 +218,7 @@ class LoadFilesFromParams(task.SingleTask):
         Can either be a glob pattern, or lists of actual files.
     distributed : bool, optional
         Whether the file should be loaded distributed across ranks.
-    convert_strings : bool. optional
+    convert_strings : bool, optional
         Convert strings to unicode when loading.
     """
 
