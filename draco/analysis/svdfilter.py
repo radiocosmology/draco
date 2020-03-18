@@ -153,7 +153,7 @@ def in_mode_inv_reshape(m, vis, is_mm, bt):
     # M-mode case
     if is_mm:
         # Transpose vis array from [msign*nprod,freq] to
-        # [msign*nprod,freq], reshape to [freq,msign,nprod],
+        # [freq,msign*nprod], reshape to [freq,msign,nprod],
         # and transpose again to [msign,freq,nprod]
         vis_m = vis.transpose((1,0)).reshape(nfreq, 2, -1).transpose((1, 0, 2))
 
@@ -165,7 +165,7 @@ def in_mode_inv_reshape(m, vis, is_mm, bt):
         nmodes_min = np.min(svd_num[0])
         nmodes_tot = np.sum(svd_num[0])
 
-        # Create empty 1d array store visibilities, and set it all to zero
+        # Create empty 1d array to store visibilities, and set it all to zero
         vis_m = np.zeros(nmodes_tot, dtype=np.complex128)
 
         # Fill in vis_m at each frequency, using starting indices corresponding
@@ -251,6 +251,7 @@ class SVDSpectrumEstimator(task.SingleTask):
         for mi, m in vis.enumerate(axis=0):
             self.log.debug("Calculating SVD spectrum of m=%i", m)
 
+            # Reshape visibilities to have freq as 2nd axis
             vis_m, mask_m = in_mode_reshape(m, vis[mi], weight[mi], is_mm, self.beamtransfer)
 
             # If there are fewer than min_modes_for_svd modes per frequency,
@@ -353,9 +354,11 @@ class SVDFilter(task.SingleTask):
 
         if not self.save_basis_only:
 
-            # Do a quick first pass calculation of all the singular values to get the max on this rank.
+            # Do a quick first pass calculation of all the singular values to get
+            # the max on this rank.
             for mi, m in vis.enumerate(axis=0):
 
+                # Reshape visibilities to have freq as 2nd axis
                 vis_m, mask_m = in_mode_reshape(m, vis[mi], weight[mi], is_mm, self.beamtransfer)
 
                 # If there are fewer than min_modes_for_svd modes per frequency,
@@ -363,7 +366,7 @@ class SVDFilter(task.SingleTask):
                 if vis_m.shape[0] < self.min_modes_for_svd:
                     continue
 
-                # Do SVD. u is matrix of msign+nprod singular vectors,
+                # Do SVD. u is matrix of msign+nprod or tel-SVD-mode singular vectors,
                 # vh is matrix of freq singular vectors
                 u, sig, vh = svd_em(vis_m, mask_m, niter=self.niter)
 
@@ -380,6 +383,7 @@ class SVDFilter(task.SingleTask):
         # Loop over all m's and remove modes below the combined cut
         for mi, m in vis.enumerate(axis=0):
 
+            # Reshape visibilities to have freq as 2nd axis
             vis_m, mask_m = in_mode_reshape(m, vis[mi], weight[mi], is_mm, self.beamtransfer)
 
             # If there are fewer than min_modes_for_svd modes per frequency,
@@ -388,7 +392,7 @@ class SVDFilter(task.SingleTask):
                 self.log.info('Skipping SVD for m = %d: not enough input modes', m)
                 continue
 
-            # Do SVD. u is matrix of msign+nprod singular vectors,
+            # Do SVD. u is matrix of msign+nprod or tel-SVD-mode singular vectors,
             # vh is matrix of freq singular vectors
             u, sig, vh = svd_em(vis_m, mask_m, niter=self.niter, full_matrices=True)
 
