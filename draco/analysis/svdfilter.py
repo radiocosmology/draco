@@ -263,7 +263,9 @@ class SVDSpectrumEstimator(task.SingleTask):
             # vh is matrix of freq singular vectors
             u, sig, vh = svd_em(vis_m, mask_m, niter=self.niter)
 
-            spec.spectrum[m] = sig
+            # sig may have fewer elements than spec.spectrum can store, so only
+            # fill up the first len(sig) elements
+            spec.spectrum[m][:len(sig)] = sig
 
         return spec
 
