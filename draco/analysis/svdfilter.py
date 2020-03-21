@@ -243,7 +243,7 @@ class SVDSpectrumEstimator(task.SingleTask):
             for m in range(self.tel.mmax):
                 svd_num = self.beamtransfer._svd_num(m)
                 n_telsvdmodes_min = max(n_telsvdmodes_min, np.min(svd_num[0]))
-            nmode = min(n_telsvdmodes_min, nfreq)
+            nmode = int(min(n_telsvdmodes_min, nfreq))
 
         spec = containers.SVDSpectrum(singularvalue=nmode, axes_from=inmodes)
         spec.spectrum[:] = 0.0
