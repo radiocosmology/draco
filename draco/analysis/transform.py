@@ -623,7 +623,7 @@ class MModeInverseTransform(task.SingleTask):
         sstream.vis[:] = ssarray
         # There is no way to recover time information for the weights.
         # Just assign the time average to each baseline and frequency.
-        sstream.weight[:] = mmodes.weight[0, 0, :, :][:, :, np.newaxis] / ntime
+        sstream.weight[:] = mmodes.weight[0, 0][..., np.newaxis] / ntime
 
         return sstream
 
