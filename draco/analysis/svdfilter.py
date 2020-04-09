@@ -447,12 +447,16 @@ class SVDFilterFromFile(task.SingleTask):
     global_threshold : float
         Remove modes with singular value higher than `global_threshold` times the
         largest mode on any m (default: 0.1).
+    mode_cut : int
+        If specified, override local_threshold and global_threshold, and simply
+        remove the first mode_cut SVD modes (default: None).
     basis_input_dir : string
         Directory where SVD basis is stored.
     """
 
     global_threshold = config.Property(proptype=float, default=0.1)
     local_threshold = config.Property(proptype=float, default=0.1)
+    mode_cut = config.Property(proptype=int, default=None)
     basis_input_dir = config.Property(proptype=str, default=None)
 
     def _svdfile(self, m, mmax):
@@ -539,6 +543,8 @@ class SVDFilterFromFile(task.SingleTask):
             global_cut = (sig > self.global_threshold * sv_max).sum()
             local_cut = (sig > self.local_threshold * sig[0]).sum()
             cut = max(global_cut, local_cut)
+            if self.mode_cut is not None:
+                cut = self.mode_cut
             # Construct identity matrix with zeros corresponding to cut modes
             Z_diag = np.ones(u.shape[0])
             Z_diag[:cut] = 0.0
