@@ -10,6 +10,7 @@ from mpi4py import MPI
 
 from caput import config, mpiutil, mpiarray
 from cora.util import units
+from ch_util import ephemeris
 
 from ..core import task, containers, io
 from ..util._fast_tools import beamform
@@ -64,6 +65,10 @@ class BeamFormBase(task.SingleTask):
     freqside = config.Property(proptype=int, default=None)
     telescope_rotation = config.Property(proptype=float, default=0.)
     baselines_from_database = config.Property(proptype=bool, default=False)
+
+    # Initialize values
+    date = None  # Initialize file date to None
+    spos = None  # Initialize source positions to None
 
     def setup(self, manager):
         """ Generic setup method.
@@ -160,7 +165,7 @@ class BeamFormBase(task.SingleTask):
         for src in range(self.nsource):
 
             # Declination of this source
-            dec = self.sdec[src]
+            dec = self.spos[src]["dec"]
 
             if self.freqside is not None:
                 # Get the frequency bin this source is closest to.
@@ -191,13 +196,13 @@ class BeamFormBase(task.SingleTask):
             if self.is_sstream:
                 # Get RA bin this source is closest to.
                 # Phasing will actually be done at src position.
-                sra_index = np.searchsorted(self.ra, self.sra[src])
+                sra_index = np.searchsorted(self.ra, self.spos[src]["ra"])
             else:
                 # Cannot use searchsorted, because RA might not be
                 # monotonically increasing. Slower.
                 # Notice: in case there is more than one transit,
                 # this will pick a single transit quasy-randomly!
-                transit_diff = abs(self.ra - self.sra[src])
+                transit_diff = abs(self.ra - self.spos[src]["ra"])
                 sra_index = np.argmin(transit_diff)
                 # For now, skip sources that do not transit in the data
                 ra_cadence = self.ra[1] - self.ra[0]
@@ -206,7 +211,7 @@ class BeamFormBase(task.SingleTask):
 
             # Compute hour angle array
             ha_array, ra_index_range, ha_mask = self._ha_array(
-                self.ra, sra_index, self.sra[src], self.ha_side, self.is_sstream
+                self.ra, sra_index, self.spos[src]["ra"], self.ha_side, self.is_sstream
             )
 
             # Arrays to store beams and weights for this source
@@ -356,7 +361,7 @@ class BeamFormBase(task.SingleTask):
         # drop in the beam at a conventional distance from the NCP.
         if "ra" in data.index_map:
             # In seconds
-            approx_time_perbin = 24.0 * 3600.0 / float(len(data.index_map["ra"]))
+            approx_time_perbin = 24.0 * 3600.0 / float(len(data.ra))
         else:
             approx_time_perbin = data.time[1] - data.time[0]
 
@@ -373,7 +378,7 @@ class BeamFormBase(task.SingleTask):
         ra : array
             RA axis in the data
         source_ra_index : int
-            Index in data.index_map['ra'] closest to source_ra
+            Index in 'ra' closest to source_ra
         source_ra : float
             RA of the quasar
         ha_side : int
@@ -386,7 +391,7 @@ class BeamFormBase(task.SingleTask):
         ha_array : np.ndarray
             Hour angle array in the range -180. to 180
         ra_index_range : np.ndarray of int
-            Indices (in data.index_map['ra']) corresponding
+            Indices (in 'ra') corresponding
             to ha_array.
         """
         # RA range to track this quasar through the beam.
@@ -502,12 +507,17 @@ class BeamFormBase(task.SingleTask):
         # Extract data info
         if "ra" in data.index_map:
             self.is_sstream = True
-            self.ra = data.index_map["ra"]
+            self.ra = data.ra
         else:
             self.is_sstream = False
             # Convert data timestamps into LSAs (degrees)
             self.ra = self.telescope.unix_to_lsa(data.time)
 
+        # Update source CIRS coordinates date if the data has a date
+        date = self._get_date(data)
+        self._update_coords_date(date)
+
+        # Includes 'centre' and 'width'
         self.freq = data.index_map["freq"]
         self.nfreq = len(self.freq)
         # Ensure data is distributed in freq axis
@@ -529,16 +539,11 @@ class BeamFormBase(task.SingleTask):
         self.lo = data.vis.local_offset[0]
         self.ls = data.vis.local_shape[0]
         self.freq_local = self.freq["centre"][self.lo : self.lo + self.ls]
-        # These are to be used when gathering results in the end.
-        # Tuple (not list!) of number of frequencies in each rank
-        self.fsize = tuple(mpiutil.world.allgather(self.ls))
-        # Tuple (not list!) of displacements of each rank array in full array
-        self.foffset = tuple(mpiutil.world.allgather(self.lo))
 
-        fullpol = ["XX", "XY", "YX", "YY"]
         # Save subsets of the data for each polarization, changing
         # the ordering to 'C' (needed for the cython part).
         # This doubles the memory usage.
+        fullpol = ["XX", "XY", "YX", "YY"]
         self.vis, self.visweight, self.bvec, self.sumweight = [], [], [], []
         for pol in self.process_pol:
             pol = fullpol.index(pol)
@@ -594,6 +599,99 @@ class BeamFormBase(task.SingleTask):
                     this_sumweight = (this_sumweight > 0.0).astype(np.float64)
                 self.sumweight.append(np.copy(this_sumweight, order="C"))
 
+    def _get_date(self, data):
+        """ Get a unix time associated with the first time/ra
+        bin of the data
+        """
+        if "time" in data.index_map:
+            return data.time[0]
+        elif "lsd" in data.attrs:
+            if isinstance(data.attrs['lsd'], float):
+                return ephemeris.csd_to_unix(data.attrs['lsd'])
+            else:
+                # Assume it's an array of LSDs.
+                return ephemeris.csd_to_unix(data.attrs['lsd'][0])
+        else:
+            return None
+
+    def _update_coords_date(self, date, date_tolerance=2.6E6):
+        """ Update the source coodinates if 'date' is more than
+        'date_tolerance' away from current internal state date
+        (self.date), otherwise keep the old date.
+
+        Computing CIRS coordinates is expensive,
+        so should not be done for small date changes.
+
+        Parameters
+        ----------
+        date : either `float` or `Datetime` object
+            New date to update to.
+        date_tolerance : `float`
+            Tolerance for date difference in seconds.
+            Default is 2.6E6 ~ 1 month.
+        """
+        update_date = False
+        if date is not None:
+            if (self.date is None):
+                update_date = True
+            elif (abs(self.date - ephemeris.ensure_unix(date)) 
+                                            > date_tolerance):
+                update_date = True
+    
+        if update_date:
+            self.date = date
+            if self.spos is not None:
+                self._compute_source_coords()
+
+    def _compute_source_coords(self):
+        """ Compute the CIRS (time variable) coordinates
+        of the source catalog from the ICRS ones.
+        """
+        # ICRS positions, no time information.
+        pos = self.source_cat['position'][:]
+        nsrc = len(pos)
+        # Positions in this rank
+        this_pos = mpiutil.partition_list_mpi(pos)
+        # Compute corrected positions in this rank.
+        skysrc = ephemeris.skyfield_star_from_ra_dec(this_pos["ra"],
+                                                     this_pos["dec"])
+        this_ra, this_dec = ephemeris.object_coords(skysrc, date=self.date)
+        # We need ra in degrees
+        this_ra = np.array(np.rad2deg(this_ra)).astype('d')
+        this_dec = np.array(this_dec).astype('d')
+
+        # Gather all RAs and DECs into all ranks
+        nlist, stt_list, _ = mpiutil.split_all(nsrc)
+        ra = np.zeros_like(pos, dtype='d')
+        recvbuf = [ra, tuple(nlist), tuple(stt_list), MPI.DOUBLE]
+        sendbuf = [this_ra, len(this_ra)]
+        mpiutil.world.Allgatherv(sendbuf, recvbuf)
+
+        dec = np.zeros_like(pos, dtype='d')
+        recvbuf = [dec, tuple(nlist), tuple(stt_list), MPI.DOUBLE]
+        sendbuf = [this_dec, len(this_dec)]
+        mpiutil.world.Allgatherv(sendbuf, recvbuf)
+
+        # Package RA and DEC in catalog type
+        self.spos = np.zeros_like(pos)
+        self.spos[:] = list(zip(ra, dec))
+
+    def _process_catalog(self, source_cat):
+        """ Store code for parsing and formating source catalog data.
+        """
+        # Extract source catalog information
+        self.source_cat = source_cat
+        # Number of pointings
+        self.nsource = len(self.source_cat["position"])
+        # Frequency of each source (MHz).
+        self.sfreq = NU21 / (self.source_cat["redshift"]["z"][:] + 1.0)
+        # Pointings RA and Dec
+        if self.date is None:
+            self.spos = self.source_cat['position'][:]
+            self.spos["dec"][:] = np.deg2rad(self.spos["dec"][:])
+        else:
+            self._compute_source_coords()
+
 
 class BeamForm(BeamFormBase):
     """ BeamForm for a single source catalog and multiple visibility datasets.
@@ -612,18 +710,10 @@ class BeamForm(BeamFormBase):
             Catalog of points to beamform at.
 
         """
+        # Call generic setup method.
         super(BeamForm, self).setup(manager)
-
-        # Extract source catalog information
-        self.source_cat = source_cat
-        # Number of pointings
-        self.nsource = len(self.source_cat["position"])
-        # Pointings RA and Dec
-        self.sdec = np.deg2rad(self.source_cat["position"]["dec"][:])
-        self.sra = self.source_cat["position"]["ra"]
-        if self.freqside is not None:
-            # Frequency of each source.
-            self.sfreq = NU21 / (self.source_cat["redshift"]["z"][:] + 1.0)  # MHz
+        # Process catalog data
+        self._process_catalog(source_cat)
 
     def process(self, data):
         """ Parse the visibility data and beamforms all sources.
@@ -662,6 +752,7 @@ class BeamFormCat(BeamFormBase):
             Data to beamform on.
 
         """
+        # Call generic setup method.
         super(BeamFormCat, self).setup(manager)
 
         # Process and make available various data
@@ -680,16 +771,8 @@ class BeamFormCat(BeamFormBase):
         formed_beam : `containers.FormedBeam` or `containers.FormedBeamHA`
             Formed beams at each source.
         """
-        # Source catalog to beamform at
-        self.source_cat = source_cat
-        # Number of pointings
-        self.nsource = len(self.source_cat["position"])
-        # Pointings RA and Dec
-        self.sdec = np.deg2rad(self.source_cat["position"]["dec"][:])
-        self.sra = self.source_cat["position"]["ra"]
-        if self.freqside is not None:
-            # Frequency of each source.
-            self.sfreq = NU21 / (self.source_cat["redshift"]["z"][:] + 1.0)  # MHz
-
+        # Process catalog data
+        self._process_catalog(source_cat)
+        
         # Call generic process method.
         return super(BeamFormCat, self).process()
