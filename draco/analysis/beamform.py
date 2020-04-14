@@ -49,6 +49,12 @@ class BeamFormBase(task.SingleTask):
     freqside : int
         Number of frequencies to process at each side of the source.
         Default (None) processes all frequencies.
+    telescope_rotation : float
+        Rotation of the telescope from true north in degrees.  A positive rotation is
+        anti-clockwise when looking down at the telescope from the sky.
+    baselines_from_database :  bool
+        Wether to recover feed positions from layout database. Default is False 
+        which means baselines are obtained from telescope object.
     """
 
     collapse_ha = config.Property(proptype=bool, default=True)
@@ -56,6 +62,8 @@ class BeamFormBase(task.SingleTask):
     weight = config.enum(["natural", "uniform", "inverse_variance"], default="natural")
     timetrack = config.Property(proptype=float, default=900.0)
     freqside = config.Property(proptype=int, default=None)
+    telescope_rotation = config.Property(proptype=float, default=0.)
+    baselines_from_database = config.Property(proptype=bool, default=False)
 
     def setup(self, manager):
         """ Generic setup method.
@@ -513,7 +521,9 @@ class BeamFormBase(task.SingleTask):
         # polarization list: ['XX', 'XY', 'YX', 'YY']
         polmap = polarization_map(data.index_map, self.telescope)
         # Baseline vectors in meters
-        bvec_m = baseline_vector(data.index_map, self.telescope)
+        bvec_m = baseline_vector(data.index_map, self.telescope,
+                                 telescope_rotation=self.telescope_rotation,
+                                 positions_from_database=self.baselines_from_database)
 
         # MPI distribution values
         self.lo = data.vis.local_offset[0]

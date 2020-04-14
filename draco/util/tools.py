@@ -484,7 +484,7 @@ def polarization_map(index_map, telescope, exclude_autos=True):
     return polmap
 
 
-def baseline_vector(index_map, telescope):
+def baseline_vector(index_map, telescope, telescope_rotation=0., positions_from_database=False):
     """ Baseline vectors in meters.
 
         Parameters
@@ -494,6 +494,13 @@ def baseline_vector(index_map, telescope):
             entry and an `input` entry.
         telescope : :class: `drift.core.telescope`
             Telescope object containing feed information.
+        telescope_rotation : float
+            Rotation of the telescope from true north in degrees.  A positive rotation is
+            anti-clockwise when looking down at the telescope from the sky.
+        positions_from_database  : bool.
+            Whether to check the database for feed positions. If False (default) use
+            telescope.baselines instead (usefull for simulated data). If telescope rotation
+            is not zero, the baseline is always used and this argument is ignored.
 
         Returns
         -------
@@ -501,6 +508,13 @@ def baseline_vector(index_map, telescope):
             Array of shape (2, nstack). The 2D baseline vector
             (in meters) for each visibility in index_map['stack']
     """
+
+    if hasattr(telescope, 'feeds'):
+        from ch_util import tools
+        if (telescope_rotation != 0):
+            tools.change_chime_location(rotation=telescope_rotation)
+        feedpos = tools.get_feed_positions(telescope.feeds)
+
     nstack = len(index_map["stack"])
     # Baseline vectors in meters.
     bvec_m = np.zeros((2, nstack), dtype=np.float64)
@@ -518,11 +532,15 @@ def baseline_vector(index_map, telescope):
         ipt0 = input_map[index_map["prod"][pi][0]]
         ipt1 = input_map[index_map["prod"][pi][1]]
 
-        # Beseline vector in meters
-        unique_index = telescope.feedmap[ipt0, ipt1]
-        bvec_m[:, vi] = telescope.baselines[unique_index]
-        # No need to conjugate. Already done in telescope.baselines.
-        # if telescope.feedconj[ipt0, ipt1]:
-        #    bvec_m[:, vi] *= -1.
+        if positions_from_database and hasattr(telescope, 'feeds'):
+            # Compute baseline separations in meters
+            bvec_m[:, vi] = feedpos[ipt0] - feedpos[ipt1]
+            if telescope.feedconj[ipt0, ipt1]:
+                bvec_m[:, vi] *= -1.
+        else:
+            # Beseline vector in meters
+            # No need to conjugate. Already done in telescope.baselines.
+            unique_index = telescope.feedmap[ipt0, ipt1]
+            bvec_m[:, vi] = telescope.baselines[unique_index]
 
     return bvec_m
