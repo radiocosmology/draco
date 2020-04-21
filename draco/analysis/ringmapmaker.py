@@ -356,22 +356,40 @@ class RingMapMaker(task.group_tasks(MakeVisGrid, BeamformNS, BeamformEW)):
 class UnbeamformNS(task.SingleTask):
     """Attempt to undo the beamforming in the NS direction.
 
-    If the original beamforming step was unitary, this should recover the
-    visibilities, but the weights cannot be restored since we do not track
-    the full covariances.
+    Inverts the beamforming matrix and the apodisation window applied by `BeamformNS`
+    The weights cannot be restored since we do not track the full covariances.
 
     Attributes
     ----------
-    ny: int
+
+    ny : int
         The number of NS baselines to generate. If not specified, use the number
-        ofNS pixels.
-    ysep: float
+        of NS pixels.
+
+    ysep : float
         The minimum baseline separation (m). Default 0.3048.
+
+    weight : string
+        NS baseline weighting that was used for the beamforming, to be undone.
+        See `BeamformNS` for options.
+
+    scaled : bool
+        Whether the beamforming used a window scaled to the longest wavelength.
+
+    pinv : bool
+        Calculate the pseudo inverse of the forward Fourier matrix to invert the
+        beamforming. Otherwise just use the conjugate transpose.
     """
 
     ny = config.Property(proptype=int, default=None)
     # TODO: Should this be obtained from a telescope object instead?
     ysep = config.Property(proptype=float, default=0.3048)
+    pinv = config.Property(proptype=bool, default=False)
+    weight = config.enum(
+        ["uniform", "natural", "inverse_variance", "blackman", "nuttall"],
+        default="uniform",
+    )
+    scaled = config.Property(proptype=bool, default=False)
 
     def process(self, bf):
 
@@ -386,6 +404,8 @@ class UnbeamformNS(task.SingleTask):
         if self.ny % 2 == 0:
             self.ny += 1
         ns = np.fft.fftfreq(self.ny, d=(1.0 / (self.ny * self.ysep)))
+        nsmax = np.abs(ns).max()
+
         # create visibility grid container
         vg = containers.VisGridStream(axes_from=bf, ns=ns, comm=bf.comm)
         vg.redistribute("freq")
@@ -399,10 +419,39 @@ class UnbeamformNS(task.SingleTask):
         # Iterate over local frequencies
         for lfi, fi in bf.vis[:].enumerate(1):
 
-            # make phase weights
+            # scale baselines in units of wavelength
             wv = scipy.constants.c * 1e-6 / freq[fi]
+            vpos = ns / wv
+
+            # reconstruct NS weights applied in forward transform
+            if self.weight == "inverse_variance":
+                raise NotImplementedError("Inverse variance weighting cannot be inverted.")
+            elif self.weight == "natural":
+                raise NotImplementedError("Natural weighting hasn't been implemented yet.")
+            else:
+                # evaluate weights over specified span
+                wvmin = scipy.constants.c * 1e-6 / freq.min()
+                vmax = nsmax / wvmin if self.scaled else nsmax / wv
+                x = 0.5 * (vpos / vmax + 1)
+                ns_weight = tools.window_generalised(x, window=self.weight)
+                # normalize
+                ns_weight *= tools.invert_no_zero(ns_weight.sum())
+                ns_weight[np.isclose(ns_weight, 0., rtol=np.finfo(bf.vis.dtype).resolution)] = 0.
+
+            # make phase weights
             phase = 2.0 * np.pi * ns[:, np.newaxis] * el[np.newaxis, :] / wv
             F = np.exp(1.0j * phase)
+            if self.pinv:
+                try:
+                    F = np.linalg.pinv(np.conj(F.T))
+                except:
+                    self.log.warning(
+                        "Pseudo-inverse failed for frequency {:.2f} MHz.".format(freq[fi])
+                    )
+                    F = np.zeros_like(F)
+            else:
+                # implicitly using this convention for Fourier transform normalisation
+                F /= F.shape[1]
             # exclude missing data
             weight = (bfw[:, lfi] > 0).astype(float)
 
@@ -413,5 +462,9 @@ class UnbeamformNS(task.SingleTask):
             # the pre-transform weights here
             t = np.sum(tools.invert_no_zero(bfw[:, lfi]) * weight**2, axis=-2)
             vgw[:, lfi] = tools.invert_no_zero(t[..., np.newaxis, :])
+
+            # invert the forward weights
+            vgv[:, lfi] *= tools.invert_no_zero(ns_weight)[:, np.newaxis]
+            vgw[:, lfi] *= (ns_weight**2)[:, np.newaxis]
 
         return vg
