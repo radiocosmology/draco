@@ -27,7 +27,9 @@ import numpy as np
 import scipy.constants
 
 from caput import config
+from cora.util import coord
 
+from .transform import _make_marray
 from ..core import task
 from ..core import io
 from ..util import tools
@@ -231,11 +233,15 @@ class BeamformNS(task.SingleTask):
             if self.weight == "inverse_variance":
                 gw = gsw[:, lfi]
             elif self.weight == "natural":
-                raise NotImplementedError("Natural weighting hasn't been implemented yet.")
+                raise NotImplementedError(
+                    "Natural weighting hasn't been implemented yet."
+                )
             else:
                 x = 0.5 * (vpos / vmax + 1)
                 ns_weight = tools.window_generalised(x, window=self.weight)
-                gw = (gsw[:, lfi] > 0) * ns_weight[np.newaxis,np.newaxis,:, np.newaxis]
+                gw = (gsw[:, lfi] > 0) * ns_weight[
+                    np.newaxis, np.newaxis, :, np.newaxis
+                ]
 
             # Remove auto-correlations
             if not self.include_auto:
@@ -243,7 +249,7 @@ class BeamformNS(task.SingleTask):
 
             # Normalize by sum of weights
             norm = np.sum(gw, axis=-2)
-            gw *= tools.invert_no_zero(norm)[...,np.newaxis,:]
+            gw *= tools.invert_no_zero(norm)[..., np.newaxis, :]
 
             # Create array that will be used for the inverse
             # discrete Fourier transform in y-direction
@@ -254,7 +260,7 @@ class BeamformNS(task.SingleTask):
             hvv[:, lfi] = np.dot(F, gw * gsv[:, lfi]).transpose(1, 2, 0, 3)
 
             # Estimate the weights assuming that the errors are all uncorrelated
-            t = np.sum(tools.invert_no_zero(gsw[:, lfi]) * gw**2, axis=-2)
+            t = np.sum(tools.invert_no_zero(gsw[:, lfi]) * gw ** 2, axis=-2)
             hvw[:, lfi] = tools.invert_no_zero(t[..., np.newaxis, :])
 
         return hv
@@ -389,6 +395,7 @@ class UnbeamformNS(task.SingleTask):
         ["uniform", "natural", "inverse_variance", "blackman", "nuttall"],
         default="uniform",
     )
+    invert_weight = config.Property(proptype=bool, default=True)
     scaled = config.Property(proptype=bool, default=False)
 
     def process(self, bf):
@@ -425,9 +432,13 @@ class UnbeamformNS(task.SingleTask):
 
             # reconstruct NS weights applied in forward transform
             if self.weight == "inverse_variance":
-                raise NotImplementedError("Inverse variance weighting cannot be inverted.")
+                raise NotImplementedError(
+                    "Inverse variance weighting cannot be inverted."
+                )
             elif self.weight == "natural":
-                raise NotImplementedError("Natural weighting hasn't been implemented yet.")
+                raise NotImplementedError(
+                    "Natural weighting hasn't been implemented yet."
+                )
             else:
                 # evaluate weights over specified span
                 wvmin = scipy.constants.c * 1e-6 / freq.min()
@@ -436,7 +447,9 @@ class UnbeamformNS(task.SingleTask):
                 ns_weight = tools.window_generalised(x, window=self.weight)
                 # normalize
                 ns_weight *= tools.invert_no_zero(ns_weight.sum())
-                ns_weight[np.isclose(ns_weight, 0., rtol=np.finfo(bf.vis.dtype).resolution)] = 0.
+                ns_weight[
+                    np.isclose(ns_weight, 0.0, rtol=np.finfo(bf.vis.dtype).resolution)
+                ] = 0.0
 
             # make phase weights
             phase = 2.0 * np.pi * ns[:, np.newaxis] * el[np.newaxis, :] / wv
@@ -446,7 +459,9 @@ class UnbeamformNS(task.SingleTask):
                     F = np.linalg.pinv(np.conj(F.T))
                 except:
                     self.log.warning(
-                        "Pseudo-inverse failed for frequency {:.2f} MHz.".format(freq[fi])
+                        "Pseudo-inverse failed for frequency {:.2f} MHz.".format(
+                            freq[fi]
+                        )
                     )
                     F = np.zeros_like(F)
             else:
@@ -460,11 +475,249 @@ class UnbeamformNS(task.SingleTask):
             # Estimate the noise weights assuming that the errors are all uncorrelated
             # Because we don't track the full covariance matrix we can't recover
             # the pre-transform weights here
-            t = np.sum(tools.invert_no_zero(bfw[:, lfi]) * weight**2, axis=-2)
+            t = np.sum(tools.invert_no_zero(bfw[:, lfi]) * weight ** 2, axis=-2)
             vgw[:, lfi] = tools.invert_no_zero(t[..., np.newaxis, :])
 
             # invert the forward weights
-            vgv[:, lfi] *= tools.invert_no_zero(ns_weight)[:, np.newaxis]
-            vgw[:, lfi] *= (ns_weight**2)[:, np.newaxis]
+            if self.invert_weight:
+                vgv[:, lfi] *= tools.invert_no_zero(ns_weight)[:, np.newaxis]
+                vgw[:, lfi] *= (ns_weight ** 2)[:, np.newaxis]
 
         return vg
+
+
+class HybridVisMAntiAlias(task.SingleTask):
+    """Mask beamformed visibilities in m-space.
+
+    Mask out regions in m vs NS beamformed pixel that are outside the region
+    of maxmimum sensitivity of every EW separation.
+
+    Attributes
+    ----------
+
+    overwrite : bool (default False)
+        Whether to write the masked data into the input container or a copy.
+
+    cyl_sep : float (default 22.)
+        Cylinder separation in m.
+
+    lat : float (default 49.5)
+        Latitude at the telescope in degrees.
+
+    n_beam : float (default 4.)
+        The width of the unmasked region in units of the beam scale.
+        This is based on the cylinder separation and scaled in declination
+        by the projection onto celestial coordinates.
+
+    min_width : int (default 50)
+        The minimum width of the unmasked region in units of m.
+
+    taper : float (int 50)
+        Span of the taper at the edges of the mask.
+    """
+
+    overwrite = config.Property(proptype=bool, default=False)
+    local_thresh = config.Property(proptype=float, default=1e-4)
+    global_thresh = config.Property(proptype=float, default=1e-6)
+    simple_beam = config.Property(proptype=bool, default=False)
+    n_beam = config.Property(proptype=float, default=4.0)
+    min_width = config.Property(proptype=int, default=50)
+    max_width = config.Property(proptype=int, default=100)
+    taper = config.Property(proptype=int, default=50)
+
+    def setup(self, tel):
+        # get telescope
+        self.tel = io.get_telescope(tel)
+
+        # get the baseline grid properties
+        xpos = self.tel.baselines[:, 0]
+        ypos = self.tel.baselines[:, 1]
+        self.cyl_sep = np.abs(xpos)[xpos != 0].min()
+        self.ysep = np.abs(ypos)[ypos != 0.0].min()
+        self.ny = int(np.round(2 * np.abs(ypos).max() / self.ysep)) + 1
+        self.log.debug(
+            "Got telescope with {:d} NS grid points with separations {:.3f}".format(
+                self.ny, self.ysep
+            )
+            + " and cylinder separation {:.2f}".format(self.cyl_sep)
+        )
+
+    def process(self, mmodes):
+
+        mmodes.redistribute("freq")
+
+        # axes
+        el = mmodes.index_map["el"][:]
+        freq = mmodes.index_map["freq"]["centre"]
+        m = mmodes.index_map["m"][:]
+        m_signed = np.array((m, -m)).T
+
+        # get angular coordinates
+        phi = (
+            (np.arange(2 * len(m) - 1) - len(m) + 1) * 2 * np.pi / (2 * len(m) - 1)
+        )
+        theta = np.arcsin(np.where(np.abs(el) <= 1.0, el, 0.0))
+        dec = theta + np.radians(self.tel.latitude)
+
+        # set the coordinates of the telescope model
+        t_grid, p_grid = np.meshgrid(np.pi / 2 - dec, phi)
+        self.tel._angpos = np.vstack((t_grid.flatten(), p_grid.flatten())).T
+
+        # output container
+        if self.overwrite:
+            mmodes_out = mmodes
+        else:
+            mmodes_out = containers.HybridVisMModes(axes_from=mmodes, attrs_from=mmodes)
+            mmodes_out.vis[:] = mmodes.vis[:]
+            mmodes_out.weight[:] = mmodes.weight[:]
+
+        mmv = mmodes_out.vis[:]
+        mmw = mmodes_out.weight[:]
+
+        for lfi, fi in mmv.enumerate(3):
+
+            wv = scipy.constants.c / freq[fi] / 1e6
+
+            # calculate the beam model
+            if not self.simple_beam:
+                feed_x, feed_y = None, None
+                for feed_ind in range(self.tel.nfeed):
+                    if self.tel.beamclass[feed_ind] == 0:
+                        feed_x = feed_ind
+                    elif self.tel.beamclass[feed_ind] == 1:
+                        feed_y = feed_ind
+                    if feed_x is not None and feed_y is not None:
+                        break
+
+                if feed_x is None or feed_y is None:
+                    raise (
+                        Exception(
+                            "Could not find feed for polarisation {}.".format(
+                                "X" if feed_x is None else "Y"
+                            )
+                        )
+                    )
+
+                beam_x = self.tel.beam(feed_x, fi).reshape(len(phi), len(theta), -1)
+                beam_y = self.tel.beam(feed_y, fi).reshape(len(phi), len(theta), -1)
+
+                # final beam model. [pol, theta, phi]
+                # TODO: should get pol order from container
+                beam = np.array(
+                    (
+                        (np.abs(beam_x) ** 2).sum(axis=-1).T,
+                        (beam_x * beam_y.conj()).sum(axis=-1).T,
+                        (beam_y * beam_x.conj()).sum(axis=-1).T,
+                        (np.abs(beam_y) ** 2).sum(axis=-1).T,
+                    )
+                )
+
+                # apodize in prep for m-mode transform
+                beam *= np.hanning(beam.shape[-1])
+            else:
+                # otherwise just model the scaling of the beam with declination
+                beam_width = wv / self.cyl_sep
+                ew_scale = np.abs(
+                    np.cos(dec)
+                    / np.sqrt(1 - np.where(np.abs(el) < 1.0, el, 0.0) ** 2)
+                    / beam_width
+                )
+                ew_scale *= self.n_beam
+                ew_scale = np.minimum(ew_scale, self.max_width)
+                beam = None
+
+            # ensure beam is zero beyond horizon
+            horizon = (
+                (
+                    np.dot(
+                        coord.sph_to_cart(self.tel._angpos),
+                        coord.sph_to_cart(self.tel.zenith),
+                    )
+                    > 0.0
+                )
+                .astype(float)
+                .reshape(len(phi), len(theta))
+                .T
+            )
+            beam *= horizon
+            beam *= (np.abs(el) <= 1.0)[np.newaxis, :, np.newaxis]
+
+            # for every cylinder separation
+            for ci in range(mmodes.index_map["ew"].shape[0]):
+
+                # calculate the beam model in m-space
+                if not self.simple_beam:
+                    # transform beam model into m
+                    beam_phase = (
+                        ci * self.cyl_sep / wv * np.cos(dec)[:, np.newaxis] * phi
+                    )
+                    beam_m = _make_marray(
+                        np.exp(-2j * np.pi * beam_phase) * beam,
+                        mmax=m.max(),
+                    )
+
+                    # use model to define region of sensitivity
+                    beam_m = (
+                            (np.abs(beam_m) > (np.abs(beam_m).max(axis=0) * self.local_thresh))
+                            * (np.abs(beam_m) > (np.abs(beam_m).max() * self.global_thresh))
+                    ).astype(float)
+                else:
+                    # calculate m with max sensitivity
+                    m0 = (
+                        -2
+                        * np.pi
+                        * ci
+                        * self.cyl_sep
+                        / wv
+                        * np.cos(dec)[np.newaxis, np.newaxis, :]
+                    )
+
+                    # define sensitivity region around this value
+                    beam_m = (
+                        np.abs(m_signed[..., np.newaxis] - m0)
+                        < np.maximum(ew_scale, self.min_width) / 2.0
+                    ).astype(float)
+
+                    # add polarisation axis
+                    # just repeat them. this makes it easier to iterate later
+                    beam_m = np.tile(beam_m, (1, 1, mmv.shape[2], 1))
+
+                # taper the edges
+                if self.taper > 0:
+                    win = np.hanning(self.taper)
+                    for i in range(beam_m.shape[-1]):
+                        for pi in range(beam_m.shape[2]):
+                            beam_m_cnt = np.concatenate(
+                                (beam_m[:0:-1, 1, pi, i], beam_m[:, 0, pi, i]),
+                                axis=0
+                            )
+                            beam_m_cnt = np.convolve(beam_m_cnt, win, "same")
+                            beam_m_max = beam_m_cnt.max()
+                            beam_m_cnt /= beam_m_max if beam_m_max != 0.0 else 1.0
+                            beam_m[:, :, pi, i] = np.vstack(
+                                (beam_m_cnt[len(m) - 1 :], beam_m_cnt[len(m) - 1 :: -1])
+                            ).T
+
+                # calculate alias matrix
+                num_alias = 3
+                j = np.arange(num_alias) - num_alias // 2
+                M = np.zeros((len(el), len(el)))
+                for jj in j:
+                    k = int(
+                        np.round(jj * wv / self.ysep / (el.max() - el.min()) * len(el))
+                    )
+                    if k >= len(el):
+                        continue
+                    M += np.diag(np.ones(len(el) - np.abs(k)), k=k)
+
+                # mask regions not covered by beam
+                M = beam_m[..., np.newaxis] * M
+
+                # apply to data
+                mmv[:, :, :, lfi, ci] = np.matmul(
+                    M, mmv[:, :, :, lfi, ci, :, np.newaxis]
+                )[..., 0]
+
+                # TODO: just ignoring the weights for now
+
+        return mmodes_out
