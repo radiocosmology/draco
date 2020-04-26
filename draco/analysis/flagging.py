@@ -183,7 +183,7 @@ class MaskBaselines(task.SingleTask):
         Mask out baselines shorter than a given distance.
     mask_short_ew : float
         Mask out baselines shorter then a given distance in the East-West
-        direction. Usefull for masking out intra-cylinder baselines for
+        direction. Useful for masking out intra-cylinder baselines for
         North-South oriented cylindrical telescopes.
     zero_data : bool, optional
         Zero the data in addition to modifying the noise weights
