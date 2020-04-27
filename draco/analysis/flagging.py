@@ -747,7 +747,7 @@ class RFIMask(task.SingleTask):
             # Construct the new mask
             newmask[:] = tvmask | (maddev > self.sigma)
 
-        # Broadcat the new flags to all ranks and then apply
+        # Broadcast the new flags to all ranks and then apply
         sstream.comm.Bcast(newmask, root=rank_with_ind)
         ssw[:] *= (~newmask)[:, np.newaxis, :]
 
@@ -763,6 +763,57 @@ class RFIMask(task.SingleTask):
             ssv[:] = destripe(ssv, ssw > weight_cut)
 
         return sstream
+
+
+class ApplyRFIMask(task.SingleTask):
+    """Apply an RFIMask to the data.
+
+    Mask out all inputs at times and frequencies contaminated by RFI.
+    """
+
+    def process(self, tstream, rfimask):
+        """Flag out RFI by zeroing the weights.
+
+        Parameters
+        ----------
+        tstream : timestream_like
+            A timestream like container. For example, `containers.TimeStream`
+            or `andata.CorrData`.
+        rfimask : containers.RFIMask
+            An RFI mask for the same period of time.
+
+        Returns
+        -------
+        tstream : timestream_like
+            The masked timestream. Note that the masking is done in place.
+        """
+
+        # Validate the sizes
+        if (tstream.time != rfimask.time).all():
+            raise ValueError("timestream and mask data have different time axes.")
+
+        if (tstream.freq != rfimask.freq).all():
+            raise ValueError("timestream and mask data have different freq axes.")
+
+        # Ensure we are frequency distributed
+        tstream.redistribute("freq")
+
+        # Create a slice that broadcasts the mask to the final shape
+        t_axes = tstream.weight.attrs["axis"]
+        m_axes = rfimask.mask.attrs["axis"]
+        bcast_slice = tuple(
+            slice(None) if ax in m_axes else np.newaxis for ax in t_axes
+        )
+
+        # RFI Mask is not distributed, so we need to cut out the frequencies
+        # that are local for the tstream
+        sf = tstream.weight.local_offset[0]
+        ef = sf + tstream.weight.local_shape[0]
+
+        # Mask the data
+        tstream.weight[:] *= rfimask.mask[sf:ef][bcast_slice]
+
+        return tstream
 
 
 def medfilt(x, mask, size, *args):
