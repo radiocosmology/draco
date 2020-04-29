@@ -50,3 +50,4 @@ script:
 
     # run (some) unit tests with mpi
     - mpirun -np 4 pytest -x test/test_selections.py
+    - mpirun -np 4 pytest -x test/test_containers.py
