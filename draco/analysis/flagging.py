@@ -175,6 +175,10 @@ class MaskData(task.SingleTask):
 class MaskBaselines(task.SingleTask):
     """Mask out baselines from a dataset.
 
+    This task may produce output with shared datasets. Be warned that
+    this can produce unexpected outputs if not properly taken into
+    account.
+
     Attributes
     ----------
     mask_long_ns : float
@@ -188,6 +192,11 @@ class MaskBaselines(task.SingleTask):
     zero_data : bool, optional
         Zero the data in addition to modifying the noise weights
         (default is False).
+    share : {"all", "none", "vis"}
+        Which datasets should we share with the input. If "none" we create a
+        full copy of the data, if "vis" we create a copy only of the modified
+        weight dataset and the unmodified vis dataset is shared, if "all" we
+        modify in place and return the input container.
     """
 
     mask_long_ns = config.Property(proptype=float, default=None)
@@ -195,6 +204,8 @@ class MaskBaselines(task.SingleTask):
     mask_short_ew = config.Property(proptype=float, default=None)
 
     zero_data = config.Property(proptype=bool, default=False)
+
+    share = config.enum(["none", "vis", "all"], default="all")
 
     def setup(self, telescope):
         """Set the telescope model.
@@ -205,6 +216,11 @@ class MaskBaselines(task.SingleTask):
         """
 
         self.telescope = io.get_telescope(telescope)
+
+        if self.zero_data and self.share == "vis":
+            self.log.warn(
+                "Setting `zero_data = True` and `share = vis` doesn't make much sense."
+            )
 
     def process(self, ss):
         """Apply the mask to data.
@@ -232,13 +248,20 @@ class MaskBaselines(task.SingleTask):
             short_ew_mask = baselines[:, 0] > self.mask_short_ew
             mask *= short_ew_mask[np.newaxis, :, np.newaxis]
 
+        if self.share == "all":
+            ssc = ss
+        elif self.share == "vis":
+            ssc = ss.copy(shared=("vis",))
+        else:  # self.share == "all"
+            ssc = ss.copy()
+
         # Apply the mask to the weight
-        ss.weight[:] *= mask
+        ssc.weight[:] *= mask
         # Apply the mask to the data
         if self.zero_data:
-            ss.vis[:] *= mask
+            ssc.vis[:] *= mask
 
-        return ss
+        return ssc
 
 
 class RadiometerWeight(task.SingleTask):
