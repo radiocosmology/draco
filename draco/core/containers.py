@@ -50,7 +50,15 @@ import numpy as np
 
 from caput import memh5, tod
 
-import bitshuffle.h5
+# Try to import bitshuffle to set the default compression options
+try:
+    import bitshuffle.h5
+
+    COMPRESSION = bitshuffle.h5.H5FILTER
+    COMPRESSION_OPTS = (0, bitshuffle.h5.H5_COMPRESS_LZ4)
+except ImportError:
+    COMPRESSION = None
+    COMPRESSION_OPTS = None
 
 
 class ContainerBase(memh5.BasicCont):
@@ -768,8 +776,8 @@ class SiderealStream(VisContainer):
             "initialise": True,
             "distributed": True,
             "distributed_axis": "freq",
-            "compression": bitshuffle.h5.H5FILTER,
-            "compression_opts": (0, bitshuffle.h5.H5_COMPRESS_LZ4),
+            "compression": COMPRESSION,
+            "compression_opts": COMPRESSION_OPTS,
             "chunks": (64, 256, 128),
         },
         "vis_weight": {
@@ -778,8 +786,8 @@ class SiderealStream(VisContainer):
             "initialise": True,
             "distributed": True,
             "distributed_axis": "freq",
-            "compression": bitshuffle.h5.H5FILTER,
-            "compression_opts": (0, bitshuffle.h5.H5_COMPRESS_LZ4),
+            "compression": COMPRESSION,
+            "compression_opts": COMPRESSION_OPTS,
             "chunks": (64, 256, 128),
         },
         "input_flags": {
@@ -924,8 +932,8 @@ class TimeStream(VisContainer, TODContainer):
             "initialise": True,
             "distributed": True,
             "distributed_axis": "freq",
-            "compression": bitshuffle.h5.H5FILTER,
-            "compression_opts": (0, bitshuffle.h5.H5_COMPRESS_LZ4),
+            "compression": COMPRESSION,
+            "compression_opts": COMPRESSION_OPTS,
             "chunks": (64, 256, 128),
         },
         "vis_weight": {
@@ -934,8 +942,8 @@ class TimeStream(VisContainer, TODContainer):
             "initialise": True,
             "distributed": True,
             "distributed_axis": "freq",
-            "compression": bitshuffle.h5.H5FILTER,
-            "compression_opts": (0, bitshuffle.h5.H5_COMPRESS_LZ4),
+            "compression": COMPRESSION,
+            "compression_opts": COMPRESSION_OPTS,
             "chunks": (64, 256, 128),
         },
         "input_flags": {
@@ -1054,8 +1062,8 @@ class TrackBeam(ContainerBase):
             "initialise": True,
             "distributed": True,
             "distributed_axis": "freq",
-            "compression": bitshuffle.h5.H5FILTER,
-            "compression_opts": (0, bitshuffle.h5.H5_COMPRESS_LZ4),
+            "compression": COMPRESSION,
+            "compression_opts": COMPRESSION_OPTS,
             "chunks": (128, 2, 128, 128),
         },
         "weight": {
@@ -1064,8 +1072,8 @@ class TrackBeam(ContainerBase):
             "initialise": True,
             "distributed": True,
             "distributed_axis": "freq",
-            "compression": bitshuffle.h5.H5FILTER,
-            "compression_opts": (0, bitshuffle.h5.H5_COMPRESS_LZ4),
+            "compression": COMPRESSION,
+            "compression_opts": COMPRESSION_OPTS,
             "chunks": (128, 2, 128, 128),
         },
     }
