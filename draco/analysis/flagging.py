@@ -834,7 +834,7 @@ class ApplyRFIMask(task.SingleTask):
         ef = sf + tstream.weight.local_shape[0]
 
         # Mask the data
-        tstream.weight[:] *= rfimask.mask[sf:ef][bcast_slice]
+        tstream.weight[:] *= (~rfimask.mask[sf:ef][bcast_slice]).astype(np.float32)
 
         return tstream
 

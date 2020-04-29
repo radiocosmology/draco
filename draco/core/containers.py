@@ -894,6 +894,9 @@ class SystemSensitivity(TODContainer):
 
 class RFIMask(TODContainer):
     """A container for holding RFI mask.
+
+    The mask is `True` for contaminated samples that should be excluded, and
+    `False` for clean samples.
     """
 
     _axes = ("freq",)
