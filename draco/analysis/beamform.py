@@ -505,12 +505,12 @@ class BeamFormBase(task.SingleTask):
                     "SiderealStream must have an LSD attribute to calculate the epoch."
                 )
 
-            # This will be a string for a single sidereal day, or a list of
-            # strings for a stack
+            # This will be a float for a single sidereal day, or a list of
+            # floats for a stack
             lsd = (
-                int(data.attrs["lsd"])
-                if isinstance(data.attrs["lsd"], str)
-                else int(data.attrs["lsd"][0])
+                data.attrs["lsd"][0]
+                if isinstance(data.attrs["lsd"], np.ndarray)
+                else data.attrs["lsd"]
             )
             self.epoch = self.telescope.lsd_to_unix(lsd)
 
