@@ -131,12 +131,9 @@ class SetMPILogging(pipeline.TaskBase):
         filt = MPILogFilter(level_all=self.level_all, level_rank0=self.level_rank0)
 
         # This uses the fact that caput.pipeline.Manager has already
-        # attempted to set up the logging. We just override the level, and
-        # insert our custom filter
+        # attempted to set up the logging. We just insert our custom filter
         root_logger = logging.getLogger()
-        root_logger.setLevel(logging.DEBUG)
         ch = root_logger.handlers[0]
-        ch.setLevel(logging.DEBUG)
         ch.addFilter(filt)
 
         formatter = logging.Formatter(
