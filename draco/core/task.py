@@ -154,7 +154,9 @@ class LoggedTask(pipeline.TaskBase):
     def __init__(self):
 
         # Get the logger for this task
-        self._log = logging.getLogger("%s.%s" % (__name__, self.__class__.__name__))
+        self._log = logging.getLogger(
+            "%s.%s" % (self.__module__, self.__class__.__name__)
+        )
 
         # Set the log level for this task if specified
         if self.log_level is not None:
