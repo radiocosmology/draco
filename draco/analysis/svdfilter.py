@@ -452,12 +452,17 @@ class SVDFilterFromFile(task.SingleTask):
         remove the first mode_cut SVD modes (default: None).
     basis_input_dir : string
         Directory where SVD basis is stored.
+    use_freq_modes : bool
+        If True, use SVD modes defined as combinations of frequencies. If
+        False, use modes defined as combinations of baselines or tel-SVD
+        modes. Default: False
     """
 
     global_threshold = config.Property(proptype=float, default=0.1)
     local_threshold = config.Property(proptype=float, default=0.1)
     mode_cut = config.Property(proptype=int, default=None)
     basis_input_dir = config.Property(proptype=str, default=None)
+    use_freq_modes = config.Property(proptype=bool, default=False)
 
     def _svdfile(self, m, mmax):
         """Filename for SVD basis for single m-mode.
@@ -534,6 +539,7 @@ class SVDFilterFromFile(task.SingleTask):
             fe = h5py.File(self._svdfile(mi, mmax), 'r')
             u = fe["u"][:]
             sig = fe["sig"][:]
+            vh = fe["vh"][:]
             fe.close()
 
             # Reshape visibilities to have freq as 2nd axis
@@ -545,15 +551,29 @@ class SVDFilterFromFile(task.SingleTask):
             cut = max(global_cut, local_cut)
             if self.mode_cut is not None:
                 cut = self.mode_cut
-            # Construct identity matrix with zeros corresponding to cut modes
-            Z_diag = np.ones(u.shape[0])
-            Z_diag[:cut] = 0.0
-            Z = np.diag(Z_diag)
 
-            # Filter input visibilities by projecting into SVD basis
-            # (with U^\dagger), multiplying by Z (which zeros out unwanted
-            # modes), and projecting back to original basis (mult. by U)
-            vis_m_filt = np.dot(u, np.dot(Z, np.dot(u.T.conj(), vis_m)))
+            if not self.use_freq_modes:
+                # Construct identity matrix with zeros corresponding to cut modes
+                Z_diag = np.ones(u.shape[1])
+                Z_diag[:cut] = 0.0
+                Z = np.diag(Z_diag)
+
+                # Filter input visibilities by projecting into SVD basis
+                # (with U^\dagger), multiplying by Z (which zeros out unwanted
+                # modes), and projecting back to original basis (mult. by U)
+                vis_m_filt = np.dot(u, np.dot(Z, np.dot(u.T.conj(), vis_m)))
+
+            else:
+                # Construct identity matrix with zeros corresponding to cut modes
+                Z_diag = np.ones(vh.shape[0])
+                Z_diag[:cut] = 0.0
+                Z = np.diag(Z_diag)
+
+                # Filter input visibilities by projecting into SVD basis
+                # (with V, from the right), multiplying by Z from the right
+                # (which zeros out unwanted modes), and projecting back to
+                # original basis (mult. by V^\dagger from the right)
+                vis_m_filt = np.dot(vis_m, np.dot(vh.T.conj(), np.dot(Z ,vh)))
 
             # Reshape and write back into the mmodes container.
             # Need to zero-pad at the end, since original vis array is
