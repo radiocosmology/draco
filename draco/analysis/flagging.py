@@ -384,7 +384,9 @@ class SmoothVisWeight(task.SingleTask):
 class ThresholdVisWeight(task.SingleTask):
     """Set any weight less than the user specified threshold equal to zero.
 
-    Threshold is determined as `maximum(absolute_threshold, relative_threshold * mean(weight))`.
+    Threshold is determined as `maximum(absolute_threshold,
+    relative_threshold * mean(weight))` and is evaluated per product/stack
+    entry.
 
     Parameters
     ----------
@@ -410,19 +412,26 @@ class ThresholdVisWeight(task.SingleTask):
         timestream : same as input timestream
             The input container with modified weights.
         """
+        timestream.redistribute(["prod", "stack"])
+
         weight = timestream.weight[:]
 
-        threshold = self.absolute_threshold
-        if self.relative_threshold > 0.0:
-            sum_weight = self.comm.allreduce(np.sum(weight))
-            mean_weight = sum_weight / float(np.prod(weight.global_shape))
-            threshold = np.maximum(threshold, self.relative_threshold * mean_weight)
+        # Average over the frequency and time axes to get a per baseline
+        # average
+        mean_weight = weight.mean(axis=2).mean(axis=0)
 
-        keep = weight > threshold
+        # Figure out which entries to keep
+        threshold = np.maximum(
+            self.absolute_threshold, self.relative_threshold * mean_weight
+        )
+        keep = weight > threshold[np.newaxis, :, np.newaxis]
+
+        keep_total = timestream.comm.allreduce(np.sum(keep))
+        keep_frac = keep_total / float(np.prod(weight.global_shape))
 
         self.log.info(
-            "%0.5f%% of data is below the weight threshold of %0.1e."
-            % (100.0 * (1.0 - np.sum(keep) / float(keep.size)), threshold)
+            "%0.5f%% of data is below the weight threshold"
+            % (100.0 * (1.0 - keep_frac))
         )
 
         timestream.weight[:] = np.where(keep, weight, 0.0)
