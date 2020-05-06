@@ -148,8 +148,6 @@ class QuadraticPSEstimationXLarge(QuadraticPSEstimation):
 
         self.sky_array[:] = 0.0
 
-        st = time.time()
-
         for mi, m in klmodes.vis[:].enumerate(axis=0):
             sky_vec1, sky_vec2 = pse.project_vector_kl_to_sky(
                 m, klmodes.vis[m, : klmodes.nmode[m]]
@@ -176,10 +174,6 @@ class QuadraticPSEstimationXLarge(QuadraticPSEstimation):
         q_local = np.sum(np.array(pse.qa[:]), axis=0)
         # Collect all m on each rank
         q = mpiutil.allreduce(q_local[:, 0], op=MPI.SUM)
-
-        et = time.time()
-        if mpiutil.rank0:
-            print("m, time needed for quadratic pse", m, et - st)
 
         # reading from directory
         fisher, bias = pse.fisher_bias()
