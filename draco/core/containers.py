@@ -50,7 +50,15 @@ import numpy as np
 
 from caput import memh5, tod
 
-import bitshuffle.h5
+# Try to import bitshuffle to set the default compression options
+try:
+    import bitshuffle.h5
+
+    COMPRESSION = bitshuffle.h5.H5FILTER
+    COMPRESSION_OPTS = (0, bitshuffle.h5.H5_COMPRESS_LZ4)
+except ImportError:
+    COMPRESSION = None
+    COMPRESSION_OPTS = None
 
 
 class ContainerBase(memh5.BasicCont):
@@ -68,6 +76,9 @@ class ContainerBase(memh5.BasicCont):
     attrs_from : `memh5.BasicCont`, optional
         Another container to copy attributes from. Must be supplied as keyword
         argument. This applies to attributes in default datasets too.
+    skip_datasets : bool, optional
+        Skip creating datasets. They must all be added manually with
+        `.add_dataset` regardless of the entry in `.dataset_spec`. Default is False.
     kwargs : dict
         Should contain entries for all other axes.
 
@@ -111,6 +122,7 @@ class ContainerBase(memh5.BasicCont):
         # Pull out the values of needed arguments
         axes_from = kwargs.pop("axes_from", None)
         attrs_from = kwargs.pop("attrs_from", None)
+        skip_datasets = kwargs.pop("skip_datasets", False)
         dist = kwargs.pop("distributed", True)
         comm = kwargs.pop("comm", None)
         self.allow_chunked = kwargs.pop("allow_chunked", False)
@@ -150,9 +162,10 @@ class ContainerBase(memh5.BasicCont):
                 raise RuntimeError("No definition of axis %s supplied." % axis)
 
         # Iterate over datasets and initialise any that specify it
-        for name, spec in self.dataset_spec.items():
-            if "initialise" in spec and spec["initialise"]:
-                self.add_dataset(name)
+        if not skip_datasets:
+            for name, spec in self.dataset_spec.items():
+                if "initialise" in spec and spec["initialise"]:
+                    self.add_dataset(name)
 
         # Copy over attributes
         if attrs_from is not None:
@@ -365,6 +378,53 @@ class ContainerBase(memh5.BasicCont):
             selections["/index_map/" + axis] = sel
 
         return selections
+
+    def copy(self, shared=None):
+        """Copy this container, optionally sharing the source datasets.
+
+        This routine will create a copy of the container. By default this is
+        as full copy with the contents fully independent. However, a set of
+        dataset names can be given that will share the same data as the
+        source to save memory for large datasets. These will just view the
+        same memory, so any modification to either the original or the copy
+        will be visible to the other. This includes all write operations,
+        addition and removal of attributes, redistribution etc. This
+        functionality should be used with caution and clearly documented.
+
+        Parameters
+        ----------
+        shared : list, optional
+            A list of datasets whose content will be shared with the original.
+
+        Returns
+        -------
+        copy : subclass of ContainerBase
+            The copied container.
+        """
+        new_cont = self.__class__(attrs_from=self, axes_from=self, skip_datasets=True)
+
+        # Loop over datasets that exist in the source and either add a view of
+        # the source dataset, or perform a full copy
+        for name, data in self.datasets.items():
+
+            if shared and name in shared:
+                # TODO: find a way to do this that doesn't depend on the
+                # internal implementation of BasicCont and MemGroup
+                # NOTE: we don't use `.view()` on the RHS here as we want to
+                # preserve the shared data through redistributions
+                new_cont._data._get_storage()[name] = self._data._get_storage()[name]
+            else:
+                dset = new_cont.add_dataset(name)
+
+                # Ensure that we have exactly the same distribution
+                if dset.distributed:
+                    dset.redistribute(data.distributed_axis)
+
+                # Copy over the data and attributes
+                dset[:] = data[:]
+                memh5.copyattrs(data.attrs, dset.attrs)
+
+        return new_cont
 
 
 class TableBase(ContainerBase):
@@ -716,8 +776,8 @@ class SiderealStream(VisContainer):
             "initialise": True,
             "distributed": True,
             "distributed_axis": "freq",
-            "compression": bitshuffle.h5.H5FILTER,
-            "compression_opts": (0, bitshuffle.h5.H5_COMPRESS_LZ4),
+            "compression": COMPRESSION,
+            "compression_opts": COMPRESSION_OPTS,
             "chunks": (64, 256, 128),
         },
         "vis_weight": {
@@ -726,8 +786,8 @@ class SiderealStream(VisContainer):
             "initialise": True,
             "distributed": True,
             "distributed_axis": "freq",
-            "compression": bitshuffle.h5.H5FILTER,
-            "compression_opts": (0, bitshuffle.h5.H5_COMPRESS_LZ4),
+            "compression": COMPRESSION,
+            "compression_opts": COMPRESSION_OPTS,
             "chunks": (64, 256, 128),
         },
         "input_flags": {
@@ -834,6 +894,9 @@ class SystemSensitivity(TODContainer):
 
 class RFIMask(TODContainer):
     """A container for holding RFI mask.
+
+    The mask is `True` for contaminated samples that should be excluded, and
+    `False` for clean samples.
     """
 
     _axes = ("freq",)
@@ -872,8 +935,8 @@ class TimeStream(VisContainer, TODContainer):
             "initialise": True,
             "distributed": True,
             "distributed_axis": "freq",
-            "compression": bitshuffle.h5.H5FILTER,
-            "compression_opts": (0, bitshuffle.h5.H5_COMPRESS_LZ4),
+            "compression": COMPRESSION,
+            "compression_opts": COMPRESSION_OPTS,
             "chunks": (64, 256, 128),
         },
         "vis_weight": {
@@ -882,8 +945,8 @@ class TimeStream(VisContainer, TODContainer):
             "initialise": True,
             "distributed": True,
             "distributed_axis": "freq",
-            "compression": bitshuffle.h5.H5FILTER,
-            "compression_opts": (0, bitshuffle.h5.H5_COMPRESS_LZ4),
+            "compression": COMPRESSION,
+            "compression_opts": COMPRESSION_OPTS,
             "chunks": (64, 256, 128),
         },
         "input_flags": {
@@ -1002,8 +1065,8 @@ class TrackBeam(ContainerBase):
             "initialise": True,
             "distributed": True,
             "distributed_axis": "freq",
-            "compression": bitshuffle.h5.H5FILTER,
-            "compression_opts": (0, bitshuffle.h5.H5_COMPRESS_LZ4),
+            "compression": COMPRESSION,
+            "compression_opts": COMPRESSION_OPTS,
             "chunks": (128, 2, 128, 128),
         },
         "weight": {
@@ -1012,8 +1075,8 @@ class TrackBeam(ContainerBase):
             "initialise": True,
             "distributed": True,
             "distributed_axis": "freq",
-            "compression": bitshuffle.h5.H5FILTER,
-            "compression_opts": (0, bitshuffle.h5.H5_COMPRESS_LZ4),
+            "compression": COMPRESSION,
+            "compression_opts": COMPRESSION_OPTS,
             "chunks": (128, 2, 128, 128),
         },
     }

@@ -175,6 +175,10 @@ class MaskData(task.SingleTask):
 class MaskBaselines(task.SingleTask):
     """Mask out baselines from a dataset.
 
+    This task may produce output with shared datasets. Be warned that
+    this can produce unexpected outputs if not properly taken into
+    account.
+
     Attributes
     ----------
     mask_long_ns : float
@@ -183,11 +187,16 @@ class MaskBaselines(task.SingleTask):
         Mask out baselines shorter than a given distance.
     mask_short_ew : float
         Mask out baselines shorter then a given distance in the East-West
-        direction. Usefull for masking out intra-cylinder baselines for
+        direction. Useful for masking out intra-cylinder baselines for
         North-South oriented cylindrical telescopes.
     zero_data : bool, optional
         Zero the data in addition to modifying the noise weights
         (default is False).
+    share : {"all", "none", "vis"}
+        Which datasets should we share with the input. If "none" we create a
+        full copy of the data, if "vis" we create a copy only of the modified
+        weight dataset and the unmodified vis dataset is shared, if "all" we
+        modify in place and return the input container.
     """
 
     mask_long_ns = config.Property(proptype=float, default=None)
@@ -195,6 +204,8 @@ class MaskBaselines(task.SingleTask):
     mask_short_ew = config.Property(proptype=float, default=None)
 
     zero_data = config.Property(proptype=bool, default=False)
+
+    share = config.enum(["none", "vis", "all"], default="all")
 
     def setup(self, telescope):
         """Set the telescope model.
@@ -205,6 +216,11 @@ class MaskBaselines(task.SingleTask):
         """
 
         self.telescope = io.get_telescope(telescope)
+
+        if self.zero_data and self.share == "vis":
+            self.log.warn(
+                "Setting `zero_data = True` and `share = vis` doesn't make much sense."
+            )
 
     def process(self, ss):
         """Apply the mask to data.
@@ -232,13 +248,20 @@ class MaskBaselines(task.SingleTask):
             short_ew_mask = baselines[:, 0] > self.mask_short_ew
             mask *= short_ew_mask[np.newaxis, :, np.newaxis]
 
+        if self.share == "all":
+            ssc = ss
+        elif self.share == "vis":
+            ssc = ss.copy(shared=("vis",))
+        else:  # self.share == "all"
+            ssc = ss.copy()
+
         # Apply the mask to the weight
-        ss.weight[:] *= mask
+        ssc.weight[:] *= mask
         # Apply the mask to the data
         if self.zero_data:
-            ss.vis[:] *= mask
+            ssc.vis[:] *= mask
 
-        return ss
+        return ssc
 
 
 class RadiometerWeight(task.SingleTask):
@@ -361,7 +384,9 @@ class SmoothVisWeight(task.SingleTask):
 class ThresholdVisWeight(task.SingleTask):
     """Set any weight less than the user specified threshold equal to zero.
 
-    Threshold is determined as `maximum(absolute_threshold, relative_threshold * mean(weight))`.
+    Threshold is determined as `maximum(absolute_threshold,
+    relative_threshold * mean(weight))` and is evaluated per product/stack
+    entry.
 
     Parameters
     ----------
@@ -387,19 +412,26 @@ class ThresholdVisWeight(task.SingleTask):
         timestream : same as input timestream
             The input container with modified weights.
         """
+        timestream.redistribute(["prod", "stack"])
+
         weight = timestream.weight[:]
 
-        threshold = self.absolute_threshold
-        if self.relative_threshold > 0.0:
-            sum_weight = self.comm.allreduce(np.sum(weight))
-            mean_weight = sum_weight / float(np.prod(weight.global_shape))
-            threshold = np.maximum(threshold, self.relative_threshold * mean_weight)
+        # Average over the frequency and time axes to get a per baseline
+        # average
+        mean_weight = weight.mean(axis=2).mean(axis=0)
 
-        keep = weight > threshold
+        # Figure out which entries to keep
+        threshold = np.maximum(
+            self.absolute_threshold, self.relative_threshold * mean_weight
+        )
+        keep = weight > threshold[np.newaxis, :, np.newaxis]
+
+        keep_total = timestream.comm.allreduce(np.sum(keep))
+        keep_frac = keep_total / float(np.prod(weight.global_shape))
 
         self.log.info(
-            "%0.5f%% of data is below the weight threshold of %0.1e."
-            % (100.0 * (1.0 - np.sum(keep) / float(keep.size)), threshold)
+            "%0.5f%% of data is below the weight threshold"
+            % (100.0 * (1.0 - keep_frac))
         )
 
         timestream.weight[:] = np.where(keep, weight, 0.0)
@@ -747,7 +779,7 @@ class RFIMask(task.SingleTask):
             # Construct the new mask
             newmask[:] = tvmask | (maddev > self.sigma)
 
-        # Broadcat the new flags to all ranks and then apply
+        # Broadcast the new flags to all ranks and then apply
         sstream.comm.Bcast(newmask, root=rank_with_ind)
         ssw[:] *= (~newmask)[:, np.newaxis, :]
 
@@ -763,6 +795,57 @@ class RFIMask(task.SingleTask):
             ssv[:] = destripe(ssv, ssw > weight_cut)
 
         return sstream
+
+
+class ApplyRFIMask(task.SingleTask):
+    """Apply an RFIMask to the data.
+
+    Mask out all inputs at times and frequencies contaminated by RFI.
+    """
+
+    def process(self, tstream, rfimask):
+        """Flag out RFI by zeroing the weights.
+
+        Parameters
+        ----------
+        tstream : timestream_like
+            A timestream like container. For example, `containers.TimeStream`
+            or `andata.CorrData`.
+        rfimask : containers.RFIMask
+            An RFI mask for the same period of time.
+
+        Returns
+        -------
+        tstream : timestream_like
+            The masked timestream. Note that the masking is done in place.
+        """
+
+        # Validate the sizes
+        if (tstream.time != rfimask.time).all():
+            raise ValueError("timestream and mask data have different time axes.")
+
+        if (tstream.freq != rfimask.freq).all():
+            raise ValueError("timestream and mask data have different freq axes.")
+
+        # Ensure we are frequency distributed
+        tstream.redistribute("freq")
+
+        # Create a slice that broadcasts the mask to the final shape
+        t_axes = tstream.weight.attrs["axis"]
+        m_axes = rfimask.mask.attrs["axis"]
+        bcast_slice = tuple(
+            slice(None) if ax in m_axes else np.newaxis for ax in t_axes
+        )
+
+        # RFI Mask is not distributed, so we need to cut out the frequencies
+        # that are local for the tstream
+        sf = tstream.weight.local_offset[0]
+        ef = sf + tstream.weight.local_shape[0]
+
+        # Mask the data
+        tstream.weight[:] *= (~rfimask.mask[sf:ef][bcast_slice]).astype(np.float32)
+
+        return tstream
 
 
 def medfilt(x, mask, size, *args):

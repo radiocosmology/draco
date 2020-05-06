@@ -131,12 +131,9 @@ class SetMPILogging(pipeline.TaskBase):
         filt = MPILogFilter(level_all=self.level_all, level_rank0=self.level_rank0)
 
         # This uses the fact that caput.pipeline.Manager has already
-        # attempted to set up the logging. We just override the level, and
-        # insert our custom filter
+        # attempted to set up the logging. We just insert our custom filter
         root_logger = logging.getLogger()
-        root_logger.setLevel(logging.DEBUG)
         ch = root_logger.handlers[0]
-        ch.setLevel(logging.DEBUG)
         ch.addFilter(filt)
 
         formatter = logging.Formatter(
@@ -157,7 +154,9 @@ class LoggedTask(pipeline.TaskBase):
     def __init__(self):
 
         # Get the logger for this task
-        self._log = logging.getLogger("%s.%s" % (__name__, self.__class__.__name__))
+        self._log = logging.getLogger(
+            "%s.%s" % (self.__module__, self.__class__.__name__)
+        )
 
         # Set the log level for this task if specified
         if self.log_level is not None:
@@ -401,10 +400,7 @@ class SingleTask(MPILoggedTask, pipeline.BasicContMixin):
             # add metadata to output
             metadata = {"versions": self.versions, "config": self.pipeline_config}
             for key, value in metadata.items():
-                # NOTE: this will overwrite any existing metadata keys. This is probably the right
-                # thing to do for now, but really we should be using the `history` functionality for
-                # this.
-                output.attrs[key] = value
+                output.add_history(key, value)
 
             # Create a tag for the output file name
             tag = output.attrs["tag"] if "tag" in output.attrs else self._count

@@ -36,6 +36,10 @@ def container_on_disk():
     container.save(fname)
     yield fname
 
+    # Ensure that all ranks have run their tests before deleting
+    if size > 1:
+        comm.Barrier()
+
     # tear down
     file_names = glob.glob(fname + "*")
     if rank == 0:
@@ -68,6 +72,10 @@ def container_on_disk_distributed():
     # save it again
     md.save(fname)
     yield fname
+
+    # Ensure that all ranks have run their tests before deleting
+    if size > 1:
+        comm.Barrier()
 
     # tear down
     file_names = glob.glob(fname + "*")
