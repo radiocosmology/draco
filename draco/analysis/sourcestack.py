@@ -5,19 +5,14 @@ from future.builtins.disabled import *  # noqa  pylint: disable=W0401, W0614
 
 # === End Python 2/3 compatibility
 
-import h5py
 import numpy as np
-import healpy as hp
 from mpi4py import MPI
 
-from caput import mpiarray, config, pipeline
+from caput import config
 from cora.util import units
-from ch_util import tools, ephemeris
-from drift.telescope import cylbeam
 
 from ..util.tools import invert_no_zero
-from ..util._fast_tools import beamform
-from ..core import task, containers, io
+from ..core import task, containers
 
 # Constants
 NU21 = units.nu21
