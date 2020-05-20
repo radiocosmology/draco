@@ -1249,6 +1249,40 @@ class VisGridStream(ContainerBase):
         return self.datasets["vis_weight"]
 
 
+class VisGridMModes(ContainerBase):
+    """Visibilities gridded into a 2D array, m-mode transformed.
+
+    Only makes sense for an array which is a cartesian grid.
+    """
+
+    _axes = ("m", "msign", "pol", "freq", "ew", "ns")
+
+    _dataset_spec = {
+        "vis": {
+            "axes": ["m", "msign", "pol", "freq", "ew", "ns"],
+            "dtype": np.complex64,
+            "initialise": True,
+            "distributed": True,
+            "distributed_axis": "freq",
+        },
+        "vis_weight": {
+            "axes": ["m", "msign", "pol", "freq", "ew", "ns"],
+            "dtype": np.float32,
+            "initialise": True,
+            "distributed": True,
+            "distributed_axis": "freq",
+        },
+    }
+
+    @property
+    def vis(self):
+        return self.datasets["vis"]
+
+    @property
+    def weight(self):
+        return self.datasets["vis_weight"]
+
+
 class HybridVisStream(ContainerBase):
     """Visibilities gridded into a 2D array.
 

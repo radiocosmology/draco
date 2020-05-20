@@ -601,6 +601,7 @@ class MModeInverseTransform(task.SingleTask):
         contmap = {
             containers.MModes: containers.SiderealStream,
             containers.HybridVisMModes: containers.HybridVisStream,
+            containers.VisGridMModes: containers.VisGridStream,
         }
 
         # Get the output container and figure out at which position is it's

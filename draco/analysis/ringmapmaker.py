@@ -27,6 +27,7 @@ import numpy as np
 import scipy.constants
 
 from caput import config
+from caput.pipeline import PipelineRuntimeError, PipelineConfigError
 from cora.util import coord
 
 from .transform import _make_marray
@@ -368,28 +369,25 @@ class UnbeamformNS(task.SingleTask):
     Attributes
     ----------
 
-    ny : int
-        The number of NS baselines to generate. If not specified, use the number
-        of NS pixels.
+    invert_weight : bool (default False)
+        Whether to invert the weighting that was applied to the visibilities.
 
-    ysep : float
-        The minimum baseline separation (m). Default 0.3048.
-
-    weight : string
+    weight : string (default 'uniform')
         NS baseline weighting that was used for the beamforming, to be undone.
         See `BeamformNS` for options.
 
-    scaled : bool
+    scaled : bool (default False)
         Whether the beamforming used a window scaled to the longest wavelength.
 
-    pinv : bool
+    pinv : bool (default True)
         Calculate the pseudo inverse of the forward Fourier matrix to invert the
         beamforming. Otherwise just use the conjugate transpose.
+
+    mask : bool (default False)
+        Include a massk that was applied to the data in the pseudo-inverse.
+        Should be used together with `pinv` only.
     """
 
-    ny = config.Property(proptype=int, default=None)
-    # TODO: Should this be obtained from a telescope object instead?
-    ysep = config.Property(proptype=float, default=0.3048)
     pinv = config.Property(proptype=bool, default=False)
     weight = config.enum(
         ["uniform", "natural", "inverse_variance", "blackman", "nuttall"],
@@ -397,8 +395,50 @@ class UnbeamformNS(task.SingleTask):
     )
     invert_weight = config.Property(proptype=bool, default=True)
     scaled = config.Property(proptype=bool, default=False)
+    mask = config.Property(proptype=bool, default=False)
 
-    def process(self, bf):
+    def setup(self, tel):
+        """Get physical array properties.
+
+        Parameters
+        ----------
+
+        tel : TransitTelescope
+            Telescope.
+        """
+
+        # get telescope
+        self.tel = io.get_telescope(tel)
+
+        # get the baseline grid properties
+        ypos = self.tel.baselines[:, 1]
+        self.ysep = np.abs(ypos)[ypos != 0.0].min()
+        self.ny = int(np.round(2 * np.abs(ypos).max() / self.ysep)) + 1
+        self.log.debug(
+            "Got telescope with {:d} NS grid points with separations {:.3f}".format(
+                self.ny, self.ysep
+            )
+        )
+
+    def process(self, bf, mask):
+        """Apply the inverse transform.
+
+        Parameters
+        ----------
+
+        bf : containers.HybridVisStream or containers.HybridVisMModes
+            The beamformed data.
+
+        mask : containers.HybridVisStream or containers.HybridVisMModes
+            Mask that was applied to the data to be included in the
+            pseudo-inverse calculation. Only used if parameter `mask=True`.
+
+        Returns
+        -------
+
+        vg : containers.VisGridStream or containers.VisGridMModes
+            The gridded visibility data.
+        """
 
         bf.redistribute("freq")
 
@@ -413,8 +453,18 @@ class UnbeamformNS(task.SingleTask):
         ns = np.fft.fftfreq(self.ny, d=(1.0 / (self.ny * self.ysep)))
         nsmax = np.abs(ns).max()
 
+        # Get the output container and figure out at which position is it's
+        # frequency axis
+        contmap = {
+            containers.HybridVisStream: containers.VisGridStream,
+            containers.HybridVisMModes: containers.VisGridMModes,
+        }
+        out_cont = contmap[bf.__class__]
+        freq_axis = out_cont._dataset_spec["vis"]["axes"].index("freq")
+        is_m = bf.__class__ is containers.HybridVisMModes
+
         # create visibility grid container
-        vg = containers.VisGridStream(axes_from=bf, ns=ns, comm=bf.comm)
+        vg = out_cont(axes_from=bf, attrs_from=bf, ns=ns, comm=bf.comm)
         vg.redistribute("freq")
 
         # Dereference datasets
@@ -422,9 +472,11 @@ class UnbeamformNS(task.SingleTask):
         bfw = bf.weight[:]
         vgv = vg.vis[:]
         vgw = vg.weight[:]
+        if self.mask:
+            bfm = mask.vis[:]
 
         # Iterate over local frequencies
-        for lfi, fi in bf.vis[:].enumerate(1):
+        for lfi, fi in bf.vis[:].enumerate(freq_axis):
 
             # scale baselines in units of wavelength
             wv = scipy.constants.c * 1e-6 / freq[fi]
@@ -452,71 +504,132 @@ class UnbeamformNS(task.SingleTask):
                 ] = 0.0
 
             # make phase weights
+            # TODO: makes more sense to invert order and do trasnpose in the FT case
             phase = 2.0 * np.pi * ns[:, np.newaxis] * el[np.newaxis, :] / wv
             F = np.exp(1.0j * phase)
-            if self.pinv:
-                try:
-                    F = np.linalg.pinv(np.conj(F.T))
-                except:
-                    self.log.warning(
-                        "Pseudo-inverse failed for frequency {:.2f} MHz.".format(
-                            freq[fi]
-                        )
+
+            # treat m-mode and sstream cases separately
+            if not is_m:
+                if self.mask:
+                    raise NotImplementedError(
+                        "Mask is only supported for HybridVisMModes."
                     )
-                    F = np.zeros_like(F)
+                if self.pinv:
+                    try:
+                        F = np.linalg.pinv(np.conj(F.T))
+                    except:
+                        self.log.warning(
+                            "Pseudo-inverse failed for frequency {:.2f} MHz.".format(
+                                freq[fi]
+                            )
+                        )
+                        F = np.zeros_like(F)
+                else:
+                    # implicitly using this convention for Fourier transform normalisation
+                    F /= F.shape[1]
+                # exclude missing data
+                weight = (bfw[:, lfi] > 0).astype(float)
+
+                # Transform back into visibility grid
+                vgv[:, lfi] = np.dot(F, weight * bfv[:, lfi]).transpose(1, 2, 0, 3)
+                # Estimate the noise weights assuming that the errors are all uncorrelated
+                # Because we don't track the full covariance matrix we can't recover
+                # the pre-transform weights here
+                t = np.sum(tools.invert_no_zero(bfw[:, lfi]) * weight ** 2, axis=-2)
+                vgw[:, lfi] = tools.invert_no_zero(t[..., np.newaxis, :])
+
+                # invert the forward weights
+                if self.invert_weight:
+                    vgv[:, lfi] *= tools.invert_no_zero(ns_weight)[:, np.newaxis]
+                    vgw[:, lfi] *= (ns_weight ** 2)[:, np.newaxis]
             else:
-                # implicitly using this convention for Fourier transform normalisation
-                F /= F.shape[1]
-            # exclude missing data
-            weight = (bfw[:, lfi] > 0).astype(float)
+                # only intended to use mask with pinv
+                if self.mask and not self.pinv:
+                    raise PipelineConfigError(
+                        "If a mask is provided, pinv should be set to True."
+                    )
+                if self.pinv:
+                    if self.mask:
+                        F = bfm[:, :, :, lfi, :, np.newaxis, :] * F
+                    else:
+                        F = np.ones_like(bfw[:, :, :, lfi, :, np.newaxis, :]) * F
+                    try:
+                        F = np.linalg.pinv(np.conj(np.swapaxes(F, -1, -2)))
+                    except:
+                        self.log.warning(
+                            "Pseudo-inverse failed for frequency {:.2f} MHz.".format(
+                                freq[fi]
+                            )
+                        )
+                        F = np.zeros_like(F)
+                else:
+                    F /= F.shape[1]
+                if len(F.shape) == 2:
+                    F = F[np.newaxis, np.newaxis, np.newaxis, np.newaxis, :, :]
+                # exclude missing data
+                weight = (bfw[:, :, :, lfi] > 0).astype(float)
 
-            # Transform back into visibility grid. Only
-            vgv[:, lfi] = np.dot(F, weight * bfv[:, lfi]).transpose(1, 2, 0, 3)
-            # Estimate the noise weights assuming that the errors are all uncorrelated
-            # Because we don't track the full covariance matrix we can't recover
-            # the pre-transform weights here
-            t = np.sum(tools.invert_no_zero(bfw[:, lfi]) * weight ** 2, axis=-2)
-            vgw[:, lfi] = tools.invert_no_zero(t[..., np.newaxis, :])
+                # Transform back into visibility grid
+                # Need to treat +/- m separately
+                vgv[:, 0, :, lfi] = np.matmul(
+                    F[:, 0], (weight[:, 0] * bfv[:, 0, :, lfi])[..., np.newaxis]
+                )[..., 0]
+                vgv[:, 1, :, lfi] = np.matmul(
+                    F[:, 1], (weight[:, 1] * bfv[:, 1, :, lfi].conj())[..., np.newaxis]
+                )[..., 0].conj()
+                # Estimate the noise weights assuming that the errors are all uncorrelated
+                # Because we don't track the full covariance matrix we can't recover
+                # the pre-transform weights here
+                t = np.sum(
+                    tools.invert_no_zero(bfw[:, :, :, lfi]) * weight ** 2, axis=-1
+                )
+                vgw[:, :, :, lfi] = tools.invert_no_zero(t[..., np.newaxis])
 
-            # invert the forward weights
-            if self.invert_weight:
-                vgv[:, lfi] *= tools.invert_no_zero(ns_weight)[:, np.newaxis]
-                vgw[:, lfi] *= (ns_weight ** 2)[:, np.newaxis]
+                # invert the forward weights
+                if self.invert_weight:
+                    vgv[:, :, :, lfi] *= tools.invert_no_zero(ns_weight)
+                    vgw[:, :, :, lfi] *= ns_weight ** 2
 
         return vg
 
 
-class HybridVisMAntiAlias(task.SingleTask):
-    """Mask beamformed visibilities in m-space.
+class HybridVisMBeamMask(task.SingleTask):
+    """Create a mask isolating the beam in beamformed m-modes.
 
-    Mask out regions in m vs NS beamformed pixel that are outside the region
-    of maxmimum sensitivity of every EW separation.
+    Use either a telescope object or a simple model to determine the extent of
+    the beam and return a mask.
 
     Attributes
-    ----------
+    ---------
 
-    overwrite : bool (default False)
-        Whether to write the masked data into the input container or a copy.
+    local_thresh : (default 1e-4)
+        Threshold to set the mask compared to the beam maximum at a every
+        declination independantly.
 
-    cyl_sep : float (default 22.)
-        Cylinder separation in m.
+    global_thresh : (default 1e-6)
+        Threshold to set the mask compared to the beam maximum overall.
 
-    lat : float (default 49.5)
-        Latitude at the telescope in degrees.
+    simple_beam : (default False)
+        Ignore the thresholds and use a simple beam model.
 
     n_beam : float (default 4.)
         The width of the unmasked region in units of the beam scale.
         This is based on the cylinder separation and scaled in declination
         by the projection onto celestial coordinates.
+        Ignored if simple_beam is False.
 
     min_width : int (default 50)
         The minimum width of the unmasked region in units of m.
+        Ignored if simple_beam is False.
+
+    max_width : int (default 50)
+        The minimum width of the unmasked region in units of m.
+        Ignored if simple_beam is False.
 
     taper : float (int 50)
         Span of the taper at the edges of the mask.
     """
 
-    overwrite = config.Property(proptype=bool, default=False)
     local_thresh = config.Property(proptype=float, default=1e-4)
     global_thresh = config.Property(proptype=float, default=1e-6)
     simple_beam = config.Property(proptype=bool, default=False)
@@ -526,6 +639,15 @@ class HybridVisMAntiAlias(task.SingleTask):
     taper = config.Property(proptype=int, default=50)
 
     def setup(self, tel):
+        """Get physical array properties.
+
+        Parameters
+        ----------
+
+        tel : TransitTelescope
+            Telescope.
+        """
+
         # get telescope
         self.tel = io.get_telescope(tel)
 
@@ -543,6 +665,20 @@ class HybridVisMAntiAlias(task.SingleTask):
         )
 
     def process(self, mmodes):
+        """Calculate the beam mask.
+
+        Parameters
+        ----------
+
+        mmodes : containers.HybridVisMModes
+            Only used to obtain the axes on which to calculate the mask.
+
+        Returns
+        -------
+
+        mask : containers.HybridVisMModes
+            The resulting mask
+        """
 
         mmodes.redistribute("freq")
 
@@ -553,9 +689,7 @@ class HybridVisMAntiAlias(task.SingleTask):
         m_signed = np.array((m, -m)).T
 
         # get angular coordinates
-        phi = (
-            (np.arange(2 * len(m) - 1) - len(m) + 1) * 2 * np.pi / (2 * len(m) - 1)
-        )
+        phi = (np.arange(2 * len(m) - 1) - len(m) + 1) * 2 * np.pi / (2 * len(m) - 1)
         theta = np.arcsin(np.where(np.abs(el) <= 1.0, el, 0.0))
         dec = theta + np.radians(self.tel.latitude)
 
@@ -564,15 +698,12 @@ class HybridVisMAntiAlias(task.SingleTask):
         self.tel._angpos = np.vstack((t_grid.flatten(), p_grid.flatten())).T
 
         # output container
-        if self.overwrite:
-            mmodes_out = mmodes
-        else:
-            mmodes_out = containers.HybridVisMModes(axes_from=mmodes, attrs_from=mmodes)
-            mmodes_out.vis[:] = mmodes.vis[:]
-            mmodes_out.weight[:] = mmodes.weight[:]
+        mask = containers.HybridVisMModes(
+            axes_from=mmodes, attrs_from=mmodes, comm=mmodes.comm
+        )
+        mask.weight[:] = 0
 
-        mmv = mmodes_out.vis[:]
-        mmw = mmodes_out.weight[:]
+        mmv = mask.vis[:]
 
         for lfi, fi in mmv.enumerate(3):
 
@@ -652,14 +783,16 @@ class HybridVisMAntiAlias(task.SingleTask):
                         ci * self.cyl_sep / wv * np.cos(dec)[:, np.newaxis] * phi
                     )
                     beam_m = _make_marray(
-                        np.exp(-2j * np.pi * beam_phase) * beam,
-                        mmax=m.max(),
+                        np.exp(-2j * np.pi * beam_phase) * beam, mmax=m.max(),
                     )
 
-                    # use model to define region of sensitivity
-                    beam_m = (
-                            (np.abs(beam_m) > (np.abs(beam_m).max(axis=0) * self.local_thresh))
-                            * (np.abs(beam_m) > (np.abs(beam_m).max() * self.global_thresh))
+                    # null below thresholds
+                    beam_m *= (
+                        (
+                            np.abs(beam_m)
+                            > (np.abs(beam_m).max(axis=0) * self.local_thresh)
+                        )
+                        * (np.abs(beam_m) > (np.abs(beam_m).max() * self.global_thresh))
                     ).astype(float)
                 else:
                     # calculate m with max sensitivity
@@ -688,8 +821,7 @@ class HybridVisMAntiAlias(task.SingleTask):
                     for i in range(beam_m.shape[-1]):
                         for pi in range(beam_m.shape[2]):
                             beam_m_cnt = np.concatenate(
-                                (beam_m[:0:-1, 1, pi, i], beam_m[:, 0, pi, i]),
-                                axis=0
+                                (beam_m[:0:-1, 1, pi, i], beam_m[:, 0, pi, i]), axis=0
                             )
                             beam_m_cnt = np.convolve(beam_m_cnt, win, "same")
                             beam_m_max = beam_m_cnt.max()
@@ -698,26 +830,32 @@ class HybridVisMAntiAlias(task.SingleTask):
                                 (beam_m_cnt[len(m) - 1 :], beam_m_cnt[len(m) - 1 :: -1])
                             ).T
 
-                # calculate alias matrix
-                num_alias = 3
-                j = np.arange(num_alias) - num_alias // 2
-                M = np.zeros((len(el), len(el)))
-                for jj in j:
-                    k = int(
-                        np.round(jj * wv / self.ysep / (el.max() - el.min()) * len(el))
-                    )
-                    if k >= len(el):
-                        continue
-                    M += np.diag(np.ones(len(el) - np.abs(k)), k=k)
+                mmv[:, :, :, lfi, ci] = beam_m
 
-                # mask regions not covered by beam
-                M = beam_m[..., np.newaxis] * M
+        return mask
 
-                # apply to data
-                mmv[:, :, :, lfi, ci] = np.matmul(
-                    M, mmv[:, :, :, lfi, ci, :, np.newaxis]
-                )[..., 0]
 
-                # TODO: just ignoring the weights for now
+class ApplyMask(task.SingleTask):
 
-        return mmodes_out
+    overwrite = config.Property(proptype=bool, default=False)
+
+    def process(self, data, mask):
+
+        if data.vis.shape != mask.vis.shape:
+            raise PipelineRuntimeError(
+                "Mask and data do not have same shape: {}, {}.".format(
+                    data.vis.shape, mask.vis.shape
+                )
+            )
+
+        if self.overwrite:
+            data_out = data
+        else:
+            data_out = data.__class__(axes_from=data, attrs_from=data, comm=data.comm)
+
+        data_out.vis[:] = data.vis[:] * mask.vis[:]
+        data_out.weight[:] = data.weight[:] * tools.invert_no_zero(
+            np.abs(mask.vis[:]) ** 2
+        )
+
+        return data_out
