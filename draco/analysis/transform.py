@@ -515,6 +515,9 @@ class MModeTransform(task.SingleTask):
         ma = out_cont(mmax=mmax, axes_from=sstream, comm=sstream.comm)
         ma.redistribute("freq")
 
+        # record whether there were an even or odd number of times
+        ma.attrs["m-even"] = (sstream.vis.shape[-1] % 2 == 0)
+
         # Assign the visibilities and weights into the container
         ma.vis[:] = marray
         ma.weight[:] = weight_sum[np.newaxis, np.newaxis, :, :]
@@ -608,8 +611,11 @@ class MModeInverseTransform(task.SingleTask):
         # Ensure m-modes are distributed in frequency
         mmodes.redistribute("freq")
 
+        # check for even/odd attribute
+        m_even = mmodes.attrs.get("m-even", None)
+
         # Re-construct array of S-streams
-        ssarray = _make_ssarray(mmodes.vis[:], n=self.n_time)
+        ssarray = _make_ssarray(mmodes.vis[:], n=self.n_time, even=m_even)
         ntime = ssarray.shape[-1]
         ssarray = mpiarray.MPIArray.wrap(ssarray[:], axis=freq_axis, comm=mmodes.comm)
 
@@ -628,21 +634,24 @@ class MModeInverseTransform(task.SingleTask):
         return sstream
 
 
-def _make_ssarray(mmodes, n=None):
+def _make_ssarray(mmodes, n=None, even=None):
     # Construct an array of sidereal time streams from m-modes
-    marray = _unpack_marray(mmodes, n=n)
+    marray = _unpack_marray(mmodes, n=n, even=even)
     ssarray = np.fft.ifft(marray * marray.shape[-1], axis=-1)
 
     return ssarray
 
 
-def _unpack_marray(mmodes, n=None):
+def _unpack_marray(mmodes, n=None, even=None):
     # Unpack m-modes into the correct format for an FFT
     # (i.e. from [m, +/-, freq, baseline] to [freq, baseline, time-FFT])
 
     shape = mmodes.shape[2:]
     mmax_plus = mmodes.shape[0] - 1
-    if (mmodes[mmax_plus, 1, ...].flatten() == 0).all():
+
+    # if not specified, infer even from absence of most negative m
+    even = (mmodes[mmax_plus, 1, ...].flatten() == 0).all() if even is None else even
+    if even:
         mmax_minus = mmax_plus - 1
     else:
         mmax_minus = mmax_plus
