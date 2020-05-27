@@ -1158,6 +1158,11 @@ class HybridVisStream(ContainerBase):
     def weight(self):
         return self.datasets["vis_weight"]
 
+    @property
+    def freq(self):
+        return self.index_map["freq"]["centre"]
+
+
 class HybridVisDelayStream(ContainerBase):
     """Container for delay transform of beams on the meridian.
 
@@ -1190,6 +1195,10 @@ class HybridVisDelayStream(ContainerBase):
     @property
     def weight(self):
         return self.datasets["vis_weight"]
+
+    @property
+    def delay(self):
+        return self.datasets["delay"]
 
 
 class HybridVisMModes(ContainerBase):
@@ -1504,6 +1513,40 @@ class DelaySpectrum(ContainerBase):
     @property
     def spectrum(self):
         return self.datasets["spectrum"]
+
+
+class DelayTransform(ContainerBase):
+    """Container for a delay transform of SiderealStream.
+    """
+
+    _axes = ("delay", "stack", "ra")
+
+    _dataset_spec = {
+        "vis": {
+            "axes": ["delay", "stack", "ra"],
+            "dtype": np.float64,
+            "initialise": True,
+            "distributed": True,
+            "distributed_axis": "stack",
+        },
+        "weight": {
+            "axes": ["delay", "stack", "ra"],
+            "dtype": np.float64,
+            "initialise": True,
+            "distributed": True,
+            "distributed_axis": "stack",
+        }
+    }
+
+    @property
+    def vis(self):
+        return self.datasets["vis"]
+    @property
+    def weight(self):
+        return self.datasets["weight"]
+    @property
+    def delay(self):
+        return self.datasets["delay"]
 
 
 class Powerspectrum2D(ContainerBase):

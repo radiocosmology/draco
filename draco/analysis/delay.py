@@ -234,6 +234,177 @@ class DelaySpectrumEstimator(task.SingleTask):
         return delay_spec
 
 
+class DelayTransformGibbs(task.SingleTask):
+    """Calculate the delay transform using Gibbs sampling.
+
+    Attributes
+    ----------
+    nsamp : int, optional
+        The number of Gibbs samples to draw.
+    freq_zero : float, optional
+        The physical frequency (in MHz) of the *zero* channel. That is the DC
+        channel coming out of the F-engine. If not specified, use the first
+        frequency channel of the stream.
+    freq_spacing : float, optional
+        The spacing between the underlying channels (in MHz). This is conjugate
+        to the length of a frame of time samples that is transformed. If not
+        set, then use the smallest gap found between channels in the dataset.
+    nfreq : int, optional
+        The number of frequency channels in the full set produced by the
+        F-engine. If not set, assume the last included frequency is the last of
+        the full set (or is the penultimate if `skip_nyquist` is set).
+    skip_nyquist : bool, optional
+        Whether the Nyquist frequency is included in the data. This is `True` by
+        default to align with the output of CASPER PFBs in the case of
+        SiderealStream/TimeStream. Ignored for HybridVisStream
+    initial_S_guess : float, optional
+        The initial delay spectrum guess.
+    """
+
+    nsamp = config.Property(proptype=int, default=20)
+    freq_zero = config.Property(proptype=float, default=None)
+    freq_spacing = config.Property(proptype=float, default=None)
+    nfreq = config.Property(proptype=int, default=None)
+    skip_nyquist = config.Property(proptype=bool, default=True)
+    initial_S_guess = config.Property(proptype=float, default=1e1)
+
+    def process(self, ss):
+        """Estimate the delay transform.
+
+        Parameters
+        ----------
+        ss : SiderealStream, TimeStream, HybridVisStream
+
+        Returns
+        -------
+        dtransform : DelayTransform, HybridVisDelayStream
+        """
+
+        # ==== Container information ====
+        contmap = {
+            containers.SiderealStream:
+            {"out_cont": containers.DelayTransform, "dist_axis": "stack",
+            "avg_axis": "ra", "real_out": True},
+            containers.HybridVisStream:
+            {"out_cont": containers.HybridVisDelayStream, "dist_axis": "el",
+            "avg_axis": "ra", "real_out": False},
+        }
+
+        # Figure out output container for given input, position of
+        # distribution axis, averaging axis, and whether the output is real or complex-valued,
+        out_cont_info = contmap[ss.__class__]
+        out_cont = out_cont_info["out_cont"]
+        dist_axis = out_cont_info["dist_axis"]
+        dist_axis_index = out_cont._dataset_spec["vis"]["axes"].index(dist_axis)
+        avg_axis = out_cont_info["avg_axis"]
+        avg_axis_index = out_cont._dataset_spec["vis"]["axes"].index(avg_axis)
+        freq_axis_index = out_cont._dataset_spec["vis"]["axes"].index("delay") #freq maps to delay
+        real_valued_output = out_cont_info["real_out"]
+
+        ss.redistribute("freq")
+
+        # ==== Figure out the frequency structure and delay values ====
+        if self.freq_zero is None:
+            self.freq_zero = ss.freq[0]
+
+        if self.freq_spacing is None:
+            self.freq_spacing = np.abs(np.diff(ss.freq[:])).min()
+
+        channel_ind = (np.abs(ss.freq[:] - self.freq_zero) / self.freq_spacing).astype(
+            np.int
+        )
+
+        if self.nfreq is None:
+            self.nfreq = channel_ind[-1] + 1
+
+            if self.skip_nyquist and real_valued_output:
+                self.nfreq += 1
+
+        # Assume each transformed frame was an even number of samples long
+        ndelay = 2 * (self.nfreq - 1) if real_valued_output else self.nfreq
+        delays = np.fft.fftshift(np.fft.fftfreq(ndelay, d=self.freq_spacing))  # in us
+
+        # === Initialise the transform container ===
+        dtransform_cont = out_cont(delay=delays, axes_from=ss)
+        dtransform_cont.redistribute(dist_axis)
+        ss.redistribute(dist_axis)
+        dtransform_cont.vis[:] = 0.0
+        dtransform_cont.weight[:] = 0.0
+
+        initial_S = np.ones_like(delays) * self.initial_S_guess
+
+        # === Figure out structure of input axes ===
+        # Construct slice objects representing the axes before the dist axis
+        slice_before = (np.s_[:],) * dist_axis_index
+
+        # Figure out index ordering to have (freq, avg_index) in the last two dimensions
+        local_shape_transposed = np.array(ss.vis.local_shape) # Will need this to reshape out later
+        local_shape_transposed[dist_axis_index] = -1 # assumes dist_axis is not "freq"
+        # Dimension of the input's frequency and avg_axis axes
+        Nfreq_cont, Navg = local_shape_transposed[[freq_axis_index, avg_axis_index]]
+        local_shape_transposed[freq_axis_index] = ndelay # input freq and output delay on same axis
+        transposed_indices = np.arange(len(local_shape_transposed))
+        # index ordering to have frequency/delay on the second-to-last dimension
+        transposed_indices[[-2, freq_axis_index]] = transposed_indices[[freq_axis_index, -2]]
+        local_shape_transposed[[-2, freq_axis_index]] = local_shape_transposed[[freq_axis_index,
+            -2]]
+        # index ordering to have avg_axis on the last dimension
+        transposed_indices[[-1, avg_axis_index]] = transposed_indices[[avg_axis_index, -1]]
+        local_shape_transposed[[-1, avg_axis_index]] = local_shape_transposed[[avg_axis_index, -1]]
+
+        # Iterate over dist_axis and use the Gibbs sampler to estimate the delay transform
+        for lbi, bi in dtransform_cont.vis[:].enumerate(axis=dist_axis_index):
+
+            # Get local selections, transpose to have (freq, avg_index) in the last two axes,
+            # and reshape to have a 3D array with (freq, avg_index) in the last two axes
+            data_local = ss.vis[:][slice_before + (np.s_[lbi:lbi+1],)].view(np.ndarray).transpose(
+                transposed_indices).reshape((-1, Nfreq_cont, Navg))
+            weight_local = ss.weight[:][slice_before + (np.s_[lbi:lbi+1],)].view(
+                np.ndarray).transpose(transposed_indices).reshape((-1, Nfreq_cont, Navg))
+
+            # Iterate over first axis
+            dtransform_local = np.zeros((data_local.shape[0], ndelay, Navg),
+                dtype=dtransform_cont.vis.dtype)
+            dtransform_weight_local = np.zeros((data_local.shape[0], ndelay, Navg),
+                dtype=dtransform_cont.weight.dtype)
+            for i in range(data_local.shape[0]):
+                # === This for loop is based on DelaySpectrumEstimator task ===
+                data = data_local[i].T
+                weight = weight_local[i]
+
+                # Mask out data with completely zero'd weights and generate time
+                # averaged weights
+                weight_cut = (
+                    1e-4 * weight.mean()
+                )  # Use approx threshold to ignore small weights
+                data = data * (weight.T > weight_cut)
+                weight = np.mean(weight, axis=1)
+
+                if (data == 0.0).all():
+                    continue
+
+                spec, dtransform = delay_spectrum_gibbs(
+                    data, ndelay, weight, initial_S, fsel=channel_ind, niter=self.nsamp,
+                    real_valued_output=real_valued_output)
+
+                # Take an average over the last half of the delay transform samples
+                # (presuming that removes the burn-in)
+                dtransform_av = np.median(dtransform[-(self.nsamp // 2) :], axis=0)
+                spec_av = np.median(spec[-(self.nsamp // 2) :], axis=0)
+                dtransform_local[i] = np.fft.fftshift(dtransform_av, axes=0)
+                # For now, weights are just the variance of the dtransform along avg_axis
+                dtransform_weight_local[i] = np.var(dtransform_local[i], axis=-1)[:, np.newaxis]
+
+            # Reshape, transpose to original form and save
+            dtransform_cont.vis[slice_before + (np.s_[bi:bi+1],)] = dtransform_local.reshape(
+                local_shape_transposed).transpose(transposed_indices)
+            dtransform_cont.weight[slice_before +
+                (np.s_[bi:bi+1],)] = dtransform_weight_local.reshape(
+                local_shape_transposed).transpose(transposed_indices)
+
+        return dtransform_cont
+
+
 def stokes_I(sstream, tel):
     """Extract instrumental Stokes I from a time/sidereal stream.
 
@@ -513,12 +684,16 @@ def delay_spectrum_gibbs(data, N, Ni, initial_S, window=True, fsel=None, niter=2
         Ni_r = np.zeros(2 * Ni.shape[0])
         Ni_r[0::2] = np.where(is_real_freq, Ni, Ni / 2 ** 0.5)
         Ni_r[1::2] = np.where(is_real_freq, 0.0, Ni / 2 ** 0.5)
+
+        # Create the Hermitian conjugate weighted by the noise (this is used multiple times)
+        FTNih = F.T * Ni_r[np.newaxis, :] ** 0.5
+        FTNiF = np.dot(FTNih, FTNih.T)
     else:
         Ni_r = Ni.copy()
 
-    # Create the Hermitian conjugate weighted by the noise (this is used multiple times)
-    FTNih = F.T * Ni_r[np.newaxis, :] ** 0.5
-    FTNiF = np.dot(FTNih, FTNih.T)
+        # Create the Hermitian conjugate weighted by the noise (this is used multiple times)
+        FTNih = F.conj().T * Ni_r[np.newaxis, :] ** 0.5
+        FTNiF = np.dot(FTNih, FTNih.conj().T)
 
     # Pre-whiten the data to save doing it repeatedly
     data = data * Ni_r[:, np.newaxis] ** 0.5
@@ -539,14 +714,20 @@ def delay_spectrum_gibbs(data, N, Ni, initial_S, window=True, fsel=None, niter=2
         Ci = np.diag(Si) + FTNiF
 
         # Draw random vectors that form the perturbations
-        w1 = rng.standard_normal((N, data.shape[1]))
-        w2 = rng.standard_normal(data.shape)
+        if real_valued_output:
+            w1 = rng.standard_normal((N, data.shape[1]))
+            w2 = rng.standard_normal(data.shape)
+        else:
+            w1 = (rng.standard_normal((N, data.shape[1])) +
+                  1j * rng.standard_normal((N, data.shape[1]))) / (2 ** 0.5)
+            w2 = (rng.standard_normal(data.shape) +
+                  1j * rng.standard_normal(data.shape)) / (2 ** 0.5)
 
         # Construct the random signal sample by forming a perturbed vector and
         # then doing a matrix solve
         y = np.dot(FTNih, data + w2) + Si[:, np.newaxis] ** 0.5 * w1
 
-        return la.solve(Ci, y, sym_pos=True)
+        return la.solve(Ci, y, assume_a="pos")
 
     def _draw_ps_sample(d):
         # Draw a random power spectrum sample assuming from the signal assuming
