@@ -1278,6 +1278,89 @@ class KLModes(SVDModes):
     pass
 
 
+class CommonModeGainData(TODContainer):
+    """Parallel container for holding gain data common to all inputs.
+    """
+
+    _axes = ("freq")
+
+    _dataset_spec = {
+        "gain": {
+            "axes": ["freq", "time"],
+            "dtype": np.complex128,
+            "initialise": True,
+            "distributed": True,
+            "distributed_axis": "freq",
+        },
+        "weight": {
+            "axes": ["freq", "time"],
+            "dtype": np.float64,
+            "initialise": False,
+            "distributed": True,
+            "distributed_axis": "freq",
+        },
+    }
+
+    @property
+    def gain(self):
+        return self.datasets["gain"]
+
+    @property
+    def weight(self):
+        try:
+            return self.datasets["weight"]
+        except KeyError:
+            return None
+
+    @property
+    def freq(self):
+        return self.index_map["freq"]["centre"]
+
+
+class CommonModeSiderealGainData(ContainerBase):
+    """Parallel container for holding sidereal gain data
+       common to all inputs.
+    """
+
+    _axes = ("freq", "ra")
+
+    _dataset_spec = {
+        "gain": {
+            "axes": ["freq", "ra"],
+            "dtype": np.complex128,
+            "initialise": True,
+            "distributed": True,
+            "distributed_axis": "freq",
+        },
+        "weight": {
+            "axes": ["freq", "ra"],
+            "dtype": np.float64,
+            "initialise": False,
+            "distributed": True,
+            "distributed_axis": "freq",
+        },
+    }
+
+    @property
+    def gain(self):
+        return self.datasets["gain"]
+
+    @property
+    def weight(self):
+        try:
+            return self.datasets["weight"]
+        except KeyError:
+            return None
+
+    @property
+    def freq(self):
+        return self.index_map["freq"]
+
+    @property
+    def ra(self):
+        return self.index_map["ra"]
+
+
 class GainData(TODContainer):
     """Parallel container for holding gain data.
     """
