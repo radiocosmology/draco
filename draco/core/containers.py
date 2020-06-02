@@ -1282,7 +1282,7 @@ class CommonModeGainData(TODContainer):
     """Parallel container for holding gain data common to all inputs.
     """
 
-    _axes = ("freq")
+    _axes = ("freq",)
 
     _dataset_spec = {
         "gain": {

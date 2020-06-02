@@ -58,9 +58,12 @@ class ApplyGain(task.SingleTask):
         tstream.redistribute("freq")
         gain.redistribute("freq")
 
-        if (tstream.is_stacked and not 
-                isinstance(gain, (containers.CommonModeGainData, containers.CommonModeSiderealGainData))):
-            raise ValueError("Cannot apply input-dependent gains to stacked data: %s" % tstream)
+        if tstream.is_stacked and not isinstance(
+            gain, (containers.CommonModeGainData, containers.CommonModeSiderealGainData)
+        ):
+            raise ValueError(
+                "Cannot apply input-dependent gains to stacked data: %s" % tstream
+            )
 
         if isinstance(gain, containers.StaticGainData):
 
@@ -72,10 +75,15 @@ class ApplyGain(task.SingleTask):
                 gain.weight[:][..., np.newaxis] if gain.weight is not None else None
             )
 
-        elif isinstance(gain, (containers.GainData,
-                               containers.SiderealGainData,
-                               containers.CommonModeGainData,
-                               containers.CommonModeSiderealGainData)):
+        elif isinstance(
+            gain,
+            (
+                containers.GainData,
+                containers.SiderealGainData,
+                containers.CommonModeGainData,
+                containers.CommonModeSiderealGainData,
+            ),
+        ):
 
             # Extract gain array
             gain_arr = gain.gain[:]
@@ -86,8 +94,10 @@ class ApplyGain(task.SingleTask):
             # Get the weight array if it's there
             weight_arr = gain.weight[:] if gain.weight is not None else None
 
-            if isinstance(gain, (containers.SiderealGainData,
-                                 containers.CommonModeSiderealGainData)):
+            if isinstance(
+                gain,
+                (containers.SiderealGainData, containers.CommonModeSiderealGainData),
+            ):
 
                 # Check that we are defined at the same RA samples
                 if (gain.ra != tstream.ra).any():
@@ -148,10 +158,11 @@ class ApplyGain(task.SingleTask):
             tools.apply_gain(
                 tstream.vis[:], gvis, out=tstream.vis[:], prod_map=tstream.prod
             )
-        elif isinstance(gain, (containers.CommonModeGainData,
-                               containers.CommonModeSiderealGainData)):
+        elif isinstance(
+            gain, (containers.CommonModeGainData, containers.CommonModeSiderealGainData)
+        ):
             # Apply the gains to all 'prods/stacks' directly:
-            tstream.vis[:] *= np.abs(gvis[:, np.newaxis, :])**2
+            tstream.vis[:] *= np.abs(gvis[:, np.newaxis, :]) ** 2
         else:
             tools.apply_gain(tstream.vis[:], gvis, out=tstream.vis[:])
 
@@ -170,10 +181,11 @@ class ApplyGain(task.SingleTask):
             tools.apply_gain(
                 tstream.weight[:], gweight, out=tstream.weight[:], prod_map=tstream.prod
             )
-        elif isinstance(gain, (containers.CommonModeGainData,
-                               containers.CommonModeSiderealGainData)):
+        elif isinstance(
+            gain, (containers.CommonModeGainData, containers.CommonModeSiderealGainData)
+        ):
             # Apply the gains to all 'prods/stacks' directly:
-            tstream.weight[:] *= gweight[:, np.newaxis, :]**2
+            tstream.weight[:] *= gweight[:, np.newaxis, :] ** 2
         else:
             tools.apply_gain(tstream.weight[:], gweight, out=tstream.weight[:])
 
