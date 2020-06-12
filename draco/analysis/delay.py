@@ -388,10 +388,11 @@ class DelayTransformGibbs(task.SingleTask):
         slice_before = (np.s_[:],) * dist_axis_index
 
         # Figure out index ordering to have (freq, avg_index) in the last two dimensions
-        local_shape_transposed = np.array(ss.vis.local_shape) # Will need this to reshape out later
-        local_shape_transposed[dist_axis_index] = -1 # assumes dist_axis is not "freq"
+        local_shape_transposed = np.array(ss.vis.shape) # Will need this to reshape out later
         # Dimension of the input's frequency and avg_axis axes
-        Nfreq_cont, Navg = local_shape_transposed[[freq_axis_index, avg_axis_index]]
+        Nfreq_cont, Navg, Ndist = local_shape_transposed[[freq_axis_index,
+            avg_axis_index, dist_axis_index]]
+        local_shape_transposed[dist_axis_index] = -1 # assumes dist_axis is not "freq"
         local_shape_transposed[freq_axis_index] = ndelay # input freq and output delay on same axis
         transposed_indices = np.arange(len(local_shape_transposed))
         # index ordering to have frequency/delay on the second-to-last dimension
@@ -404,6 +405,8 @@ class DelayTransformGibbs(task.SingleTask):
 
         # Iterate over dist_axis and use the Gibbs sampler to estimate the delay transform
         for lbi, bi in dtransform_cont.vis[:].enumerate(axis=dist_axis_index):
+
+            self.log.debug("Delay transforming %s element %i/%i", dist_axis, bi, Ndist)
 
             # Get local selections, transpose to have (freq, avg_index) in the last two axes,
             # and reshape to have a 3D array with (freq, avg_index) in the last two axes
