@@ -1549,6 +1549,74 @@ class DelayTransform(ContainerBase):
         return self.index_map["delay"]
 
 
+class VisI(ContainerBase):
+    """Container for a Stokes I.
+    """
+
+    _axes = ("baseline", "freq", "ra")
+
+    _dataset_spec = {
+        "vis": {
+            "axes": ["baseline", "freq", "ra"],
+            "dtype": np.complex64,
+            "initialise": True,
+            "distributed": True,
+            "distributed_axis": "freq",
+        },
+        "weight": {
+            "axes": ["baseline", "freq", "ra"],
+            "dtype": np.float64,
+            "initialise": True,
+            "distributed": True,
+            "distributed_axis": "freq",
+        }
+    }
+
+    @property
+    def vis(self):
+        return self.datasets["vis"]
+    @property
+    def weight(self):
+        return self.datasets["weight"]
+    @property
+    def freq(self):
+        return self.index_map["freq"]["centre"]
+
+
+class DelayTransformVisI(ContainerBase):
+    """Container for a delay transform of VisI data.
+    """
+
+    _axes = ("baseline", "delay", "ra")
+
+    _dataset_spec = {
+        "vis": {
+            "axes": ["baseline", "delay", "ra"],
+            "dtype": np.complex64,
+            "initialise": True,
+            "distributed": True,
+            "distributed_axis": "baseline",
+        },
+        "weight": {
+            "axes": ["baseline", "delay", "ra"],
+            "dtype": np.float64,
+            "initialise": True,
+            "distributed": True,
+            "distributed_axis": "baseline",
+        }
+    }
+
+    @property
+    def vis(self):
+        return self.datasets["vis"]
+    @property
+    def weight(self):
+        return self.datasets["weight"]
+    @property
+    def delay(self):
+        return self.index_map["delay"]
+
+
 class Powerspectrum2D(ContainerBase):
     """Container for a 2D cartesian power spectrum.
 

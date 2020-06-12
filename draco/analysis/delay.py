@@ -234,6 +234,51 @@ class DelaySpectrumEstimator(task.SingleTask):
         return delay_spec
 
 
+class VisI(task.SingleTask):
+    """Extract instrumental Stokes I from a time/sidereal stream.
+
+    This task basically uses the function Stokes_I and saves its
+    output to Ccontainers.VisI
+    """
+
+    def setup(self, telescope):
+        """Set the telescope needed to generate Stokes I.
+
+        Parameters
+        ----------
+        telescope : TransitTelescope
+        """
+        self.telescope = io.get_telescope(telescope)
+
+    def process(self, ss):
+        """Estimate the delay spectrum.
+
+        Parameters
+        ----------
+        ss : SiderealStream or TimeStream
+
+        Returns
+        -------
+        dspec : Ccontainers.VisI
+        """
+
+        tel = self.telescope
+
+        ss.redistribute("freq")
+
+        # Construct the Stokes I vis
+        vis_I, vis_weight, baselines = stokes_I(ss, tel)
+
+        # Initialise the spectrum container
+        visI_cont = containers.VisI(baseline=baselines, axes_from=ss)
+        visI_cont.redistribute("baseline")
+        visI_cont.vis[:] = vis_I[:]
+        visI_cont.weight[:] = vis_weight[:]
+        visI_cont.redistribute("freq")
+
+        return visI_cont
+
+
 class DelayTransformGibbs(task.SingleTask):
     """Calculate the delay transform using Gibbs sampling.
 
