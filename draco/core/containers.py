@@ -1198,7 +1198,7 @@ class HybridVisDelayStream(ContainerBase):
 
     @property
     def delay(self):
-        return self.datasets["delay"]
+        return self.index_map["delay"]
 
 
 class HybridVisMModes(ContainerBase):
@@ -1546,7 +1546,7 @@ class DelayTransform(ContainerBase):
         return self.datasets["weight"]
     @property
     def delay(self):
-        return self.datasets["delay"]
+        return self.index_map["delay"]
 
 
 class Powerspectrum2D(ContainerBase):
