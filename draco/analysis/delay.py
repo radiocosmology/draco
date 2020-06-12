@@ -304,6 +304,8 @@ class DelayTransformGibbs(task.SingleTask):
         SiderealStream/TimeStream. Ignored for HybridVisStream
     initial_S_guess : float, optional
         The initial delay spectrum guess.
+    real_valued_output : bool, optional
+        Output signal is expected to be real valued. Default is True.
     """
 
     nsamp = config.Property(proptype=int, default=20)
@@ -312,6 +314,7 @@ class DelayTransformGibbs(task.SingleTask):
     nfreq = config.Property(proptype=int, default=None)
     skip_nyquist = config.Property(proptype=bool, default=True)
     initial_S_guess = config.Property(proptype=float, default=1e1)
+    real_valued_output = config.Property(proptype=bool, default=True)
 
     def process(self, ss):
         """Estimate the delay transform.
@@ -329,10 +332,13 @@ class DelayTransformGibbs(task.SingleTask):
         contmap = {
             containers.SiderealStream:
             {"out_cont": containers.DelayTransform, "dist_axis": "stack",
-            "avg_axis": "ra", "real_out": True},
+            "avg_axis": "ra"},
             containers.HybridVisStream:
             {"out_cont": containers.HybridVisDelayStream, "dist_axis": "el",
-            "avg_axis": "ra", "real_out": False},
+            "avg_axis": "ra"},
+            containers.VisI:
+            {"out_cont": containers.DelayTransformVisI, "dist_axis": "baseline",
+            "avg_axis": "ra"},
         }
 
         # Figure out output container for given input, position of
@@ -344,7 +350,6 @@ class DelayTransformGibbs(task.SingleTask):
         avg_axis = out_cont_info["avg_axis"]
         avg_axis_index = out_cont._dataset_spec["vis"]["axes"].index(avg_axis)
         freq_axis_index = out_cont._dataset_spec["vis"]["axes"].index("delay") #freq maps to delay
-        real_valued_output = out_cont_info["real_out"]
 
         ss.redistribute("freq")
 
@@ -362,11 +367,11 @@ class DelayTransformGibbs(task.SingleTask):
         if self.nfreq is None:
             self.nfreq = channel_ind[-1] + 1
 
-            if self.skip_nyquist and real_valued_output:
+            if self.skip_nyquist and self.real_valued_output:
                 self.nfreq += 1
 
         # Assume each transformed frame was an even number of samples long
-        ndelay = 2 * (self.nfreq - 1) if real_valued_output else self.nfreq
+        ndelay = 2 * (self.nfreq - 1) if self.real_valued_output else self.nfreq
         delays = np.fft.fftshift(np.fft.fftfreq(ndelay, d=self.freq_spacing))  # in us
 
         # === Initialise the transform container ===
@@ -430,7 +435,7 @@ class DelayTransformGibbs(task.SingleTask):
 
                 spec, dtransform = delay_spectrum_gibbs(
                     data, ndelay, weight, initial_S, fsel=channel_ind, niter=self.nsamp,
-                    real_valued_output=real_valued_output)
+                    real_valued_output=self.real_valued_output)
 
                 # Take an average over the last half of the delay transform samples
                 # (presuming that removes the burn-in)
