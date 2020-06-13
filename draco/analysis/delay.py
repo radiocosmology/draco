@@ -403,6 +403,12 @@ class DelayTransformGibbs(task.SingleTask):
         transposed_indices[[-1, avg_axis_index]] = transposed_indices[[avg_axis_index, -1]]
         local_shape_transposed[[-1, avg_axis_index]] = local_shape_transposed[[avg_axis_index, -1]]
 
+        # De-reference input distributed array outside loop
+        # NOTE: This step is not optional. Without it, the returned output fails the nan_check
+        # test when ranks do not have same number of elements. TO DO: investigate why
+        ssv = ss.vis[:]
+        ssw = ss.weight[:]
+
         # Iterate over dist_axis and use the Gibbs sampler to estimate the delay transform
         for lbi, bi in dtransform_cont.vis[:].enumerate(axis=dist_axis_index):
 
@@ -410,9 +416,9 @@ class DelayTransformGibbs(task.SingleTask):
 
             # Get local selections, transpose to have (freq, avg_index) in the last two axes,
             # and reshape to have a 3D array with (freq, avg_index) in the last two axes
-            data_local = ss.vis[:][slice_before + (np.s_[lbi:lbi+1],)].view(np.ndarray).transpose(
+            data_local = ssv[slice_before + (np.s_[lbi:lbi+1],)].view(np.ndarray).transpose(
                 transposed_indices).reshape((-1, Nfreq_cont, Navg))
-            weight_local = ss.weight[:][slice_before + (np.s_[lbi:lbi+1],)].view(
+            weight_local = ssw[slice_before + (np.s_[lbi:lbi+1],)].view(
                 np.ndarray).transpose(transposed_indices).reshape((-1, Nfreq_cont, Navg))
 
             # Iterate over first axis
