@@ -617,7 +617,7 @@ def fourier_matrix_c2c(N, fsel=None):
     fa = fa[:, np.newaxis]
     ta = np.arange(N)[np.newaxis, :]
 
-    return np.exp(-2 * np.pi * ta * fa / N)
+    return np.exp(-2.0j * np.pi * ta * fa / N)
 
 
 def fourier_matrix_c2r(N, fsel=None):
@@ -795,8 +795,9 @@ def delay_spectrum_gibbs(data, N, Ni, initial_S, window=True, fsel=None, niter=2
 
         S_hat = d.var(axis=1)
 
-        df = d.shape[1]
-        chi2 = rng.chisquare(df, size=d.shape[0])
+        df = d.shape[1] if real_valued_output else 2 * d.shape[1]
+        alpha = 1. if real_valued_output else 2.
+        chi2 = alpha * rng.chisquare(df, size=d.shape[0])
 
         S_samp = S_hat * df / chi2
 
