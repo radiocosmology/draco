@@ -11,6 +11,7 @@ import numpy as np
 import scipy.linalg as la
 
 from caput import config
+from caput.pipeline import PipelineConfigError
 
 from draco.core import task, containers
 
@@ -50,7 +51,7 @@ class SVDSpectrumEstimator(task.SingleTask):
         weight = mmodes.weight[:]
 
         # transform freq against baseline stack / beamformed pixel
-        f_ax = vis.attrs["axis"].index("freq")
+        f_ax = list(mmodes.vis.attrs["axis"]).index("freq")
         nmode = min(vis.shape[-1], vis.shape[f_ax])
 
         out_cont = contmap[mmodes.__class__]
@@ -83,19 +84,23 @@ class SVDFilter(task.SingleTask):
 
     Attributes
     ----------
-    niter : int
+    niter : int (default 5)
         Number of iterations of EM to perform.
-    local_threshold : float
+    local_threshold : float (default 1e-2)
         Cut out modes with singular value higher than `local_threshold` times the
         largest mode on each m.
-    global_threshold : float
+    global_threshold : float (default 1e-3)
         Remove modes with singular value higher than `global_threshold` times the
         largest mode on any m
+    fixed_cut : int (default 0)
+        If positive, ignore thresholds and just cut a fixed number of modes for
+        every m.
     """
 
     niter = config.Property(proptype=int, default=5)
     global_threshold = config.Property(proptype=float, default=1e-3)
     local_threshold = config.Property(proptype=float, default=1e-2)
+    fixed_cut = config.Property(proptype=int, default=0)
 
     def process(self, mmodes):
         """Filter MModes using an SVD.
@@ -116,38 +121,47 @@ class SVDFilter(task.SingleTask):
         vis = mmodes.vis[:]
         weight = mmodes.weight[:]
 
-        f_ax = vis.attrs["axis"].index("freq")
+        f_ax = list(mmodes.vis.attrs["axis"]).index("freq")
 
         sv_max = 0.0
+
+        if self.fixed_cut > 0:
+            self.log.debug(f"Will cut {self.fixed_cut} modes for every m.")
+        elif self.fixed_cut < 0:
+            raise PipelineConfigError("'fixed_cut' parameter cannot be negative.")
+
 
         # TODO: this should be changed such that it does all the computation in
         # a single SVD pass.
 
-        # Do a quick first pass calculation of all the singular values to get the max on this rank.
-        for mi, m in vis.enumerate(axis=0):
+        if self.fixed_cut == 0:
+            # Do a quick first pass calculation of all the singular values to get the max on this rank.
+            for mi, m in vis.enumerate(axis=0):
 
-            # Reorder array to have frequency and baseline/pixel at the end
-            vis_m = np.moveaxis(
-                vis[mi].view(np.ndarray), f_ax - 1, -2
-            ).reshape(-1, vis.shape[f_ax], vis.shape[-1])
-            weight_m = np.moveaxis(
-                weight[mi].view(np.ndarray), f_ax - 1, -2
-            ).reshape(-1, vis.shape[f_ax], vis.shape[-1])
-            mask_m = weight_m == 0.0
+                # Reorder array to have frequency and baseline/pixel at the end
+                vis_m = np.moveaxis(
+                    vis[mi].view(np.ndarray), f_ax - 1, -2
+                ).reshape(-1, vis.shape[f_ax], vis.shape[-1])
+                weight_m = np.moveaxis(
+                    weight[mi].view(np.ndarray), f_ax - 1, -2
+                ).reshape(-1, vis.shape[f_ax], vis.shape[-1])
+                mask_m = weight_m == 0.0
 
-            # Iterate over remaining axes
-            for i in range(vis_m.shape[0]):
-                u, sig, vh = svd_em(vis_m, mask_m, niter=self.niter)
+                # Iterate over remaining axes
+                for i in range(vis_m.shape[0]):
+                    u, sig, vh = svd_em(vis_m[i], mask_m[i], niter=self.niter)
 
-                sv_max = max(sig[0], sv_max)
+                    sv_max = max(sig[0], sv_max)
 
-        # Reduce to get the global max.
-        global_max = mmodes.comm.allreduce(sv_max, op=MPI.MAX)
+            # Reduce to get the global max.
+            global_max = mmodes.comm.allreduce(sv_max, op=MPI.MAX)
 
-        self.log.debug("Global maximum singular value=%.2g", global_max)
-        import sys
+            self.log.debug("Global maximum singular value=%.2g", global_max)
+            import sys
 
-        sys.stdout.flush()
+            sys.stdout.flush()
+        else:
+            global_max = 0.0
 
         # Loop over all m's and remove modes below the combined cut
         for mi, m in vis.enumerate(axis=0):
@@ -166,9 +180,12 @@ class SVDFilter(task.SingleTask):
                 u, sig, vh = svd_em(vis_m[i], mask_m[i], niter=self.niter)
 
                 # Zero out singular values below the combined mode cut
-                global_cut = (sig > self.global_threshold * global_max).sum()
-                local_cut = (sig > self.local_threshold * sig[0]).sum()
-                cut = max(global_cut, local_cut)
+                if self.fixed_cut > 0:
+                    cut = self.fixed_cut
+                else:
+                    global_cut = (sig > self.global_threshold * global_max).sum()
+                    local_cut = (sig > self.local_threshold * sig[0]).sum()
+                    cut = max(global_cut, local_cut)
                 sig[:cut] = 0.0
 
                 # Recombine the matrix
