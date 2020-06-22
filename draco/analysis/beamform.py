@@ -553,14 +553,8 @@ class BeamFormBase(task.SingleTask):
             self.vis.append(
                 np.copy(np.moveaxis(data.vis[:, polmask, :], 1, 2), order="C")
             )
-            # Restrict visweight to the local frequencies
             self.visweight.append(
-                np.copy(
-                    np.moveaxis(
-                        data.weight[self.lo : self.lo + self.ls][:, polmask, :], 1, 2
-                    ).astype(np.float64),
-                    order="C",
-                )
+                np.copy(np.moveaxis(data.weight[:, polmask, :], 1, 2).astype(np.float64), order="C")
             )
             # Multiply bvec_m by frequencies to get vector in wavelengths.
             # Shape: (2, nfreq_local, nvis), for each pol.
