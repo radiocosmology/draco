@@ -518,10 +518,10 @@ class SVDFilterFromFile(task.SingleTask):
         sv_max_rank = 0.
         for mi, m in vis.enumerate(axis=0):
             # Skip this m if SVD basis file doesn't exist.
-            if not os.path.exists(self._svdfile(mi, mmax)):
+            if not os.path.exists(self._svdfile(m, mmax)):
                 continue
 
-            fe = h5py.File(self._svdfile(mi, mmax), 'r')
+            fe = h5py.File(self._svdfile(m, mmax), 'r')
             ext_sig = fe["sig"][:]
             sv_max_rank = max(ext_sig[0], sv_max_rank)
             fe.close()
@@ -532,11 +532,11 @@ class SVDFilterFromFile(task.SingleTask):
         # Loop over all m's and remove modes below the combined cut
         for mi, m in vis.enumerate(axis=0):
             # Skip this m if SVD basis file doesn't exist.
-            if not os.path.exists(self._svdfile(mi, mmax)):
+            if not os.path.exists(self._svdfile(m, mmax)):
                 continue
 
             # Open SVD basis file for this m, and read U and singular values
-            fe = h5py.File(self._svdfile(mi, mmax), 'r')
+            fe = h5py.File(self._svdfile(m, mmax), 'r')
             u = fe["u"][:]
             sig = fe["sig"][:]
             vh = fe["vh"][:]
