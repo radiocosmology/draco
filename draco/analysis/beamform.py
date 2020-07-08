@@ -681,7 +681,8 @@ class BeamFormBase(task.SingleTask):
         self.sfreq = NU21 / (self.source_cat["redshift"]["z"][:] + 1.0)
         # Pointings RA and Dec
         if self.date is None:
-            self.spos = self.source_cat['position'][:]
+            # Need to copy here, to avoid changing the catalog values.
+            self.spos = np.copy(self.source_cat['position'][:])
             self.spos["dec"][:] = np.deg2rad(self.spos["dec"][:])
         else:
             self._compute_source_coords()
