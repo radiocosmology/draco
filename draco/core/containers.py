@@ -1318,8 +1318,7 @@ class CommonModeGainData(TODContainer):
 
 
 class CommonModeSiderealGainData(ContainerBase):
-    """Parallel container for holding sidereal gain data
-       common to all inputs.
+    """Parallel container for holding sidereal gain data common to all inputs.
     """
 
     _axes = ("freq", "ra")
