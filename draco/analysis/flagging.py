@@ -241,7 +241,7 @@ class MaskBaselines(task.SingleTask):
             mask *= long_ns_mask[np.newaxis, :, np.newaxis]
 
         if self.mask_short is not None:
-            short_mask = np.sum(baselines ** 2, axis=1)**0.5 > self.mask_short
+            short_mask = np.sum(baselines ** 2, axis=1) ** 0.5 > self.mask_short
             mask *= short_mask[np.newaxis, :, np.newaxis]
 
         if self.mask_short_ew is not None:
