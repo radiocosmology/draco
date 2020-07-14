@@ -448,8 +448,8 @@ class DelayTransformGibbs(task.SingleTask):
 
                 # Take an average over the last half of the delay transform samples
                 # (presuming that removes the burn-in)
-                dtransform_av = np.median(dtransform[-(self.nsamp // 2) :], axis=0)
-                spec_av = np.median(spec[-(self.nsamp // 2) :], axis=0)
+                dtransform_av = np.mean(dtransform[-(self.nsamp // 2) :], axis=0)
+                spec_av = np.mean(spec[-(self.nsamp // 2) :], axis=0)
                 dtransform_local[i] = np.fft.fftshift(dtransform_av, axes=0)
                 # For now, weights are just the variance of the dtransform along avg_axis
                 dtransform_weight_local[i] = np.var(dtransform_local[i], axis=-1)[:, np.newaxis]
