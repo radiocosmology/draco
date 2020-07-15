@@ -286,6 +286,8 @@ class DelayTransformGibbs(task.SingleTask):
     ----------
     nsamp : int, optional
         The number of Gibbs samples to draw.
+    window : bool, optional
+        Apply a Nuttall apodisation function. Default is True.
     freq_zero : float, optional
         The physical frequency (in MHz) of the *zero* channel. That is the DC
         channel coming out of the F-engine. If not specified, use the first
@@ -309,6 +311,7 @@ class DelayTransformGibbs(task.SingleTask):
     """
 
     nsamp = config.Property(proptype=int, default=20)
+    window = config.Property(proptype=bool, default=True)
     freq_zero = config.Property(proptype=float, default=None)
     freq_spacing = config.Property(proptype=float, default=None)
     nfreq = config.Property(proptype=int, default=None)
@@ -444,7 +447,7 @@ class DelayTransformGibbs(task.SingleTask):
 
                 spec, dtransform = delay_spectrum_gibbs(
                     data, ndelay, weight, initial_S, fsel=channel_ind, niter=self.nsamp,
-                    real_valued_output=self.real_valued_output)
+                    real_valued_output=self.real_valued_output, window=self.window)
 
                 # Take an average over the last half of the delay transform samples
                 # (presuming that removes the burn-in)
