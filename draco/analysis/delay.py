@@ -16,6 +16,7 @@ from caput import mpiarray, config
 from cora.util import units
 
 from ..core import containers, task, io
+from ..util import tools
 
 
 class DelayFilter(task.SingleTask):
@@ -454,8 +455,9 @@ class DelayTransformGibbs(task.SingleTask):
                 dtransform_av = np.mean(dtransform[-(self.nsamp // 2) :], axis=0)
                 spec_av = np.mean(spec[-(self.nsamp // 2) :], axis=0)
                 dtransform_local[i] = np.fft.fftshift(dtransform_av, axes=0)
-                # For now, weights are just the variance of the dtransform along avg_axis
-                dtransform_weight_local[i] = np.var(dtransform_local[i], axis=-1)[:, np.newaxis]
+                # For now, weights are just the inv variance of the dtransform along avg_axis
+                dtransform_weight_local[i] = tools.invert_no_zero(np.var(dtransform_local[i],
+                    axis=-1))[:, np.newaxis]
 
             # Reshape, transpose to original form and save
             dtransform_cont.vis[slice_before + (np.s_[bi:bi+1],)] = dtransform_local.reshape(
