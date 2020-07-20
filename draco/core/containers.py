@@ -13,6 +13,9 @@ Containers
     Map
     MModes
     RingMap
+    GridBeam
+    HEALPixBeam
+    TrackBeam
 
 Container Base Classes
 ----------------------
@@ -774,7 +777,7 @@ class SiderealStream(VisContainer):
         The number of points to divide the RA axis up into.
     """
 
-    _axes = ("ra",)
+    _axes = ("ra", "freq", "stack", "input")
 
     _dataset_spec = {
         "vis": {
@@ -1055,6 +1058,73 @@ class GridBeam(ContainerBase):
     @property
     def phi(self):
         return self.index_map["phi"]
+
+
+class HEALPixBeam(ContainerBase):
+    """Generic container for representing the 2-d beam in spherical
+       coordinates on a HEALPix grid.
+    """
+
+    _axes = ("freq", "pol", "input", "pix")
+
+    _dataset_spec = {
+        "beam": {
+            "axes": ["freq", "pol", "input", "pix"],
+            "dtype": [("Et", np.complex64), ("Ep", np.complex64)],
+            "initialise": True,
+            "distributed": True,
+            "distributed_axis": "freq",
+        },
+        "weight": {
+            "axes": ["freq", "pol", "input", "pix"],
+            "dtype": [("Et", np.float32), ("Ep", np.float32)],
+            "initialise": False,
+            "distributed": True,
+            "distributed_axis": "freq",
+        },
+    }
+
+    def __init__(self, coords="unknown", ordering="unknown", *args, **kwargs):
+
+        super(HEALPixBeam, self).__init__(*args, **kwargs)
+        self.attrs["coords"] = coords
+        self.attrs["ordering"] = ordering
+
+    @property
+    def beam(self):
+        return self.datasets["beam"]
+
+    @property
+    def weight(self):
+        return self.datasets["weight"]
+
+    @property
+    def ordering(self):
+        return self.attrs["ordering"]
+
+    @property
+    def coords(self):
+        return self.attrs["coords"]
+
+    @property
+    def freq(self):
+        return self.index_map["freq"]["centre"]
+
+    @property
+    def pol(self):
+        return self.index_map["pol"]
+
+    @property
+    def input(self):
+        return self.index_map["input"]
+
+    @property
+    def pix(self):
+        return self.index_map["pix"]
+
+    @property
+    def nside(self):
+        return int(np.sqrt(len(self.pix) / 12))
 
 
 class TrackBeam(ContainerBase):
