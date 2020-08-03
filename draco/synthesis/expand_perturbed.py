@@ -137,7 +137,7 @@ class ExpandPerturbedProducts(task.SingleTask):
 
                 # Add perturbation components to unperturbed sstream
                 ssp += ss_fii.conj() if conj_fii else ss_fii
-                ssp += ss_fjj.conj() if conj_fjj else ss_jj
+                ssp += ss_fjj.conj() if conj_fjj else ss_fjj
 
 
                 if self.solution_order == 1:
