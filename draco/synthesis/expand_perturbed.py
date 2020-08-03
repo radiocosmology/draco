@@ -72,7 +72,7 @@ class ExpandPerturbedProducts(task.SingleTask):
 
         # Determine ninput per perturbation based on ninput/n perturbations.
         ninput_pert = len(sstream.input)
-        ninput = int(len(ninput_pert) / tel.npert)
+        ninput = int(ninput_pert / tel.npert)
 
         # If I perturb also frequencies....
         # linp, sinp, einp = mpiutil.split_local(ninput)
