@@ -214,12 +214,12 @@ class ExpandProducts(task.SingleTask):
             dtype=[("input_a", int), ("input_b", int)],
         )
         nprod = len(prod)
-
+        
         new_stream = containers.SiderealStream(prod=prod, stack=None, axes_from=sstream)
         new_stream.redistribute("freq")
         new_stream.vis[:] = 0.0
         new_stream.weight[:] = 0.0
-
+        
         # Create dummpy index and reverse map for the stack axis to match the behaviour
         # of reading in an N^2 file through andata
         fwd_stack = np.empty(nprod, dtype=[("prod", "<u4"), ("conjugate", "u1")])

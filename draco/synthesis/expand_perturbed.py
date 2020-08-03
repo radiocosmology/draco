@@ -76,24 +76,26 @@ class ExpandPerturbedProducts(task.SingleTask):
         # Determine ninput per perturbation based on ninput/n perturbations.
         ninput_pert = len(sstream.input)
         ninput = int(ninput_pert / tel.npert)
-
+        
         # If I perturb also frequencies....
         # linp, sinp, einp = mpiutil.split_local(ninput)
 
         # Pre-define prod map and conjugation and feedmap outside of loop
         prod = np.array([(fi, fj) for fi in range(ninput) for fj in range(fi, ninput)], dtype=[('input_a', int), ('input_b', int)])
 
-        new_stream = containers.SiderealStream(input=ninput, prod=prod, axes_from=sstream, comm=self.comm)
+        # Define new SiderealStream. Need to specify stack=None for it to
+        # correspond to a non-stacked stream
+        new_stream = containers.SiderealStream(input=ninput, prod=prod, axes_from=sstream, stack=None, comm=self.comm)
         new_stream.redistribute('freq')
         new_stream.vis[:] = 0.0
-        new_stream.weight[:] = 0.
-
+        new_stream.weight[:] = 0.0
+        
         # Dereference the global slices
         nss = new_stream.vis[:]
         nssw = new_stream.weight[:]
         ss = sstream.vis[:]
         ssw = sstream.weight[:]
-
+        
         # Iterate over all feed pairs and work out which is the correct index in
         # the sidereal stack.
         for pi, (fi, fj) in enumerate(prod):
