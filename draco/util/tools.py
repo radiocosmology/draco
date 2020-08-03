@@ -142,7 +142,7 @@ def find_inputs(input_index, inputs, require_match=False):
         that are not contained in `input_index`.
     """
     # Significantly faster than repeated calls to find_key
-
+    
     if "correlator_input" in input_index.dtype.fields:
         field_to_match = "correlator_input"
     elif "chan_id" in input_index.dtype.fields:

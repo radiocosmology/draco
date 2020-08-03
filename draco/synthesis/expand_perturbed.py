@@ -83,9 +83,12 @@ class ExpandPerturbedProducts(task.SingleTask):
         # Pre-define prod map and conjugation and feedmap outside of loop
         prod = np.array([(fi, fj) for fi in range(ninput) for fj in range(fi, ninput)], dtype=[('input_a', int), ('input_b', int)])
 
+        # Make array of feed indices for new SiderealStream
+        new_stream_input = np.array(np.arange(ninput), dtype=sstream.input.dtype)
+
         # Define new SiderealStream. Need to specify stack=None for it to
         # correspond to a non-stacked stream
-        new_stream = containers.SiderealStream(input=ninput, prod=prod, axes_from=sstream, stack=None, comm=self.comm)
+        new_stream = containers.SiderealStream(input=new_stream_input, prod=prod, axes_from=sstream, stack=None, comm=self.comm)
         new_stream.redistribute('freq')
         new_stream.vis[:] = 0.0
         new_stream.weight[:] = 0.0

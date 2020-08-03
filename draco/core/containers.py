@@ -506,7 +506,7 @@ class VisContainer(ContainerBase):
             inputs = kwargs["input"]
         elif ("axes_from" in kwargs) and ("input" in kwargs["axes_from"].index_map):
             inputs = kwargs["axes_from"].index_map["input"]
-
+        
         # Resolve stack map
         stack = None
         if "stack" in kwargs:
@@ -526,10 +526,9 @@ class VisContainer(ContainerBase):
             stack["prod"][:] = np.arange(len(prod))
             stack["conjugate"] = 0
             kwargs["stack"] = stack
-
+        
         # Call initializer from `ContainerBase`
         super(VisContainer, self).__init__(*args, **kwargs)
-
         reverse_map_stack = None
         # Create reverse map
         if "reverse_map_stack" in kwargs:
