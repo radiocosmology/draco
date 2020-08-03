@@ -312,7 +312,7 @@ class Print(pipeline.TaskBase):
 
     def next(self, input_):
 
-        print input_
+        print(input_)
 
         return input_
 
