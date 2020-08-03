@@ -246,7 +246,7 @@ class ContainerBase(memh5.BasicCont):
 
         """
         out = {}
-        for name, value in self._data.iteritems():
+        for name, value in self._data.items():
             if not memh5.is_group(value):
                 out[name] = value
         return memh5.ro_dict(out)
