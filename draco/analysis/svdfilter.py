@@ -1,5 +1,11 @@
 """A set of tasks for SVD filtering the m-modes.
 """
+# === Start Python 2/3 compatibility
+from __future__ import absolute_import, division, print_function, unicode_literals
+from future.builtins import *  # noqa  pylint: disable=W0401, W0614
+from future.builtins.disabled import *  # noqa  pylint: disable=W0401, W0614
+
+# === End Python 2/3 compatibility
 
 import numpy as np
 import scipy.linalg as la
@@ -33,7 +39,7 @@ class SVDSpectrumEstimator(task.SingleTask):
         spectrum : containers.SVDSpectrum
         """
 
-        mmodes.redistribute('m')
+        mmodes.redistribute("m")
 
         vis = mmodes.vis[:]
         weight = mmodes.weight[:]
@@ -46,11 +52,16 @@ class SVDSpectrumEstimator(task.SingleTask):
         for mi, m in vis.enumerate(axis=0):
             self.log.debug("Calculating SVD spectrum of m=%i", m)
 
-            vis_m = (vis[mi].view(np.ndarray)
-                     .transpose((1, 0, 2)).reshape(vis.shape[2], -1))
-            weight_m = (weight[mi].view(np.ndarray)
-                        .transpose((1, 0, 2)).reshape(vis.shape[2], -1))
-            mask_m = (weight_m == 0.0)
+            vis_m = (
+                vis[mi].view(np.ndarray).transpose((1, 0, 2)).reshape(vis.shape[2], -1)
+            )
+            weight_m = (
+                weight[mi]
+                .view(np.ndarray)
+                .transpose((1, 0, 2))
+                .reshape(vis.shape[2], -1)
+            )
+            mask_m = weight_m == 0.0
 
             u, sig, vh = svd_em(vis_m, mask_m, niter=self.niter)
 
@@ -92,7 +103,7 @@ class SVDFilter(task.SingleTask):
 
         from mpi4py import MPI
 
-        mmodes.redistribute('m')
+        mmodes.redistribute("m")
 
         vis = mmodes.vis[:]
         weight = mmodes.weight[:]
@@ -105,11 +116,16 @@ class SVDFilter(task.SingleTask):
         # Do a quick first pass calculation of all the singular values to get the max on this rank.
         for mi, m in vis.enumerate(axis=0):
 
-            vis_m = (vis[mi].view(np.ndarray)
-                     .transpose((1, 0, 2)).reshape(vis.shape[2], -1))
-            weight_m = (weight[mi].view(np.ndarray)
-                        .transpose((1, 0, 2)).reshape(vis.shape[2], -1))
-            mask_m = (weight_m == 0.0)
+            vis_m = (
+                vis[mi].view(np.ndarray).transpose((1, 0, 2)).reshape(vis.shape[2], -1)
+            )
+            weight_m = (
+                weight[mi]
+                .view(np.ndarray)
+                .transpose((1, 0, 2))
+                .reshape(vis.shape[2], -1)
+            )
+            mask_m = weight_m == 0.0
 
             u, sig, vh = svd_em(vis_m, mask_m, niter=self.niter)
 
@@ -120,16 +136,22 @@ class SVDFilter(task.SingleTask):
 
         self.log.debug("Global maximum singular value=%.2g", global_max)
         import sys
+
         sys.stdout.flush()
 
         # Loop over all m's and remove modes below the combined cut
         for mi, m in vis.enumerate(axis=0):
 
-            vis_m = (vis[mi].view(np.ndarray)
-                     .transpose((1, 0, 2)).reshape(vis.shape[2], -1))
-            weight_m = (weight[mi].view(np.ndarray)
-                        .transpose((1, 0, 2)).reshape(vis.shape[2], -1))
-            mask_m = (weight_m == 0.0)
+            vis_m = (
+                vis[mi].view(np.ndarray).transpose((1, 0, 2)).reshape(vis.shape[2], -1)
+            )
+            weight_m = (
+                weight[mi]
+                .view(np.ndarray)
+                .transpose((1, 0, 2))
+                .reshape(vis.shape[2], -1)
+            )
+            mask_m = weight_m == 0.0
 
             u, sig, vh = svd_em(vis_m, mask_m, niter=self.niter)
 

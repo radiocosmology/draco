@@ -1,5 +1,11 @@
 """Delay space spectrum estimation and filtering.
 """
+# === Start Python 2/3 compatibility
+from __future__ import absolute_import, division, print_function, unicode_literals
+from future.builtins import *  # noqa  pylint: disable=W0401, W0614
+from future.builtins.disabled import *  # noqa  pylint: disable=W0401, W0614
+
+# === End Python 2/3 compatibility
 
 import numpy as np
 import scipy.linalg as la
@@ -7,6 +13,7 @@ import scipy.stats as st
 from randomgen import RandomGenerator
 
 from caput import mpiarray, config
+from cora.util import units
 
 from ..core import containers, task, io
 
@@ -18,11 +25,38 @@ class DelayFilter(task.SingleTask):
     ----------
     delay_cut : float
         Delay value to filter at in seconds.
+    za_cut : float
+        Sine of the maximum zenith angle included in
+        baseline-dependent delay filtering. Default is 1
+        which corresponds to the horizon (ie: filters
+        out all zenith angles). Setting to zero turns off
+        baseline dependent cut.
+    update_weight : bool
+        Not implemented.
+    weight_tol : float
+        Maximum weight kept in the masked data, as a fraction of
+        the largest weight in the original dataset.
+    telescope_orientation : one of ('NS', 'EW', 'none')
+        Determines if the baseline-dependent delay cut is based on
+        the north-south component, the east-west component or the full
+        baseline length. For cylindrical telescopes oriented in the
+        NS direction (like CHIME) use 'NS'. The default is 'NS'.
     """
 
     delay_cut = config.Property(proptype=float, default=0.1)
-
+    za_cut = config.Property(proptype=float, default=1.0)
     update_weight = config.Property(proptype=bool, default=False)
+    weight_tol = config.Property(proptype=float, default=1e-4)
+    telescope_orientation = config.enum(["NS", "EW", "none"], default="NS")
+
+    def setup(self, telescope):
+        """Set the telescope needed to obtain baselines.
+
+        Parameters
+        ----------
+        telescope : TransitTelescope
+        """
+        self.telescope = io.get_telescope(telescope)
 
     def process(self, ss):
         """Filter out delays from a SiderealStream or TimeStream.
@@ -37,21 +71,42 @@ class DelayFilter(task.SingleTask):
         ss_filt : containers.SiderealStream
             Filtered dataset.
         """
+        tel = self.telescope
 
         if self.update_weight:
             raise NotImplemented("Weight updating is not implemented.")
 
-        ss.redistribute(['input', 'prod', 'stack'])
+        ss.redistribute(["input", "prod", "stack"])
 
         freq = ss.freq[:]
 
         ssv = ss.vis[:].view(np.ndarray)
         ssw = ss.weight[:].view(np.ndarray)
 
+        ubase, uinv = np.unique(
+            tel.baselines[:, 0] + 1.0j * tel.baselines[:, 1], return_inverse=True
+        )
+        ubase = ubase.view(np.float64).reshape(-1, 2)
+
         for lbi, bi in ss.vis[:].enumerate(axis=1):
 
-            freq_weight = np.median(ssw[:, lbi], axis=1)
-            NF = null_delay_filter(freq, self.delay_cut, freq_weight)
+            # Select the baseline length to use
+            baseline = ubase[uinv[bi]]
+            if self.telescope_orientation == "NS":
+                baseline = abs(baseline[1])  # Y baseline
+            elif self.telescope_orientation == "EW":
+                baseline = abs(baseline[0])  # X baseline
+            else:
+                baseline = np.linalg.norm(baseline)  # Norm
+            # In micro seconds
+            baseline_delay_cut = self.za_cut * baseline / units.c * 1e6
+            delay_cut = np.amax([baseline_delay_cut, self.delay_cut])
+
+            weight_mask = np.median(ssw[:, lbi], axis=1)
+            weight_mask = (weight_mask > (self.weight_tol * weight_mask.max())).astype(
+                np.float64
+            )
+            NF = null_delay_filter(freq, delay_cut, weight_mask)
 
             ssv[:, lbi] = np.dot(NF, ssv[:, lbi])
 
@@ -114,7 +169,7 @@ class DelaySpectrumEstimator(task.SingleTask):
 
         tel = self.telescope
 
-        ss.redistribute('freq')
+        ss.redistribute("freq")
 
         # Construct the Stokes I vis
         vis_I, vis_weight, baselines = stokes_I(ss, tel)
@@ -126,8 +181,9 @@ class DelaySpectrumEstimator(task.SingleTask):
         if self.freq_spacing is None:
             self.freq_spacing = np.abs(np.diff(ss.freq[:])).min()
 
-        channel_ind = (np.abs(ss.freq[:] - self.freq_zero) /
-                       self.freq_spacing).astype(np.int)
+        channel_ind = (np.abs(ss.freq[:] - self.freq_zero) / self.freq_spacing).astype(
+            np.int
+        )
 
         if self.nfreq is None:
             self.nfreq = channel_ind[-1] + 1
@@ -141,7 +197,7 @@ class DelaySpectrumEstimator(task.SingleTask):
 
         # Initialise the spectrum container
         delay_spec = containers.DelaySpectrum(baseline=baselines, delay=delays)
-        delay_spec.redistribute('baseline')
+        delay_spec.redistribute("baseline")
         delay_spec.spectrum[:] = 0.0
 
         initial_S = np.ones_like(delays) * 1e1
@@ -149,8 +205,7 @@ class DelaySpectrumEstimator(task.SingleTask):
         # Iterate over all baselines and use the Gibbs sampler to estimate the spectrum
         for lbi, bi in delay_spec.spectrum[:].enumerate(axis=0):
 
-            self.log.debug("Delay transforming baseline %i/%i",
-                           bi, len(baselines))
+            self.log.debug("Delay transforming baseline %i/%i", bi, len(baselines))
 
             # Get the local selections
             data = vis_I[lbi].view(np.ndarray).T
@@ -158,19 +213,22 @@ class DelaySpectrumEstimator(task.SingleTask):
 
             # Mask out data with completely zero'd weights and generate time
             # averaged weights
-            weight_cut = 1e-4 * weight.mean()  # Use approx threshold to ignore small weights
+            weight_cut = (
+                1e-4 * weight.mean()
+            )  # Use approx threshold to ignore small weights
             data = data * (weight.T > weight_cut)
             weight = np.mean(weight, axis=1)
 
             if (data == 0.0).all():
                 continue
 
-            spec = delay_spectrum_gibbs(data, ndelay, weight, initial_S,
-                                        fsel=channel_ind, niter=self.nsamp)
+            spec = delay_spectrum_gibbs(
+                data, ndelay, weight, initial_S, fsel=channel_ind, niter=self.nsamp
+            )
 
             # Take an average over the last half of the delay spectrum samples
             # (presuming that removes the burn-in)
-            spec_av = np.median(spec[-(self.nsamp / 2):], axis=0)
+            spec_av = np.median(spec[-(self.nsamp // 2) :], axis=0)
             delay_spec.spectrum[bi] = np.fft.fftshift(spec_av)
 
         return delay_spec
@@ -197,8 +255,9 @@ def stokes_I(sstream, tel):
 
     # ==== Unpack into Stokes I
     ubase, uinv, ucount = np.unique(
-        tel.baselines[:, 0] + 1.0J * tel.baselines[:, 1],
-        return_inverse=True, return_counts=True
+        tel.baselines[:, 0] + 1.0j * tel.baselines[:, 1],
+        return_inverse=True,
+        return_counts=True,
     )
     ubase = ubase.view(np.float64).reshape(-1, 2)
     nbase = ubase.shape[0]
@@ -238,7 +297,7 @@ def stokes_I(sstream, tel):
     return vis_I, vis_weight, ubase
 
 
-def window_generalised(x, window='nuttall'):
+def window_generalised(x, window="nuttall"):
     """A generalised high-order window at arbitrary locations.
 
     Parameters
@@ -255,9 +314,9 @@ def window_generalised(x, window='nuttall'):
     """
 
     a_table = {
-        'nuttall': np.array([0.355768, -0.487396, 0.144232, -0.012604]),
-        'blackman_nuttall': np.array([0.3635819, -0.4891775, 0.1365995, -0.0106411]),
-        'blackman_harris': np.array([0.35875, -0.48829, 0.14128, -0.01168])
+        "nuttall": np.array([0.355768, -0.487396, 0.144232, -0.012604]),
+        "blackman_nuttall": np.array([0.3635819, -0.4891775, 0.1365995, -0.0106411]),
+        "blackman_harris": np.array([0.35875, -0.48829, 0.14128, -0.01168]),
     }
 
     a = a_table[window]
@@ -288,7 +347,7 @@ def fourier_matrix_r2c(N, fsel=None):
     """
 
     if fsel is None:
-        fa = np.arange(N / 2 + 1)
+        fa = np.arange(N // 2 + 1)
     else:
         fa = np.array(fsel)
 
@@ -322,13 +381,13 @@ def fourier_matrix_c2r(N, fsel=None):
     """
 
     if fsel is None:
-        fa = np.arange(N / 2 + 1)
+        fa = np.arange(N // 2 + 1)
     else:
         fa = np.array(fsel)
 
     fa = fa[np.newaxis, :]
 
-    mul = np.where((fa == 0) | (fa == N / 2), 1.0, 2.0) / N
+    mul = np.where((fa == 0) | (fa == N // 2), 1.0, 2.0) / N
 
     ta = np.arange(N)[:, np.newaxis]
 
@@ -342,6 +401,7 @@ def fourier_matrix_c2r(N, fsel=None):
 
 # RNG used for delay estimation
 _delay_rng = RandomGenerator()
+
 
 def delay_spectrum_gibbs(data, N, Ni, initial_S, window=True, fsel=None, niter=20):
     """Estimate the delay spectrum by Gibbs sampling.
@@ -381,7 +441,7 @@ def delay_spectrum_gibbs(data, N, Ni, initial_S, window=True, fsel=None, niter=2
 
     spec = []
 
-    total_freq = N / 2 + 1
+    total_freq = N // 2 + 1
 
     if fsel is None:
         fsel = np.arange(total_freq)
@@ -390,34 +450,34 @@ def delay_spectrum_gibbs(data, N, Ni, initial_S, window=True, fsel=None, niter=2
     F = fourier_matrix_r2c(N, fsel)
 
     # Construct a view of the data with alternating real and imaginary parts
-    data = data.astype(np.complex128, order='C').view(np.float64).T.copy()
+    data = data.astype(np.complex128, order="C").view(np.float64).T.copy()
 
     # Window the frequency data
     if window:
 
         # Construct the window function
         x = fsel * 1.0 / total_freq
-        w = window_generalised(x, window='nuttall')
+        w = window_generalised(x, window="nuttall")
         w = np.repeat(w, 2)
 
         # Apply to the projection matrix and the data
         F *= w[:, np.newaxis]
         data *= w[:, np.newaxis]
 
-    is_real_freq = (fsel == 0) | (fsel == N / 2)
+    is_real_freq = (fsel == 0) | (fsel == N // 2)
 
     # Construct the Noise inverse array for the real and imaginary parts (taking
     # into account that the zero and Nyquist frequencies are strictly real)
     Ni_r = np.zeros(2 * Ni.shape[0])
-    Ni_r[0::2] = np.where(is_real_freq, Ni, Ni / 2**0.5)
-    Ni_r[1::2] = np.where(is_real_freq, 0.0, Ni / 2**0.5)
+    Ni_r[0::2] = np.where(is_real_freq, Ni, Ni / 2 ** 0.5)
+    Ni_r[1::2] = np.where(is_real_freq, 0.0, Ni / 2 ** 0.5)
 
     # Create the Hermitian conjugate weighted by the noise (this is used multiple times)
-    FTNih = F.T * Ni_r[np.newaxis, :]**0.5
+    FTNih = F.T * Ni_r[np.newaxis, :] ** 0.5
     FTNiF = np.dot(FTNih, FTNih.T)
 
     # Pre-whiten the data to save doing it repeatedly
-    data = data * Ni_r[:, np.newaxis]**0.5
+    data = data * Ni_r[:, np.newaxis] ** 0.5
 
     # Set the initial starting points
     S_samp = initial_S
@@ -440,7 +500,7 @@ def delay_spectrum_gibbs(data, N, Ni, initial_S, window=True, fsel=None, niter=2
 
         # Construct the random signal sample by forming a perturbed vector and
         # then doing a matrix solve
-        y = np.dot(FTNih, data + w2) + Si[:, np.newaxis]**0.5 * w1
+        y = np.dot(FTNih, data + w2) + Si[:, np.newaxis] ** 0.5 * w1
 
         return la.solve(Ci, y, sym_pos=True)
 
@@ -496,12 +556,14 @@ def null_delay_filter(freq, max_delay, mask, num_delay=200, tol=1e-8, window=Tru
 
     # Construct the window function
     x = (freq - freq.min()) / freq.ptp()
-    w = window_generalised(x, window='nuttall')
+    w = window_generalised(x, window="nuttall")
 
     delay = np.linspace(-max_delay, max_delay, num_delay)
 
     # Construct the Fourier matrix
-    F = (mask * w)[:, np.newaxis] * np.exp(2.0J * np.pi * delay[np.newaxis, :] * freq[:, np.newaxis])
+    F = (mask * w)[:, np.newaxis] * np.exp(
+        2.0j * np.pi * delay[np.newaxis, :] * freq[:, np.newaxis]
+    )
 
     # Use an SVD to figure out the set of significant modes spanning the delays
     # we are wanting to get rid of.

@@ -1,5 +1,12 @@
 """Power spectrum estimation code.
 """
+# === Start Python 2/3 compatibility
+from __future__ import absolute_import, division, print_function, unicode_literals
+from future.builtins import *  # noqa  pylint: disable=W0401, W0614
+from future.builtins.disabled import *  # noqa  pylint: disable=W0401, W0614
+
+# === End Python 2/3 compatibility
+
 
 import numpy as np
 
@@ -22,8 +29,9 @@ class QuadraticPSEstimation(task.SingleTask):
 
     psname = config.Property(proptype=str)
 
-    pstype = config.enum(['unwindowed', 'minimum_variance', 'uncorrelated'],
-                         default='unwindowed')
+    pstype = config.enum(
+        ["unwindowed", "minimum_variance", "uncorrelated"], default="unwindowed"
+    )
 
     def setup(self, manager):
         """Set the ProductManager instance to use.
@@ -49,10 +57,12 @@ class QuadraticPSEstimation(task.SingleTask):
         import scipy.linalg as la
 
         if not isinstance(klmodes, containers.KLModes):
-            raise ValueError('Input container must be instance of '
-                             'KLModes (received %s)' % klmodes.__class__)
+            raise ValueError(
+                "Input container must be instance of "
+                "KLModes (received %s)" % klmodes.__class__
+            )
 
-        klmodes.redistribute('m')
+        klmodes.redistribute("m")
 
         pse = self.manager.psestimators[self.psname]
         pse.genbands()
@@ -60,7 +70,7 @@ class QuadraticPSEstimation(task.SingleTask):
         q_list = []
 
         for mi, m in klmodes.vis[:].enumerate(axis=0):
-            ps_single = pse.q_estimator(m, klmodes.vis[m, :klmodes.nmode[m]])
+            ps_single = pse.q_estimator(m, klmodes.vis[m, : klmodes.nmode[m]])
             q_list.append(ps_single)
 
         q = klmodes.comm.allgather(np.array(q_list).sum(axis=0))
@@ -69,20 +79,21 @@ class QuadraticPSEstimation(task.SingleTask):
         # reading from directory
         fisher, bias = pse.fisher_bias()
 
-        ps = containers.Powerspectrum2D(kperp_edges=pse.kperp_bands,
-                                        kpar_edges=pse.kpar_bands)
+        ps = containers.Powerspectrum2D(
+            kperp_edges=pse.kperp_bands, kpar_edges=pse.kpar_bands
+        )
 
-        npar = len(ps.index_map['kpar'])
-        nperp = len(ps.index_map['kperp'])
+        npar = len(ps.index_map["kpar"])
+        nperp = len(ps.index_map["kperp"])
 
         # Calculate the right unmixing matrix for each ps type
-        if self.pstype == 'unwindowed':
+        if self.pstype == "unwindowed":
             M = la.pinv(fisher, rcond=1e-8)
-        elif self.pstype == 'uncorrelated':
+        elif self.pstype == "uncorrelated":
             Fh = la.cholesky(fisher)
             M = la.inv(Fh) / Fh.sum(axis=1)[:, np.newaxis]
-        elif self.pstype == 'minimum_variance':
-            M = np.diag(fisher.sum(axis=1)**-1)
+        elif self.pstype == "minimum_variance":
+            M = np.diag(fisher.sum(axis=1) ** -1)
 
         ps.powerspectrum[:] = np.dot(M, q - bias).reshape(nperp, npar)
         ps.C_inv[:] = fisher.reshape(nperp, npar, nperp, npar)

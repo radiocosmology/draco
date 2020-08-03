@@ -11,10 +11,18 @@ Tasks
     WienerMapMaker
     RingMapMaker
 """
+# === Start Python 2/3 compatibility
+from __future__ import absolute_import, division, print_function, unicode_literals
+from future.builtins import *  # noqa  pylint: disable=W0401, W0614
+from future.builtins.disabled import *  # noqa  pylint: disable=W0401, W0614
+
+# === End Python 2/3 compatibility
+
 import numpy as np
 from caput import mpiarray, config
 
 from ..core import containers, task, io
+from ..util import tools
 
 
 class BaseMapMaker(task.SingleTask):
@@ -59,46 +67,43 @@ class BaseMapMaker(task.SingleTask):
         # Fetch various properties
         bt = self.beamtransfer
         lmax = bt.telescope.lmax
-        mmax = min(bt.telescope.mmax, len(mmodes.index_map['m']) - 1)
-        nfreq = len(mmodes.index_map['freq'])  # bt.telescope.nfreq
-
-        def find_key(key_list, key):
-            try:
-                return map(tuple, list(key_list)).index(tuple(key))
-            except TypeError:
-                return list(key_list).index(key)
-            except ValueError:
-                return None
+        mmax = min(bt.telescope.mmax, len(mmodes.index_map["m"]) - 1)
+        nfreq = len(mmodes.index_map["freq"])  # bt.telescope.nfreq
 
         # Figure out mapping between the frequencies
         bt_freq = self.beamtransfer.telescope.frequencies
-        mm_freq = mmodes.index_map['freq']['centre']
+        mm_freq = mmodes.index_map["freq"]["centre"]
 
-        freq_ind = [ find_key(bt_freq, mf) for mf in mm_freq]
+        freq_ind = tools.find_keys(bt_freq, mm_freq, require_match=True)
 
         # Trim off excess m-modes
-        mmodes.redistribute('freq')
-        m_array = mmodes.vis[:(mmax + 1)]
+        mmodes.redistribute("freq")
+        m_array = mmodes.vis[: (mmax + 1)]
         m_array = m_array.redistribute(axis=0)
 
-        m_weight = mmodes.weight[:(mmax + 1)]
+        m_weight = mmodes.weight[: (mmax + 1)]
         m_weight = m_weight.redistribute(axis=0)
 
         # Create array to store alms in.
-        alm = mpiarray.MPIArray((nfreq, 4, lmax + 1, mmax + 1), axis=3,
-                                dtype=np.complex128, comm=mmodes.comm)
+        alm = mpiarray.MPIArray(
+            (nfreq, 4, lmax + 1, mmax + 1),
+            axis=3,
+            dtype=np.complex128,
+            comm=mmodes.comm,
+        )
         alm[:] = 0.0
 
         # Loop over all m's and solve from m-mode visibilities to alms.
         for mi, m in m_array.enumerate(axis=0):
 
-            self.log.debug("Processing m=%i (local %i/%i)",
-                           m, mi + 1, m_array.local_shape[0])
+            self.log.debug(
+                "Processing m=%i (local %i/%i)", m, mi + 1, m_array.local_shape[0]
+            )
 
-	    # Get and cache the beam transfer matrix, but trim off any l < m.
-	    # if self.bt_cache is None:
-	    #	self.bt_cache = (m, bt.beam_m(m))
-	    #	self.log.debug("Cached beamtransfer for m=%i", m)
+            # Get and cache the beam transfer matrix, but trim off any l < m.
+            # if self.bt_cache is None:
+            #     self.bt_cache = (m, bt.beam_m(m))
+            #     self.log.debug("Cached beamtransfer for m=%i", m)
 
             for fi in range(nfreq):
                 v = m_array[mi, :, fi].view(np.ndarray)
@@ -107,14 +112,19 @@ class BaseMapMaker(task.SingleTask):
 
                 a[:] = self._solve_m(m, freq_ind[fi], v, Ni)
 
-	    self.bt_cache = None
+        self.bt_cache = None
 
         # Redistribute back over frequency
         alm = alm.redistribute(axis=0)
 
         # Copy into square alm array for transform
-        almt = mpiarray.MPIArray((nfreq, 4, lmax + 1, lmax + 1), dtype=np.complex128, axis=0, comm=mmodes.comm)
-        almt[..., :(mmax + 1)] = alm
+        almt = mpiarray.MPIArray(
+            (nfreq, 4, lmax + 1, lmax + 1),
+            dtype=np.complex128,
+            axis=0,
+            comm=mmodes.comm,
+        )
+        almt[..., : (mmax + 1)] = alm
         alm = almt
 
         # Perform spherical harmonic transform to map space
@@ -204,7 +214,7 @@ class MaximumLikelihoodMapMaker(BaseMapMaker):
         Ni = Ni.reshape(bt.ntel)
         bm = bt.beam_m(m, fi=f).reshape(bt.ntel, bt.nsky)
 
-        Nh = Ni**0.5
+        Nh = Ni ** 0.5
 
         # Construct the beam pseudo inverse
         ib = pinv_svd(bm * Nh[:, np.newaxis])
@@ -254,17 +264,17 @@ class WienerMapMaker(BaseMapMaker):
 
         bt = self.beamtransfer
 
-	# Get transfer for this m and f
-	if self.bt_cache is not None and self.bt_cache[0] == m:
-	    bm = self.bt_cache[1][f]
-	else:
-	    bm = bt.beam_m(m, fi=f)
-	bm = bm[..., m:].reshape(bt.ntel, -1)
+        # Get transfer for this m and f
+        if self.bt_cache is not None and self.bt_cache[0] == m:
+            bm = self.bt_cache[1][f]
+        else:
+            bm = bt.beam_m(m, fi=f)
+        bm = bm[..., m:].reshape(bt.ntel, -1)
 
         # Massage the arrays into shape
         v = v.reshape(bt.ntel)
         Ni = Ni.reshape(bt.ntel)
-        Nh = Ni**0.5
+        Nh = Ni ** 0.5
 
         # Construct pre-wightened beam and beam-conjugated matrices
         bmt = bm * Nh[:, np.newaxis]
@@ -277,12 +287,14 @@ class WienerMapMaker(BaseMapMaker):
         l = np.arange(bt.telescope.lmax + 1)
         l[0] = 1  # Change l=0 to get around singularity
         l = l[m:]  # Trim off any l < m
-        cl_TT = self.prior_amp**2 * l**(-self.prior_tilt)
+        cl_TT = self.prior_amp ** 2 * l ** (-self.prior_tilt)
         S_diag = np.concatenate([cl_TT] * 4)
 
         # For large ntel it's quickest to solve in the standard Wiener filter way
         if bt.ntel > bt.nsky:
-            Ci = np.diag(1.0 / S_diag) + np.dot(bth, bmt)  # Construct the inverse covariance
+            Ci = np.diag(1.0 / S_diag) + np.dot(
+                bth, bmt
+            )  # Construct the inverse covariance
             a_dirty = np.dot(bth, vt)  # Find the dirty map
             a_wiener = la.solve(Ci, a_dirty, sym_pos=True)  # Solve to find C vt
 
@@ -309,8 +321,8 @@ def pinv_svd(M, acond=1e-4, rcond=1e-3):
 
     rank = np.sum(np.logical_and(sig > rcond * sig.max(), sig > acond))
 
-    psigma_diag = 1.0 / sig[: rank]
+    psigma_diag = 1.0 / sig[:rank]
 
-    B = np.transpose(np.conjugate(np.dot(u[:, : rank] * psigma_diag, vh[: rank])))
+    B = np.transpose(np.conjugate(np.dot(u[:, :rank] * psigma_diag, vh[:rank])))
 
     return B

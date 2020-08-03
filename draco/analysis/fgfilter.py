@@ -1,5 +1,12 @@
 """Tasks for foreground filtering data.
 """
+# === Start Python 2/3 compatibility
+from __future__ import absolute_import, division, print_function, unicode_literals
+from future.builtins import *  # noqa  pylint: disable=W0401, W0614
+from future.builtins.disabled import *  # noqa  pylint: disable=W0401, W0614
+
+# === End Python 2/3 compatibility
+
 
 import numpy as np
 
@@ -18,7 +25,7 @@ class _ProjectFilterBase(task.SingleTask):
         data through the basis (filter).
     """
 
-    mode = config.enum(['forward', 'backward', 'filter'], default='forward')
+    mode = config.enum(["forward", "backward", "filter"], default="forward")
 
     def process(self, inp):
         """Project or filter the input data.
@@ -33,13 +40,13 @@ class _ProjectFilterBase(task.SingleTask):
         output : memh5.BasicCont
         """
 
-        if self.mode == 'forward':
+        if self.mode == "forward":
             return self._forward(inp)
 
-        if self.mode == 'backward':
+        if self.mode == "backward":
             return self._backward(inp)
 
-        if self.mode == 'filter':
+        if self.mode == "filter":
             return self._backward(self._forward(inp))
 
     def _forward(self, inp):
@@ -72,12 +79,13 @@ class SVDModeProject(_ProjectFilterBase):
         bt = self.beamtransfer
         tel = bt.telescope
 
-        svdmodes = containers.SVDModes(mode=bt.ndofmax, axes_from=mmodes,
-                                       attrs_from=mmodes)
+        svdmodes = containers.SVDModes(
+            mode=bt.ndofmax, axes_from=mmodes, attrs_from=mmodes
+        )
         svdmodes.vis[:] = 0.0
 
-        mmodes.redistribute('m')
-        svdmodes.redistribute('m')
+        mmodes.redistribute("m")
+        svdmodes.redistribute("m")
 
         # Iterate over local m's, project mode and save to disk.
         for lm, mi in mmodes.vis[:].enumerate(axis=0):
@@ -86,7 +94,7 @@ class SVDModeProject(_ProjectFilterBase):
             svdm = bt.project_vector_telescope_to_svd(mi, tm)
 
             svdmodes.nmode[mi] = len(svdm)
-            svdmodes.vis[mi, :svdmodes.nmode[mi]] = svdm
+            svdmodes.vis[mi, : svdmodes.nmode[mi]] = svdm
 
             # TODO: apply transform correctly to weights. For now just crudely
             # transfer over the weights, only really good for determining
@@ -109,18 +117,21 @@ class SVDModeProject(_ProjectFilterBase):
 
         # Construct frequency index map
         freqmap = np.zeros(
-            len(tel.frequencies),
-            dtype=[('centre', np.float64), ('width', np.float64)]
+            len(tel.frequencies), dtype=[("centre", np.float64), ("width", np.float64)]
         )
-        freqmap['centre'][:] = tel.frequencies
-        freqmap['width'][:] = np.abs(np.diff(tel.frequencies)[0])
+        freqmap["centre"][:] = tel.frequencies
+        freqmap["width"][:] = np.abs(np.diff(tel.frequencies)[0])
 
         # Construct the new m-mode container
-        mmodes = containers.MModes(freq=freqmap, prod=tel.uniquepairs,
-                                   input=feed_index, attrs_from=svdmodes,
-                                   axes_from=svdmodes)
-        mmodes.redistribute('m')
-        svdmodes.redistribute('m')
+        mmodes = containers.MModes(
+            freq=freqmap,
+            prod=tel.uniquepairs,
+            input=feed_index,
+            attrs_from=svdmodes,
+            axes_from=svdmodes,
+        )
+        mmodes.redistribute("m")
+        svdmodes.redistribute("m")
 
         # Iterate over local m's, project mode and save to disk.
         for lm, mi in mmodes.vis[:].enumerate(axis=0):
@@ -170,28 +181,29 @@ class KLModeProject(_ProjectFilterBase):
         # Check and set the KL basis we are using
         if self.klname not in self.product_manager.kltransforms:
             raise RuntimeError(
-                'Requested KL basis %s not available (options are %s)' %
-                (self.klname, repr(self.product_manager.kltransforms.items()))
+                "Requested KL basis %s not available (options are %s)"
+                % (self.klname, repr(list(self.product_manager.kltransforms.items())))
             )
         kl = self.product_manager.kltransforms[self.klname]
 
         # Construct the container and redistribute
-        klmodes = containers.KLModes(mode=bt.ndofmax, axes_from=svdmodes,
-                                     attrs_from=svdmodes)
+        klmodes = containers.KLModes(
+            mode=bt.ndofmax, axes_from=svdmodes, attrs_from=svdmodes
+        )
 
         klmodes.vis[:] = 0.0
 
-        klmodes.redistribute('m')
-        svdmodes.redistribute('m')
+        klmodes.redistribute("m")
+        svdmodes.redistribute("m")
 
         # Iterate over local m's and project mode into KL basis
         for lm, mi in svdmodes.vis[:].enumerate(axis=0):
 
-            sm = svdmodes.vis[mi][:svdmodes.nmode[mi]]
+            sm = svdmodes.vis[mi][: svdmodes.nmode[mi]]
             klm = kl.project_vector_svd_to_kl(mi, sm, threshold=self.threshold)
 
             klmodes.nmode[mi] = len(klm)
-            klmodes.vis[mi, :klmodes.nmode[mi]] = klm
+            klmodes.vis[mi, : klmodes.nmode[mi]] = klm
 
             # TODO: apply transform correctly to weights. For now just crudely
             # transfer over the weights, only really good for determining
@@ -208,26 +220,27 @@ class KLModeProject(_ProjectFilterBase):
         # Check and set the KL basis we are using
         if self.klname not in self.product_manager.kltransforms:
             raise RuntimeError(
-                'Requested KL basis %s not available (options are %s)' %
-                (self.klname, repr(self.product_manager.kltransforms.items()))
+                "Requested KL basis %s not available (options are %s)"
+                % (self.klname, repr(list(self.product_manager.kltransforms.items())))
             )
         kl = self.product_manager.kltransforms[self.klname]
 
         # Construct the container and redistribute
 
-        svdmodes = containers.SVDModes(mode=bt.ndofmax, axes_from=klmodes,
-                                       attrs_from=klmodes)
-        klmodes.redistribute('m')
-        svdmodes.redistribute('m')
+        svdmodes = containers.SVDModes(
+            mode=bt.ndofmax, axes_from=klmodes, attrs_from=klmodes
+        )
+        klmodes.redistribute("m")
+        svdmodes.redistribute("m")
 
         # Iterate over local m's and project mode into KL basis
         for lm, mi in klmodes.vis[:].enumerate(axis=0):
 
-            klm = klmodes.vis[mi][:klmodes.nmode[mi]]
+            klm = klmodes.vis[mi][: klmodes.nmode[mi]]
             sm = kl.project_vector_kl_to_svd(mi, klm, threshold=self.threshold)
 
             svdmodes.nmode[mi] = len(sm)
-            svdmodes.vis[mi, :svdmodes.nmode[mi]] = sm
+            svdmodes.vis[mi, : svdmodes.nmode[mi]] = sm
 
             # TODO: apply transform correctly to weights. For now just crudely
             # transfer over the weights, only really good for determining

@@ -10,6 +10,13 @@ Tasks
     RandomGains
     GainStacker
 """
+# === Start Python 2/3 compatibility
+from __future__ import absolute_import, division, print_function, unicode_literals
+from future.builtins import *  # noqa  pylint: disable=W0401, W0614
+from future.builtins.disabled import *  # noqa  pylint: disable=W0401, W0614
+
+# === End Python 2/3 compatibility
+
 
 import numpy as np
 
@@ -48,17 +55,17 @@ class BaseGains(task.SingleTask):
         -------
         gain : :class:`containers.GainData`
         """
-        data.redistribute('freq')
+        data.redistribute("freq")
 
         time = data.time
 
         gain_data = containers.GainData(time=time, axes_from=data, comm=data.comm)
-        gain_data.redistribute('input')
+        gain_data.redistribute("input")
 
         # Save some useful attributes
         self.ninput_local = gain_data.gain.local_shape[1]
         self.ninput_global = gain_data.gain.global_shape[1]
-        self.freq = data.index_map['freq']['centre'][:]
+        self.freq = data.index_map["freq"]["centre"][:]
 
         gain_amp = 1.0
         gain_phase = 0.0
@@ -70,7 +77,7 @@ class BaseGains(task.SingleTask):
             gain_phase = self._generate_phase(time)
 
         # Combine into an overall gain fluctuation
-        gain_comb = gain_amp * np.exp(1.0J * gain_phase)
+        gain_comb = gain_amp * np.exp(1.0j * gain_phase)
 
         # Copy the gain entries into the output container
         gain = mpiarray.MPIArray.wrap(gain_comb, axis=1, comm=data.comm)
@@ -91,9 +98,10 @@ class BaseGains(task.SingleTask):
         amp : float
             Amplitude (given as standard deviation) of fluctuations.
         """
+
         def _cf(x):
             dij = x[:, np.newaxis] - x[np.newaxis, :]
-            return amp**2 * np.exp(-0.5 * (dij / zeta)**2)
+            return amp ** 2 * np.exp(-0.5 * (dij / zeta) ** 2)
 
         return _cf
 
@@ -109,7 +117,7 @@ class BaseGains(task.SingleTask):
         """
         raise NotImplementedError
 
-    def _generate_phase(self,  time):
+    def _generate_phase(self, time):
         """Generate phase gain errors.
 
         This implementation is blank. Must be overriden.
@@ -153,7 +161,11 @@ class SiderealGains(BaseGains):
         self.lsd_start = self.observer.unix_to_lsd(self.start_time)
         self.lsd_end = self.observer.unix_to_lsd(self.end_time)
 
-        self.log.info("Sidereal period requested: ", int(self.lsd_start), int(self.lsd_end))
+        self.log.info(
+            "Sidereal period requested: LSD=%i to LSD=%i",
+            int(self.lsd_start),
+            int(self.lsd_end),
+        )
 
         # Initialize the current lsd time
         self._current_lsd = None
@@ -185,14 +197,14 @@ class SiderealGains(BaseGains):
 
         # Distribute the sidereal data and create a time array
         data = self.sstream
-        data.redistribute('freq')
-        self.freq = data.index_map['freq']['centre'][:]
+        data.redistribute("freq")
+        self.freq = data.index_map["freq"]["centre"][:]
         nra = len(data.ra)
         time = np.linspace(unix_start, unix_end, nra, endpoint=False)
 
         # Make a sidereal gain data container
         gain_data = containers.SiderealGainData(axes_from=data, comm=data.comm)
-        gain_data.redistribute('input')
+        gain_data.redistribute("input")
 
         self.ninput_local = gain_data.gain.local_shape[1]
         self.ninput_global = gain_data.gain.global_shape[1]
@@ -207,13 +219,13 @@ class SiderealGains(BaseGains):
             gain_phase = self._generate_phase(time)
 
         # Combine into an overall gain fluctuation
-        gain_comb = gain_amp * np.exp(1.0J * gain_phase)
+        gain_comb = gain_amp * np.exp(1.0j * gain_phase)
 
         # Copy the gain entries into the output container
         gain = mpiarray.MPIArray.wrap(gain_comb, axis=1, comm=data.comm)
         gain_data.gain[:] = gain
-        gain_data.attrs['lsd'] = self._current_lsd
-        gain_data.attrs['tag'] = 'lsd_%i' % self._current_lsd
+        gain_data.attrs["lsd"] = self._current_lsd
+        gain_data.attrs["tag"] = "lsd_%i" % self._current_lsd
 
         # Increment current lsd
         self._current_lsd += 1
@@ -270,8 +282,9 @@ class RandomGains(BaseGains):
         ntime = len(time)
 
         # Generate amplitude fluctuations
-        gain_amp = generate_fluctuations(time, cf_amp, num_realisations,
-                                         self._prev_time, self._prev_amp)
+        gain_amp = generate_fluctuations(
+            time, cf_amp, num_realisations, self._prev_time, self._prev_amp
+        )
 
         # Save amplitude fluctuations to instannce
         self._prev_amp = gain_amp
@@ -290,8 +303,9 @@ class RandomGains(BaseGains):
         ntime = len(time)
 
         # Generate phase fluctuations
-        gain_phase_fluc = generate_fluctuations(time, cf_phase, num_realisations,
-                                                self._prev_time, self._prev_phase)
+        gain_phase_fluc = generate_fluctuations(
+            time, cf_phase, num_realisations, self._prev_time, self._prev_phase
+        )
 
         # Save phase fluctuations to instannce
         self._prev_phase = gain_phase_fluc
@@ -299,6 +313,15 @@ class RandomGains(BaseGains):
         gain_phase_fluc = gain_phase_fluc.reshape((len(self.freq), ninput, ntime))
 
         return gain_phase_fluc
+
+
+class RandomSiderealGains(RandomGains, SiderealGains):
+    """Generate random gains on a Sidereal grid.
+
+    See the documentation for `RandomGains` and `SiderealGains` for more detail.
+    """
+
+    pass
 
 
 class GainStacker(task.SingleTask):
@@ -351,10 +374,10 @@ class GainStacker(task.SingleTask):
         """
         stream = self.stream
 
-        prod = stream.index_map['prod']
+        prod = stream.index_map["prod"]
 
-        if 'lsd' in gain.attrs:
-            input_lsd = gain.attrs['lsd']
+        if "lsd" in gain.attrs:
+            input_lsd = gain.attrs["lsd"]
         else:
             input_lsd = -1
 
@@ -364,33 +387,33 @@ class GainStacker(task.SingleTask):
         # gain data and redistribute over all freq
         if self.gain_stack is None:
             self.gain_stack = containers.empty_like(stream)
-            self.gain_stack.redistribute('freq')
-            gain.redistribute('freq')
+            self.gain_stack.redistribute("freq")
+            gain.redistribute("freq")
 
             gsv = self.gain_stack.vis[:]
             g = gain.gain[:]
 
             for pi, (ii, jj) in enumerate(prod):
-                gsv[:, pi, :] = (g[:, ii] * np.conjugate(g[:, jj]))
+                gsv[:, pi, :] = g[:, ii] * np.conjugate(g[:, jj])
 
             self.gain_stack.weight[:] = np.ones(self.gain_stack.vis.local_shape)
 
             self.lsd_list = input_lsd
 
-            self.log.info("Starting gain stack with LSD:%i", input_lsd)
+            self.log.info("Starting gain stack with LSD:%i", input_lsd[0])
 
             return
 
         # Keep gains around for next round, save current lsd to list, log
-        self.log.info("Adding LSD:%i to gain stack", gain.attrs['lsd'])
+        self.log.info("Adding LSD:%i to gain stack", gain.attrs["lsd"])
 
-        gain.redistribute('freq')
+        gain.redistribute("freq")
         gsv = self.gain_stack.vis[:]
         g = gain.gain[:]
 
         # Calculate the gain products
         for pi, (ii, jj) in enumerate(prod):
-            gsv[:, pi] += (g[:, ii] * np.conjugate(g[:, jj]))
+            gsv[:, pi] += g[:, ii] * np.conjugate(g[:, jj])
 
         self.gain_stack.weight[:] += np.ones(self.gain_stack.vis.local_shape)
 
@@ -405,29 +428,33 @@ class GainStacker(task.SingleTask):
             Stack of sidereal data with gain applied.
         """
         # If requested, or shapes of visibilties and gain stack don't match then just return stack.
-        if (self.stream.vis[:].shape[-1] != self.gain_stack.vis[:].shape[-1]) or self.only_gains:
+        if (
+            self.stream.vis[:].shape[-1] != self.gain_stack.vis[:].shape[-1]
+        ) or self.only_gains:
             self.log.info("Saving only gain stack")
-            self.log.info("Either requested or shapes of visibilites and gain stack do not match")
+            self.log.info(
+                "Either requested or shapes of visibilites and gain stack do not match"
+            )
 
-            self.gain_stack.vis[:] = (self.gain_stack.vis[:] / self.gain_stack.weight[:])
+            self.gain_stack.vis[:] = self.gain_stack.vis[:] / self.gain_stack.weight[:]
 
             return self.gain_stack
 
         data = containers.empty_like(self.stream)
-        data.redistribute('freq')
+        data.redistribute("freq")
 
-        self.gain_stack.vis[:] = (self.gain_stack.vis[:] / self.gain_stack.weight[:])
+        self.gain_stack.vis[:] = self.gain_stack.vis[:] / self.gain_stack.weight[:]
         data.vis[:] = self.stream.vis[:] * self.gain_stack.vis[:]
         data.weight[:] = self.stream.weight[:]
 
-        data.attrs['tag'] = 'gain_stack'
+        data.attrs["tag"] = "gain_stack"
 
         return data
 
 
 def _ensure_list(x):
 
-    if hasattr(x, '__iter__'):
+    if hasattr(x, "__iter__"):
         y = [xx for xx in x]
     else:
         y = [x]
@@ -466,7 +493,8 @@ def generate_fluctuations(x, corrfunc, n, prev_x, prev_fluc):
 
     else:
         fluctuations = constrained_gaussian_realisation(
-            x, corrfunc, n, prev_x, prev_fluc).reshape(n, nx)
+            x, corrfunc, n, prev_x, prev_fluc
+        ).reshape(n, nx)
 
     return fluctuations
 
@@ -504,7 +532,7 @@ def _realisation(C, n, rcond):
     # construct a matrix projecting from the non-singular space
     evals, evecs = la.eigh(C)
     num = np.sum(evals > rcond * evals[-1])
-    R = evecs[:, -num:] * evals[np.newaxis, -num:]**0.5
+    R = evecs[:, -num:] * evals[np.newaxis, -num:] ** 0.5
 
     # Generate independent gaussian variables
     w = np.random.standard_normal((n, num))
@@ -544,7 +572,7 @@ def constrained_gaussian_realisation(x, corrfunc, n, x2, y2, rcond=1e-12):
     import scipy.linalg as la
 
     if (y2.ndim >= 2) and (n != y2.shape[0]):
-        raise ValueError('Array y2 of existing data has the wrong shape.')
+        raise ValueError("Array y2 of existing data has the wrong shape.")
 
     # Calculate the covariance matrix for the full dataset
     xc = np.concatenate([x, x2])

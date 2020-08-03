@@ -4,6 +4,13 @@ Tasks should be proactively moved out of here when there is a thematically
 appropriate module, or enough related tasks end up in here such that they can
 all be moved out into their own module.
 """
+# === Start Python 2/3 compatibility
+from __future__ import absolute_import, division, print_function, unicode_literals
+from future.builtins import *  # noqa  pylint: disable=W0401, W0614
+from future.builtins.disabled import *  # noqa  pylint: disable=W0401, W0614
+
+# === End Python 2/3 compatibility
+
 
 import numpy as np
 
@@ -24,6 +31,7 @@ class ApplyGain(task.SingleTask):
         Scale the weight array with the updated gains.
     smoothing_length : float, optional
         Smooth the gain timestream across the given number of seconds.
+        Not supported (ignored) for Sidereal Streams.
     """
 
     inverse = config.Property(proptype=bool, default=True)
@@ -31,9 +39,27 @@ class ApplyGain(task.SingleTask):
     smoothing_length = config.Property(proptype=float, default=None)
 
     def process(self, tstream, gain):
+        """Apply gains to the given timestream.
 
-        tstream.redistribute('freq')
-        gain.redistribute('freq')
+        Smoothing the gains is not supported for SiderealStreams.
+
+        Parameters
+        ----------
+        tstream : TimeStream like or SiderealStream
+            Time stream to apply gains to. The gains are applied in place.
+        gain : StaticGainData, GainData or SiderealGainData
+            Gains to apply.
+
+        Returns
+        -------
+        tstream : TimeStream or SiderealStream
+            The timestream with the gains applied.
+        """
+        tstream.redistribute("freq")
+        gain.redistribute("freq")
+
+        if tstream.is_stacked:
+            raise ValueError("Cannot apply gains to stacked data: %s" % tstream)
 
         if isinstance(gain, containers.StaticGainData):
 
@@ -41,9 +67,11 @@ class ApplyGain(task.SingleTask):
             gain_arr = gain.gain[:][..., np.newaxis]
 
             # Get the weight array if it's there
-            weight_arr = gain.weight[:][..., np.newaxis] if gain.weight is not None else None
+            weight_arr = (
+                gain.weight[:][..., np.newaxis] if gain.weight is not None else None
+            )
 
-        elif isinstance(gain, containers.GainData):
+        elif isinstance(gain, (containers.GainData, containers.SiderealGainData)):
 
             # Extract gain array
             gain_arr = gain.gain[:]
@@ -54,38 +82,51 @@ class ApplyGain(task.SingleTask):
             # Get the weight array if it's there
             weight_arr = gain.weight[:] if gain.weight is not None else None
 
-            # Check that we are defined at the same time samples
-            if (gain.time != tstream.time).any():
-                raise RuntimeError('Gain data and timestream defined at different time samples.')
+            if isinstance(gain, containers.SiderealGainData):
 
-            # Smooth the gain data if required
-            if self.smoothing_length is not None:
-                import scipy.signal as ss
+                # Check that we are defined at the same RA samples
+                if (gain.ra != tstream.ra).any():
+                    raise RuntimeError(
+                        "Gain data and sidereal stream defined at different RA samples."
+                    )
 
-                # Turn smoothing length into a number of samples
-                tdiff = gain.time[1] - gain.time[0]
-                samp = int(np.ceil(self.smoothing_length / tdiff))
+            else:
+                # We are using a time stream
 
-                # Ensure smoothing length is odd
-                l = 2 * (samp / 2) + 1
+                # Check that we are defined at the same time samples
+                if (gain.time != tstream.time).any():
+                    raise RuntimeError(
+                        "Gain data and timestream defined at different time samples."
+                    )
 
-                # Turn into 2D array (required by smoothing routines)
-                gain_r = gain_arr.reshape(-1, gain_arr.shape[-1])
+                # Smooth the gain data if required
+                if self.smoothing_length is not None:
+                    import scipy.signal as ss
 
-                # Smooth amplitude and phase separately
-                smooth_amp = ss.medfilt2d(np.abs(gain_r), kernel_size=[1, l])
-                smooth_phase = ss.medfilt2d(np.angle(gain_r), kernel_size=[1, l])
+                    # Turn smoothing length into a number of samples
+                    tdiff = gain.time[1] - gain.time[0]
+                    samp = int(np.ceil(self.smoothing_length / tdiff))
 
-                # Recombine and reshape back to original shape
-                gain_arr = smooth_amp * np.exp(1.0J * smooth_phase)
-                gain_arr = gain_arr.reshape(gain.gain[:].shape)
+                    # Ensure smoothing length is odd
+                    l = 2 * (samp // 2) + 1
 
-                # Smooth weight array if it exists
-                if weight_arr is not None:
-                    weight_arr = ss.medfilt2d(weight_arr, kernel_size=[1, l])
+                    # Turn into 2D array (required by smoothing routines)
+                    gain_r = gain_arr.reshape(-1, gain_arr.shape[-1])
+
+                    # Smooth amplitude and phase separately
+                    smooth_amp = ss.medfilt2d(np.abs(gain_r), kernel_size=[1, l])
+                    smooth_phase = ss.medfilt2d(np.angle(gain_r), kernel_size=[1, l])
+
+                    # Recombine and reshape back to original shape
+                    gain_arr = smooth_amp * np.exp(1.0j * smooth_phase)
+                    gain_arr = gain_arr.reshape(gain.gain[:].shape)
+
+                    # Smooth weight array if it exists
+                    if weight_arr is not None:
+                        weight_arr = ss.medfilt2d(weight_arr, kernel_size=[1, l])
 
         else:
-            raise RuntimeError('Format of `gain` argument is unknown.')
+            raise RuntimeError("Format of `gain` argument is unknown.")
 
         # Regularise any crazy entries
         gain_arr = np.nan_to_num(gain_arr)
@@ -97,24 +138,73 @@ class ApplyGain(task.SingleTask):
         # Apply gains to visibility matrix
         self.log.info("Applying inverse gain." if self.inverse else "Applying gain.")
         gvis = inverse_gain_arr if self.inverse else gain_arr
-        tools.apply_gain(tstream.vis[:], gvis, out=tstream.vis[:])
+        if isinstance(gain, containers.SiderealGainData):
+            # Need a prod_map for sidereal streams
+            tools.apply_gain(
+                tstream.vis[:], gvis, out=tstream.vis[:], prod_map=tstream.prod
+            )
+        else:
+            tools.apply_gain(tstream.vis[:], gvis, out=tstream.vis[:])
 
         # Apply gains to the weights
         if self.update_weight:
             self.log.info("Applying gain to weight.")
-            gweight = np.abs(gain_arr if self.inverse else inverse_gain_arr)**2
+            gweight = np.abs(gain_arr if self.inverse else inverse_gain_arr) ** 2
+        else:
+            gweight = np.ones(gain_arr.shape, dtype=np.float64)
+
+        if weight_arr is not None:
+            gweight *= (weight_arr[:] > 0.0).astype(np.float64)
+
+        if isinstance(gain, containers.SiderealGainData):
+            # Need a prod_map for sidereal streams
+            tools.apply_gain(
+                tstream.weight[:], gweight, out=tstream.weight[:], prod_map=tstream.prod
+            )
+        else:
             tools.apply_gain(tstream.weight[:], gweight, out=tstream.weight[:])
 
-        # Update units if thet were specified
-        convert_units_to = gain.gain.attrs.get('convert_units_to')
+        # Update units if they were specified
+        convert_units_to = gain.gain.attrs.get("convert_units_to")
         if convert_units_to is not None:
-            tstream.vis.attrs['units'] = convert_units_to
-
-        # Modify the weight array according to the gain weights
-        if weight_arr is not None:
-
-            # Convert dynamic range to a binary weight and apply to data
-            gain_weight = (weight_arr[:] > 2.0).astype(np.float64)
-            tstream.weight[:] *= gain_weight[:, np.newaxis, :]
+            tstream.vis.attrs["units"] = convert_units_to
 
         return tstream
+
+
+class AccumulateList(task.MPILoggedTask):
+    """Accumulate the inputs into a list and return when the task *finishes*."""
+
+    def __init__(self):
+        super(AccumulateList, self).__init__()
+        self._items = []
+
+    def next(self, input_):
+        self._items.append(input_)
+
+    def finish(self):
+
+        # Remove the internal reference to the items so they don't hang around after the task
+        # finishes
+        items = self._items
+        del self._items
+
+        return items
+
+
+class WaitUntil(task.MPILoggedTask):
+    """Wait until the the requires before forwarding inputs.
+
+    This simple synchronization task will forward on whatever inputs it gets, however, it won't do
+    this until it receives any requirement to it's setup method. This allows certain parts of the
+    pipeline to be delayed until a piece of data further up has been generated.
+    """
+
+    def setup(self, input_):
+        """Accept, but don't save any input."""
+        self.log.info("Received the requirement, starting to forward inputs")
+        pass
+
+    def next(self, input_):
+        """Immediately forward any input."""
+        return input_

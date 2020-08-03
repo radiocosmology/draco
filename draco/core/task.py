@@ -9,7 +9,16 @@ Tasks
     SingleTask
     ReturnLastInputOnFinish
     ReturnFirstInputOnFinish
+    Delete
 """
+# === Start Python 2/3 compatibility
+from __future__ import absolute_import, division, print_function, unicode_literals
+from future.builtins import *  # noqa  pylint: disable=W0401, W0614
+from future.builtins.disabled import *  # noqa  pylint: disable=W0401, W0614
+from past.builtins import basestring
+
+# === End Python 2/3 compatibility
+
 import os
 import logging
 
@@ -34,8 +43,9 @@ class MPILogFilter(logging.Filter):
         Log level for messages from all other ranks.
     """
 
-    def __init__(self, add_mpi_info=True, level_rank0=logging.INFO,
-                 level_all=logging.WARN):
+    def __init__(
+        self, add_mpi_info=True, level_rank0=logging.INFO, level_all=logging.WARN
+    ):
 
         from mpi4py import MPI
 
@@ -60,8 +70,9 @@ class MPILogFilter(logging.Filter):
         record.elapsedTime = record.relativeCreated * 1e-3
 
         # Return whether we should filter the record or not.
-        return ((record.mpi_rank == 0 and record.levelno >= self.level_rank0) or
-                (record.mpi_rank > 0 and record.levelno >= self.level_all))
+        return (record.mpi_rank == 0 and record.levelno >= self.level_rank0) or (
+            record.mpi_rank > 0 and record.levelno >= self.level_all
+        )
 
 
 def _log_level(x):
@@ -79,20 +90,20 @@ def _log_level(x):
     """
 
     level_dict = {
-        'DEBUG': logging.DEBUG,
-        'INFO': logging.INFO,
-        'WARN': logging.WARN,
-        'WARNING': logging.WARN,
-        'ERROR': logging.ERROR,
-        'CRITICAL': logging.CRITICAL
+        "DEBUG": logging.DEBUG,
+        "INFO": logging.INFO,
+        "WARN": logging.WARN,
+        "WARNING": logging.WARN,
+        "ERROR": logging.ERROR,
+        "CRITICAL": logging.CRITICAL,
     }
 
     if isinstance(x, int):
         return x
-    elif isinstance(x, str) and x in level_dict:
+    elif isinstance(x, basestring) and x in level_dict:
         return level_dict[x.upper()]
     else:
-        raise ValueError('Logging level %s not understood' % repr(x))
+        raise ValueError("Logging level %s not understood" % repr(x))
 
 
 class SetMPILogging(pipeline.TaskBase):
@@ -129,8 +140,9 @@ class SetMPILogging(pipeline.TaskBase):
         ch.addFilter(filt)
 
         formatter = logging.Formatter(
-            "%(elapsedTime)8.1fs " + mpi_fmt +
-            " - %(levelname)-8s %(name)s: %(message)s"
+            "%(elapsedTime)8.1fs "
+            + mpi_fmt
+            + " - %(levelname)-8s %(name)s: %(message)s"
         )
 
         ch.setFormatter(formatter)
@@ -145,8 +157,7 @@ class LoggedTask(pipeline.TaskBase):
     def __init__(self):
 
         # Get the logger for this task
-        self._log = logging.getLogger("%s.%s" %
-                                      (__name__, self.__class__.__name__))
+        self._log = logging.getLogger("%s.%s" % (__name__, self.__class__.__name__))
 
         # Set the log level for this task if specified
         if self.log_level is not None:
@@ -187,11 +198,11 @@ class _AddRankLogAdapter(logging.LoggerAdapter):
 
     def process(self, msg, kwargs):
 
-        if 'extra' not in kwargs:
-            kwargs['extra'] = {}
+        if "extra" not in kwargs:
+            kwargs["extra"] = {}
 
-        kwargs['extra']['mpi_rank'] = self.calling_obj.comm.rank
-        kwargs['extra']['mpi_size'] = self.calling_obj.comm.size
+        kwargs["extra"]["mpi_rank"] = self.calling_obj.comm.rank
+        kwargs["extra"]["mpi_size"] = self.calling_obj.comm.size
 
         return msg, kwargs
 
@@ -237,15 +248,31 @@ class SingleTask(MPILoggedTask, pipeline.BasicContMixin):
     ----------
     save : bool
         Whether to save the output to disk or not.
+    output_name : string
+        A python format string used to construct the filename. Valid identifiers are:
+          - `count`: an integer giving which iteration of the task is this.
+          - `tag`: a string identifier for the output derived from the
+                   containers `tag` attribute. If that attribute is not present
+                   `count` is used instead.
+          - `key`: the name of the output key.
+          - `task`: the (unqualified) name of the task.
+          - `output_root`: the value of the output root argument. This is deprecated
+                           and is just used for legacy support. The default value of
+                           `output_name` means the previous behaviour works.
     output_root : string
         Pipeline settable parameter giving the first part of the output path.
-        If set to 'None' no output is written.
+        Deprecated in favour of `output_name`.
     nan_check : bool
         Check the output for NaNs (and infs) logging if they are present.
     nan_dump : bool
         If NaN's are found, dump the container to disk.
     nan_skip : bool
         If NaN's are found, don't pass on the output.
+    versions : dict
+        Keys are module names (str) and values are their version strings. This is
+        attached to output metadata.
+    pipeline_config : dict
+        Global pipeline configuration. This is attached to output metadata.
 
     Methods
     -------
@@ -260,11 +287,17 @@ class SingleTask(MPILoggedTask, pipeline.BasicContMixin):
     """
 
     save = config.Property(default=False, proptype=bool)
-    output_root = config.Property(default='', proptype=str)
+
+    output_root = config.Property(default="", proptype=str)
+    output_name = config.Property(default="{output_root}{tag}.h5", proptype=str)
 
     nan_check = config.Property(default=True, proptype=bool)
     nan_skip = config.Property(default=True, proptype=bool)
     nan_dump = config.Property(default=True, proptype=bool)
+
+    # Metadata to get attached to the output
+    versions = config.Property(default={}, proptype=dict)
+    pipeline_config = config.Property(default={}, proptype=dict)
 
     _count = 0
 
@@ -283,8 +316,10 @@ class SingleTask(MPILoggedTask, pipeline.BasicContMixin):
         n_args = len(pro_argspec.args) - 1
 
         if pro_argspec.varargs or pro_argspec.keywords or pro_argspec.defaults:
-            msg = ("`process` method may not have variable length or optional"
-                   " arguments.")
+            msg = (
+                "`process` method may not have variable length or optional"
+                " arguments."
+            )
             raise pipeline.PipelineConfigError(msg)
 
         if n_args == 0:
@@ -320,8 +355,8 @@ class SingleTask(MPILoggedTask, pipeline.BasicContMixin):
             return
 
         # Set a tag in output if needed
-        if 'tag' not in output.attrs and len(input) > 0 and 'tag' in input[0].attrs:
-            output.attrs['tag'] = input[0].attrs['tag']
+        if "tag" not in output.attrs and len(input) > 0 and "tag" in input[0].attrs:
+            output.attrs["tag"] = input[0].attrs["tag"]
 
         # Check for NaN's etc
         output = self._nan_process_output(output)
@@ -361,14 +396,29 @@ class SingleTask(MPILoggedTask, pipeline.BasicContMixin):
 
     def _save_output(self, output):
         # Routine to write output if needed.
-
         if self.save and output is not None:
 
+            # add metadata to output
+            metadata = {"versions": self.versions, "config": self.pipeline_config}
+            for key, value in metadata.items():
+                if key in output.attrs:
+                    raise RuntimeError(
+                        "Can't write {} to output: it already exists.".format(key)
+                    )
+                output.attrs[key] = value
+
             # Create a tag for the output file name
-            tag = output.attrs['tag'] if 'tag' in output.attrs else self._count
+            tag = output.attrs["tag"] if "tag" in output.attrs else self._count
 
             # Construct the filename
-            outfile = self.output_root + str(tag) + '.h5'
+            name_parts = {
+                "tag": tag,
+                "count": self._count,
+                "task": self.__class__.__name__,
+                "key": self._out_keys[0] if self._out_keys else "",
+                "output_root": self.output_root,
+            }
+            outfile = self.output_name.format(**name_parts)
 
             # Expand any variables in the path
             outfile = os.path.expanduser(outfile)
@@ -376,7 +426,6 @@ class SingleTask(MPILoggedTask, pipeline.BasicContMixin):
 
             self.log.debug("Writing output %s to disk.", outfile)
             self.write_output(outfile, output)
-
 
     def _nan_process_output(self, output):
         # Process the output to check for NaN's
@@ -388,8 +437,8 @@ class SingleTask(MPILoggedTask, pipeline.BasicContMixin):
             if nan_found and self.nan_dump:
 
                 # Construct the filename
-                tag = output.attrs['tag'] if 'tag' in output.attrs else self._count
-                outfile = "nandump_" + self.__class__.__name__ + "_" +  str(tag) + '.h5'
+                tag = output.attrs["tag"] if "tag" in output.attrs else self._count
+                outfile = "nandump_" + self.__class__.__name__ + "_" + str(tag) + ".h5"
                 self.log.debug("NaN found. Dumping %s", outfile)
                 self.write_output(outfile, output)
 
@@ -427,13 +476,21 @@ class SingleTask(MPILoggedTask, pipeline.BasicContMixin):
                     continue
 
                 if is_nan.any():
-                    self.log.info("NaN's found in dataset %s [%i of %i elements]",
-                                  n.name, is_nan.sum(), arr.size)
+                    self.log.info(
+                        "NaN's found in dataset %s [%i of %i elements]",
+                        n.name,
+                        is_nan.sum(),
+                        arr.size,
+                    )
                     found = True
 
                 if is_inf.any():
-                    self.log.info("Inf's found in dataset %s [%i of %i elements]",
-                                  n.name, is_inf.sum(), arr.size)
+                    self.log.info(
+                        "Inf's found in dataset %s [%i of %i elements]",
+                        n.name,
+                        is_inf.sum(),
+                        arr.size,
+                    )
                     found = True
 
             elif isinstance(n, (memh5.MemGroup, memh5.MemDiskGroup)):
@@ -452,6 +509,7 @@ class ReturnLastInputOnFinish(SingleTask):
     This caches its input on every call to `process` and then returns
     the last one for a finish call.
     """
+
     x = None
 
     def process(self, x):
@@ -480,6 +538,7 @@ class ReturnFirstInputOnFinish(SingleTask):
     This caches its input on the first call to `process` and
     then returns it for a finish call.
     """
+
     x = None
 
     def process(self, x):
@@ -501,3 +560,23 @@ class ReturnFirstInputOnFinish(SingleTask):
             Last input to process.
         """
         return self.x
+
+
+class Delete(SingleTask):
+    """Delete pipeline products to free memory."""
+
+    def process(self, x):
+        """Delete the input and collect garbage.
+
+        Parameters
+        ----------
+        x : object
+            The object to be deleted.
+        """
+        import gc
+
+        self.log.info("Deleting %s" % type(x))
+        del x
+        gc.collect()
+
+        return None
