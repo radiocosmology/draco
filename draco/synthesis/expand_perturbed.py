@@ -41,7 +41,10 @@ class ExpandPerturbedProducts(task.SingleTask):
         """
         self.telescope = io.get_telescope(bt)
         ninput = self.telescope.nfeed / self.telescope.npert
-
+        if not ninput.is_integer():
+            raise Exception('nfeed/npert is not an integer!')
+        ninput = int(ninput)
+        
         self._generate_pertubations(ninput)
 
     def process(self, sstream):
