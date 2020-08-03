@@ -158,9 +158,9 @@ class ExpandPerturbedProducts(task.SingleTask):
 
     def _generate_pertubations(self, ninput):
         """Initialise beam pertubations for input channels"""
-        if self.comm == 0:
+        if self.comm.rank == 0:
             # Choose random pertubations, each frequency and input?
-            pertubations = np.random.normal(0, self.pert_value, size=ninput)
+            pertubations = np.random.normal(0, self.pert_val, size=ninput)
 
         else:
             pertubations = None
