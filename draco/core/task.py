@@ -398,14 +398,15 @@ class SingleTask(MPILoggedTask, pipeline.BasicContMixin):
         # Routine to write output if needed.
         if self.save and output is not None:
 
-            # add metadata to output
-            metadata = {"versions": self.versions, "config": self.pipeline_config}
-            for key, value in metadata.items():
-                if key in output.attrs:
-                    raise RuntimeError(
-                        "Can't write {} to output: it already exists.".format(key)
-                    )
-                output.attrs[key] = value
+            ### SJF: commented out until proper fix is available
+            # # add metadata to output
+            # metadata = {"versions": self.versions, "config": self.pipeline_config}
+            # for key, value in metadata.items():
+            #     if key in output.attrs:
+            #         raise RuntimeError(
+            #             "Can't write {} to output: it already exists.".format(key)
+            #         )
+            #     output.attrs[key] = value
 
             # Create a tag for the output file name
             tag = output.attrs["tag"] if "tag" in output.attrs else self._count
