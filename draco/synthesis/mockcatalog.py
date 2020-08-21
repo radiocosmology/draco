@@ -1,6 +1,6 @@
-"""Take a quasar catalog and a 21cm simulated map and generate mock 
-catalogs correlated to the 21cm maps and following a selection function
-derived from the original catalog.
+"""Take a source catalog and a (possibly biased) matter simulated map 
+and generate mock catalogs correlated to the matter maps and following 
+a selection function derived from the original catalog.
 
 Pipeline tasks
 ==============
@@ -10,7 +10,7 @@ Pipeline tasks
 
     SelFuncEstimator
     PdfGenerator
-    MockQCatGenerator
+    MockCatGenerator
 
 Internal functions
 ==================
@@ -30,7 +30,7 @@ Usage
 Generally you would want to use these tasks together. Providing a catalog
 path to :class:`SelFuncEstimator`, then feeding the resulting selection
 function to :class:`PdfGenerator` and finally passing the resulting
-probability distribution function to :class:`MockQCatGenerator` to generate
+probability distribution function to :class:`MockCatGenerator` to generate
 mock catalogs. Below is an example of yaml file to generate mock catalogs:
 
 >>> spam_config = '''
@@ -45,20 +45,20 @@ mock catalogs. Below is an example of yaml file to generate mock catalogs:
 ...             requires: selfunc
 ...             out:      pdf_map
 ... 
-...         -   type:     draco.synthesis.mockcatalog.MockQCatGenerator
+...         -   type:     draco.synthesis.mockcatalog.MockCatGenerator
 ...             params:   mqcat_params
 ...             requires: pdf_map
-...             out:      mockqcat
+...             out:      mockcat
 ... 
 ... selfunc_params:
-...     bqcat_path: '/bg01/homescinet/k/krs/jrs65/sdss_quasar_catalog.h5'
+...     bcat_path: '/bg01/homescinet/k/krs/jrs65/sdss_quasar_catalog.h5'
 ...     nside: 16
 ... 
 ... pdf_params:
 ...     qsomaps_path: '/scratch/k/krs/fandino/xcorrSDSS/sim21cm/21cmmap.hdf5'
 ... 
 ... mqcat_params:
-...     nqsos: 200000
+...     nsources: 200000
 ...     ncats: 5
 ...     save: True
 ...     output_root: '/scratch/k/krs/fandino/test_mqcat/mqcat'
@@ -90,13 +90,13 @@ from mpi4py import MPI
 
 
 class SelFuncEstimator(task.SingleTask):
-    """Takes a quasar catalog as input and returns an estimate of the
+    """Takes a source catalog as input and returns an estimate of the
     selection function based on a low rank SVD reconstruction.
 
     Attributes
     ----------
-    bqcat_path : str
-        Full path to base quasar catalog.
+    bcat_path : str
+        Full path to base source catalog.
     nside : int
         NSIDE for catalog maps generated for the SVD.
     n_z : int
@@ -111,7 +111,7 @@ class SelFuncEstimator(task.SingleTask):
 
     """
 
-    bqcat_path = config.Property(proptype=str)
+    bcat_path = config.Property(proptype=str)
     density_maps_path = config.Property(proptype=str, default="")
 
     # These seem to be optimal parameters and should not
@@ -125,8 +125,8 @@ class SelFuncEstimator(task.SingleTask):
     def setup(self):
         """
         """
-        # Load base quasar catalog from file:
-        self._base_qcat = containers.SpectroscopicCatalog.from_file(self.bqcat_path)
+        # Load base source catalog from file:
+        self._base_qcat = containers.SpectroscopicCatalog.from_file(self.bcat_path)
 
         if self.density_maps_path != "":
             densitymaps = containers.Map.from_file(
@@ -142,7 +142,7 @@ class SelFuncEstimator(task.SingleTask):
     def process(self):
         """Put the base catalog into maps. SVD the maps and recover
         with a small number of modes. This smoothes out the distribution
-        quasars and provides an estimate of the selection function used.
+        sources and provides an estimate of the selection function used.
         """
         # Number of pixels to use in catalog maps for SVD
         n_pix = hp.pixelfunc.nside2npix(self.nside)
@@ -160,23 +160,23 @@ class SelFuncEstimator(task.SingleTask):
         # No point in distributing this in a mpi clever way
         # because I need to SVD it.
         maps = np.zeros((self.n_z, n_pix))
-        # Indices of each qso in z axis:
+        # Indices of each source in z axis:
         idxs = (
             np.digitize(self.base_qcat["redshift"]["z"], zlims_selfunc) - 1
         )  # -1 to get indices
-        # Map pixel of each qso
+        # Map pixel of each source
         pixls = _radec_to_pix(
             self.base_qcat["position"]["ra"],
             self.base_qcat["position"]["dec"],
             self.nside,
         )
         for jj in range(self.n_z):
-            zpixls = pixls[idxs == jj]  # Map pixels of qsos in z bin jj
+            zpixls = pixls[idxs == jj]  # Map pixels of sources in z bin jj
             for kk in range(n_pix):
-                # Number of quasars in z bin jj and pixel kk
+                # Number of sources in z bin jj and pixel kk
                 maps[jj, kk] = np.sum(zpixls == kk)
 
-        # SVD the quasar density maps:
+        # SVD the source density maps:
         svd = np.linalg.svd(maps, full_matrices=0)
 
         # Map container to store the selection function:
@@ -221,22 +221,22 @@ class SelFuncEstimator(task.SingleTask):
 
 
 class PdfGenerator(task.SingleTask):
-    """Take a quasar catalog selection function and simulated Quasar
+    """Take a source catalog selection function and simulated source
     (biased density) maps and return a PDF map correlated with the 
     density maps and the selection function. This PDF map can be used 
-    by the task :class:`MockQCatGenerator` to draw mock catalogs.
+    by the task :class:`MockCatGenerator` to draw mock catalogs.
 
     Attributes
     ----------
-    qsomaps_path : str
-        Full path to simulated QSO maps.
+    source_maps_path : str
+        Full path to simulated source maps (biased matter density fluctuations).
     random_catalog : bool
         Is True generate random catalogs, not correlated with the maps.
         Default is False.
 
     """
 
-    qsomaps_path = config.Property(proptype=str)
+    source_maps_path = config.Property(proptype=str)
     random_catalog = config.Property(proptype=bool, default=False)
 
     def setup(self, selfunc):
@@ -244,34 +244,34 @@ class PdfGenerator(task.SingleTask):
         """
         self.selfunc = selfunc
 
-        # Load QSO CORA maps from file:
-        qsomaps = containers.Map.from_file(self.qsomaps_path, distributed=True)
+        # Load source maps from file:
+        source_maps = containers.Map.from_file(self.source_maps_path, distributed=True)
         if self.random_catalog:
             # To make a random (not correlated) catalog
-            qsomaps.map[:] = np.zeros_like(qsomaps.map)
+            source_maps.map[:] = np.zeros_like(source_maps.map)
 
-        self.qsomaps = qsomaps  # Setter sets other parameters too
+        self.source_maps = source_maps  # Setter sets other parameters too
 
         # For easy access to communicator:
-        self.comm_ = self.qsomaps.comm
+        self.comm_ = self.source_maps.comm
         self.rank = self.comm_.Get_rank()  # Unused for now
 
     def process(self):
         """
         """
         # From frequency to redshift:
-        z = _freq_to_z(self.qsomaps.index_map["freq"])
+        z = _freq_to_z(self.source_maps.index_map["freq"])
         n_z = len(z)
 
         # Freq to redshift of selection function:
         z_selfunc = _freq_to_z(self.selfunc.index_map["freq"])
 
         # Re-distribute maps in pixels:
-        self.qsomaps.redistribute(dist_axis=2)
+        self.source_maps.redistribute(dist_axis=2)
 
         # TODO: Change h1maps for something more generic, like density_maps
 
-        rho_m = mpiarray.MPIArray.wrap(self.qsomaps.map[:, 0, :] + 1.0, axis=1)
+        rho_m = mpiarray.MPIArray.wrap(self.source_maps.map[:, 0, :] + 1.0, axis=1)
 
         # Re-distribute in frequencies before normalizing
         # (which requires summing over pixels)
@@ -290,7 +290,7 @@ class PdfGenerator(task.SingleTask):
             self.selfunc.map[:, 0, :], rho_m.global_shape, z, z_selfunc
         )
 
-        # Generate wheights for correct distribution of quasars in redshift:
+        # Generate wheights for correct distribution of sources in redshift:
         z_wheights = np.sum(resized_selfunc, axis=1)
         # Sum wheights in each comm rank. Need array of scalar here.
         z_total_temp = mpiarray.MPIArray.wrap(
@@ -314,7 +314,7 @@ class PdfGenerator(task.SingleTask):
 
         # Put PDF in a map container:
         pdf_map = containers.Map(
-            nside=self._nside, polarisation=False, freq=self.qsomaps.index_map["freq"]
+            nside=self._nside, polarisation=False, freq=self.source_maps.index_map["freq"]
         )
 
         # I am not sure I need this test every time:
@@ -369,44 +369,44 @@ class PdfGenerator(task.SingleTask):
         return mpiarray.MPIArray.wrap(resized_map, axis=0)
 
     @property
-    def qsomaps(self):
-        return self._qsomaps
+    def source_maps(self):
+        return self._source_maps
 
-    @qsomaps.setter
-    def qsomaps(self, qsomaps):
+    @source_maps.setter
+    def source_maps(self, source_maps):
         """
-        Setter for qsomaps
+        Setter for source_maps
         Also set the attributes:
-            self._npix : Number of pixels in CORA QSO maps 
-            self._nside : NSIDE of CORA QSO maps
+            self._npix : Number of pixels in source maps 
+            self._nside : NSIDE of source maps
 
         """
-        if isinstance(qsomaps, containers.Map):
-            self._qsomaps = qsomaps
-            self._npix = len(self._qsomaps.index_map["pixel"])
+        if isinstance(source_maps, containers.Map):
+            self._source_maps = source_maps
+            self._npix = len(self._source_maps.index_map["pixel"])
             self._nside = hp.pixelfunc.npix2nside(self._npix)
         else:
             msg = (
-                "qsomaps is not an instance of "
+                "source_maps is not an instance of "
                 + "draco.core.containers.Map\n"
-                + "Value for _qsomaps not set."
+                + "Value for _source_maps not set."
             )
             print(msg)
 
 
-class MockQCatGenerator(task.SingleTask):
+class MockCatGenerator(task.SingleTask):
     """Take PDF maps generated by task :class:`PdfGenerator` 
     and use it to draw mock catalogs.
 
     Attributes
     ----------
-    nqsos : int
-        Number of quasars to draw in each mock catalog
+    nsources : int
+        Number of sources to draw in each mock catalog
     ncats : int
         Number of catalogs to generate 
     """
 
-    nqsos = config.Property(proptype=int)
+    nsources = config.Property(proptype=int)
     ncats = config.Property(proptype=int)
 
     def setup(self, pdf_map):
@@ -438,7 +438,7 @@ class MockQCatGenerator(task.SingleTask):
             self.global_z_wheights = None
 
         # Gather z_wheights on rank 0 (necessary to draw a redshift
-        # distribution of quasars):
+        # distribution of sources):
         self.comm_.Gatherv(
             z_wheights,
             [
@@ -450,7 +450,7 @@ class MockQCatGenerator(task.SingleTask):
             root=0,
         )
 
-        # CDF to draw quasars from:
+        # CDF to draw sources from:
         self.cdf = np.cumsum(self.pdf.map[:, 0, :], axis=1)
         # Normalize:
         self.cdf = self.cdf / self.cdf[:, -1][:, np.newaxis]
@@ -461,38 +461,38 @@ class MockQCatGenerator(task.SingleTask):
 
         if self.rank == 0:
             # Only rank zero is relevant. All the others are None.
-            # The number of quasars in each redshift bin follows a multinomial
+            # The number of sources in each redshift bin follows a multinomial
             # distribution (reshape from (1,nz) to (nz) to make a 1D array):
-            global_qso_numbers = np.random.multinomial(
-                self.nqsos, self.global_z_wheights
+            global_source_numbers = np.random.multinomial(
+                self.nsources, self.global_z_wheights
             )
         else:
-            # All processes must have a value for qso_numbers:
-            global_qso_numbers = None
+            # All processes must have a value for source_numbers:
+            global_source_numbers = None
 
-        qso_numbers = np.zeros(self.ls, dtype=np.int)
+        source_numbers = np.zeros(self.ls, dtype=np.int)
         # Need to pass tuples. For some reason lists don't work.
-        # qso_numbers has shape (self.ls)
+        # source_numbers has shape (self.ls)
         self.comm_.Scatterv(
-            [global_qso_numbers, tuple(self.ls_list), tuple(self.lo_list), MPI.DOUBLE],
-            qso_numbers,
+            [global_source_numbers, tuple(self.ls_list), tuple(self.lo_list), MPI.DOUBLE],
+            source_numbers,
         )
 
         # Generate random numbers to assign voxels.
-        # Shape: [self.ls=local # of z-bins][# of qsos in each z-bin]
-        rnbs = [np.random.uniform(size=num) for num in qso_numbers]
+        # Shape: [self.ls=local # of z-bins][# of sources in each z-bin]
+        rnbs = [np.random.uniform(size=num) for num in source_numbers]
 
-        # Indices of each random quasar in pdf maps pixels.
-        # Shape: [self.ls=local # of z-bins][# of qsos in each z-bin]
+        # Indices of each random source in pdf maps pixels.
+        # Shape: [self.ls=local # of z-bins][# of sources in each z-bin]
         idxs = [np.digitize(rnbs[ii], self.cdf[ii]) for ii in range(len(rnbs))]
 
-        # Generate random nmbrs to randomize position of quasars in each voxel:
+        # Generate random nmbrs to randomize position of sources in each voxel:
         # Random numbers for z-placement range: (-0.5,0.5)
-        rz = [np.random.uniform(size=num) - 0.5 for num in qso_numbers]
+        rz = [np.random.uniform(size=num) - 0.5 for num in source_numbers]
         # Random numbers for theta-placement range: (-0.5,0.5)
-        rtheta = [np.random.uniform(size=num) - 0.5 for num in qso_numbers]
+        rtheta = [np.random.uniform(size=num) - 0.5 for num in source_numbers]
         # Random numbers for phi-placement range: (-0.5,0.5)
-        rphi = [np.random.uniform(size=num) - 0.5 for num in qso_numbers]
+        rphi = [np.random.uniform(size=num) - 0.5 for num in source_numbers]
 
         # :meth::nside2resol() returns the square root of the pixel area,
         # which is a gross approximation of the pixel size, given the
@@ -502,16 +502,16 @@ class MockQCatGenerator(task.SingleTask):
         # Global values for redshift bins:
         z = _freq_to_z(self.pdf.index_map["freq"][:])
 
-        # Number of quasars in each rank
-        nqso_rank = np.sum([len(idxs[ii]) for ii in range(len(idxs))])
+        # Number of sources in each rank
+        nsource_rank = np.sum([len(idxs[ii]) for ii in range(len(idxs))])
         # Local arrays to hold the informations on
-        # quasars in the local frequency range
-        mock_zs = np.empty(nqso_rank, dtype=np.float64)
-        mock_ra = np.empty(nqso_rank, dtype=np.float64)
-        mock_dec = np.empty(nqso_rank, dtype=np.float64)
-        qso_count = 0
+        # sources in the local frequency range
+        mock_zs = np.empty(nsource_rank, dtype=np.float64)
+        mock_ra = np.empty(nsource_rank, dtype=np.float64)
+        mock_dec = np.empty(nsource_rank, dtype=np.float64)
+        source_count = 0
         for ii in range(len(idxs)):  # For each local redshift bin
-            for jj in range(len(idxs[ii])):  # For each quasar in in z-bin ii
+            for jj in range(len(idxs[ii])):  # For each source in in z-bin ii
                 decbase, RAbase = _pix_to_radec(idxs[ii][jj], self._nside)
                 # global redshift index:
                 global_z_index = ii + self.lo
@@ -521,43 +521,43 @@ class MockQCatGenerator(task.SingleTask):
                     + z["centre"][global_z_index]
                 )
                 # Populate local arrays
-                mock_zs[qso_count] = z_value
-                mock_ra[qso_count] = RAbase + ang_size * rtheta[ii][jj]
-                mock_dec[qso_count] = decbase + ang_size * rphi[ii][jj]
-                qso_count += 1
+                mock_zs[source_count] = z_value
+                mock_ra[source_count] = RAbase + ang_size * rtheta[ii][jj]
+                mock_dec[source_count] = decbase + ang_size * rphi[ii][jj]
+                source_count += 1
 
-        # Arrays to hold the whole quasar set information
-        mock_zs_full = np.empty(self.nqsos, dtype=mock_zs.dtype)
-        mock_ra_full = np.empty(self.nqsos, dtype=mock_ra.dtype)
-        mock_dec_full = np.empty(self.nqsos, dtype=mock_dec.dtype)
+        # Arrays to hold the whole source set information
+        mock_zs_full = np.empty(self.nsources, dtype=mock_zs.dtype)
+        mock_ra_full = np.empty(self.nsources, dtype=mock_ra.dtype)
+        mock_dec_full = np.empty(self.nsources, dtype=mock_dec.dtype)
 
         # The counts and displacement arguments of Allgatherv are tuples!
-        # Tuple (not list!) of number of QSOs in each rank
-        nqso_tuple = tuple(self.comm_.allgather(nqso_rank))
+        # Tuple (not list!) of number of sources in each rank
+        nsource_tuple = tuple(self.comm_.allgather(nsource_rank))
         # Tuple (not list!) of displacements of each rank array in full array
-        dspls = tuple(np.insert(arr=np.cumsum(nqso_tuple)[:-1], obj=0, values=0.0))
+        dspls = tuple(np.insert(arr=np.cumsum(nsource_tuple)[:-1], obj=0, values=0.0))
         # Gather redshifts
-        recvbuf = [mock_zs_full, nqso_tuple, dspls, MPI.DOUBLE]
+        recvbuf = [mock_zs_full, nsource_tuple, dspls, MPI.DOUBLE]
         sendbuf = [mock_zs, len(mock_zs)]
         self.comm_.Allgatherv(sendbuf, recvbuf)
         # Gather theta
-        recvbuf = [mock_ra_full, nqso_tuple, dspls, MPI.DOUBLE]
+        recvbuf = [mock_ra_full, nsource_tuple, dspls, MPI.DOUBLE]
         sendbuf = [mock_ra, len(mock_ra)]
         self.comm_.Allgatherv(sendbuf, recvbuf)
         # Gather phi
-        recvbuf = [mock_dec_full, nqso_tuple, dspls, MPI.DOUBLE]
+        recvbuf = [mock_dec_full, nsource_tuple, dspls, MPI.DOUBLE]
         sendbuf = [mock_dec, len(mock_dec)]
         self.comm_.Allgatherv(sendbuf, recvbuf)
 
         # Create catalog container
         mock_catalog = containers.SpectroscopicCatalog(
-            object_id=np.arange(self.nqsos, dtype=np.uint64)
+            object_id=np.arange(self.nsources, dtype=np.uint64)
         )
         mock_catalog["position"][:] = np.empty(
-            self.nqsos, dtype=[("ra", mock_ra.dtype), ("dec", mock_dec.dtype)]
+            self.nsources, dtype=[("ra", mock_ra.dtype), ("dec", mock_dec.dtype)]
         )
         mock_catalog["redshift"][:] = np.empty(
-            self.nqsos, dtype=[("z", mock_zs.dtype), ("z_error", mock_zs.dtype)]
+            self.nsources, dtype=[("z", mock_zs.dtype), ("z_error", mock_zs.dtype)]
         )
         # Assign data to catalog container
         mock_catalog["position"]["ra"][:] = mock_ra_full
