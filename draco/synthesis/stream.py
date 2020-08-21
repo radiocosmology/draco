@@ -15,13 +15,19 @@ Tasks
     ExpandProducts
     MakeTimeStream
 """
+# === Start Python 2/3 compatibility
+from __future__ import absolute_import, division, print_function, unicode_literals
+from future.builtins import *  # noqa  pylint: disable=W0401, W0614
+from future.builtins.disabled import *  # noqa  pylint: disable=W0401, W0614
+
+# === End Python 2/3 compatibility
 
 import numpy as np
 
 from cora.util import hputil
 from caput import mpiutil, pipeline, config, mpiarray
 
-from ..core import containers, task
+from ..core import containers, task, io
 
 
 class SimulateSidereal(task.SingleTask):
@@ -30,16 +36,16 @@ class SimulateSidereal(task.SingleTask):
 
     done = False
 
-    def setup(self, beamtransfer):
+    def setup(self, bt):
         """Setup the simulation.
 
         Parameters
         ----------
-        bt : BeamTransfer
+        bt : ProductManager or BeamTransfer
             Beam Transfer maanger.
         """
-        self.beamtransfer = beamtransfer
-        self.telescope = beamtransfer.telescope
+        self.beamtransfer = io.get_beamtransfer(bt)
+        self.telescope = io.get_telescope(bt)
 
     def process(self, map_):
         """Simulate a SiderealStream
@@ -77,17 +83,19 @@ class SimulateSidereal(task.SingleTask):
         # Set the minimum resolution required for the sky.
         ntime = 2 * mmax + 1
 
-        freqmap = map_.index_map['freq'][:]
+        freqmap = map_.index_map["freq"][:]
         row_map = map_.map[:]
 
-        if (tel.frequencies != freqmap['centre']).all():
-            raise RuntimeError('Frequencies in map do not match those in Beam Transfers.')
+        if (tel.frequencies != freqmap["centre"]).any():
+            raise ValueError("Frequencies in map do not match those in Beam Transfers.")
 
         # Calculate the alm's for the local sections
-        row_alm = hputil.sphtrans_sky(row_map, lmax=lmax).reshape((lfreq, npol * (lmax + 1), lmax + 1))
+        row_alm = hputil.sphtrans_sky(row_map, lmax=lmax).reshape(
+            (lfreq, npol * (lmax + 1), lmax + 1)
+        )
 
         # Trim off excess m's and wrap into MPIArray
-        row_alm = row_alm[..., :(mmax + 1)]
+        row_alm = row_alm[..., : (mmax + 1)]
         row_alm = mpiarray.MPIArray.wrap(row_alm, axis=0)
 
         # Perform the transposition to distribute different m's across processes. Neat
@@ -99,13 +107,17 @@ class SimulateSidereal(task.SingleTask):
         col_alm = col_alm.transpose((2, 0, 1)).reshape((None, nfreq, npol, lmax + 1))
 
         # Create storage for visibility data
-        vis_data = mpiarray.MPIArray((mmax + 1, nfreq, bt.ntel), axis=0, dtype=np.complex128)
+        vis_data = mpiarray.MPIArray(
+            (mmax + 1, nfreq, bt.ntel), axis=0, dtype=np.complex128
+        )
         vis_data[:] = 0.0
 
         # Iterate over m's local to this process and generate the corresponding
         # visibilities
         for mp, mi in vis_data.enumerate(axis=0):
-            vis_data[mp] = bt.project_vector_sky_to_telescope(mi, col_alm[mp].view(np.ndarray))
+            vis_data[mp] = bt.project_vector_sky_to_telescope(
+                mi, col_alm[mp].view(np.ndarray)
+            )
 
         # Rearrange axes such that frequency is last (as we want to divide
         # frequencies across processors)
@@ -117,12 +129,16 @@ class SimulateSidereal(task.SingleTask):
 
         # Transpose the local section to make the m's the last axis and unwrap the
         # positive and negative m at the same time.
-        col_vis = mpiarray.MPIArray((tel.npairs, nfreq, ntime), axis=1, dtype=np.complex128)
+        col_vis = mpiarray.MPIArray(
+            (tel.npairs, nfreq, ntime), axis=1, dtype=np.complex128
+        )
         col_vis[:] = 0.0
         col_vis[..., 0] = col_vis_tmp[0, 0]
         for mi in range(1, mmax + 1):
             col_vis[..., mi] = col_vis_tmp[mi, 0]
-            col_vis[..., -mi] = col_vis_tmp[mi, 1].conj()  # Conjugate only (not (-1)**m - see paper)
+            col_vis[..., -mi] = col_vis_tmp[
+                mi, 1
+            ].conj()  # Conjugate only (not (-1)**m - see paper)
 
         del col_vis_tmp
 
@@ -137,9 +153,22 @@ class SimulateSidereal(task.SingleTask):
         except AttributeError:
             feed_index = tel.nfeed
 
+        # Construct a product map
+        prod_map = np.zeros(
+            tel.uniquepairs.shape[0], dtype=[("input_a", int), ("input_b", int)]
+        )
+        prod_map["input_a"] = tel.uniquepairs[:, 0]
+        prod_map["input_b"] = tel.uniquepairs[:, 1]
+
         # Construct container and set visibility data
-        sstream = containers.SiderealStream(freq=freqmap, ra=ntime, input=feed_index,
-                                            prod=tel.uniquepairs, distributed=True, comm=map_.comm)
+        sstream = containers.SiderealStream(
+            freq=freqmap,
+            ra=ntime,
+            input=feed_index,
+            prod=prod_map,
+            distributed=True,
+            comm=map_.comm,
+        )
         sstream.vis[:] = mpiarray.MPIArray.wrap(vis_stream, axis=0)
         sstream.weight[:] = 1.0
 
@@ -160,7 +189,7 @@ class ExpandProducts(task.SingleTask):
         tel : :class:`drift.core.TransitTelescope`
             Telescope object.
         """
-        self.telescope = telescope
+        self.telescope = io.get_telescope(telescope)
 
     def process(self, sstream):
         """Transform a sidereal stream to having a full product matrix.
@@ -176,20 +205,33 @@ class ExpandProducts(task.SingleTask):
             Unwrapped sidereal stream.
         """
 
-        sstream.redistribute('freq')
+        sstream.redistribute("freq")
 
         ninput = len(sstream.input)
+        prod = np.array(
+            [(fi, fj) for fi in range(ninput) for fj in range(fi, ninput)],
+            dtype=[("input_a", int), ("input_b", int)],
+        )
+        nprod = len(prod)
 
-        prod = np.array([ (fi, fj) for fi in range(ninput) for fj in range(fi, ninput)])
-
-        new_stream = containers.SiderealStream(prod=prod, axes_from=sstream)
-        new_stream.redistribute('freq')
+        new_stream = containers.SiderealStream(prod=prod, stack=None, axes_from=sstream)
+        new_stream.redistribute("freq")
         new_stream.vis[:] = 0.0
         new_stream.weight[:] = 0.0
 
+        # Create dummpy index and reverse map for the stack axis to match the behaviour
+        # of reading in an N^2 file through andata
+        fwd_stack = np.empty(nprod, dtype=[("prod", "<u4"), ("conjugate", "u1")])
+        fwd_stack["prod"] = np.arange(nprod)
+        fwd_stack["conjugate"] = False
+        new_stream.create_index_map("stack", fwd_stack)
+        rev_stack = np.empty(nprod, dtype=[("stack", "<u4"), ("conjugate", "u1")])
+        rev_stack["stack"] = np.arange(nprod)
+        rev_stack["conjugate"] = False
+        new_stream.create_reverse_map("stack", rev_stack)
+
         # Iterate over all feed pairs and work out which is the correct index in the sidereal stack.
         for pi, (fi, fj) in enumerate(prod):
-
             unique_ind = self.telescope.feedmap[fi, fj]
             conj = self.telescope.feedconj[fi, fj]
 
@@ -232,21 +274,19 @@ class MakeTimeStream(task.SingleTask):
 
     _cur_time = 0.0  # Hold the current file start time
 
-    def setup(self, sstream, observer):
+    def setup(self, sstream, manager):
         """Get the sidereal stream to turn into files.
 
         Parameters
         ----------
         sstream : SiderealStream
             The sidereal data to use.
-        observer : :class:`~caput.time.Observer`
-            An Observer object holding the geographic location of the telescope.
-            Note that :class:`~drift.core.TransitTelescope` instances are also
-            Observers.
+        manager : ProductManager or BeamTransfer
+            Beam Transfer and telescope manager
         """
         self.sstream = sstream
-        self.observer = observer
-
+        # Need an Observer object holding the geographic location of the telescope.
+        self.observer = io.get_telescope(manager)
         # Initialise the current start time
         self._cur_time = self.start_time
 
@@ -263,7 +303,7 @@ class MakeTimeStream(task.SingleTask):
 
         # First check to see if we have reached the end of the requested time,
         # and if so stop the iteration.
-        if self._cur_time > self.end_time:
+        if self._cur_time >= self.end_time:
             raise pipeline.PipelineStopIteration
 
         time = self._next_time_axis()
@@ -292,20 +332,29 @@ class MakeTimeStream(task.SingleTask):
         if self.integration_time is not None:
             int_time = self.integration_time
         else:
-            int_time = 2.56e-6 * 2**self.integration_frame_exp
+            int_time = 2.56e-6 * 2 ** self.integration_frame_exp
 
         # Calculate number of samples in file and timestamps
-        nsamp = min(int(np.ceil((self.end_time - self._cur_time) / int_time)), self.samples_per_file)
-        timestamps = self._cur_time + (np.arange(nsamp) + 1) * int_time  # +1 as timestamps are at the end of each sample
+        nsamp = min(
+            int(np.ceil((self.end_time - self._cur_time) / int_time)),
+            self.samples_per_file,
+        )
+        timestamps = (
+            self._cur_time + (np.arange(nsamp) + 1) * int_time
+        )  # +1 as timestamps are at the end of each sample
 
         # Construct the time axis index map
         if self.integration_time is not None:
             time = timestamps
         else:
-            _time_dtype = [('fpga_count', np.uint64), ('ctime', np.float64)]
+            _time_dtype = [("fpga_count", np.uint64), ("ctime", np.float64)]
             time = np.zeros(nsamp, _time_dtype)
-            time['ctime'] = timestamps
-            time['fpga_count'] = ((timestamps - self.start_time) / int_time * 2**self.integration_frame_exp).astype(np.uint64)
+            time["ctime"] = timestamps
+            time["fpga_count"] = (
+                (timestamps - self.start_time)
+                / int_time
+                * 2 ** self.integration_frame_exp
+            ).astype(np.uint64)
 
         # Increment the current start time for the next iteration
         self._cur_time += nsamp * int_time

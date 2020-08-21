@@ -19,14 +19,21 @@ into  :class:`SiderealGrouper`, then feeding that into
 :class:`SiderealRegridder` to grid onto each sidereal day, and then into
 :class:`SiderealStacker` if you want to combine the different days.
 """
+# === Start Python 2/3 compatibility
+from __future__ import absolute_import, division, print_function, unicode_literals
+from future.builtins import *  # noqa  pylint: disable=W0401, W0614
+from future.builtins.disabled import *  # noqa  pylint: disable=W0401, W0614
+
+# === End Python 2/3 compatibility
 
 
 import numpy as np
 
 from caput import config, mpiutil, mpiarray, tod
 
-from ..core import task, containers
-from ..util import regrid
+from .transform import Regridder
+from ..core import task, containers, io
+from ..util import tools
 
 
 class SiderealGrouper(task.SingleTask):
@@ -37,9 +44,18 @@ class SiderealGrouper(task.SingleTask):
     padding : float
         Extra amount of a sidereal day to pad each timestream by. Useful for
         getting rid of interpolation artifacts.
+    offset : float
+        Time in seconds to subtract before determining the LSD.  Useful if the
+        desired output is not a full sideral stream, but rather a narrow window
+        around source transits on different sideral days.  In that case, one
+        should set this quantity to `240 * (source_ra - 180)`.
+    min_day_length : float
+        Require at least this fraction of a full sidereal day to process.
     """
 
-    padding = config.Property(proptype=float, default=0.005)
+    padding = config.Property(proptype=float, default=0.0)
+    offset = config.Property(proptype=float, default=0.0)
+    min_day_length = config.Property(proptype=float, default=0.10)
 
     def __init__(self):
         super(SiderealGrouper, self).__init__()
@@ -47,7 +63,7 @@ class SiderealGrouper(task.SingleTask):
         self._timestream_list = []
         self._current_lsd = None
 
-    def setup(self, observer):
+    def setup(self, manager):
         """Set the local observers position.
 
         Parameters
@@ -57,7 +73,8 @@ class SiderealGrouper(task.SingleTask):
             Note that :class:`~drift.core.TransitTelescope` instances are also
             Observers.
         """
-        self.observer = observer
+        # Need an observer object holding the geographic location of the telescope.
+        self.observer = io.get_telescope(manager)
 
     def process(self, tstream):
         """Load in each sidereal day.
@@ -74,9 +91,16 @@ class SiderealGrouper(task.SingleTask):
             the last file, otherwise returns :obj:`None`.
         """
 
-        # Get the start and end LSDs of the file
-        lsd_start = int(self.observer.unix_to_lsd(tstream.time[0]))
-        lsd_end = int(self.observer.unix_to_lsd(tstream.time[-1]))
+        # This is the start and the end of the LSDs of the file only if padding
+        # is chosen to be 0 (default). If padding is set to some value then 'lsd_start'
+        # will actually correspond to the start of of the requested time frame (incl
+        # padding)
+        lsd_start = int(
+            self.observer.unix_to_lsd(tstream.time[0] - self.padding - self.offset)
+        )
+        lsd_end = int(
+            self.observer.unix_to_lsd(tstream.time[-1] + self.padding - self.offset)
+        )
 
         # If current_lsd is None then this is the first time we've run
         if self._current_lsd is None:
@@ -91,8 +115,7 @@ class SiderealGrouper(task.SingleTask):
         # If this file ends during a later LSD then we need to process the
         # current list and restart the system
         if self._current_lsd < lsd_end:
-
-            self.log.info("Concatenating files for LSD:%i", lsd_start)
+            self.log.info("Concatenating files for LSD:%i", self._current_lsd)
 
             # Combine timestreams into a single container for the whole day this
             # could get returned as None if there wasn't enough data
@@ -115,11 +138,8 @@ class SiderealGrouper(task.SingleTask):
             Returns the timestream of the final sidereal day if it's long
             enough, otherwise returns :obj:`None`.
         """
-
         # If we are here there is no more data coming, we just need to process any remaining data
-        tstream_all = self._process_current_lsd()
-
-        return tstream_all
+        return self._process_current_lsd() if self._timestream_list else None
 
     def _process_current_lsd(self):
         # Combine the current set of files into a timestream
@@ -132,23 +152,22 @@ class SiderealGrouper(task.SingleTask):
         day_length = min(end, lsd + 1) - max(start, lsd)
 
         # If the amount of data for this day is too small, then just skip
-        if day_length < 0.1:
+        if day_length < self.min_day_length:
             return None
 
-        self.log.info("Constructing LSD:%i [%i files]",
-                      lsd, len(self._timestream_list))
+        self.log.info("Constructing LSD:%i [%i files]", lsd, len(self._timestream_list))
 
         # Construct the combined timestream
         ts = tod.concatenate(self._timestream_list)
 
         # Add attributes for the LSD and a tag for labelling saved files
-        ts.attrs['tag'] = ('lsd_%i' % lsd)
-        ts.attrs['lsd'] = lsd
+        ts.attrs["tag"] = "lsd_%i" % lsd
+        ts.attrs["lsd"] = lsd
 
         return ts
 
 
-class SiderealRegridder(task.SingleTask):
+class SiderealRegridder(Regridder):
     """Take a sidereal days worth of data, and put onto a regular grid.
 
     Uses a maximum-likelihood inverse of a Lanczos interpolation to do the
@@ -161,12 +180,11 @@ class SiderealRegridder(task.SingleTask):
         Number of samples across the sidereal day.
     lanczos_width : int
         Width of the Lanczos interpolation kernel.
+    snr_cov: float
+        Ratio of signal covariance to noise covariance (used for Wiener filter).
     """
 
-    samples = config.Property(proptype=int, default=1024)
-    lanczos_width = config.Property(proptype=int, default=5)
-
-    def setup(self, observer):
+    def setup(self, manager):
         """Set the local observers position.
 
         Parameters
@@ -176,7 +194,8 @@ class SiderealRegridder(task.SingleTask):
             Note that :class:`~drift.core.TransitTelescope` instances are also
             Observers.
         """
-        self.observer = observer
+        # Need an Observer object holding the geographic location of the telescope.
+        self.observer = io.get_telescope(manager)
 
     def process(self, data):
         """Regrid the sidereal day.
@@ -192,58 +211,37 @@ class SiderealRegridder(task.SingleTask):
             The regularly gridded sidereal timestream.
         """
 
-        self.log.info("Regridding LSD:%i", data.attrs['lsd'])
+        self.log.info("Regridding LSD:%i", data.attrs["lsd"])
 
         # Redistribute if needed too
-        data.redistribute('freq')
+        data.redistribute("freq")
 
         # Convert data timestamps into LSDs
         timestamp_lsd = self.observer.unix_to_lsd(data.time)
 
-        # Fetch which LSD this is
-        lsd = data.attrs['lsd']
+        # Fetch which LSD this is to set bounds
+        self.start = data.attrs["lsd"]
+        self.end = self.start + 1
 
-        # Create a regular grid in LSD, padded at either end to supress interpolation issues
-        pad = 5 * self.lanczos_width
-        lsd_grid = lsd + np.arange(-pad, self.samples + pad, dtype=np.float64) / self.samples
-
-        # Construct regridding matrix
-        lzf = regrid.lanczos_forward_matrix(lsd_grid, timestamp_lsd, self.lanczos_width).T.copy()
-
-        # Mask data
-        imask = data.weight[:].view(np.ndarray)
+        # Get view of data
+        weight = data.weight[:].view(np.ndarray)
         vis_data = data.vis[:].view(np.ndarray)
 
-        # Reshape data
-        vr = vis_data.reshape(-1, vis_data.shape[-1])
-        nr = imask.reshape(-1, vis_data.shape[-1])
-
-        # Construct a signal 'covariance'
-        Si = np.ones_like(lsd_grid) * 1e-8
-
-        # Calculate the interpolated data and a noise weight at the points in the padded grid
-        sts, ni = regrid.band_wiener(lzf, nr, Si, vr, 2 * self.lanczos_width - 1)
-
-        # Throw away the padded ends
-        sts = sts[:, pad:-pad].copy()
-        ni = ni[:, pad:-pad].copy()
-
-        # Reshape to the correct shape
-        sts = sts.reshape(vis_data.shape[:-1] + (self.samples,))
-        ni = ni.reshape(vis_data.shape[:-1] + (self.samples,))
+        # perform regridding
+        new_grid, sts, ni = self._regrid(vis_data, weight, timestamp_lsd)
 
         # Wrap to produce MPIArray
-        sts = mpiarray.MPIArray.wrap(sts, axis=data.vis.distributed_axis)
-        ni = mpiarray.MPIArray.wrap(ni, axis=data.vis.distributed_axis)
+        sts = mpiarray.MPIArray.wrap(sts, axis=0)
+        ni = mpiarray.MPIArray.wrap(ni, axis=0)
 
         # FYI this whole process creates an extra copy of the sidereal stack.
         # This could probably be optimised out with a little work.
         sdata = containers.SiderealStream(axes_from=data, ra=self.samples)
-        sdata.redistribute('freq')
+        sdata.redistribute("freq")
         sdata.vis[:] = sts
         sdata.weight[:] = ni
-        sdata.attrs['lsd'] = lsd
-        sdata.attrs['tag'] = 'lsd_%i' % lsd
+        sdata.attrs["lsd"] = self.start
+        sdata.attrs["tag"] = "lsd_%i" % self.start
 
         return sdata
 
@@ -266,15 +264,15 @@ class SiderealStacker(task.SingleTask):
             Individual sidereal day to stack up.
         """
 
-        sdata.redistribute('freq')
+        sdata.redistribute("freq")
 
         # Get the LSD label out of the data (resort to using a CSD if it's
         # present). If there's no label just use a place holder and stack
         # anyway.
-        if 'lsd' in sdata.attrs:
-            input_lsd = sdata.attrs['lsd']
-        elif 'csd' in sdata.attrs:
-            input_lsd = sdata.attrs['csd']
+        if "lsd" in sdata.attrs:
+            input_lsd = sdata.attrs["lsd"]
+        elif "csd" in sdata.attrs:
+            input_lsd = sdata.attrs["csd"]
         else:
             input_lsd = -1
 
@@ -283,23 +281,23 @@ class SiderealStacker(task.SingleTask):
         if self.stack is None:
 
             self.stack = containers.empty_like(sdata)
-            self.stack.redistribute('freq')
+            self.stack.redistribute("freq")
 
             self.stack.vis[:] = sdata.vis[:] * sdata.weight[:]
             self.stack.weight[:] = sdata.weight[:]
 
             self.lsd_list = input_lsd
 
-            self.log.info("Starting stack with LSD:%i", sdata.attrs['lsd'])
+            self.log.info("Starting stack with LSD:%i", sdata.attrs["lsd"])
 
             return
 
-        self.log.info("Adding LSD:%i to stack", sdata.attrs['lsd'])
+        self.log.info("Adding LSD:%i to stack", sdata.attrs["lsd"])
 
         # note: Eventually we should fix up gains
 
         # Combine stacks with inverse `noise' weighting
-        self.stack.vis[:] += (sdata.vis[:] * sdata.weight[:])
+        self.stack.vis[:] += sdata.vis[:] * sdata.weight[:]
         self.stack.weight[:] += sdata.weight[:]
 
         self.lsd_list += input_lsd
@@ -313,19 +311,17 @@ class SiderealStacker(task.SingleTask):
             Stack of sidereal days.
         """
 
-        self.stack.attrs['tag'] = 'stack'
-        self.stack.attrs['lsd'] = np.array(self.lsd_list)
+        self.stack.attrs["tag"] = "stack"
+        self.stack.attrs["lsd"] = np.array(self.lsd_list)
 
-        self.stack.vis[:] = np.where(self.stack.weight[:] == 0,
-                                     0.0,
-                                     self.stack.vis[:] / self.stack.weight[:])
+        self.stack.vis[:] *= tools.invert_no_zero(self.stack.weight[:])
 
         return self.stack
 
 
 def _ensure_list(x):
 
-    if hasattr(x, '__iter__'):
+    if hasattr(x, "__iter__"):
         y = [xx for xx in x]
     else:
         y = [x]

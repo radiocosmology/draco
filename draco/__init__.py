@@ -1,2 +1,11 @@
-# Specify version in Semantic style (with PEP 440 pre-release specification)
-__version__ = '0.1.0.b1'
+# === Start Python 2/3 compatibility
+from __future__ import absolute_import, division, print_function, unicode_literals
+from future.builtins import *  # noqa  pylint: disable=W0401, W0614
+from future.builtins.disabled import *  # noqa  pylint: disable=W0401, W0614
+
+# === End Python 2/3 compatibility
+
+from ._version import get_versions
+
+__version__ = get_versions()["version"]
+del get_versions

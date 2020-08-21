@@ -15,6 +15,12 @@ Tasks
     lanczos_forward_matrix
     lanczos_inverse_matrix
 """
+# === Start Python 2/3 compatibility
+from __future__ import absolute_import, division, print_function, unicode_literals
+from future.builtins import *  # noqa  pylint: disable=W0401, W0614
+from future.builtins.disabled import *  # noqa  pylint: disable=W0401, W0614
+
+# === End Python 2/3 compatibility
 
 import numpy as np
 import scipy.linalg as la
@@ -68,6 +74,11 @@ def band_wiener(R, Ni, Si, y, bw):
     R_s = R.astype(np.float32)
     np.dot(y, R_s.T, out=xh)
 
+    # Calculate the start and end indices of the summation
+    start_ind = (R != 0).argmax(axis=-1).astype(np.int32)
+    end_ind = R.shape[-1] - (R[..., ::-1] != 0).argmax(axis=-1)
+    end_ind = np.where((R == 0).all(axis=-1), 0, end_ind).astype(np.int32)
+
     # Iterate through and solve noise
     for ki in range(k):
 
@@ -75,7 +86,7 @@ def band_wiener(R, Ni, Si, y, bw):
         Ni_ki = Ni[ki].astype(np.float64)
 
         # Calculate the Wiener noise weighting (i.e. inverse covariance)
-        Ci = _fast_tools._band_wiener_covariance(R, Ni_ki, bw)
+        Ci = _fast_tools._band_wiener_covariance(R, Ni_ki, start_ind, end_ind, bw)
 
         # Add on the signal covariance part
         Ci[-1] += Si
@@ -130,7 +141,7 @@ def lanczos_forward_matrix(x, y, a=5, periodic=False):
 
     if periodic:
         n = len(x)
-        sep = np.where(np.abs(sep) > n / 2, n - np.abs(sep), sep)
+        sep = np.where(np.abs(sep) > n // 2, n - np.abs(sep), sep)
 
     lz_forward = lanczos_kernel(sep, a)
 
