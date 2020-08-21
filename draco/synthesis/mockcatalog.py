@@ -132,7 +132,7 @@ class SelFuncEstimator(task.SingleTask):
             densitymaps = containers.Map.from_file(
                 self.density_maps_path, distributed=True
             )
-            densityz = _freq_to_z(densitymaps.freq)
+            densityz = _freq_to_z(densitymaps.index_map["freq"])
             # If density map is given overrride z_stt and z_stp
             idx_stt = np.argmin(densityz["centre"])
             idx_stp = np.argmax(densityz["centre"])
@@ -260,11 +260,11 @@ class PdfGenerator(task.SingleTask):
         """
         """
         # From frequency to redshift:
-        z = _freq_to_z(self.qsomaps.freq)
+        z = _freq_to_z(self.qsomaps.index_map["freq"])
         n_z = len(z)
 
         # Freq to redshift of selection function:
-        z_selfunc = _freq_to_z(self.selfunc.freq)
+        z_selfunc = _freq_to_z(self.selfunc.index_map["freq"])
 
         # Re-distribute maps in pixels:
         self.qsomaps.redistribute(dist_axis=2)
@@ -314,7 +314,7 @@ class PdfGenerator(task.SingleTask):
 
         # Put PDF in a map container:
         pdf_map = containers.Map(
-            nside=self._nside, polarisation=False, freq=self.qsomaps.freq
+            nside=self._nside, polarisation=False, freq=self.qsomaps.index_map["freq"]
         )
 
         # I am not sure I need this test every time:
@@ -500,7 +500,7 @@ class MockQCatGenerator(task.SingleTask):
         ang_size = hp.pixelfunc.nside2resol(self._nside) * 180.0 / np.pi
 
         # Global values for redshift bins:
-        z = _freq_to_z(self.pdf.freq)
+        z = _freq_to_z(self.pdf.index_map["freq"][:])
 
         # Number of quasars in each rank
         nqso_rank = np.sum([len(idxs[ii]) for ii in range(len(idxs))])
