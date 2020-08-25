@@ -220,9 +220,7 @@ class ContainerBase(memh5.BasicCont):
             compression_opts = dspec.get("compression_opts", None)
 
         # Get distribution properties
-        dist = (
-            dspec["distributed"] if "distributed" in dspec else self._data._distributed
-        )
+        dist = self.distributed and dspec.get("distributed", True)
         shape = ()
 
         # Check that all the specified axes are defined, and fetch their lengths
@@ -413,7 +411,13 @@ class ContainerBase(memh5.BasicCont):
         copy : subclass of ContainerBase
             The copied container.
         """
-        new_cont = self.__class__(attrs_from=self, axes_from=self, skip_datasets=True)
+        new_cont = self.__class__(
+            attrs_from=self,
+            axes_from=self,
+            skip_datasets=True,
+            distributed=self.distributed,
+            comm=self.comm,
+        )
 
         # Loop over datasets that exist in the source and either add a view of
         # the source dataset, or perform a full copy
