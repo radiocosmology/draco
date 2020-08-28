@@ -8,11 +8,26 @@ Containers
 
     TimeStream
     SiderealStream
-    GainData
-    StaticGainData
     Map
+    GridBeam
+    TrackBeam
     MModes
-    RingMap
+    SVDModes
+    KLModes
+    CommonModeGainData
+    CommonModeSiderealGainData
+    GainData
+    SiderealGainData
+    StaticGainData
+    DelaySpectrum
+    Powerspectrum2D
+    SVDSpectrum
+    FrequencyStack
+    SourceCatalog
+    SpectroscopicCatalog
+    FormedBeam
+    FormedBeamHA
+
 
 Container Base Classes
 ----------------------
@@ -23,6 +38,7 @@ Container Base Classes
     ContainerBase
     TODContainer
     VisContainer
+    SampleVarianceContainer
 
 Helper Routines
 ---------------
@@ -49,6 +65,8 @@ import inspect
 import numpy as np
 
 from caput import memh5, tod
+
+from ..util import tools
 
 # Try to import bitshuffle to set the default compression options
 try:
@@ -726,6 +744,131 @@ class VisContainer(ContainerBase):
         return len(self.stack) != len(self.prod)
 
 
+class SampleVarianceContainer(ContainerBase):
+    """Base container for holding the sample variance over observations.
+
+    This works like :class:`ContainerBase` but provides additional capabilities
+    for containers that may be used to hold the sample mean and variance over
+    complex-valued observations.  These capabilities include automatic definition
+    of the component axis, properties for accessing standard datasets, properties
+    that rotate the sample variance into common bases, and a `sample_weight` property
+    that provides an equivalent to the `weight` dataset that is determined from the
+    sample variance over observations.
+
+    Subclasses must include a `sample_variance` and `nsample` dataset
+    in there `_dataset_spec` dictionary.  They must also specify a
+    `_mean` property that returns the dataset containing the mean over observations.
+    """
+
+    _axes = ("component",)
+
+    def __init__(self, *args, **kwargs):
+
+        # Set component axis to default real-imaginary basis if not already provided
+        if "component" not in kwargs:
+            kwargs["component"] = np.array(
+                [("real", "real"), ("real", "imag"), ("imag", "imag")],
+                dtype=[("component_a", "<U8"), ("component_b", "<U8")],
+            )
+
+        super(SampleVarianceContainer, self).__init__(*args, **kwargs)
+
+    @property
+    def component(self):
+        return self.index_map["component"]
+
+    @property
+    def sample_variance(self):
+        """Convience access to the sample variance dataset.
+
+        Returns
+        -------
+        C: np.ndarray[ncomponent, ...]
+            The variance over the dimension that was stacked
+            (e.g., sidereal days, holographic observations)
+            in the default real-imaginary basis. The array is packed
+            into upper-triangle format such that the component axis
+            contains [('real', 'real'), ('real', 'imag'), ('imag', 'imag')].
+        """
+        if "sample_variance" in self.datasets:
+            return self.datasets["sample_variance"]
+        else:
+            raise KeyError("Dataset 'sample_variance' not initialised.")
+
+    @property
+    def sample_variance_iq(self):
+        """Rotate the sample variance to the in-phase/quadrature basis.
+
+        Returns
+        -------
+        C: np.ndarray[ncomponent, ...]
+            The `sample_variance` dataset in the in-phase/quadrature basis,
+            packed into upper triangle format such that the component axis
+            contains [('I', 'I'), ('I', 'Q'), ('Q', 'Q')].
+        """
+        C = self.sample_variance[:].view(np.ndarray)
+
+        # Construct rotation coefficients from average vis angle
+        phi = np.angle(self._mean[:].view(np.ndarray))
+        cc = np.cos(phi) ** 2
+        cs = np.cos(phi) * np.sin(phi)
+        ss = np.sin(phi) ** 2
+
+        # Rotate the covariance matrix from real-imag to in-phase/quadrature
+        Cphi = np.zeros_like(C)
+        Cphi[0] = cc * C[0] + 2 * cs * C[1] + ss * C[2]
+        Cphi[1] = -cs * C[0] + (cc - ss) * C[1] + cs * C[2]
+        Cphi[2] = ss * C[0] - 2 * cs * C[1] + cc * C[2]
+
+        return Cphi
+
+    @property
+    def sample_variance_amp_phase(self):
+        """Calculate the amplitude/phase covariance.
+
+        This interpretation is only valid if the fractional
+        variations in the amplitude and phase are small.
+
+        Returns
+        -------
+        C: np.ndarray[ncomponent, ...]
+            The observed amplitude/phase covariance matrix, packed
+            into upper triangle format such that the component axis
+            contains [('amp', 'amp'), ('amp', 'phase'), ('phase', 'phase')].
+        """
+        # Rotate to in-phase/quadrature basis and then
+        # normalize by squared amplitude to convert to
+        # fractional units (amplitude) and radians (phase).
+        return self.sample_variance_iq * tools.invert_no_zero(
+            np.abs(self._mean[:][np.newaxis, ...]) ** 2
+        )
+
+    @property
+    def nsample(self):
+        if "nsample" in self.datasets:
+            return self.datasets["nsample"]
+        else:
+            raise KeyError("Dataset 'nsample' not initialised.")
+
+    @property
+    def sample_weight(self):
+        """Calculate a weight from the sample variance.
+
+        Returns
+        -------
+        weight: np.ndarray[...]
+            The trace of the `sample_variance` dataset is used
+            as an estimate of the total variance and divided by the
+            `nsample` dataset to yield the uncertainty on the mean.
+            The inverse of this quantity is returned, and can be compared
+            directly to the `weight` dataset.
+        """
+        C = self.sample_variance[:].view(np.ndarray)
+        nsample = self.nsample[:].view(np.ndarray)
+
+        return nsample * tools.invert_no_zero(C[0] + C[2])
+
+
 class Map(ContainerBase):
     """Container for holding multifrequency sky maps.
 
@@ -774,7 +917,7 @@ class Map(ContainerBase):
         return self.datasets["map"]
 
 
-class SiderealStream(VisContainer):
+class SiderealStream(VisContainer, SampleVarianceContainer):
     """A container for holding a visibility dataset in sidereal time.
 
     Parameters
@@ -819,6 +962,26 @@ class SiderealStream(VisContainer):
             "distributed": True,
             "distributed_axis": "freq",
         },
+        "sample_variance": {
+            "axes": ["component", "freq", "stack", "ra"],
+            "dtype": np.float32,
+            "initialise": False,
+            "distributed": True,
+            "distributed_axis": "freq",
+            "compression": COMPRESSION,
+            "compression_opts": COMPRESSION_OPTS,
+            "chunks": (3, 64, 256, 128),
+        },
+        "nsample": {
+            "axes": ["freq", "stack", "ra"],
+            "dtype": np.uint16,
+            "initialise": False,
+            "distributed": True,
+            "distributed_axis": "freq",
+            "compression": COMPRESSION,
+            "compression_opts": COMPRESSION_OPTS,
+            "chunks": (64, 256, 128),
+        },
     }
 
     def __init__(self, ra=None, *args, **kwargs):
@@ -842,6 +1005,10 @@ class SiderealStream(VisContainer):
     @property
     def ra(self):
         return self.index_map["ra"]
+
+    @property
+    def _mean(self):
+        return self.datasets["vis"]
 
 
 class SystemSensitivity(TODContainer):
@@ -1066,7 +1233,7 @@ class GridBeam(ContainerBase):
         return self.index_map["phi"]
 
 
-class TrackBeam(ContainerBase):
+class TrackBeam(SampleVarianceContainer):
     """ Container for a sequence of beam samples at arbitrary locations
         on the sphere. The axis of the beam samples is 'pix', defined by
         the numpy.dtype [('theta', np.float32), ('phi', np.float32)].
@@ -1089,6 +1256,26 @@ class TrackBeam(ContainerBase):
             "axes": ["freq", "pol", "input", "pix"],
             "dtype": np.float32,
             "initialise": True,
+            "distributed": True,
+            "distributed_axis": "freq",
+            "compression": COMPRESSION,
+            "compression_opts": COMPRESSION_OPTS,
+            "chunks": (128, 2, 128, 128),
+        },
+        "sample_variance": {
+            "axes": ["component", "freq", "pol", "input", "pix"],
+            "dtype": np.float32,
+            "initialise": False,
+            "distributed": True,
+            "distributed_axis": "freq",
+            "compression": COMPRESSION,
+            "compression_opts": COMPRESSION_OPTS,
+            "chunks": (3, 128, 2, 128, 128),
+        },
+        "nsample": {
+            "axes": ["freq", "pol", "input", "pix"],
+            "dtype": np.uint8,
+            "initialise": False,
             "distributed": True,
             "distributed_axis": "freq",
             "compression": COMPRESSION,
@@ -1163,6 +1350,10 @@ class TrackBeam(ContainerBase):
     @property
     def pix(self):
         return self.index_map["pix"]
+
+    @property
+    def _mean(self):
+        return self.datasets["beam"]
 
 
 class MModes(VisContainer):
