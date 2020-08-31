@@ -44,6 +44,8 @@ from past.builtins import basestring
 # === End Python 2/3 compatibility
 
 import os.path
+
+import h5py
 import numpy as np
 from yaml import dump as yamldump
 
@@ -220,11 +222,41 @@ class LoadFilesFromParams(task.SingleTask):
         Whether the file should be loaded distributed across ranks.
     convert_strings : bool, optional
         Convert strings to unicode when loading.
+    selections : dict, optional
+        A dictionary of axis selections. See the section below for details.
+
+    Selections
+    ----------
+    Selections can be given to limit the data read to specified subsets. They can be
+    given for any named axis in the container.
+
+    Selections can be given as a slice with an `<axis name>_range` key with either
+    `[start, stop]` or `[start, stop, step]` as the value. Alternatively a list of
+    explicit indices to extract can be given with the `<axis name>_index` key, and
+    the value is a list of the indices. If both `<axis name>_range` and `<axis
+    name>_index` keys are given the former will take precedence, but you should
+    clearly avoid doing this.
+
+    Additionally index based selections currently don't work for distributed reads.
+
+    Here's an example in the YAML format that the pipeline uses:
+
+    .. code-block:: yaml
+
+        selections:
+            freq_range: [256, 512, 4]  # A strided slice
+            stack_index: [1, 2, 4, 9, 16, 25, 36, 49, 64]  # A sparse selection
+            stack_range: [1, 14]  # Will override the selection above
     """
 
     files = config.Property(proptype=_list_or_glob)
     distributed = config.Property(proptype=bool, default=True)
     convert_strings = config.Property(proptype=bool, default=True)
+    selections = config.Property(proptype=dict, default=None)
+
+    def setup(self):
+        """Resolve the selections."""
+        self._sel = self._resolve_sel()
 
     def process(self):
         """Load the given files in turn and pass on.
@@ -248,14 +280,31 @@ class LoadFilesFromParams(task.SingleTask):
         # Fetch and remove the first item in the list
         file_ = self.files.pop(0)
 
-        self.log.info("Loading file %s" % file_)
+        self.log.info(f"Loading file {file_}")
+        self.log.debug(f"Reading with selections: {self._sel}")
 
-        cont = memh5.BasicCont.from_file(
+        # If we are applying selections we need to dispatch the `from_file` via the
+        # correct subclass, rather than relying on the internal detection of the
+        # subclass. To minimise the number of files being opened this is only done on
+        # rank=0 and is then broadcast
+        if self._sel:
+            if self.comm.rank == 0:
+                with h5py.File(file_, "r") as fh:
+                    clspath = memh5.MemDiskGroup._detect_subclass_path(fh)
+            else:
+                clspath = None
+            clspath = self.comm.bcast(clspath, root=0)
+            new_cls = memh5.MemDiskGroup._resolve_subclass(clspath)
+        else:
+            new_cls = memh5.BasicCont
+
+        cont = new_cls.from_file(
             file_,
             distributed=self.distributed,
             comm=self.comm,
             convert_attribute_strings=self.convert_strings,
             convert_dataset_strings=self.convert_strings,
+            **self._sel,
         )
 
         if "tag" not in cont.attrs:
@@ -265,6 +314,57 @@ class LoadFilesFromParams(task.SingleTask):
             cont.attrs["tag"] = tag
 
         return cont
+
+    def _resolve_sel(self):
+        # Turn the selection parameters into actual selectable types
+
+        sel = {}
+
+        sel_parsers = {"range": self._parse_range, "index": self._parse_index}
+
+        # To enforce the precedence of range vs index selections, we rely on the fact
+        # that a sort will place the axis_range keys after axis_index keys
+        for k in sorted(self.selections or []):
+
+            # Parse the key to get the axis name and type, accounting for the fact the
+            # axis name may contain an underscore
+            *axis, type_ = k.split("_")
+            axis_name = "_".join(axis)
+
+            if type_ not in sel_parsers:
+                raise ValueError(
+                    f'Unsupported selection type "{type_}", or invalid key "{k}"'
+                )
+
+            sel[f"{axis_name}_sel"] = sel_parsers[type_](self.selections[k])
+
+        return sel
+
+    def _parse_range(self, x):
+        # Parse and validate a range type selection
+
+        if not isinstance(x, (list, tuple)) or len(x) > 3 or len(x) < 2:
+            raise ValueError(
+                f"Range spec must be a length 2 or 3 list or tuple. Got {x}."
+            )
+
+        for v in x:
+            if not isinstance(v, int):
+                raise ValueError(f"All elements of range spec must be ints. Got {x}")
+
+        return slice(*x)
+
+    def _parse_index(self, x):
+        # Parse and validate an index type selection
+
+        if not isinstance(x, (list, tuple)) or len(x) == 0:
+            raise ValueError(f"Index spec must be a non-empty list or tuple. Got {x}.")
+
+        for v in x:
+            if not isinstance(v, int):
+                raise ValueError(f"All elements of index spec must be ints. Got {x}")
+
+        return list(x)
 
 
 # Define alias for old code
@@ -306,8 +406,12 @@ class LoadFiles(LoadFilesFromParams):
         ----------
         files : list
         """
+
+        # Call the baseclass setup to resolve any selections
+        super().setup()
+
         if not isinstance(files, (list, tuple)):
-            raise RuntimeError("Argument must be list of files.")
+            raise RuntimeError(f'Argument must be list of files. Got "{files}"')
 
         self.files = files
 
