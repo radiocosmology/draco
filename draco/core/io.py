@@ -372,7 +372,7 @@ LoadBasicCont = LoadFilesFromParams
 
 
 class FindFiles(pipeline.TaskBase):
-    """ Take a glob or list of files specified as a parameter in the
+    """Take a glob or list of files specified as a parameter in the
     configuration file and pass on to other tasks.
 
     Parameters
@@ -383,8 +383,7 @@ class FindFiles(pipeline.TaskBase):
     files = config.Property(proptype=_list_or_glob)
 
     def setup(self):
-        """ Return list of files specified in the parameters.
-        """
+        """Return list of files specified in the parameters."""
         if not isinstance(self.files, (list, tuple)):
             raise RuntimeError("Argument must be list of files.")
 
@@ -457,8 +456,7 @@ class Save(pipeline.TaskBase):
 
 
 class Print(pipeline.TaskBase):
-    """Stupid module which just prints whatever it gets. Good for debugging.
-    """
+    """Stupid module which just prints whatever it gets. Good for debugging."""
 
     def next(self, input_):
 

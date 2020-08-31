@@ -24,7 +24,7 @@ C = units.c
 
 
 class BeamFormBase(task.SingleTask):
-    """ Base class for beam forming tasks.
+    """Base class for beam forming tasks.
 
     Defines a few useful methods. Not to be used directly
     but as parent class for BeamForm and BeamFormCat.
@@ -60,7 +60,7 @@ class BeamFormBase(task.SingleTask):
     freqside = config.Property(proptype=int, default=None)
 
     def setup(self, manager):
-        """ Generic setup method.
+        """Generic setup method.
 
         To be complemented by specific
         setup methods in daughter tasks.
@@ -97,7 +97,7 @@ class BeamFormBase(task.SingleTask):
         self.latitude = np.deg2rad(self.telescope.latitude)
 
     def process(self):
-        """ Generic process method.
+        """Generic process method.
 
         Performs all the beamforming,
         but not the data parsing. To be complemented by specific
@@ -331,7 +331,7 @@ class BeamFormBase(task.SingleTask):
         return formed_beam
 
     def _ha_side(self, data, timetrack=900.0):
-        """ Number of RA/time bins to track the source at each side of transit.
+        """Number of RA/time bins to track the source at each side of transit.
 
         Parameters
         ----------
@@ -358,7 +358,7 @@ class BeamFormBase(task.SingleTask):
         return int(timetrack / approx_time_perbin)
 
     def _ha_array(self, ra, source_ra_index, source_ra, ha_side, is_sstream=True):
-        """ Hour angle for each RA/time bin to be processed.
+        """Hour angle for each RA/time bin to be processed.
 
         Also return the indices of these bins in the full RA/time axis.
 
@@ -416,7 +416,7 @@ class BeamFormBase(task.SingleTask):
 
     # TODO: This is very CHIME specific. Should probably be moved somewhere else.
     def _beamfunc(self, ha, pol, freq, dec, zenith=0.70999994):
-        """ Simple and fast beam model to be used as beamforming weights.
+        """Simple and fast beam model to be used as beamforming weights.
 
         Parameters
         ----------
@@ -447,15 +447,10 @@ class BeamFormBase(task.SingleTask):
             pol = pollist.index(pol)
 
         def _sig(pp, freq, dec):
-            """
-            """
             sig_amps = [14.87857614, 9.95746878]
             return sig_amps[pp] / freq / np.cos(dec)
 
         def _amp(pp, dec, zenith):
-            """
-            """
-
             def _flat_top_gauss6(x, A, sig, x0):
                 """Flat-top gaussian. Power of 6."""
                 return A * np.exp(-abs((x - x0) / sig) ** 6)
@@ -488,8 +483,7 @@ class BeamFormBase(task.SingleTask):
             ) ** 0.5
 
     def _process_data(self, data):
-        """ Store code for parsing and formating data prior to beamforming.
-        """
+        """Store code for parsing and formating data prior to beamforming."""
         # Easy access to communicator
         self.comm_ = data.comm
 
@@ -627,12 +621,10 @@ class BeamFormBase(task.SingleTask):
 
 
 class BeamForm(BeamFormBase):
-    """ BeamForm for a single source catalog and multiple visibility datasets.
-
-    """
+    """BeamForm for a single source catalog and multiple visibility datasets."""
 
     def setup(self, manager, source_cat):
-        """ Parse the source catalog and performs the generic setup.
+        """Parse the source catalog and performs the generic setup.
 
         Parameters
         ----------
@@ -647,7 +639,7 @@ class BeamForm(BeamFormBase):
         self.catalog = source_cat
 
     def process(self, data):
-        """ Parse the visibility data and beamforms all sources.
+        """Parse the visibility data and beamforms all sources.
 
         Parameters
         ----------
@@ -668,12 +660,10 @@ class BeamForm(BeamFormBase):
 
 
 class BeamFormCat(BeamFormBase):
-    """ BeamForm for multiple source catalogs and a single visibility dataset.
-
-    """
+    """BeamForm for multiple source catalogs and a single visibility dataset."""
 
     def setup(self, manager, data):
-        """ Parse the visibility data and performs the generic setup.
+        """Parse the visibility data and performs the generic setup.
 
         Parameters
         ----------
@@ -690,7 +680,7 @@ class BeamFormCat(BeamFormBase):
         self._process_data(data)
 
     def process(self, source_cat):
-        """ Parse the source catalog and beamforms all sources.
+        """Parse the source catalog and beamforms all sources.
 
         Parameters
         ----------

@@ -47,7 +47,7 @@ class ApplyGain(task.SingleTask):
         ----------
         tstream : TimeStream like or SiderealStream
             Time stream to apply gains to. The gains are applied in place.
-        gain : StaticGainData, GainData, SiderealGainData, CommonModeGainData 
+        gain : StaticGainData, GainData, SiderealGainData, CommonModeGainData
             or CommonModeSiderealGainData. Gains to apply.
 
         Returns

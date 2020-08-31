@@ -146,8 +146,7 @@ class SetMPILogging(pipeline.TaskBase):
 
 
 class LoggedTask(pipeline.TaskBase):
-    """A task with logger support.
-    """
+    """A task with logger support."""
 
     log_level = config.Property(proptype=_log_level, default=None)
 
@@ -164,8 +163,7 @@ class LoggedTask(pipeline.TaskBase):
 
     @property
     def log(self):
-        """The logger object for this task.
-        """
+        """The logger object for this task."""
         return self._log
 
 
@@ -207,8 +205,7 @@ class _AddRankLogAdapter(logging.LoggerAdapter):
 
 
 class MPILoggedTask(MPITask, LoggedTask):
-    """A task base that has MPI aware logging.
-    """
+    """A task base that has MPI aware logging."""
 
     def __init__(self):
 
