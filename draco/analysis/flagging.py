@@ -674,8 +674,7 @@ class RFISensitivityMask(task.SingleTask):
         return flagsir
 
     def _mad_tv_mask(self, data, start_flag, freq):
-        """Use the specific scattered TV channel flagging.
-        """
+        """Use the specific scattered TV channel flagging."""
         # Make copy of data
         data = np.copy(data)
 

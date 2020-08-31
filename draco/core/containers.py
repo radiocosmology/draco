@@ -312,8 +312,7 @@ class ContainerBase(memh5.BasicCont):
 
     @classmethod
     def _class_axes(cls):
-        """Return the set of axes for this container defined by this class and the base classes.
-        """
+        """Return the set of axes for this container defined by this class and the base classes."""
         axes = set()
 
         # Iterate over the reversed MRO and look for _table_spec attributes
@@ -332,8 +331,7 @@ class ContainerBase(memh5.BasicCont):
 
     @property
     def axes(self):
-        """The set of axes for this container including any defined on the instance.
-        """
+        """The set of axes for this container including any defined on the instance."""
         axes = set(self._class_axes())
 
         # Add in any axes found on the instance (this is needed to support the table classes where
@@ -994,8 +992,8 @@ class TimeStream(VisContainer, TODContainer):
 
 
 class GridBeam(ContainerBase):
-    """ Generic container for representing the 2-d beam in spherical
-        coordinates on a rectangular grid.
+    """Generic container for representing the 2-d beam in spherical
+    coordinates on a rectangular grid.
     """
 
     _axes = ("freq", "pol", "input", "theta", "phi")
@@ -1067,9 +1065,9 @@ class GridBeam(ContainerBase):
 
 
 class TrackBeam(ContainerBase):
-    """ Container for a sequence of beam samples at arbitrary locations
-        on the sphere. The axis of the beam samples is 'pix', defined by
-        the numpy.dtype [('theta', np.float32), ('phi', np.float32)].
+    """Container for a sequence of beam samples at arbitrary locations
+    on the sphere. The axis of the beam samples is 'pix', defined by
+    the numpy.dtype [('theta', np.float32), ('phi', np.float32)].
     """
 
     _axes = ("freq", "pol", "input", "pix")
@@ -1295,8 +1293,7 @@ class KLModes(SVDModes):
 
 
 class CommonModeGainData(TODContainer):
-    """Parallel container for holding gain data common to all inputs.
-    """
+    """Parallel container for holding gain data common to all inputs."""
 
     _axes = ("freq",)
 
@@ -1334,8 +1331,7 @@ class CommonModeGainData(TODContainer):
 
 
 class CommonModeSiderealGainData(ContainerBase):
-    """Parallel container for holding sidereal gain data common to all inputs.
-    """
+    """Parallel container for holding sidereal gain data common to all inputs."""
 
     _axes = ("freq", "ra")
 
@@ -1377,8 +1373,7 @@ class CommonModeSiderealGainData(ContainerBase):
 
 
 class GainData(TODContainer):
-    """Parallel container for holding gain data.
-    """
+    """Parallel container for holding gain data."""
 
     _axes = ("freq", "input")
 
@@ -1420,8 +1415,7 @@ class GainData(TODContainer):
 
 
 class SiderealGainData(ContainerBase):
-    """Parallel container for holding sidereal gain data.
-    """
+    """Parallel container for holding sidereal gain data."""
 
     _axes = ("freq", "input", "ra")
 
@@ -1467,8 +1461,7 @@ class SiderealGainData(ContainerBase):
 
 
 class StaticGainData(ContainerBase):
-    """Parallel container for holding static gain data (i.e. non time varying).
-    """
+    """Parallel container for holding static gain data (i.e. non time varying)."""
 
     _axes = ("freq", "input")
 
@@ -1507,8 +1500,7 @@ class StaticGainData(ContainerBase):
 
 
 class DelaySpectrum(ContainerBase):
-    """Container for a delay spectrum.
-    """
+    """Container for a delay spectrum."""
 
     _axes = ("baseline", "delay")
 
@@ -1600,8 +1592,7 @@ class Powerspectrum2D(ContainerBase):
 
 
 class SVDSpectrum(ContainerBase):
-    """Container for an m-mode SVD spectrum.
-    """
+    """Container for an m-mode SVD spectrum."""
 
     _axes = ("m", "singularvalue")
 
@@ -1675,8 +1666,7 @@ class SourceCatalog(TableBase):
 
 
 class SpectroscopicCatalog(SourceCatalog):
-    """A container for spectroscopic catalogs.
-    """
+    """A container for spectroscopic catalogs."""
 
     _table_spec = {
         "redshift": {
@@ -1687,8 +1677,7 @@ class SpectroscopicCatalog(SourceCatalog):
 
 
 class FormedBeam(ContainerBase):
-    """Container for formed beams.
-    """
+    """Container for formed beams."""
 
     _axes = ("object_id", "pol", "freq")
 
@@ -1748,7 +1737,7 @@ class FormedBeam(ContainerBase):
 
 class FormedBeamHA(FormedBeam):
     """Container for formed beams.
-       These have not been collapsed in the hour angle (HA) axis
+    These have not been collapsed in the hour angle (HA) axis
     """
 
     _axes = ("object_id", "pol", "freq", "ha")

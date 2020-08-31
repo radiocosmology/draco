@@ -31,8 +31,7 @@ from ..core import containers, task, io
 
 
 class SimulateSidereal(task.SingleTask):
-    """Create a simulated sidereal dataset from an input map.
-    """
+    """Create a simulated sidereal dataset from an input map."""
 
     done = False
 
@@ -178,8 +177,7 @@ class SimulateSidereal(task.SingleTask):
 
 
 class ExpandProducts(task.SingleTask):
-    """Un-wrap collated products to full triangle.
-    """
+    """Un-wrap collated products to full triangle."""
 
     def setup(self, telescope):
         """Get a reference to the telescope class.
