@@ -24,7 +24,7 @@ import logging
 
 import numpy as np
 
-from caput import pipeline, config, memh5
+from caput import pipeline, config, memh5, misc
 
 
 class MPILogFilter(logging.Filter):
@@ -305,13 +305,11 @@ class SingleTask(MPILoggedTask, pipeline.BasicContMixin):
 
         super(SingleTask, self).__init__()
 
-        import inspect
-
         # Inspect the `process` method to see how many arguments it takes.
-        pro_argspec = inspect.getargspec(self.process)
+        pro_argspec = misc.getfullargspec(self.process)
         n_args = len(pro_argspec.args) - 1
 
-        if pro_argspec.varargs or pro_argspec.keywords or pro_argspec.defaults:
+        if pro_argspec.varargs or pro_argspec.varkw or pro_argspec.defaults:
             msg = (
                 "`process` method may not have variable length or optional"
                 " arguments."
