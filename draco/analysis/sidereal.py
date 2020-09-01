@@ -335,10 +335,10 @@ class SiderealStacker(task.SingleTask):
             self.stack.weight[:] += (coeff ** 2) * tools.invert_no_zero(sdata.weight[:])
         else:
             coeff = sdata.weight[:]
-            # We are using inverse variance weights.  In this case, the
-            # expression above reduces such that we are accumulating
-            # the sum of inverse variances in the stack.weight dataset.
-            # Do that directly to prevent an unneccessary division.
+            # We are using inverse variance weights.  In this case,
+            # we accumulate the inverse variances in the stack.weight
+            # dataset.  Do that directly to avoid an unneccessary
+            # division in the more general expression above.
             self.stack.weight[:] += sdata.weight[:]
 
         # Accumulate the total number of samples and the sum of squared coefficients.
@@ -356,7 +356,7 @@ class SiderealStacker(task.SingleTask):
         # Calculate weighted difference between the new data and the current mean.
         delta_before = coeff * (sdata.vis[:] - self.stack.vis[:])
 
-        # Update the mean value
+        # Update the mean.
         self.stack.vis[:] += delta_before * tools.invert_no_zero(sum_coeff)
 
         # Calculate the difference between the new data and the updated mean.
