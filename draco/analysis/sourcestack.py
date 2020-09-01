@@ -36,7 +36,7 @@ class SourceStack(task.SingleTask):
     freqside = config.Property(proptype=int, default=50)
 
     def process(self, formed_beam):
-        """ Receives a formed beam object and stack across sources.
+        """Receives a formed beam object and stack across sources.
 
         Parameters
         ----------

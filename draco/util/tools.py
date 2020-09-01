@@ -397,24 +397,24 @@ def redefine_stack_index_map(telescope, inputs, prod, stack, reverse_stack):
 
 
 def polarization_map(index_map, telescope, exclude_autos=True):
-    """ Map the visibilities corresponding to entries in
-        pol = ['XX', 'XY', 'YX', 'YY'].
+    """Map the visibilities corresponding to entries in
+    pol = ['XX', 'XY', 'YX', 'YY'].
 
-        Parameters
-        ----------
-        index_map : h5py.group or dict
-            Index map to map into polarizations. Must contain a `stack`
-            entry and an `input` entry.
-        telescope : :class: `drift.core.telescope`
-            Telescope object containing feed information.
-        exclude_autos: bool
-            If True (default), auto-correlations are set to -1.
+    Parameters
+    ----------
+    index_map : h5py.group or dict
+        Index map to map into polarizations. Must contain a `stack`
+        entry and an `input` entry.
+    telescope : :class: `drift.core.telescope`
+        Telescope object containing feed information.
+    exclude_autos: bool
+        If True (default), auto-correlations are set to -1.
 
-        Returns
-        -------
-        polmap : array of int
-            Array of size `nstack`. Each entry is the index to the
-            corresponding polarization in pol = ['XX', 'XY', 'YX', 'YY']
+    Returns
+    -------
+    polmap : array of int
+        Array of size `nstack`. Each entry is the index to the
+        corresponding polarization in pol = ['XX', 'XY', 'YX', 'YY']
 
     """
     # Old versions of telescope object don't have the `stack_type`
@@ -485,21 +485,21 @@ def polarization_map(index_map, telescope, exclude_autos=True):
 
 
 def baseline_vector(index_map, telescope):
-    """ Baseline vectors in meters.
+    """Baseline vectors in meters.
 
-        Parameters
-        ----------
-        index_map : h5py.group or dict
-            Index map to map into polarizations. Must contain a `stack`
-            entry and an `input` entry.
-        telescope : :class: `drift.core.telescope`
-            Telescope object containing feed information.
+    Parameters
+    ----------
+    index_map : h5py.group or dict
+        Index map to map into polarizations. Must contain a `stack`
+        entry and an `input` entry.
+    telescope : :class: `drift.core.telescope`
+        Telescope object containing feed information.
 
-        Returns
-        -------
-        bvec_m : array
-            Array of shape (2, nstack). The 2D baseline vector
-            (in meters) for each visibility in index_map['stack']
+    Returns
+    -------
+    bvec_m : array
+        Array of shape (2, nstack). The 2D baseline vector
+        (in meters) for each visibility in index_map['stack']
     """
     nstack = len(index_map["stack"])
     # Baseline vectors in meters.
