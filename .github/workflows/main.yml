@@ -56,8 +56,7 @@ jobs:
 
     - name: Run parallel tests
       run: |
-        mpirun -np 4 pytest -x test/test_selections.py
-        mpirun -np 4 pytest -x test/test_containers.py
+        mpirun -np 4 pytest -x -m mpi test/
 
   build-docs:
 

@@ -1,2 +1,7 @@
 [build-system]
 requires = ['setuptools', 'wheel', 'Cython', 'future', 'numpy>=1.7']
+
+[tool.pytest.ini_options]
+minversion = "6"
+addopts = "--strict-markers"
+markers = ["mpi: mark a test that should be run under MPI"]
