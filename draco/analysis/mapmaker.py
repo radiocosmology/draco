@@ -333,7 +333,7 @@ class PointSourceWienerMapMaker(BaseMapMaker):
     The point source amplitudes are allowed to vary independently. They all
     have the same prior variance, equal across frequencies, whereas the
     diffuse component has a power spectrum that scales with frequency.
-    
+
     An estimate of the point-source amplitudes is saved to a numpy
     binary (in brightness-temperature units) [TO DO: turn this into a proper
     task output].
@@ -345,7 +345,7 @@ class PointSourceWienerMapMaker(BaseMapMaker):
     kps_amp = config.Property(proptype=float, default=1.0)
     RA = config.Property(proptype=list)
     dec = config.Property(proptype=list)
-    ps_amp_file = config.Property(proptype=str, default='ps_amps.npy')
+    ps_amp_file = config.Property(proptype=str, default="ps_amps.npy")
 
     def process(self, mmodes):
         """Overrides the BaseMapMaker routine to allow for input of point source map.
@@ -354,8 +354,8 @@ class PointSourceWienerMapMaker(BaseMapMaker):
         ----------
         mmodes : containers.MModes
 
-        ps_map : containers.Map 
-        
+        ps_map : containers.Map
+
         Returns
         -------
         map : containers.Map
@@ -369,12 +369,12 @@ class PointSourceWienerMapMaker(BaseMapMaker):
         bt = self.beamtransfer
         tel = bt.telescope
         lmax = bt.telescope.lmax
-        mmax = min(bt.telescope.mmax, len(mmodes.index_map['m']) - 1)
-        nfreq = len(mmodes.index_map['freq'])
+        mmax = min(bt.telescope.mmax, len(mmodes.index_map["m"]) - 1)
+        nfreq = len(mmodes.index_map["freq"])
         npol = bt.telescope.num_pol_sky
         nps = len(self.RA)
 
-        #Save as class variables
+        # Save as class variables
         self.tel = tel
         self.lmax = lmax
         self.mmax = mmax
@@ -383,7 +383,7 @@ class PointSourceWienerMapMaker(BaseMapMaker):
 
         def find_key(key_list, key):
             try:
-                return map(tuple, list(key_list)).index(tuple(key))
+                return list(map(tuple, list(key_list))).index(tuple(key))
             except TypeError:
                 return list(key_list).index(key)
             except ValueError:
@@ -391,33 +391,37 @@ class PointSourceWienerMapMaker(BaseMapMaker):
 
         # Figure out mapping between the frequencies
         bt_freq = self.beamtransfer.telescope.frequencies
-        mm_freq = mmodes.index_map['freq']['centre']
+        mm_freq = mmodes.index_map["freq"]["centre"]
 
-        freq_ind = [ find_key(bt_freq, mf) for mf in mm_freq]
+        freq_ind = [find_key(bt_freq, mf) for mf in mm_freq]
 
         # Trim off excess m-modes
-        mmodes.redistribute('freq')
-        m_array = mmodes.vis[:(mmax + 1)]
+        mmodes.redistribute("freq")
+        m_array = mmodes.vis[: (mmax + 1)]
         m_array = m_array.redistribute(axis=0)
 
-        m_weight = mmodes.weight[:(mmax + 1)]
+        m_weight = mmodes.weight[: (mmax + 1)]
         m_weight = m_weight.redistribute(axis=0)
 
         # Create array to store final alms in.
-        alm = mpiarray.MPIArray((nfreq, 4, lmax + 1, mmax + 1), axis=3,
-                                dtype=np.complex128, comm=mmodes.comm)
+        alm = mpiarray.MPIArray(
+            (nfreq, 4, lmax + 1, mmax + 1),
+            axis=3,
+            dtype=np.complex128,
+            comm=mmodes.comm,
+        )
         alm[:] = 0.0
 
         # Create array to store projections onto point-source positions in.
-        vis_pss = np.zeros((nfreq, nps), dtype = np.complex128)
+        vis_pss = np.zeros((nfreq, nps), dtype=np.complex128)
 
         # Create array to store matrix in point-source space in.
-        M_pss = np.zeros((nfreq, nps, nps), dtype = np.complex128)
+        M_pss = np.zeros((nfreq, nps, nps), dtype=np.complex128)
 
         # Create array to store the point source amplitudes.
-        ps_amps = np.zeros((nfreq, nps), dtype = np.float64)
+        ps_amps = np.zeros((nfreq, nps), dtype=np.float64)
 
-        #Load in the alms of the point sources.
+        # Load in the alms of the point sources.
         self._get_ps_alms()
 
         # Loop over all m's collecting the required components.
@@ -428,10 +432,12 @@ class PointSourceWienerMapMaker(BaseMapMaker):
                 a = alm[fi, ..., mi].view(np.ndarray)
                 Ni = m_weight[mi, :, fi].view(np.ndarray)
 
-                #Get the diagonal (in m) piece of the inverse
-                a[:], Ainv, ps_amps_i = self._solve_m_diagonal(m, mi, fi, bt_freq[fi], v, Ni)
+                # Get the diagonal (in m) piece of the inverse
+                a[:], Ainv, ps_amps_i = self._solve_m_diagonal(
+                    m, mi, fi, bt_freq[fi], v, Ni
+                )
 
-                #Get the ingredients for the correction in point-source space
+                # Get the ingredients for the correction in point-source space
                 M_pss_i, vis_pss_i = self._solve_m_correction(Ainv, m, mi, fi, v, Ni)
 
                 vis_pss[fi] = vis_pss[fi] + vis_pss_i
@@ -439,9 +445,9 @@ class PointSourceWienerMapMaker(BaseMapMaker):
                 ps_amps[fi] = ps_amps[fi] + ps_amps_i
 
         for fi in range(nfreq):
-            #invert the point-source space covariance
-            M_pss[fi] = np.linalg.inv(np.identity(nps)/self.kps_amp + M_pss[fi])
-            #multiply the point-source-projected visibilities with this matrix
+            # invert the point-source space covariance
+            M_pss[fi] = np.linalg.inv(np.identity(nps) / self.kps_amp + M_pss[fi])
+            # multiply the point-source-projected visibilities with this matrix
             vis_pss[fi] = np.dot(M_pss[fi], vis_pss[fi])
 
         for mi, m in m_array.enumerate(axis=0):
@@ -450,12 +456,13 @@ class PointSourceWienerMapMaker(BaseMapMaker):
                 a = alm[fi, ..., mi].view(np.ndarray)
                 Ni = m_weight[mi, :, fi].view(np.ndarray)
 
-                if mpiutil.rank0:
-                    print eph.datetime.now(), "DEBUG: Assembling results: fi, mi = ", fi, mi
+                self.log.debug(f"Assembling results: fi, mi = {fi}, {mi}")
 
                 corr = self._spread_ps_results(vis_pss[fi], m, mi, fi, Ni)
 
-                acorr, Ainv, pscorr = self._solve_m_diagonal(m, mi, fi, bt_freq[fi], corr, Ni, prewhiten=False)
+                acorr, Ainv, pscorr = self._solve_m_diagonal(
+                    m, mi, fi, bt_freq[fi], corr, Ni, prewhiten=False
+                )
 
                 a[:] = a[:] - acorr
                 ps_amps[fi] = ps_amps[fi] - pscorr
@@ -463,8 +470,13 @@ class PointSourceWienerMapMaker(BaseMapMaker):
         alm = alm.redistribute(axis=0)
 
         # Copy into square alm array for transform
-        almt = mpiarray.MPIArray((nfreq, 4, lmax + 1, lmax + 1), dtype=np.complex128, axis=0, comm=mmodes.comm)
-        almt[..., :(mmax + 1)] = alm
+        almt = mpiarray.MPIArray(
+            (nfreq, 4, lmax + 1, lmax + 1),
+            dtype=np.complex128,
+            axis=0,
+            comm=mmodes.comm,
+        )
+        almt[..., : (mmax + 1)] = alm
         alm = almt
 
         # Perform spherical harmonic transform to map space
@@ -474,14 +486,12 @@ class PointSourceWienerMapMaker(BaseMapMaker):
         m = containers.Map(nside=self.nside, axes_from=mmodes, comm=mmodes.comm)
         m.map[:] = maps
 
-        np.save(self.ps_amp_file,ps_amps)
+        np.save(self.ps_amp_file, ps_amps)
 
         return m
 
-
     def _solve_m_diagonal(self, m, mi, f, freq, v, Ni, prewhiten=True):
-        #perform the regular Wiener inversion (i.e., the part that's diagonal
-        #in m)
+        """perform the regular Wiener inversion (i.e., the part that's diagonal in m)"""
 
         import scipy.linalg as la
 
@@ -492,11 +502,11 @@ class PointSourceWienerMapMaker(BaseMapMaker):
         # Massage the arrays into shape
         v = v.reshape(bt.ntel)
         Ni = Ni.reshape(bt.ntel)
-        Nh = Ni**0.5
+        Nh = Ni ** 0.5
 
         # Get the beam transfer matrix, but trim off any l < m.
         bm = bt.beam_m(m, fi=f)[..., m:].copy()
-        bm[np.isnan(bm)] = 0.
+        bm[np.isnan(bm)] = 0.0
 
         bm = bm.reshape(bt.ntel, -1)
 
@@ -514,9 +524,9 @@ class PointSourceWienerMapMaker(BaseMapMaker):
         l = np.arange(lmax + 1)
         l[0] = 1  # Change l=0 to get around singularity
         l = l[m:]  # Trim off any l < m
-        cl_TT = self.prior_amp * l**(-self.prior_tilt)
-        #correct amplitude for spectral index
-        cl_TT *= (bt.telescope.frequencies[f]/408.)**(-2.*self.spec_ind)
+        cl_TT = self.prior_amp * l ** (-self.prior_tilt)
+        # correct amplitude for spectral index
+        cl_TT *= (bt.telescope.frequencies[f] / 408.0) ** (-2.0 * self.spec_ind)
         S_diag = np.concatenate([cl_TT] * 4)
 
         # Rearrange for blockwise matrix inversion
@@ -525,9 +535,11 @@ class PointSourceWienerMapMaker(BaseMapMaker):
         vis_wiener = np.dot(pC, vt)
         a_wiener = np.dot(bth, vis_wiener)
 
-        #Get the Y_l's for this m, but trim any l<m.
+        # Get the Y_l's for this m, but trim any l<m.
         Yl = np.array([self.col_alm[mi, ii, f][..., m:].ravel() for ii in range(nps)])
-        ps_amps = self.kps_amp*np.array([np.dot(Yl[ii].conjugate(),a_wiener) for ii in range(nps)])
+        ps_amps = self.kps_amp * np.array(
+            [np.dot(Yl[ii].conjugate(), a_wiener) for ii in range(nps)]
+        )
 
         a_wiener = S_diag * a_wiener
 
@@ -537,9 +549,8 @@ class PointSourceWienerMapMaker(BaseMapMaker):
 
         return a, pC, ps_amps
 
-
     def _solve_m_correction(self, Ainv, m, mi, f, v, Ni):
-        #Get the ingredients for the correction in point-source space
+        """Get the ingredients for the correction in point-source space"""
 
         import scipy.linalg as la
 
@@ -550,11 +561,11 @@ class PointSourceWienerMapMaker(BaseMapMaker):
         # Massage the arrays into shape
         v = v.reshape(bt.ntel)
         Ni = Ni.reshape(bt.ntel)
-        Nh = Ni**0.5
+        Nh = Ni ** 0.5
 
         # Get the beam transfer matrix, but trim off any l < m.
         bm = bt.beam_m(m, fi=f)[..., m:].copy()
-        bm[np.isnan(bm)] = 0.
+        bm[np.isnan(bm)] = 0.0
 
         bm = bm.reshape(bt.ntel, -1)
 
@@ -566,24 +577,28 @@ class PointSourceWienerMapMaker(BaseMapMaker):
         vt = Nh * v
         vt = np.dot(Ainv, vt)
 
-        #Get the Y_l's for this m, but trim any l<m.
+        # Get the Y_l's for this m, but trim any l<m.
         Yl = np.array([self.col_alm[mi, ii, f][..., m:].ravel() for ii in range(nps)])
 
-        #Compute A^{-1}U
+        # Compute A^{-1}U
         Bu = np.array([np.dot(bmt, Yl[ii]) for ii in range(nps)])
         ui = np.array([np.dot(Ainv, Bu[ii]) for ii in range(nps)])
 
-        #Compute the piece of the point-source covariance for this m.
-        M_pss_i = np.array([[np.dot(Bu[ii].T.conj(), ui[jj]) for jj in range(nps)] for ii in range(nps)])
+        # Compute the piece of the point-source covariance for this m.
+        M_pss_i = np.array(
+            [
+                [np.dot(Bu[ii].T.conj(), ui[jj]) for jj in range(nps)]
+                for ii in range(nps)
+            ]
+        )
 
-        #Compute the point-source-projected visibilities for this m.
+        # Compute the point-source-projected visibilities for this m.
         vis_pss_i = np.array([np.dot(Bu[ii].T.conj(), vt) for ii in range(nps)])
 
         return M_pss_i, vis_pss_i
 
-
     def _spread_ps_results(self, vis_pss, m, mi, f, Ni):
-        #project the results of the point-source correction back into map space
+        """project the results of the point-source correction back into map space"""
 
         bt = self.beamtransfer
         lmax = bt.telescope.lmax
@@ -591,11 +606,11 @@ class PointSourceWienerMapMaker(BaseMapMaker):
 
         # Massage the arrays into shape
         Ni = Ni.reshape(bt.ntel)
-        Nh = Ni**0.5
+        Nh = Ni ** 0.5
 
         # Get the beam transfer matrix, but trim off any l < m.
         bm = bt.beam_m(m, fi=f)[..., m:].copy()
-        bm[np.isnan(bm)] = 0.
+        bm[np.isnan(bm)] = 0.0
 
         bm = bm.reshape(bt.ntel, -1)
 
@@ -607,18 +622,19 @@ class PointSourceWienerMapMaker(BaseMapMaker):
         Bu = np.array([np.dot(bmt, Yl[ii]) for ii in range(nps)])
         corr = np.zeros(Bu[0].shape, dtype=complex)
         for ii in range(nps):
-            corr += vis_pss[ii]*Bu[ii] 
+            corr += vis_pss[ii] * Bu[ii]
 
         return corr
 
-
     def _get_ps_alms(self):
-        #Calculate the alms for each point source. At the moment this is done in
-        #a stupid way by creating a map with one non-zero pixel each and
-        #calculating the spherical-harmonic transform of those maps.
-        #TO DO: replace this procedure with a direct evaluation of spherical
-        #harmonics, using a fast and accurate library (perhaps pyGSL or pyshtools)
-        
+        """Calculate the alms for each point source. At the moment this is done in
+        a stupid way by creating a map with one non-zero pixel each and
+        calculating the spherical-harmonic transform of those maps.
+        TO DO: replace this procedure with a direct evaluation of spherical
+        harmonics, using a fast and accurate library (perhaps pyGSL or
+        pyshtools)
+        """
+
         from caput import mpiutil
         from cora.util import hputil
 
@@ -629,29 +645,37 @@ class PointSourceWienerMapMaker(BaseMapMaker):
         tel = self.beamtransfer.telescope
         nps = len(self.RA)
 
-        row_maps = [containers.Map(nside=self.nside,freq=nfreq) for ii in range(nps)]
+        row_maps = [containers.Map(nside=self.nside, freq=nfreq) for ii in range(nps)]
         for ii in range(nps):
-            row_maps[ii].map[:] = 0.
-            theta = np.pi / 2. - self.dec[ii] / 180. * np.pi
-            phi = self.RA[ii] / 180. * np.pi
-            pix = hputil.healpy.ang2pix(self.nside,theta,phi)
-            row_maps[ii].map[:,0,pix] = 1.
+            row_maps[ii].map[:] = 0.0
+            theta = np.pi / 2.0 - self.dec[ii] / 180.0 * np.pi
+            phi = self.RA[ii] / 180.0 * np.pi
+            pix = hputil.healpy.ang2pix(self.nside, theta, phi)
+            row_maps[ii].map[:, 0, pix] = 1.0
 
         # Calculate the alms of input point source map
-        row_alm = np.array([hputil.sphtrans_sky(row_maps[ii].map[:], lmax=lmax).reshape((-1, npol * (lmax + 1), lmax + 1)) for ii in range(nps)])
+        row_alm = np.array(
+            [
+                hputil.sphtrans_sky(row_maps[ii].map[:], lmax=lmax).reshape(
+                    (-1, npol * (lmax + 1), lmax + 1)
+                )
+                for ii in range(nps)
+            ]
+        )
 
         # Trim off excess m's and wrap into MPIArray
-        row_alm = row_alm[..., :(mmax+1)]
+        row_alm = row_alm[..., : (mmax + 1)]
         row_alm = mpiarray.MPIArray.wrap(row_alm, axis=1)
 
         # Perform the transposition to distribute different m's across processes.
         col_alm = row_alm.redistribute(axis=3)
 
         # Transpose and reshape to shift m index first.
-        col_alm = col_alm.transpose((3, 0, 1, 2)).reshape((None, nps, nfreq, npol, lmax+1))
+        col_alm = col_alm.transpose((3, 0, 1, 2)).reshape(
+            (None, nps, nfreq, npol, lmax + 1)
+        )
 
         self.col_alm = col_alm
-
 
 
 def pinv_svd(M, acond=1e-4, rcond=1e-3):
