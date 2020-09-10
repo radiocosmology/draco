@@ -1062,7 +1062,7 @@ class GridBeam(ContainerBase):
 
 class HEALPixBeam(ContainerBase):
     """Generic container for representing the 2-d beam in spherical
-       coordinates on a HEALPix grid.
+    coordinates on a HEALPix grid.
     """
 
     _axes = ("freq", "pol", "input", "pix")
