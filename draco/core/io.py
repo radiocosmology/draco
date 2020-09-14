@@ -45,6 +45,7 @@ from past.builtins import basestring
 
 import os.path
 import numpy as np
+from yaml import dump as yamldump
 
 from caput import pipeline
 from caput import config
@@ -217,10 +218,13 @@ class LoadFilesFromParams(task.SingleTask):
         Can either be a glob pattern, or lists of actual files.
     distributed : bool, optional
         Whether the file should be loaded distributed across ranks.
+    convert_strings : bool, optional
+        Convert strings to unicode when loading.
     """
 
     files = config.Property(proptype=_list_or_glob)
     distributed = config.Property(proptype=bool, default=True)
+    convert_strings = config.Property(proptype=bool, default=True)
 
     def process(self):
         """Load the given files in turn and pass on.
@@ -247,7 +251,11 @@ class LoadFilesFromParams(task.SingleTask):
         self.log.info("Loading file %s" % file_)
 
         cont = memh5.BasicCont.from_file(
-            file_, distributed=self.distributed, comm=self.comm
+            file_,
+            distributed=self.distributed,
+            comm=self.comm,
+            convert_attribute_strings=self.convert_strings,
+            convert_dataset_strings=self.convert_strings,
         )
 
         if "tag" not in cont.attrs:
@@ -551,6 +559,66 @@ class Truncate(task.SingleTask):
                     ).reshape(old_shape)
 
         return data
+
+
+class SaveModuleVersions(task.SingleTask):
+    """Write module versions to a YAML file.
+
+    The list of modules should be added to the configuration under key 'save_versions'.
+    The version strings are written to a YAML file.
+
+    Attributes
+    ----------
+    root : str
+        Root of the file name to output to.
+    """
+
+    root = config.Property(proptype=str)
+
+    done = True
+
+    def setup(self):
+        """Save module versions."""
+
+        fname = "{}_versions.yml".format(self.root)
+        f = open(fname, "w")
+        f.write(yamldump(self.versions))
+        f.close()
+        self.done = True
+
+    def process(self):
+        """Do nothing."""
+        self.done = True
+        return
+
+
+class SaveConfig(task.SingleTask):
+    """Write pipeline config to a text file.
+
+    Yaml configuration document is written to a text file.
+
+    Attributes
+    ----------
+    root : str
+        Root of the file name to output to.
+    """
+
+    root = config.Property(proptype=str)
+    done = True
+
+    def setup(self):
+        """Save module versions."""
+
+        fname = "{}_config.yml".format(self.root)
+        f = open(fname, "w")
+        f.write(yamldump(self.pipeline_config))
+        f.close()
+        self.done = True
+
+    def process(self):
+        """Do nothing."""
+        self.done = True
+        return
 
 
 def get_telescope(obj):

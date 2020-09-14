@@ -6,9 +6,11 @@ from future.builtins.disabled import *  # noqa  pylint: disable=W0401, W0614
 # === End Python 2/3 compatibility
 
 import numpy as np
-from mpi4py import MPI
+from skyfield.api import Star, Angle
 
-from caput import config, mpiutil, mpiarray
+from caput import config
+from caput import time as ctime
+
 from cora.util import units
 
 from ..core import task, containers, io
@@ -152,7 +154,7 @@ class BeamFormBase(task.SingleTask):
         for src in range(self.nsource):
 
             # Declination of this source
-            dec = self.sdec[src]
+            dec = np.radians(self.sdec[src])
 
             if self.freqside is not None:
                 # Get the frequency bin this source is closest to.
@@ -165,7 +167,7 @@ class BeamFormBase(task.SingleTask):
                 f_mask = np.ones(self.nfreq, dtype=bool)
                 f_mask[freq_idx0:freq_idx1] = False
                 # Restrict frequency mask to local range
-                f_mask = f_mask[self.lo : self.lo + self.ls]
+                f_mask = f_mask[self.lo : (self.lo + self.ls)]
 
                 # TODO: In principle I should be able to skip
                 # sources that have no indices to be processed
@@ -474,15 +476,15 @@ class BeamFormBase(task.SingleTask):
         if pol < 2:
             # XX or YY
             return _amp(pol, dec, zenith) * np.exp(
-                -((ha - ha0) / _sig(pol, freq, dec)) ** 2
+                -(((ha - ha0) / _sig(pol, freq, dec)) ** 2)
             )
         else:
             # XY or YX
             return (
                 _amp(0, dec, zenith)
-                * np.exp(-((ha - ha0) / _sig(0, freq, dec)) ** 2)
+                * np.exp(-(((ha - ha0) / _sig(0, freq, dec)) ** 2))
                 * _amp(1, dec, zenith)
-                * np.exp(-((ha - ha0) / _sig(1, freq, dec)) ** 2)
+                * np.exp(-(((ha - ha0) / _sig(1, freq, dec)) ** 2))
             ) ** 0.5
 
     def _process_data(self, data):
@@ -495,10 +497,28 @@ class BeamFormBase(task.SingleTask):
         if "ra" in data.index_map:
             self.is_sstream = True
             self.ra = data.index_map["ra"]
+
+            # Calculate the epoch for the data so we can calculate the correct
+            # CIRS coordinates
+            if "lsd" not in data.attrs:
+                raise ValueError(
+                    "SiderealStream must have an LSD attribute to calculate the epoch."
+                )
+
+            # This will be a float for a single sidereal day, or a list of
+            # floats for a stack
+            lsd = (
+                data.attrs["lsd"][0]
+                if isinstance(data.attrs["lsd"], np.ndarray)
+                else data.attrs["lsd"]
+            )
+            self.epoch = self.telescope.lsd_to_unix(lsd)
+
         else:
             self.is_sstream = False
             # Convert data timestamps into LSAs (degrees)
             self.ra = self.telescope.unix_to_lsa(data.time)
+            self.epoch = data.time.mean()
 
         self.freq = data.index_map["freq"]
         self.nfreq = len(self.freq)
@@ -521,9 +541,9 @@ class BeamFormBase(task.SingleTask):
         self.freq_local = self.freq["centre"][self.lo : self.lo + self.ls]
         # These are to be used when gathering results in the end.
         # Tuple (not list!) of number of frequencies in each rank
-        self.fsize = tuple(mpiutil.world.allgather(self.ls))
+        self.fsize = tuple(data.comm.allgather(self.ls))
         # Tuple (not list!) of displacements of each rank array in full array
-        self.foffset = tuple(mpiutil.world.allgather(self.lo))
+        self.foffset = tuple(data.comm.allgather(self.lo))
 
         fullpol = ["XX", "XY", "YX", "YY"]
         # Save subsets of the data for each polarization, changing
@@ -584,6 +604,27 @@ class BeamFormBase(task.SingleTask):
                     this_sumweight = (this_sumweight > 0.0).astype(np.float64)
                 self.sumweight.append(np.copy(this_sumweight, order="C"))
 
+    def _process_catalog(self, catalog):
+        """Process the catalog to get CIRS coordinates at the correct epoch.
+
+        Note that `self._process_data` must have been called before this.
+        """
+
+        if "position" not in catalog:
+            raise ValueError("Input is missing a position table.")
+
+        self.sra, self.sdec = icrs_to_cirs(
+            catalog["position"]["ra"], catalog["position"]["dec"], self.epoch
+        )
+
+        if self.freqside is not None:
+            if "redshift" not in catalog:
+                raise ValueError("Input is missing a required redshift table.")
+            self.sfreq = NU21 / (catalog["redshift"]["z"][:] + 1.0)  # MHz
+
+        self.source_cat = catalog
+        self.nsource = len(self.sra)
+
 
 class BeamForm(BeamFormBase):
     """ BeamForm for a single source catalog and multiple visibility datasets.
@@ -603,17 +644,7 @@ class BeamForm(BeamFormBase):
 
         """
         super(BeamForm, self).setup(manager)
-
-        # Extract source catalog information
-        self.source_cat = source_cat
-        # Number of pointings
-        self.nsource = len(self.source_cat["position"])
-        # Pointings RA and Dec
-        self.sdec = np.deg2rad(self.source_cat["position"]["dec"][:])
-        self.sra = self.source_cat["position"]["ra"]
-        if self.freqside is not None:
-            # Frequency of each source.
-            self.sfreq = NU21 / (self.source_cat["redshift"]["z"][:] + 1.0)  # MHz
+        self.catalog = source_cat
 
     def process(self, data):
         """ Parse the visibility data and beamforms all sources.
@@ -630,6 +661,7 @@ class BeamForm(BeamFormBase):
         """
         # Process and make available various data
         self._process_data(data)
+        self._process_catalog(self.catalog)
 
         # Call generic process method.
         return super(BeamForm, self).process()
@@ -670,16 +702,41 @@ class BeamFormCat(BeamFormBase):
         formed_beam : `containers.FormedBeam` or `containers.FormedBeamHA`
             Formed beams at each source.
         """
-        # Source catalog to beamform at
-        self.source_cat = source_cat
-        # Number of pointings
-        self.nsource = len(self.source_cat["position"])
-        # Pointings RA and Dec
-        self.sdec = np.deg2rad(self.source_cat["position"]["dec"][:])
-        self.sra = self.source_cat["position"]["ra"]
-        if self.freqside is not None:
-            # Frequency of each source.
-            self.sfreq = NU21 / (self.source_cat["redshift"]["z"][:] + 1.0)  # MHz
+        self._process_catalog(source_cat)
 
         # Call generic process method.
         return super(BeamFormCat, self).process()
+
+
+def icrs_to_cirs(ra, dec, epoch, apparent=True):
+    """Convert a set of positions from ICRS to CIRS at a given data.
+
+    Parameters
+    ----------
+    ra, dec : float or np.ndarray
+        Positions of source in ICRS coordinates including an optional
+        redshift position.
+    epoch : time_like
+        Time to convert the positions to. Can be any type convertible to a
+        time using `caput.time.ensure_unix`.
+    apparent : bool
+        Calculate the apparent position (includes abberation and deflection).
+
+    Returns
+    -------
+    ra_cirs, dec_cirs : float or np.ndarray
+        Arrays of the positions in *CIRS* coordiantes.
+    """
+    positions = Star(ra=Angle(degrees=ra), dec=Angle(degrees=dec))
+
+    epoch = ctime.unix_to_skyfield_time(ctime.ensure_unix(epoch))
+
+    earth = ctime.skyfield_wrapper.ephemeris["earth"]
+    positions = earth.at(epoch).observe(positions)
+
+    if apparent:
+        positions = positions.apparent()
+
+    ra_cirs, dec_cirs, _ = positions.cirs_radec(epoch)
+
+    return ra_cirs._degrees, dec_cirs._degrees

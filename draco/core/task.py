@@ -131,12 +131,9 @@ class SetMPILogging(pipeline.TaskBase):
         filt = MPILogFilter(level_all=self.level_all, level_rank0=self.level_rank0)
 
         # This uses the fact that caput.pipeline.Manager has already
-        # attempted to set up the logging. We just override the level, and
-        # insert our custom filter
+        # attempted to set up the logging. We just insert our custom filter
         root_logger = logging.getLogger()
-        root_logger.setLevel(logging.DEBUG)
         ch = root_logger.handlers[0]
-        ch.setLevel(logging.DEBUG)
         ch.addFilter(filt)
 
         formatter = logging.Formatter(
@@ -157,7 +154,9 @@ class LoggedTask(pipeline.TaskBase):
     def __init__(self):
 
         # Get the logger for this task
-        self._log = logging.getLogger("%s.%s" % (__name__, self.__class__.__name__))
+        self._log = logging.getLogger(
+            "%s.%s" % (self.__module__, self.__class__.__name__)
+        )
 
         # Set the log level for this task if specified
         if self.log_level is not None:
@@ -248,15 +247,31 @@ class SingleTask(MPILoggedTask, pipeline.BasicContMixin):
     ----------
     save : bool
         Whether to save the output to disk or not.
+    output_name : string
+        A python format string used to construct the filename. Valid identifiers are:
+          - `count`: an integer giving which iteration of the task is this.
+          - `tag`: a string identifier for the output derived from the
+                   containers `tag` attribute. If that attribute is not present
+                   `count` is used instead.
+          - `key`: the name of the output key.
+          - `task`: the (unqualified) name of the task.
+          - `output_root`: the value of the output root argument. This is deprecated
+                           and is just used for legacy support. The default value of
+                           `output_name` means the previous behaviour works.
     output_root : string
         Pipeline settable parameter giving the first part of the output path.
-        If set to 'None' no output is written.
+        Deprecated in favour of `output_name`.
     nan_check : bool
         Check the output for NaNs (and infs) logging if they are present.
     nan_dump : bool
         If NaN's are found, dump the container to disk.
     nan_skip : bool
         If NaN's are found, don't pass on the output.
+    versions : dict
+        Keys are module names (str) and values are their version strings. This is
+        attached to output metadata.
+    pipeline_config : dict
+        Global pipeline configuration. This is attached to output metadata.
 
     Methods
     -------
@@ -271,11 +286,17 @@ class SingleTask(MPILoggedTask, pipeline.BasicContMixin):
     """
 
     save = config.Property(default=False, proptype=bool)
+
     output_root = config.Property(default="", proptype=str)
+    output_name = config.Property(default="{output_root}{tag}.h5", proptype=str)
 
     nan_check = config.Property(default=True, proptype=bool)
     nan_skip = config.Property(default=True, proptype=bool)
     nan_dump = config.Property(default=True, proptype=bool)
+
+    # Metadata to get attached to the output
+    versions = config.Property(default={}, proptype=dict)
+    pipeline_config = config.Property(default={}, proptype=dict)
 
     _count = 0
 
@@ -374,14 +395,25 @@ class SingleTask(MPILoggedTask, pipeline.BasicContMixin):
 
     def _save_output(self, output):
         # Routine to write output if needed.
-
         if self.save and output is not None:
+
+            # add metadata to output
+            metadata = {"versions": self.versions, "config": self.pipeline_config}
+            for key, value in metadata.items():
+                output.add_history(key, value)
 
             # Create a tag for the output file name
             tag = output.attrs["tag"] if "tag" in output.attrs else self._count
 
             # Construct the filename
-            outfile = self.output_root + str(tag) + ".h5"
+            name_parts = {
+                "tag": tag,
+                "count": self._count,
+                "task": self.__class__.__name__,
+                "key": self._out_keys[0] if self._out_keys else "",
+                "output_root": self.output_root,
+            }
+            outfile = self.output_name.format(**name_parts)
 
             # Expand any variables in the path
             outfile = os.path.expanduser(outfile)

@@ -1,0 +1,11 @@
+driftscan @ git+https://github.com/radiocosmology/driftscan.git
+caput @ git+https://github.com/radiocosmology/caput.git
+cora @ git+https://github.com/radiocosmology/cora.git
+Cython>0.18
+
+# same as caput to prevent binary incompatibility bug
+numpy>=1.16
+
+scipy>=0.10
+RandomGen
+mpi4py

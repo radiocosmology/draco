@@ -1,0 +1,2 @@
+include versioneer.py
+include draco/_version.py

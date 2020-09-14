@@ -59,6 +59,107 @@ def icmap(ix, n):
     return i, j
 
 
+def find_key(key_list, key):
+    """Find the index of a key in a list of keys.
+
+    This is a wrapper for the list method `index`
+    that can search any interable (not just lists)
+    and will return None if the key is not found.
+
+    Parameters
+    ----------
+    key_list : iterable
+    key : object to be searched
+
+    Returns
+    -------
+    index : int or None
+        The index of `key` in `key_list`.
+        If `key_list` does not contain `key`,
+        then None is returned.
+    """
+    try:
+        return [tuple(x) for x in key_list].index(tuple(key))
+    except TypeError:
+        return list(key_list).index(key)
+    except ValueError:
+        return None
+
+
+def find_keys(key_list, keys, require_match=False):
+    """Find the indices of keys into a list of keys.
+
+    Parameters
+    ----------
+    key_list : iterable
+    keys : iterable
+    require_match : bool
+        Require that `key_list` contain every element of `keys`,
+        and if not, raise ValueError.
+
+    Returns
+    -------
+    indices : list of int or None
+        List of the same length as `keys` containing
+        the indices of `keys` in `key_list`.  If `require_match`
+        is False, then this can also contain None for keys
+        that are not contained in `key_list`.
+    """
+    # Significantly faster than repeated calls to find_key
+    try:
+        dct = {tuple(kk): ii for ii, kk in enumerate(key_list)}
+        index = [dct.get(tuple(key)) for key in keys]
+    except TypeError:
+        dct = {kk: ii for ii, kk in enumerate(key_list)}
+        index = [dct.get(key) for key in keys]
+
+    if require_match and any([ind is None for ind in index]):
+        raise ValueError("Could not find all of the keys.")
+    else:
+        return index
+
+
+def find_inputs(input_index, inputs, require_match=False):
+    """Find the indices of inputs into a list of inputs.
+
+    This behaves similarly to `find_keys` but will automatically choose the key to
+    match on.
+
+    Parameters
+    ----------
+    input_index : np.ndarray
+    inputs : np.ndarray
+    require_match : bool
+        Require that `input_index` contain every element of `inputs`,
+        and if not, raise ValueError.
+
+    Returns
+    -------
+    indices : list of int or None
+        List of the same length as `inputs` containing
+        the indices of `inputs` in `input_inswx`.  If `require_match`
+        is False, then this can also contain None for inputs
+        that are not contained in `input_index`.
+    """
+    # Significantly faster than repeated calls to find_key
+
+    if "correlator_input" in input_index.dtype.fields:
+        field_to_match = "correlator_input"
+    elif "chan_id" in input_index.dtype.fields:
+        field_to_match = "chan_id"
+    else:
+        raise ValueError(
+            "`input_index` must have either a `chan_id` or `correlator_input` field."
+        )
+
+    if field_to_match not in inputs.dtype.fields:
+        raise ValueError("`inputs` array does not have a `%s` field." % field_to_match)
+
+    return find_keys(
+        input_index[field_to_match], inputs[field_to_match], require_match=require_match
+    )
+
+
 def apply_gain(vis, gain, axis=1, out=None, prod_map=None):
     """Apply per input gains to a set of visibilities packed in upper
     triangular format.
@@ -233,6 +334,66 @@ def calculate_redundancy(input_flags, prod_map, stack_index, nstack):
     _calc_redundancy(input_flags, pm, stack_index.copy(), nstack, redundancy)
 
     return redundancy
+
+
+def redefine_stack_index_map(telescope, inputs, prod, stack, reverse_stack):
+    """Ensure baselines between unmasked inputs are used to represent each stack.
+
+    Parameters
+    ----------
+    telescope : :class: `drift.core.telescope`
+        Telescope object containing feed information.
+    inputs : np.ndarray[ninput,] of dtype=('correlator_input', 'chan_id')
+        The 'correlator_input' or 'chan_id' of the inputs in the stack.
+    prod : np.ndarray[nprod,] of dtype=('input_a', 'input_b')
+        The correlation products as pairs of inputs.
+    stack : np.ndarray[nstack,] of dtype=('prod', 'conjugate')
+        The index into the `prod` axis of a characteristic baseline included in the stack.
+    reverse_stack :  np.ndarray[nprod,] of dtype=('stack', 'conjugate')
+        The index into the `stack` axis that each `prod` belongs.
+
+    Returns
+    -------
+    stack_new : np.ndarray[nstack,] of dtype=('prod', 'conjugate')
+        The updated `stack` index map, where each element is an index to a product
+        consisting of a pair of unmasked inputs.
+    stack_flag : np.ndarray[nstack,] of dtype=np.bool
+        Boolean flag that is True if this element of the stack index map is now valid,
+        and False if none of the baselines that were stacked contained unmasked inputs.
+    """
+    # Determine mapping between inputs in the index_map and
+    # inputs in the telescope instance
+    tel_index = find_inputs(telescope.input_index, inputs, require_match=False)
+
+    # Create a copy of the stack axis
+    stack_new = stack.copy()
+    stack_flag = np.zeros(stack_new.size, dtype=np.bool)
+
+    # Loop over the stacked baselines
+    for sind, (ii, jj) in enumerate(prod[stack["prod"]]):
+
+        bi, bj = tel_index[ii], tel_index[jj]
+
+        # Check that the represenative pair of inputs are present
+        # in the telescope instance and not masked.
+        if (bi is None) or (bj is None) or not telescope.feedmask[bi, bj]:
+
+            # Find alternative pairs of inputs using the reverse map
+            this_stack = np.flatnonzero(reverse_stack["stack"] == sind)
+
+            # Loop over alternatives until we find an acceptable pair of inputs
+            for ts in this_stack:
+                tp = prod[ts]
+                ti, tj = tel_index[tp[0]], tel_index[tp[1]]
+                if (ti is not None) and (tj is not None) and telescope.feedmask[ti, tj]:
+                    stack_new[sind]["prod"] = ts
+                    stack_new[sind]["conjugate"] = reverse_stack[ts]["conjugate"]
+                    stack_flag[sind] = True
+                    break
+        else:
+            stack_flag[sind] = True
+
+    return stack_new, stack_flag
 
 
 def polarization_map(index_map, telescope, exclude_autos=True):

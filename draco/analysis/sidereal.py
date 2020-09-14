@@ -138,11 +138,8 @@ class SiderealGrouper(task.SingleTask):
             Returns the timestream of the final sidereal day if it's long
             enough, otherwise returns :obj:`None`.
         """
-
         # If we are here there is no more data coming, we just need to process any remaining data
-        tstream_all = self._process_current_lsd()
-
-        return tstream_all
+        return self._process_current_lsd() if self._timestream_list else None
 
     def _process_current_lsd(self):
         # Combine the current set of files into a timestream

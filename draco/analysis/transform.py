@@ -149,14 +149,22 @@ class CollateProducts(task.SingleTask):
         )
 
         # Construct the equivalent prod and stack index_map for the telescope instance
+        triu = np.triu_indices(self.telescope.nfeed)
         dt_prod = np.dtype([("input_a", "<u2"), ("input_b", "<u2")])
-        self.bt_prod = (
-            np.array(np.triu_indices(self.telescope.nfeed))
-            .astype("<u2")
-            .T.copy()
-            .view(dt_prod)
-            .reshape(-1)
+        self.bt_prod = np.array(triu).astype("<u2").T.copy().view(dt_prod).reshape(-1)
+
+        # Construct the equivalent reverse_map stack for the telescope instance.
+        # Note that we identify invalid products here using an index that is the
+        # size of the stack axis.
+        feedmask = self.telescope.feedmask[triu]
+
+        self.bt_rev = np.empty(
+            feedmask.size, dtype=[("stack", "<u4"), ("conjugate", "u1")]
         )
+        self.bt_rev["stack"] = np.where(
+            feedmask, self.telescope.feedmap[triu], self.telescope.npairs
+        )
+        self.bt_rev["conjugate"] = np.where(feedmask, self.telescope.feedconj[triu], 0)
 
     def process(self, ss):
         """Select and reorder the products.
@@ -170,90 +178,46 @@ class CollateProducts(task.SingleTask):
         sp : SiderealStream
             Dataset containing only the required products.
         """
-
-        # Define two functions that are used below
-        def find_key(key_list, key):
-            try:
-                return [tuple(x) for x in key_list].index(tuple(key))
-            except TypeError:
-                return list(key_list).index(key)
-            except ValueError:
-                return None
-
-        def pack_product_array(arr):
-
-            nfeed = arr.shape[0]
-            nprod = (nfeed * (nfeed + 1)) // 2
-
-            ret = np.zeros(nprod, dtype=arr.dtype)
-            iout = 0
-
-            for i in range(nfeed):
-                ret[iout : (iout + nfeed - i)] = arr[i, i:]
-                iout += nfeed - i
-
-            return ret
-
-        # Determine current conjugation and product map.
-        match_sn = True
-        if "stack" in ss.index_map:
-            match_sn = ss.index_map["stack"].size == ss.index_map["prod"].size
-            ss_conj = ss.index_map["stack"]["conjugate"]
-            ss_prod = ss.index_map["prod"][ss.index_map["stack"]["prod"]]
-        else:
-            ss_conj = np.zeros(ss.vis.shape[1], dtype=np.bool)
-            ss_prod = ss.index_map["prod"]
-
         # For each input in the file, find the corresponding index in the telescope instance
-        ss_keys = ss.index_map["input"][:]
-        try:
-            bt_keys = self.telescope.input_index
-        except AttributeError:
-            bt_keys = np.array(
-                np.arange(self.telescope.nfeed), dtype=[("chan_id", "u2")]
-            )
-            match_sn = False
-
-        field_to_match = "correlator_input" if match_sn else "chan_id"
-        input_ind = [
-            find_key(bt_keys[field_to_match], sk) for sk in ss_keys[field_to_match]
-        ]
+        input_ind = tools.find_inputs(
+            self.telescope.input_index, ss.input, require_match=False
+        )
 
         # Figure out the reverse mapping (i.e., for each input in the telescope instance,
         # find the corresponding index in file)
-        rev_input_ind = [
-            find_key(ss_keys[field_to_match], bk) for bk in bt_keys[field_to_match]
-        ]
-
-        if any([rv is None for rv in rev_input_ind]):
-            raise ValueError(
-                "All feeds in Telescope instance must exist in Timestream instance."
-            )
+        rev_input_ind = tools.find_inputs(
+            ss.input, self.telescope.input_index, require_match=True
+        )
 
         # Figure out mapping between the frequencies
-        freq_ind = [find_key(ss.freq[:], bf) for bf in self.telescope.frequencies]
-
-        if any([fi is None for fi in freq_ind]):
-            raise ValueError(
-                "All frequencies in Telescope instance must exist in Timestream instance."
-            )
+        freq_ind = tools.find_keys(
+            ss.freq[:], self.telescope.frequencies, require_match=True
+        )
 
         bt_freq = ss.index_map["freq"][freq_ind]
 
-        # Construct the equivalent stack reverse_map for the telescope instance.  Note
-        # that we identify invalid products here using an index that is the size of the stack axis.
-        feedmask = pack_product_array(self.telescope.feedmask)
-        bt_rev = np.fromiter(
-            zip(
-                np.where(
-                    feedmask,
-                    pack_product_array(self.telescope.feedmap),
-                    self.telescope.npairs,
-                ),
-                np.where(feedmask, pack_product_array(self.telescope.feedconj), 0),
-            ),
-            dtype=[("stack", "<u4"), ("conjugate", "u1")],
-        )
+        # Determine the input product map and conjugation.
+        # If the input timestream is already stacked, then attempt to redefine
+        # its representative products so that they contain only feeds that exist
+        # and are not masked in the telescope instance.
+        if ss.is_stacked:
+
+            stack_new, stack_flag = tools.redefine_stack_index_map(
+                self.telescope, ss.input, ss.prod, ss.stack, ss.reverse_map["stack"]
+            )
+
+            if not np.all(stack_flag):
+                self.log.warning(
+                    "There are %d stacked baselines that are masked "
+                    "in the telescope instance." % np.sum(~stack_flag)
+                )
+
+            ss_prod = ss.prod[stack_new["prod"]]
+            ss_conj = stack_new["conjugate"]
+
+        else:
+            ss_prod = ss.prod
+            ss_conj = np.zeros(ss_prod.size, dtype=np.bool)
 
         # Create output container
         if isinstance(ss, containers.SiderealStream):
@@ -265,15 +229,15 @@ class CollateProducts(task.SingleTask):
 
         sp = OutputContainer(
             freq=bt_freq,
-            input=bt_keys,
+            input=self.telescope.input_index,
             prod=self.bt_prod,
             stack=self.bt_stack,
-            reverse_map_stack=bt_rev,
+            reverse_map_stack=self.bt_rev,
             axes_from=ss,
             attrs_from=ss,
             distributed=True,
             comm=ss.comm,
-            **output_kwargs,
+            **output_kwargs
         )
 
         # Add gain dataset.
@@ -572,21 +536,126 @@ def _pack_marray(mmodes, mmax=None):
     # Pack an FFT into the correct format for the m-modes (i.e. [m, freq, +/-,
     # baseline])
 
+    N = mmodes.shape[-1]  # Total number of modes
+    N_pos_mmodes = N // 2  # Total number of positive modes
     if mmax is None:
-        mmax = mmodes.shape[-1] // 2
+        mmax = mlim = N_pos_mmodes
+        mlim_neg = mlim - 1 + N % 2  # Index for negative modes
+    elif mmax >= N_pos_mmodes:  # Modes larger than N_pos_mmodes set to 0.
+        mlim = N_pos_mmodes
+        mlim_neg = mlim - 1 + N % 2
+    else:
+        mlim = mmax
+        mlim_neg = mlim
 
     shape = mmodes.shape[:-1]
 
     marray = np.zeros((mmax + 1, 2) + shape, dtype=np.complex128)
 
-    marray[0, 0] = mmodes[..., 0]
+    # Non-negative modes
+    marray[: mlim + 1, 0] = np.rollaxis(mmodes[..., : mlim + 1], -1, 0)
+    # Negative modes
+    marray[1 : mlim_neg + 1, 1] = np.rollaxis(
+        mmodes[..., -1 : -(mlim_neg + 1) : -1].conj(), -1, 0
+    )
 
-    mlimit = min(
-        mmax, mmodes.shape[-1] // 2
-    )  # So as not to run off the end of the array
-    for mi in range(1, mlimit - 1):
-        marray[mi, 0] = mmodes[..., mi]
-        marray[mi, 1] = mmodes[..., -mi].conj()
+    return marray
+
+
+class MModeInverseTransform(task.SingleTask):
+    """Transform m-modes to sidereal stream.
+
+    Currently ignores any noise weighting.
+
+    Attributes
+    ----------
+    n_time : int
+        Number of time bins in the output. Note that if
+        the number of samples does not Nyquist sample the
+        maximum m, information may be lost.
+    """
+
+    n_time = config.Property(proptype=int, default=None)
+
+    def process(self, mmodes):
+        """Perform the m-mode inverse transform.
+
+        Parameters
+        ----------
+        mmodes : containers.MModes
+            The input m-modes.
+
+        Returns
+        -------
+        sstream : containers.SiderealStream
+            The output sidereal stream.
+        """
+        # NOTE: If n_time is smaller than Nyquist sampling the m-mode axis then
+        # the m-modes get clipped. If it is larger, they get zero padded. This
+        # is NOT passed directly as parameter 'n' to `numpy.fft.ifft`, as this
+        # would give unwanted behaviour (https://github.com/numpy/numpy/pull/7593).
+
+        # Ensure m-modes are distributed in frequency
+        mmodes.redistribute("freq")
+
+        # Re-construct array of S-streams
+        ssarray = _make_ssarray(mmodes.vis[:], n=self.n_time)
+        ntime = ssarray.shape[-1]
+        ssarray = mpiarray.MPIArray.wrap(ssarray[:], axis=0, comm=mmodes.comm)
+
+        # Construct container and set visibility data
+        sstream = containers.SiderealStream(
+            ra=ntime, axes_from=mmodes, distributed=True, comm=mmodes.comm
+        )
+        sstream.redistribute("freq")
+
+        # Assign the visibilities and weights into the container
+        sstream.vis[:] = ssarray
+        # There is no way to recover time information for the weights.
+        # Just assign the time average to each baseline and frequency.
+        sstream.weight[:] = mmodes.weight[0, 0, :, :][:, :, np.newaxis] / ntime
+
+        return sstream
+
+
+def _make_ssarray(mmodes, n=None):
+    # Construct an array of sidereal time streams from m-modes
+    marray = _unpack_marray(mmodes, n=n)
+    ssarray = np.fft.ifft(marray * marray.shape[-1], axis=-1)
+
+    return ssarray
+
+
+def _unpack_marray(mmodes, n=None):
+    # Unpack m-modes into the correct format for an FFT
+    # (i.e. from [m, +/-, freq, baseline] to [freq, baseline, time-FFT])
+
+    shape = mmodes.shape[2:]
+    mmax_plus = mmodes.shape[0] - 1
+    if (mmodes[mmax_plus, 1, ...].flatten() == 0).all():
+        mmax_minus = mmax_plus - 1
+    else:
+        mmax_minus = mmax_plus
+
+    if n is None:
+        ntimes = mmax_plus + mmax_minus + 1
+    else:
+        ntimes = n
+        mmax_plus = np.amin((ntimes // 2, mmax_plus))
+        mmax_minus = np.amin(((ntimes - 1) // 2, mmax_minus))
+
+    # Create array to contain mmodes
+    marray = np.zeros(shape + (ntimes,), dtype=np.complex128)
+    # Add the DC bin
+    marray[..., 0] = mmodes[0, 0]
+    # Add all m-modes up to mmax_minus
+    for mi in range(1, mmax_minus + 1):
+        marray[..., mi] = mmodes[mi, 0]
+        marray[..., -mi] = mmodes[mi, 1].conj()
+
+    if mmax_plus != mmax_minus:
+        # In case of even number of samples. Add the Nyquist frequency.
+        marray[..., mmax_plus] = mmodes[mmax_plus, 0]
 
     return marray
 
@@ -610,6 +679,9 @@ class Regridder(task.SingleTask):
         Width of the Lanczos interpolation kernel.
     snr_cov: float
         Ratio of signal covariance to noise covariance (used for Wiener filter).
+    mask_zero_weight: bool
+        Mask the output noise weights at frequencies where the weights were
+        zero for all time samples.
     """
 
     samples = config.Property(proptype=int, default=1024)
@@ -617,6 +689,7 @@ class Regridder(task.SingleTask):
     end = config.Property(proptype=float)
     lanczos_width = config.Property(proptype=int, default=5)
     snr_cov = config.Property(proptype=float, default=1e-8)
+    mask_zero_weight = config.Property(proptype=bool, default=False)
 
     def setup(self, observer):
         """Set the local observers position.
@@ -714,5 +787,10 @@ class Regridder(task.SingleTask):
         # Reshape to the correct shape
         sts = sts.reshape(vis_data.shape[:-1] + (self.samples,))
         ni = ni.reshape(vis_data.shape[:-1] + (self.samples,))
+
+        if self.mask_zero_weight:
+            # set weights to zero where there is no data
+            w_mask = weight.sum(axis=-1) != 0.0
+            ni *= w_mask[..., np.newaxis]
 
         return interp_grid, sts, ni

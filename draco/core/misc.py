@@ -40,16 +40,16 @@ class ApplyGain(task.SingleTask):
 
     def process(self, tstream, gain):
         """Apply gains to the given timestream.
-        
+
         Smoothing the gains is not supported for SiderealStreams.
-        
+
         Parameters
         ----------
         tstream : TimeStream like or SiderealStream
             Time stream to apply gains to. The gains are applied in place.
-        gain : StaticGainData, GainData or SiderealGainData
-            Gains to apply.
-            
+        gain : StaticGainData, GainData, SiderealGainData, CommonModeGainData 
+            or CommonModeSiderealGainData. Gains to apply.
+
         Returns
         -------
         tstream : TimeStream or SiderealStream
@@ -57,6 +57,13 @@ class ApplyGain(task.SingleTask):
         """
         tstream.redistribute("freq")
         gain.redistribute("freq")
+
+        if tstream.is_stacked and not isinstance(
+            gain, (containers.CommonModeGainData, containers.CommonModeSiderealGainData)
+        ):
+            raise ValueError(
+                "Cannot apply input-dependent gains to stacked data: %s" % tstream
+            )
 
         if isinstance(gain, containers.StaticGainData):
 
@@ -68,7 +75,15 @@ class ApplyGain(task.SingleTask):
                 gain.weight[:][..., np.newaxis] if gain.weight is not None else None
             )
 
-        elif isinstance(gain, (containers.GainData, containers.SiderealGainData)):
+        elif isinstance(
+            gain,
+            (
+                containers.GainData,
+                containers.SiderealGainData,
+                containers.CommonModeGainData,
+                containers.CommonModeSiderealGainData,
+            ),
+        ):
 
             # Extract gain array
             gain_arr = gain.gain[:]
@@ -79,7 +94,10 @@ class ApplyGain(task.SingleTask):
             # Get the weight array if it's there
             weight_arr = gain.weight[:] if gain.weight is not None else None
 
-            if isinstance(gain, containers.SiderealGainData):
+            if isinstance(
+                gain,
+                (containers.SiderealGainData, containers.CommonModeSiderealGainData),
+            ):
 
                 # Check that we are defined at the same RA samples
                 if (gain.ra != tstream.ra).any():
@@ -140,6 +158,11 @@ class ApplyGain(task.SingleTask):
             tools.apply_gain(
                 tstream.vis[:], gvis, out=tstream.vis[:], prod_map=tstream.prod
             )
+        elif isinstance(
+            gain, (containers.CommonModeGainData, containers.CommonModeSiderealGainData)
+        ):
+            # Apply the gains to all 'prods/stacks' directly:
+            tstream.vis[:] *= np.abs(gvis[:, np.newaxis, :]) ** 2
         else:
             tools.apply_gain(tstream.vis[:], gvis, out=tstream.vis[:])
 
@@ -147,28 +170,29 @@ class ApplyGain(task.SingleTask):
         if self.update_weight:
             self.log.info("Applying gain to weight.")
             gweight = np.abs(gain_arr if self.inverse else inverse_gain_arr) ** 2
-            if isinstance(gain, containers.SiderealGainData):
-                # Need a prod_map for sidereal streams
-                tools.apply_gain(
-                    tstream.weight[:],
-                    gweight,
-                    out=tstream.weight[:],
-                    prod_map=tstream.prod,
-                )
-            else:
-                tools.apply_gain(tstream.weight[:], gweight, out=tstream.weight[:])
+        else:
+            gweight = np.ones(gain_arr.shape, dtype=np.float64)
 
-        # Update units if thet were specified
+        if weight_arr is not None:
+            gweight *= (weight_arr[:] > 0.0).astype(np.float64)
+
+        if isinstance(gain, containers.SiderealGainData):
+            # Need a prod_map for sidereal streams
+            tools.apply_gain(
+                tstream.weight[:], gweight, out=tstream.weight[:], prod_map=tstream.prod
+            )
+        elif isinstance(
+            gain, (containers.CommonModeGainData, containers.CommonModeSiderealGainData)
+        ):
+            # Apply the gains to all 'prods/stacks' directly:
+            tstream.weight[:] *= gweight[:, np.newaxis, :] ** 2
+        else:
+            tools.apply_gain(tstream.weight[:], gweight, out=tstream.weight[:])
+
+        # Update units if they were specified
         convert_units_to = gain.gain.attrs.get("convert_units_to")
         if convert_units_to is not None:
             tstream.vis.attrs["units"] = convert_units_to
-
-        # Modify the weight array according to the gain weights
-        if weight_arr is not None:
-
-            # Convert dynamic range to a binary weight and apply to data
-            gain_weight = (weight_arr[:] > 2.0).astype(np.float64)
-            tstream.weight[:] *= gain_weight[:, np.newaxis, :]
 
         return tstream
 

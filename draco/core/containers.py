@@ -22,6 +22,7 @@ Container Base Classes
 
     ContainerBase
     TODContainer
+    VisContainer
 
 Helper Routines
 ---------------
@@ -49,7 +50,15 @@ import numpy as np
 
 from caput import memh5, tod
 
-import bitshuffle.h5
+# Try to import bitshuffle to set the default compression options
+try:
+    import bitshuffle.h5
+
+    COMPRESSION = bitshuffle.h5.H5FILTER
+    COMPRESSION_OPTS = (0, bitshuffle.h5.H5_COMPRESS_LZ4)
+except ImportError:
+    COMPRESSION = None
+    COMPRESSION_OPTS = None
 
 
 class ContainerBase(memh5.BasicCont):
@@ -67,6 +76,9 @@ class ContainerBase(memh5.BasicCont):
     attrs_from : `memh5.BasicCont`, optional
         Another container to copy attributes from. Must be supplied as keyword
         argument. This applies to attributes in default datasets too.
+    skip_datasets : bool, optional
+        Skip creating datasets. They must all be added manually with
+        `.add_dataset` regardless of the entry in `.dataset_spec`. Default is False.
     kwargs : dict
         Should contain entries for all other axes.
 
@@ -102,11 +114,15 @@ class ContainerBase(memh5.BasicCont):
 
     _dataset_spec = {}
 
+    convert_attribute_strings = True
+    convert_dataset_strings = True
+
     def __init__(self, *args, **kwargs):
 
         # Pull out the values of needed arguments
         axes_from = kwargs.pop("axes_from", None)
         attrs_from = kwargs.pop("attrs_from", None)
+        skip_datasets = kwargs.pop("skip_datasets", False)
         dist = kwargs.pop("distributed", True)
         comm = kwargs.pop("comm", None)
         self.allow_chunked = kwargs.pop("allow_chunked", False)
@@ -145,29 +161,11 @@ class ContainerBase(memh5.BasicCont):
             else:
                 raise RuntimeError("No definition of axis %s supplied." % axis)
 
-        reverse_map_stack = None
-        # Create reverse map
-        if "reverse_map_stack" in kwargs:
-            # If axis is an integer, turn into an arange as a default definition
-            if isinstance(kwargs["reverse_map_stack"], int):
-                reverse_map_stack = np.arange(kwargs["reverse_map_stack"])
-            else:
-                reverse_map_stack = kwargs["reverse_map_stack"]
-
-        # If not set in the arguments copy from another object if set
-        elif axes_from is not None and "stack" in axes_from.reverse_map:
-            reverse_map_stack = axes_from.reverse_map["stack"]
-
-        # Set the reverse_map['stack'] if we have a definition,
-        # otherwise do NOT throw an error, errors are thrown in
-        # classes that actually need a reverse stack
-        if reverse_map_stack is not None:
-            self.create_reverse_map("stack", reverse_map_stack)
-
         # Iterate over datasets and initialise any that specify it
-        for name, spec in self.dataset_spec.items():
-            if "initialise" in spec and spec["initialise"]:
-                self.add_dataset(name)
+        if not skip_datasets:
+            for name, spec in self.dataset_spec.items():
+                if "initialise" in spec and spec["initialise"]:
+                    self.add_dataset(name)
 
         # Copy over attributes
         if attrs_from is not None:
@@ -178,9 +176,12 @@ class ContainerBase(memh5.BasicCont):
             # Copy attributes over from any common datasets
             for name in self.dataset_spec.keys():
                 if name in self.datasets and name in attrs_from.datasets:
-                    memh5.copyattrs(
-                        attrs_from.datasets[name].attrs, self.datasets[name].attrs
-                    )
+                    attrs_no_axis = {
+                        k: v
+                        for k, v in attrs_from.datasets[name].attrs.items()
+                        if k != "axis"
+                    }
+                    memh5.copyattrs(attrs_no_axis, self.datasets[name].attrs)
 
             # Make sure that the __memh5_subclass attribute is accurate
             clspath = self.__class__.__module__ + "." + self.__class__.__name__
@@ -311,28 +312,131 @@ class ContainerBase(memh5.BasicCont):
         # Ensure that the dataset_spec is the same order on all ranks
         return {k: ddict[k] for k in sorted(ddict)}
 
-    @property
-    def axes(self):
-        """Return the set of axes for this container..
+    @classmethod
+    def _class_axes(cls):
+        """Return the set of axes for this container defined by this class and the base classes.
         """
         axes = set()
 
         # Iterate over the reversed MRO and look for _table_spec attributes
         # which get added to a temporary dict. We go over the reversed MRO so
         # that the `tdict.update` overrides tables in base classes.
-        for cls in inspect.getmro(self.__class__)[::-1]:
+        for c in inspect.getmro(cls)[::-1]:
 
             try:
-                axes |= set(cls._axes)
+                axes |= set(c._axes)
             except AttributeError:
                 pass
 
-        # Add in any axes found on the instance
+        # This must be the same order on all ranks, so we need to explicitly sort to get around the
+        # hash randomization
+        return tuple(sorted(axes))
+
+    @property
+    def axes(self):
+        """The set of axes for this container including any defined on the instance.
+        """
+        axes = set(self._class_axes())
+
+        # Add in any axes found on the instance (this is needed to support the table classes where
+        # the axes get added at run time)
         axes |= set(self.__dict__.get("_axes", []))
 
         # This must be the same order on all ranks, so we need to explicitly sort to get around the
         # hash randomization
         return tuple(sorted(axes))
+
+    @classmethod
+    def _make_selections(cls, sel_args):
+        """
+        Match down-selection arguments to axes of datasets.
+
+        Parses sel_* argument and returns dict mapping dataset names to selections.
+
+        Parameters
+        ----------
+        sel_args : dict
+            Should contain valid numpy indexes as values and axis names (str) as keys.
+
+        Returns
+        -------
+        dict
+            Mapping of dataset names to numpy indexes for downselection of the data.
+            Also includes another dict under the key "index_map" that includes
+            the selections for those.
+        """
+        # Check if all those axes exist
+        for axis in sel_args.keys():
+            if axis not in cls._class_axes():
+                raise RuntimeError("No '{}' axis found to select from.".format(axis))
+
+        # Build selections dict
+        selections = {}
+        for name, dataset in cls._dataset_spec.items():
+            ds_axes = dataset["axes"]
+            sel = []
+            ds_relevant = False
+            for axis in ds_axes:
+                if axis in sel_args:
+                    sel.append(sel_args[axis])
+                    ds_relevant = True
+                else:
+                    sel.append(slice(None))
+            if ds_relevant:
+                selections["/" + name] = tuple(sel)
+
+        # add index maps selections
+        for axis, sel in sel_args.items():
+            selections["/index_map/" + axis] = sel
+
+        return selections
+
+    def copy(self, shared=None):
+        """Copy this container, optionally sharing the source datasets.
+
+        This routine will create a copy of the container. By default this is
+        as full copy with the contents fully independent. However, a set of
+        dataset names can be given that will share the same data as the
+        source to save memory for large datasets. These will just view the
+        same memory, so any modification to either the original or the copy
+        will be visible to the other. This includes all write operations,
+        addition and removal of attributes, redistribution etc. This
+        functionality should be used with caution and clearly documented.
+
+        Parameters
+        ----------
+        shared : list, optional
+            A list of datasets whose content will be shared with the original.
+
+        Returns
+        -------
+        copy : subclass of ContainerBase
+            The copied container.
+        """
+        new_cont = self.__class__(attrs_from=self, axes_from=self, skip_datasets=True)
+
+        # Loop over datasets that exist in the source and either add a view of
+        # the source dataset, or perform a full copy
+        for name, data in self.datasets.items():
+
+            if shared and name in shared:
+                # TODO: find a way to do this that doesn't depend on the
+                # internal implementation of BasicCont and MemGroup
+                # NOTE: we don't use `.view()` on the RHS here as we want to
+                # preserve the shared data through redistributions
+                new_cont._data._get_storage()[name] = self._data._get_storage()[name]
+            else:
+                dset = new_cont.add_dataset(name)
+
+                # Ensure that we have exactly the same distribution
+                if dset.distributed:
+                    dset.redistribute(data.distributed_axis)
+
+                # Copy over the data and attributes
+                dset[:] = data[:]
+                memh5.copyattrs(data.attrs, dset.attrs)
+
+        return new_cont
 
 
 class TableBase(ContainerBase):
@@ -469,6 +573,8 @@ class TODContainer(ContainerBase, tod.TOData):
     instance.
     """
 
+    _axes = ("time",)
+
     @property
     def time(self):
         try:
@@ -477,6 +583,143 @@ class TODContainer(ContainerBase, tod.TOData):
         # different exceptions.
         except (IndexError, ValueError):
             return self.index_map["time"][:]
+
+
+class VisContainer(ContainerBase):
+    """A base container for holding a visibility dataset.
+
+    This works like a :class:`ContainerBase` container, with the
+    ability to create visibility specific axes, if they are not
+    passed as a kwargs parameter.
+
+    Additionally this container has visibility specific defined properties
+    such as 'vis', 'weight', 'freq', 'input', 'prod', 'stack',
+    'prodstack', 'conjugate'.
+
+    Parameters
+    ----------
+    axes_from : `memh5.BasicCont`, optional
+        Another container to copy axis definitions from. Must be supplied as
+        keyword argument.
+    attrs_from : `memh5.BasicCont`, optional
+        Another container to copy attributes from. Must be supplied as keyword
+        argument. This applies to attributes in default datasets too.
+    kwargs : dict
+        Should contain entries for all other axes.
+    """
+
+    _axes = ("freq", "input", "prod", "stack")
+
+    def __init__(self, *args, **kwargs):
+        # Resolve product map
+        prod = None
+        if "prod" in kwargs:
+            prod = kwargs["prod"]
+        elif ("axes_from" in kwargs) and ("prod" in kwargs["axes_from"].index_map):
+            prod = kwargs["axes_from"].index_map["prod"]
+
+        # Resolve input map
+        inputs = None
+        if "input" in kwargs:
+            inputs = kwargs["input"]
+        elif ("axes_from" in kwargs) and ("input" in kwargs["axes_from"].index_map):
+            inputs = kwargs["axes_from"].index_map["input"]
+
+        # Resolve stack map
+        stack = None
+        if "stack" in kwargs:
+            stack = kwargs["stack"]
+        elif ("axes_from" in kwargs) and ("stack" in kwargs["axes_from"].index_map):
+            stack = kwargs["axes_from"].index_map["stack"]
+
+        # Automatically construct product map from inputs if not given
+        if prod is None and inputs is not None:
+            nfeed = inputs if isinstance(inputs, int) else len(inputs)
+            kwargs["prod"] = np.array(
+                [[fi, fj] for fi in range(nfeed) for fj in range(fi, nfeed)]
+            )
+
+        if stack is None and prod is not None:
+            stack = np.empty_like(prod, dtype=[("prod", "<u4"), ("conjugate", "u1")])
+            stack["prod"][:] = np.arange(len(prod))
+            stack["conjugate"] = 0
+            kwargs["stack"] = stack
+
+        # Call initializer from `ContainerBase`
+        super(VisContainer, self).__init__(*args, **kwargs)
+
+        reverse_map_stack = None
+        # Create reverse map
+        if "reverse_map_stack" in kwargs:
+            # If axis is an integer, turn into an arange as a default definition
+            if isinstance(kwargs["reverse_map_stack"], int):
+                reverse_map_stack = np.arange(kwargs["reverse_map_stack"])
+            else:
+                reverse_map_stack = kwargs["reverse_map_stack"]
+        # If not set in the arguments copy from another object if set
+        elif ("axes_from" in kwargs) and ("stack" in kwargs["axes_from"].reverse_map):
+            reverse_map_stack = kwargs["axes_from"].reverse_map["stack"]
+
+        # Set the reverse_map['stack'] if we have a definition,
+        # otherwise do NOT throw an error, errors are thrown in
+        # classes that actually need a reverse stack
+        if reverse_map_stack is not None:
+            self.create_reverse_map("stack", reverse_map_stack)
+
+    @property
+    def vis(self):
+        """The visibility like dataset."""
+        return self.datasets["vis"]
+
+    @property
+    def weight(self):
+        """The visibility weights."""
+        return self.datasets["vis_weight"]
+
+    @property
+    def freq(self):
+        """The frequency axis."""
+        return self.index_map["freq"]["centre"]
+
+    @property
+    def input(self):
+        """The correlated inputs."""
+        return self.index_map["input"]
+
+    @property
+    def prod(self):
+        """All the pairwise products that are represented in the data."""
+        return self.index_map["prod"]
+
+    @property
+    def stack(self):
+        """The stacks definition as an index (and conjugation) of a member product."""
+        return self.index_map["stack"]
+
+    @property
+    def prodstack(self):
+        """A pair of input indices representative of those in the stack.
+
+        Note, these are correctly conjugated on return, and so calculations
+        of the baseline and polarisation can be done without additionally
+        looking up the stack conjugation.
+        """
+        if not self.is_stacked:
+            return self.prod
+
+        t = self.index_map["prod"][:][self.index_map["stack"]["prod"]]
+
+        prodmap = t.copy()
+        conj = self.stack["conjugate"]
+        prodmap["input_a"] = np.where(conj, t["input_b"], t["input_a"])
+        prodmap["input_b"] = np.where(conj, t["input_a"], t["input_b"])
+
+        return prodmap
+
+    @property
+    def is_stacked(self):
+        """Test if the data has been stacked or not."""
+        return len(self.stack) != len(self.prod)
 
 
 class Map(ContainerBase):
@@ -527,7 +770,7 @@ class Map(ContainerBase):
         return self.datasets["map"]
 
 
-class SiderealStream(ContainerBase):
+class SiderealStream(VisContainer):
     """A container for holding a visibility dataset in sidereal time.
 
     Parameters
@@ -536,7 +779,7 @@ class SiderealStream(ContainerBase):
         The number of points to divide the RA axis up into.
     """
 
-    _axes = ("freq", "prod", "stack", "input", "ra")
+    _axes = ("ra",)
 
     _dataset_spec = {
         "vis": {
@@ -545,8 +788,8 @@ class SiderealStream(ContainerBase):
             "initialise": True,
             "distributed": True,
             "distributed_axis": "freq",
-            "compression": bitshuffle.h5.H5FILTER,
-            "compression_opts": (0, bitshuffle.h5.H5_COMPRESS_LZ4),
+            "compression": COMPRESSION,
+            "compression_opts": COMPRESSION_OPTS,
             "chunks": (64, 256, 128),
         },
         "vis_weight": {
@@ -555,8 +798,8 @@ class SiderealStream(ContainerBase):
             "initialise": True,
             "distributed": True,
             "distributed_axis": "freq",
-            "compression": bitshuffle.h5.H5FILTER,
-            "compression_opts": (0, bitshuffle.h5.H5_COMPRESS_LZ4),
+            "compression": COMPRESSION,
+            "compression_opts": COMPRESSION_OPTS,
             "chunks": (64, 256, 128),
         },
         "input_flags": {
@@ -582,55 +825,11 @@ class SiderealStream(ContainerBase):
                 ra = np.linspace(0.0, 360.0, ra, endpoint=False)
             kwargs["ra"] = ra
 
-        # Resolve product map
-        prod = None
-        if "prod" in kwargs:
-            prod = kwargs["prod"]
-        elif ("axes_from" in kwargs) and ("prod" in kwargs["axes_from"].index_map):
-            prod = kwargs["axes_from"].index_map["prod"]
-
-        # Resolve input map
-        inputs = None
-        if "input" in kwargs:
-            inputs = kwargs["input"]
-        elif ("axes_from" in kwargs) and ("input" in kwargs["axes_from"].index_map):
-            inputs = kwargs["axes_from"].index_map["input"]
-
-        # Resolve stack map
-        stack = None
-        if "stack" in kwargs:
-            stack = kwargs["stack"]
-        elif ("axes_from" in kwargs) and ("stack" in kwargs["axes_from"].index_map):
-            stack = kwargs["axes_from"].index_map["stack"]
-
-        # Automatically construct product map from inputs if not given
-        if prod is None and inputs is not None:
-            nfeed = inputs if isinstance(inputs, int) else len(inputs)
-            kwargs["prod"] = np.array(
-                [(fi, fj) for fi in range(nfeed) for fj in range(fi, nfeed)],
-                dtype=[("input_a", np.int16), ("input_b", np.int16)],
-            )
-            prod = kwargs["prod"]
-
-        if stack is None:
-            stack = np.empty_like(prod, dtype=[("prod", "<u4"), ("conjugate", "u1")])
-            stack["prod"][:] = np.arange(len(prod))
-            stack["conjugate"] = 0
-            kwargs["stack"] = stack
-
         super(SiderealStream, self).__init__(*args, **kwargs)
-
-    @property
-    def vis(self):
-        return self.datasets["vis"]
 
     @property
     def gain(self):
         return self.datasets["gain"]
-
-    @property
-    def weight(self):
-        return self.datasets["vis_weight"]
 
     @property
     def input_flags(self):
@@ -640,32 +839,106 @@ class SiderealStream(ContainerBase):
     def ra(self):
         return self.index_map["ra"]
 
+
+class SystemSensitivity(TODContainer):
+    """A container for holding the total system sensitivity.
+
+    This should be averaged/collapsed in the stack/prod axis
+    to provide an overall summary of the system sensitivity.
+    Two datasets are available: the measured noise from the
+    visibility weights and the radiometric estimate of the
+    noise from the autocorrelations.
+    """
+
+    _axes = ("freq", "pol")
+
+    _dataset_spec = {
+        "measured": {
+            "axes": ["freq", "pol", "time"],
+            "dtype": np.float32,
+            "initialise": True,
+            "distributed": True,
+        },
+        "radiometer": {
+            "axes": ["freq", "pol", "time"],
+            "dtype": np.float32,
+            "initialise": True,
+            "distributed": True,
+        },
+        "weight": {
+            "axes": ["freq", "pol", "time"],
+            "dtype": np.float32,
+            "initialise": True,
+            "distributed": True,
+        },
+        "frac_lost": {
+            "axes": ["freq", "time"],
+            "dtype": np.float32,
+            "initialise": True,
+            "distributed": True,
+        },
+    }
+
+    @property
+    def measured(self):
+        return self.datasets["measured"]
+
+    @property
+    def radiometer(self):
+        return self.datasets["radiometer"]
+
+    @property
+    def weight(self):
+        return self.datasets["weight"]
+
+    @property
+    def frac_lost(self):
+        return self.datasets["frac_lost"]
+
     @property
     def freq(self):
         return self.index_map["freq"]["centre"]
 
     @property
-    def input(self):
-        return self.index_map["input"]
+    def pol(self):
+        return self.index_map["pol"]
+
+
+class RFIMask(TODContainer):
+    """A container for holding RFI mask.
+
+    The mask is `True` for contaminated samples that should be excluded, and
+    `False` for clean samples.
+    """
+
+    _axes = ("freq",)
+
+    _dataset_spec = {
+        "mask": {
+            "axes": ["freq", "time"],
+            "dtype": bool,
+            "initialise": True,
+            "distributed": False,
+            "distributed_axis": "freq",
+        }
+    }
 
     @property
-    def prod(self):
-        return self.index_map["prod"][:][self.index_map["stack"]["prod"]]
+    def mask(self):
+        return self.datasets["mask"]
 
     @property
-    def conjugate(self):
-        return self.index_map["stack"]["conjugate"]
+    def freq(self):
+        return self.index_map["freq"]["centre"]
 
 
-class TimeStream(TODContainer):
+class TimeStream(VisContainer, TODContainer):
     """A container for holding a visibility dataset in time.
 
     This should look similar enough to the CHIME
     :class:`~ch_util.andata.CorrData` container that they can be used
     interchangably in most cases.
     """
-
-    _axes = ("freq", "prod", "stack", "input", "time")
 
     _dataset_spec = {
         "vis": {
@@ -674,8 +947,8 @@ class TimeStream(TODContainer):
             "initialise": True,
             "distributed": True,
             "distributed_axis": "freq",
-            "compression": bitshuffle.h5.H5FILTER,
-            "compression_opts": (0, bitshuffle.h5.H5_COMPRESS_LZ4),
+            "compression": COMPRESSION,
+            "compression_opts": COMPRESSION_OPTS,
             "chunks": (64, 256, 128),
         },
         "vis_weight": {
@@ -684,8 +957,8 @@ class TimeStream(TODContainer):
             "initialise": True,
             "distributed": True,
             "distributed_axis": "freq",
-            "compression": bitshuffle.h5.H5FILTER,
-            "compression_opts": (0, bitshuffle.h5.H5_COMPRESS_LZ4),
+            "compression": COMPRESSION,
+            "compression_opts": COMPRESSION_OPTS,
             "chunks": (64, 256, 128),
         },
         "input_flags": {
@@ -705,73 +978,15 @@ class TimeStream(TODContainer):
 
     def __init__(self, *args, **kwargs):
 
-        # Resolve product map
-        prod = None
-        if "prod" in kwargs:
-            prod = kwargs["prod"]
-        elif ("axes_from" in kwargs) and ("prod" in kwargs["axes_from"].index_map):
-            prod = kwargs["axes_from"].index_map["prod"]
-
-        # Resolve input map
-        inputs = None
-        if "input" in kwargs:
-            inputs = kwargs["input"]
-        elif ("axes_from" in kwargs) and ("input" in kwargs["axes_from"].index_map):
-            inputs = kwargs["axes_from"].index_map["input"]
-
-        # Resolve stack map
-        stack = None
-        if "stack" in kwargs:
-            stack = kwargs["stack"]
-        elif ("axes_from" in kwargs) and ("stack" in kwargs["axes_from"].index_map):
-            stack = kwargs["axes_from"].index_map["stack"]
-
-        # Automatically construct product map from inputs if not given
-        if prod is None and inputs is not None:
-            nfeed = inputs if isinstance(inputs, int) else len(inputs)
-            kwargs["prod"] = np.array(
-                [[fi, fj] for fi in range(nfeed) for fj in range(fi, nfeed)]
-            )
-
-        if stack is None and prod is not None:
-            stack = np.empty_like(prod, dtype=[("prod", "<u4"), ("conjugate", "u1")])
-            stack["prod"][:] = np.arange(len(prod))
-            stack["conjugate"] = 0
-            kwargs["stack"] = stack
-
         super(TimeStream, self).__init__(*args, **kwargs)
-
-    @property
-    def vis(self):
-        return self.datasets["vis"]
 
     @property
     def gain(self):
         return self.datasets["gain"]
 
     @property
-    def weight(self):
-        return self.datasets["vis_weight"]
-
-    @property
     def input_flags(self):
         return self.datasets["input_flags"]
-
-    @property
-    def freq(self):
-        return self.index_map["freq"]["centre"]
-
-    @property
-    def input(self):
-        return self.index_map["input"]
-
-    @property
-    def prod(self):
-        return self.index_map["prod"][:][self.index_map["stack"]["prod"]]
-
-    @property
-    def conjugate(self):
-        return self.index_map["stack"]["conjugate"]
 
 
 class GridBeam(ContainerBase):
@@ -862,8 +1077,8 @@ class TrackBeam(ContainerBase):
             "initialise": True,
             "distributed": True,
             "distributed_axis": "freq",
-            "compression": bitshuffle.h5.H5FILTER,
-            "compression_opts": (0, bitshuffle.h5.H5_COMPRESS_LZ4),
+            "compression": COMPRESSION,
+            "compression_opts": COMPRESSION_OPTS,
             "chunks": (128, 2, 128, 128),
         },
         "weight": {
@@ -872,8 +1087,8 @@ class TrackBeam(ContainerBase):
             "initialise": True,
             "distributed": True,
             "distributed_axis": "freq",
-            "compression": bitshuffle.h5.H5FILTER,
-            "compression_opts": (0, bitshuffle.h5.H5_COMPRESS_LZ4),
+            "compression": COMPRESSION,
+            "compression_opts": COMPRESSION_OPTS,
             "chunks": (128, 2, 128, 128),
         },
     }
@@ -946,7 +1161,7 @@ class TrackBeam(ContainerBase):
         return self.index_map["pix"]
 
 
-class MModes(ContainerBase):
+class MModes(VisContainer):
     """Parallel container for holding m-mode data.
 
     Parameters
@@ -962,7 +1177,7 @@ class MModes(ContainerBase):
         Array of weights for each point.
     """
 
-    _axes = ("m", "msign", "freq", "prod", "stack", "input")
+    _axes = ("m", "msign")
 
     _dataset_spec = {
         "vis": {
@@ -980,22 +1195,6 @@ class MModes(ContainerBase):
             "distributed_axis": "m",
         },
     }
-
-    @property
-    def vis(self):
-        return self.datasets["vis"]
-
-    @property
-    def weight(self):
-        return self.datasets["vis_weight"]
-
-    @property
-    def freq(self):
-        return self.index_map["freq"]["centre"]
-
-    @property
-    def input(self):
-        return self.index_map["input"]
 
     def __init__(self, mmax=None, *args, **kwargs):
 
@@ -1278,11 +1477,93 @@ class RingMap(ContainerBase):
         return self.datasets["dirty_beam"]
 
 
+class CommonModeGainData(TODContainer):
+    """Parallel container for holding gain data common to all inputs.
+    """
+
+    _axes = ("freq",)
+
+    _dataset_spec = {
+        "gain": {
+            "axes": ["freq", "time"],
+            "dtype": np.complex128,
+            "initialise": True,
+            "distributed": True,
+            "distributed_axis": "freq",
+        },
+        "weight": {
+            "axes": ["freq", "time"],
+            "dtype": np.float64,
+            "initialise": False,
+            "distributed": True,
+            "distributed_axis": "freq",
+        },
+    }
+
+    @property
+    def gain(self):
+        return self.datasets["gain"]
+
+    @property
+    def weight(self):
+        try:
+            return self.datasets["weight"]
+        except KeyError:
+            return None
+
+    @property
+    def freq(self):
+        return self.index_map["freq"]["centre"]
+
+
+class CommonModeSiderealGainData(ContainerBase):
+    """Parallel container for holding sidereal gain data common to all inputs.
+    """
+
+    _axes = ("freq", "ra")
+
+    _dataset_spec = {
+        "gain": {
+            "axes": ["freq", "ra"],
+            "dtype": np.complex128,
+            "initialise": True,
+            "distributed": True,
+            "distributed_axis": "freq",
+        },
+        "weight": {
+            "axes": ["freq", "ra"],
+            "dtype": np.float64,
+            "initialise": False,
+            "distributed": True,
+            "distributed_axis": "freq",
+        },
+    }
+
+    @property
+    def gain(self):
+        return self.datasets["gain"]
+
+    @property
+    def weight(self):
+        try:
+            return self.datasets["weight"]
+        except KeyError:
+            return None
+
+    @property
+    def freq(self):
+        return self.index_map["freq"]
+
+    @property
+    def ra(self):
+        return self.index_map["ra"]
+
+
 class GainData(TODContainer):
     """Parallel container for holding gain data.
     """
 
-    _axes = ("freq", "input", "time")
+    _axes = ("freq", "input")
 
     _dataset_spec = {
         "gain": {
@@ -1383,7 +1664,7 @@ class StaticGainData(ContainerBase):
             "distributed_axis": "freq",
         },
         "weight": {
-            "axes": ["freq"],
+            "axes": ["freq", "input"],
             "dtype": np.float64,
             "initialise": False,
             "distributed": True,
@@ -1520,6 +1801,44 @@ class SVDSpectrum(ContainerBase):
     @property
     def spectrum(self):
         return self.datasets["spectrum"]
+
+
+class FrequencyStack(ContainerBase):
+    """Container for a frequency stack.
+
+    In general used to hold the product of `draco.analysis.SourceStack`
+    The stacked signal of frequency slices of the data in the direction
+    of sources of interest.
+    """
+
+    _axes = ("freq",)
+
+    _dataset_spec = {
+        "stack": {
+            "axes": ["freq"],
+            "dtype": np.float64,
+            "initialise": True,
+            "distributed": False,
+        },
+        "weight": {
+            "axes": ["freq"],
+            "dtype": np.float64,
+            "initialise": True,
+            "distributed": False,
+        },
+    }
+
+    @property
+    def stack(self):
+        return self.datasets["stack"]
+
+    @property
+    def weight(self):
+        return self.datasets["weight"]
+
+    @property
+    def freq(self):
+        return self.index_map["freq"]["centre"]
 
 
 class SourceCatalog(TableBase):
