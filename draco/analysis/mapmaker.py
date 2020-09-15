@@ -419,7 +419,10 @@ class PointSourceWienerMapMaker(BaseMapMaker):
         M_pss = np.zeros((nfreq, nps, nps), dtype=np.complex128)
 
         # Create array to store the point source amplitudes.
-        ps_amps = np.zeros((nfreq, nps), dtype=np.float64)
+        ps_amps = np.zeros((nfreq, nps), dtype=np.complex128)
+
+        # Create array to store the point source projection matrix
+        U = np.zeros((nfreq, bt.ntel, nps), dtype=np.complex128)
 
         # Load in the alms of the point sources.
         self._get_ps_alms()
@@ -438,17 +441,24 @@ class PointSourceWienerMapMaker(BaseMapMaker):
                 )
 
                 # Get the ingredients for the correction in point-source space
-                M_pss_i, vis_pss_i = self._solve_m_correction(Ainv, m, mi, fi, v, Ni)
+                M_pss_i, vis_pss_i, U_i = self._solve_m_correction(
+                    Ainv, m, mi, fi, v, Ni
+                )
 
+                # Acumulate over m
                 vis_pss[fi] = vis_pss[fi] + vis_pss_i
                 M_pss[fi] = M_pss[fi] + M_pss_i
                 ps_amps[fi] = ps_amps[fi] + ps_amps_i
+                U[fi] += U_i.T
 
         for fi in range(nfreq):
             # invert the point-source space covariance
             M_pss[fi] = np.linalg.inv(np.identity(nps) / self.kps_amp + M_pss[fi])
             # multiply the point-source-projected visibilities with this matrix
             vis_pss[fi] = np.dot(M_pss[fi], vis_pss[fi])
+
+        # Calculate point source correction projected onto visibilities
+        corr = np.dot(U[fi], vis_pss[fi])
 
         for mi, m in m_array.enumerate(axis=0):
 
@@ -458,7 +468,7 @@ class PointSourceWienerMapMaker(BaseMapMaker):
 
                 self.log.debug(f"Assembling results: fi, mi = {fi}, {mi}")
 
-                corr = self._spread_ps_results(vis_pss[fi], m, mi, fi, Ni)
+                # corr = self._spread_ps_results(vis_pss[fi], m, mi, fi, Ni)
 
                 acorr, Ainv, pscorr = self._solve_m_diagonal(
                     m, mi, fi, bt_freq[fi], corr, Ni, prewhiten=False
@@ -595,7 +605,7 @@ class PointSourceWienerMapMaker(BaseMapMaker):
         # Compute the point-source-projected visibilities for this m.
         vis_pss_i = np.array([np.dot(Bu[ii].T.conj(), vt) for ii in range(nps)])
 
-        return M_pss_i, vis_pss_i
+        return M_pss_i, vis_pss_i, Bu
 
     def _spread_ps_results(self, vis_pss, m, mi, f, Ni):
         """project the results of the point-source correction back into map space"""
