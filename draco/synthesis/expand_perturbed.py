@@ -114,8 +114,9 @@ class ExpandPerturbedProducts(task.SingleTask):
             elif tel.beamclass[fj] > 1:
                 continue
 
-            # Select visibility corresponding to unique_ind product.
-            ssp = ss[:, unique_ind]
+            # Select visibilities corresponding to unique_ind product.
+            # Make sure to copy them, since we will be modifying ssp in-place.
+            ssp = ss[:, unique_ind].local_array.copy()
             # Conjugate if necessary.
             ssp = ssp.conj() if conj else ssp
 
@@ -139,12 +140,11 @@ class ExpandPerturbedProducts(task.SingleTask):
                 # Is this a conjugated product
                 conj_fii = tel.feedconj[fii, fj]
                 conj_fjj = tel.feedconj[fi, fjj]
-
+                
                 # Add perturbation components to unperturbed sstream
                 ssp += ss_fii.conj() if conj_fii else ss_fii
                 ssp += ss_fjj.conj() if conj_fjj else ss_fjj
-
-
+        
                 if self.solution_order == 1:
                     continue
                 else:
@@ -156,12 +156,11 @@ class ExpandPerturbedProducts(task.SingleTask):
                     # Multiply it by both the fi and fj perturbation values.
                     ss_fiifjj = ss[:, f_fiifjj] * pertubations[fi] * pertubations[fj]
                     ssp += ss_fiifjj.conj() if conj_fiifjj else ss_fiifjj
-
+                    
             # Put prod_stream into new container new_stream.
             nss[:, pi] = ssp
             nssw[:, pi] = 1.0
-
-
+            
         return new_stream
 
     def _generate_pertubations(self, ninput):
