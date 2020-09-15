@@ -133,8 +133,8 @@ class CollateProducts(task.SingleTask):
         """
 
         if self.weight not in ["natural", "uniform", "inverse_variance"]:
-            KeyError("Do not recognize weight = %s" % self.weight)
-
+            raise KeyError("Do not recognize weight = %s" % self.weight)
+            
         self.telescope = io.get_telescope(tel)
 
         # Precalculate the stack properties
@@ -322,7 +322,7 @@ class CollateProducts(task.SingleTask):
 
             # Increment counter
             counter[:, sp_pi] += wss
-
+            
         # Divide through by counter to get properly weighted visibility average
         sp.vis[:] *= tools.invert_no_zero(counter)
         sp.weight[:] = counter ** 2 * tools.invert_no_zero(sp.weight[:])
@@ -400,7 +400,7 @@ class SelectFreq(task.SingleTask):
             )[0]
 
         else:
-            ValueError(
+            raise ValueError(
                 "Must specify either freq_physical, channel_range, or channel_index."
             )
 
