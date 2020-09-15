@@ -30,6 +30,7 @@ class ExpandPerturbedProducts(task.SingleTask):
     """
     solution_order = config.Property(proptype=float, default=1)
     pert_val = config.Property(proptype=float, default=0.01)
+    ewidth_only = config.Property(proptype=bool, default=True)
 
     def setup(self, bt):
         """Set up an instance of a telescope.
@@ -69,6 +70,13 @@ class ExpandPerturbedProducts(task.SingleTask):
         tel = self.telescope
 
         pertubations = self._pertubations
+        
+        # If only perturbing the primary beam E-plane width, the beam perturbation
+        # entries are actually derivatives with respect to fwhm_e itself, so if we
+        # want pert_val to be the fractional variation in this width, we need
+        # to multiply the Gaussian perturbation values by fwhm_e
+        if self.ewidth_only:
+            pertubations *= self.telescope.fwhm_e
 
         # Redistribute sstream over freq
         sstream.redistribute('freq')
