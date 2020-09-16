@@ -436,11 +436,13 @@ class PointSourceWienerMapMaker(BaseMapMaker):
                 Ni = m_weight[mi, :, fi].view(np.ndarray)
 
                 # Get the diagonal (in m) piece of the inverse
+                self.log.debug(f"Solving Wiener for m={m}, fi={fi}.")
                 a[:], Ainv, ps_amps_i = self._solve_m_diagonal(
                     m, mi, fi, bt_freq[fi], v, Ni
                 )
 
                 # Get the ingredients for the correction in point-source space
+                self.log.debug(f"Solving correction for m={m}, fi={fi}.")
                 M_pss_i, vis_pss_i, U_i = self._solve_m_correction(
                     Ainv, m, mi, fi, v, Ni
                 )
@@ -452,6 +454,7 @@ class PointSourceWienerMapMaker(BaseMapMaker):
                 U[fi] += U_i.T
 
         for fi in range(nfreq):
+            self.log.debug(f"Computing point source vis for fi={fi}.")
             # invert the point-source space covariance
             M_pss[fi] = np.linalg.inv(np.identity(nps) / self.kps_amp + M_pss[fi])
             # multiply the point-source-projected visibilities with this matrix
@@ -466,7 +469,7 @@ class PointSourceWienerMapMaker(BaseMapMaker):
                 a = alm[fi, ..., mi].view(np.ndarray)
                 Ni = m_weight[mi, :, fi].view(np.ndarray)
 
-                self.log.debug(f"Assembling results: fi, mi = {fi}, {mi}")
+                self.log.debug(f"Assembling results: m={m}, fi={fi}.")
 
                 # corr = self._spread_ps_results(vis_pss[fi], m, mi, fi, Ni)
 
