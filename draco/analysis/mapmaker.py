@@ -13,7 +13,10 @@ Tasks
 """
 
 import numpy as np
+import healpy as hp
 from caput import mpiarray, config
+from caput.pipeline import PipelineConfigError
+from cora.util import sphfunc
 
 from ..core import containers, task, io
 from ..util import tools
@@ -222,6 +225,12 @@ class MaximumLikelihoodMapMaker(BaseMapMaker):
         return a
 
 
+def _list_float(l):
+    if not isinstance(l, (list, tuple)):
+        raise ValueError(f"Expected a list, but got {l}.")
+    return [float(ll) for ll in l]
+
+
 class WienerMapMaker(BaseMapMaker):
     r"""Generate a Wiener filtered map assuming that the signal is a Gaussian
     random field described by a power-law power spectum.
@@ -249,8 +258,24 @@ class WienerMapMaker(BaseMapMaker):
 
     prior_amp = config.Property(proptype=float, default=1.0)
     prior_tilt = config.Property(proptype=float, default=0.5)
+    spec_ind = config.Property(proptype=float, default=2.8)
+    kps_amp = config.Property(proptype=_list_float, default=[])
+    RA = config.Property(proptype=_list_float, default=[])
+    dec = config.Property(proptype=_list_float, default=[])
 
     bt_cache = None
+
+    def setup(self, bt):
+        # check point source parameters have same length
+        for name, coord in (("RA", self.RA), ("dec", self.dec)):
+            if len(self.kps_amp) != len(coord):
+                raise PipelineConfigError(
+                    "Point source parameters must all have same length. "
+                    f"Got {name} of length {len(coord)} != {len(self.kps_amp)} "
+                    "point source amplitudes."
+                )
+
+        return super().setup(bt)
 
     def _solve_m(self, m, f, v, Ni):
 
@@ -282,19 +307,37 @@ class WienerMapMaker(BaseMapMaker):
         l[0] = 1  # Change l=0 to get around singularity
         l = l[m:]  # Trim off any l < m
         cl_TT = self.prior_amp ** 2 * l ** (-self.prior_tilt)
+        # correct amplitude for spectral index
+        cl_TT *= (bt.telescope.frequencies[f] / 408.0) ** (-2.0 * self.spec_ind)
         S_diag = np.concatenate([cl_TT] * 4)
+
+        # Construct point source noise covariance
+        if len(self.kps_amp) > 0:
+            Yl = self._get_ps_yl(m)
+            U = np.dot(bmt, Yl)
+            Nps = np.dot(U * np.array(self.kps_amp), U.T.conj())
+        else:
+            Nps = None
 
         # For large ntel it's quickest to solve in the standard Wiener filter way
         if bt.ntel > bt.nsky:
-            Ci = np.diag(1.0 / S_diag) + np.dot(
-                bth, bmt
-            )  # Construct the inverse covariance
-            a_dirty = np.dot(bth, vt)  # Find the dirty map
-            a_wiener = la.solve(Ci, a_dirty, sym_pos=True)  # Solve to find C vt
+            # Construct the inverse covariance
+            if Nps is None:
+                BtNi = bth
+            else:
+                BtNi = np.dot(bth, la.inv(np.identity(Nps.shape[0]) + Nps))
+            Ci = np.diag(1.0 / S_diag) + np.dot(BtNi, bmt)
+            # Find the dirty map
+            a_dirty = np.dot(BtNi, vt)
+            # Solve to find C vt
+            a_wiener = la.solve(Ci, a_dirty, sym_pos=True)
+            del BtNi
 
         # If not it's better to rearrange using the results for blockwise matrix inversion
         else:
             pCi = np.identity(bt.ntel) + np.dot(bmt * S_diag[np.newaxis, :], bth)
+            if Nps is not None:
+                pCi += Nps
             v_int = la.solve(pCi, vt, sym_pos=True)
             a_wiener = S_diag * np.dot(bth, v_int)
 
@@ -303,6 +346,32 @@ class WienerMapMaker(BaseMapMaker):
         a[:, m:] = a_wiener.reshape(bt.telescope.num_pol_sky, -1)
 
         return a
+
+    def _get_ps_yl(self, m):
+        """Evaluate spherical harmonic coefficients for point sources."""
+
+        nps = len(self.kps_amp)
+        npol = self.beamtransfer.telescope.num_pol_sky
+
+        # All l for this m
+        lmax = self.beamtransfer.telescope.lmax
+        l = np.arange(m, lmax + 1)
+
+        # Fill in shperical coefficients for every source
+        ps_yl = np.zeros((npol, l.shape[0], nps), dtype=np.complex64)
+        for ii in range(nps):
+            # convert coordinates to polar radians
+            theta = (0.5 - self.dec[ii] / 180.0) * np.pi
+            phi = self.RA[ii] / 180.0 * np.pi
+            # only populate Stokes I
+            ps_yl[0, :, ii] = sphfunc.Ylm(
+                l, np.repeat(m, l.shape[0]), theta, phi
+            ).conj()
+
+        # normalize to match the flux in a single pixe
+        ps_yl *= 4 * np.pi / hp.nside2npix(self.nside)
+
+        return ps_yl.reshape((-1, nps))
 
 
 class PointSourceWienerMapMaker(BaseMapMaker):
@@ -706,3 +775,4 @@ def pinv_svd(M, acond=1e-4, rcond=1e-3):
     B = np.transpose(np.conjugate(np.dot(u[:, :rank] * psigma_diag, vh[:rank])))
 
     return B
+
