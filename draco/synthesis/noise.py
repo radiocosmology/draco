@@ -28,8 +28,13 @@ from future.builtins.disabled import *  # noqa  pylint: disable=W0401, W0614
 
 import contextlib
 
-import randomgen
 import numpy as np
+
+try:
+    # For backwards compatibility
+    from randomgen import RandomGenerator
+except ImportError:
+    from randomgen import Generator as RandomGenerator
 
 from caput import config
 from caput.time import STELLAR_S
@@ -103,9 +108,9 @@ class GaussianNoiseDataset(task.SingleTask):
         vis = data.vis[:]
 
         # create a random generator, and create a local seed state
-        rg = randomgen.generator.RandomGenerator()
+        rg = RandomGenerator()
 
-        with mpi_random_seed(self.seed, randomgen=rg) as rg:
+        with mpi_random_seed(self.seed, gen=rg) as rg:
             noise = rg.normal(
                 scale=np.sqrt(tools.invert_no_zero(data.weight[:]) / 2),
                 size=(2,) + data.weight[:].shape,
@@ -113,8 +118,7 @@ class GaussianNoiseDataset(task.SingleTask):
             vis[:] = noise[0] + 1j * noise[1]
 
         for si, prod in enumerate(data.prodstack):
-            prod_inputs = data.prod[prod]
-            if prod_inputs[0] == prod_inputs[1]:
+            if prod[0] == prod[1]:
                 # This is an auto-correlation
                 vis[:, si].real *= 2 ** 0.5
                 vis[:, si].imag = 0.0
@@ -390,7 +394,7 @@ def draw_complex_wishart(C, n):
 
 
 @contextlib.contextmanager
-def mpi_random_seed(seed, extra=0, randomgen=None):
+def mpi_random_seed(seed, extra=0, gen=None):
     """Use a specific random seed for the numpy.random context or for the RandomGen context, and return to the original state on exit.
 
     This is designed to work for MPI computations, incrementing the actual seed
@@ -428,7 +432,7 @@ def mpi_random_seed(seed, extra=0, randomgen=None):
     np.random.seed(new_seed)
 
     # we will be setting the numpy.random context
-    if randomgen is None:
+    if gen is None:
         # Copy the old state for restoration later.
         old_state = np.random.get_state()
 
