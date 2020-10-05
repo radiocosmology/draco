@@ -623,10 +623,8 @@ def _unpack_marray(mmodes, n=None):
     shape = mmodes.shape[2:]
     mmax_plus = mmodes.shape[0] - 1
     if (mmodes[mmax_plus, 1, ...].flatten() == 0).all():
-        print("Had an even number os samples originally")
         mmax_minus = mmax_plus - 1
     else:
-        print("Had an odd number of samples originally")
         mmax_minus = mmax_plus
 
     if n is None:
@@ -671,6 +669,9 @@ class Regridder(task.SingleTask):
         Width of the Lanczos interpolation kernel.
     snr_cov: float
         Ratio of signal covariance to noise covariance (used for Wiener filter).
+    mask_zero_weight: bool
+        Mask the output noise weights at frequencies where the weights were
+        zero for all time samples.
     """
 
     samples = config.Property(proptype=int, default=1024)
@@ -678,6 +679,7 @@ class Regridder(task.SingleTask):
     end = config.Property(proptype=float)
     lanczos_width = config.Property(proptype=int, default=5)
     snr_cov = config.Property(proptype=float, default=1e-8)
+    mask_zero_weight = config.Property(proptype=bool, default=False)
 
     def setup(self, observer):
         """Set the local observers position.
@@ -775,5 +777,10 @@ class Regridder(task.SingleTask):
         # Reshape to the correct shape
         sts = sts.reshape(vis_data.shape[:-1] + (self.samples,))
         ni = ni.reshape(vis_data.shape[:-1] + (self.samples,))
+
+        if self.mask_zero_weight:
+            # set weights to zero where there is no data
+            w_mask = weight.sum(axis=-1) != 0.0
+            ni *= w_mask[..., np.newaxis]
 
         return interp_grid, sts, ni

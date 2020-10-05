@@ -58,9 +58,26 @@ class ComputeSystemSensitivity(task.SingleTask):
 
         nfreq, nstack, ntime = data.vis.local_shape
 
-        # Calculate redundancy
+        # Extract the input flags.  If container has a gain dataset,
+        # then also check for the default gain 1.0 + 0.0j as this indicates
+        # that an input was masked for a particular time and frequency.
+        inpflg = data.input_flags[:].view(np.ndarray).astype(np.bool)
+        niff = 1
+
+        if "gain" in data.datasets:
+            # Derive frequency dependent flags from gains
+            gainflg = data.gain[:].view(np.ndarray) != (1.0 + 0.0j)
+            inpflg = np.swapaxes(inpflg[np.newaxis, :, :] & gainflg, 0, 1)
+            # Flatten frequency and time axis so we can use numpy's unique
+            inpflg = inpflg.reshape(inpflg.shape[0], -1)
+            niff = nfreq
+
+        # Find unique sets of input flags
+        uniq_inpflg, index_cnt = np.unique(inpflg, return_inverse=True, axis=1)
+
+        # Calculate redundancy for each unique set of input flags
         cnt = tools.calculate_redundancy(
-            data.input_flags[:],
+            uniq_inpflg.astype(np.float32),
             data.prod,
             data.reverse_map["stack"]["stack"],
             data.stack.size,
@@ -154,12 +171,15 @@ class ComputeSystemSensitivity(task.SingleTask):
             # Loop over frequencies to reduce memory usage
             for ff in range(nfreq):
 
+                fslc = slice((ff % niff) * ntime, ((ff % niff) + 1) * ntime)
+                pfcnt = pcnt[:, index_cnt[fslc]]
+
                 pvar = tools.invert_no_zero(bweight[ff, ipol, :])
                 pflag = bflag[ff, ipol, :].astype(np.float32)
 
-                var[ff, pp, :] = np.sum(pcnt ** 2 * pscale * pflag * pvar, axis=0)
+                var[ff, pp, :] = np.sum(pfcnt ** 2 * pscale * pflag * pvar, axis=0)
 
-                counter[ff, pp, :] = np.sum(pcnt * pscale * pflag, axis=0)
+                counter[ff, pp, :] = np.sum(pfcnt * pscale * pflag, axis=0)
 
         # Normalize
         var *= tools.invert_no_zero(counter ** 2)
@@ -169,9 +189,10 @@ class ComputeSystemSensitivity(task.SingleTask):
         auto_input = prodstack["input_a"][auto_stack_id]
         auto_pol = input_pol[auto_input]
 
-        num_feed = cnt[np.newaxis, auto_stack_id, :] * bflag[
-            :, auto_stack_id, :
-        ].astype(np.float32)
+        auto_cnt = cnt[auto_stack_id, :][:, index_cnt]
+        auto_cnt = np.swapaxes(auto_cnt.reshape(-1, niff, ntime), 0, 1)
+        num_feed = auto_cnt * bflag[:, auto_stack_id, :].astype(np.float32)
+
         auto = data.vis[:, auto_stack_id, :].real
 
         # Construct the radiometric estimate of the noise by taking the sum
@@ -204,11 +225,11 @@ class ComputeSystemSensitivity(task.SingleTask):
         dnu = np.median(data.index_map["freq"]["width"]) * 1e6
 
         if ("flags" in data) and ("frac_lost" in data["flags"]):
-            frac_lost = data["flags"]["frac_lost"][:][:, np.newaxis, :]
+            frac_lost = data["flags"]["frac_lost"][:]
         else:
-            frac_lost = 0.0
+            frac_lost = np.zeros((1, 1), dtype=np.float32)
 
-        nint = dnu * tint * (1.0 - frac_lost)
+        nint = dnu * tint * (1.0 - frac_lost[:, np.newaxis, :])
 
         # Normalize by the number of independent samples
         # and the total number of baselines squared
@@ -216,7 +237,7 @@ class ComputeSystemSensitivity(task.SingleTask):
 
         # Create output container
         metrics = containers.SystemSensitivity(
-            pol=np.array(pol_uniq, dtype=np.string_),
+            pol=np.array(pol_uniq, dtype="<U2"),
             time=data.time[:],
             axes_from=data,
             attrs_from=data,
@@ -235,5 +256,8 @@ class ComputeSystemSensitivity(task.SingleTask):
 
         # Save the total number of baselines that were averaged in the weight dataset
         metrics.weight[:] = counter
+
+        # Save the fraction of missing samples
+        metrics.frac_lost[:] = frac_lost
 
         return metrics

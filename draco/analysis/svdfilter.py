@@ -639,7 +639,7 @@ def svd_em(A, mask, niter=5, rank=5, full_matrices=False):
 
     # Do an initial fill of the missing entries
     A = A.copy()
-    A[mask] = np.median(A)
+    A[mask] = np.median(A[~mask])
 
     # Perform cycles of calculating the SVD with the current guess for the
     # missing values, then forming a new estimate of the missing values using a

@@ -24,7 +24,7 @@ import logging
 
 import numpy as np
 
-from caput import pipeline, config, memh5
+from caput import pipeline, config, memh5, misc
 
 
 class MPILogFilter(logging.Filter):
@@ -131,12 +131,9 @@ class SetMPILogging(pipeline.TaskBase):
         filt = MPILogFilter(level_all=self.level_all, level_rank0=self.level_rank0)
 
         # This uses the fact that caput.pipeline.Manager has already
-        # attempted to set up the logging. We just override the level, and
-        # insert our custom filter
+        # attempted to set up the logging. We just insert our custom filter
         root_logger = logging.getLogger()
-        root_logger.setLevel(logging.DEBUG)
         ch = root_logger.handlers[0]
-        ch.setLevel(logging.DEBUG)
         ch.addFilter(filt)
 
         formatter = logging.Formatter(
@@ -149,15 +146,16 @@ class SetMPILogging(pipeline.TaskBase):
 
 
 class LoggedTask(pipeline.TaskBase):
-    """A task with logger support.
-    """
+    """A task with logger support."""
 
     log_level = config.Property(proptype=_log_level, default=None)
 
     def __init__(self):
 
         # Get the logger for this task
-        self._log = logging.getLogger("%s.%s" % (__name__, self.__class__.__name__))
+        self._log = logging.getLogger(
+            "%s.%s" % (self.__module__, self.__class__.__name__)
+        )
 
         # Set the log level for this task if specified
         if self.log_level is not None:
@@ -165,8 +163,7 @@ class LoggedTask(pipeline.TaskBase):
 
     @property
     def log(self):
-        """The logger object for this task.
-        """
+        """The logger object for this task."""
         return self._log
 
 
@@ -208,8 +205,7 @@ class _AddRankLogAdapter(logging.LoggerAdapter):
 
 
 class MPILoggedTask(MPITask, LoggedTask):
-    """A task base that has MPI aware logging.
-    """
+    """A task base that has MPI aware logging."""
 
     def __init__(self):
 
@@ -309,13 +305,11 @@ class SingleTask(MPILoggedTask, pipeline.BasicContMixin):
 
         super(SingleTask, self).__init__()
 
-        import inspect
-
         # Inspect the `process` method to see how many arguments it takes.
-        pro_argspec = inspect.getargspec(self.process)
+        pro_argspec = misc.getfullargspec(self.process)
         n_args = len(pro_argspec.args) - 1
 
-        if pro_argspec.varargs or pro_argspec.keywords or pro_argspec.defaults:
+        if pro_argspec.varargs or pro_argspec.varkw or pro_argspec.defaults:
             msg = (
                 "`process` method may not have variable length or optional"
                 " arguments."
@@ -398,15 +392,10 @@ class SingleTask(MPILoggedTask, pipeline.BasicContMixin):
         # Routine to write output if needed.
         if self.save and output is not None:
 
-            ### SJF: commented out until proper fix is available
-            # # add metadata to output
-            # metadata = {"versions": self.versions, "config": self.pipeline_config}
-            # for key, value in metadata.items():
-            #     if key in output.attrs:
-            #         raise RuntimeError(
-            #             "Can't write {} to output: it already exists.".format(key)
-            #         )
-            #     output.attrs[key] = value
+            # add metadata to output
+            metadata = {"versions": self.versions, "config": self.pipeline_config}
+            for key, value in metadata.items():
+                output.add_history(key, value)
 
             # Create a tag for the output file name
             tag = output.attrs["tag"] if "tag" in output.attrs else self._count

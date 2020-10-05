@@ -168,8 +168,7 @@ class KLModeProject(_ProjectFilterBase):
     klname = config.Property(proptype=str)
 
     def setup(self, manager):
-        """Set the product manager that holds the saved KL modes.
-        """
+        """Set the product manager that holds the saved KL modes."""
         self.product_manager = manager
 
     def _forward(self, svdmodes):

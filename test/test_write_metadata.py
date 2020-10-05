@@ -8,13 +8,10 @@ from future.builtins.disabled import *  # noqa  pylint: disable=W0401, W0614
 from caput import pipeline, memh5
 
 import caput
-import h5py
-import json
 import numpy
 import yaml
 
 TAG = "test"
-JSON_PREFIX = "!!_memh5_json:"
 
 
 def test_metadata_to_hdf5():
@@ -38,23 +35,12 @@ def test_metadata_to_hdf5():
     man = pipeline.Manager.from_yaml_str(testconfig)
     man.run()
 
-    # Check HDF5 file for config- and versiondump
-    f = h5py.File("{}.h5".format(TAG), "r")
-    configdump = f.attrs["config"]
-    versiondump = f.attrs["versions"]
-    assert versiondump == JSON_PREFIX + json.dumps(
-        {"numpy": numpy.__version__, "caput": caput.__version__}
-    )
-    assert configdump == JSON_PREFIX + json.dumps(
-        yaml.load(testconfig, Loader=yaml.SafeLoader)
-    )
-
     # Do the same using caput.memh5 to make sure it deserializes it
-    m = memh5.MemDiskGroup.from_file("{}.h5".format(TAG))
-    configdump = m.attrs["config"]
-    versiondump = m.attrs["versions"]
-    assert versiondump == {"numpy": numpy.__version__, "caput": caput.__version__}
-    assert configdump == yaml.load(testconfig, Loader=yaml.SafeLoader)
+    with memh5.MemDiskGroup.from_file("{}.h5".format(TAG)) as m:
+        configdump = m.history["config"]
+        versiondump = m.history["versions"]
+        assert versiondump == {"numpy": numpy.__version__, "caput": caput.__version__}
+        assert configdump == yaml.load(testconfig, Loader=yaml.SafeLoader)
 
 
 def test_metadata_to_yaml():

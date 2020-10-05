@@ -50,7 +50,15 @@ import numpy as np
 
 from caput import memh5, tod
 
-import bitshuffle.h5
+# Try to import bitshuffle to set the default compression options
+try:
+    import bitshuffle.h5
+
+    COMPRESSION = bitshuffle.h5.H5FILTER
+    COMPRESSION_OPTS = (0, bitshuffle.h5.H5_COMPRESS_LZ4)
+except ImportError:
+    COMPRESSION = None
+    COMPRESSION_OPTS = None
 
 
 class ContainerBase(memh5.BasicCont):
@@ -68,6 +76,9 @@ class ContainerBase(memh5.BasicCont):
     attrs_from : `memh5.BasicCont`, optional
         Another container to copy attributes from. Must be supplied as keyword
         argument. This applies to attributes in default datasets too.
+    skip_datasets : bool, optional
+        Skip creating datasets. They must all be added manually with
+        `.add_dataset` regardless of the entry in `.dataset_spec`. Default is False.
     kwargs : dict
         Should contain entries for all other axes.
 
@@ -111,6 +122,7 @@ class ContainerBase(memh5.BasicCont):
         # Pull out the values of needed arguments
         axes_from = kwargs.pop("axes_from", None)
         attrs_from = kwargs.pop("attrs_from", None)
+        skip_datasets = kwargs.pop("skip_datasets", False)
         dist = kwargs.pop("distributed", True)
         comm = kwargs.pop("comm", None)
         self.allow_chunked = kwargs.pop("allow_chunked", False)
@@ -150,9 +162,10 @@ class ContainerBase(memh5.BasicCont):
                 raise RuntimeError("No definition of axis %s supplied." % axis)
 
         # Iterate over datasets and initialise any that specify it
-        for name, spec in self.dataset_spec.items():
-            if "initialise" in spec and spec["initialise"]:
-                self.add_dataset(name)
+        if not skip_datasets:
+            for name, spec in self.dataset_spec.items():
+                if "initialise" in spec and spec["initialise"]:
+                    self.add_dataset(name)
 
         # Copy over attributes
         if attrs_from is not None:
@@ -163,9 +176,12 @@ class ContainerBase(memh5.BasicCont):
             # Copy attributes over from any common datasets
             for name in self.dataset_spec.keys():
                 if name in self.datasets and name in attrs_from.datasets:
-                    memh5.copyattrs(
-                        attrs_from.datasets[name].attrs, self.datasets[name].attrs
-                    )
+                    attrs_no_axis = {
+                        k: v
+                        for k, v in attrs_from.datasets[name].attrs.items()
+                        if k != "axis"
+                    }
+                    memh5.copyattrs(attrs_no_axis, self.datasets[name].attrs)
 
             # Make sure that the __memh5_subclass attribute is accurate
             clspath = self.__class__.__module__ + "." + self.__class__.__name__
@@ -204,9 +220,7 @@ class ContainerBase(memh5.BasicCont):
             compression_opts = dspec.get("compression_opts", None)
 
         # Get distribution properties
-        dist = (
-            dspec["distributed"] if "distributed" in dspec else self._data._distributed
-        )
+        dist = self.distributed and dspec.get("distributed", True)
         shape = ()
 
         # Check that all the specified axes are defined, and fetch their lengths
@@ -296,28 +310,135 @@ class ContainerBase(memh5.BasicCont):
         # Ensure that the dataset_spec is the same order on all ranks
         return {k: ddict[k] for k in sorted(ddict)}
 
-    @property
-    def axes(self):
-        """Return the set of axes for this container..
-        """
+    @classmethod
+    def _class_axes(cls):
+        """Return the set of axes for this container defined by this class and the base classes."""
         axes = set()
 
         # Iterate over the reversed MRO and look for _table_spec attributes
         # which get added to a temporary dict. We go over the reversed MRO so
         # that the `tdict.update` overrides tables in base classes.
-        for cls in inspect.getmro(self.__class__)[::-1]:
+        for c in inspect.getmro(cls)[::-1]:
 
             try:
-                axes |= set(cls._axes)
+                axes |= set(c._axes)
             except AttributeError:
                 pass
 
-        # Add in any axes found on the instance
+        # This must be the same order on all ranks, so we need to explicitly sort to get around the
+        # hash randomization
+        return tuple(sorted(axes))
+
+    @property
+    def axes(self):
+        """The set of axes for this container including any defined on the instance."""
+        axes = set(self._class_axes())
+
+        # Add in any axes found on the instance (this is needed to support the table classes where
+        # the axes get added at run time)
         axes |= set(self.__dict__.get("_axes", []))
 
         # This must be the same order on all ranks, so we need to explicitly sort to get around the
         # hash randomization
         return tuple(sorted(axes))
+
+    @classmethod
+    def _make_selections(cls, sel_args):
+        """
+        Match down-selection arguments to axes of datasets.
+
+        Parses sel_* argument and returns dict mapping dataset names to selections.
+
+        Parameters
+        ----------
+        sel_args : dict
+            Should contain valid numpy indexes as values and axis names (str) as keys.
+
+        Returns
+        -------
+        dict
+            Mapping of dataset names to numpy indexes for downselection of the data.
+            Also includes another dict under the key "index_map" that includes
+            the selections for those.
+        """
+        # Check if all those axes exist
+        for axis in sel_args.keys():
+            if axis not in cls._class_axes():
+                raise RuntimeError("No '{}' axis found to select from.".format(axis))
+
+        # Build selections dict
+        selections = {}
+        for name, dataset in cls._dataset_spec.items():
+            ds_axes = dataset["axes"]
+            sel = []
+            ds_relevant = False
+            for axis in ds_axes:
+                if axis in sel_args:
+                    sel.append(sel_args[axis])
+                    ds_relevant = True
+                else:
+                    sel.append(slice(None))
+            if ds_relevant:
+                selections["/" + name] = tuple(sel)
+
+        # add index maps selections
+        for axis, sel in sel_args.items():
+            selections["/index_map/" + axis] = sel
+
+        return selections
+
+    def copy(self, shared=None):
+        """Copy this container, optionally sharing the source datasets.
+
+        This routine will create a copy of the container. By default this is
+        as full copy with the contents fully independent. However, a set of
+        dataset names can be given that will share the same data as the
+        source to save memory for large datasets. These will just view the
+        same memory, so any modification to either the original or the copy
+        will be visible to the other. This includes all write operations,
+        addition and removal of attributes, redistribution etc. This
+        functionality should be used with caution and clearly documented.
+
+        Parameters
+        ----------
+        shared : list, optional
+            A list of datasets whose content will be shared with the original.
+
+        Returns
+        -------
+        copy : subclass of ContainerBase
+            The copied container.
+        """
+        new_cont = self.__class__(
+            attrs_from=self,
+            axes_from=self,
+            skip_datasets=True,
+            distributed=self.distributed,
+            comm=self.comm,
+        )
+
+        # Loop over datasets that exist in the source and either add a view of
+        # the source dataset, or perform a full copy
+        for name, data in self.datasets.items():
+
+            if shared and name in shared:
+                # TODO: find a way to do this that doesn't depend on the
+                # internal implementation of BasicCont and MemGroup
+                # NOTE: we don't use `.view()` on the RHS here as we want to
+                # preserve the shared data through redistributions
+                new_cont._data._get_storage()[name] = self._data._get_storage()[name]
+            else:
+                dset = new_cont.add_dataset(name)
+
+                # Ensure that we have exactly the same distribution
+                if dset.distributed:
+                    dset.redistribute(data.distributed_axis)
+
+                # Copy over the data and attributes
+                dset[:] = data[:]
+                memh5.copyattrs(data.attrs, dset.attrs)
+
+        return new_cont
 
 
 class TableBase(ContainerBase):
@@ -669,8 +790,8 @@ class SiderealStream(VisContainer):
             "initialise": True,
             "distributed": True,
             "distributed_axis": "freq",
-            "compression": bitshuffle.h5.H5FILTER,
-            "compression_opts": (0, bitshuffle.h5.H5_COMPRESS_LZ4),
+            "compression": COMPRESSION,
+            "compression_opts": COMPRESSION_OPTS,
             "chunks": (64, 256, 128),
         },
         "vis_weight": {
@@ -679,8 +800,8 @@ class SiderealStream(VisContainer):
             "initialise": True,
             "distributed": True,
             "distributed_axis": "freq",
-            "compression": bitshuffle.h5.H5FILTER,
-            "compression_opts": (0, bitshuffle.h5.H5_COMPRESS_LZ4),
+            "compression": COMPRESSION,
+            "compression_opts": COMPRESSION_OPTS,
             "chunks": (64, 256, 128),
         },
         "input_flags": {
@@ -752,6 +873,12 @@ class SystemSensitivity(TODContainer):
             "initialise": True,
             "distributed": True,
         },
+        "frac_lost": {
+            "axes": ["freq", "time"],
+            "dtype": np.float32,
+            "initialise": True,
+            "distributed": True,
+        },
     }
 
     @property
@@ -767,6 +894,10 @@ class SystemSensitivity(TODContainer):
         return self.datasets["weight"]
 
     @property
+    def frac_lost(self):
+        return self.datasets["frac_lost"]
+
+    @property
     def freq(self):
         return self.index_map["freq"]["centre"]
 
@@ -777,6 +908,9 @@ class SystemSensitivity(TODContainer):
 
 class RFIMask(TODContainer):
     """A container for holding RFI mask.
+
+    The mask is `True` for contaminated samples that should be excluded, and
+    `False` for clean samples.
     """
 
     _axes = ("freq",)
@@ -815,8 +949,8 @@ class TimeStream(VisContainer, TODContainer):
             "initialise": True,
             "distributed": True,
             "distributed_axis": "freq",
-            "compression": bitshuffle.h5.H5FILTER,
-            "compression_opts": (0, bitshuffle.h5.H5_COMPRESS_LZ4),
+            "compression": COMPRESSION,
+            "compression_opts": COMPRESSION_OPTS,
             "chunks": (64, 256, 128),
         },
         "vis_weight": {
@@ -825,8 +959,8 @@ class TimeStream(VisContainer, TODContainer):
             "initialise": True,
             "distributed": True,
             "distributed_axis": "freq",
-            "compression": bitshuffle.h5.H5FILTER,
-            "compression_opts": (0, bitshuffle.h5.H5_COMPRESS_LZ4),
+            "compression": COMPRESSION,
+            "compression_opts": COMPRESSION_OPTS,
             "chunks": (64, 256, 128),
         },
         "input_flags": {
@@ -858,8 +992,8 @@ class TimeStream(VisContainer, TODContainer):
 
 
 class GridBeam(ContainerBase):
-    """ Generic container for representing the 2-d beam in spherical
-        coordinates on a rectangular grid.
+    """Generic container for representing the 2-d beam in spherical
+    coordinates on a rectangular grid.
     """
 
     _axes = ("freq", "pol", "input", "theta", "phi")
@@ -931,9 +1065,9 @@ class GridBeam(ContainerBase):
 
 
 class TrackBeam(ContainerBase):
-    """ Container for a sequence of beam samples at arbitrary locations
-        on the sphere. The axis of the beam samples is 'pix', defined by
-        the numpy.dtype [('theta', np.float32), ('phi', np.float32)].
+    """Container for a sequence of beam samples at arbitrary locations
+    on the sphere. The axis of the beam samples is 'pix', defined by
+    the numpy.dtype [('theta', np.float32), ('phi', np.float32)].
     """
 
     _axes = ("freq", "pol", "input", "pix")
@@ -945,8 +1079,8 @@ class TrackBeam(ContainerBase):
             "initialise": True,
             "distributed": True,
             "distributed_axis": "freq",
-            "compression": bitshuffle.h5.H5FILTER,
-            "compression_opts": (0, bitshuffle.h5.H5_COMPRESS_LZ4),
+            "compression": COMPRESSION,
+            "compression_opts": COMPRESSION_OPTS,
             "chunks": (128, 2, 128, 128),
         },
         "weight": {
@@ -955,8 +1089,8 @@ class TrackBeam(ContainerBase):
             "initialise": True,
             "distributed": True,
             "distributed_axis": "freq",
-            "compression": bitshuffle.h5.H5FILTER,
-            "compression_opts": (0, bitshuffle.h5.H5_COMPRESS_LZ4),
+            "compression": COMPRESSION,
+            "compression_opts": COMPRESSION_OPTS,
             "chunks": (128, 2, 128, 128),
         },
     }
@@ -1158,9 +1292,88 @@ class KLModes(SVDModes):
     pass
 
 
+class CommonModeGainData(TODContainer):
+    """Parallel container for holding gain data common to all inputs."""
+
+    _axes = ("freq",)
+
+    _dataset_spec = {
+        "gain": {
+            "axes": ["freq", "time"],
+            "dtype": np.complex128,
+            "initialise": True,
+            "distributed": True,
+            "distributed_axis": "freq",
+        },
+        "weight": {
+            "axes": ["freq", "time"],
+            "dtype": np.float64,
+            "initialise": False,
+            "distributed": True,
+            "distributed_axis": "freq",
+        },
+    }
+
+    @property
+    def gain(self):
+        return self.datasets["gain"]
+
+    @property
+    def weight(self):
+        try:
+            return self.datasets["weight"]
+        except KeyError:
+            return None
+
+    @property
+    def freq(self):
+        return self.index_map["freq"]["centre"]
+
+
+class CommonModeSiderealGainData(ContainerBase):
+    """Parallel container for holding sidereal gain data common to all inputs."""
+
+    _axes = ("freq", "ra")
+
+    _dataset_spec = {
+        "gain": {
+            "axes": ["freq", "ra"],
+            "dtype": np.complex128,
+            "initialise": True,
+            "distributed": True,
+            "distributed_axis": "freq",
+        },
+        "weight": {
+            "axes": ["freq", "ra"],
+            "dtype": np.float64,
+            "initialise": False,
+            "distributed": True,
+            "distributed_axis": "freq",
+        },
+    }
+
+    @property
+    def gain(self):
+        return self.datasets["gain"]
+
+    @property
+    def weight(self):
+        try:
+            return self.datasets["weight"]
+        except KeyError:
+            return None
+
+    @property
+    def freq(self):
+        return self.index_map["freq"]
+
+    @property
+    def ra(self):
+        return self.index_map["ra"]
+
+
 class GainData(TODContainer):
-    """Parallel container for holding gain data.
-    """
+    """Parallel container for holding gain data."""
 
     _axes = ("freq", "input")
 
@@ -1202,8 +1415,7 @@ class GainData(TODContainer):
 
 
 class SiderealGainData(ContainerBase):
-    """Parallel container for holding sidereal gain data.
-    """
+    """Parallel container for holding sidereal gain data."""
 
     _axes = ("freq", "input", "ra")
 
@@ -1249,8 +1461,7 @@ class SiderealGainData(ContainerBase):
 
 
 class StaticGainData(ContainerBase):
-    """Parallel container for holding static gain data (i.e. non time varying).
-    """
+    """Parallel container for holding static gain data (i.e. non time varying)."""
 
     _axes = ("freq", "input")
 
@@ -1289,8 +1500,7 @@ class StaticGainData(ContainerBase):
 
 
 class DelaySpectrum(ContainerBase):
-    """Container for a delay spectrum.
-    """
+    """Container for a delay spectrum."""
 
     _axes = ("baseline", "delay")
 
@@ -1382,8 +1592,7 @@ class Powerspectrum2D(ContainerBase):
 
 
 class SVDSpectrum(ContainerBase):
-    """Container for an m-mode SVD spectrum.
-    """
+    """Container for an m-mode SVD spectrum."""
 
     _axes = ("m", "singularvalue")
 
@@ -1457,8 +1666,7 @@ class SourceCatalog(TableBase):
 
 
 class SpectroscopicCatalog(SourceCatalog):
-    """A container for spectroscopic catalogs.
-    """
+    """A container for spectroscopic catalogs."""
 
     _table_spec = {
         "redshift": {
@@ -1469,8 +1677,7 @@ class SpectroscopicCatalog(SourceCatalog):
 
 
 class FormedBeam(ContainerBase):
-    """Container for formed beams.
-    """
+    """Container for formed beams."""
 
     _axes = ("object_id", "pol", "freq")
 
@@ -1530,7 +1737,7 @@ class FormedBeam(ContainerBase):
 
 class FormedBeamHA(FormedBeam):
     """Container for formed beams.
-       These have not been collapsed in the hour angle (HA) axis
+    These have not been collapsed in the hour angle (HA) axis
     """
 
     _axes = ("object_id", "pol", "freq", "ha")

@@ -1,0 +1,86 @@
+name: draco-ci-build
+on:
+  pull_request:
+    branches:
+    - master
+  push:
+    branches:
+    - master
+
+jobs:
+
+  lint-code:
+
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v2
+
+    - name: Set up Python 3.8
+      uses: actions/setup-python@v1
+      with:
+        python-version: 3.8
+
+    - name: Install black
+      run: pip install black
+
+    - name: Check code with black
+      run: black --check .
+
+  run-tests:
+
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v2
+
+    - name: Install apt dependencies
+      run: |
+        sudo apt-get install -y libopenmpi-dev openmpi-bin
+
+    - name: Set up Python 3.8
+      uses: actions/setup-python@v1
+      with:
+        python-version: 3.8
+
+    - name: Install pip dependencies
+      run: |
+        pip install future
+        pip install numpy
+        pip install cython
+        pip install -r requirements.txt
+        pip install mpi4py
+        pip install pytest
+        python setup.py develop
+
+    - name: Run serial tests
+      run: pytest -x test/
+
+    - name: Run parallel tests
+      run: |
+        mpirun -np 4 pytest -x -m mpi test/
+
+  build-docs:
+
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v2
+
+    - name: Install apt dependencies
+      run: |
+        sudo apt-get install -y libopenmpi-dev openmpi-bin
+
+    - name: Set up Python 3.8
+      uses: actions/setup-python@v1
+      with:
+        python-version: 3.8
+
+    - name: Install pip dependencies
+      run: |
+        pip install future
+        pip install numpy
+        pip install cython
+        pip install -r requirements.txt
+        pip install -r doc/requirements.txt
+        python setup.py develop
+
+    - name: Build sphinx docs
+      run: sphinx-build -b html doc/ doc/_build/html
