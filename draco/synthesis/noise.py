@@ -76,9 +76,13 @@ class GaussianNoiseDataset(task.SingleTask):
     ----------
     seed : int
         Random seed for the noise generation.
+    add_to_vis : bool
+        If True, add the generated noise to the existing visibility.
+        Else, substitute existing visibility. Default = False.
     """
 
     seed = config.Property(proptype=int, default=None)
+    add_to_vis = config.Property(proptype=bool, default=False)
 
     def process(self, data):
         """Generates a Gaussian distributed noise dataset,
@@ -97,6 +101,7 @@ class GaussianNoiseDataset(task.SingleTask):
             a Gaussian distributed noise realisation.
 
         """
+        from caput import mpiutil
         # Distribute in something other than `stack`
         data.redistribute("freq")
         # Visibility to be replaced by noise
@@ -105,18 +110,25 @@ class GaussianNoiseDataset(task.SingleTask):
         # create a random generator, and create a local seed state
         rg = randomgen.generator.RandomGenerator()
 
-        with mpi_random_seed(self.seed, randomgen=rg) as rg:
+        with mpi_random_seed(self.seed, gen=rg) as rg:
             noise = rg.normal(
                 scale=np.sqrt(tools.invert_no_zero(data.weight[:]) / 2),
                 size=(2,) + data.weight[:].shape,
             )
-            vis[:] = noise[0] + 1j * noise[1]
+            if self.add_to_vis:
+                vis[:] += noise[0] + 1j * noise[1]
+            else:
+                vis[:] = noise[0] + 1j * noise[1]
 
-        for si, prod in enumerate(data.prodstack):
-            prod_inputs = data.prod[prod]
+        for si, prod_inputs in enumerate(data.prodstack):
             if prod_inputs[0] == prod_inputs[1]:
                 # This is an auto-correlation
-                vis[:, si].real *= 2 ** 0.5
+                if self.add_to_vis:
+                    # Add noise top-up to auto-corr (real part).
+                    # Should be 2^(1/2) times the value in `noise`.
+                    vis[:, si].real += (noise[0][:, si] + 1j * noise[1][:, si]) * (2 ** 0.5 - 1)
+                else:
+                    vis[:, si].real *= 2 ** 0.5
                 vis[:, si].imag = 0.0
 
         return data
@@ -390,7 +402,7 @@ def draw_complex_wishart(C, n):
 
 
 @contextlib.contextmanager
-def mpi_random_seed(seed, extra=0, randomgen=None):
+def mpi_random_seed(seed, extra=0, gen=None):
     """Use a specific random seed for the numpy.random context or for the RandomGen context, and return to the original state on exit.
 
     This is designed to work for MPI computations, incrementing the actual seed
@@ -428,7 +440,7 @@ def mpi_random_seed(seed, extra=0, randomgen=None):
     np.random.seed(new_seed)
 
     # we will be setting the numpy.random context
-    if randomgen is None:
+    if gen is None:
         # Copy the old state for restoration later.
         old_state = np.random.get_state()
 
