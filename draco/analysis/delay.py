@@ -54,6 +54,7 @@ class DelayFilter(task.SingleTask):
     update_weight = config.Property(proptype=bool, default=False)
     weight_tol = config.Property(proptype=float, default=1e-4)
     telescope_orientation = config.enum(["NS", "EW", "none"], default="NS")
+    apply_window = config.Property(proptype=bool, default=True)
 
     def setup(self, telescope):
         """Set the telescope needed to obtain baselines.
@@ -112,7 +113,8 @@ class DelayFilter(task.SingleTask):
             weight_mask = (weight_mask > (self.weight_tol * weight_mask.max())).astype(
                 np.float64
             )
-            NF = null_delay_filter(freq, delay_cut, weight_mask)
+            NF = null_delay_filter(freq, delay_cut, weight_mask,
+                                   window=self.apply_window)
 
             ssv[:, lbi] = np.dot(NF, ssv[:, lbi])
 
@@ -582,5 +584,7 @@ def null_delay_filter(freq, max_delay, mask, num_delay=200, tol=1e-8, window=Tru
 
     if window:
         proj = (mask * w)[np.newaxis, :] * proj
+    else:
+        print("HAHA! I'm not applying a window!")
 
     return proj
