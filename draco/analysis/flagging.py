@@ -202,6 +202,7 @@ class MaskBaselines(task.SingleTask):
     mask_long_ns = config.Property(proptype=float, default=None)
     mask_short = config.Property(proptype=float, default=None)
     mask_short_ew = config.Property(proptype=float, default=None)
+    mask_long_ew = config.Property(proptype=float, default=None)
 
     zero_data = config.Property(proptype=bool, default=False)
 
@@ -247,6 +248,10 @@ class MaskBaselines(task.SingleTask):
         if self.mask_short_ew is not None:
             short_ew_mask = baselines[:, 0] > self.mask_short_ew
             mask *= short_ew_mask[np.newaxis, :, np.newaxis]
+
+        if self.mask_long_ew is not None:
+            long_ew_mask = baselines[:, 0] < self.mask_long_ew
+            mask *= long_ew_mask[np.newaxis, :, np.newaxis]
 
         if self.share == "all":
             ssc = ss
