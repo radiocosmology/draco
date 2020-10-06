@@ -36,13 +36,6 @@ their own custom container types.
     empty_like
     empty_timestream
 """
-# === Start Python 2/3 compatibility
-from __future__ import absolute_import, division, print_function, unicode_literals
-from future.builtins import *  # noqa  pylint: disable=W0401, W0614
-from future.builtins.disabled import *  # noqa  pylint: disable=W0401, W0614
-from past.builtins import basestring
-
-# === End Python 2/3 compatibility
 
 import inspect
 
@@ -542,7 +535,7 @@ class TableBase(ContainerBase):
 
         dt = []
         for ci, (name, dtype) in enumerate(columns):
-            if not isinstance(name, basestring):
+            if not isinstance(name, str):
                 raise ValueError("Column %i is invalid" % ci)
             dt.append((name, dtype))
 
