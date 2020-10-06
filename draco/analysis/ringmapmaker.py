@@ -70,31 +70,34 @@ class MakeVisGrid(task.SingleTask):
         )
 
         # Construct mapping from vis array to unpacked 2D grid
-        nprod = sstream.prod.shape[0]
+        prodstack = sstream.prodstack
+        nprod = prodstack.shape[0]
         pind = np.zeros(nprod, dtype=np.int)
         xind = np.zeros(nprod, dtype=np.int)
         ysep = np.zeros(nprod, dtype=np.float)
         xsep = np.zeros(nprod, dtype=np.float)
 
-        for pp, (ii, jj) in enumerate(sstream.prod):
-
-            if self.telescope.feedconj[ii, jj]:
-                ii, jj = jj, ii
-
-            # fi = self.telescope.feeds[ii]
-            # fj = self.telescope.feeds[jj]
+        for pp, (ii, jj) in enumerate(prodstack):
 
             pind[pp] = 2 * self.telescope.beamclass[ii] + self.telescope.beamclass[jj]
-            # pind[pp] = 2 * int(fi.pol == 'S') + int(fj.pol == 'S')
-            # xind[pp] = np.abs(fi.cyl - fj.cyl)
-            ysep[pp] = self.telescope.baselines[pp, 1]
-            xsep[pp] = self.telescope.baselines[pp, 0]
-            # xsep[pp] = fi.pos[0] - fj.pos[0]
+            #ysep[pp] = self.telescope.baselines[pp, 1]
+            #xsep[pp] = self.telescope.baselines[pp, 0]
 
+            # Need to undo telescope rotation to allow for the indices computation later.
+            _CHIME_ROT = -0.071
+            t = np.radians(-1*_CHIME_ROT)
+            c, s = np.cos(t), np.sin(t)
+            ysep[pp] = s * self.telescope.baselines[pp, 0] + c * self.telescope.baselines[pp, 1]
+            xsep[pp] = c * self.telescope.baselines[pp, 0] - s * self.telescope.baselines[pp, 1]
+
+        # These computations rely on the telescope being regular and not rotated.
+        # There should be a better way to get those things.
         abs_ysep = np.abs(ysep)
         abs_xsep = np.abs(xsep)
-        min_ysep, max_ysep = np.percentile(abs_ysep[abs_ysep > 0.0], [0, 100])
-        min_xsep, max_xsep = np.percentile(abs_xsep[abs_xsep > 0.0], [0, 100])
+        # Because of the de-rotation I don't end up with 
+        # zeroes but tiny x and y minimum separations.
+        min_ysep, max_ysep = np.percentile(abs_ysep[abs_ysep > 0.01], [0, 100])
+        min_xsep, max_xsep = np.percentile(abs_xsep[abs_xsep > 0.01], [0, 100])
 
         yind = np.round(ysep / min_ysep).astype(np.int)
         xind = np.round(xsep / min_xsep).astype(np.int)
