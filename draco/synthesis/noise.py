@@ -20,22 +20,13 @@ Tasks
     SampleNoise
 """
 
-import contextlib
-
 import numpy as np
-
-try:
-    # For backwards compatibility
-    from randomgen import RandomGenerator
-except ImportError:
-    from randomgen import Generator as RandomGenerator
 
 from caput import config
 from caput.time import STELLAR_S
-from cora.util import nputil
 
 from ..core import task, containers, io
-from ..util import tools
+from ..util import tools, random
 
 
 class ReceiverTemperature(task.SingleTask):
@@ -67,17 +58,10 @@ class ReceiverTemperature(task.SingleTask):
         return data
 
 
-class GaussianNoiseDataset(task.SingleTask):
+class GaussianNoiseDataset(task.SingleTask, random.RandomTask):
     """Generates a Gaussian distributed noise dataset using the
     the noise estimates of an existing dataset.
-
-    Attributes
-    ----------
-    seed : int
-        Random seed for the noise generation.
     """
-
-    seed = config.Property(proptype=int, default=None)
 
     def process(self, data):
         """Generates a Gaussian distributed noise dataset,
@@ -98,19 +82,14 @@ class GaussianNoiseDataset(task.SingleTask):
         """
         # Distribute in something other than `stack`
         data.redistribute("freq")
-        # Visibility to be replaced by noise
+
+        # Replace visibilities with noise
         vis = data.vis[:]
+        random.complex_normal(
+            scale=tools.invert_no_zero(data.weight[:]) ** 0.5, out=vis, rng=self.rng
+        )
 
-        # create a random generator, and create a local seed state
-        rg = RandomGenerator()
-
-        with mpi_random_seed(self.seed, gen=rg) as rg:
-            noise = rg.normal(
-                scale=np.sqrt(tools.invert_no_zero(data.weight[:]) / 2),
-                size=(2,) + data.weight[:].shape,
-            )
-            vis[:] = noise[0] + 1j * noise[1]
-
+        # We need to loop to ensure the autos are real and have the correct variance
         for si, prod in enumerate(data.prodstack):
             if prod[0] == prod[1]:
                 # This is an auto-correlation
@@ -120,7 +99,7 @@ class GaussianNoiseDataset(task.SingleTask):
         return data
 
 
-class GaussianNoise(task.SingleTask):
+class GaussianNoise(task.SingleTask, random.RandomTask):
     """Add Gaussian distributed noise to a visibility dataset.
 
     Note that this is an approximation to the actual noise distribution good only
@@ -130,8 +109,6 @@ class GaussianNoise(task.SingleTask):
     ----------
     ndays : float
         Multiplies the number of samples in each measurement.
-    seed : int
-        Random seed for the noise generation.
     set_weights : bool
         Set the weights to the appropriate values.
     recv_temp : bool
@@ -140,7 +117,6 @@ class GaussianNoise(task.SingleTask):
 
     recv_temp = config.Property(proptype=float, default=50.0)
     ndays = config.Property(proptype=float, default=733.0)
-    seed = config.Property(proptype=int, default=None)
     set_weights = config.Property(proptype=bool, default=True)
 
     def setup(self, manager=None):
@@ -205,12 +181,11 @@ class GaussianNoise(task.SingleTask):
         nsamp = int(self.ndays * dt * df) * redundancy
         std = self.recv_temp / np.sqrt(nsamp)
 
-        with mpi_random_seed(self.seed):
-            noise = std[np.newaxis, :, np.newaxis] * nputil.complex_std_normal(
-                (nfreq, nprod, ntime)
-            )
+        noise = random.complex_normal(
+            (nfreq, nprod, ntime), scale=std[np.newaxis, :, np.newaxis], rng=self.rng
+        )
 
-        # Iterate over the products to find the auto-correlations and add the noise into them
+        # Iterate over the products to find the auto-correlations and add the noise
         for pi, prod in enumerate(data.prodstack):
 
             # Auto: multiply by sqrt(2) because auto has twice the variance
@@ -244,8 +219,6 @@ class SampleNoise(task.SingleTask):
         Multiplies the number of samples in each measurement. For instance this
         could be a duty cycle if the correlator was not keeping up, or could be
         larger than one if multiple measurements were combined.
-    seed : int
-        Random seed for the noise generation.
     set_weights : bool
         Set the weights to the appropriate values.
     """
@@ -288,161 +261,37 @@ class SampleNoise(task.SingleTask):
         else:
             dt = data_exp.time[1] - data_exp.time[0]
 
-        with mpi_random_seed(self.seed):
+        # Iterate over frequencies
+        for lfi, fi in vis_data.enumerate(0):
 
-            # Iterate over frequencies
-            for lfi, fi in vis_data.enumerate(0):
+            # Get the frequency interval
+            df = data_exp.index_map["freq"]["width"][fi] * 1e6
 
-                # Get the frequency interval
-                df = data_exp.index_map["freq"]["width"][fi] * 1e6
+            # Calculate the number of samples
+            nsamp = int(self.sample_frac * dt * df)
 
-                # Calculate the number of samples
-                nsamp = int(self.sample_frac * dt * df)
+            # Iterate over time
+            for lti, ti in vis_data.enumerate(2):
 
-                # Iterate over time
-                for lti, ti in vis_data.enumerate(2):
+                # Unpack visibilites into full matrix
+                vis_utv = vis_data[lfi, :, lti].view(np.ndarray).copy()
+                vis_mat = np.zeros((nfeed, nfeed), dtype=vis_utv.dtype)
+                _fast_tools._unpack_product_array_fast(
+                    vis_utv, vis_mat, np.arange(nfeed), nfeed
+                )
 
-                    # Unpack visibilites into full matrix
-                    vis_utv = vis_data[lfi, :, lti].view(np.ndarray).copy()
-                    vis_mat = np.zeros((nfeed, nfeed), dtype=vis_utv.dtype)
-                    _fast_tools._unpack_product_array_fast(
-                        vis_utv, vis_mat, np.arange(nfeed), nfeed
-                    )
+                vis_samp = random.complex_wishart(vis_mat, nsamp, rng=self.rng) / nsamp
 
-                    vis_samp = draw_complex_wishart(vis_mat, nsamp) / nsamp
+                vis_data[lfi, :, lti] = vis_samp[np.triu_indices(nfeed)]
 
-                    vis_data[lfi, :, lti] = vis_samp[np.triu_indices(nfeed)]
-
-                # Construct and set the correct weights in place
-                if self.set_weights:
-                    autos = tools.extract_diagonal(vis_data[lfi], axis=0).real
-                    weight_fac = nsamp ** 0.5 / autos
-                    tools.apply_gain(
-                        data_exp.weight[fi][np.newaxis, ...],
-                        weight_fac[np.newaxis, ...],
-                        out=data_exp.weight[fi][np.newaxis, ...],
-                    )
+            # Construct and set the correct weights in place
+            if self.set_weights:
+                autos = tools.extract_diagonal(vis_data[lfi], axis=0).real
+                weight_fac = nsamp ** 0.5 / autos
+                tools.apply_gain(
+                    data_exp.weight[fi][np.newaxis, ...],
+                    weight_fac[np.newaxis, ...],
+                    out=data_exp.weight[fi][np.newaxis, ...],
+                )
 
         return data_exp
-
-
-def standard_complex_wishart(m, n):
-    """Draw a standard Wishart matrix.
-
-    Parameters
-    ----------
-    m : integer
-        Number of variables (i.e. size of matrix).
-    n : integer
-        Number of measurements the covariance matrix is estimated from.
-
-    Returns
-    -------
-    B : np.ndarray[m, m]
-    """
-
-    from scipy.stats import gamma
-
-    # Fill in normal variables in the lower triangle
-    T = np.zeros((m, m), dtype=np.complex128)
-    T[np.tril_indices(m, k=-1)] = (
-        np.random.standard_normal(m * (m - 1) // 2)
-        + 1.0j * np.random.standard_normal(m * (m - 1) // 2)
-    ) / 2 ** 0.5
-
-    # Gamma variables on the diagonal
-    for i in range(m):
-        T[i, i] = gamma.rvs(n - i) ** 0.5
-
-    # Return the square to get the Wishart matrix
-    return np.dot(T, T.T.conj())
-
-
-def draw_complex_wishart(C, n):
-    """Draw a complex Wishart matrix.
-
-    Parameters
-    ----------
-    C_exp : np.ndarray[:, :]
-        Expected covaraince matrix.
-
-    n : integer
-        Number of measurements the covariance matrix is estimated from.
-
-    Returns
-    -------
-    C_samp : np.ndarray
-        Sample covariance matrix.
-    """
-
-    import scipy.linalg as la
-
-    # Find Cholesky of C
-    L = la.cholesky(C, lower=True)
-
-    # Generate a standard Wishart
-    A = standard_complex_wishart(C.shape[0], n)
-
-    # Transform to get the Wishart variable
-    return np.dot(L, np.dot(A, L.T.conj()))
-
-
-@contextlib.contextmanager
-def mpi_random_seed(seed, extra=0, gen=None):
-    """Use a specific random seed for the numpy.random context or for the RandomGen context, and return to the original state on exit.
-
-    This is designed to work for MPI computations, incrementing the actual seed
-    of each process by the MPI rank. Overall each process gets the numpy seed:
-    `numpy_seed = seed + mpi_rank + 4096 * extra`.
-
-    Parameters
-    ----------
-    seed : int
-        Base seed to set. If seed is :obj:`None`, re-seed randomly.
-    extra : int, optional
-        An extra part of the seed, which should be changed for calculations
-        using the same seed, but that want different random sequences.
-    gen: :class: `Generator`
-        A RandomGen bit_generator whose internal seed state we are going to
-        influence.
-
-    Yields
-    ------
-    If we are setting the numpy.random context, nothing is yielded.
-
-    :class: `Generator`
-        If we are setting the RandomGen bit_generator, it will be returned.
-    """
-
-    import numpy as np
-    from caput import mpiutil
-
-    # Just choose a random number per process as the seed if nothing was set.
-    if seed is None:
-        seed = np.random.randint(2 ** 30)
-
-    # Construct the new process specific seed
-    new_seed = seed + mpiutil.rank + 4096 * extra
-    np.random.seed(new_seed)
-
-    # we will be setting the numpy.random context
-    if gen is None:
-        # Copy the old state for restoration later.
-        old_state = np.random.get_state()
-
-        # Enter the context block, and reset the state on exit.
-        try:
-            yield
-        finally:
-            np.random.set_state(old_state)
-
-    # we will be setting the randomgen context
-    else:
-        # Copy the old state for restoration later.
-        old_state = gen.state
-
-        # Enter the context block, and reset the state on exit.
-        try:
-            yield gen
-        finally:
-            gen.state = old_state
