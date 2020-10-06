@@ -35,13 +35,6 @@ Several tasks accept groups of files as arguments. These are specified in the YA
     single_group:
         files: ['file1.h5', 'file2.h5']
 """
-# === Start Python 2/3 compatibility
-from __future__ import absolute_import, division, print_function, unicode_literals
-from future.builtins import *  # noqa  pylint: disable=W0401, W0614
-from future.builtins.disabled import *  # noqa  pylint: disable=W0401, W0614
-from past.builtins import basestring
-
-# === End Python 2/3 compatibility
 
 import os.path
 
@@ -87,7 +80,7 @@ def _list_of_filelists(files):
 
     for filelist in files:
 
-        if isinstance(filelist, basestring):
+        if isinstance(filelist, str):
             filelist = glob.glob(filelist)
         elif isinstance(filelist, list):
             pass
@@ -102,7 +95,7 @@ def _list_or_glob(files):
     # Take in a list of lists/glob patterns of filenames
     import glob
 
-    if isinstance(files, basestring):
+    if isinstance(files, str):
         files = sorted(glob.glob(files))
     elif isinstance(files, list):
         pass
