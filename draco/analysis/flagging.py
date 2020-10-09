@@ -1060,3 +1060,123 @@ def destripe(x, w, axis=1):
     bsel = tuple(bsel)
 
     return x - stripe[bsel]
+
+
+class BlendStack(task.SingleTask):
+    """Mix a small amount of a stack into data to regularise RFI gaps.
+
+    This is designed to mix in a small amount of a stack into a day of data (which
+    will have RFI masked gaps) to attempt to regularise operations which struggle to
+    deal with time variable masks, e.g. `DelaySpectrumEstimator`.
+
+    Attribute
+    ---------
+    frac : float, optional
+        The relative weight to give the stack in the average. This multiplies the
+        weights already in the stack, and so it should be remembered that these may
+        already be significantly higher than the single day weights.
+    match_median : bool, optional
+        Estimate the median in the time/RA direction from the common samples and use
+        this to match any quasi time-independent bias of the data (e.g. cross talk).
+    """
+
+    frac = config.Property(proptype=float, default=1e-4)
+    match_median = config.Property(proptype=bool, default=True)
+
+    def setup(self, data_stack):
+        """Set the stacked data.
+
+        Parameters
+        ----------
+        stack : VisContainer
+        """
+        self.data_stack = data_stack
+
+    def process(self, data):
+        """Blend a small amount of the stack into the incoming data.
+
+        Parameters
+        ----------
+        data : VisContainer
+            The data to be blended into. This is modified in place.
+
+        Returns
+        -------
+        data_blend : VisContainer
+            The modified data. This is the same object as the input, and it has been
+            modified in place.
+        """
+
+        if type(self.data_stack) != type(data):
+            raise TypeError(
+                f"type(data) (={type(data)}) must match"
+                f"type(data_stack) (={type(self.type)}"
+            )
+
+        # Try and get both the stack and the incoming data to have the same
+        # distribution
+        self.data_stack.redistribute(["freq", "time", "ra"])
+        data.redistribute(["freq", "time", "ra"])
+
+        if isinstance(data, containers.SiderealStream):
+            dset_stack = self.data_stack.vis[:]
+            dset = data.vis[:]
+        else:
+            raise TypeError(
+                "Only SiderealStream's are currently supported. "
+                f"Got type(data) = {type(data)}"
+            )
+
+        if dset_stack.shape != dset.shape:
+            raise ValueError(
+                f"Size of data ({dset.shape}) must match "
+                f"data_stack ({dset_stack.shape})"
+            )
+
+        weight_stack = self.data_stack.weight[:]
+        weight = data.weight[:]
+
+        # Find the median offset between the stack and the daily data
+        if self.match_median:
+
+            # Find the parts of the both the stack and the daily data that are both
+            # measured
+            mask = (
+                ((weight[:] > 0) & (weight_stack[:] > 0))
+                .astype(np.float32)
+                .view(np.ndarray)
+            )
+
+            # ... get the median of the stack in this common subset
+            stack_med_real = weighted_median.weighted_median(
+                dset_stack.real.view(np.ndarray).copy(), mask
+            )
+            stack_med_imag = weighted_median.weighted_median(
+                dset_stack.imag.view(np.ndarray).copy(), mask
+            )
+
+            # ... get the median of the data in the common subset
+            data_med_real = weighted_median.weighted_median(
+                dset.real.view(np.ndarray).copy(), mask
+            )
+            data_med_imag = weighted_median.weighted_median(
+                dset.imag.view(np.ndarray).copy(), mask
+            )
+
+            # ... construct an offset to match the medians in the time/RA direction
+            stack_offset = (
+                (data_med_real - stack_med_real)
+                + 1.0j * (data_med_imag - stack_med_imag)
+            )[..., np.newaxis]
+
+        else:
+            stack_offset = 0
+
+        # Perform a weighted average of the data
+        dset *= weight
+        dset += weight_stack * self.frac * (dset_stack + stack_offset)
+        weight += weight_stack * self.frac
+
+        dset *= tools.invert_no_zero(weight)
+
+        return data
