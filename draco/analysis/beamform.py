@@ -143,8 +143,14 @@ class BeamFormBase(task.SingleTask):
             f_local_indices = np.arange(self.ls, dtype=np.int32)
             f_mask = np.zeros(self.ls, dtype=bool)
 
+        fbb = formed_beam.beam[:]
+        fbw = formed_beam.weight[:]
+
         # For each source, beamform and populate container.
         for src in range(self.nsource):
+
+            if src % 1000 == 0:
+                self.log.debug(f"Source {src}/{self.nsource}")
 
             # Declination of this source
             dec = np.radians(self.sdec[src])
@@ -167,10 +173,10 @@ class BeamFormBase(task.SingleTask):
                 # in this rank. I am getting a NaN error, however.
                 # I may need an mpiutil.barrier() call before the
                 # return statement.
-                # if f_mask.all():
-                #    # If there are no indices to be processed in
-                #    #the local frequency range, skip source.
-                #    continue
+                if f_mask.all():
+                    # If there are no indices to be processed in
+                    # the local frequency range, skip source.
+                    continue
 
                 # Frequency indices to process in local range
                 f_local_indices = np.arange(self.ls, dtype=np.int32)[np.invert(f_mask)]
@@ -312,8 +318,8 @@ class BeamFormBase(task.SingleTask):
                 pass
 
             # Populate container.
-            formed_beam.beam[src] = formed_beam_full
-            formed_beam.weight[src] = weight_full
+            fbb[src] = formed_beam_full
+            fbw[src] = weight_full
             if not self.collapse_ha:
                 if self.is_sstream:
                     formed_beam.ha[src, :] = ha_array
