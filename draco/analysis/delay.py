@@ -21,33 +21,45 @@ from ..core import containers, task, io
 class DelayFilter(task.SingleTask):
     """Remove delays less than a given threshold.
 
+    This is performed by projecting the data onto the null space that is orthogonal
+    to any mode at low delays.
+
     Attributes
     ----------
     delay_cut : float
         Delay value to filter at in seconds.
     za_cut : float
-        Sine of the maximum zenith angle included in
-        baseline-dependent delay filtering. Default is 1
-        which corresponds to the horizon (ie: filters
-        out all zenith angles). Setting to zero turns off
-        baseline dependent cut.
+        Sine of the maximum zenith angle included in baseline-dependent delay
+        filtering. Default is 1 which corresponds to the horizon (ie: filters out all
+        zenith angles). Setting to zero turns off baseline dependent cut.
+    extra_cut : float
+        Increase the delay threshold beyond the baseline dependent term.
     update_weight : bool
-        Not implemented.
+        Updates the weight dataset to reflect frequency channels that had too low
+        weight to be included by the filter.
     weight_tol : float
-        Maximum weight kept in the masked data, as a fraction of
-        the largest weight in the original dataset.
+        Maximum weight kept in the masked data, as a fraction of the largest weight
+        in the original dataset.
     telescope_orientation : one of ('NS', 'EW', 'none')
-        Determines if the baseline-dependent delay cut is based on
-        the north-south component, the east-west component or the full
-        baseline length. For cylindrical telescopes oriented in the
-        NS direction (like CHIME) use 'NS'. The default is 'NS'.
+        Determines if the baseline-dependent delay cut is based on the north-south
+        component, the east-west component or the full baseline length. For
+        cylindrical telescopes oriented in the NS direction (like CHIME) use 'NS'.
+        The default is 'NS'.
+    window : bool
+        Apply the window function to the data when applying the filter.
+
+    Notes
+    -----
+    The delay cut applied is `max(za_cut * baseline / c + extra_cut, delay_cut)`.
     """
 
     delay_cut = config.Property(proptype=float, default=0.1)
     za_cut = config.Property(proptype=float, default=1.0)
-    update_weight = config.Property(proptype=bool, default=False)
+    extra_cut = config.Property(proptype=float, default=0.0)
+    update_weight = config.Property(proptype=bool, default=True)
     weight_tol = config.Property(proptype=float, default=1e-4)
     telescope_orientation = config.enum(["NS", "EW", "none"], default="NS")
+    window = config.Property(proptype=bool, default=False)
 
     def setup(self, telescope):
         """Set the telescope needed to obtain baselines.
@@ -73,12 +85,10 @@ class DelayFilter(task.SingleTask):
         """
         tel = self.telescope
 
-        if self.update_weight:
-            raise NotImplemented("Weight updating is not implemented.")
-
         ss.redistribute(["input", "prod", "stack"])
 
         freq = ss.freq[:]
+        bandwidth = np.ptp(freq)
 
         ssv = ss.vis[:].view(np.ndarray)
         ssw = ss.weight[:].view(np.ndarray)
@@ -99,16 +109,26 @@ class DelayFilter(task.SingleTask):
             else:
                 baseline = np.linalg.norm(baseline)  # Norm
             # In micro seconds
-            baseline_delay_cut = self.za_cut * baseline / units.c * 1e6
+            baseline_delay_cut = self.za_cut * baseline / units.c * 1e6 + self.extra_cut
             delay_cut = np.amax([baseline_delay_cut, self.delay_cut])
+
+            # Calculate the number of samples needed to construct the delay null space.
+            # `4 * tau_max * bandwidth` is the amount recommended in the DAYENU paper
+            # and seems to work well here
+            number_cut = int(4.0 * bandwidth * delay_cut + 0.5)
 
             weight_mask = np.median(ssw[:, lbi], axis=1)
             weight_mask = (weight_mask > (self.weight_tol * weight_mask.max())).astype(
                 np.float64
             )
-            NF = null_delay_filter(freq, delay_cut, weight_mask)
+            NF = null_delay_filter(
+                freq, delay_cut, weight_mask, num_delay=number_cut, window=self.window
+            )
 
             ssv[:, lbi] = np.dot(NF, ssv[:, lbi])
+
+            if self.update_weight:
+                ssw[:, lbi] *= weight_mask[:, np.newaxis]
 
         return ss
 
