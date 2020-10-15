@@ -3,19 +3,12 @@
 
 import numpy as np
 import scipy.linalg as la
-import scipy.stats as st
-
-try:
-    # For backwards compatibility
-    from randomgen import RandomGenerator
-except ImportError:
-    from randomgen import Generator as RandomGenerator
-
 
 from caput import mpiarray, config
 from cora.util import units
 
 from ..core import containers, task, io
+from ..util import random
 
 
 class DelayFilter(task.SingleTask):
@@ -133,7 +126,7 @@ class DelayFilter(task.SingleTask):
         return ss
 
 
-class DelaySpectrumEstimator(task.SingleTask):
+class DelaySpectrumEstimator(task.SingleTask, random.RandomTask):
     """Calculate the delay spectrum of a Sidereal/TimeStream for instrumental Stokes I.
 
     The spectrum is calculated by Gibbs sampling. However, at the moment only
@@ -222,6 +215,9 @@ class DelaySpectrumEstimator(task.SingleTask):
 
         initial_S = np.ones_like(delays) * 1e1
 
+        # Get the random Generator that we will use
+        rng = self.rng
+
         # Iterate over all baselines and use the Gibbs sampler to estimate the spectrum
         for lbi, bi in delay_spec.spectrum[:].enumerate(axis=0):
 
@@ -242,8 +238,25 @@ class DelaySpectrumEstimator(task.SingleTask):
             if (data == 0.0).all():
                 continue
 
+            # If there are no non-zero weighted entries skip
+            non_zero = weight > 0
+            if not non_zero.any():
+                continue
+
+            # Remove any frequency channel which is entirely zero, this is just to
+            # reduce the computational cost, it should make no difference to the result
+            data = data[:, non_zero]
+            weight = weight[non_zero]
+            non_zero_channel = channel_ind[non_zero]
+
             spec = delay_spectrum_gibbs(
-                data, ndelay, weight, initial_S, fsel=channel_ind, niter=self.nsamp
+                data,
+                ndelay,
+                weight,
+                initial_S,
+                fsel=non_zero_channel,
+                niter=self.nsamp,
+                rng=rng,
             )
 
             # Take an average over the last half of the delay spectrum samples
@@ -419,11 +432,9 @@ def fourier_matrix_c2r(N, fsel=None):
     return Fr
 
 
-# RNG used for delay estimation
-_delay_rng = RandomGenerator()
-
-
-def delay_spectrum_gibbs(data, N, Ni, initial_S, window=True, fsel=None, niter=20):
+def delay_spectrum_gibbs(
+    data, N, Ni, initial_S, window=True, fsel=None, niter=20, rng=None
+):
     """Estimate the delay spectrum by Gibbs sampling.
 
     This routine estimates the spectrum at the `N` delay samples conjugate to
@@ -447,6 +458,8 @@ def delay_spectrum_gibbs(data, N, Ni, initial_S, window=True, fsel=None, niter=2
         Indices of channels that we have data at. By default assume all channels.
     niter : int, optional
         Number of Gibbs samples to generate.
+    rng : np.random.Generator, optional
+        A generator to use to produce the random samples.
 
     Returns
     -------
@@ -455,9 +468,8 @@ def delay_spectrum_gibbs(data, N, Ni, initial_S, window=True, fsel=None, niter=2
     """
 
     # Get reference to RNG
-    # TODO: do something smarter here
-    # TODO: multithread RNG generation
-    rng = _delay_rng
+    if rng is None:
+        rng = random.default_rng()
 
     spec = []
 
