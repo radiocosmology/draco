@@ -303,6 +303,9 @@ def stokes_I(sstream, tel):
     # TODO: this should be updated when driftscan gains a concept of polarisation
     ssv = sstream.vis[:]
     ssw = sstream.weight[:]
+
+    # Cache beamclass as it's regenerated every call
+    beamclass = tel.beamclass[:]
     for ii, ui in enumerate(uinv):
 
         # Skip if not all polarisations were included
@@ -310,7 +313,7 @@ def stokes_I(sstream, tel):
             continue
 
         fi, fj = tel.uniquepairs[ii]
-        bi, bj = tel.beamclass[fi], tel.beamclass[fj]
+        bi, bj = beamclass[fi], beamclass[fj]
 
         upi = tel.feedmap[fi, fj]
 
