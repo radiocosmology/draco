@@ -517,13 +517,14 @@ def delay_spectrum_gibbs(
     # Set the initial starting points
     S_samp = initial_S
 
-    def _draw_signal_sample(S):
+    def _draw_signal_sample_f(S):
         # Draw a random sample of the signal assuming a Gaussian model with a
         # given delay spectrum shape. Do this using the perturbed Wiener filter
         # approach
 
-        # TODO: we can probably change the order that the Wiener filter is
-        # evaluated for some computational saving as nfreq < ndelay
+        # This method is fastest if the number of frequencies is larger than the number
+        # of delays we are solving for. Typically this isn't true, so we probably want
+        # `_draw_signal_sample2`
 
         # Construct the Wiener covariance
         Si = 1.0 / S
@@ -539,6 +540,27 @@ def delay_spectrum_gibbs(
 
         return la.solve(Ci, y, sym_pos=True)
 
+    def _draw_signal_sample_t(S):
+        # This method is fastest if the number of delays is larger than the number of
+        # frequencies. This is usually the regime we are in.
+
+        # Construct various dependent matrices
+        Sh = S ** 0.5
+        Rt = Sh[:, np.newaxis] * FTNih
+        R = Rt.T
+
+        # Draw random vectors that form the perturbations
+        w1 = rng.standard_normal((N, data.shape[1]))
+        w2 = rng.standard_normal(data.shape)
+
+        # Perform the solve step (rather than explicitly using the inverse)
+        y = data + w2 - np.dot(R, w1)
+        Ci = np.identity(len(Ni_r)) + np.dot(R, Rt)
+        x = la.solve(Ci, y, sym_pos=True)
+
+        s = Sh[:, np.newaxis] * (np.dot(Rt, x) + w1)
+        return s
+
     def _draw_ps_sample(d):
         # Draw a random power spectrum sample assuming from the signal assuming
         # the signal is Gaussian and we have a flat prior on the power spectrum.
@@ -552,6 +574,12 @@ def delay_spectrum_gibbs(
         S_samp = S_hat * df / chi2
 
         return S_samp
+
+    # Select the method to use for the signal sample based on how many frequencies
+    # versus delays there are
+    _draw_signal_sample = (
+        _draw_signal_sample_f if len(fsel) > 0.25 * N else _draw_signal_sample_t
+    )
 
     # Perform the Gibbs sampling iteration for a given number of loops and
     # return the power spectrum output of them.
