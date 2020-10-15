@@ -987,19 +987,25 @@ def tv_channels_flag(x, freq, sigma=5, f=0.5, debug=False):
     tvstart_freq = 398
     tvwidth_freq = 6
 
+    # Calculate the boundaries of each frequency channel
+    df = np.median(np.abs(np.diff(freq)))
+    freq_start = freq - 0.5 * df
+    freq_end = freq + 0.5 * df
+
     for i in range(67):
 
+        # Find all frequencies that lie wholly or partially within the TV channel
         fs = tvstart_freq + i * tvwidth_freq
         fe = fs + tvwidth_freq
-        sel = (freq >= fs) & (freq < fe)
+        sel = (freq_end >= fs) & (freq_start <= fe)
 
         # Calculate the threshold to apply
         N = sel.sum()
         k = int(f * N)
 
-        # This is the Gaussian threshold required for there to be at most a p_false chance of more
-        # than k trials exceeding the threshold. This is the correct expression, and has been double
-        # checked by numerical trials.
+        # This is the Gaussian threshold required for there to be at most a p_false
+        # chance of more than k trials exceeding the threshold. This is the correct
+        # expression, and has been double checked by numerical trials.
         t = p_to_sigma(inverse_binom_cdf_prob(k, N, 1 - p_false))
 
         frac[sel] = (x[sel] > t).mean(axis=0)[np.newaxis, :]
