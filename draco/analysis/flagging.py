@@ -143,7 +143,7 @@ class MaskData(task.SingleTask):
         -------
         mmodes : containers.MModes
         """
-        mmodes.redistribute("m")
+        mmodes.redistribute("freq")
 
         mw = mmodes.weight[:]
 
