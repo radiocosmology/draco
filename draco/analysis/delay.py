@@ -286,12 +286,14 @@ def stokes_I(sstream, tel):
     baselines : np.ndarray[nbase, 2]
     """
 
+    # Construct a complex number representing each baseline (used for determining
+    # unique baselines).
+    # NOTE: due to floating point precision, some baselines don't get matched as having
+    # the same lengths. To get around this, round all separations to 0.1 mm precision
+    bl_round = np.around(tel.baselines[:, 0] + 1.0j * tel.baselines[:, 1], 4)
+
     # ==== Unpack into Stokes I
-    ubase, uinv, ucount = np.unique(
-        tel.baselines[:, 0] + 1.0j * tel.baselines[:, 1],
-        return_inverse=True,
-        return_counts=True,
-    )
+    ubase, uinv, ucount = np.unique(bl_round, return_inverse=True, return_counts=True)
     ubase = ubase.view(np.float64).reshape(-1, 2)
     nbase = ubase.shape[0]
 
