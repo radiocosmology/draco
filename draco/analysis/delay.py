@@ -27,9 +27,6 @@ class DelayFilter(task.SingleTask):
         zenith angles). Setting to zero turns off baseline dependent cut.
     extra_cut : float
         Increase the delay threshold beyond the baseline dependent term.
-    update_weight : bool
-        Updates the weight dataset to reflect frequency channels that had too low
-        weight to be included by the filter.
     weight_tol : float
         Maximum weight kept in the masked data, as a fraction of the largest weight
         in the original dataset.
@@ -49,7 +46,6 @@ class DelayFilter(task.SingleTask):
     delay_cut = config.Property(proptype=float, default=0.1)
     za_cut = config.Property(proptype=float, default=1.0)
     extra_cut = config.Property(proptype=float, default=0.0)
-    update_weight = config.Property(proptype=bool, default=True)
     weight_tol = config.Property(proptype=float, default=1e-4)
     telescope_orientation = config.enum(["NS", "EW", "none"], default="NS")
     window = config.Property(proptype=bool, default=False)
@@ -119,9 +115,7 @@ class DelayFilter(task.SingleTask):
             )
 
             ssv[:, lbi] = np.dot(NF, ssv[:, lbi])
-
-            if self.update_weight:
-                ssw[:, lbi] *= weight_mask[:, np.newaxis]
+            ssw[:, lbi] *= weight_mask[:, np.newaxis]
 
         return ss
 
@@ -626,9 +620,12 @@ def null_delay_filter(freq, max_delay, mask, num_delay=200, tol=1e-8, window=Tru
     delay = np.linspace(-max_delay, max_delay, num_delay)
 
     # Construct the Fourier matrix
-    F = (mask * w)[:, np.newaxis] * np.exp(
+    F = mask[:, np.newaxis] * np.exp(
         2.0j * np.pi * delay[np.newaxis, :] * freq[:, np.newaxis]
     )
+
+    if window:
+        F *= w[:, np.newaxis]
 
     # Use an SVD to figure out the set of significant modes spanning the delays
     # we are wanting to get rid of.
@@ -638,8 +635,9 @@ def null_delay_filter(freq, max_delay, mask, num_delay=200, tol=1e-8, window=Tru
 
     # Construct a projection matrix for the filter
     proj = np.identity(len(freq)) - np.dot(p, p.T.conj())
+    proj *= mask[np.newaxis, :]
 
     if window:
-        proj = (mask * w)[np.newaxis, :] * proj
+        proj *= w[np.newaxis, :]
 
     return proj
