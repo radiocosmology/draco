@@ -45,7 +45,7 @@ class ExpandPerturbedProducts(task.SingleTask):
         if not ninput.is_integer():
             raise Exception('nfeed/npert is not an integer!')
         ninput = int(ninput)
-        
+
         self._generate_pertubations(ninput)
 
     def process(self, sstream):
@@ -70,7 +70,7 @@ class ExpandPerturbedProducts(task.SingleTask):
         tel = self.telescope
 
         pertubations = self._pertubations
-        
+
         # If only perturbing the primary beam E-plane width, the beam perturbation
         # entries are actually derivatives with respect to fwhm_e itself, so if we
         # want pert_val to be the fractional variation in this width, we need
@@ -84,7 +84,7 @@ class ExpandPerturbedProducts(task.SingleTask):
         # Determine ninput per perturbation based on ninput/n perturbations.
         ninput_pert = len(sstream.input)
         ninput = int(ninput_pert / tel.npert)
-        
+
         # If I perturb also frequencies....
         # linp, sinp, einp = mpiutil.split_local(ninput)
 
@@ -100,13 +100,13 @@ class ExpandPerturbedProducts(task.SingleTask):
         new_stream.redistribute('freq')
         new_stream.vis[:] = 0.0
         new_stream.weight[:] = 0.0
-        
+
         # Dereference the global slices
         nss = new_stream.vis[:]
         nssw = new_stream.weight[:]
         ss = sstream.vis[:]
         ssw = sstream.weight[:]
-        
+
         # Iterate over all feed pairs and work out which is the correct index in
         # the sidereal stack.
         for pi, (fi, fj) in enumerate(prod):
@@ -148,11 +148,11 @@ class ExpandPerturbedProducts(task.SingleTask):
                 # Is this a conjugated product
                 conj_fii = tel.feedconj[fii, fj]
                 conj_fjj = tel.feedconj[fi, fjj]
-                
+
                 # Add perturbation components to unperturbed sstream
                 ssp += ss_fii.conj() if conj_fii else ss_fii
                 ssp += ss_fjj.conj() if conj_fjj else ss_fjj
-        
+
                 if self.solution_order == 1:
                     continue
                 else:
@@ -164,11 +164,11 @@ class ExpandPerturbedProducts(task.SingleTask):
                     # Multiply it by both the fi and fj perturbation values.
                     ss_fiifjj = ss[:, f_fiifjj] * pertubations[fi] * pertubations[fj]
                     ssp += ss_fiifjj.conj() if conj_fiifjj else ss_fiifjj
-                    
+
             # Put prod_stream into new container new_stream.
             nss[:, pi] = ssp
             nssw[:, pi] = 1.0
-            
+
         return new_stream
 
     def _generate_pertubations(self, ninput):
@@ -176,6 +176,28 @@ class ExpandPerturbedProducts(task.SingleTask):
         if self.comm.rank == 0:
             # Choose random pertubations, each frequency and input?
             pertubations = np.random.normal(0, self.pert_val, size=ninput)
+
+        else:
+            pertubations = None
+
+        # Broadcast slices to all ranks
+        self._pertubations = self.comm.bcast(pertubations, root=0)
+
+
+
+class ExpandPerturbedProductsSinglePert(ExpandPerturbedProducts):
+    """Like ExpandPerturbedProducts, but instead of randomly perturbing
+    the E-plane width of each feed's primary beam individually, this class
+    perturbs each width by the *same* amount. This is intended to be used
+    for testing schemes for filtering modes that are sensitive to certain
+    beam perturbations.
+    """
+
+    def _generate_pertubations(self, ninput):
+        """Initialise beam pertubations for input channels"""
+        if self.comm.rank == 0:
+
+            pertubations = np.random.normal(0, self.pert_val) * np.ones(ninput)
 
         else:
             pertubations = None
