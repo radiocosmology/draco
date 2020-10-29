@@ -134,15 +134,16 @@ class SiderealGains(BaseGains):
     Attributes
     ----------
     start_time, end_time : float or datetime
-        Start and end times of the timestream to simulate. Needs to be either a
-        `float` (UNIX time) or a `datetime` objects in UTC.
+        Start and end times of the gain timestream to simulate. Needs to be either a
+        `float` (UNIX time) or a `datetime` objects in UTC. This determines the set
+        of LSDs to generate data for.
     """
 
     start_time = config.utc_time()
     end_time = config.utc_time()
 
     def setup(self, bt, sstream):
-        """Set up an oberserver and the data to use for this simulation.
+        """Set up an observer and the data to use for this simulation.
 
         Parameters
         ----------
