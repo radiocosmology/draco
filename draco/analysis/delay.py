@@ -236,10 +236,10 @@ class DelaySpectrumEstimator(task.SingleTask):
 
 
 class VisI(task.SingleTask):
-    """Extract instrumental Stokes I from a time/sidereal stream.
+    """Extract instrumental Stokes I from a sidereal stream.
 
     This task basically uses the function Stokes_I and saves its
-    output to Ccontainers.VisI
+    output to containers.VisI
     """
 
     def setup(self, telescope):
@@ -252,15 +252,19 @@ class VisI(task.SingleTask):
         self.telescope = io.get_telescope(telescope)
 
     def process(self, ss):
-        """Estimate the delay spectrum.
+        """Extract instrumental Stokes I from a sidereal stream.
+
+        This task basically uses the function Stokes_I and saves its
+        output to Containers.VisI
 
         Parameters
         ----------
-        ss : SiderealStream or TimeStream
+        ss : SiderealStream
 
         Returns
         -------
-        dspec : Ccontainers.VisI
+        visI_cont : containers.VisI
+            The instrumental Stokes I visibilities, distributed over frequencies.
         """
 
         tel = self.telescope
