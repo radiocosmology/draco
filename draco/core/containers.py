@@ -1524,7 +1524,7 @@ class DelayTransform(ContainerBase):
     _dataset_spec = {
         "vis": {
             "axes": ["delay", "stack", "ra"],
-            "dtype": np.float64,
+            "dtype": np.complex64,
             "initialise": True,
             "distributed": True,
             "distributed_axis": "stack",
