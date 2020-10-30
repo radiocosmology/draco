@@ -457,11 +457,11 @@ class DelayTransformGibbs(task.SingleTask):
                 # Take an average over the last half of the delay transform samples
                 # (presuming that removes the burn-in)
                 dtransform_av = np.mean(dtransform[-(self.nsamp // 2) :], axis=0)
-                spec_av = np.mean(spec[-(self.nsamp // 2) :], axis=0)
+                dtransform_var = np.var(dtransform[-(self.nsamp // 2) :], axis=0)
                 dtransform_local[i] = np.fft.fftshift(dtransform_av, axes=0)
-                # For now, weights are just the inv variance of the dtransform along avg_axis
-                dtransform_weight_local[i] = tools.invert_no_zero(np.var(dtransform_local[i],
-                    axis=-1))[:, np.newaxis]
+                # Weights are the inv variance of the dtransform along last half of Gibbs samples
+                dtransform_weight_local[i] = tools.invert_no_zero(np.fft.fftshift(dtransform_var,
+                    axes=0))
 
             # Reshape, transpose to original form and save
             dtransform_cont.vis[slice_before + (np.s_[bi:bi+1],)] = dtransform_local.reshape(
