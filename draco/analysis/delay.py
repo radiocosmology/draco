@@ -329,11 +329,11 @@ class DelayTransformGibbs(task.SingleTask):
 
         Parameters
         ----------
-        ss : SiderealStream, TimeStream, HybridVisStream
+        ss : SiderealStream, HybridVisStream, VisI
 
         Returns
         -------
-        dtransform : DelayTransform, HybridVisDelayStream
+        dtransform : DelayTransform, HybridVisDelayStream, DelayTransformVisI
         """
 
         # ==== Container information ====
