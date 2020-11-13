@@ -246,7 +246,7 @@ class BeamFormBase(task.SingleTask):
                     # this_formed_beam was never normalized (this avoids
                     # re-work and makes code more efficient).
                     this_sumweight = np.sum(
-                        np.sum(sumweight_inrange, axis=-1) * primary_beam, axis=1
+                        np.sum(sumweight_inrange, axis=-1) * primary_beam ** 2, axis=1
                     )
 
                     formed_beam_full[pol] = np.sum(
@@ -263,15 +263,14 @@ class BeamFormBase(task.SingleTask):
                             * primary_beam ** 2,
                             axis=1,
                         )
-                    else:
-                        this_weight2 = np.sum(
-                            np.sum(sumweight_inrange, axis=-1) * primary_beam ** 2,
-                            axis=1,
+
+                        weight_full[pol] = this_sumweight ** 2 * invert_no_zero(
+                            this_weight2
                         )
 
-                    weight_full[pol] = this_sumweight ** 2 * invert_no_zero(
-                        this_weight2
-                    )
+                    else:
+                        weight_full[pol] = this_sumweight
+
                 else:
                     # Need to divide by weight here for proper
                     # normalization because it is not done in
