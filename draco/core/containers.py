@@ -13,6 +13,7 @@ Containers
     Map
     MModes
     RingMap
+    BeamPerturbation
 
 Container Base Classes
 ----------------------
@@ -619,7 +620,7 @@ class VisContainer(ContainerBase):
             inputs = kwargs["input"]
         elif ("axes_from" in kwargs) and ("input" in kwargs["axes_from"].index_map):
             inputs = kwargs["axes_from"].index_map["input"]
-
+        
         # Resolve stack map
         stack = None
         if "stack" in kwargs:
@@ -639,10 +640,9 @@ class VisContainer(ContainerBase):
             stack["prod"][:] = np.arange(len(prod))
             stack["conjugate"] = 0
             kwargs["stack"] = stack
-
+        
         # Call initializer from `ContainerBase`
         super(VisContainer, self).__init__(*args, **kwargs)
-
         reverse_map_stack = None
         # Create reverse map
         if "reverse_map_stack" in kwargs:
@@ -1805,3 +1805,47 @@ def empty_timestream(**kwargs):
     ts : TimeStream
     """
     return TimeStream(**kwargs)
+
+
+class BeamPerturbation(TODContainer):
+    """Container for holding beam perturbation values.
+        (as created in draco.synthesis.expand_perturbed)
+    """
+
+    _axes = ('freq', 'input')
+
+    _dataset_spec = {
+        'pert': {
+            'axes': ['freq', 'input'],
+            'dtype': np.complex128,
+            'initialise': True,
+            'distributed': True,
+            'distributed_axis': 'freq'
+        },
+        'weight': {
+            'axes': ['freq'],
+            'dtype': np.float64,
+            'initialise': False,
+            'distributed': True,
+            'distributed_axis': 'freq'
+        }
+    }
+
+    @property
+    def pert(self):
+        return self.datasets['pert']
+
+    @property
+    def weight(self):
+        try:
+            return self.datasets['weight']
+        except KeyError:
+            return None
+
+    @property
+    def freq(self):
+        return self.index_map['freq']
+
+    @property
+    def input(self):
+        return self.index_map['input']

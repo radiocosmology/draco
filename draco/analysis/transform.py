@@ -127,7 +127,7 @@ class CollateProducts(task.SingleTask):
         """
 
         if self.weight not in ["natural", "uniform", "inverse_variance"]:
-            KeyError("Do not recognize weight = %s" % self.weight)
+            raise KeyError("Do not recognize weight = %s" % self.weight)
 
         self.telescope = io.get_telescope(tel)
 
@@ -394,7 +394,7 @@ class SelectFreq(task.SingleTask):
             )[0]
 
         else:
-            ValueError(
+            raise ValueError(
                 "Must specify either freq_physical, channel_range, or channel_index."
             )
 
