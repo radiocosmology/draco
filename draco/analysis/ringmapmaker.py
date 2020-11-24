@@ -28,7 +28,11 @@ from ..core import containers
 
 
 class MakeVisGrid(task.SingleTask):
-    """Arrange the visibilities onto a 2D grid."""
+    """Arrange the visibilities onto a 2D grid.
+
+    This will fill out the visibilities in the half plane `x >= 0` where x is the EW
+    baseline separation.
+    """
 
     def setup(self, tel):
         """Set the Telescope instance to use.
@@ -52,61 +56,56 @@ class MakeVisGrid(task.SingleTask):
         rm : containers.RingMap
         """
 
-        # Redistribute over frequency
-        sstream.redistribute("freq")
+        if (sstream.prodstack != self.telescope.uniquepairs).all():
+            raise ValueError(
+                "Products in sstream do not match those in the beam transfers."
+            )
 
-        # Extract the right ascension (or calculate from timestamp)
+        # Calculation the set of polarisations in the data, and which polarisation
+        # index every entry corresponds to
+        polpair = self.telescope.polarisation[self.telescope.uniquepairs].view("U2")
+        pol, pind = np.unique(polpair, return_inverse=True)
+
+        if len(pol) != 4:
+            raise RuntimeError(f"Expected to find four polarisations. Got {pol}")
+
+        # Find the mapping from a polarisation index to it's complement with the feeds
+        # reversed
+        pconjmap = np.unique([pj + pi for pi, pj in pol], return_inverse=True)[1]
+
+        # Determine the layout of the visibilities on the grid. This isn't trivial
+        # because of potential rotation of the telescope with respect to NS
+        xind, yind, min_xsep, min_ysep = find_grid_indices(self.telescope.baselines)
+
+        # Define several variables describing the baseline configuration.
+        nx = np.abs(xind).max() + 1
+        ny = np.abs(yind).max() + 1
+        vis_pos_x = np.arange(nx) * min_xsep
+        vis_pos_y = np.fft.fftfreq(ny, d=(1.0 / (ny * min_ysep)))
+
+        # Extract the right ascension to initialise the new container with (or
+        # calculate from timestamp)
         ra = (
             sstream.ra
             if "ra" in sstream.index_map
             else self.telescope.lsa(sstream.time)
         )
 
-        # Construct mapping from vis array to unpacked 2D grid
-        nprod = sstream.prod.shape[0]
-        pind = np.zeros(nprod, dtype=np.int)
-        xind = np.zeros(nprod, dtype=np.int)
-        ysep = np.zeros(nprod, dtype=np.float)
-        xsep = np.zeros(nprod, dtype=np.float)
-
-        for pp, (ii, jj) in enumerate(sstream.prod):
-
-            if self.telescope.feedconj[ii, jj]:
-                ii, jj = jj, ii
-
-            # fi = self.telescope.feeds[ii]
-            # fj = self.telescope.feeds[jj]
-
-            pind[pp] = 2 * self.telescope.beamclass[ii] + self.telescope.beamclass[jj]
-            # pind[pp] = 2 * int(fi.pol == 'S') + int(fj.pol == 'S')
-            # xind[pp] = np.abs(fi.cyl - fj.cyl)
-            ysep[pp] = self.telescope.baselines[pp, 1]
-            xsep[pp] = self.telescope.baselines[pp, 0]
-            # xsep[pp] = fi.pos[0] - fj.pos[0]
-
-        abs_ysep = np.abs(ysep)
-        abs_xsep = np.abs(xsep)
-        min_ysep, max_ysep = np.percentile(abs_ysep[abs_ysep > 0.0], [0, 100])
-        min_xsep, max_xsep = np.percentile(abs_xsep[abs_xsep > 0.0], [0, 100])
-
-        yind = np.round(ysep / min_ysep).astype(np.int)
-        xind = np.round(xsep / min_xsep).astype(np.int)
-
-        grid_index = list(zip(pind, xind, yind))
-
-        # Define several variables describing the baseline configuration.
-        nfeed = int(np.round(max_ysep / min_ysep)) + 1
-        nvis_1d = 2 * nfeed - 1
-        ncyl = np.max(xind) + 1
-
-        # Define polarisation axis
-        pol = np.array([x + y for x in ["X", "Y"] for y in ["X", "Y"]])
-        vis_pos_ns = np.fft.fftfreq(nvis_1d, d=(1.0 / (nvis_1d * min_ysep)))
-        vis_pos_ew = np.arange(ncyl) * min_xsep
-
         # Create container for output
         grid = containers.VisGridStream(
-            pol=pol, ew=vis_pos_ew, ns=vis_pos_ns, ra=ra, axes_from=sstream
+            pol=pol, ew=vis_pos_x, ns=vis_pos_y, ra=ra, axes_from=sstream
+        )
+
+        # Redistribute over frequency
+        sstream.redistribute("freq")
+        grid.redistribute("freq")
+
+        # Calculate the redundancy
+        redundancy = tools.calculate_redundancy(
+            sstream.input_flags[:],
+            sstream.index_map["prod"][:],
+            sstream.reverse_map["stack"]["stack"][:],
+            sstream.vis.shape[1],
         )
 
         # De-reference distributed arrays outside loop to save repeated MPI calls
@@ -114,20 +113,24 @@ class MakeVisGrid(task.SingleTask):
         ssw = sstream.weight[:]
         gsv = grid.vis[:]
         gsw = grid.weight[:]
+        gsr = grid.redundancy[:]
 
         gsv[:] = 0.0
         gsw[:] = 0.0
 
         # Unpack visibilities into new array
-        for vis_ind, (p_ind, x_ind, y_ind) in enumerate(grid_index):
+        for vis_ind, (p_ind, x_ind, y_ind) in enumerate(zip(pind, xind, yind)):
 
             # Different behavior for intracylinder and intercylinder baselines.
             gsv[p_ind, :, x_ind, y_ind, :] = ssv[:, vis_ind]
             gsw[p_ind, :, x_ind, y_ind, :] = ssw[:, vis_ind]
+            gsr[p_ind, x_ind, y_ind, :] = redundancy[vis_ind]
 
             if x_ind == 0:
-                gsv[p_ind, :, x_ind, -y_ind, :] = ssv[:, vis_ind].conj()
-                gsw[p_ind, :, x_ind, -y_ind, :] = ssw[:, vis_ind]
+                pc_ind = pconjmap[p_ind]
+                gsv[pc_ind, :, x_ind, -y_ind, :] = ssv[:, vis_ind].conj()
+                gsw[pc_ind, :, x_ind, -y_ind, :] = ssw[:, vis_ind]
+                gsr[pc_ind, x_ind, -y_ind, :] = redundancy[vis_ind]
 
         return grid
 
@@ -344,3 +347,63 @@ class RingMapMaker(task.group_tasks(MakeVisGrid, BeamformNS, BeamformEW)):
     """Make a ringmap from the data."""
 
     pass
+
+
+def find_basis(baselines):
+    """Find the basis unit vectors of the grid of baselines.
+
+    Parameters
+    ----------
+    baselines : np.ndarray[nbase, 2]
+        X and Y displacements of the baselines.
+
+    Returns
+    -------
+    xhat, yhat : np.ndarray[2]
+        Unit vectors pointing in the mostly X and mostly Y directions of the grid.
+    """
+
+    # Find the shortest baseline, this should give one of the axes
+    bl = np.abs(baselines)
+    bl[bl == 0] = 1e30
+    ind = np.argmin(bl)
+
+    # Determine the basis vectors and label them xhat and yhat
+    e1 = baselines[ind]
+    e2 = np.array([e1[1], -e1[0]])
+
+    xh, yh = (e1, e2) if abs(e1[0]) > abs(e2[0]) else (e2, e1)
+
+    xh = xh / np.dot(xh, xh) ** 0.5 * np.sign(xh[0])
+    yh = yh / np.dot(yh, yh) ** 0.5 * np.sign(yh[1])
+
+    return xh, yh
+
+
+def find_grid_indices(baselines):
+    """Find the indices of each baseline in the grid, and the spacing.
+
+    Parameters
+    ----------
+    baselines : np.ndarray[nbase, 2]
+        X and Y displacements of the baselines.
+
+    Returns
+    -------
+    xind, yind : np.ndarray[nbase]
+        Indices of the baselines in the grid.
+    dx, dy : float
+        Spacing of the grid in each direction.
+    """
+
+    def _get_inds(s):
+        s_abs = np.abs(s)
+        d = s_abs[s_abs > 1e-4].min()
+        return np.rint(s / d), d
+
+    xh, yh = find_basis(baselines)
+
+    xind, dx = _get_inds(np.dot(baselines, xh))
+    yind, dy = _get_inds(np.dot(baselines, yh))
+
+    return xind, yind, dx, dy
