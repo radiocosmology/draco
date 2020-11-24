@@ -601,7 +601,7 @@ class VisContainer(ContainerBase):
         Should contain entries for all other axes.
     """
 
-    _axes = ("freq", "input", "prod", "stack")
+    _axes = ("input", "prod", "stack")
 
     def __init__(self, *args, **kwargs):
         # Resolve product map
@@ -668,11 +668,6 @@ class VisContainer(ContainerBase):
     def weight(self):
         """The visibility weights."""
         return self.datasets["vis_weight"]
-
-    @property
-    def freq(self):
-        """The frequency axis."""
-        return self.index_map["freq"]["centre"]
 
     @property
     def input(self):
@@ -770,12 +765,37 @@ class SiderealContainer(ContainerBase):
 
         super().__init__(*args, **kwargs)
 
-
     @property
     def ra(self):
-        """The RA in degrees associated with each sample of the RA axis.
-        """
+        """The RA in degrees associated with each sample of the RA axis."""
         return self.index_map["ra"][:]
+
+
+class MContainer(ContainerBase):
+    """Container for holding m-mode type data.
+
+    Note this container will have an `msign` axis even though not all m-mode based
+    data needs one. As always this is not an issue, datasets that don't need it are
+    not required to list it in their `axes` list.
+
+    Parameters
+    ----------
+    mmax : integer, optional
+        Largest m to be held.
+    """
+
+    _axes = ("m", "msign")
+
+    def __init__(self, mmax=None, *args, **kwargs):
+
+        # Set up axes from passed arguments
+        if mmax is not None:
+            kwargs["m"] = mmax + 1
+
+        # Ensure the sign axis is set correctly
+        kwargs["msign"] = np.array(["+", "-"])
+
+        super().__init__(*args, **kwargs)
 
 
 class Map(FreqContainer):
@@ -1175,13 +1195,8 @@ class TrackBeam(FreqContainer):
         return self.index_map["pix"]
 
 
-class MModes(FreqContainer, VisContainer):
+class MModes(FreqContainer, VisContainer, MContainer):
     """Parallel container for holding m-mode data.
-
-    Parameters
-    ----------
-    mmax : integer, optional
-        Largest m to be held.
 
     Attributes
     ----------
@@ -1190,8 +1205,6 @@ class MModes(FreqContainer, VisContainer):
     weight : mpidataset.MPIArray
         Array of weights for each point.
     """
-
-    _axes = ("m", "msign")
 
     _dataset_spec = {
         "vis": {
@@ -1210,19 +1223,8 @@ class MModes(FreqContainer, VisContainer):
         },
     }
 
-    def __init__(self, mmax=None, *args, **kwargs):
 
-        # Set up axes from passed arguments
-        if mmax is not None:
-            kwargs["m"] = mmax + 1
-
-        # Ensure the sign axis is set correctly
-        kwargs["msign"] = np.array(["+", "-"])
-
-        super(MModes, self).__init__(*args, **kwargs)
-
-
-class SVDModes(ContainerBase):
+class SVDModes(MContainer):
     """Parallel container for holding SVD m-mode data.
 
     Parameters
@@ -1237,8 +1239,6 @@ class SVDModes(ContainerBase):
     weight : mpidataset.MPIArray
         Array of weights for each point.
     """
-
-    _axes = ("m", "mode")
 
     _dataset_spec = {
         "vis": {
@@ -1276,14 +1276,6 @@ class SVDModes(ContainerBase):
     def weight(self):
         return self.datasets["vis_weight"]
 
-    def __init__(self, mmax=None, *args, **kwargs):
-
-        # Set up axes from passed arguments
-        if mmax is not None:
-            kwargs["m"] = mmax + 1
-
-        super(SVDModes, self).__init__(*args, **kwargs)
-
 
 class KLModes(SVDModes):
     """Parallel container for holding KL filtered m-mode data.
@@ -1304,13 +1296,13 @@ class KLModes(SVDModes):
     pass
 
 
-class VisGridStream(ContainerBase):
+class VisGridStream(FreqContainer, SiderealContainer):
     """Visibilities gridded into a 2D array.
 
     Only makes sense for an array which is a cartesian grid.
     """
 
-    _axes = ("pol", "freq", "ew", "ns", "ra")
+    _axes = ("pol", "ew", "ns")
 
     _dataset_spec = {
         "vis": {
@@ -1338,13 +1330,15 @@ class VisGridStream(ContainerBase):
         return self.datasets["vis_weight"]
 
 
-class HybridVisStream(ContainerBase):
-    """Visibilities gridded into a 2D array.
 
-    Only makes sense for an array which is a cartesian grid.
+class HybridVisStream(FreqContainer, SiderealContainer):
+    """Visibilities beamformed only in the NS direction.
+
+    This container has visibilities beam formed only in the NS direction to give a
+    grid in elevation.
     """
 
-    _axes = ("pol", "freq", "ew", "el", "ra")
+    _axes = ("pol", "ew", "el")
 
     _dataset_spec = {
         "vis": {
@@ -1372,13 +1366,15 @@ class HybridVisStream(ContainerBase):
         return self.datasets["vis_weight"]
 
 
-class HybridVisMModes(ContainerBase):
-    """Visibilities gridded into a 2D array.
 
-    Only makes sense for an array which is a cartesian grid.
+class HybridVisMModes(FreqContainer):
+    """Visibilities beamformed in the NS direction and m-mode transformed in RA.
+
+    This container has visibilities beam formed only in the NS direction to give a
+    grid in elevation.
     """
 
-    _axes = ("pol", "freq", "ew", "el", "m", "msign")
+    _axes = ("pol", "freq", "ew", "el")
 
     _dataset_spec = {
         "vis": {
@@ -1397,17 +1393,6 @@ class HybridVisMModes(ContainerBase):
         },
     }
 
-    def __init__(self, mmax=None, *args, **kwargs):
-
-        # Set up axes from passed arguments
-        if mmax is not None:
-            kwargs["m"] = mmax + 1
-
-        # Ensure the sign axis is set correctly
-        kwargs["msign"] = np.array(["+", "-"])
-
-        super(HybridVisMModes, self).__init__(*args, **kwargs)
-
     @property
     def vis(self):
         return self.datasets["vis"]
@@ -1417,7 +1402,7 @@ class HybridVisMModes(ContainerBase):
         return self.datasets["vis_weight"]
 
 
-class RingMap(ContainerBase):
+class RingMap(FreqContainer, SiderealContainer):
     """Container for holding multifrequency ring maps.
 
     The maps are packed in format `[freq, pol, ra, EW beam, el]` where
@@ -1432,7 +1417,7 @@ class RingMap(ContainerBase):
         stored.
     """
 
-    _axes = ("freq", "pol", "ra", "beam", "el")
+    _axes = ("pol", "beam", "el")
 
     _dataset_spec = {
         "map": {
@@ -1458,21 +1443,9 @@ class RingMap(ContainerBase):
         },
     }
 
-    def __init__(self, *args, **kwargs):
-
-        super(RingMap, self).__init__(*args, **kwargs)
-
-    @property
-    def freq(self):
-        return self.index_map["freq"]
-
     @property
     def pol(self):
         return self.index_map["pol"]
-
-    @property
-    def ra(self):
-        return self.index_map["ra"]
 
     @property
     def el(self):
