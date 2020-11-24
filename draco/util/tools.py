@@ -540,6 +540,7 @@ def window_generalised(x, window="nuttall"):
 
     a_table = {
         "uniform": np.array([1, 0, 0, 0]),
+        "hann": np.array([0.5, -0.5, 0, 0]),
         "hanning": np.array([0.5, -0.5, 0, 0]),
         "hamming": np.array([0.53836, -0.46164, 0, 0]),
         "blackman": np.array([0.42, -0.5, 0.08, 0]),
