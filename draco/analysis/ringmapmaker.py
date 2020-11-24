@@ -192,7 +192,8 @@ class BeamformNS(task.SingleTask):
         gstream.redistribute("freq")
 
         gsv = gstream.vis[:]
-        gsw = gstream.weight[:].copy()
+        gsw = gstream.weight[:]
+        gsr = gstream.redundancy[:]
 
         # Construct phase array
         el = self.span * np.linspace(-1.0, 1.0, self.npix)
@@ -204,6 +205,7 @@ class BeamformNS(task.SingleTask):
         # Dereference datasets
         hvv = hv.vis[:]
         hvw = hv.weight[:]
+        hvb = hv.dirty_beam[:]
 
         nspos = gstream.index_map["ns"][:]
         nsmax = np.abs(nspos).max()
@@ -225,13 +227,18 @@ class BeamformNS(task.SingleTask):
                 vmax = nsmax / wv
 
             if self.weight == "inverse_variance":
-                gw = gsw[:, lfi]
+                gw = gsw[:, lfi].copy()
             elif self.weight == "natural":
-                raise NotImplementedError("Natural weighting hasn't been implemented yet.")
+                gw = gsr[:].copy()
             else:
                 x = 0.5 * (vpos / vmax + 1)
                 ns_weight = tools.window_generalised(x, window=self.weight)
-                gw = (gsw[:, lfi] > 0) * ns_weight[np.newaxis,np.newaxis,:, np.newaxis]
+                gw = (gsw[:, lfi] > 0) * ns_weight[
+                    np.newaxis, np.newaxis, :, np.newaxis
+                ]
+
+            # Ensure we skip entries which are flagged out entirely
+            gw *= gsw[:, lfi] > 0
 
             # Remove auto-correlations
             if not self.include_auto:
@@ -239,7 +246,7 @@ class BeamformNS(task.SingleTask):
 
             # Normalize by sum of weights
             norm = np.sum(gw, axis=-2)
-            gw *= tools.invert_no_zero(norm)[...,np.newaxis,:]
+            gw *= tools.invert_no_zero(norm)[..., np.newaxis, :]
 
             # Create array that will be used for the inverse
             # discrete Fourier transform in y-direction
@@ -249,9 +256,12 @@ class BeamformNS(task.SingleTask):
             # Calculate the hybrid visibilities
             hvv[:, lfi] = np.dot(F, gw * gsv[:, lfi]).transpose(1, 2, 0, 3)
 
+            # Calculate the dirty beam
+            hvb[:, lfi] = np.dot(F, gw * np.one_like(gsv[:, lfi])).transpose(1, 2, 0, 3)
+
             # Estimate the weights assuming that the errors are all uncorrelated
-            t = np.sum(tools.invert_no_zero(gsw[:, lfi]) * gw**2, axis=-2)
-            hvw[:, lfi] = tools.invert_no_zero(t[..., np.newaxis, :])
+            t = np.sum(tools.invert_no_zero(gsw[:, lfi]) * gw ** 2, axis=-2)
+            hvw[:, lfi] = tools.invert_no_zero(t)
 
         return hv
 
