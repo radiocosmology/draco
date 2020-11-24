@@ -1319,6 +1319,12 @@ class VisGridStream(FreqContainer, SiderealContainer):
             "distributed": True,
             "distributed_axis": "freq",
         },
+        "redundancy": {
+            "axes": ["pol", "ew", "ns", "ra"],
+            "dtype": np.int32,
+            "initialise": True,
+            "distributed": False,
+        },
     }
 
     @property
@@ -1329,6 +1335,9 @@ class VisGridStream(FreqContainer, SiderealContainer):
     def weight(self):
         return self.datasets["vis_weight"]
 
+    @property
+    def redundancy(self):
+        return self.datasets["redundancy"]
 
 
 class HybridVisStream(FreqContainer, SiderealContainer):
@@ -1348,8 +1357,15 @@ class HybridVisStream(FreqContainer, SiderealContainer):
             "distributed": True,
             "distributed_axis": "freq",
         },
-        "vis_weight": {
+        "dirty_beam": {
             "axes": ["pol", "freq", "ew", "el", "ra"],
+            "dtype": np.float32,
+            "initialise": True,
+            "distributed": True,
+            "distributed_axis": "freq",
+        },
+        "vis_weight": {
+            "axes": ["pol", "freq", "ew", "ra"],
             "dtype": np.float32,
             "initialise": True,
             "distributed": True,
@@ -1365,16 +1381,20 @@ class HybridVisStream(FreqContainer, SiderealContainer):
     def weight(self):
         return self.datasets["vis_weight"]
 
+    @property
+    def dirty_beam(self):
+        """This isn't useful at this stage, but it's needed to propagate onward."""
+        return self.datasets["dirty_beam"]
 
 
-class HybridVisMModes(FreqContainer):
+class HybridVisMModes(FreqContainer, MContainer):
     """Visibilities beamformed in the NS direction and m-mode transformed in RA.
 
     This container has visibilities beam formed only in the NS direction to give a
     grid in elevation.
     """
 
-    _axes = ("pol", "freq", "ew", "el")
+    _axes = ("pol", "ew", "el")
 
     _dataset_spec = {
         "vis": {
@@ -1385,7 +1405,7 @@ class HybridVisMModes(FreqContainer):
             "distributed_axis": "freq",
         },
         "vis_weight": {
-            "axes": ["m", "msign", "pol", "freq", "ew", "el"],
+            "axes": ["m", "msign", "pol", "freq", "ew"],
             "dtype": np.float32,
             "initialise": True,
             "distributed": True,
@@ -1427,6 +1447,13 @@ class RingMap(FreqContainer, SiderealContainer):
             "distributed": True,
             "distributed_axis": "freq",
         },
+        "weight": {
+            "axes": ["pol", "freq", "ra"],
+            "dtype": np.float64,
+            "initialise": True,
+            "distributed": True,
+            "distributed_axis": "freq",
+        },
         "dirty_beam": {
             "axes": ["beam", "pol", "freq", "ra", "el"],
             "dtype": np.float64,
@@ -1458,6 +1485,10 @@ class RingMap(FreqContainer, SiderealContainer):
     @property
     def rms(self):
         return self.datasets["rms"]
+
+    @property
+    def weight(self):
+        return self.datasets["weight"]
 
     @property
     def dirty_beam(self):
