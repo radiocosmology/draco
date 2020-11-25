@@ -503,10 +503,17 @@ class SiderealStacker(task.SingleTask):
     """Take in a set of sidereal days, and stack them up.
 
     This will apply relative calibration.
+
+    Parameters
+    ----------
+    tag : str
+        The tag to give the stack.
     """
 
     stack = None
     lsd_list = None
+
+    tag = config.Property(proptype=str, default="stack")
 
     def process(self, sdata):
         """Stack up sidereal days.
@@ -564,7 +571,7 @@ class SiderealStacker(task.SingleTask):
             Stack of sidereal days.
         """
 
-        self.stack.attrs["tag"] = "stack"
+        self.stack.attrs["tag"] = self.tag
         self.stack.attrs["lsd"] = np.array(self.lsd_list)
 
         self.stack.vis[:] *= tools.invert_no_zero(self.stack.weight[:])
