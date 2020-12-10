@@ -140,11 +140,12 @@ def _list_or_glob(files):
             raise ConfigError("File not found: %s" % files)
         files = sorted(glob.glob(files))
     elif isinstance(files, list):
-        for i in range(len(files)):
-            files[i] = _list_or_glob(files[i])
+        parsed_files = []
+        for f in files:
+            parsed_files = parsed_files + _list_or_glob(f)
+        files = parsed_files
     else:
         raise ConfigError("Argument must be list or glob pattern, got %s" % repr(files))
-
     return files
 
 
