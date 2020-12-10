@@ -109,7 +109,7 @@ def _list_of_filelists(files):
                 filelist[i] = _list_or_glob(filelist[i])
         else:
             raise ConfigError("Must be list or glob pattern.")
-        f2.append(filelist)
+        f2 = f2 + filelist
 
     return f2
 
