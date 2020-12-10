@@ -63,6 +63,10 @@ jobs:
       run: |
         mpirun -np 4 pytest -x -m mpi test/
 
+    - name: Run caput linter on example configs
+      run: |
+        caput-pipeline lint examples/*.yaml
+
   build-docs:
 
     runs-on: ubuntu-latest
