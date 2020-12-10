@@ -48,6 +48,7 @@ from caput import config
 from cora.util import units
 
 from . import task
+from ..util.exception import ConfigError
 from ..util.truncate import bit_truncate_weights, bit_truncate_fixed
 from .containers import SiderealStream, TimeStream, TrackBeam
 
@@ -75,7 +76,24 @@ TRUNC_SPEC = {
 
 
 def _list_of_filelists(files):
-    # Take in a list of lists/glob patterns of filenames
+    """
+    Take in a list of lists/glob patterns of filenames
+
+    Parameters
+    ----------
+    files : List[str] or List[List[str]]
+        A path or glob pattern (e.g. /my/data/*.h5) or a list of those (or a list of lists of those).
+
+    Raises
+    ------
+    ConfigError
+        If files has the wrong format or refers to a file that doesn't exist.
+
+    Returns
+    -------
+    List[List[str]]
+        The input file list list. Any glob patterns will be flattened to file path string lists.
+    """
     import glob
 
     f2 = []
@@ -83,32 +101,72 @@ def _list_of_filelists(files):
     for filelist in files:
 
         if isinstance(filelist, str):
+            if "*" not in filelist and not os.path.isfile(filelist):
+                raise ConfigError("File not found: %s" % filelist)
             filelist = glob.glob(filelist)
         elif isinstance(filelist, list):
-            pass
+            for i in range(len(filelist)):
+                filelist[i] = _list_or_glob(filelist[i])
         else:
-            raise Exception("Must be list or glob pattern.")
+            raise ConfigError("Must be list or glob pattern.")
         f2.append(filelist)
 
     return f2
 
 
 def _list_or_glob(files):
-    # Take in a list of lists/glob patterns of filenames
+    """
+    Take in a list of lists/glob patterns of filenames
+
+    Parameters
+    ----------
+    files : str or List[str]
+        A path or glob pattern (e.g. /my/data/*.h5) or a list of those
+
+    Returns
+    -------
+    List[str]
+        The input file list. Any glob patterns will be flattened to file path string lists.
+
+    Raises
+    ------
+    ConfigError
+        If files has the wrong type or if it refers to a file that doesn't exist.
+    """
     import glob
 
     if isinstance(files, str):
+        if "*" not in files and not os.path.isfile(files):
+            raise ConfigError("File not found: %s" % files)
         files = sorted(glob.glob(files))
     elif isinstance(files, list):
-        pass
+        for i in range(len(files)):
+            files[i] = _list_or_glob(files[i])
     else:
-        raise ValueError("Argument must be list or glob pattern, got %s" % repr(files))
+        raise ConfigError("Argument must be list or glob pattern, got %s" % repr(files))
 
     return files
 
 
 def _list_of_filegroups(groups):
-    # Process a file group/groups
+    """
+    Process a file group/groups
+
+    Parameters
+    ----------
+    groups : List[Dict] or Dict
+        Dicts should contain keys 'files': An iterable with file path or glob pattern strings, 'tag': the group tag str
+
+    Returns
+    -------
+    List[Dict]
+        The input groups. Any glob patterns in the 'files' list will be flattened to file path strings.
+
+    Raises
+    ------
+    ConfigError
+        If groups has the wrong format.
+    """
     import glob
 
     # Convert to list if the group was not included in a list
@@ -119,7 +177,10 @@ def _list_of_filegroups(groups):
     # through glob
     for gi, group in enumerate(groups):
 
-        files = group["files"]
+        try:
+            files = group["files"]
+        except KeyError:
+            raise ConfigError("File group is missing key 'files'.")
 
         if "tag" not in group:
             group["tag"] = "group_%i" % gi
@@ -127,10 +188,12 @@ def _list_of_filegroups(groups):
         flist = []
 
         for fname in files:
+            if "*" not in fname and not os.path.isfile(fname):
+                raise ConfigError("File not found: %s" % fname)
             flist += glob.glob(fname)
 
         if not len(flist):
-            raise RuntimeError("No files in group exist (%s)." % files)
+            raise ConfigError("No files in group exist (%s)." % files)
 
         group["files"] = flist
 
