@@ -182,6 +182,10 @@ def _list_of_filegroups(groups):
             files = group["files"]
         except KeyError:
             raise ConfigError("File group is missing key 'files'.")
+        except TypeError:
+            raise ConfigError(
+                "Expected type dict in file groups (got {}).".format(type(group))
+            )
 
         if "tag" not in group:
             group["tag"] = "group_%i" % gi
