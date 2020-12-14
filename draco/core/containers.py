@@ -1063,7 +1063,7 @@ class TrackBeam(ContainerBase):
     the numpy.dtype [('theta', np.float32), ('phi', np.float32)].
     """
 
-    _axes = ("freq", "pol", "input", "pix")
+    _axes = ("freq", "pol", "input", "pix", "components")
 
     _dataset_spec = {
         "beam": {
@@ -1086,12 +1086,30 @@ class TrackBeam(ContainerBase):
             "compression_opts": COMPRESSION_OPTS,
             "chunks": (128, 2, 128, 128),
         },
+        "observed_variance": {
+            "axes": ["components", "freq", "pol", "input", "pix"],
+            "dtype": np.float32,
+            "initialise": False,
+            "distributed": True,
+            "distributed_axis": "freq",
+            "compression": bitshuffle.h5.H5FILTER,
+            "compression_opts": (0, bitshuffle.h5.H5_COMPRESS_LZ4),
+            "chunks": (3, 128, 2, 128, 128),
+        },
+        "number_of_observations": {
+            "axes": ["freq", "pol", "input", "pix"],
+            "dtype": np.int32,
+            "initialise": False,
+            "distributed": True,
+            "distributed_axis": "freq",
+        },
     }
 
     def __init__(
         self,
         theta=None,
         phi=None,
+        components=np.array(["rr", "ri", "ii"]),
         coords="celestial",
         track_type="drift",
         *args,
@@ -1113,6 +1131,7 @@ class TrackBeam(ContainerBase):
                 kwargs["pix"] = pix
         elif (theta is None) != (phi is None):
             raise RuntimeError("Both theta and phi coordinates must be specified.")
+        kwargs["components"] = components
 
         super(TrackBeam, self).__init__(*args, **kwargs)
 
@@ -1128,8 +1147,84 @@ class TrackBeam(ContainerBase):
         return self.datasets["weight"]
 
     @property
-    def gain(self):
-        return self.datasets["gain"]
+    def observed_variance(self):
+        if "observed_variance" in self.datasets:
+            return self.datasets["observed_variance"]
+        else:
+            raise KeyError("Dataset 'observed_variance' not initialised.")
+
+    @property
+    def observed_variance_iq(self):
+        """Rotate the observed variance to the in-phase/quadrature basis
+
+        Returns
+        -------
+        C: np.ndarray[ncomponent, nfreq, npol, ninput, npix]
+            The `observed_variance` dataset in the in-phase/quadrature basis,
+            packed into upper triangle format such that the components axis
+            contains ['ii', 'iq', 'qq'].
+        """
+        C = self.observed_variance[:].view(np.ndarray)
+
+        # Construct rotation coefficients from average beam angle
+        phi = np.angle(self.beam[:].view(np.ndarray))
+        cc = np.cos(phi) ** 2
+        cs = np.cos(phi) * np.sin(phi)
+        ss = np.sin(phi) ** 2
+
+        # Rotate the covariance matrix from real-imag to in-phase/quadrature
+        Cphi = np.zeros_like(C)
+        Cphi[0] = cc * C[0] + 2 * cs * C[1] + ss * C[2]
+        Cphi[1] = -cs * C[0] + (cc - ss) * C[1] + cs * C[2]
+        Cphi[2] = ss * C[0] - 2 * cs * C[1] + cc * C[2]
+
+        return Cphi
+
+    @property
+    def observed_variance_amp_phase(self):
+        """Calculate the amplitude/phase covariance
+
+        This interpretation is only valid if the fractional
+        variations in the amplitude and phase are small.
+
+        Returns
+        -------
+        C: np.ndarray[ncomponent, nfreq, npol, ninput, npix]
+            The observed amplitude/phase covariance matrix, packed
+            into upper triangle format such that the components axis
+            contains ['aa', 'ap', 'pp'].
+        """
+        # Rotate to in-phase/quadrature basis and then
+        # normalize by squared amplitude to convert to
+        # fractional units (amplitude) and radians (phase).
+        return self.observed_variance_iq * tools.invert_no_zero(
+            np.abs(self.beam[:][np.newaxis, ...]) ** 2
+        )
+
+    @property
+    def number_of_observations(self):
+        if "number_of_observations" in self.datasets:
+            return self.datasets["number_of_observations"]
+        else:
+            raise KeyError("Dataset 'number_of_observations' not initialised.")
+
+    @property
+    def observed_weight(self):
+        """Calculate the observed weight
+
+        Returns
+        -------
+        weight: np.ndarray[nfreq, npol, ninput, npix]
+            The trace of the `observed_variance` dataset is used
+            as an estimate of the total variance and divided by the
+            `number_of_observations` to yield the uncertainty on the mean.
+            The inverse of this quantity is returned, and can be compared
+            directly to the `weight` dataset.
+        """
+        C = self.observed_variance[:].view(np.ndarray)
+        nobs = self.number_of_observations[:].view(np.ndarray)
+
+        return nobs * tools.invert_no_zero(C[0] + C[2])
 
     @property
     def coords(self):
