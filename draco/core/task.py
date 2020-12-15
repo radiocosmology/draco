@@ -343,24 +343,25 @@ class SingleTask(MPILoggedTask, pipeline.BasicContMixin):
     def finish(self):
         """Should not need to override. Implement `process_finish` instead."""
 
-        self.log.info("Starting finish for task %s" % self.__class__.__name__)
+        class_name = self.__class__.__name__
 
-        try:
-            output = self.process_finish()
+        self.log.info(f"Starting finish for task {class_name}")
 
-            # Check for NaN's etc
-            output = self._nan_process_output(output)
+        if not hasattr(self, "process_finish"):
+            self.log.info(f"No finish for task {class_name}")
+            return
 
-            # Write the output if needed
-            self._save_output(output)
+        output = self.process_finish()
 
-            self.log.info("Leaving finish for task %s" % self.__class__.__name__)
+        # Check for NaN's etc
+        output = self._nan_process_output(output)
 
-            return output
+        # Write the output if needed
+        self._save_output(output)
 
-        except AttributeError:
-            self.log.info("No finish for task %s" % self.__class__.__name__)
-            pass
+        self.log.info(f"Leaving finish for task {class_name}")
+
+        return output
 
     def _save_output(self, output):
         # Routine to write output if needed.
