@@ -433,7 +433,7 @@ class RFISensitivityMask(task.SingleTask):
         polarisations.
     remove_median : bool, optional
         Remove median accross times for each frequency?
-        Recomended. Default: True.
+        Recommended. Default: True.
     sir : bool, optional
         Apply scale invariant rank (SIR) operator on top of final mask?
         We find that this is advisable while we still haven't flagged
@@ -446,7 +446,7 @@ class RFISensitivityMask(task.SingleTask):
         Maximum size of the SumThreshold window to use.
         The default (8) seems to work well with sensitivity data.
     start_threshold_sigma : float, optional
-        The desired threshold for the SumThreshold algorythm at the
+        The desired threshold for the SumThreshold algorithm at the
         final window size (determined by max m) given as a
         number of standard deviations (to be estimated from the
         sensitivity map excluding weight and static masks).
