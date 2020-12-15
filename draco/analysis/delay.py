@@ -81,21 +81,20 @@ class DelayFilter(task.SingleTask):
         ssv = ss.vis[:].view(np.ndarray)
         ssw = ss.weight[:].view(np.ndarray)
 
-        ubase, uinv = np.unique(
-            tel.baselines[:, 0] + 1.0j * tel.baselines[:, 1], return_inverse=True
-        )
-        ubase = ubase.view(np.float64).reshape(-1, 2)
+        ia, ib = ss.prodstack.view(np.int16).reshape(-1, 2).T
+        baselines = tel.feedpositions[ia] - tel.feedpositions[ib]
 
         for lbi, bi in ss.vis[:].enumerate(axis=1):
 
             # Select the baseline length to use
-            baseline = ubase[uinv[bi]]
+            baseline = baselines[bi]
             if self.telescope_orientation == "NS":
                 baseline = abs(baseline[1])  # Y baseline
             elif self.telescope_orientation == "EW":
                 baseline = abs(baseline[0])  # X baseline
             else:
                 baseline = np.linalg.norm(baseline)  # Norm
+
             # In micro seconds
             baseline_delay_cut = self.za_cut * baseline / units.c * 1e6 + self.extra_cut
             delay_cut = np.amax([baseline_delay_cut, self.delay_cut])
@@ -109,9 +108,12 @@ class DelayFilter(task.SingleTask):
             weight_mask = (weight_mask > (self.weight_tol * weight_mask.max())).astype(
                 np.float64
             )
-            NF = null_delay_filter(
-                freq, delay_cut, weight_mask, num_delay=number_cut, window=self.window
-            )
+            try:
+                NF = null_delay_filter(
+                    freq, delay_cut, weight_mask, num_delay=number_cut, window=self.window
+                )
+            except la.LinAlgError as e:
+                raise RuntimeError(f"Failed to converge while processing baseline {bi}") from e
 
             ssv[:, lbi] = np.dot(NF, ssv[:, lbi])
             ssw[:, lbi] *= weight_mask[:, np.newaxis]
@@ -628,7 +630,11 @@ def null_delay_filter(freq, max_delay, mask, num_delay=200, tol=1e-8, window=Tru
 
     # Use an SVD to figure out the set of significant modes spanning the delays
     # we are wanting to get rid of.
-    u, sig, vh = la.svd(F)
+    # NOTE: we've experienced some convergence failures in here which ultimately seem
+    # to be the fault of MKL (see https://github.com/scipy/scipy/issues/10032 and links
+    # therein). This seems to be limited to the `gesdd` LAPACK routine, so we can get
+    # around it by switching to `gesvd`.
+    u, sig, vh = la.svd(F, lapack_driver="gesvd")
     nmodes = np.sum(sig > tol * sig.max())
     p = u[:, :nmodes]
 
