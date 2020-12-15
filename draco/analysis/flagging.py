@@ -826,6 +826,135 @@ class ApplyRFIMask(task.SingleTask):
         return tstream
 
 
+class MaskFreq(task.SingleTask):
+    """Apply a mask to the frequency axis.
+
+    Attributes
+    ----------
+    bad_freq_ind : list, optional
+        A list containing frequencies to flag out. Each entry can either be an
+        integer giving an individual frequency index to remove, or 2-tuples giving
+        start and end indices of a range to flag (as with a standard slice, the end
+        is *not* included.)
+    factorize : bool, optional
+        Find the smallest factorizable mask of the time-frequency axis that covers all samples already flagged in the data.
+    all_time : bool, optional
+        Only include frequencies where all time samples are present.
+    mask_missing_baselines : bool, optional
+        Mask time-freq samples where some baselines are missing.
+    """
+
+    bad_freq_ind = config.Property(proptype=list, default=None)
+    factorize = config.Property(proptype=bool, default=False)
+    all_time = config.Property(proptype=bool, default=False)
+    mask_missing_baselines = config.Property(proptype=bool, default=False)
+
+    def process(self, data):
+        """Apply the mask to the data.
+
+        Parameters
+        ----------
+        data : SiderealStream or TimeStream
+            The data to mask.
+
+        Returns
+        -------
+        data_masked : SiderealRFIMask or RFIMask
+            The mask marking bad data.
+        """
+
+        data.redistribute("freq")
+
+        # Get the total number of baselines observed at each freq-time. This is used to
+        # create an initial mask
+        present_baselines = mpiarray.MPIArray.wrap(
+            (data.weight[:] > 0).sum(axis=1), comm=data.weight.comm, axis=0
+        )
+        all_present_baselines = present_baselines.allgather()
+        mask = all_present_baselines == 0
+
+        self.log.info(f"Input data: {100.0 * mask.mean():.2f}% flagged.")
+
+        # Create an initial mask of the freq-time space, where bad samples are
+        # True. If missing_baselines is set this masks any sample where the number
+        # of present baselines is less than the maximum, otherwise it is where all
+        # baselines are missing
+        if self.mask_missing_baselines:
+            mask = all_present_baselines < all_present_baselines.max()
+            self.log.info(
+                f"Requiring all baselines: {100.0 * mask.mean():.2f}% flagged."
+            )
+
+        if self.bad_freq_ind is not None:
+            nfreq = len(data.freq)
+            mask |= self._bad_freq_mask(nfreq)[:, np.newaxis]
+            self.log.info(f"Frequency mask: {100.0 * mask.mean():.2f}% flagged.")
+
+        if self.all_time:
+            mask |= mask.any(axis=1)[:, np.newaxis]
+            self.log.info(f"All time mask: {100.0 * mask.mean():.2f}% flagged.")
+        elif self.factorize:
+            mask = self._optimal_mask(mask)
+            self.log.info(f"Factorizable mask: {100.0 * mask.mean():.2f}% flagged.")
+
+        maskcls = (
+            containers.SiderealRFIMask
+            if isinstance(data, containers.SiderealStream)
+            else containers.RFIMask
+        )
+        maskcont = maskcls(axes_from=data, attrs_from=data)
+        maskcont.mask[:] = mask
+
+        return maskcont
+
+    def _bad_freq_mask(self, nfreq):
+        # Parse the bad frequency list to create a per frequency mask
+
+        mask = np.zeros(nfreq, dtype=np.bool)
+
+        for s in self.bad_freq_ind:
+
+            if isinstance(s, int):
+                mask[s] = True
+            elif isinstance(s, (tuple, list)) and len(s) == 2:
+                mask[s[0] : s[1]] = True
+            else:
+                raise ValueError(
+                    "Elements of `bad_freq_ind` must be integers or 2-tuples. "
+                    f"Got {type(s)}."
+                )
+
+        return mask
+
+    def _optimal_mask(self, mask):
+        # From the freq-time input mask, create the smallest factorizable mask that
+        # covers all the original masked samples
+
+        from scipy.optimize import minimize_scalar
+
+        def genmask(f):
+            # Calculate a factorisable mask given the time masking threshold f
+            time_mask = mask.mean(axis=0) > f
+            freq_mask = mask[:, ~time_mask].any(axis=1)
+            return time_mask[np.newaxis, :] | freq_mask[:, np.newaxis]
+
+        def fmask(f):
+            # Calculate the total area masked given f
+            m = genmask(f).mean()
+            self.log.info(f"Current value: {m}")
+            return m
+
+        # Solve to find a value of f that minimises the amount of data masked
+        res = minimize_scalar(
+            fmask, method="golden", options=dict(maxiter=20, xtol=1e-2)
+        )
+
+        if not res.success:
+            self.log.info("Optimisation did not converge, but this isn't unexpected.")
+
+        return genmask(res.x)
+
+
 def medfilt(x, mask, size, *args):
     """Apply a moving median filter to masked data.
 
