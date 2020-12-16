@@ -4,12 +4,6 @@ Tasks should be proactively moved out of here when there is a thematically
 appropriate module, or enough related tasks end up in here such that they can
 all be moved out into their own module.
 """
-# === Start Python 2/3 compatibility
-from __future__ import absolute_import, division, print_function, unicode_literals
-from future.builtins import *  # noqa  pylint: disable=W0401, W0614
-from future.builtins.disabled import *  # noqa  pylint: disable=W0401, W0614
-
-# === End Python 2/3 compatibility
 
 
 import numpy as np
@@ -47,7 +41,7 @@ class ApplyGain(task.SingleTask):
         ----------
         tstream : TimeStream like or SiderealStream
             Time stream to apply gains to. The gains are applied in place.
-        gain : StaticGainData, GainData, SiderealGainData, CommonModeGainData 
+        gain : StaticGainData, GainData, SiderealGainData, CommonModeGainData
             or CommonModeSiderealGainData. Gains to apply.
 
         Returns

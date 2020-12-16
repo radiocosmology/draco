@@ -11,20 +11,13 @@ Tasks
     ReturnFirstInputOnFinish
     Delete
 """
-# === Start Python 2/3 compatibility
-from __future__ import absolute_import, division, print_function, unicode_literals
-from future.builtins import *  # noqa  pylint: disable=W0401, W0614
-from future.builtins.disabled import *  # noqa  pylint: disable=W0401, W0614
-from past.builtins import basestring
-
-# === End Python 2/3 compatibility
 
 import os
 import logging
 
 import numpy as np
 
-from caput import pipeline, config, memh5
+from caput import pipeline, config, memh5, misc
 
 
 class MPILogFilter(logging.Filter):
@@ -100,7 +93,7 @@ def _log_level(x):
 
     if isinstance(x, int):
         return x
-    elif isinstance(x, basestring) and x in level_dict:
+    elif isinstance(x, str) and x in level_dict:
         return level_dict[x.upper()]
     else:
         raise ValueError("Logging level %s not understood" % repr(x))
@@ -146,8 +139,7 @@ class SetMPILogging(pipeline.TaskBase):
 
 
 class LoggedTask(pipeline.TaskBase):
-    """A task with logger support.
-    """
+    """A task with logger support."""
 
     log_level = config.Property(proptype=_log_level, default=None)
 
@@ -164,8 +156,7 @@ class LoggedTask(pipeline.TaskBase):
 
     @property
     def log(self):
-        """The logger object for this task.
-        """
+        """The logger object for this task."""
         return self._log
 
 
@@ -207,8 +198,7 @@ class _AddRankLogAdapter(logging.LoggerAdapter):
 
 
 class MPILoggedTask(MPITask, LoggedTask):
-    """A task base that has MPI aware logging.
-    """
+    """A task base that has MPI aware logging."""
 
     def __init__(self):
 
@@ -308,13 +298,11 @@ class SingleTask(MPILoggedTask, pipeline.BasicContMixin):
 
         super(SingleTask, self).__init__()
 
-        import inspect
-
         # Inspect the `process` method to see how many arguments it takes.
-        pro_argspec = inspect.getargspec(self.process)
+        pro_argspec = misc.getfullargspec(self.process)
         n_args = len(pro_argspec.args) - 1
 
-        if pro_argspec.varargs or pro_argspec.keywords or pro_argspec.defaults:
+        if pro_argspec.varargs or pro_argspec.varkw or pro_argspec.defaults:
             msg = (
                 "`process` method may not have variable length or optional"
                 " arguments."
