@@ -189,7 +189,7 @@ class BeamFormBase(task.SingleTask):
                 # Cannot use searchsorted, because RA might not be
                 # monotonically increasing. Slower.
                 # Notice: in case there is more than one transit,
-                # this will pick a single transit quasy-randomly!
+                # this will pick a single transit quasi-randomly!
                 transit_diff = abs(self.ra - self.sra[src])
                 sra_index = np.argmin(transit_diff)
                 # For now, skip sources that do not transit in the data
