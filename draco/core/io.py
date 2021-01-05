@@ -330,7 +330,11 @@ class LoadFITSCatalog(task.SingleTask):
 
                 catalog_stack.append(pos)
 
+            # NOTE: this one is tricky, for some reason the concatenate in here
+            # produces a non C contiguous array, so we need to ensure that otherwise
+            # the broadcasting will get very confused
             catalog_array = np.concatenate(catalog_stack, axis=-1).astype(np.float64)
+            catalog_array = np.ascontiguousarray(catalog_array)
             num_objects = catalog_array.shape[-1]
         else:
             num_objects = None
@@ -340,6 +344,7 @@ class LoadFITSCatalog(task.SingleTask):
         # broadcast into it
         num_objects = self.comm.bcast(num_objects, root=0)
         self.log.debug(f"Constructing catalog with {num_objects} objects.")
+
         if self.comm.rank != 0:
             catalog_array = np.zeros((3, num_objects), dtype=np.float64)
         self.comm.Bcast(catalog_array, root=0)
