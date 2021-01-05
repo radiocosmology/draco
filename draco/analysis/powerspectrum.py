@@ -1,5 +1,4 @@
-"""Power spectrum estimation code.
-"""
+"""Power spectrum estimation code."""
 
 
 import numpy as np

@@ -1,6 +1,6 @@
 """Collection of miscellaneous routines.
 
-Miscellaneous tasks should be placed in :module:`draco.core.misc`.
+Miscellaneous tasks should be placed in :py:mod:`draco.core.misc`.
 """
 
 import numpy as np

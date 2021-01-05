@@ -1,4 +1,3 @@
-
 pipeline:
     tasks:
         -   type:       ch_pipeline.io.LoadBeamTransfer

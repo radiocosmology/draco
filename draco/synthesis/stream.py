@@ -4,16 +4,6 @@ A typical pattern would be to turn a map into a
 :class:`containers.SiderealStream` with the :class:`SimulateSidereal` task, then
 expand any redundant products with :class:`ExpandProducts` and finally generate
 a set of time stream files with :class:`MakeTimeStream`.
-
-Tasks
-=====
-
-.. autosummary::
-    :toctree:
-
-    SimulateSidereal
-    ExpandProducts
-    MakeTimeStream
 """
 
 import numpy as np

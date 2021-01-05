@@ -2,21 +2,6 @@
 
 This includes data quality flagging on timestream data; sun excision on sidereal
 data; and pre-map making flagging on m-modes.
-
-Tasks
-=====
-
-.. autosummary::
-    :toctree:
-
-    DayMask
-    MaskData
-    MaskBaselines
-    RadiometerWeight
-    SmoothVisWeight
-    ThresholdVisWeight
-    RFIMask
-    RFISensitivityMask
 """
 
 import numpy as np
@@ -1075,8 +1060,8 @@ class BlendStack(task.SingleTask):
     will have RFI masked gaps) to attempt to regularise operations which struggle to
     deal with time variable masks, e.g. `DelaySpectrumEstimator`.
 
-    Attribute
-    ---------
+    Attributes
+    ----------
     frac : float, optional
         The relative weight to give the stack in the average. This multiplies the
         weights already in the stack, and so it should be remembered that these may

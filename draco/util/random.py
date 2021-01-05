@@ -1,15 +1,5 @@
-"""Utilities for drawing random numbers.
+"""Utilities for drawing random numbers."""
 
-Routines
-========
-
-.. autosummary::
-    :toctree:
-
-    standard_complex_wishart
-    draw_complex_wishart
-    mpi_random_seed
-"""
 import contextlib
 
 import numpy as np
@@ -46,31 +36,32 @@ def default_rng():
 def complex_normal(
     size=None, loc=0.0, scale=1.0, dtype=np.complex128, rng=None, out=None
 ):
-    """Get a set of complex normal variables.
+    """
+    Get a set of complex normal variables.
 
-        By default generate standard complex normal variables.
+    By default generate standard complex normal variables.
 
-        Parameters
-        ----------
-        size : tuple
-            Shape of the array of variables.
-        loc : np.ndarray or complex float, optional
-            The mean of the complex output. Can be any array which broadcasts against
-            an array of `size`.
-        scale : np.ndarray or float, optional
-            The standard deviation of the complex output. Can be any array which
-            broadcasts against an array of `size`.
-        dtype : {np.complex64, np.complex128}, optional
-            Output datatype.
-        rng : np.random.Generator, optional
-            Generator object to use.
-        out : np.ndarray[shape], optional
-            Array to place output directly into.
-    ,
-        Returns
-        -------
-        out : np.ndarray[shape]
-            Complex gaussian variates.
+    Parameters
+    ----------
+    size : tuple
+        Shape of the array of variables.
+    loc : np.ndarray or complex float, optional
+        The mean of the complex output. Can be any array which broadcasts against
+        an array of `size`.
+    scale : np.ndarray or float, optional
+        The standard deviation of the complex output. Can be any array which
+        broadcasts against an array of `size`.
+    dtype : {np.complex64, np.complex128}, optional
+        Output datatype.
+    rng : np.random.Generator, optional
+        Generator object to use.
+    out : np.ndarray[shape], optional
+        Array to place output directly into.
+
+    Returns
+    -------
+    out : np.ndarray[shape]
+        Complex gaussian variates.
     """
 
     # Validate/set size argument
@@ -126,21 +117,22 @@ def complex_normal(
 
 
 def standard_complex_normal(shape, dtype=np.complex128, rng=None):
-    """Get a set of standard complex normal variables.
+    """
+    Get a set of standard complex normal variables.
 
-        Parameters
-        ----------
-        shape : tuple
-            Shape of the array of variables.
-        dtype : {np.complex64, np.complex128}, optional
-            Output datatype.
-        rng : np.random.Generator, optional
-            Generator object to use.
-    ,
-        Returns
-        -------
-        out : np.ndarray[shape]
-            Complex gaussian variates.
+    Parameters
+    ----------
+    shape : tuple
+        Shape of the array of variables.
+    dtype : {np.complex64, np.complex128}, optional
+        Output datatype.
+    rng : np.random.Generator, optional
+        Generator object to use.
+
+    Returns
+    -------
+    out : np.ndarray[shape]
+        Complex gaussian variates.
     """
     return complex_normal(shape, dtype=dtype, rng=rng)
 
