@@ -160,14 +160,17 @@ class MaskBaselines(task.SingleTask):
 
     Attributes
     ----------
-    mask_long_ns : float
+    mask_long_ns : float, optional
         Mask out baselines longer than a given distance in the N/S direction.
-    mask_short : float
+    mask_short : float, optional
         Mask out baselines shorter than a given distance.
-    mask_short_ew : float
+    mask_short_ew : float, optional
         Mask out baselines shorter then a given distance in the East-West
         direction. Useful for masking out intra-cylinder baselines for
         North-South oriented cylindrical telescopes.
+    missing_threshold : float, optional
+        Mask any baseline that is missing more than this fraction of samples. This is
+        measured relative to other baselines.
     zero_data : bool, optional
         Zero the data in addition to modifying the noise weights
         (default is False).
@@ -181,6 +184,8 @@ class MaskBaselines(task.SingleTask):
     mask_long_ns = config.Property(proptype=float, default=None)
     mask_short = config.Property(proptype=float, default=None)
     mask_short_ew = config.Property(proptype=float, default=None)
+
+    missing_threshold = config.Property(proptype=float, default=None)
 
     zero_data = config.Property(proptype=bool, default=False)
 
@@ -209,6 +214,7 @@ class MaskBaselines(task.SingleTask):
         ss : SiderealStream or TimeStream
             Data to mask. Applied in place.
         """
+        from mpi4py import MPI
 
         ss.redistribute("freq")
 
@@ -227,11 +233,25 @@ class MaskBaselines(task.SingleTask):
             short_ew_mask = baselines[:, 0] > self.mask_short_ew
             mask *= short_ew_mask[np.newaxis, :, np.newaxis]
 
+        if self.missing_threshold is not None:
+            # Get the total number of samples for each baseline accumulated onto each
+            # rank
+            nsamp_local = (ss.weight[:] > 0).sum(axis=-1).sum(axis=0)
+            nsamp_tot = np.zeros_like(nsamp_local)
+            self.comm.Allreduce(nsamp_local, nsamp_tot, op=MPI.SUM)
+
+            # Mask out baselines with more that `missing_threshold` samples missing
+            baseline_missing_ratio = 1 - nsamp_tot / nsamp_tot.max()
+            mask &= (
+                baseline_missing_ratio[np.newaxis, :, np.newaxis]
+                < self.missing_threshold
+            )
+
         if self.share == "all":
             ssc = ss
         elif self.share == "vis":
             ssc = ss.copy(shared=("vis",))
-        else:  # self.share == "all"
+        else:  # self.share == "none"
             ssc = ss.copy()
 
         # Apply the mask to the weight
