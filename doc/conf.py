@@ -8,6 +8,27 @@
 
 import draco
 
+import sys, os
+
+# Check if we are on readthedocs
+on_rtd = os.environ.get("READTHEDOCS", None) == "True"
+
+# Mock up modules missing on readthedocs.
+from mock import Mock as MagicMock
+
+
+class Mock(MagicMock):
+    @classmethod
+    def __getattr__(cls, name):
+        return Mock()
+
+
+# Do not mock up mpi4py. This is an "extra", and docs bbuild without it.
+# MOCK_MODULES = ['h5py', 'mpi4py']
+MOCK_MODULES = ["mpi4py"]
+if on_rtd:
+    sys.modules.update((mod_name, Mock()) for mod_name in MOCK_MODULES)
+
 # -- Path setup --------------------------------------------------------------
 
 # If extensions (or modules to document with autodoc) are in another directory,

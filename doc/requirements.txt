@@ -1,5 +1,6 @@
 Sphinx==3.4.2
 sphinx_rtd_theme
+mock
 
 # cora needs cython in its setup.py
 cython
