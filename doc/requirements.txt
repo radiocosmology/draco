@@ -4,3 +4,9 @@ mock
 
 # cora needs cython in its setup.py
 cython
+
+# from the main requirements file
+driftscan @ git+https://github.com/radiocosmology/driftscan.git
+caput @ git+https://github.com/radiocosmology/caput.git
+numpy>=1.17
+scipy>=0.10
