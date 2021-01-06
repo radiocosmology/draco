@@ -3,7 +3,6 @@ sphinx_rtd_theme
 mock
 
 # from the main requirements file
-driftscan @ git+https://github.com/radiocosmology/driftscan.git
 caput @ git+https://github.com/radiocosmology/caput.git
 Cython>0.18
 numpy>=1.17
