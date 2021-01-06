@@ -12,19 +12,12 @@ pipeline :
             params:
                 files: testdata/*.h5
 
-        -   type:   ch_pipeline.analysis.sidereal.SiderealGrouper
+        -   type:   draco.analysis.sidereal.SiderealGrouper
             out:    siderealday
             in:     input_files
 
-        -   type:   ch_pipeline.analysis.flagging.RFIFilter
+        -   type:   draco.analysis.sidereal.SiderealRegridder
             in:     siderealday
-            out:    maskedday
-            params:
-                save: true
-                output_name: rfi_filtered.h5
-
-        -   type:   ch_pipeline.analysis.sidereal.SiderealRegridder
-            in:     maskedday
             out:    sday
             params:
                 save: true
