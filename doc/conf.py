@@ -16,11 +16,12 @@
 import os
 import sys
 
+sys.path.insert(0, os.path.abspath("."))
 sys.path.insert(0, os.path.abspath("../"))
 
 import draco
 
-autodoc_mock_imports = ["mpi4py", "cora", "driftscan", "caput"]
+autodoc_mock_imports = ["mpi4py", "cora", "driftscan"]
 
 # -- Project information -----------------------------------------------------
 
