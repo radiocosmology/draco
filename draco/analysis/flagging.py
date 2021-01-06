@@ -779,29 +779,64 @@ class ApplyRFIMask(task.SingleTask):
     """Apply an RFIMask to the data.
 
     Mask out all inputs at times and frequencies contaminated by RFI.
+
+    This task may produce output with shared datasets. Be warned that
+    this can produce unexpected outputs if not properly taken into
+    account.
+
+    Attributes
+    ----------
+    share : {"all", "none", "vis"}
+        Which datasets should we share with the input. If "none" we create a
+        full copy of the data, if "vis" we create a copy only of the modified
+        weight dataset and the unmodified vis dataset is shared, if "all" we
+        modify in place and return the input container.
     """
+
+    share = config.enum(["none", "vis", "all"], default="all")
 
     def process(self, tstream, rfimask):
         """Flag out RFI by zeroing the weights.
 
         Parameters
         ----------
-        tstream : timestream_like
-            A timestream like container. For example, `containers.TimeStream`
-            or `andata.CorrData`.
+        tstream : timestream or sidereal stream
+            A timestream or sidereal stream like container. For example,
+            `containers.TimeStream`, `andata.CorrData` or
+            `containers.SiderealStream`.
         rfimask : containers.RFIMask
             An RFI mask for the same period of time.
 
         Returns
         -------
-        tstream : timestream_like
+        tstream : timestream or sidereal stream
             The masked timestream. Note that the masking is done in place.
         """
 
-        # Validate the sizes
-        if (tstream.time != rfimask.time).all():
-            raise ValueError("timestream and mask data have different time axes.")
+        if isinstance(rfimask, containers.RFIMask):
+            if not hasattr(tstream, "time"):
+                raise TypeError(
+                    f"Expected a timestream like type. Got {type(tstream)}."
+                )
+            # Validate the time axes match
+            if (tstream.time != rfimask.time).all():
+                raise ValueError("timestream and mask data have different time axes.")
 
+        elif isinstance(rfimask, containers.SiderealRFIMask):
+            if not hasattr(tstream, "ra"):
+                raise TypeError(
+                    f"Expected a sidereal stream like type. Got {type(tstream)}."
+                )
+            # Validate the RA axes match
+            if (tstream.ra != rfimask.ra).all():
+                raise ValueError("timestream and mask data have different RA axes.")
+
+        else:
+            raise TypeError(
+                f"Require a RFIMask or SiderealRFIMask. Got {type(rfimask)}."
+            )
+
+        # Validate the frequency axis
         if (tstream.freq != rfimask.freq).all():
             raise ValueError("timestream and mask data have different freq axes.")
 
@@ -820,10 +855,17 @@ class ApplyRFIMask(task.SingleTask):
         sf = tstream.weight.local_offset[0]
         ef = sf + tstream.weight.local_shape[0]
 
-        # Mask the data
-        tstream.weight[:] *= (~rfimask.mask[sf:ef][bcast_slice]).astype(np.float32)
+        if self.share == "all":
+            tsc = tstream
+        elif self.share == "vis":
+            tsc = tstream.copy(shared=("vis",))
+        else:  # self.share == "none"
+            tsc = tstream.copy()
 
-        return tstream
+        # Mask the data
+        tsc.weight[:] *= (~rfimask.mask[sf:ef][bcast_slice]).astype(np.float32)
+
+        return tsc
 
 
 class MaskFreq(task.SingleTask):
