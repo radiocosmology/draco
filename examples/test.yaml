@@ -12,13 +12,18 @@ pipeline :
             params:
                 files: testdata/*.h5
 
+        -   type: draco.core.io.LoadProductManager
+            out: manager
+
         -   type:   draco.analysis.sidereal.SiderealGrouper
             out:    siderealday
             in:     input_files
+            requires: manager
 
-        -   type:   draco.analysis.sidereal.SiderealRegridder
-            in:     siderealday
-            out:    sday
+        -   type:       draco.analysis.sidereal.SiderealRegridder
+            in:         siderealday
+            out:        sday
+            requires: manager
             params:
                 save: true
                 output_name: sidereal_grid.h5
