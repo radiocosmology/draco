@@ -16,6 +16,10 @@ class DelayFilter(task.SingleTask):
     This is performed by projecting the data onto the null space that is orthogonal
     to any mode at low delays.
 
+    Note that for this task to work best the zero entries in the weights dataset
+    should factorize in frequency-time for each baseline. A mostly optimal masking
+    can be generated using the `draco.analysis.flagging.MaskFreq` task.
+
     Attributes
     ----------
     delay_cut : float
@@ -104,19 +108,28 @@ class DelayFilter(task.SingleTask):
             # and seems to work well here
             number_cut = int(4.0 * bandwidth * delay_cut + 0.5)
 
-            weight_mask = np.median(ssw[:, lbi], axis=1)
-            weight_mask = (weight_mask > (self.weight_tol * weight_mask.max())).astype(
-                np.float64
-            )
+            # Flag frequencies and times with zero weight. This works much better if the incoming weight can be factorized
+            f_samp = (ssw[:, lbi] > 0.0).sum(axis=1)
+            f_mask = (f_samp == f_samp.max()).astype(np.float64)
+
+            t_samp = (ssw[:, lbi] > 0.0).sum(axis=0)
+            t_mask = (t_samp == t_samp.max()).astype(np.float64)
+
             try:
                 NF = null_delay_filter(
-                    freq, delay_cut, weight_mask, num_delay=number_cut, window=self.window
+                    freq,
+                    delay_cut,
+                    f_mask,
+                    num_delay=number_cut,
+                    window=self.window,
                 )
             except la.LinAlgError as e:
-                raise RuntimeError(f"Failed to converge while processing baseline {bi}") from e
+                raise RuntimeError(
+                    f"Failed to converge while processing baseline {bi}"
+                ) from e
 
             ssv[:, lbi] = np.dot(NF, ssv[:, lbi])
-            ssw[:, lbi] *= weight_mask[:, np.newaxis]
+            ssw[:, lbi] *= f_mask[:, np.newaxis] * t_mask[np.newaxis, :]
 
         return ss
 
