@@ -12,20 +12,18 @@ pipeline :
             params:
                 files: testdata/*.h5
 
-        -   type:   ch_pipeline.analysis.sidereal.SiderealGrouper
+        -   type: draco.core.io.LoadProductManager
+            out: manager
+
+        -   type:   draco.analysis.sidereal.SiderealGrouper
             out:    siderealday
             in:     input_files
+            requires: manager
 
-        -   type:   ch_pipeline.analysis.flagging.RFIFilter
-            in:     siderealday
-            out:    maskedday
-            params:
-                save: true
-                output_name: rfi_filtered.h5
-
-        -   type:   ch_pipeline.analysis.sidereal.SiderealRegridder
-            in:     maskedday
-            out:    sday
+        -   type:       draco.analysis.sidereal.SiderealRegridder
+            in:         siderealday
+            out:        sday
+            requires: manager
             params:
                 save: true
                 output_name: sidereal_grid.h5

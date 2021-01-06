@@ -66,6 +66,7 @@ jobs:
     - name: Run caput linter on example configs
       run: |
         caput-pipeline lint examples/*.yaml
+        caput-pipeline lint doc/pipeline_params.yaml
 
   build-docs:
 

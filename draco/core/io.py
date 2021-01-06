@@ -27,6 +27,7 @@ import os.path
 
 import h5py
 import numpy as np
+from typing import Union, Dict, List
 from yaml import dump as yamldump
 
 from caput import pipeline
@@ -62,13 +63,13 @@ TRUNC_SPEC = {
 }
 
 
-def _list_of_filelists(files):
+def _list_of_filelists(files: Union[List[str], List[List[str]]]) -> List[List[str]]:
     """
     Take in a list of lists/glob patterns of filenames
 
     Parameters
     ----------
-    files : List[str] or List[List[str]]
+    files
         A path or glob pattern (e.g. /my/data/\*.h5) or a list of those (or a list of lists of those).
 
     Raises
@@ -78,8 +79,7 @@ def _list_of_filelists(files):
 
     Returns
     -------
-    List[List[str]]
-        The input file list list. Any glob patterns will be flattened to file path string lists.
+    The input file list list. Any glob patterns will be flattened to file path string lists.
     """
     import glob
 
@@ -101,19 +101,18 @@ def _list_of_filelists(files):
     return f2
 
 
-def _list_or_glob(files):
+def _list_or_glob(files: Union[str, List[str]]) -> List[str]:
     """
     Take in a list of lists/glob patterns of filenames
 
     Parameters
     ----------
-    files : str or List[str]
+    files
         A path or glob pattern (e.g. /my/data/\*.h5) or a list of those
 
     Returns
     -------
-    List[str]
-        The input file list. Any glob patterns will be flattened to file path string lists.
+    The input file list. Any glob patterns will be flattened to file path string lists.
 
     Raises
     ------
@@ -136,19 +135,18 @@ def _list_or_glob(files):
     return files
 
 
-def _list_of_filegroups(groups):
+def _list_of_filegroups(groups: Union[List[Dict] or Dict]) -> List[Dict]:
     """
     Process a file group/groups
 
     Parameters
     ----------
-    groups : List[Dict] or Dict
+    groups
         Dicts should contain keys 'files': An iterable with file path or glob pattern strings, 'tag': the group tag str
 
     Returns
     -------
-    List[Dict]
-        The input groups. Any glob patterns in the 'files' list will be flattened to file path strings.
+    The input groups. Any glob patterns in the 'files' list will be flattened to file path strings.
 
     Raises
     ------
