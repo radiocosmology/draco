@@ -19,6 +19,8 @@ import sys
 sys.path.insert(0, os.path.abspath("."))
 sys.path.insert(0, os.path.abspath("../"))
 sys.path.insert(0, os.path.abspath(".."))
+for x in os.walk('../draco'):
+  sys.path.insert(0, x[0])
 
 
 import draco

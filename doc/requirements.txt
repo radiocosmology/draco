@@ -7,3 +7,4 @@ caput @ git+https://github.com/radiocosmology/caput.git
 Cython>0.18
 numpy>=1.17
 scipy>=0.10
+skyfield
