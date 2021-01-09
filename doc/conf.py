@@ -7,25 +7,7 @@
 # http://www.sphinx-doc.org/en/master/config
 
 
-# -- Path setup --------------------------------------------------------------
-
-# If extensions (or modules to document with autodoc) are in another directory,
-# add these directories to sys.path here. If the directory is relative to the
-# documentation root, use os.path.abspath to make it absolute, like shown here.
-#
-import os
-import sys
-
-sys.path.insert(0, os.path.abspath("."))
-sys.path.insert(0, os.path.abspath("../"))
-sys.path.insert(0, os.path.abspath(".."))
-for x in os.walk("../draco"):
-    sys.path.insert(0, x[0])
-
-
 import draco
-
-#autodoc_mock_imports = ["mpi4py", "cora", "driftscan", "caput"]
 
 # -- Project information -----------------------------------------------------
 
@@ -76,11 +58,6 @@ autodoc_default_options = {
     # Make sure that any autodoc declarations show the right members
     "members": True,
     "show-inheritance": True,
-    # "private-members": True,
-    # "special-members": True,
-    # "undoc-members": True,
-    # "inherited-members": True,
-    # "imported-members": True,
 }
 autosummary_generate = True  # Make _autosummary files and include them
 autosummary_imported_members = False
