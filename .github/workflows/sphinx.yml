@@ -28,9 +28,9 @@ jobs:
       - name: Sphinx build
         run: |
           git checkout -b gh-pages
-          mkdir ../docs
+          mkdir docs
           sphinx-build -b html doc/ docs
-          touch ../docs/.nojekyll
+          touch docs/.nojekyll
       - name: Commit site
         run: |
           git config --global user.name 'Rick Nitsche (automated)'
