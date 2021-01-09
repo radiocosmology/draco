@@ -174,7 +174,7 @@ class DirtyMapMaker(BaseMapMaker):
 
 
 class MaximumLikelihoodMapMaker(BaseMapMaker):
-    """Generate a Maximum Likelihood map using the Moore-Penrose pseudo-inverse.
+    r"""Generate a Maximum Likelihood map using the Moore-Penrose pseudo-inverse.
 
     Notes
     -----
@@ -182,7 +182,7 @@ class MaximumLikelihoodMapMaker(BaseMapMaker):
     The dirty map is produced by generating a set of :math:`a_{lm}` coefficients
     using
 
-    .. math:: \hat{\mathbf{a}} = ( \mathbf{N}^{-1/2 }\mathbf{B} ) ^+ \mathbf{N}^{-1/2} \mathbf{v}
+    .. math:: \hat{\mathbf{a}} = \left( \mathbf{N}^{-1/2 }\mathbf{B} \right) ^+ \mathbf{N}^{-1/2} \mathbf{v}
 
     where the superscript :math:`+` denotes the pseudo-inverse.
     """
