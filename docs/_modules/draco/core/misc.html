@@ -1,0 +1,434 @@
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" >
+<head>
+  <meta charset="utf-8" />
+  
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  
+  <title>draco.core.misc &mdash; draco 0+untagged.1.g43914e3 documentation</title>
+  
+
+  
+  <link rel="stylesheet" href="../../../_static/css/theme.css" type="text/css" />
+  <link rel="stylesheet" href="../../../_static/pygments.css" type="text/css" />
+
+  
+  
+
+  
+  
+
+  
+
+  
+  <!--[if lt IE 9]>
+    <script src="../../../_static/js/html5shiv.min.js"></script>
+  <![endif]-->
+  
+    
+      <script type="text/javascript" id="documentation_options" data-url_root="../../../" src="../../../_static/documentation_options.js"></script>
+        <script src="../../../_static/jquery.js"></script>
+        <script src="../../../_static/underscore.js"></script>
+        <script src="../../../_static/doctools.js"></script>
+        <script async="async" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/2.7.7/latest.js?config=TeX-AMS-MML_HTMLorMML"></script>
+    
+    <script type="text/javascript" src="../../../_static/js/theme.js"></script>
+
+    
+    <link rel="index" title="Index" href="../../../genindex.html" />
+    <link rel="search" title="Search" href="../../../search.html" /> 
+</head>
+
+<body class="wy-body-for-nav">
+
+   
+  <div class="wy-grid-for-nav">
+    
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+          
+
+          
+            <a href="../../../index.html" class="icon icon-home"> draco
+          
+
+          
+          </a>
+
+          
+            
+            
+              <div class="version">
+                0+untagged.1.g43914e3
+              </div>
+            
+          
+
+          
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../../../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+
+          
+        </div>
+
+        
+        <div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="main navigation">
+          
+            
+            
+              
+            
+            
+              <ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../tutorial.html">Tutorial</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../reference.html">API Reference</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../dev.html">Development Guidelines</a></li>
+</ul>
+
+            
+          
+        </div>
+        
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap">
+
+      
+      <nav class="wy-nav-top" aria-label="top navigation">
+        
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../../../index.html">draco</a>
+        
+      </nav>
+
+
+      <div class="wy-nav-content">
+        
+        <div class="rst-content">
+        
+          
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<div role="navigation" aria-label="breadcrumbs navigation">
+
+  <ul class="wy-breadcrumbs">
+    
+      <li><a href="../../../index.html" class="icon icon-home"></a> &raquo;</li>
+        
+          <li><a href="../../index.html">Module code</a> &raquo;</li>
+        
+      <li>draco.core.misc</li>
+    
+    
+      <li class="wy-breadcrumbs-aside">
+        
+      </li>
+    
+  </ul>
+
+  
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+            
+  <h1>Source code for draco.core.misc</h1><div class="highlight"><pre>
+<span></span><span class="sd">&quot;&quot;&quot;Miscellaneous pipeline tasks with no where better to go.</span>
+
+<span class="sd">Tasks should be proactively moved out of here when there is a thematically</span>
+<span class="sd">appropriate module, or enough related tasks end up in here such that they can</span>
+<span class="sd">all be moved out into their own module.</span>
+<span class="sd">&quot;&quot;&quot;</span>
+
+
+<span class="kn">import</span> <span class="nn">numpy</span> <span class="k">as</span> <span class="nn">np</span>
+
+<span class="kn">from</span> <span class="nn">caput</span> <span class="kn">import</span> <span class="n">config</span><span class="p">,</span> <span class="n">mpiutil</span>
+
+<span class="kn">from</span> <span class="nn">..core</span> <span class="kn">import</span> <span class="n">task</span><span class="p">,</span> <span class="n">containers</span>
+<span class="kn">from</span> <span class="nn">..util</span> <span class="kn">import</span> <span class="n">tools</span>
+
+
+<div class="viewcode-block" id="ApplyGain"><a class="viewcode-back" href="../../../_autosummary/draco.core.misc.html#draco.core.misc.ApplyGain">[docs]</a><span class="k">class</span> <span class="nc">ApplyGain</span><span class="p">(</span><span class="n">task</span><span class="o">.</span><span class="n">SingleTask</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;Apply a set of gains to a timestream or sidereal stack.</span>
+
+<span class="sd">    Attributes</span>
+<span class="sd">    ----------</span>
+<span class="sd">    inverse : bool, optional</span>
+<span class="sd">        Apply the gains directly, or their inverse.</span>
+<span class="sd">    update_weight : bool, optional</span>
+<span class="sd">        Scale the weight array with the updated gains.</span>
+<span class="sd">    smoothing_length : float, optional</span>
+<span class="sd">        Smooth the gain timestream across the given number of seconds.</span>
+<span class="sd">        Not supported (ignored) for Sidereal Streams.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+
+    <span class="n">inverse</span> <span class="o">=</span> <span class="n">config</span><span class="o">.</span><span class="n">Property</span><span class="p">(</span><span class="n">proptype</span><span class="o">=</span><span class="nb">bool</span><span class="p">,</span> <span class="n">default</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+    <span class="n">update_weight</span> <span class="o">=</span> <span class="n">config</span><span class="o">.</span><span class="n">Property</span><span class="p">(</span><span class="n">proptype</span><span class="o">=</span><span class="nb">bool</span><span class="p">,</span> <span class="n">default</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
+    <span class="n">smoothing_length</span> <span class="o">=</span> <span class="n">config</span><span class="o">.</span><span class="n">Property</span><span class="p">(</span><span class="n">proptype</span><span class="o">=</span><span class="nb">float</span><span class="p">,</span> <span class="n">default</span><span class="o">=</span><span class="kc">None</span><span class="p">)</span>
+
+<div class="viewcode-block" id="ApplyGain.process"><a class="viewcode-back" href="../../../_autosummary/draco.core.misc.html#draco.core.misc.ApplyGain.process">[docs]</a>    <span class="k">def</span> <span class="nf">process</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">tstream</span><span class="p">,</span> <span class="n">gain</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Apply gains to the given timestream.</span>
+
+<span class="sd">        Smoothing the gains is not supported for SiderealStreams.</span>
+
+<span class="sd">        Parameters</span>
+<span class="sd">        ----------</span>
+<span class="sd">        tstream : TimeStream like or SiderealStream</span>
+<span class="sd">            Time stream to apply gains to. The gains are applied in place.</span>
+<span class="sd">        gain : StaticGainData, GainData, SiderealGainData, CommonModeGainData</span>
+<span class="sd">            or CommonModeSiderealGainData. Gains to apply.</span>
+
+<span class="sd">        Returns</span>
+<span class="sd">        -------</span>
+<span class="sd">        tstream : TimeStream or SiderealStream</span>
+<span class="sd">            The timestream with the gains applied.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">tstream</span><span class="o">.</span><span class="n">redistribute</span><span class="p">(</span><span class="s2">&quot;freq&quot;</span><span class="p">)</span>
+        <span class="n">gain</span><span class="o">.</span><span class="n">redistribute</span><span class="p">(</span><span class="s2">&quot;freq&quot;</span><span class="p">)</span>
+
+        <span class="k">if</span> <span class="n">tstream</span><span class="o">.</span><span class="n">is_stacked</span> <span class="ow">and</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span>
+            <span class="n">gain</span><span class="p">,</span> <span class="p">(</span><span class="n">containers</span><span class="o">.</span><span class="n">CommonModeGainData</span><span class="p">,</span> <span class="n">containers</span><span class="o">.</span><span class="n">CommonModeSiderealGainData</span><span class="p">)</span>
+        <span class="p">):</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+                <span class="s2">&quot;Cannot apply input-dependent gains to stacked data: </span><span class="si">%s</span><span class="s2">&quot;</span> <span class="o">%</span> <span class="n">tstream</span>
+            <span class="p">)</span>
+
+        <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">gain</span><span class="p">,</span> <span class="n">containers</span><span class="o">.</span><span class="n">StaticGainData</span><span class="p">):</span>
+
+            <span class="c1"># Extract gain array and add in a time axis</span>
+            <span class="n">gain_arr</span> <span class="o">=</span> <span class="n">gain</span><span class="o">.</span><span class="n">gain</span><span class="p">[:][</span><span class="o">...</span><span class="p">,</span> <span class="n">np</span><span class="o">.</span><span class="n">newaxis</span><span class="p">]</span>
+
+            <span class="c1"># Get the weight array if it&#39;s there</span>
+            <span class="n">weight_arr</span> <span class="o">=</span> <span class="p">(</span>
+                <span class="n">gain</span><span class="o">.</span><span class="n">weight</span><span class="p">[:][</span><span class="o">...</span><span class="p">,</span> <span class="n">np</span><span class="o">.</span><span class="n">newaxis</span><span class="p">]</span> <span class="k">if</span> <span class="n">gain</span><span class="o">.</span><span class="n">weight</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="k">else</span> <span class="kc">None</span>
+            <span class="p">)</span>
+
+        <span class="k">elif</span> <span class="nb">isinstance</span><span class="p">(</span>
+            <span class="n">gain</span><span class="p">,</span>
+            <span class="p">(</span>
+                <span class="n">containers</span><span class="o">.</span><span class="n">GainData</span><span class="p">,</span>
+                <span class="n">containers</span><span class="o">.</span><span class="n">SiderealGainData</span><span class="p">,</span>
+                <span class="n">containers</span><span class="o">.</span><span class="n">CommonModeGainData</span><span class="p">,</span>
+                <span class="n">containers</span><span class="o">.</span><span class="n">CommonModeSiderealGainData</span><span class="p">,</span>
+            <span class="p">),</span>
+        <span class="p">):</span>
+
+            <span class="c1"># Extract gain array</span>
+            <span class="n">gain_arr</span> <span class="o">=</span> <span class="n">gain</span><span class="o">.</span><span class="n">gain</span><span class="p">[:]</span>
+
+            <span class="c1"># Regularise any crazy entries</span>
+            <span class="n">gain_arr</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">nan_to_num</span><span class="p">(</span><span class="n">gain_arr</span><span class="p">)</span>
+
+            <span class="c1"># Get the weight array if it&#39;s there</span>
+            <span class="n">weight_arr</span> <span class="o">=</span> <span class="n">gain</span><span class="o">.</span><span class="n">weight</span><span class="p">[:]</span> <span class="k">if</span> <span class="n">gain</span><span class="o">.</span><span class="n">weight</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="k">else</span> <span class="kc">None</span>
+
+            <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span>
+                <span class="n">gain</span><span class="p">,</span>
+                <span class="p">(</span><span class="n">containers</span><span class="o">.</span><span class="n">SiderealGainData</span><span class="p">,</span> <span class="n">containers</span><span class="o">.</span><span class="n">CommonModeSiderealGainData</span><span class="p">),</span>
+            <span class="p">):</span>
+
+                <span class="c1"># Check that we are defined at the same RA samples</span>
+                <span class="k">if</span> <span class="p">(</span><span class="n">gain</span><span class="o">.</span><span class="n">ra</span> <span class="o">!=</span> <span class="n">tstream</span><span class="o">.</span><span class="n">ra</span><span class="p">)</span><span class="o">.</span><span class="n">any</span><span class="p">():</span>
+                    <span class="k">raise</span> <span class="ne">RuntimeError</span><span class="p">(</span>
+                        <span class="s2">&quot;Gain data and sidereal stream defined at different RA samples.&quot;</span>
+                    <span class="p">)</span>
+
+            <span class="k">else</span><span class="p">:</span>
+                <span class="c1"># We are using a time stream</span>
+
+                <span class="c1"># Check that we are defined at the same time samples</span>
+                <span class="k">if</span> <span class="p">(</span><span class="n">gain</span><span class="o">.</span><span class="n">time</span> <span class="o">!=</span> <span class="n">tstream</span><span class="o">.</span><span class="n">time</span><span class="p">)</span><span class="o">.</span><span class="n">any</span><span class="p">():</span>
+                    <span class="k">raise</span> <span class="ne">RuntimeError</span><span class="p">(</span>
+                        <span class="s2">&quot;Gain data and timestream defined at different time samples.&quot;</span>
+                    <span class="p">)</span>
+
+                <span class="c1"># Smooth the gain data if required</span>
+                <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">smoothing_length</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+                    <span class="kn">import</span> <span class="nn">scipy.signal</span> <span class="k">as</span> <span class="nn">ss</span>
+
+                    <span class="c1"># Turn smoothing length into a number of samples</span>
+                    <span class="n">tdiff</span> <span class="o">=</span> <span class="n">gain</span><span class="o">.</span><span class="n">time</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span> <span class="o">-</span> <span class="n">gain</span><span class="o">.</span><span class="n">time</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+                    <span class="n">samp</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">ceil</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">smoothing_length</span> <span class="o">/</span> <span class="n">tdiff</span><span class="p">))</span>
+
+                    <span class="c1"># Ensure smoothing length is odd</span>
+                    <span class="n">l</span> <span class="o">=</span> <span class="mi">2</span> <span class="o">*</span> <span class="p">(</span><span class="n">samp</span> <span class="o">//</span> <span class="mi">2</span><span class="p">)</span> <span class="o">+</span> <span class="mi">1</span>
+
+                    <span class="c1"># Turn into 2D array (required by smoothing routines)</span>
+                    <span class="n">gain_r</span> <span class="o">=</span> <span class="n">gain_arr</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">,</span> <span class="n">gain_arr</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">])</span>
+
+                    <span class="c1"># Smooth amplitude and phase separately</span>
+                    <span class="n">smooth_amp</span> <span class="o">=</span> <span class="n">ss</span><span class="o">.</span><span class="n">medfilt2d</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">abs</span><span class="p">(</span><span class="n">gain_r</span><span class="p">),</span> <span class="n">kernel_size</span><span class="o">=</span><span class="p">[</span><span class="mi">1</span><span class="p">,</span> <span class="n">l</span><span class="p">])</span>
+                    <span class="n">smooth_phase</span> <span class="o">=</span> <span class="n">ss</span><span class="o">.</span><span class="n">medfilt2d</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">angle</span><span class="p">(</span><span class="n">gain_r</span><span class="p">),</span> <span class="n">kernel_size</span><span class="o">=</span><span class="p">[</span><span class="mi">1</span><span class="p">,</span> <span class="n">l</span><span class="p">])</span>
+
+                    <span class="c1"># Recombine and reshape back to original shape</span>
+                    <span class="n">gain_arr</span> <span class="o">=</span> <span class="n">smooth_amp</span> <span class="o">*</span> <span class="n">np</span><span class="o">.</span><span class="n">exp</span><span class="p">(</span><span class="mf">1.0</span><span class="n">j</span> <span class="o">*</span> <span class="n">smooth_phase</span><span class="p">)</span>
+                    <span class="n">gain_arr</span> <span class="o">=</span> <span class="n">gain_arr</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="n">gain</span><span class="o">.</span><span class="n">gain</span><span class="p">[:]</span><span class="o">.</span><span class="n">shape</span><span class="p">)</span>
+
+                    <span class="c1"># Smooth weight array if it exists</span>
+                    <span class="k">if</span> <span class="n">weight_arr</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+                        <span class="n">weight_arr</span> <span class="o">=</span> <span class="n">ss</span><span class="o">.</span><span class="n">medfilt2d</span><span class="p">(</span><span class="n">weight_arr</span><span class="p">,</span> <span class="n">kernel_size</span><span class="o">=</span><span class="p">[</span><span class="mi">1</span><span class="p">,</span> <span class="n">l</span><span class="p">])</span>
+
+        <span class="k">else</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">RuntimeError</span><span class="p">(</span><span class="s2">&quot;Format of `gain` argument is unknown.&quot;</span><span class="p">)</span>
+
+        <span class="c1"># Regularise any crazy entries</span>
+        <span class="n">gain_arr</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">nan_to_num</span><span class="p">(</span><span class="n">gain_arr</span><span class="p">)</span>
+
+        <span class="c1"># Invert the gains as we need both the gains and the inverse to update</span>
+        <span class="c1"># the visibilities and the weights</span>
+        <span class="n">inverse_gain_arr</span> <span class="o">=</span> <span class="n">tools</span><span class="o">.</span><span class="n">invert_no_zero</span><span class="p">(</span><span class="n">gain_arr</span><span class="p">)</span>
+
+        <span class="c1"># Apply gains to visibility matrix</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">log</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s2">&quot;Applying inverse gain.&quot;</span> <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">inverse</span> <span class="k">else</span> <span class="s2">&quot;Applying gain.&quot;</span><span class="p">)</span>
+        <span class="n">gvis</span> <span class="o">=</span> <span class="n">inverse_gain_arr</span> <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">inverse</span> <span class="k">else</span> <span class="n">gain_arr</span>
+        <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">gain</span><span class="p">,</span> <span class="n">containers</span><span class="o">.</span><span class="n">SiderealGainData</span><span class="p">):</span>
+            <span class="c1"># Need a prod_map for sidereal streams</span>
+            <span class="n">tools</span><span class="o">.</span><span class="n">apply_gain</span><span class="p">(</span>
+                <span class="n">tstream</span><span class="o">.</span><span class="n">vis</span><span class="p">[:],</span> <span class="n">gvis</span><span class="p">,</span> <span class="n">out</span><span class="o">=</span><span class="n">tstream</span><span class="o">.</span><span class="n">vis</span><span class="p">[:],</span> <span class="n">prod_map</span><span class="o">=</span><span class="n">tstream</span><span class="o">.</span><span class="n">prod</span>
+            <span class="p">)</span>
+        <span class="k">elif</span> <span class="nb">isinstance</span><span class="p">(</span>
+            <span class="n">gain</span><span class="p">,</span> <span class="p">(</span><span class="n">containers</span><span class="o">.</span><span class="n">CommonModeGainData</span><span class="p">,</span> <span class="n">containers</span><span class="o">.</span><span class="n">CommonModeSiderealGainData</span><span class="p">)</span>
+        <span class="p">):</span>
+            <span class="c1"># Apply the gains to all &#39;prods/stacks&#39; directly:</span>
+            <span class="n">tstream</span><span class="o">.</span><span class="n">vis</span><span class="p">[:]</span> <span class="o">*=</span> <span class="n">np</span><span class="o">.</span><span class="n">abs</span><span class="p">(</span><span class="n">gvis</span><span class="p">[:,</span> <span class="n">np</span><span class="o">.</span><span class="n">newaxis</span><span class="p">,</span> <span class="p">:])</span> <span class="o">**</span> <span class="mi">2</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">tools</span><span class="o">.</span><span class="n">apply_gain</span><span class="p">(</span><span class="n">tstream</span><span class="o">.</span><span class="n">vis</span><span class="p">[:],</span> <span class="n">gvis</span><span class="p">,</span> <span class="n">out</span><span class="o">=</span><span class="n">tstream</span><span class="o">.</span><span class="n">vis</span><span class="p">[:])</span>
+
+        <span class="c1"># Apply gains to the weights</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">update_weight</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">log</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s2">&quot;Applying gain to weight.&quot;</span><span class="p">)</span>
+            <span class="n">gweight</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">abs</span><span class="p">(</span><span class="n">gain_arr</span> <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">inverse</span> <span class="k">else</span> <span class="n">inverse_gain_arr</span><span class="p">)</span> <span class="o">**</span> <span class="mi">2</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">gweight</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">ones</span><span class="p">(</span><span class="n">gain_arr</span><span class="o">.</span><span class="n">shape</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">float64</span><span class="p">)</span>
+
+        <span class="k">if</span> <span class="n">weight_arr</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">gweight</span> <span class="o">*=</span> <span class="p">(</span><span class="n">weight_arr</span><span class="p">[:]</span> <span class="o">&gt;</span> <span class="mf">0.0</span><span class="p">)</span><span class="o">.</span><span class="n">astype</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">float64</span><span class="p">)</span>
+
+        <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">gain</span><span class="p">,</span> <span class="n">containers</span><span class="o">.</span><span class="n">SiderealGainData</span><span class="p">):</span>
+            <span class="c1"># Need a prod_map for sidereal streams</span>
+            <span class="n">tools</span><span class="o">.</span><span class="n">apply_gain</span><span class="p">(</span>
+                <span class="n">tstream</span><span class="o">.</span><span class="n">weight</span><span class="p">[:],</span> <span class="n">gweight</span><span class="p">,</span> <span class="n">out</span><span class="o">=</span><span class="n">tstream</span><span class="o">.</span><span class="n">weight</span><span class="p">[:],</span> <span class="n">prod_map</span><span class="o">=</span><span class="n">tstream</span><span class="o">.</span><span class="n">prod</span>
+            <span class="p">)</span>
+        <span class="k">elif</span> <span class="nb">isinstance</span><span class="p">(</span>
+            <span class="n">gain</span><span class="p">,</span> <span class="p">(</span><span class="n">containers</span><span class="o">.</span><span class="n">CommonModeGainData</span><span class="p">,</span> <span class="n">containers</span><span class="o">.</span><span class="n">CommonModeSiderealGainData</span><span class="p">)</span>
+        <span class="p">):</span>
+            <span class="c1"># Apply the gains to all &#39;prods/stacks&#39; directly:</span>
+            <span class="n">tstream</span><span class="o">.</span><span class="n">weight</span><span class="p">[:]</span> <span class="o">*=</span> <span class="n">gweight</span><span class="p">[:,</span> <span class="n">np</span><span class="o">.</span><span class="n">newaxis</span><span class="p">,</span> <span class="p">:]</span> <span class="o">**</span> <span class="mi">2</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">tools</span><span class="o">.</span><span class="n">apply_gain</span><span class="p">(</span><span class="n">tstream</span><span class="o">.</span><span class="n">weight</span><span class="p">[:],</span> <span class="n">gweight</span><span class="p">,</span> <span class="n">out</span><span class="o">=</span><span class="n">tstream</span><span class="o">.</span><span class="n">weight</span><span class="p">[:])</span>
+
+        <span class="c1"># Update units if they were specified</span>
+        <span class="n">convert_units_to</span> <span class="o">=</span> <span class="n">gain</span><span class="o">.</span><span class="n">gain</span><span class="o">.</span><span class="n">attrs</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;convert_units_to&quot;</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">convert_units_to</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">tstream</span><span class="o">.</span><span class="n">vis</span><span class="o">.</span><span class="n">attrs</span><span class="p">[</span><span class="s2">&quot;units&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">convert_units_to</span>
+
+        <span class="k">return</span> <span class="n">tstream</span></div></div>
+
+
+<div class="viewcode-block" id="AccumulateList"><a class="viewcode-back" href="../../../_autosummary/draco.core.misc.html#draco.core.misc.AccumulateList">[docs]</a><span class="k">class</span> <span class="nc">AccumulateList</span><span class="p">(</span><span class="n">task</span><span class="o">.</span><span class="n">MPILoggedTask</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;Accumulate the inputs into a list and return when the task *finishes*.&quot;&quot;&quot;</span>
+
+    <span class="k">def</span> <span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="nb">super</span><span class="p">(</span><span class="n">AccumulateList</span><span class="p">,</span> <span class="bp">self</span><span class="p">)</span><span class="o">.</span><span class="fm">__init__</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_items</span> <span class="o">=</span> <span class="p">[]</span>
+
+<div class="viewcode-block" id="AccumulateList.next"><a class="viewcode-back" href="../../../_autosummary/draco.core.misc.html#draco.core.misc.AccumulateList.next">[docs]</a>    <span class="k">def</span> <span class="nf">next</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">input_</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_items</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">input_</span><span class="p">)</span></div>
+
+<div class="viewcode-block" id="AccumulateList.finish"><a class="viewcode-back" href="../../../_autosummary/draco.core.misc.html#draco.core.misc.AccumulateList.finish">[docs]</a>    <span class="k">def</span> <span class="nf">finish</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+
+        <span class="c1"># Remove the internal reference to the items so they don&#39;t hang around after the task</span>
+        <span class="c1"># finishes</span>
+        <span class="n">items</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_items</span>
+        <span class="k">del</span> <span class="bp">self</span><span class="o">.</span><span class="n">_items</span>
+
+        <span class="k">return</span> <span class="n">items</span></div></div>
+
+
+<div class="viewcode-block" id="WaitUntil"><a class="viewcode-back" href="../../../_autosummary/draco.core.misc.html#draco.core.misc.WaitUntil">[docs]</a><span class="k">class</span> <span class="nc">WaitUntil</span><span class="p">(</span><span class="n">task</span><span class="o">.</span><span class="n">MPILoggedTask</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;Wait until the the requires before forwarding inputs.</span>
+
+<span class="sd">    This simple synchronization task will forward on whatever inputs it gets, however, it won&#39;t do</span>
+<span class="sd">    this until it receives any requirement to it&#39;s setup method. This allows certain parts of the</span>
+<span class="sd">    pipeline to be delayed until a piece of data further up has been generated.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+
+<div class="viewcode-block" id="WaitUntil.setup"><a class="viewcode-back" href="../../../_autosummary/draco.core.misc.html#draco.core.misc.WaitUntil.setup">[docs]</a>    <span class="k">def</span> <span class="nf">setup</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">input_</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Accept, but don&#39;t save any input.&quot;&quot;&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">log</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s2">&quot;Received the requirement, starting to forward inputs&quot;</span><span class="p">)</span>
+        <span class="k">pass</span></div>
+
+<div class="viewcode-block" id="WaitUntil.next"><a class="viewcode-back" href="../../../_autosummary/draco.core.misc.html#draco.core.misc.WaitUntil.next">[docs]</a>    <span class="k">def</span> <span class="nf">next</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">input_</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Immediately forward any input.&quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="n">input_</span></div></div>
+</pre></div>
+
+           </div>
+           
+          </div>
+          <footer>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>
+        &#169; Copyright 2016, Richard Shaw.
+
+    </p>
+  </div>
+    
+    
+    
+    Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    
+    provided by <a href="https://readthedocs.org">Read the Docs</a>. 
+
+</footer>
+        </div>
+      </div>
+
+    </section>
+
+  </div>
+  
+
+  <script type="text/javascript">
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script>
+
+  
+  
+    
+   
+
+</body>
+</html>

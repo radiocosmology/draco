@@ -1,0 +1,530 @@
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" >
+<head>
+  <meta charset="utf-8" />
+  
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  
+  <title>draco.util.random &mdash; draco 0+untagged.1.g43914e3 documentation</title>
+  
+
+  
+  <link rel="stylesheet" href="../../../_static/css/theme.css" type="text/css" />
+  <link rel="stylesheet" href="../../../_static/pygments.css" type="text/css" />
+
+  
+  
+
+  
+  
+
+  
+
+  
+  <!--[if lt IE 9]>
+    <script src="../../../_static/js/html5shiv.min.js"></script>
+  <![endif]-->
+  
+    
+      <script type="text/javascript" id="documentation_options" data-url_root="../../../" src="../../../_static/documentation_options.js"></script>
+        <script src="../../../_static/jquery.js"></script>
+        <script src="../../../_static/underscore.js"></script>
+        <script src="../../../_static/doctools.js"></script>
+        <script async="async" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/2.7.7/latest.js?config=TeX-AMS-MML_HTMLorMML"></script>
+    
+    <script type="text/javascript" src="../../../_static/js/theme.js"></script>
+
+    
+    <link rel="index" title="Index" href="../../../genindex.html" />
+    <link rel="search" title="Search" href="../../../search.html" /> 
+</head>
+
+<body class="wy-body-for-nav">
+
+   
+  <div class="wy-grid-for-nav">
+    
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+          
+
+          
+            <a href="../../../index.html" class="icon icon-home"> draco
+          
+
+          
+          </a>
+
+          
+            
+            
+              <div class="version">
+                0+untagged.1.g43914e3
+              </div>
+            
+          
+
+          
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../../../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+
+          
+        </div>
+
+        
+        <div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="main navigation">
+          
+            
+            
+              
+            
+            
+              <ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../tutorial.html">Tutorial</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../reference.html">API Reference</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../dev.html">Development Guidelines</a></li>
+</ul>
+
+            
+          
+        </div>
+        
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap">
+
+      
+      <nav class="wy-nav-top" aria-label="top navigation">
+        
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../../../index.html">draco</a>
+        
+      </nav>
+
+
+      <div class="wy-nav-content">
+        
+        <div class="rst-content">
+        
+          
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<div role="navigation" aria-label="breadcrumbs navigation">
+
+  <ul class="wy-breadcrumbs">
+    
+      <li><a href="../../../index.html" class="icon icon-home"></a> &raquo;</li>
+        
+          <li><a href="../../index.html">Module code</a> &raquo;</li>
+        
+      <li>draco.util.random</li>
+    
+    
+      <li class="wy-breadcrumbs-aside">
+        
+      </li>
+    
+  </ul>
+
+  
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+            
+  <h1>Source code for draco.util.random</h1><div class="highlight"><pre>
+<span></span><span class="sd">&quot;&quot;&quot;Utilities for drawing random numbers.&quot;&quot;&quot;</span>
+
+<span class="kn">import</span> <span class="nn">contextlib</span>
+
+<span class="kn">import</span> <span class="nn">numpy</span> <span class="k">as</span> <span class="nn">np</span>
+<span class="kn">import</span> <span class="nn">zlib</span>
+
+<span class="kn">from</span> <span class="nn">caput</span> <span class="kn">import</span> <span class="n">config</span>
+<span class="kn">from</span> <span class="nn">..core</span> <span class="kn">import</span> <span class="n">task</span>
+
+
+<span class="n">_rng</span> <span class="o">=</span> <span class="kc">None</span>
+<span class="n">_default_bitgen</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">random</span><span class="o">.</span><span class="n">SFC64</span>
+
+
+<div class="viewcode-block" id="default_rng"><a class="viewcode-back" href="../../../_autosummary/draco.util.random.html#draco.util.random.default_rng">[docs]</a><span class="k">def</span> <span class="nf">default_rng</span><span class="p">():</span>
+    <span class="sd">&quot;&quot;&quot;Returns an instance of the default random number generator to use.</span>
+
+<span class="sd">    This creates a randomly seeded generator using the fast SFC64 bit generator</span>
+<span class="sd">    underneath. This is only initialise on the first call, subsequent calls will</span>
+<span class="sd">    return the same Generator.</span>
+
+<span class="sd">    Returns</span>
+<span class="sd">    -------</span>
+<span class="sd">    rng : np.random.Generator</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+
+    <span class="k">global</span> <span class="n">_rng</span>
+
+    <span class="k">if</span> <span class="n">_rng</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="n">_rng</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">random</span><span class="o">.</span><span class="n">Generator</span><span class="p">(</span><span class="n">_default_bitgen</span><span class="p">())</span>
+
+    <span class="k">return</span> <span class="n">_rng</span></div>
+
+
+<div class="viewcode-block" id="complex_normal"><a class="viewcode-back" href="../../../_autosummary/draco.util.random.html#draco.util.random.complex_normal">[docs]</a><span class="k">def</span> <span class="nf">complex_normal</span><span class="p">(</span>
+    <span class="n">size</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">loc</span><span class="o">=</span><span class="mf">0.0</span><span class="p">,</span> <span class="n">scale</span><span class="o">=</span><span class="mf">1.0</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">complex128</span><span class="p">,</span> <span class="n">rng</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">out</span><span class="o">=</span><span class="kc">None</span>
+<span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Get a set of complex normal variables.</span>
+
+<span class="sd">    By default generate standard complex normal variables.</span>
+
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    size : tuple</span>
+<span class="sd">        Shape of the array of variables.</span>
+<span class="sd">    loc : np.ndarray or complex float, optional</span>
+<span class="sd">        The mean of the complex output. Can be any array which broadcasts against</span>
+<span class="sd">        an array of `size`.</span>
+<span class="sd">    scale : np.ndarray or float, optional</span>
+<span class="sd">        The standard deviation of the complex output. Can be any array which</span>
+<span class="sd">        broadcasts against an array of `size`.</span>
+<span class="sd">    dtype : {np.complex64, np.complex128}, optional</span>
+<span class="sd">        Output datatype.</span>
+<span class="sd">    rng : np.random.Generator, optional</span>
+<span class="sd">        Generator object to use.</span>
+<span class="sd">    out : np.ndarray[shape], optional</span>
+<span class="sd">        Array to place output directly into.</span>
+
+<span class="sd">    Returns</span>
+<span class="sd">    -------</span>
+<span class="sd">    out : np.ndarray[shape]</span>
+<span class="sd">        Complex gaussian variates.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+
+    <span class="c1"># Validate/set size argument</span>
+    <span class="k">if</span> <span class="n">size</span> <span class="ow">is</span> <span class="kc">None</span> <span class="ow">and</span> <span class="n">out</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="n">size</span> <span class="o">=</span> <span class="p">(</span><span class="mi">1</span><span class="p">,)</span>
+    <span class="k">elif</span> <span class="n">out</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="n">size</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="n">size</span> <span class="o">=</span> <span class="n">out</span><span class="o">.</span><span class="n">shape</span>
+    <span class="k">elif</span> <span class="n">out</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="n">size</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="n">out</span><span class="o">.</span><span class="n">shape</span> <span class="o">!=</span> <span class="n">size</span><span class="p">:</span>
+        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+            <span class="sa">f</span><span class="s2">&quot;Shape of output array (</span><span class="si">{</span><span class="n">out</span><span class="o">.</span><span class="n">shape</span><span class="si">}</span><span class="s2">) != size argument (</span><span class="si">{</span><span class="n">size</span><span class="si">}</span><span class="s2">&quot;</span>
+        <span class="p">)</span>
+
+    <span class="c1"># Validate/set dtype argument</span>
+    <span class="k">if</span> <span class="n">dtype</span> <span class="ow">is</span> <span class="kc">None</span> <span class="ow">and</span> <span class="n">out</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="n">dtype</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">complex128</span>
+    <span class="k">elif</span> <span class="n">dtype</span> <span class="ow">is</span> <span class="kc">None</span> <span class="ow">and</span> <span class="n">out</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="n">dtype</span> <span class="o">=</span> <span class="n">out</span><span class="o">.</span><span class="n">dtype</span>
+    <span class="k">elif</span> <span class="n">out</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="n">dtype</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="n">out</span><span class="o">.</span><span class="n">dtype</span> <span class="o">!=</span> <span class="n">dtype</span><span class="p">:</span>
+        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+            <span class="sa">f</span><span class="s2">&quot;Dtype of output array (</span><span class="si">{</span><span class="n">out</span><span class="o">.</span><span class="n">dtype</span><span class="si">}</span><span class="s2">) != dtype argument (</span><span class="si">{</span><span class="n">dtype</span><span class="si">}</span><span class="s2">&quot;</span>
+        <span class="p">)</span>
+
+    <span class="k">if</span> <span class="n">rng</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="n">rng</span> <span class="o">=</span> <span class="n">default_rng</span><span class="p">()</span>
+
+    <span class="n">_type_map</span> <span class="o">=</span> <span class="p">{</span>
+        <span class="n">np</span><span class="o">.</span><span class="n">complex64</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">float32</span><span class="p">,</span>
+        <span class="n">np</span><span class="o">.</span><span class="n">complex128</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">float64</span><span class="p">,</span>
+    <span class="p">}</span>
+
+    <span class="k">if</span> <span class="n">dtype</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">_type_map</span><span class="p">:</span>
+        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+            <span class="sa">f</span><span class="s2">&quot;Only dtype must be complex64 or complex128. Got dtype=</span><span class="si">{</span><span class="n">dtype</span><span class="si">}</span><span class="s2">.&quot;</span>
+        <span class="p">)</span>
+
+    <span class="k">if</span> <span class="n">out</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="n">out</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">(</span><span class="n">size</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">dtype</span><span class="p">)</span>
+
+    <span class="c1"># Fill the complex array by creating a real type view of it</span>
+    <span class="n">rtype</span> <span class="o">=</span> <span class="n">_type_map</span><span class="p">[</span><span class="n">dtype</span><span class="p">]</span>
+    <span class="n">rsize</span> <span class="o">=</span> <span class="n">size</span><span class="p">[:</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span> <span class="o">+</span> <span class="p">(</span><span class="n">size</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span> <span class="o">*</span> <span class="mi">2</span><span class="p">,)</span>
+    <span class="n">rng</span><span class="o">.</span><span class="n">standard_normal</span><span class="p">(</span><span class="n">rsize</span><span class="p">,</span> <span class="n">out</span><span class="o">=</span><span class="n">out</span><span class="o">.</span><span class="n">view</span><span class="p">(</span><span class="n">rtype</span><span class="p">))</span>
+
+    <span class="c1"># Use inplace ops for scaling and adding to avoid intermediate arrays</span>
+    <span class="n">rscale</span> <span class="o">=</span> <span class="n">scale</span> <span class="o">/</span> <span class="mi">2</span> <span class="o">**</span> <span class="mf">0.5</span>
+    <span class="n">out</span> <span class="o">*=</span> <span class="n">rscale</span>
+
+    <span class="c1"># Don&#39;t bother with the additions if not needed</span>
+    <span class="k">if</span> <span class="n">np</span><span class="o">.</span><span class="n">any</span><span class="p">(</span><span class="n">loc</span> <span class="o">!=</span> <span class="mf">0.0</span><span class="p">):</span>
+        <span class="n">out</span> <span class="o">+=</span> <span class="n">loc</span>
+
+    <span class="k">return</span> <span class="n">out</span></div>
+
+
+<div class="viewcode-block" id="standard_complex_normal"><a class="viewcode-back" href="../../../_autosummary/draco.util.random.html#draco.util.random.standard_complex_normal">[docs]</a><span class="k">def</span> <span class="nf">standard_complex_normal</span><span class="p">(</span><span class="n">shape</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">complex128</span><span class="p">,</span> <span class="n">rng</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Get a set of standard complex normal variables.</span>
+
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    shape : tuple</span>
+<span class="sd">        Shape of the array of variables.</span>
+<span class="sd">    dtype : {np.complex64, np.complex128}, optional</span>
+<span class="sd">        Output datatype.</span>
+<span class="sd">    rng : np.random.Generator, optional</span>
+<span class="sd">        Generator object to use.</span>
+
+<span class="sd">    Returns</span>
+<span class="sd">    -------</span>
+<span class="sd">    out : np.ndarray[shape]</span>
+<span class="sd">        Complex gaussian variates.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">return</span> <span class="n">complex_normal</span><span class="p">(</span><span class="n">shape</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">dtype</span><span class="p">,</span> <span class="n">rng</span><span class="o">=</span><span class="n">rng</span><span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="standard_complex_wishart"><a class="viewcode-back" href="../../../_autosummary/draco.util.random.html#draco.util.random.standard_complex_wishart">[docs]</a><span class="k">def</span> <span class="nf">standard_complex_wishart</span><span class="p">(</span><span class="n">m</span><span class="p">,</span> <span class="n">n</span><span class="p">,</span> <span class="n">rng</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;Draw a standard Wishart matrix.</span>
+
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    m : integer</span>
+<span class="sd">        Number of variables (i.e. size of matrix).</span>
+<span class="sd">    n : integer</span>
+<span class="sd">        Number of measurements the covariance matrix is estimated from.</span>
+<span class="sd">    rng : np.random.Generator, optional</span>
+<span class="sd">        Random number generator to use.</span>
+
+<span class="sd">    Returns</span>
+<span class="sd">    -------</span>
+<span class="sd">    B : np.ndarray[m, m]</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+
+    <span class="k">if</span> <span class="n">rng</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="n">rng</span> <span class="o">=</span> <span class="n">default_rng</span><span class="p">()</span>
+
+    <span class="c1"># Fill in normal variables in the lower triangle</span>
+    <span class="n">T</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">zeros</span><span class="p">((</span><span class="n">m</span><span class="p">,</span> <span class="n">m</span><span class="p">),</span> <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">complex128</span><span class="p">)</span>
+    <span class="n">T</span><span class="p">[</span><span class="n">np</span><span class="o">.</span><span class="n">tril_indices</span><span class="p">(</span><span class="n">m</span><span class="p">,</span> <span class="n">k</span><span class="o">=-</span><span class="mi">1</span><span class="p">)]</span> <span class="o">=</span> <span class="p">(</span>
+        <span class="n">rng</span><span class="o">.</span><span class="n">standard_normal</span><span class="p">(</span><span class="n">m</span> <span class="o">*</span> <span class="p">(</span><span class="n">m</span> <span class="o">-</span> <span class="mi">1</span><span class="p">)</span> <span class="o">//</span> <span class="mi">2</span><span class="p">)</span>
+        <span class="o">+</span> <span class="mf">1.0</span><span class="n">j</span> <span class="o">*</span> <span class="n">rng</span><span class="o">.</span><span class="n">standard_normal</span><span class="p">(</span><span class="n">m</span> <span class="o">*</span> <span class="p">(</span><span class="n">m</span> <span class="o">-</span> <span class="mi">1</span><span class="p">)</span> <span class="o">//</span> <span class="mi">2</span><span class="p">)</span>
+    <span class="p">)</span> <span class="o">/</span> <span class="mi">2</span> <span class="o">**</span> <span class="mf">0.5</span>
+
+    <span class="c1"># Gamma variables on the diagonal</span>
+    <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">m</span><span class="p">):</span>
+        <span class="n">T</span><span class="p">[</span><span class="n">i</span><span class="p">,</span> <span class="n">i</span><span class="p">]</span> <span class="o">=</span> <span class="n">rng</span><span class="o">.</span><span class="n">gamma</span><span class="p">(</span><span class="n">n</span> <span class="o">-</span> <span class="n">i</span><span class="p">)</span> <span class="o">**</span> <span class="mf">0.5</span>
+
+    <span class="c1"># Return the square to get the Wishart matrix</span>
+    <span class="k">return</span> <span class="n">np</span><span class="o">.</span><span class="n">dot</span><span class="p">(</span><span class="n">T</span><span class="p">,</span> <span class="n">T</span><span class="o">.</span><span class="n">T</span><span class="o">.</span><span class="n">conj</span><span class="p">())</span></div>
+
+
+<div class="viewcode-block" id="complex_wishart"><a class="viewcode-back" href="../../../_autosummary/draco.util.random.html#draco.util.random.complex_wishart">[docs]</a><span class="k">def</span> <span class="nf">complex_wishart</span><span class="p">(</span><span class="n">C</span><span class="p">,</span> <span class="n">n</span><span class="p">,</span> <span class="n">rng</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;Draw a complex Wishart matrix.</span>
+
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    C_exp : np.ndarray[:, :]</span>
+<span class="sd">        Expected covaraince matrix.</span>
+<span class="sd">    n : integer</span>
+<span class="sd">        Number of measurements the covariance matrix is estimated from.</span>
+<span class="sd">    rng : np.random.Generator, optional</span>
+<span class="sd">        Random number generator to use.</span>
+
+<span class="sd">    Returns</span>
+<span class="sd">    -------</span>
+<span class="sd">    C_samp : np.ndarray</span>
+<span class="sd">        Sample covariance matrix.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+
+    <span class="kn">import</span> <span class="nn">scipy.linalg</span> <span class="k">as</span> <span class="nn">la</span>
+
+    <span class="c1"># Find Cholesky of C</span>
+    <span class="n">L</span> <span class="o">=</span> <span class="n">la</span><span class="o">.</span><span class="n">cholesky</span><span class="p">(</span><span class="n">C</span><span class="p">,</span> <span class="n">lower</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+
+    <span class="c1"># Generate a standard Wishart</span>
+    <span class="n">A</span> <span class="o">=</span> <span class="n">standard_complex_wishart</span><span class="p">(</span><span class="n">C</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span> <span class="n">n</span><span class="p">,</span> <span class="n">rng</span><span class="o">=</span><span class="n">rng</span><span class="p">)</span>
+
+    <span class="c1"># Transform to get the Wishart variable</span>
+    <span class="k">return</span> <span class="n">np</span><span class="o">.</span><span class="n">dot</span><span class="p">(</span><span class="n">L</span><span class="p">,</span> <span class="n">np</span><span class="o">.</span><span class="n">dot</span><span class="p">(</span><span class="n">A</span><span class="p">,</span> <span class="n">L</span><span class="o">.</span><span class="n">T</span><span class="o">.</span><span class="n">conj</span><span class="p">()))</span></div>
+
+
+<div class="viewcode-block" id="mpi_random_seed"><a class="viewcode-back" href="../../../_autosummary/draco.util.random.html#draco.util.random.mpi_random_seed">[docs]</a><span class="nd">@contextlib</span><span class="o">.</span><span class="n">contextmanager</span>
+<span class="k">def</span> <span class="nf">mpi_random_seed</span><span class="p">(</span><span class="n">seed</span><span class="p">,</span> <span class="n">extra</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span> <span class="n">gen</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;Use a specific random seed and return to the original state on exit.</span>
+
+<span class="sd">    This is designed to work for MPI computations, incrementing the actual seed of</span>
+<span class="sd">    each process by the MPI rank. Overall each process gets the numpy seed:</span>
+<span class="sd">    `numpy_seed = seed + mpi_rank + 4096 * extra`. This can work for either the</span>
+<span class="sd">    global numpy.random context or for new np.random.Generator.</span>
+
+
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    seed : int</span>
+<span class="sd">        Base seed to set. If seed is :obj:`None`, re-seed randomly.</span>
+<span class="sd">    extra : int, optional</span>
+<span class="sd">        An extra part of the seed, which should be changed for calculations</span>
+<span class="sd">        using the same seed, but that want different random sequences.</span>
+<span class="sd">    gen: :class: `Generator`</span>
+<span class="sd">        A RandomGen bit_generator whose internal seed state we are going to</span>
+<span class="sd">        influence.</span>
+
+<span class="sd">    Yields</span>
+<span class="sd">    ------</span>
+<span class="sd">    If we are setting the numpy.random context, nothing is yielded.</span>
+
+<span class="sd">    :class: `Generator`</span>
+<span class="sd">        If we are setting the RandomGen bit_generator, it will be returned.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="kn">import</span> <span class="nn">warnings</span>
+    <span class="kn">from</span> <span class="nn">caput</span> <span class="kn">import</span> <span class="n">mpiutil</span>
+
+    <span class="n">warnings</span><span class="o">.</span><span class="n">warn</span><span class="p">(</span>
+        <span class="s2">&quot;This routine has fatal flaws. Try using `RandomTask` instead&quot;</span><span class="p">,</span>
+        <span class="n">category</span><span class="o">=</span><span class="ne">DeprecationWarning</span><span class="p">,</span>
+    <span class="p">)</span>
+
+    <span class="c1"># Just choose a random number per process as the seed if nothing was set.</span>
+    <span class="k">if</span> <span class="n">seed</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="n">seed</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">random</span><span class="o">.</span><span class="n">randint</span><span class="p">(</span><span class="mi">2</span> <span class="o">**</span> <span class="mi">30</span><span class="p">)</span>
+
+    <span class="c1"># Construct the new process specific seed</span>
+    <span class="n">new_seed</span> <span class="o">=</span> <span class="n">seed</span> <span class="o">+</span> <span class="n">mpiutil</span><span class="o">.</span><span class="n">rank</span> <span class="o">+</span> <span class="mi">4096</span> <span class="o">*</span> <span class="n">extra</span>
+    <span class="n">np</span><span class="o">.</span><span class="n">random</span><span class="o">.</span><span class="n">seed</span><span class="p">(</span><span class="n">new_seed</span><span class="p">)</span>
+
+    <span class="c1"># we will be setting the numpy.random context</span>
+    <span class="k">if</span> <span class="n">gen</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="c1"># Copy the old state for restoration later.</span>
+        <span class="n">old_state</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">random</span><span class="o">.</span><span class="n">get_state</span><span class="p">()</span>
+
+        <span class="c1"># Enter the context block, and reset the state on exit.</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="k">yield</span>
+        <span class="k">finally</span><span class="p">:</span>
+            <span class="n">np</span><span class="o">.</span><span class="n">random</span><span class="o">.</span><span class="n">set_state</span><span class="p">(</span><span class="n">old_state</span><span class="p">)</span>
+
+    <span class="c1"># we will be setting the randomgen context</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="c1"># Copy the old state for restoration later.</span>
+        <span class="n">old_state</span> <span class="o">=</span> <span class="n">gen</span><span class="o">.</span><span class="n">state</span>
+
+        <span class="c1"># Enter the context block, and reset the state on exit.</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="k">yield</span> <span class="n">gen</span>
+        <span class="k">finally</span><span class="p">:</span>
+            <span class="n">gen</span><span class="o">.</span><span class="n">state</span> <span class="o">=</span> <span class="n">old_state</span></div>
+
+
+<div class="viewcode-block" id="RandomTask"><a class="viewcode-back" href="../../../_autosummary/draco.util.random.html#draco.util.random.RandomTask">[docs]</a><span class="k">class</span> <span class="nc">RandomTask</span><span class="p">(</span><span class="n">task</span><span class="o">.</span><span class="n">MPILoggedTask</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;A base class for MPI tasks that needs to generate random numbers.</span>
+
+<span class="sd">    Attributes</span>
+<span class="sd">    ----------</span>
+<span class="sd">    seed : int, optional</span>
+<span class="sd">        Set the seed for use in the task. If not set, a random seed is generated and</span>
+<span class="sd">        broadcast to all ranks. The seed being used is logged, to repeat a previous</span>
+<span class="sd">        run, simply set this as the seed parameter.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+
+    <span class="n">seed</span> <span class="o">=</span> <span class="n">config</span><span class="o">.</span><span class="n">Property</span><span class="p">(</span><span class="n">proptype</span><span class="o">=</span><span class="nb">int</span><span class="p">,</span> <span class="n">default</span><span class="o">=</span><span class="kc">None</span><span class="p">)</span>
+
+    <span class="n">_rng</span> <span class="o">=</span> <span class="kc">None</span>
+
+    <span class="nd">@property</span>
+    <span class="k">def</span> <span class="nf">rng</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;A random number generator for this task.</span>
+
+<span class="sd">        .. warning::</span>
+<span class="sd">            Initialising the RNG is a collective operation if the seed is not set,</span>
+<span class="sd">            and so all ranks must participate in the first access of this property.</span>
+
+<span class="sd">        Returns</span>
+<span class="sd">        -------</span>
+<span class="sd">        rng : np.random.Generator</span>
+<span class="sd">            A deterministically seeded random number generator suitable for use in</span>
+<span class="sd">            MPI jobs.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_rng</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+
+            <span class="c1"># Generate a new base seed for all MPI ranks</span>
+            <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">seed</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+                <span class="c1"># Use seed sequence to generate a random seed</span>
+                <span class="n">seed</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">random</span><span class="o">.</span><span class="n">SeedSequence</span><span class="p">()</span><span class="o">.</span><span class="n">entropy</span>
+                <span class="n">seed</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">comm</span><span class="o">.</span><span class="n">bcast</span><span class="p">(</span><span class="n">seed</span><span class="p">,</span> <span class="n">root</span><span class="o">=</span><span class="mi">0</span><span class="p">)</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="n">seed</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">seed</span>
+
+            <span class="bp">self</span><span class="o">.</span><span class="n">log</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s2">&quot;Using random seed: </span><span class="si">%i</span><span class="s2">&quot;</span><span class="p">,</span> <span class="n">seed</span><span class="p">)</span>
+
+            <span class="c1"># Construct the new MPI-process and task specific seed. This mixes an</span>
+            <span class="c1"># integer checksum of the class name with the MPI-rank to generate a new</span>
+            <span class="c1"># hash.</span>
+            <span class="c1"># NOTE: the slightly odd (rank + 1) is to ensure that even rank=0 mixes in</span>
+            <span class="c1"># the class seed</span>
+            <span class="n">cls_name</span> <span class="o">=</span> <span class="s2">&quot;</span><span class="si">%s</span><span class="s2">.</span><span class="si">%s</span><span class="s2">&quot;</span> <span class="o">%</span> <span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="vm">__module__</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="vm">__class__</span><span class="o">.</span><span class="vm">__name__</span><span class="p">)</span>
+            <span class="n">cls_seed</span> <span class="o">=</span> <span class="n">zlib</span><span class="o">.</span><span class="n">adler32</span><span class="p">(</span><span class="n">cls_name</span><span class="o">.</span><span class="n">encode</span><span class="p">())</span>
+            <span class="n">new_seed</span> <span class="o">=</span> <span class="n">seed</span> <span class="o">+</span> <span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">comm</span><span class="o">.</span><span class="n">rank</span> <span class="o">+</span> <span class="mi">1</span><span class="p">)</span> <span class="o">*</span> <span class="n">cls_seed</span>
+
+            <span class="bp">self</span><span class="o">.</span><span class="n">_rng</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">random</span><span class="o">.</span><span class="n">Generator</span><span class="p">(</span><span class="n">_default_bitgen</span><span class="p">(</span><span class="n">new_seed</span><span class="p">))</span>
+
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_rng</span></div>
+</pre></div>
+
+           </div>
+           
+          </div>
+          <footer>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>
+        &#169; Copyright 2016, Richard Shaw.
+
+    </p>
+  </div>
+    
+    
+    
+    Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    
+    provided by <a href="https://readthedocs.org">Read the Docs</a>. 
+
+</footer>
+        </div>
+      </div>
+
+    </section>
+
+  </div>
+  
+
+  <script type="text/javascript">
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script>
+
+  
+  
+    
+   
+
+</body>
+</html>

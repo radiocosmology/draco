@@ -1,0 +1,919 @@
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" >
+<head>
+  <meta charset="utf-8" />
+  
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  
+  <title>draco.core.io &mdash; draco 0+untagged.1.g43914e3 documentation</title>
+  
+
+  
+  <link rel="stylesheet" href="../_static/css/theme.css" type="text/css" />
+  <link rel="stylesheet" href="../_static/pygments.css" type="text/css" />
+
+  
+  
+
+  
+  
+
+  
+
+  
+  <!--[if lt IE 9]>
+    <script src="../_static/js/html5shiv.min.js"></script>
+  <![endif]-->
+  
+    
+      <script type="text/javascript" id="documentation_options" data-url_root="../" src="../_static/documentation_options.js"></script>
+        <script src="../_static/jquery.js"></script>
+        <script src="../_static/underscore.js"></script>
+        <script src="../_static/doctools.js"></script>
+        <script async="async" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/2.7.7/latest.js?config=TeX-AMS-MML_HTMLorMML"></script>
+    
+    <script type="text/javascript" src="../_static/js/theme.js"></script>
+
+    
+    <link rel="index" title="Index" href="../genindex.html" />
+    <link rel="search" title="Search" href="../search.html" />
+    <link rel="next" title="draco.core.misc" href="draco.core.misc.html" />
+    <link rel="prev" title="draco.core.containers" href="draco.core.containers.html" /> 
+</head>
+
+<body class="wy-body-for-nav">
+
+   
+  <div class="wy-grid-for-nav">
+    
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+          
+
+          
+            <a href="../index.html" class="icon icon-home"> draco
+          
+
+          
+          </a>
+
+          
+            
+            
+              <div class="version">
+                0+untagged.1.g43914e3
+              </div>
+            
+          
+
+          
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+
+          
+        </div>
+
+        
+        <div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="main navigation">
+          
+            
+            
+              
+            
+            
+              <ul class="current">
+<li class="toctree-l1"><a class="reference internal" href="../tutorial.html">Tutorial</a></li>
+<li class="toctree-l1 current"><a class="reference internal" href="../reference.html">API Reference</a><ul class="current">
+<li class="toctree-l2 current"><a class="reference internal" href="../reference.html#submodules">Submodules</a><ul class="current">
+<li class="toctree-l3"><a class="reference internal" href="draco.analysis.html">draco.analysis</a></li>
+<li class="toctree-l3 current"><a class="reference internal" href="draco.core.html">draco.core</a><ul class="current">
+<li class="toctree-l4"><a class="reference internal" href="draco.core.containers.html">draco.core.containers</a></li>
+<li class="toctree-l4 current"><a class="current reference internal" href="#">draco.core.io</a></li>
+<li class="toctree-l4"><a class="reference internal" href="draco.core.misc.html">draco.core.misc</a></li>
+<li class="toctree-l4"><a class="reference internal" href="draco.core.task.html">draco.core.task</a></li>
+</ul>
+</li>
+<li class="toctree-l3"><a class="reference internal" href="draco.synthesis.html">draco.synthesis</a></li>
+<li class="toctree-l3"><a class="reference internal" href="draco.util.html">draco.util</a></li>
+</ul>
+</li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="../dev.html">Development Guidelines</a></li>
+</ul>
+
+            
+          
+        </div>
+        
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap">
+
+      
+      <nav class="wy-nav-top" aria-label="top navigation">
+        
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../index.html">draco</a>
+        
+      </nav>
+
+
+      <div class="wy-nav-content">
+        
+        <div class="rst-content">
+        
+          
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<div role="navigation" aria-label="breadcrumbs navigation">
+
+  <ul class="wy-breadcrumbs">
+    
+      <li><a href="../index.html" class="icon icon-home"></a> &raquo;</li>
+        
+          <li><a href="../reference.html">API Reference</a> &raquo;</li>
+        
+          <li><a href="draco.core.html">draco.core</a> &raquo;</li>
+        
+      <li>draco.core.io</li>
+    
+    
+      <li class="wy-breadcrumbs-aside">
+        
+          
+            <a href="../_sources/_autosummary/draco.core.io.rst.txt" rel="nofollow"> View page source</a>
+          
+        
+      </li>
+    
+  </ul>
+
+  
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+            
+  <div class="section" id="module-draco.core.io">
+<span id="draco-core-io"></span><h1>draco.core.io<a class="headerlink" href="#module-draco.core.io" title="Permalink to this headline">¶</a></h1>
+<p>Tasks for reading and writing data.</p>
+<div class="section" id="file-groups">
+<h2>File Groups<a class="headerlink" href="#file-groups" title="Permalink to this headline">¶</a></h2>
+<p>Several tasks accept groups of files as arguments. These are specified in the YAML file as a dictionary like below.</p>
+<div class="highlight-yaml notranslate"><div class="highlight"><pre><span></span><span class="nt">list_of_file_groups</span><span class="p">:</span>
+    <span class="p p-Indicator">-</span>   <span class="nt">tag</span><span class="p">:</span> <span class="l l-Scalar l-Scalar-Plain">first_group</span>  <span class="c1"># An optional tag naming the group</span>
+        <span class="nt">files</span><span class="p">:</span>
+            <span class="p p-Indicator">-</span>   <span class="s">&#39;file1.h5&#39;</span>
+            <span class="p p-Indicator">-</span>   <span class="s">&#39;file[3-4].h5&#39;</span>  <span class="c1"># Globs are processed</span>
+            <span class="p p-Indicator">-</span>   <span class="s">&#39;file7.h5&#39;</span>
+
+    <span class="p p-Indicator">-</span>   <span class="nt">files</span><span class="p">:</span>  <span class="c1"># No tag specified, implicitly gets the tag &#39;group_2&#39;</span>
+            <span class="p p-Indicator">-</span>   <span class="s">&#39;another_file1.h5&#39;</span>
+            <span class="p p-Indicator">-</span>   <span class="s">&#39;another_file2.h5&#39;</span>
+
+
+<span class="nt">single_group</span><span class="p">:</span>
+    <span class="nt">files</span><span class="p">:</span> <span class="p p-Indicator">[</span><span class="s">&#39;file1.h5&#39;</span><span class="p p-Indicator">,</span> <span class="s">&#39;file2.h5&#39;</span><span class="p p-Indicator">]</span>
+</pre></div>
+</div>
+<p class="rubric">Functions</p>
+<table class="longtable docutils align-default">
+<colgroup>
+<col style="width: 10%" />
+<col style="width: 90%" />
+</colgroup>
+<tbody>
+<tr class="row-odd"><td><p><a class="reference internal" href="#draco.core.io.get_beamtransfer" title="draco.core.io.get_beamtransfer"><code class="xref py py-obj docutils literal notranslate"><span class="pre">get_beamtransfer</span></code></a>(obj)</p></td>
+<td><p>Return a BeamTransfer object out of the input (either <cite>ProductManager</cite>, <cite>BeamTransfer</cite>).</p></td>
+</tr>
+<tr class="row-even"><td><p><a class="reference internal" href="#draco.core.io.get_telescope" title="draco.core.io.get_telescope"><code class="xref py py-obj docutils literal notranslate"><span class="pre">get_telescope</span></code></a>(obj)</p></td>
+<td><p>Return a telescope object out of the input (either <cite>ProductManager</cite>, <cite>BeamTransfer</cite> or <cite>TransitTelescope</cite>).</p></td>
+</tr>
+</tbody>
+</table>
+<p class="rubric">Classes</p>
+<table class="longtable docutils align-default">
+<colgroup>
+<col style="width: 10%" />
+<col style="width: 90%" />
+</colgroup>
+<tbody>
+<tr class="row-odd"><td><p><a class="reference internal" href="#draco.core.io.FindFiles" title="draco.core.io.FindFiles"><code class="xref py py-obj docutils literal notranslate"><span class="pre">FindFiles</span></code></a>()</p></td>
+<td><p>Take a glob or list of files specified as a parameter in the configuration file and pass on to other tasks.</p></td>
+</tr>
+<tr class="row-even"><td><p><a class="reference internal" href="#draco.core.io.LoadBasicCont" title="draco.core.io.LoadBasicCont"><code class="xref py py-obj docutils literal notranslate"><span class="pre">LoadBasicCont</span></code></a></p></td>
+<td><p>alias of <a class="reference internal" href="#draco.core.io.LoadFilesFromParams" title="draco.core.io.LoadFilesFromParams"><code class="xref py py-class docutils literal notranslate"><span class="pre">draco.core.io.LoadFilesFromParams</span></code></a></p></td>
+</tr>
+<tr class="row-odd"><td><p><a class="reference internal" href="#draco.core.io.LoadBeamTransfer" title="draco.core.io.LoadBeamTransfer"><code class="xref py py-obj docutils literal notranslate"><span class="pre">LoadBeamTransfer</span></code></a>()</p></td>
+<td><p>Loads a beam transfer manager from disk.</p></td>
+</tr>
+<tr class="row-even"><td><p><a class="reference internal" href="#draco.core.io.LoadFITSCatalog" title="draco.core.io.LoadFITSCatalog"><code class="xref py py-obj docutils literal notranslate"><span class="pre">LoadFITSCatalog</span></code></a>()</p></td>
+<td><p>Load an SDSS-style FITS source catalog.</p></td>
+</tr>
+<tr class="row-odd"><td><p><a class="reference internal" href="#draco.core.io.LoadFiles" title="draco.core.io.LoadFiles"><code class="xref py py-obj docutils literal notranslate"><span class="pre">LoadFiles</span></code></a>()</p></td>
+<td><p>Load data from files passed into the setup routine.</p></td>
+</tr>
+<tr class="row-even"><td><p><a class="reference internal" href="#draco.core.io.LoadFilesFromParams" title="draco.core.io.LoadFilesFromParams"><code class="xref py py-obj docutils literal notranslate"><span class="pre">LoadFilesFromParams</span></code></a>()</p></td>
+<td><p>Load data from files given in the tasks parameters.</p></td>
+</tr>
+<tr class="row-odd"><td><p><a class="reference internal" href="#draco.core.io.LoadMaps" title="draco.core.io.LoadMaps"><code class="xref py py-obj docutils literal notranslate"><span class="pre">LoadMaps</span></code></a>()</p></td>
+<td><p>Load a series of maps from files given in the tasks parameters.</p></td>
+</tr>
+<tr class="row-even"><td><p><a class="reference internal" href="#draco.core.io.LoadProductManager" title="draco.core.io.LoadProductManager"><code class="xref py py-obj docutils literal notranslate"><span class="pre">LoadProductManager</span></code></a>()</p></td>
+<td><p>Loads a driftscan product manager from disk.</p></td>
+</tr>
+<tr class="row-odd"><td><p><a class="reference internal" href="#draco.core.io.Print" title="draco.core.io.Print"><code class="xref py py-obj docutils literal notranslate"><span class="pre">Print</span></code></a>()</p></td>
+<td><p>Stupid module which just prints whatever it gets.</p></td>
+</tr>
+<tr class="row-even"><td><p><a class="reference internal" href="#draco.core.io.Save" title="draco.core.io.Save"><code class="xref py py-obj docutils literal notranslate"><span class="pre">Save</span></code></a>()</p></td>
+<td><p>Save out the input, and pass it on.</p></td>
+</tr>
+<tr class="row-odd"><td><p><a class="reference internal" href="#draco.core.io.SaveConfig" title="draco.core.io.SaveConfig"><code class="xref py py-obj docutils literal notranslate"><span class="pre">SaveConfig</span></code></a>()</p></td>
+<td><p>Write pipeline config to a text file.</p></td>
+</tr>
+<tr class="row-even"><td><p><a class="reference internal" href="#draco.core.io.SaveModuleVersions" title="draco.core.io.SaveModuleVersions"><code class="xref py py-obj docutils literal notranslate"><span class="pre">SaveModuleVersions</span></code></a>()</p></td>
+<td><p>Write module versions to a YAML file.</p></td>
+</tr>
+<tr class="row-odd"><td><p><a class="reference internal" href="#draco.core.io.Truncate" title="draco.core.io.Truncate"><code class="xref py py-obj docutils literal notranslate"><span class="pre">Truncate</span></code></a>()</p></td>
+<td><p>Precision truncate data prior to saving with bitshuffle compression.</p></td>
+</tr>
+</tbody>
+</table>
+<dl class="py class">
+<dt id="draco.core.io.FindFiles">
+<em class="property">class </em><code class="sig-prename descclassname">draco.core.io.</code><code class="sig-name descname">FindFiles</code><a class="reference internal" href="../_modules/draco/core/io.html#FindFiles"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#draco.core.io.FindFiles" title="Permalink to this definition">¶</a></dt>
+<dd><p>Bases: <code class="xref py py-class docutils literal notranslate"><span class="pre">caput.pipeline.TaskBase</span></code></p>
+<p>Take a glob or list of files specified as a parameter in the
+configuration file and pass on to other tasks.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><p><strong>files</strong> (<em>list</em><em> or </em><em>glob</em>) – </p>
+</dd>
+</dl>
+<p>Initialize pipeline task.</p>
+<p>May be overridden with no arguments.  Will be called after any
+<cite>config.Property</cite> attributes are set and after ‘input’ and ‘requires’
+keys are set up.</p>
+<dl class="py method">
+<dt id="draco.core.io.FindFiles.setup">
+<code class="sig-name descname">setup</code><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="../_modules/draco/core/io.html#FindFiles.setup"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#draco.core.io.FindFiles.setup" title="Permalink to this definition">¶</a></dt>
+<dd><p>Return list of files specified in the parameters.</p>
+</dd></dl>
+
+</dd></dl>
+
+<dl class="py attribute">
+<dt id="draco.core.io.LoadBasicCont">
+<code class="sig-prename descclassname">draco.core.io.</code><code class="sig-name descname">LoadBasicCont</code><a class="headerlink" href="#draco.core.io.LoadBasicCont" title="Permalink to this definition">¶</a></dt>
+<dd><p>alias of <a class="reference internal" href="#draco.core.io.LoadFilesFromParams" title="draco.core.io.LoadFilesFromParams"><code class="xref py py-class docutils literal notranslate"><span class="pre">draco.core.io.LoadFilesFromParams</span></code></a></p>
+</dd></dl>
+
+<dl class="py class">
+<dt id="draco.core.io.LoadBeamTransfer">
+<em class="property">class </em><code class="sig-prename descclassname">draco.core.io.</code><code class="sig-name descname">LoadBeamTransfer</code><a class="reference internal" href="../_modules/draco/core/io.html#LoadBeamTransfer"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#draco.core.io.LoadBeamTransfer" title="Permalink to this definition">¶</a></dt>
+<dd><p>Bases: <code class="xref py py-class docutils literal notranslate"><span class="pre">caput.pipeline.TaskBase</span></code></p>
+<p>Loads a beam transfer manager from disk.</p>
+<dl class="py attribute">
+<dt id="draco.core.io.LoadBeamTransfer.product_directory">
+<code class="sig-name descname">product_directory</code><a class="headerlink" href="#draco.core.io.LoadBeamTransfer.product_directory" title="Permalink to this definition">¶</a></dt>
+<dd><p>Path to the saved Beam Transfer products.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type</dt>
+<dd class="field-odd"><p>str</p>
+</dd>
+</dl>
+</dd></dl>
+
+<p>Initialize pipeline task.</p>
+<p>May be overridden with no arguments.  Will be called after any
+<cite>config.Property</cite> attributes are set and after ‘input’ and ‘requires’
+keys are set up.</p>
+<dl class="py method">
+<dt id="draco.core.io.LoadBeamTransfer.setup">
+<code class="sig-name descname">setup</code><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="../_modules/draco/core/io.html#LoadBeamTransfer.setup"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#draco.core.io.LoadBeamTransfer.setup" title="Permalink to this definition">¶</a></dt>
+<dd><p>Load the beam transfer matrices.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Returns</dt>
+<dd class="field-odd"><p><ul class="simple">
+<li><p><strong>tel</strong> (<em>TransitTelescope</em>) – Object describing the telescope.</p></li>
+<li><p><strong>bt</strong> (<em>BeamTransfer</em>) – BeamTransfer manager.</p></li>
+<li><p><strong>feed_info</strong> (<em>list, optional</em>) – Optional list providing additional information about each feed.</p></li>
+</ul>
+</p>
+</dd>
+</dl>
+</dd></dl>
+
+</dd></dl>
+
+<dl class="py class">
+<dt id="draco.core.io.LoadFITSCatalog">
+<em class="property">class </em><code class="sig-prename descclassname">draco.core.io.</code><code class="sig-name descname">LoadFITSCatalog</code><a class="reference internal" href="../_modules/draco/core/io.html#LoadFITSCatalog"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#draco.core.io.LoadFITSCatalog" title="Permalink to this definition">¶</a></dt>
+<dd><p>Bases: <a class="reference internal" href="draco.core.task.html#draco.core.task.SingleTask" title="draco.core.task.SingleTask"><code class="xref py py-class docutils literal notranslate"><span class="pre">draco.core.task.SingleTask</span></code></a></p>
+<p>Load an SDSS-style FITS source catalog.</p>
+<p>Catalogs are given as one, or a list of <cite>File Groups</cite> (see
+<a class="reference internal" href="#module-draco.core.io" title="draco.core.io"><code class="xref py py-mod docutils literal notranslate"><span class="pre">draco.core.io</span></code></a>). Catalogs within the same group are combined together
+before being passed on.</p>
+<dl class="py attribute">
+<dt id="draco.core.io.LoadFITSCatalog.catalogs">
+<code class="sig-name descname">catalogs</code><a class="headerlink" href="#draco.core.io.LoadFITSCatalog.catalogs" title="Permalink to this definition">¶</a></dt>
+<dd><p>A dictionary specifying a file group, or a list of them.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type</dt>
+<dd class="field-odd"><p>list or dict</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt id="draco.core.io.LoadFITSCatalog.z_range">
+<code class="sig-name descname">z_range</code><a class="headerlink" href="#draco.core.io.LoadFITSCatalog.z_range" title="Permalink to this definition">¶</a></dt>
+<dd><p>Select only sources with a redshift within the given range.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type</dt>
+<dd class="field-odd"><p>list, optional</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt id="draco.core.io.LoadFITSCatalog.freq_range">
+<code class="sig-name descname">freq_range</code><a class="headerlink" href="#draco.core.io.LoadFITSCatalog.freq_range" title="Permalink to this definition">¶</a></dt>
+<dd><p>Select only sources with a 21cm line freq within the given range. Overrides
+<cite>z_range</cite>.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type</dt>
+<dd class="field-odd"><p>list, optional</p>
+</dd>
+</dl>
+</dd></dl>
+
+<p>Initialize pipeline task.</p>
+<p>May be overridden with no arguments.  Will be called after any
+<cite>config.Property</cite> attributes are set and after ‘input’ and ‘requires’
+keys are set up.</p>
+<dl class="py method">
+<dt id="draco.core.io.LoadFITSCatalog.process">
+<code class="sig-name descname">process</code><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="../_modules/draco/core/io.html#LoadFITSCatalog.process"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#draco.core.io.LoadFITSCatalog.process" title="Permalink to this definition">¶</a></dt>
+<dd><p>Load the groups of catalogs from disk, concatenate them and pass them on.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Returns</dt>
+<dd class="field-odd"><p><strong>catalog</strong></p>
+</dd>
+<dt class="field-even">Return type</dt>
+<dd class="field-even"><p><code class="xref py py-class docutils literal notranslate"><span class="pre">containers.SpectroscopicCatalog</span></code></p>
+</dd>
+</dl>
+</dd></dl>
+
+</dd></dl>
+
+<dl class="py class">
+<dt id="draco.core.io.LoadFiles">
+<em class="property">class </em><code class="sig-prename descclassname">draco.core.io.</code><code class="sig-name descname">LoadFiles</code><a class="reference internal" href="../_modules/draco/core/io.html#LoadFiles"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#draco.core.io.LoadFiles" title="Permalink to this definition">¶</a></dt>
+<dd><p>Bases: <a class="reference internal" href="#draco.core.io.LoadFilesFromParams" title="draco.core.io.LoadFilesFromParams"><code class="xref py py-class docutils literal notranslate"><span class="pre">draco.core.io.LoadFilesFromParams</span></code></a></p>
+<p>Load data from files passed into the setup routine.</p>
+<p>File must be a serialised subclass of <code class="xref py py-class docutils literal notranslate"><span class="pre">memh5.BasicCont</span></code>.</p>
+<p>Initialize pipeline task.</p>
+<p>May be overridden with no arguments.  Will be called after any
+<cite>config.Property</cite> attributes are set and after ‘input’ and ‘requires’
+keys are set up.</p>
+<dl class="py method">
+<dt id="draco.core.io.LoadFiles.setup">
+<code class="sig-name descname">setup</code><span class="sig-paren">(</span><em class="sig-param"><span class="n">files</span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/draco/core/io.html#LoadFiles.setup"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#draco.core.io.LoadFiles.setup" title="Permalink to this definition">¶</a></dt>
+<dd><p>Set the list of files to load.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><p><strong>files</strong> (<em>list</em>) – </p>
+</dd>
+</dl>
+</dd></dl>
+
+</dd></dl>
+
+<dl class="py class">
+<dt id="draco.core.io.LoadFilesFromParams">
+<em class="property">class </em><code class="sig-prename descclassname">draco.core.io.</code><code class="sig-name descname">LoadFilesFromParams</code><a class="reference internal" href="../_modules/draco/core/io.html#LoadFilesFromParams"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#draco.core.io.LoadFilesFromParams" title="Permalink to this definition">¶</a></dt>
+<dd><p>Bases: <a class="reference internal" href="draco.core.task.html#draco.core.task.SingleTask" title="draco.core.task.SingleTask"><code class="xref py py-class docutils literal notranslate"><span class="pre">draco.core.task.SingleTask</span></code></a></p>
+<p>Load data from files given in the tasks parameters.</p>
+<dl class="py attribute">
+<dt id="draco.core.io.LoadFilesFromParams.files">
+<code class="sig-name descname">files</code><a class="headerlink" href="#draco.core.io.LoadFilesFromParams.files" title="Permalink to this definition">¶</a></dt>
+<dd><p>Can either be a glob pattern, or lists of actual files.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type</dt>
+<dd class="field-odd"><p>glob pattern, or list</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt id="draco.core.io.LoadFilesFromParams.distributed">
+<code class="sig-name descname">distributed</code><a class="headerlink" href="#draco.core.io.LoadFilesFromParams.distributed" title="Permalink to this definition">¶</a></dt>
+<dd><p>Whether the file should be loaded distributed across ranks.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type</dt>
+<dd class="field-odd"><p>bool, optional</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt id="draco.core.io.LoadFilesFromParams.convert_strings">
+<code class="sig-name descname">convert_strings</code><a class="headerlink" href="#draco.core.io.LoadFilesFromParams.convert_strings" title="Permalink to this definition">¶</a></dt>
+<dd><p>Convert strings to unicode when loading.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type</dt>
+<dd class="field-odd"><p>bool, optional</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt id="draco.core.io.LoadFilesFromParams.selections">
+<code class="sig-name descname">selections</code><a class="headerlink" href="#draco.core.io.LoadFilesFromParams.selections" title="Permalink to this definition">¶</a></dt>
+<dd><p>A dictionary of axis selections. See the section below for details.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type</dt>
+<dd class="field-odd"><p>dict, optional</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt id="draco.core.io.LoadFilesFromParams.Selections">
+<code class="sig-name descname">Selections</code><a class="headerlink" href="#draco.core.io.LoadFilesFromParams.Selections" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt>
+<code class="sig-name descname">----------</code></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt>
+<code class="sig-name descname">Selections can be given to limit the data read to specified subsets. They can be</code></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt>
+<code class="sig-name descname">given for any named axis in the container.</code></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt>
+<code class="sig-name descname">Selections can be given as a slice with an `&lt;axis name&gt;_range` key with either</code></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt>
+<code class="sig-name descname">`[start, stop]` or `[start, stop, step]` as the value. Alternatively a list of</code></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt>
+<code class="sig-name descname">explicit indices to extract can be given with the `&lt;axis name&gt;_index` key, and</code></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt>
+<code class="sig-name descname">the value is a list of the indices. If both `&lt;axis name&gt;_range` and `&lt;axis</code></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt>
+<code class="sig-name descname">name&gt;_index` keys are given the former will take precedence, but you should</code></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt>
+<code class="sig-name descname">clearly avoid doing this.</code></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt>
+<code class="sig-name descname">Additionally index based selections currently don't work for distributed reads.</code></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt>
+<code class="sig-name descname">Here's an example in the YAML format that the pipeline uses</code></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt>
+<code class="sig-name descname">.. code-block:: yaml</code></dt>
+<dd><dl class="simple">
+<dt>selections:</dt><dd><p>freq_range: [256, 512, 4]  # A strided slice
+stack_index: [1, 2, 4, 9, 16, 25, 36, 49, 64]  # A sparse selection
+stack_range: [1, 14]  # Will override the selection above</p>
+</dd>
+</dl>
+</dd></dl>
+
+<p>Initialize pipeline task.</p>
+<p>May be overridden with no arguments.  Will be called after any
+<cite>config.Property</cite> attributes are set and after ‘input’ and ‘requires’
+keys are set up.</p>
+<dl class="py method">
+<dt id="draco.core.io.LoadFilesFromParams.process">
+<code class="sig-name descname">process</code><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="../_modules/draco/core/io.html#LoadFilesFromParams.process"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#draco.core.io.LoadFilesFromParams.process" title="Permalink to this definition">¶</a></dt>
+<dd><p>Load the given files in turn and pass on.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Returns</dt>
+<dd class="field-odd"><p><strong>cont</strong></p>
+</dd>
+<dt class="field-even">Return type</dt>
+<dd class="field-even"><p>subclass of <cite>memh5.BasicCont</cite></p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt id="draco.core.io.LoadFilesFromParams.setup">
+<code class="sig-name descname">setup</code><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="../_modules/draco/core/io.html#LoadFilesFromParams.setup"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#draco.core.io.LoadFilesFromParams.setup" title="Permalink to this definition">¶</a></dt>
+<dd><p>Resolve the selections.</p>
+</dd></dl>
+
+</dd></dl>
+
+<dl class="py class">
+<dt id="draco.core.io.LoadMaps">
+<em class="property">class </em><code class="sig-prename descclassname">draco.core.io.</code><code class="sig-name descname">LoadMaps</code><a class="reference internal" href="../_modules/draco/core/io.html#LoadMaps"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#draco.core.io.LoadMaps" title="Permalink to this definition">¶</a></dt>
+<dd><p>Bases: <a class="reference internal" href="draco.core.task.html#draco.core.task.MPILoggedTask" title="draco.core.task.MPILoggedTask"><code class="xref py py-class docutils literal notranslate"><span class="pre">draco.core.task.MPILoggedTask</span></code></a></p>
+<p>Load a series of maps from files given in the tasks parameters.</p>
+<p>Maps are given as one, or a list of <cite>File Groups</cite> (see
+<a class="reference internal" href="#module-draco.core.io" title="draco.core.io"><code class="xref py py-mod docutils literal notranslate"><span class="pre">draco.core.io</span></code></a>). Maps within the same group are added together
+before being passed on.</p>
+<dl class="py attribute">
+<dt id="draco.core.io.LoadMaps.maps">
+<code class="sig-name descname">maps</code><a class="headerlink" href="#draco.core.io.LoadMaps.maps" title="Permalink to this definition">¶</a></dt>
+<dd><p>A dictionary specifying a file group, or a list of them.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type</dt>
+<dd class="field-odd"><p>list or dict</p>
+</dd>
+</dl>
+</dd></dl>
+
+<p>Initialize pipeline task.</p>
+<p>May be overridden with no arguments.  Will be called after any
+<cite>config.Property</cite> attributes are set and after ‘input’ and ‘requires’
+keys are set up.</p>
+<dl class="py method">
+<dt id="draco.core.io.LoadMaps.next">
+<code class="sig-name descname">next</code><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="../_modules/draco/core/io.html#LoadMaps.next"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#draco.core.io.LoadMaps.next" title="Permalink to this definition">¶</a></dt>
+<dd><p>Load the groups of maps from disk and pass them on.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Returns</dt>
+<dd class="field-odd"><p><strong>map</strong></p>
+</dd>
+<dt class="field-even">Return type</dt>
+<dd class="field-even"><p><code class="xref py py-class docutils literal notranslate"><span class="pre">containers.Map</span></code></p>
+</dd>
+</dl>
+</dd></dl>
+
+</dd></dl>
+
+<dl class="py class">
+<dt id="draco.core.io.LoadProductManager">
+<em class="property">class </em><code class="sig-prename descclassname">draco.core.io.</code><code class="sig-name descname">LoadProductManager</code><a class="reference internal" href="../_modules/draco/core/io.html#LoadProductManager"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#draco.core.io.LoadProductManager" title="Permalink to this definition">¶</a></dt>
+<dd><p>Bases: <code class="xref py py-class docutils literal notranslate"><span class="pre">caput.pipeline.TaskBase</span></code></p>
+<p>Loads a driftscan product manager from disk.</p>
+<dl class="py attribute">
+<dt id="draco.core.io.LoadProductManager.product_directory">
+<code class="sig-name descname">product_directory</code><a class="headerlink" href="#draco.core.io.LoadProductManager.product_directory" title="Permalink to this definition">¶</a></dt>
+<dd><p>Path to the root of the products. This is the same as the output
+directory used by <code class="docutils literal notranslate"><span class="pre">drift-makeproducts</span></code>.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type</dt>
+<dd class="field-odd"><p>str</p>
+</dd>
+</dl>
+</dd></dl>
+
+<p>Initialize pipeline task.</p>
+<p>May be overridden with no arguments.  Will be called after any
+<cite>config.Property</cite> attributes are set and after ‘input’ and ‘requires’
+keys are set up.</p>
+<dl class="py method">
+<dt id="draco.core.io.LoadProductManager.setup">
+<code class="sig-name descname">setup</code><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="../_modules/draco/core/io.html#LoadProductManager.setup"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#draco.core.io.LoadProductManager.setup" title="Permalink to this definition">¶</a></dt>
+<dd><p>Load the beam transfer matrices.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Returns</dt>
+<dd class="field-odd"><p><strong>manager</strong> – Object describing the telescope.</p>
+</dd>
+<dt class="field-even">Return type</dt>
+<dd class="field-even"><p>ProductManager</p>
+</dd>
+</dl>
+</dd></dl>
+
+</dd></dl>
+
+<dl class="py class">
+<dt id="draco.core.io.Print">
+<em class="property">class </em><code class="sig-prename descclassname">draco.core.io.</code><code class="sig-name descname">Print</code><a class="reference internal" href="../_modules/draco/core/io.html#Print"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#draco.core.io.Print" title="Permalink to this definition">¶</a></dt>
+<dd><p>Bases: <code class="xref py py-class docutils literal notranslate"><span class="pre">caput.pipeline.TaskBase</span></code></p>
+<p>Stupid module which just prints whatever it gets. Good for debugging.</p>
+<p>Initialize pipeline task.</p>
+<p>May be overridden with no arguments.  Will be called after any
+<cite>config.Property</cite> attributes are set and after ‘input’ and ‘requires’
+keys are set up.</p>
+<dl class="py method">
+<dt id="draco.core.io.Print.next">
+<code class="sig-name descname">next</code><span class="sig-paren">(</span><em class="sig-param"><span class="n">input_</span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/draco/core/io.html#Print.next"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#draco.core.io.Print.next" title="Permalink to this definition">¶</a></dt>
+<dd><p>Iterative analysis stage of pipeline task.</p>
+<p>May be overridden with any number of positional only arguments
+(defaults are allowed).  Pipeline data-products will be passed as
+specified by <cite>in</cite> keys in the pipeline setup.</p>
+<p>Function will be called repetitively until it either raises a
+<cite>PipelineStopIteration</cite> or, if accepting inputs, runs out of input
+data-products.</p>
+<p>Any return values will be treated as pipeline data-products as
+specified by the <cite>out</cite> keys in the pipeline setup.</p>
+</dd></dl>
+
+</dd></dl>
+
+<dl class="py class">
+<dt id="draco.core.io.Save">
+<em class="property">class </em><code class="sig-prename descclassname">draco.core.io.</code><code class="sig-name descname">Save</code><a class="reference internal" href="../_modules/draco/core/io.html#Save"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#draco.core.io.Save" title="Permalink to this definition">¶</a></dt>
+<dd><p>Bases: <code class="xref py py-class docutils literal notranslate"><span class="pre">caput.pipeline.TaskBase</span></code></p>
+<p>Save out the input, and pass it on.</p>
+<p>Assumes that the input has a <cite>to_hdf5</cite> method. Appends a <em>tag</em> if there is
+a <cite>tag</cite> entry in the attributes, otherwise just uses a count.</p>
+<dl class="py attribute">
+<dt id="draco.core.io.Save.root">
+<code class="sig-name descname">root</code><a class="headerlink" href="#draco.core.io.Save.root" title="Permalink to this definition">¶</a></dt>
+<dd><p>Root of the file name to output to.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type</dt>
+<dd class="field-odd"><p>str</p>
+</dd>
+</dl>
+</dd></dl>
+
+<p>Initialize pipeline task.</p>
+<p>May be overridden with no arguments.  Will be called after any
+<cite>config.Property</cite> attributes are set and after ‘input’ and ‘requires’
+keys are set up.</p>
+<dl class="py method">
+<dt id="draco.core.io.Save.next">
+<code class="sig-name descname">next</code><span class="sig-paren">(</span><em class="sig-param"><span class="n">data</span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/draco/core/io.html#Save.next"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#draco.core.io.Save.next" title="Permalink to this definition">¶</a></dt>
+<dd><p>Write out the data file.</p>
+<p>Assumes it has an MPIDataset interface.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><p><strong>data</strong> (<em>mpidataset.MPIDataset</em>) – Data to write out.</p>
+</dd>
+</dl>
+</dd></dl>
+
+</dd></dl>
+
+<dl class="py class">
+<dt id="draco.core.io.SaveConfig">
+<em class="property">class </em><code class="sig-prename descclassname">draco.core.io.</code><code class="sig-name descname">SaveConfig</code><a class="reference internal" href="../_modules/draco/core/io.html#SaveConfig"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#draco.core.io.SaveConfig" title="Permalink to this definition">¶</a></dt>
+<dd><p>Bases: <a class="reference internal" href="draco.core.task.html#draco.core.task.SingleTask" title="draco.core.task.SingleTask"><code class="xref py py-class docutils literal notranslate"><span class="pre">draco.core.task.SingleTask</span></code></a></p>
+<p>Write pipeline config to a text file.</p>
+<p>Yaml configuration document is written to a text file.</p>
+<dl class="py attribute">
+<dt id="draco.core.io.SaveConfig.root">
+<code class="sig-name descname">root</code><a class="headerlink" href="#draco.core.io.SaveConfig.root" title="Permalink to this definition">¶</a></dt>
+<dd><p>Root of the file name to output to.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type</dt>
+<dd class="field-odd"><p>str</p>
+</dd>
+</dl>
+</dd></dl>
+
+<p>Initialize pipeline task.</p>
+<p>May be overridden with no arguments.  Will be called after any
+<cite>config.Property</cite> attributes are set and after ‘input’ and ‘requires’
+keys are set up.</p>
+<dl class="py method">
+<dt id="draco.core.io.SaveConfig.process">
+<code class="sig-name descname">process</code><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="../_modules/draco/core/io.html#SaveConfig.process"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#draco.core.io.SaveConfig.process" title="Permalink to this definition">¶</a></dt>
+<dd><p>Do nothing.</p>
+</dd></dl>
+
+<dl class="py method">
+<dt id="draco.core.io.SaveConfig.setup">
+<code class="sig-name descname">setup</code><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="../_modules/draco/core/io.html#SaveConfig.setup"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#draco.core.io.SaveConfig.setup" title="Permalink to this definition">¶</a></dt>
+<dd><p>Save module versions.</p>
+</dd></dl>
+
+</dd></dl>
+
+<dl class="py class">
+<dt id="draco.core.io.SaveModuleVersions">
+<em class="property">class </em><code class="sig-prename descclassname">draco.core.io.</code><code class="sig-name descname">SaveModuleVersions</code><a class="reference internal" href="../_modules/draco/core/io.html#SaveModuleVersions"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#draco.core.io.SaveModuleVersions" title="Permalink to this definition">¶</a></dt>
+<dd><p>Bases: <a class="reference internal" href="draco.core.task.html#draco.core.task.SingleTask" title="draco.core.task.SingleTask"><code class="xref py py-class docutils literal notranslate"><span class="pre">draco.core.task.SingleTask</span></code></a></p>
+<p>Write module versions to a YAML file.</p>
+<p>The list of modules should be added to the configuration under key ‘save_versions’.
+The version strings are written to a YAML file.</p>
+<dl class="py attribute">
+<dt id="draco.core.io.SaveModuleVersions.root">
+<code class="sig-name descname">root</code><a class="headerlink" href="#draco.core.io.SaveModuleVersions.root" title="Permalink to this definition">¶</a></dt>
+<dd><p>Root of the file name to output to.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type</dt>
+<dd class="field-odd"><p>str</p>
+</dd>
+</dl>
+</dd></dl>
+
+<p>Initialize pipeline task.</p>
+<p>May be overridden with no arguments.  Will be called after any
+<cite>config.Property</cite> attributes are set and after ‘input’ and ‘requires’
+keys are set up.</p>
+<dl class="py method">
+<dt id="draco.core.io.SaveModuleVersions.process">
+<code class="sig-name descname">process</code><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="../_modules/draco/core/io.html#SaveModuleVersions.process"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#draco.core.io.SaveModuleVersions.process" title="Permalink to this definition">¶</a></dt>
+<dd><p>Do nothing.</p>
+</dd></dl>
+
+<dl class="py method">
+<dt id="draco.core.io.SaveModuleVersions.setup">
+<code class="sig-name descname">setup</code><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="../_modules/draco/core/io.html#SaveModuleVersions.setup"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#draco.core.io.SaveModuleVersions.setup" title="Permalink to this definition">¶</a></dt>
+<dd><p>Save module versions.</p>
+</dd></dl>
+
+</dd></dl>
+
+<dl class="py class">
+<dt id="draco.core.io.Truncate">
+<em class="property">class </em><code class="sig-prename descclassname">draco.core.io.</code><code class="sig-name descname">Truncate</code><a class="reference internal" href="../_modules/draco/core/io.html#Truncate"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#draco.core.io.Truncate" title="Permalink to this definition">¶</a></dt>
+<dd><p>Bases: <a class="reference internal" href="draco.core.task.html#draco.core.task.SingleTask" title="draco.core.task.SingleTask"><code class="xref py py-class docutils literal notranslate"><span class="pre">draco.core.task.SingleTask</span></code></a></p>
+<p>Precision truncate data prior to saving with bitshuffle compression.</p>
+<p>If no configuration is provided, will look for preset values for the
+input container. Any properties defined in the config will override the
+presets.</p>
+<p>If available, each specified dataset will be truncated relative to a
+(specified) weight dataset with the truncation increasing the variance up
+to the specified maximum in <cite>variance_increase</cite>. If there is no specified
+weight dataset then the truncation falls back to using the
+<cite>fixed_precision</cite>.</p>
+<dl class="py attribute">
+<dt id="draco.core.io.Truncate.dataset">
+<code class="sig-name descname">dataset</code><a class="headerlink" href="#draco.core.io.Truncate.dataset" title="Permalink to this definition">¶</a></dt>
+<dd><p>Datasets to truncate.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type</dt>
+<dd class="field-odd"><p>list of str</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt id="draco.core.io.Truncate.weight_dataset">
+<code class="sig-name descname">weight_dataset</code><a class="headerlink" href="#draco.core.io.Truncate.weight_dataset" title="Permalink to this definition">¶</a></dt>
+<dd><p>Datasets to use as inverse variance for truncation precision.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type</dt>
+<dd class="field-odd"><p>list of str</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt id="draco.core.io.Truncate.fixed_precision">
+<code class="sig-name descname">fixed_precision</code><a class="headerlink" href="#draco.core.io.Truncate.fixed_precision" title="Permalink to this definition">¶</a></dt>
+<dd><p>Relative precision to truncate to (default 1e-4).</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type</dt>
+<dd class="field-odd"><p>float</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt id="draco.core.io.Truncate.variance_increase">
+<code class="sig-name descname">variance_increase</code><a class="headerlink" href="#draco.core.io.Truncate.variance_increase" title="Permalink to this definition">¶</a></dt>
+<dd><p>Maximum fractional increase in variance from numerical truncation.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type</dt>
+<dd class="field-odd"><p>float</p>
+</dd>
+</dl>
+</dd></dl>
+
+<p>Initialize pipeline task.</p>
+<p>May be overridden with no arguments.  Will be called after any
+<cite>config.Property</cite> attributes are set and after ‘input’ and ‘requires’
+keys are set up.</p>
+<dl class="py method">
+<dt id="draco.core.io.Truncate.process">
+<code class="sig-name descname">process</code><span class="sig-paren">(</span><em class="sig-param"><span class="n">data</span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/draco/core/io.html#Truncate.process"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#draco.core.io.Truncate.process" title="Permalink to this definition">¶</a></dt>
+<dd><p>Truncate the incoming data.</p>
+<p>The truncation is done <em>in place</em>.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><p><strong>data</strong> (<a class="reference internal" href="draco.core.containers.html#draco.core.containers.ContainerBase" title="draco.core.containers.ContainerBase"><em>containers.ContainerBase</em></a>) – Data to truncate.</p>
+</dd>
+<dt class="field-even">Returns</dt>
+<dd class="field-even"><p><strong>truncated_data</strong> – Truncated data.</p>
+</dd>
+<dt class="field-odd">Return type</dt>
+<dd class="field-odd"><p><a class="reference internal" href="draco.core.containers.html#draco.core.containers.ContainerBase" title="draco.core.containers.ContainerBase">containers.ContainerBase</a></p>
+</dd>
+</dl>
+</dd></dl>
+
+</dd></dl>
+
+<dl class="py function">
+<dt id="draco.core.io.get_beamtransfer">
+<code class="sig-prename descclassname">draco.core.io.</code><code class="sig-name descname">get_beamtransfer</code><span class="sig-paren">(</span><em class="sig-param"><span class="n">obj</span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/draco/core/io.html#get_beamtransfer"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#draco.core.io.get_beamtransfer" title="Permalink to this definition">¶</a></dt>
+<dd><p>Return a BeamTransfer object out of the input (either <cite>ProductManager</cite>,
+<cite>BeamTransfer</cite>).</p>
+</dd></dl>
+
+<dl class="py function">
+<dt id="draco.core.io.get_telescope">
+<code class="sig-prename descclassname">draco.core.io.</code><code class="sig-name descname">get_telescope</code><span class="sig-paren">(</span><em class="sig-param"><span class="n">obj</span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/draco/core/io.html#get_telescope"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#draco.core.io.get_telescope" title="Permalink to this definition">¶</a></dt>
+<dd><p>Return a telescope object out of the input (either <cite>ProductManager</cite>,
+<cite>BeamTransfer</cite> or <cite>TransitTelescope</cite>).</p>
+</dd></dl>
+
+</div>
+</div>
+
+
+           </div>
+           
+          </div>
+          <footer>
+    <div class="rst-footer-buttons" role="navigation" aria-label="footer navigation">
+        <a href="draco.core.misc.html" class="btn btn-neutral float-right" title="draco.core.misc" accesskey="n" rel="next">Next <span class="fa fa-arrow-circle-right" aria-hidden="true"></span></a>
+        <a href="draco.core.containers.html" class="btn btn-neutral float-left" title="draco.core.containers" accesskey="p" rel="prev"><span class="fa fa-arrow-circle-left" aria-hidden="true"></span> Previous</a>
+    </div>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>
+        &#169; Copyright 2016, Richard Shaw.
+
+    </p>
+  </div>
+    
+    
+    
+    Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    
+    provided by <a href="https://readthedocs.org">Read the Docs</a>. 
+
+</footer>
+        </div>
+      </div>
+
+    </section>
+
+  </div>
+  
+
+  <script type="text/javascript">
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script>
+
+  
+  
+    
+   
+
+</body>
+</html>

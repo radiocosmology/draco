@@ -1,0 +1,585 @@
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" >
+<head>
+  <meta charset="utf-8" />
+  
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  
+  <title>draco.synthesis.gain &mdash; draco 0+untagged.1.g43914e3 documentation</title>
+  
+
+  
+  <link rel="stylesheet" href="../_static/css/theme.css" type="text/css" />
+  <link rel="stylesheet" href="../_static/pygments.css" type="text/css" />
+
+  
+  
+
+  
+  
+
+  
+
+  
+  <!--[if lt IE 9]>
+    <script src="../_static/js/html5shiv.min.js"></script>
+  <![endif]-->
+  
+    
+      <script type="text/javascript" id="documentation_options" data-url_root="../" src="../_static/documentation_options.js"></script>
+        <script src="../_static/jquery.js"></script>
+        <script src="../_static/underscore.js"></script>
+        <script src="../_static/doctools.js"></script>
+        <script async="async" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/2.7.7/latest.js?config=TeX-AMS-MML_HTMLorMML"></script>
+    
+    <script type="text/javascript" src="../_static/js/theme.js"></script>
+
+    
+    <link rel="index" title="Index" href="../genindex.html" />
+    <link rel="search" title="Search" href="../search.html" />
+    <link rel="next" title="draco.synthesis.noise" href="draco.synthesis.noise.html" />
+    <link rel="prev" title="draco.synthesis" href="draco.synthesis.html" /> 
+</head>
+
+<body class="wy-body-for-nav">
+
+   
+  <div class="wy-grid-for-nav">
+    
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+          
+
+          
+            <a href="../index.html" class="icon icon-home"> draco
+          
+
+          
+          </a>
+
+          
+            
+            
+              <div class="version">
+                0+untagged.1.g43914e3
+              </div>
+            
+          
+
+          
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+
+          
+        </div>
+
+        
+        <div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="main navigation">
+          
+            
+            
+              
+            
+            
+              <ul class="current">
+<li class="toctree-l1"><a class="reference internal" href="../tutorial.html">Tutorial</a></li>
+<li class="toctree-l1 current"><a class="reference internal" href="../reference.html">API Reference</a><ul class="current">
+<li class="toctree-l2 current"><a class="reference internal" href="../reference.html#submodules">Submodules</a><ul class="current">
+<li class="toctree-l3"><a class="reference internal" href="draco.analysis.html">draco.analysis</a></li>
+<li class="toctree-l3"><a class="reference internal" href="draco.core.html">draco.core</a></li>
+<li class="toctree-l3 current"><a class="reference internal" href="draco.synthesis.html">draco.synthesis</a><ul class="current">
+<li class="toctree-l4 current"><a class="current reference internal" href="#">draco.synthesis.gain</a></li>
+<li class="toctree-l4"><a class="reference internal" href="draco.synthesis.noise.html">draco.synthesis.noise</a></li>
+<li class="toctree-l4"><a class="reference internal" href="draco.synthesis.stream.html">draco.synthesis.stream</a></li>
+</ul>
+</li>
+<li class="toctree-l3"><a class="reference internal" href="draco.util.html">draco.util</a></li>
+</ul>
+</li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="../dev.html">Development Guidelines</a></li>
+</ul>
+
+            
+          
+        </div>
+        
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap">
+
+      
+      <nav class="wy-nav-top" aria-label="top navigation">
+        
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../index.html">draco</a>
+        
+      </nav>
+
+
+      <div class="wy-nav-content">
+        
+        <div class="rst-content">
+        
+          
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<div role="navigation" aria-label="breadcrumbs navigation">
+
+  <ul class="wy-breadcrumbs">
+    
+      <li><a href="../index.html" class="icon icon-home"></a> &raquo;</li>
+        
+          <li><a href="../reference.html">API Reference</a> &raquo;</li>
+        
+          <li><a href="draco.synthesis.html">draco.synthesis</a> &raquo;</li>
+        
+      <li>draco.synthesis.gain</li>
+    
+    
+      <li class="wy-breadcrumbs-aside">
+        
+          
+            <a href="../_sources/_autosummary/draco.synthesis.gain.rst.txt" rel="nofollow"> View page source</a>
+          
+        
+      </li>
+    
+  </ul>
+
+  
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+            
+  <div class="section" id="module-draco.synthesis.gain">
+<span id="draco-synthesis-gain"></span><h1>draco.synthesis.gain<a class="headerlink" href="#module-draco.synthesis.gain" title="Permalink to this headline">¶</a></h1>
+<p>Tasks for generating random gain fluctuations in the data and stacking them.</p>
+<p class="rubric">Functions</p>
+<table class="longtable docutils align-default">
+<colgroup>
+<col style="width: 10%" />
+<col style="width: 90%" />
+</colgroup>
+<tbody>
+<tr class="row-odd"><td><p><a class="reference internal" href="#draco.synthesis.gain.constrained_gaussian_realisation" title="draco.synthesis.gain.constrained_gaussian_realisation"><code class="xref py py-obj docutils literal notranslate"><span class="pre">constrained_gaussian_realisation</span></code></a>(x, …[, rcond])</p></td>
+<td><p>Generate a constrained Gaussian random field.</p></td>
+</tr>
+<tr class="row-even"><td><p><a class="reference internal" href="#draco.synthesis.gain.gaussian_realisation" title="draco.synthesis.gain.gaussian_realisation"><code class="xref py py-obj docutils literal notranslate"><span class="pre">gaussian_realisation</span></code></a>(x, corrfunc, n[, rcond])</p></td>
+<td><p>Generate a Gaussian random field.</p></td>
+</tr>
+<tr class="row-odd"><td><p><a class="reference internal" href="#draco.synthesis.gain.generate_fluctuations" title="draco.synthesis.gain.generate_fluctuations"><code class="xref py py-obj docutils literal notranslate"><span class="pre">generate_fluctuations</span></code></a>(x, corrfunc, n, …)</p></td>
+<td><p>Generate correlated random streams.</p></td>
+</tr>
+</tbody>
+</table>
+<p class="rubric">Classes</p>
+<table class="longtable docutils align-default">
+<colgroup>
+<col style="width: 10%" />
+<col style="width: 90%" />
+</colgroup>
+<tbody>
+<tr class="row-odd"><td><p><a class="reference internal" href="#draco.synthesis.gain.BaseGains" title="draco.synthesis.gain.BaseGains"><code class="xref py py-obj docutils literal notranslate"><span class="pre">BaseGains</span></code></a>()</p></td>
+<td><p>Rudimentary class to generate gain timestreams.</p></td>
+</tr>
+<tr class="row-even"><td><p><a class="reference internal" href="#draco.synthesis.gain.GainStacker" title="draco.synthesis.gain.GainStacker"><code class="xref py py-obj docutils literal notranslate"><span class="pre">GainStacker</span></code></a>()</p></td>
+<td><p>Take sidereal gain data, make products and stack them up.</p></td>
+</tr>
+<tr class="row-odd"><td><p><a class="reference internal" href="#draco.synthesis.gain.RandomGains" title="draco.synthesis.gain.RandomGains"><code class="xref py py-obj docutils literal notranslate"><span class="pre">RandomGains</span></code></a>()</p></td>
+<td><p>Generate random gains.</p></td>
+</tr>
+<tr class="row-even"><td><p><a class="reference internal" href="#draco.synthesis.gain.RandomSiderealGains" title="draco.synthesis.gain.RandomSiderealGains"><code class="xref py py-obj docutils literal notranslate"><span class="pre">RandomSiderealGains</span></code></a>()</p></td>
+<td><p>Generate random gains on a Sidereal grid.</p></td>
+</tr>
+<tr class="row-odd"><td><p><a class="reference internal" href="#draco.synthesis.gain.SiderealGains" title="draco.synthesis.gain.SiderealGains"><code class="xref py py-obj docutils literal notranslate"><span class="pre">SiderealGains</span></code></a>()</p></td>
+<td><p>Task for simulating sidereal gains.</p></td>
+</tr>
+</tbody>
+</table>
+<dl class="py class">
+<dt id="draco.synthesis.gain.BaseGains">
+<em class="property">class </em><code class="sig-prename descclassname">draco.synthesis.gain.</code><code class="sig-name descname">BaseGains</code><a class="reference internal" href="../_modules/draco/synthesis/gain.html#BaseGains"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#draco.synthesis.gain.BaseGains" title="Permalink to this definition">¶</a></dt>
+<dd><p>Bases: <a class="reference internal" href="draco.core.task.html#draco.core.task.SingleTask" title="draco.core.task.SingleTask"><code class="xref py py-class docutils literal notranslate"><span class="pre">draco.core.task.SingleTask</span></code></a></p>
+<p>Rudimentary class to generate gain timestreams.</p>
+<p>The gains are drawn for times which match up to an input timestream file.</p>
+<dl class="py attribute">
+<dt id="draco.synthesis.gain.BaseGains.amp">
+<code class="sig-name descname">amp</code><a class="headerlink" href="#draco.synthesis.gain.BaseGains.amp" title="Permalink to this definition">¶</a></dt>
+<dd><p>Generate gain amplitude fluctuations. Default is True.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type</dt>
+<dd class="field-odd"><p>bool</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt id="draco.synthesis.gain.BaseGains.phase">
+<code class="sig-name descname">phase</code><a class="headerlink" href="#draco.synthesis.gain.BaseGains.phase" title="Permalink to this definition">¶</a></dt>
+<dd><p>Generate gain phase fluctuations. Default is True.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type</dt>
+<dd class="field-odd"><p>bool</p>
+</dd>
+</dl>
+</dd></dl>
+
+<p>Initialize pipeline task.</p>
+<p>May be overridden with no arguments.  Will be called after any
+<cite>config.Property</cite> attributes are set and after ‘input’ and ‘requires’
+keys are set up.</p>
+<dl class="py method">
+<dt id="draco.synthesis.gain.BaseGains.process">
+<code class="sig-name descname">process</code><span class="sig-paren">(</span><em class="sig-param"><span class="n">data</span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/draco/synthesis/gain.html#BaseGains.process"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#draco.synthesis.gain.BaseGains.process" title="Permalink to this definition">¶</a></dt>
+<dd><p>Generate a gain timestream for the inputs and times in <cite>data</cite>.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><p><strong>data</strong> (<code class="xref py py-class docutils literal notranslate"><span class="pre">containers.TimeStream</span></code>) – Generate gain errors for <cite>data</cite>.</p>
+</dd>
+<dt class="field-even">Returns</dt>
+<dd class="field-even"><p><strong>gain</strong></p>
+</dd>
+<dt class="field-odd">Return type</dt>
+<dd class="field-odd"><p><code class="xref py py-class docutils literal notranslate"><span class="pre">containers.GainData</span></code></p>
+</dd>
+</dl>
+</dd></dl>
+
+</dd></dl>
+
+<dl class="py class">
+<dt id="draco.synthesis.gain.GainStacker">
+<em class="property">class </em><code class="sig-prename descclassname">draco.synthesis.gain.</code><code class="sig-name descname">GainStacker</code><a class="reference internal" href="../_modules/draco/synthesis/gain.html#GainStacker"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#draco.synthesis.gain.GainStacker" title="Permalink to this definition">¶</a></dt>
+<dd><p>Bases: <a class="reference internal" href="draco.core.task.html#draco.core.task.SingleTask" title="draco.core.task.SingleTask"><code class="xref py py-class docutils literal notranslate"><span class="pre">draco.core.task.SingleTask</span></code></a></p>
+<p>Take sidereal gain data, make products and stack them up.</p>
+<dl class="py attribute">
+<dt id="draco.synthesis.gain.GainStacker.only_gains">
+<code class="sig-name descname">only_gains</code><a class="headerlink" href="#draco.synthesis.gain.GainStacker.only_gains" title="Permalink to this definition">¶</a></dt>
+<dd><p>Whether to return only the stacked gains or the stacked gains
+mulitplied with the visibilites. Default: False.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type</dt>
+<dd class="field-odd"><p>bool</p>
+</dd>
+</dl>
+</dd></dl>
+
+<p class="rubric">Notes</p>
+<p>This task generates products of gain time streams for every sidereal day and
+stacks them up over the number of days in the simulation.</p>
+<p>More formally a gain stack can be described as</p>
+<div class="math notranslate nohighlight">
+\[G_{ij} = \sum_{a}^{Ndays} g_{i}(t)^{a} g_j(t)^{*a}\]</div>
+<p>Initialize pipeline task.</p>
+<p>May be overridden with no arguments.  Will be called after any
+<cite>config.Property</cite> attributes are set and after ‘input’ and ‘requires’
+keys are set up.</p>
+<dl class="py method">
+<dt id="draco.synthesis.gain.GainStacker.process">
+<code class="sig-name descname">process</code><span class="sig-paren">(</span><em class="sig-param"><span class="n">gain</span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/draco/synthesis/gain.html#GainStacker.process"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#draco.synthesis.gain.GainStacker.process" title="Permalink to this definition">¶</a></dt>
+<dd><p>Make sidereal gain products and stack them up.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><p><strong>gain</strong> (<a class="reference internal" href="draco.core.containers.html#draco.core.containers.SiderealGainData" title="draco.core.containers.SiderealGainData"><em>containers.SiderealGainData</em></a><em> or </em><a class="reference internal" href="draco.core.containers.html#draco.core.containers.GainData" title="draco.core.containers.GainData"><em>containers.GainData</em></a>) – Individual sidereal or time ordered gain data.</p>
+</dd>
+<dt class="field-even">Returns</dt>
+<dd class="field-even"><p><strong>gain_stack</strong> – Stacked products of gains.</p>
+</dd>
+<dt class="field-odd">Return type</dt>
+<dd class="field-odd"><p><a class="reference internal" href="draco.core.containers.html#draco.core.containers.TimeStream" title="draco.core.containers.TimeStream">containers.TimeStream</a> or <a class="reference internal" href="draco.core.containers.html#draco.core.containers.SiderealStream" title="draco.core.containers.SiderealStream">containers.SiderealStream</a></p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt id="draco.synthesis.gain.GainStacker.process_finish">
+<code class="sig-name descname">process_finish</code><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="../_modules/draco/synthesis/gain.html#GainStacker.process_finish"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#draco.synthesis.gain.GainStacker.process_finish" title="Permalink to this definition">¶</a></dt>
+<dd><p>Multiply summed gain with sidereal stream.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Returns</dt>
+<dd class="field-odd"><p><strong>data</strong> – Stack of sidereal data with gain applied.</p>
+</dd>
+<dt class="field-even">Return type</dt>
+<dd class="field-even"><p><a class="reference internal" href="draco.core.containers.html#draco.core.containers.SiderealStream" title="draco.core.containers.SiderealStream">containers.SiderealStream</a> or <a class="reference internal" href="draco.core.containers.html#draco.core.containers.TimeStream" title="draco.core.containers.TimeStream">containers.TimeStream</a></p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt id="draco.synthesis.gain.GainStacker.setup">
+<code class="sig-name descname">setup</code><span class="sig-paren">(</span><em class="sig-param"><span class="n">stream</span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/draco/synthesis/gain.html#GainStacker.setup"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#draco.synthesis.gain.GainStacker.setup" title="Permalink to this definition">¶</a></dt>
+<dd><p>Get the sidereal stream onto which we stack the simulated gain data.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><p><strong>stream</strong> (<a class="reference internal" href="draco.core.containers.html#draco.core.containers.SiderealStream" title="draco.core.containers.SiderealStream"><em>containers.SiderealStream</em></a><em> or </em><a class="reference internal" href="draco.core.containers.html#draco.core.containers.TimeStream" title="draco.core.containers.TimeStream"><em>containers.TimeStream</em></a>) – The sidereal or time data to use.</p>
+</dd>
+</dl>
+</dd></dl>
+
+</dd></dl>
+
+<dl class="py class">
+<dt id="draco.synthesis.gain.RandomGains">
+<em class="property">class </em><code class="sig-prename descclassname">draco.synthesis.gain.</code><code class="sig-name descname">RandomGains</code><a class="reference internal" href="../_modules/draco/synthesis/gain.html#RandomGains"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#draco.synthesis.gain.RandomGains" title="Permalink to this definition">¶</a></dt>
+<dd><p>Bases: <a class="reference internal" href="#draco.synthesis.gain.BaseGains" title="draco.synthesis.gain.BaseGains"><code class="xref py py-class docutils literal notranslate"><span class="pre">draco.synthesis.gain.BaseGains</span></code></a></p>
+<p>Generate random gains.</p>
+<p class="rubric">Notes</p>
+<p>The Random Gains class generates random fluctuations in gain amplitude and
+phase.</p>
+<dl class="py attribute">
+<dt>
+<code class="sig-name descname">corr_length_amp, corr_length_phase</code></dt>
+<dd><p>Correlation length for amplitude and phase fluctuations in seconds.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type</dt>
+<dd class="field-odd"><p>float</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt>
+<code class="sig-name descname">sigma_amp, sigma_phase</code></dt>
+<dd><p>Size of fluctuations for amplitude (fractional), and phase (radians).</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type</dt>
+<dd class="field-odd"><p>float</p>
+</dd>
+</dl>
+</dd></dl>
+
+<p class="rubric">Notes</p>
+<p>This task generates gain time streams which are Gaussian distributed with
+covariance</p>
+<div class="math notranslate nohighlight">
+\[C_{ij} = \sigma^2 \exp{\left(-\frac{1}{2 \xi^2}(t_i - t_j)^2\right)}\]</div>
+<p>As the time stream is generated in separate pieces, to ensure that there is
+consistency between them each gain time stream is drawn as a constrained
+realisation against the previous file.</p>
+<p>Initialize pipeline task.</p>
+<p>May be overridden with no arguments.  Will be called after any
+<cite>config.Property</cite> attributes are set and after ‘input’ and ‘requires’
+keys are set up.</p>
+</dd></dl>
+
+<dl class="py class">
+<dt id="draco.synthesis.gain.RandomSiderealGains">
+<em class="property">class </em><code class="sig-prename descclassname">draco.synthesis.gain.</code><code class="sig-name descname">RandomSiderealGains</code><a class="reference internal" href="../_modules/draco/synthesis/gain.html#RandomSiderealGains"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#draco.synthesis.gain.RandomSiderealGains" title="Permalink to this definition">¶</a></dt>
+<dd><p>Bases: <a class="reference internal" href="#draco.synthesis.gain.RandomGains" title="draco.synthesis.gain.RandomGains"><code class="xref py py-class docutils literal notranslate"><span class="pre">draco.synthesis.gain.RandomGains</span></code></a>, <a class="reference internal" href="#draco.synthesis.gain.SiderealGains" title="draco.synthesis.gain.SiderealGains"><code class="xref py py-class docutils literal notranslate"><span class="pre">draco.synthesis.gain.SiderealGains</span></code></a></p>
+<p>Generate random gains on a Sidereal grid.</p>
+<p>See the documentation for <cite>RandomGains</cite> and <cite>SiderealGains</cite> for more detail.</p>
+<p>Initialize pipeline task.</p>
+<p>May be overridden with no arguments.  Will be called after any
+<cite>config.Property</cite> attributes are set and after ‘input’ and ‘requires’
+keys are set up.</p>
+</dd></dl>
+
+<dl class="py class">
+<dt id="draco.synthesis.gain.SiderealGains">
+<em class="property">class </em><code class="sig-prename descclassname">draco.synthesis.gain.</code><code class="sig-name descname">SiderealGains</code><a class="reference internal" href="../_modules/draco/synthesis/gain.html#SiderealGains"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#draco.synthesis.gain.SiderealGains" title="Permalink to this definition">¶</a></dt>
+<dd><p>Bases: <a class="reference internal" href="#draco.synthesis.gain.BaseGains" title="draco.synthesis.gain.BaseGains"><code class="xref py py-class docutils literal notranslate"><span class="pre">draco.synthesis.gain.BaseGains</span></code></a></p>
+<p>Task for simulating sidereal gains.</p>
+<p>This base class is useful for generating gain errors in sidereal time.
+The simulation period is set by <cite>start_time</cite> and <cite>end_time</cite> and does not
+need any input to <cite>process</cite>.</p>
+<dl class="py attribute">
+<dt>
+<code class="sig-name descname">start_time, end_time</code></dt>
+<dd><p>Start and end times of the gain timestream to simulate. Needs to be either a
+<cite>float</cite> (UNIX time) or a <cite>datetime</cite> objects in UTC. This determines the set
+of LSDs to generate data for.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type</dt>
+<dd class="field-odd"><p>float or datetime</p>
+</dd>
+</dl>
+</dd></dl>
+
+<p>Initialize pipeline task.</p>
+<p>May be overridden with no arguments.  Will be called after any
+<cite>config.Property</cite> attributes are set and after ‘input’ and ‘requires’
+keys are set up.</p>
+<dl class="py method">
+<dt id="draco.synthesis.gain.SiderealGains.process">
+<code class="sig-name descname">process</code><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="../_modules/draco/synthesis/gain.html#SiderealGains.process"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#draco.synthesis.gain.SiderealGains.process" title="Permalink to this definition">¶</a></dt>
+<dd><p>Generate a gain timestream for the inputs and times in <cite>data</cite>.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Returns</dt>
+<dd class="field-odd"><p><strong>gain</strong> – Simulated gain errors in sidereal time.</p>
+</dd>
+<dt class="field-even">Return type</dt>
+<dd class="field-even"><p><code class="xref py py-class docutils literal notranslate"><span class="pre">containers.SiderealGainData</span></code></p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt id="draco.synthesis.gain.SiderealGains.setup">
+<code class="sig-name descname">setup</code><span class="sig-paren">(</span><em class="sig-param"><span class="n">bt</span></em>, <em class="sig-param"><span class="n">sstream</span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/draco/synthesis/gain.html#SiderealGains.setup"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#draco.synthesis.gain.SiderealGains.setup" title="Permalink to this definition">¶</a></dt>
+<dd><p>Set up an observer and the data to use for this simulation.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>bt</strong> (<em>beamtransfer.BeamTransfer</em><em> or </em><em>manager.ProductManager</em>) – Sets up an observer holding the geographic location of the telscope.</p></li>
+<li><p><strong>sstream</strong> (<a class="reference internal" href="draco.core.containers.html#draco.core.containers.SiderealStream" title="draco.core.containers.SiderealStream"><em>containers.SiderealStream</em></a>) – The sidereal data to use for this gain simulation.</p></li>
+</ul>
+</dd>
+</dl>
+</dd></dl>
+
+</dd></dl>
+
+<dl class="py function">
+<dt id="draco.synthesis.gain.constrained_gaussian_realisation">
+<code class="sig-prename descclassname">draco.synthesis.gain.</code><code class="sig-name descname">constrained_gaussian_realisation</code><span class="sig-paren">(</span><em class="sig-param"><span class="n">x</span></em>, <em class="sig-param"><span class="n">corrfunc</span></em>, <em class="sig-param"><span class="n">n</span></em>, <em class="sig-param"><span class="n">x2</span></em>, <em class="sig-param"><span class="n">y2</span></em>, <em class="sig-param"><span class="n">rcond</span><span class="o">=</span><span class="default_value">1e-12</span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/draco/synthesis/gain.html#constrained_gaussian_realisation"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#draco.synthesis.gain.constrained_gaussian_realisation" title="Permalink to this definition">¶</a></dt>
+<dd><p>Generate a constrained Gaussian random field.</p>
+<p>Given a correlation function generate a Gaussian random field that is
+consistent with an existing set of values of parameter <cite>y2</cite> located at
+co-ordinates in parameter <cite>x2</cite>.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>x</strong> (<em>np.ndarray</em><em>[</em><em>npoints</em><em>] or </em><em>np.ndarray</em><em>[</em><em>npoints</em><em>, </em><em>ndim</em><em>]</em>) – Co-ordinates of points to generate.</p></li>
+<li><p><strong>corrfunc</strong> (<em>function</em><em>(</em><em>x</em><em>) </em><em>-&gt; covariance matrix</em>) – Function that take (vectorized) co-ordinates and returns their
+covariance functions.</p></li>
+<li><p><strong>n</strong> (<em>integer</em>) – Number of realisations to generate.</p></li>
+<li><p><strong>x2</strong> (<em>np.ndarray</em><em>[</em><em>npoints</em><em>] or </em><em>np.ndarray</em><em>[</em><em>npoints</em><em>, </em><em>ndim</em><em>]</em>) – Co-ordinates of existing points.</p></li>
+<li><p><strong>y2</strong> (<em>np.ndarray</em><em>[</em><em>npoints</em><em>] or </em><em>np.ndarray</em><em>[</em><em>n</em><em>, </em><em>npoints</em><em>]</em>) – Existing values of the random field.</p></li>
+<li><p><strong>rcond</strong> (<em>float</em><em>, </em><em>optional</em>) – Ignore eigenmodes smaller than <cite>rcond</cite> times the largest eigenvalue.</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns</dt>
+<dd class="field-even"><p><strong>y</strong> – Realisations of the gaussian field.</p>
+</dd>
+<dt class="field-odd">Return type</dt>
+<dd class="field-odd"><p>np.ndarray[n, npoints]</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py function">
+<dt id="draco.synthesis.gain.gaussian_realisation">
+<code class="sig-prename descclassname">draco.synthesis.gain.</code><code class="sig-name descname">gaussian_realisation</code><span class="sig-paren">(</span><em class="sig-param"><span class="n">x</span></em>, <em class="sig-param"><span class="n">corrfunc</span></em>, <em class="sig-param"><span class="n">n</span></em>, <em class="sig-param"><span class="n">rcond</span><span class="o">=</span><span class="default_value">1e-12</span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/draco/synthesis/gain.html#gaussian_realisation"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#draco.synthesis.gain.gaussian_realisation" title="Permalink to this definition">¶</a></dt>
+<dd><p>Generate a Gaussian random field.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>x</strong> (<em>np.ndarray</em><em>[</em><em>npoints</em><em>] or </em><em>np.ndarray</em><em>[</em><em>npoints</em><em>, </em><em>ndim</em><em>]</em>) – Co-ordinates of points to generate.</p></li>
+<li><p><strong>corrfunc</strong> (<em>function</em><em>(</em><em>x</em><em>) </em><em>-&gt; covariance matrix</em>) – Function that take (vectorized) co-ordinates and returns their
+covariance functions.</p></li>
+<li><p><strong>n</strong> (<em>integer</em>) – Number of realisations to generate.</p></li>
+<li><p><strong>rcond</strong> (<em>float</em><em>, </em><em>optional</em>) – Ignore eigenmodes smaller than <cite>rcond</cite> times the largest eigenvalue.</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns</dt>
+<dd class="field-even"><p><strong>y</strong> – Realisations of the gaussian field.</p>
+</dd>
+<dt class="field-odd">Return type</dt>
+<dd class="field-odd"><p>np.ndarray[n, npoints]</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py function">
+<dt id="draco.synthesis.gain.generate_fluctuations">
+<code class="sig-prename descclassname">draco.synthesis.gain.</code><code class="sig-name descname">generate_fluctuations</code><span class="sig-paren">(</span><em class="sig-param"><span class="n">x</span></em>, <em class="sig-param"><span class="n">corrfunc</span></em>, <em class="sig-param"><span class="n">n</span></em>, <em class="sig-param"><span class="n">prev_x</span></em>, <em class="sig-param"><span class="n">prev_fluc</span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/draco/synthesis/gain.html#generate_fluctuations"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#draco.synthesis.gain.generate_fluctuations" title="Permalink to this definition">¶</a></dt>
+<dd><p>Generate correlated random streams.</p>
+<p>Generates a Gaussian field from the given correlation function and (potentially)
+correlated with prior data.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>x</strong> (<em>np.ndarray</em><em>[</em><em>npoints</em><em>]</em>) – Coordinates of samples in the new stream.</p></li>
+<li><p><strong>corrfunc</strong> (<em>function</em>) – See documentation of <cite>gaussian_realisation</cite>.</p></li>
+<li><p><strong>prev_x</strong> (<em>np.ndarray</em><em>[</em><em>npoints</em><em>]</em>) – Coordinates of previous samples. Ignored if <cite>prev_fluc</cite> is None.</p></li>
+<li><p><strong>prev_fluc</strong> (<em>np.ndarray</em><em>[</em><em>npoints</em><em>]</em>) – Values of previous samples. If <cite>None</cite> the stream is initialised.</p></li>
+<li><p><strong>n</strong> (<em>int</em>) – Number of realisations to generate.</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns</dt>
+<dd class="field-even"><p><strong>y</strong> – Realisations of the stream.</p>
+</dd>
+<dt class="field-odd">Return type</dt>
+<dd class="field-odd"><p>np.ndarray[n, npoints]</p>
+</dd>
+</dl>
+</dd></dl>
+
+</div>
+
+
+           </div>
+           
+          </div>
+          <footer>
+    <div class="rst-footer-buttons" role="navigation" aria-label="footer navigation">
+        <a href="draco.synthesis.noise.html" class="btn btn-neutral float-right" title="draco.synthesis.noise" accesskey="n" rel="next">Next <span class="fa fa-arrow-circle-right" aria-hidden="true"></span></a>
+        <a href="draco.synthesis.html" class="btn btn-neutral float-left" title="draco.synthesis" accesskey="p" rel="prev"><span class="fa fa-arrow-circle-left" aria-hidden="true"></span> Previous</a>
+    </div>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>
+        &#169; Copyright 2016, Richard Shaw.
+
+    </p>
+  </div>
+    
+    
+    
+    Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    
+    provided by <a href="https://readthedocs.org">Read the Docs</a>. 
+
+</footer>
+        </div>
+      </div>
+
+    </section>
+
+  </div>
+  
+
+  <script type="text/javascript">
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script>
+
+  
+  
+    
+   
+
+</body>
+</html>

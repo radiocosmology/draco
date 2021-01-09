@@ -1,0 +1,745 @@
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" >
+<head>
+  <meta charset="utf-8" />
+  
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  
+  <title>draco.core.task &mdash; draco 0+untagged.1.g43914e3 documentation</title>
+  
+
+  
+  <link rel="stylesheet" href="../../../_static/css/theme.css" type="text/css" />
+  <link rel="stylesheet" href="../../../_static/pygments.css" type="text/css" />
+
+  
+  
+
+  
+  
+
+  
+
+  
+  <!--[if lt IE 9]>
+    <script src="../../../_static/js/html5shiv.min.js"></script>
+  <![endif]-->
+  
+    
+      <script type="text/javascript" id="documentation_options" data-url_root="../../../" src="../../../_static/documentation_options.js"></script>
+        <script src="../../../_static/jquery.js"></script>
+        <script src="../../../_static/underscore.js"></script>
+        <script src="../../../_static/doctools.js"></script>
+        <script async="async" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/2.7.7/latest.js?config=TeX-AMS-MML_HTMLorMML"></script>
+    
+    <script type="text/javascript" src="../../../_static/js/theme.js"></script>
+
+    
+    <link rel="index" title="Index" href="../../../genindex.html" />
+    <link rel="search" title="Search" href="../../../search.html" /> 
+</head>
+
+<body class="wy-body-for-nav">
+
+   
+  <div class="wy-grid-for-nav">
+    
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+          
+
+          
+            <a href="../../../index.html" class="icon icon-home"> draco
+          
+
+          
+          </a>
+
+          
+            
+            
+              <div class="version">
+                0+untagged.1.g43914e3
+              </div>
+            
+          
+
+          
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../../../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+
+          
+        </div>
+
+        
+        <div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="main navigation">
+          
+            
+            
+              
+            
+            
+              <ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../tutorial.html">Tutorial</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../reference.html">API Reference</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../dev.html">Development Guidelines</a></li>
+</ul>
+
+            
+          
+        </div>
+        
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap">
+
+      
+      <nav class="wy-nav-top" aria-label="top navigation">
+        
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../../../index.html">draco</a>
+        
+      </nav>
+
+
+      <div class="wy-nav-content">
+        
+        <div class="rst-content">
+        
+          
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<div role="navigation" aria-label="breadcrumbs navigation">
+
+  <ul class="wy-breadcrumbs">
+    
+      <li><a href="../../../index.html" class="icon icon-home"></a> &raquo;</li>
+        
+          <li><a href="../../index.html">Module code</a> &raquo;</li>
+        
+      <li>draco.core.task</li>
+    
+    
+      <li class="wy-breadcrumbs-aside">
+        
+      </li>
+    
+  </ul>
+
+  
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+            
+  <h1>Source code for draco.core.task</h1><div class="highlight"><pre>
+<span></span><span class="sd">&quot;&quot;&quot;An improved base task implementing easy (and explicit) saving of outputs.&quot;&quot;&quot;</span>
+
+<span class="kn">import</span> <span class="nn">os</span>
+<span class="kn">import</span> <span class="nn">logging</span>
+
+<span class="kn">import</span> <span class="nn">numpy</span> <span class="k">as</span> <span class="nn">np</span>
+
+<span class="kn">from</span> <span class="nn">caput</span> <span class="kn">import</span> <span class="n">pipeline</span><span class="p">,</span> <span class="n">config</span><span class="p">,</span> <span class="n">memh5</span><span class="p">,</span> <span class="n">misc</span>
+
+
+<div class="viewcode-block" id="MPILogFilter"><a class="viewcode-back" href="../../../_autosummary/draco.core.task.html#draco.core.task.MPILogFilter">[docs]</a><span class="k">class</span> <span class="nc">MPILogFilter</span><span class="p">(</span><span class="n">logging</span><span class="o">.</span><span class="n">Filter</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;Filter log entries by MPI rank.</span>
+
+<span class="sd">    Also this will optionally add MPI rank information, and add an elapsed time</span>
+<span class="sd">    entry.</span>
+
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    add_mpi_info : boolean, optional</span>
+<span class="sd">        Add MPI rank/size info to log records that don&#39;t already have it.</span>
+<span class="sd">    level_rank0 : int</span>
+<span class="sd">        Log level for messages from rank=0.</span>
+<span class="sd">    level_all : int</span>
+<span class="sd">        Log level for messages from all other ranks.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+
+    <span class="k">def</span> <span class="fm">__init__</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span> <span class="n">add_mpi_info</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">level_rank0</span><span class="o">=</span><span class="n">logging</span><span class="o">.</span><span class="n">INFO</span><span class="p">,</span> <span class="n">level_all</span><span class="o">=</span><span class="n">logging</span><span class="o">.</span><span class="n">WARN</span>
+    <span class="p">):</span>
+
+        <span class="kn">from</span> <span class="nn">mpi4py</span> <span class="kn">import</span> <span class="n">MPI</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">add_mpi_info</span> <span class="o">=</span> <span class="n">add_mpi_info</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">level_rank0</span> <span class="o">=</span> <span class="n">level_rank0</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">level_all</span> <span class="o">=</span> <span class="n">level_all</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">comm</span> <span class="o">=</span> <span class="n">MPI</span><span class="o">.</span><span class="n">COMM_WORLD</span>
+
+<div class="viewcode-block" id="MPILogFilter.filter"><a class="viewcode-back" href="../../../_autosummary/draco.core.task.html#draco.core.task.MPILogFilter.filter">[docs]</a>    <span class="k">def</span> <span class="nf">filter</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">record</span><span class="p">):</span>
+
+        <span class="c1"># Add MPI info if desired</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="n">record</span><span class="o">.</span><span class="n">mpi_rank</span>
+        <span class="k">except</span> <span class="ne">AttributeError</span><span class="p">:</span>
+            <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">add_mpi_info</span><span class="p">:</span>
+                <span class="n">record</span><span class="o">.</span><span class="n">mpi_rank</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">comm</span><span class="o">.</span><span class="n">rank</span>
+                <span class="n">record</span><span class="o">.</span><span class="n">mpi_size</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">comm</span><span class="o">.</span><span class="n">size</span>
+
+        <span class="c1"># Add a new field with the elapsed time in seconds (as a float)</span>
+        <span class="n">record</span><span class="o">.</span><span class="n">elapsedTime</span> <span class="o">=</span> <span class="n">record</span><span class="o">.</span><span class="n">relativeCreated</span> <span class="o">*</span> <span class="mf">1e-3</span>
+
+        <span class="c1"># Return whether we should filter the record or not.</span>
+        <span class="k">return</span> <span class="p">(</span><span class="n">record</span><span class="o">.</span><span class="n">mpi_rank</span> <span class="o">==</span> <span class="mi">0</span> <span class="ow">and</span> <span class="n">record</span><span class="o">.</span><span class="n">levelno</span> <span class="o">&gt;=</span> <span class="bp">self</span><span class="o">.</span><span class="n">level_rank0</span><span class="p">)</span> <span class="ow">or</span> <span class="p">(</span>
+            <span class="n">record</span><span class="o">.</span><span class="n">mpi_rank</span> <span class="o">&gt;</span> <span class="mi">0</span> <span class="ow">and</span> <span class="n">record</span><span class="o">.</span><span class="n">levelno</span> <span class="o">&gt;=</span> <span class="bp">self</span><span class="o">.</span><span class="n">level_all</span>
+        <span class="p">)</span></div></div>
+
+
+<span class="k">def</span> <span class="nf">_log_level</span><span class="p">(</span><span class="n">x</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;Interpret the input as a logging level.</span>
+
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    x : int or str</span>
+<span class="sd">        Explicit integer logging level or one of &#39;DEBUG&#39;, &#39;INFO&#39;, &#39;WARN&#39;,</span>
+<span class="sd">        &#39;ERROR&#39; or &#39;CRITICAL&#39;.</span>
+
+<span class="sd">    Returns</span>
+<span class="sd">    -------</span>
+<span class="sd">    level : int</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+
+    <span class="n">level_dict</span> <span class="o">=</span> <span class="p">{</span>
+        <span class="s2">&quot;DEBUG&quot;</span><span class="p">:</span> <span class="n">logging</span><span class="o">.</span><span class="n">DEBUG</span><span class="p">,</span>
+        <span class="s2">&quot;INFO&quot;</span><span class="p">:</span> <span class="n">logging</span><span class="o">.</span><span class="n">INFO</span><span class="p">,</span>
+        <span class="s2">&quot;WARN&quot;</span><span class="p">:</span> <span class="n">logging</span><span class="o">.</span><span class="n">WARN</span><span class="p">,</span>
+        <span class="s2">&quot;WARNING&quot;</span><span class="p">:</span> <span class="n">logging</span><span class="o">.</span><span class="n">WARN</span><span class="p">,</span>
+        <span class="s2">&quot;ERROR&quot;</span><span class="p">:</span> <span class="n">logging</span><span class="o">.</span><span class="n">ERROR</span><span class="p">,</span>
+        <span class="s2">&quot;CRITICAL&quot;</span><span class="p">:</span> <span class="n">logging</span><span class="o">.</span><span class="n">CRITICAL</span><span class="p">,</span>
+    <span class="p">}</span>
+
+    <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">x</span><span class="p">,</span> <span class="nb">int</span><span class="p">):</span>
+        <span class="k">return</span> <span class="n">x</span>
+    <span class="k">elif</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">x</span><span class="p">,</span> <span class="nb">str</span><span class="p">)</span> <span class="ow">and</span> <span class="n">x</span> <span class="ow">in</span> <span class="n">level_dict</span><span class="p">:</span>
+        <span class="k">return</span> <span class="n">level_dict</span><span class="p">[</span><span class="n">x</span><span class="o">.</span><span class="n">upper</span><span class="p">()]</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;Logging level </span><span class="si">%s</span><span class="s2"> not understood&quot;</span> <span class="o">%</span> <span class="nb">repr</span><span class="p">(</span><span class="n">x</span><span class="p">))</span>
+
+
+<div class="viewcode-block" id="SetMPILogging"><a class="viewcode-back" href="../../../_autosummary/draco.core.task.html#draco.core.task.SetMPILogging">[docs]</a><span class="k">class</span> <span class="nc">SetMPILogging</span><span class="p">(</span><span class="n">pipeline</span><span class="o">.</span><span class="n">TaskBase</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;A task used to configure MPI aware logging.</span>
+
+<span class="sd">    Attributes</span>
+<span class="sd">    ----------</span>
+<span class="sd">    level_rank0, level_all : int or str</span>
+<span class="sd">        Log level for rank=0, and other ranks respectively.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+
+    <span class="n">level_rank0</span> <span class="o">=</span> <span class="n">config</span><span class="o">.</span><span class="n">Property</span><span class="p">(</span><span class="n">proptype</span><span class="o">=</span><span class="n">_log_level</span><span class="p">,</span> <span class="n">default</span><span class="o">=</span><span class="n">logging</span><span class="o">.</span><span class="n">INFO</span><span class="p">)</span>
+    <span class="n">level_all</span> <span class="o">=</span> <span class="n">config</span><span class="o">.</span><span class="n">Property</span><span class="p">(</span><span class="n">proptype</span><span class="o">=</span><span class="n">_log_level</span><span class="p">,</span> <span class="n">default</span><span class="o">=</span><span class="n">logging</span><span class="o">.</span><span class="n">WARN</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+
+        <span class="kn">from</span> <span class="nn">mpi4py</span> <span class="kn">import</span> <span class="n">MPI</span>
+        <span class="kn">import</span> <span class="nn">math</span>
+
+        <span class="n">logging</span><span class="o">.</span><span class="n">captureWarnings</span><span class="p">(</span><span class="kc">True</span><span class="p">)</span>
+
+        <span class="n">rank_length</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="n">math</span><span class="o">.</span><span class="n">log10</span><span class="p">(</span><span class="n">MPI</span><span class="o">.</span><span class="n">COMM_WORLD</span><span class="o">.</span><span class="n">size</span><span class="p">))</span> <span class="o">+</span> <span class="mi">1</span>
+
+        <span class="n">mpi_fmt</span> <span class="o">=</span> <span class="s2">&quot;[MPI </span><span class="si">%%</span><span class="s2">(mpi_rank)</span><span class="si">%i</span><span class="s2">d/</span><span class="si">%%</span><span class="s2">(mpi_size)</span><span class="si">%i</span><span class="s2">d]&quot;</span> <span class="o">%</span> <span class="p">(</span><span class="n">rank_length</span><span class="p">,</span> <span class="n">rank_length</span><span class="p">)</span>
+        <span class="n">filt</span> <span class="o">=</span> <span class="n">MPILogFilter</span><span class="p">(</span><span class="n">level_all</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">level_all</span><span class="p">,</span> <span class="n">level_rank0</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">level_rank0</span><span class="p">)</span>
+
+        <span class="c1"># This uses the fact that caput.pipeline.Manager has already</span>
+        <span class="c1"># attempted to set up the logging. We just insert our custom filter</span>
+        <span class="n">root_logger</span> <span class="o">=</span> <span class="n">logging</span><span class="o">.</span><span class="n">getLogger</span><span class="p">()</span>
+        <span class="n">ch</span> <span class="o">=</span> <span class="n">root_logger</span><span class="o">.</span><span class="n">handlers</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+        <span class="n">ch</span><span class="o">.</span><span class="n">addFilter</span><span class="p">(</span><span class="n">filt</span><span class="p">)</span>
+
+        <span class="n">formatter</span> <span class="o">=</span> <span class="n">logging</span><span class="o">.</span><span class="n">Formatter</span><span class="p">(</span>
+            <span class="s2">&quot;</span><span class="si">%(elapsedTime)8.1f</span><span class="s2">s &quot;</span>
+            <span class="o">+</span> <span class="n">mpi_fmt</span>
+            <span class="o">+</span> <span class="s2">&quot; - </span><span class="si">%(levelname)-8s</span><span class="s2"> </span><span class="si">%(name)s</span><span class="s2">: </span><span class="si">%(message)s</span><span class="s2">&quot;</span>
+        <span class="p">)</span>
+
+        <span class="n">ch</span><span class="o">.</span><span class="n">setFormatter</span><span class="p">(</span><span class="n">formatter</span><span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="LoggedTask"><a class="viewcode-back" href="../../../_autosummary/draco.core.task.html#draco.core.task.LoggedTask">[docs]</a><span class="k">class</span> <span class="nc">LoggedTask</span><span class="p">(</span><span class="n">pipeline</span><span class="o">.</span><span class="n">TaskBase</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;A task with logger support.&quot;&quot;&quot;</span>
+
+    <span class="n">log_level</span> <span class="o">=</span> <span class="n">config</span><span class="o">.</span><span class="n">Property</span><span class="p">(</span><span class="n">proptype</span><span class="o">=</span><span class="n">_log_level</span><span class="p">,</span> <span class="n">default</span><span class="o">=</span><span class="kc">None</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+
+        <span class="c1"># Get the logger for this task</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_log</span> <span class="o">=</span> <span class="n">logging</span><span class="o">.</span><span class="n">getLogger</span><span class="p">(</span>
+            <span class="s2">&quot;</span><span class="si">%s</span><span class="s2">.</span><span class="si">%s</span><span class="s2">&quot;</span> <span class="o">%</span> <span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="vm">__module__</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="vm">__class__</span><span class="o">.</span><span class="vm">__name__</span><span class="p">)</span>
+        <span class="p">)</span>
+
+        <span class="c1"># Set the log level for this task if specified</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">log_level</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">log</span><span class="o">.</span><span class="n">setLevel</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">log_level</span><span class="p">)</span>
+
+    <span class="nd">@property</span>
+    <span class="k">def</span> <span class="nf">log</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;The logger object for this task.&quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_log</span></div>
+
+
+<div class="viewcode-block" id="MPITask"><a class="viewcode-back" href="../../../_autosummary/draco.core.task.html#draco.core.task.MPITask">[docs]</a><span class="k">class</span> <span class="nc">MPITask</span><span class="p">(</span><span class="n">pipeline</span><span class="o">.</span><span class="n">TaskBase</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;Base class for MPI using tasks. Just ensures that the task gets a `comm`</span>
+<span class="sd">    attribute.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+
+    <span class="n">comm</span> <span class="o">=</span> <span class="kc">None</span>
+
+    <span class="k">def</span> <span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+
+        <span class="kn">from</span> <span class="nn">mpi4py</span> <span class="kn">import</span> <span class="n">MPI</span>
+
+        <span class="c1"># Set default communicator</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">comm</span> <span class="o">=</span> <span class="n">MPI</span><span class="o">.</span><span class="n">COMM_WORLD</span></div>
+
+
+<span class="k">class</span> <span class="nc">_AddRankLogAdapter</span><span class="p">(</span><span class="n">logging</span><span class="o">.</span><span class="n">LoggerAdapter</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;Add the rank of the logging process to a log message.</span>
+
+<span class="sd">    Attributes</span>
+<span class="sd">    ----------</span>
+<span class="sd">    calling_obj : object</span>
+<span class="sd">        An object with a `comm` property that will be queried for the rank.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+
+    <span class="n">calling_obj</span> <span class="o">=</span> <span class="kc">None</span>
+
+    <span class="k">def</span> <span class="nf">process</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">msg</span><span class="p">,</span> <span class="n">kwargs</span><span class="p">):</span>
+
+        <span class="k">if</span> <span class="s2">&quot;extra&quot;</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">kwargs</span><span class="p">:</span>
+            <span class="n">kwargs</span><span class="p">[</span><span class="s2">&quot;extra&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="p">{}</span>
+
+        <span class="n">kwargs</span><span class="p">[</span><span class="s2">&quot;extra&quot;</span><span class="p">][</span><span class="s2">&quot;mpi_rank&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">calling_obj</span><span class="o">.</span><span class="n">comm</span><span class="o">.</span><span class="n">rank</span>
+        <span class="n">kwargs</span><span class="p">[</span><span class="s2">&quot;extra&quot;</span><span class="p">][</span><span class="s2">&quot;mpi_size&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">calling_obj</span><span class="o">.</span><span class="n">comm</span><span class="o">.</span><span class="n">size</span>
+
+        <span class="k">return</span> <span class="n">msg</span><span class="p">,</span> <span class="n">kwargs</span>
+
+
+<div class="viewcode-block" id="MPILoggedTask"><a class="viewcode-back" href="../../../_autosummary/draco.core.task.html#draco.core.task.MPILoggedTask">[docs]</a><span class="k">class</span> <span class="nc">MPILoggedTask</span><span class="p">(</span><span class="n">MPITask</span><span class="p">,</span> <span class="n">LoggedTask</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;A task base that has MPI aware logging.&quot;&quot;&quot;</span>
+
+    <span class="k">def</span> <span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+
+        <span class="c1"># Initialise the base classes</span>
+        <span class="n">MPITask</span><span class="o">.</span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span>
+        <span class="n">LoggedTask</span><span class="o">.</span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span>
+
+        <span class="c1"># Replace the logger with a LogAdapter instance that adds MPI process</span>
+        <span class="c1"># information</span>
+        <span class="n">logadapter</span> <span class="o">=</span> <span class="n">_AddRankLogAdapter</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_log</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
+        <span class="n">logadapter</span><span class="o">.</span><span class="n">calling_obj</span> <span class="o">=</span> <span class="bp">self</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_log</span> <span class="o">=</span> <span class="n">logadapter</span></div>
+
+
+<div class="viewcode-block" id="SingleTask"><a class="viewcode-back" href="../../../_autosummary/draco.core.task.html#draco.core.task.SingleTask">[docs]</a><span class="k">class</span> <span class="nc">SingleTask</span><span class="p">(</span><span class="n">MPILoggedTask</span><span class="p">,</span> <span class="n">pipeline</span><span class="o">.</span><span class="n">BasicContMixin</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;Process a task with at most one input and output.</span>
+
+<span class="sd">    Both input and output are expected to be :class:`memh5.BasicCont` objects.</span>
+<span class="sd">    This class allows writing of the output when requested.</span>
+
+<span class="sd">    Tasks inheriting from this class should override `process` and optionally</span>
+<span class="sd">    :meth:`setup` or :meth:`finish`. They should not override :meth:`next`.</span>
+
+<span class="sd">    If the value of :attr:`input_root` is anything other than the string &quot;None&quot;</span>
+<span class="sd">    then the input will be read (using :meth:`read_input`) from the file</span>
+<span class="sd">    ``self.input_root + self.input_filename``.  If the input is specified both as</span>
+<span class="sd">    a filename and as a product key in the pipeline configuration, an error</span>
+<span class="sd">    will be raised upon initialization.</span>
+
+
+<span class="sd">    If the value of :attr:`output_root` is anything other than the string</span>
+<span class="sd">    &quot;None&quot; then the output will be written (using :meth:`write_output`) to the</span>
+<span class="sd">    file ``self.output_root + self.output_filename``.</span>
+
+<span class="sd">    Attributes</span>
+<span class="sd">    ----------</span>
+<span class="sd">    save : bool</span>
+<span class="sd">        Whether to save the output to disk or not.</span>
+<span class="sd">    output_name : string</span>
+<span class="sd">        A python format string used to construct the filename. Valid identifiers are:</span>
+<span class="sd">          - `count`: an integer giving which iteration of the task is this.</span>
+<span class="sd">          - `tag`: a string identifier for the output derived from the</span>
+<span class="sd">                   containers `tag` attribute. If that attribute is not present</span>
+<span class="sd">                   `count` is used instead.</span>
+<span class="sd">          - `key`: the name of the output key.</span>
+<span class="sd">          - `task`: the (unqualified) name of the task.</span>
+<span class="sd">          - `output_root`: the value of the output root argument. This is deprecated</span>
+<span class="sd">                           and is just used for legacy support. The default value of</span>
+<span class="sd">                           `output_name` means the previous behaviour works.</span>
+<span class="sd">    output_root : string</span>
+<span class="sd">        Pipeline settable parameter giving the first part of the output path.</span>
+<span class="sd">        Deprecated in favour of `output_name`.</span>
+<span class="sd">    nan_check : bool</span>
+<span class="sd">        Check the output for NaNs (and infs) logging if they are present.</span>
+<span class="sd">    nan_dump : bool</span>
+<span class="sd">        If NaN&#39;s are found, dump the container to disk.</span>
+<span class="sd">    nan_skip : bool</span>
+<span class="sd">        If NaN&#39;s are found, don&#39;t pass on the output.</span>
+<span class="sd">    versions : dict</span>
+<span class="sd">        Keys are module names (str) and values are their version strings. This is</span>
+<span class="sd">        attached to output metadata.</span>
+<span class="sd">    pipeline_config : dict</span>
+<span class="sd">        Global pipeline configuration. This is attached to output metadata.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+
+    <span class="n">save</span> <span class="o">=</span> <span class="n">config</span><span class="o">.</span><span class="n">Property</span><span class="p">(</span><span class="n">default</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span> <span class="n">proptype</span><span class="o">=</span><span class="nb">bool</span><span class="p">)</span>
+
+    <span class="n">output_root</span> <span class="o">=</span> <span class="n">config</span><span class="o">.</span><span class="n">Property</span><span class="p">(</span><span class="n">default</span><span class="o">=</span><span class="s2">&quot;&quot;</span><span class="p">,</span> <span class="n">proptype</span><span class="o">=</span><span class="nb">str</span><span class="p">)</span>
+    <span class="n">output_name</span> <span class="o">=</span> <span class="n">config</span><span class="o">.</span><span class="n">Property</span><span class="p">(</span><span class="n">default</span><span class="o">=</span><span class="s2">&quot;</span><span class="si">{output_root}{tag}</span><span class="s2">.h5&quot;</span><span class="p">,</span> <span class="n">proptype</span><span class="o">=</span><span class="nb">str</span><span class="p">)</span>
+
+    <span class="n">nan_check</span> <span class="o">=</span> <span class="n">config</span><span class="o">.</span><span class="n">Property</span><span class="p">(</span><span class="n">default</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">proptype</span><span class="o">=</span><span class="nb">bool</span><span class="p">)</span>
+    <span class="n">nan_skip</span> <span class="o">=</span> <span class="n">config</span><span class="o">.</span><span class="n">Property</span><span class="p">(</span><span class="n">default</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">proptype</span><span class="o">=</span><span class="nb">bool</span><span class="p">)</span>
+    <span class="n">nan_dump</span> <span class="o">=</span> <span class="n">config</span><span class="o">.</span><span class="n">Property</span><span class="p">(</span><span class="n">default</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">proptype</span><span class="o">=</span><span class="nb">bool</span><span class="p">)</span>
+
+    <span class="c1"># Metadata to get attached to the output</span>
+    <span class="n">versions</span> <span class="o">=</span> <span class="n">config</span><span class="o">.</span><span class="n">Property</span><span class="p">(</span><span class="n">default</span><span class="o">=</span><span class="p">{},</span> <span class="n">proptype</span><span class="o">=</span><span class="nb">dict</span><span class="p">)</span>
+    <span class="n">pipeline_config</span> <span class="o">=</span> <span class="n">config</span><span class="o">.</span><span class="n">Property</span><span class="p">(</span><span class="n">default</span><span class="o">=</span><span class="p">{},</span> <span class="n">proptype</span><span class="o">=</span><span class="nb">dict</span><span class="p">)</span>
+
+    <span class="n">_count</span> <span class="o">=</span> <span class="mi">0</span>
+
+    <span class="n">done</span> <span class="o">=</span> <span class="kc">False</span>
+    <span class="n">_no_input</span> <span class="o">=</span> <span class="kc">False</span>
+
+    <span class="k">def</span> <span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="nb">super</span><span class="p">(</span><span class="n">SingleTask</span><span class="p">,</span> <span class="bp">self</span><span class="p">)</span><span class="o">.</span><span class="fm">__init__</span><span class="p">()</span>
+
+        <span class="c1"># Inspect the `process` method to see how many arguments it takes.</span>
+        <span class="n">pro_argspec</span> <span class="o">=</span> <span class="n">misc</span><span class="o">.</span><span class="n">getfullargspec</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">process</span><span class="p">)</span>
+        <span class="n">n_args</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">pro_argspec</span><span class="o">.</span><span class="n">args</span><span class="p">)</span> <span class="o">-</span> <span class="mi">1</span>
+
+        <span class="k">if</span> <span class="n">pro_argspec</span><span class="o">.</span><span class="n">varargs</span> <span class="ow">or</span> <span class="n">pro_argspec</span><span class="o">.</span><span class="n">varkw</span> <span class="ow">or</span> <span class="n">pro_argspec</span><span class="o">.</span><span class="n">defaults</span><span class="p">:</span>
+            <span class="n">msg</span> <span class="o">=</span> <span class="p">(</span>
+                <span class="s2">&quot;`process` method may not have variable length or optional&quot;</span>
+                <span class="s2">&quot; arguments.&quot;</span>
+            <span class="p">)</span>
+            <span class="k">raise</span> <span class="n">pipeline</span><span class="o">.</span><span class="n">PipelineConfigError</span><span class="p">(</span><span class="n">msg</span><span class="p">)</span>
+
+        <span class="k">if</span> <span class="n">n_args</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_no_input</span> <span class="o">=</span> <span class="kc">True</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_no_input</span> <span class="o">=</span> <span class="kc">False</span>
+
+<div class="viewcode-block" id="SingleTask.next"><a class="viewcode-back" href="../../../_autosummary/draco.core.task.html#draco.core.task.SingleTask.next">[docs]</a>    <span class="k">def</span> <span class="nf">next</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="o">*</span><span class="nb">input</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Should not need to override. Implement `process` instead.&quot;&quot;&quot;</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">log</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s2">&quot;Starting next for task </span><span class="si">%s</span><span class="s2">&quot;</span> <span class="o">%</span> <span class="bp">self</span><span class="o">.</span><span class="vm">__class__</span><span class="o">.</span><span class="vm">__name__</span><span class="p">)</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">comm</span><span class="o">.</span><span class="n">Barrier</span><span class="p">()</span>
+
+        <span class="c1"># This should only be called once.</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">done</span><span class="p">:</span>
+                <span class="k">raise</span> <span class="n">pipeline</span><span class="o">.</span><span class="n">PipelineStopIteration</span><span class="p">()</span>
+        <span class="k">except</span> <span class="ne">AttributeError</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">done</span> <span class="o">=</span> <span class="kc">True</span>
+
+        <span class="c1"># Process input and fetch ouput</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_no_input</span><span class="p">:</span>
+            <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="nb">input</span><span class="p">)</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="p">:</span>
+                <span class="c1"># This should never happen.  Just here to catch bugs.</span>
+                <span class="k">raise</span> <span class="ne">RuntimeError</span><span class="p">(</span><span class="s2">&quot;Somehow `input` was set.&quot;</span><span class="p">)</span>
+            <span class="n">output</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">process</span><span class="p">()</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">output</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">process</span><span class="p">(</span><span class="o">*</span><span class="nb">input</span><span class="p">)</span>
+
+        <span class="c1"># Return immediately if output is None to skip writing phase.</span>
+        <span class="k">if</span> <span class="n">output</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="k">return</span>
+
+        <span class="c1"># Set a tag in output if needed</span>
+        <span class="k">if</span> <span class="s2">&quot;tag&quot;</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">output</span><span class="o">.</span><span class="n">attrs</span> <span class="ow">and</span> <span class="nb">len</span><span class="p">(</span><span class="nb">input</span><span class="p">)</span> <span class="o">&gt;</span> <span class="mi">0</span> <span class="ow">and</span> <span class="s2">&quot;tag&quot;</span> <span class="ow">in</span> <span class="nb">input</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">attrs</span><span class="p">:</span>
+            <span class="n">output</span><span class="o">.</span><span class="n">attrs</span><span class="p">[</span><span class="s2">&quot;tag&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="nb">input</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">attrs</span><span class="p">[</span><span class="s2">&quot;tag&quot;</span><span class="p">]</span>
+
+        <span class="c1"># Check for NaN&#39;s etc</span>
+        <span class="n">output</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_nan_process_output</span><span class="p">(</span><span class="n">output</span><span class="p">)</span>
+
+        <span class="c1"># Write the output if needed</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_save_output</span><span class="p">(</span><span class="n">output</span><span class="p">)</span>
+
+        <span class="c1"># Increment internal counter</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_count</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_count</span> <span class="o">+</span> <span class="mi">1</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">log</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s2">&quot;Leaving next for task </span><span class="si">%s</span><span class="s2">&quot;</span> <span class="o">%</span> <span class="bp">self</span><span class="o">.</span><span class="vm">__class__</span><span class="o">.</span><span class="vm">__name__</span><span class="p">)</span>
+
+        <span class="c1"># Return the output for the next task</span>
+        <span class="k">return</span> <span class="n">output</span></div>
+
+<div class="viewcode-block" id="SingleTask.finish"><a class="viewcode-back" href="../../../_autosummary/draco.core.task.html#draco.core.task.SingleTask.finish">[docs]</a>    <span class="k">def</span> <span class="nf">finish</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Should not need to override. Implement `process_finish` instead.&quot;&quot;&quot;</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">log</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s2">&quot;Starting finish for task </span><span class="si">%s</span><span class="s2">&quot;</span> <span class="o">%</span> <span class="bp">self</span><span class="o">.</span><span class="vm">__class__</span><span class="o">.</span><span class="vm">__name__</span><span class="p">)</span>
+
+        <span class="k">try</span><span class="p">:</span>
+            <span class="n">output</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">process_finish</span><span class="p">()</span>
+
+            <span class="c1"># Check for NaN&#39;s etc</span>
+            <span class="n">output</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_nan_process_output</span><span class="p">(</span><span class="n">output</span><span class="p">)</span>
+
+            <span class="c1"># Write the output if needed</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_save_output</span><span class="p">(</span><span class="n">output</span><span class="p">)</span>
+
+            <span class="bp">self</span><span class="o">.</span><span class="n">log</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s2">&quot;Leaving finish for task </span><span class="si">%s</span><span class="s2">&quot;</span> <span class="o">%</span> <span class="bp">self</span><span class="o">.</span><span class="vm">__class__</span><span class="o">.</span><span class="vm">__name__</span><span class="p">)</span>
+
+            <span class="k">return</span> <span class="n">output</span>
+
+        <span class="k">except</span> <span class="ne">AttributeError</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">log</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s2">&quot;No finish for task </span><span class="si">%s</span><span class="s2">&quot;</span> <span class="o">%</span> <span class="bp">self</span><span class="o">.</span><span class="vm">__class__</span><span class="o">.</span><span class="vm">__name__</span><span class="p">)</span>
+            <span class="k">pass</span></div>
+
+    <span class="k">def</span> <span class="nf">_save_output</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">output</span><span class="p">):</span>
+        <span class="c1"># Routine to write output if needed.</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">save</span> <span class="ow">and</span> <span class="n">output</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+
+            <span class="c1"># add metadata to output</span>
+            <span class="n">metadata</span> <span class="o">=</span> <span class="p">{</span><span class="s2">&quot;versions&quot;</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">versions</span><span class="p">,</span> <span class="s2">&quot;config&quot;</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">pipeline_config</span><span class="p">}</span>
+            <span class="k">for</span> <span class="n">key</span><span class="p">,</span> <span class="n">value</span> <span class="ow">in</span> <span class="n">metadata</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+                <span class="n">output</span><span class="o">.</span><span class="n">add_history</span><span class="p">(</span><span class="n">key</span><span class="p">,</span> <span class="n">value</span><span class="p">)</span>
+
+            <span class="c1"># Create a tag for the output file name</span>
+            <span class="n">tag</span> <span class="o">=</span> <span class="n">output</span><span class="o">.</span><span class="n">attrs</span><span class="p">[</span><span class="s2">&quot;tag&quot;</span><span class="p">]</span> <span class="k">if</span> <span class="s2">&quot;tag&quot;</span> <span class="ow">in</span> <span class="n">output</span><span class="o">.</span><span class="n">attrs</span> <span class="k">else</span> <span class="bp">self</span><span class="o">.</span><span class="n">_count</span>
+
+            <span class="c1"># Construct the filename</span>
+            <span class="n">name_parts</span> <span class="o">=</span> <span class="p">{</span>
+                <span class="s2">&quot;tag&quot;</span><span class="p">:</span> <span class="n">tag</span><span class="p">,</span>
+                <span class="s2">&quot;count&quot;</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">_count</span><span class="p">,</span>
+                <span class="s2">&quot;task&quot;</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="vm">__class__</span><span class="o">.</span><span class="vm">__name__</span><span class="p">,</span>
+                <span class="s2">&quot;key&quot;</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">_out_keys</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_out_keys</span> <span class="k">else</span> <span class="s2">&quot;&quot;</span><span class="p">,</span>
+                <span class="s2">&quot;output_root&quot;</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">output_root</span><span class="p">,</span>
+            <span class="p">}</span>
+            <span class="n">outfile</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">output_name</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="o">**</span><span class="n">name_parts</span><span class="p">)</span>
+
+            <span class="c1"># Expand any variables in the path</span>
+            <span class="n">outfile</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">expanduser</span><span class="p">(</span><span class="n">outfile</span><span class="p">)</span>
+            <span class="n">outfile</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">expandvars</span><span class="p">(</span><span class="n">outfile</span><span class="p">)</span>
+
+            <span class="bp">self</span><span class="o">.</span><span class="n">log</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="s2">&quot;Writing output </span><span class="si">%s</span><span class="s2"> to disk.&quot;</span><span class="p">,</span> <span class="n">outfile</span><span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">write_output</span><span class="p">(</span><span class="n">outfile</span><span class="p">,</span> <span class="n">output</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">_nan_process_output</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">output</span><span class="p">):</span>
+        <span class="c1"># Process the output to check for NaN&#39;s</span>
+        <span class="c1"># Returns the output or, None if it should be skipped</span>
+
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">nan_check</span><span class="p">:</span>
+            <span class="n">nan_found</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_nan_check_walk</span><span class="p">(</span><span class="n">output</span><span class="p">)</span>
+
+            <span class="k">if</span> <span class="n">nan_found</span> <span class="ow">and</span> <span class="bp">self</span><span class="o">.</span><span class="n">nan_dump</span><span class="p">:</span>
+
+                <span class="c1"># Construct the filename</span>
+                <span class="n">tag</span> <span class="o">=</span> <span class="n">output</span><span class="o">.</span><span class="n">attrs</span><span class="p">[</span><span class="s2">&quot;tag&quot;</span><span class="p">]</span> <span class="k">if</span> <span class="s2">&quot;tag&quot;</span> <span class="ow">in</span> <span class="n">output</span><span class="o">.</span><span class="n">attrs</span> <span class="k">else</span> <span class="bp">self</span><span class="o">.</span><span class="n">_count</span>
+                <span class="n">outfile</span> <span class="o">=</span> <span class="s2">&quot;nandump_&quot;</span> <span class="o">+</span> <span class="bp">self</span><span class="o">.</span><span class="vm">__class__</span><span class="o">.</span><span class="vm">__name__</span> <span class="o">+</span> <span class="s2">&quot;_&quot;</span> <span class="o">+</span> <span class="nb">str</span><span class="p">(</span><span class="n">tag</span><span class="p">)</span> <span class="o">+</span> <span class="s2">&quot;.h5&quot;</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">log</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="s2">&quot;NaN found. Dumping </span><span class="si">%s</span><span class="s2">&quot;</span><span class="p">,</span> <span class="n">outfile</span><span class="p">)</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">write_output</span><span class="p">(</span><span class="n">outfile</span><span class="p">,</span> <span class="n">output</span><span class="p">)</span>
+
+            <span class="k">if</span> <span class="n">nan_found</span> <span class="ow">and</span> <span class="bp">self</span><span class="o">.</span><span class="n">nan_skip</span><span class="p">:</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">log</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="s2">&quot;NaN found. Skipping output.&quot;</span><span class="p">)</span>
+                <span class="k">return</span> <span class="kc">None</span>
+
+        <span class="k">return</span> <span class="n">output</span>
+
+    <span class="k">def</span> <span class="nf">_nan_check_walk</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">cont</span><span class="p">):</span>
+        <span class="c1"># Walk through a memh5 container and check for NaN&#39;s and Inf&#39;s.</span>
+        <span class="c1"># Logs any issues found and returns True if there were any found.</span>
+        <span class="kn">from</span> <span class="nn">mpi4py</span> <span class="kn">import</span> <span class="n">MPI</span>
+
+        <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">cont</span><span class="p">,</span> <span class="n">memh5</span><span class="o">.</span><span class="n">MemDiskGroup</span><span class="p">):</span>
+            <span class="n">cont</span> <span class="o">=</span> <span class="n">cont</span><span class="o">.</span><span class="n">_data</span>
+
+        <span class="n">stack</span> <span class="o">=</span> <span class="p">[</span><span class="n">cont</span><span class="p">]</span>
+        <span class="n">found</span> <span class="o">=</span> <span class="kc">False</span>
+
+        <span class="c1"># Walk over the container tree...</span>
+        <span class="k">while</span> <span class="n">stack</span><span class="p">:</span>
+            <span class="n">n</span> <span class="o">=</span> <span class="n">stack</span><span class="o">.</span><span class="n">pop</span><span class="p">()</span>
+
+            <span class="c1"># Check the dataset for non-finite numbers</span>
+            <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">n</span><span class="p">,</span> <span class="n">memh5</span><span class="o">.</span><span class="n">MemDataset</span><span class="p">):</span>
+
+                <span class="c1"># Try to test for NaN&#39;s and infs. This will fail for compound datatypes...</span>
+                <span class="n">arr</span> <span class="o">=</span> <span class="n">n</span><span class="p">[:]</span>
+                <span class="k">try</span><span class="p">:</span>
+                    <span class="n">is_nan</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">isnan</span><span class="p">(</span><span class="n">arr</span><span class="p">)</span>
+                    <span class="n">is_inf</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">isinf</span><span class="p">(</span><span class="n">arr</span><span class="p">)</span>
+                    <span class="n">arr</span> <span class="o">=</span> <span class="n">n</span><span class="p">[:]</span>
+                <span class="k">except</span> <span class="ne">TypeError</span><span class="p">:</span>
+                    <span class="k">continue</span>
+
+                <span class="k">if</span> <span class="n">is_nan</span><span class="o">.</span><span class="n">any</span><span class="p">():</span>
+                    <span class="bp">self</span><span class="o">.</span><span class="n">log</span><span class="o">.</span><span class="n">info</span><span class="p">(</span>
+                        <span class="s2">&quot;NaN&#39;s found in dataset </span><span class="si">%s</span><span class="s2"> [</span><span class="si">%i</span><span class="s2"> of </span><span class="si">%i</span><span class="s2"> elements]&quot;</span><span class="p">,</span>
+                        <span class="n">n</span><span class="o">.</span><span class="n">name</span><span class="p">,</span>
+                        <span class="n">is_nan</span><span class="o">.</span><span class="n">sum</span><span class="p">(),</span>
+                        <span class="n">arr</span><span class="o">.</span><span class="n">size</span><span class="p">,</span>
+                    <span class="p">)</span>
+                    <span class="n">found</span> <span class="o">=</span> <span class="kc">True</span>
+
+                <span class="k">if</span> <span class="n">is_inf</span><span class="o">.</span><span class="n">any</span><span class="p">():</span>
+                    <span class="bp">self</span><span class="o">.</span><span class="n">log</span><span class="o">.</span><span class="n">info</span><span class="p">(</span>
+                        <span class="s2">&quot;Inf&#39;s found in dataset </span><span class="si">%s</span><span class="s2"> [</span><span class="si">%i</span><span class="s2"> of </span><span class="si">%i</span><span class="s2"> elements]&quot;</span><span class="p">,</span>
+                        <span class="n">n</span><span class="o">.</span><span class="n">name</span><span class="p">,</span>
+                        <span class="n">is_inf</span><span class="o">.</span><span class="n">sum</span><span class="p">(),</span>
+                        <span class="n">arr</span><span class="o">.</span><span class="n">size</span><span class="p">,</span>
+                    <span class="p">)</span>
+                    <span class="n">found</span> <span class="o">=</span> <span class="kc">True</span>
+
+            <span class="k">elif</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">n</span><span class="p">,</span> <span class="p">(</span><span class="n">memh5</span><span class="o">.</span><span class="n">MemGroup</span><span class="p">,</span> <span class="n">memh5</span><span class="o">.</span><span class="n">MemDiskGroup</span><span class="p">)):</span>
+                <span class="k">for</span> <span class="n">item</span> <span class="ow">in</span> <span class="n">n</span><span class="o">.</span><span class="n">values</span><span class="p">():</span>
+                    <span class="n">stack</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">item</span><span class="p">)</span>
+
+        <span class="c1"># All ranks need to know if any rank found a NaN/Inf</span>
+        <span class="n">found</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">comm</span><span class="o">.</span><span class="n">allreduce</span><span class="p">(</span><span class="n">found</span><span class="p">,</span> <span class="n">op</span><span class="o">=</span><span class="n">MPI</span><span class="o">.</span><span class="n">MAX</span><span class="p">)</span>
+
+        <span class="k">return</span> <span class="n">found</span></div>
+
+
+<div class="viewcode-block" id="ReturnLastInputOnFinish"><a class="viewcode-back" href="../../../_autosummary/draco.core.task.html#draco.core.task.ReturnLastInputOnFinish">[docs]</a><span class="k">class</span> <span class="nc">ReturnLastInputOnFinish</span><span class="p">(</span><span class="n">SingleTask</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;Workaround for `caput.pipeline` issues.</span>
+
+<span class="sd">    This caches its input on every call to `process` and then returns</span>
+<span class="sd">    the last one for a finish call.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+
+    <span class="n">x</span> <span class="o">=</span> <span class="kc">None</span>
+
+<div class="viewcode-block" id="ReturnLastInputOnFinish.process"><a class="viewcode-back" href="../../../_autosummary/draco.core.task.html#draco.core.task.ReturnLastInputOnFinish.process">[docs]</a>    <span class="k">def</span> <span class="nf">process</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">x</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Take a reference to the input.</span>
+
+<span class="sd">        Parameters</span>
+<span class="sd">        ----------</span>
+<span class="sd">        x : object</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">x</span> <span class="o">=</span> <span class="n">x</span></div>
+
+<div class="viewcode-block" id="ReturnLastInputOnFinish.process_finish"><a class="viewcode-back" href="../../../_autosummary/draco.core.task.html#draco.core.task.ReturnLastInputOnFinish.process_finish">[docs]</a>    <span class="k">def</span> <span class="nf">process_finish</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Return the last input to process.</span>
+
+<span class="sd">        Returns</span>
+<span class="sd">        -------</span>
+<span class="sd">        x : object</span>
+<span class="sd">            Last input to process.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">x</span></div></div>
+
+
+<div class="viewcode-block" id="ReturnFirstInputOnFinish"><a class="viewcode-back" href="../../../_autosummary/draco.core.task.html#draco.core.task.ReturnFirstInputOnFinish">[docs]</a><span class="k">class</span> <span class="nc">ReturnFirstInputOnFinish</span><span class="p">(</span><span class="n">SingleTask</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;Workaround for `caput.pipeline` issues.</span>
+
+<span class="sd">    This caches its input on the first call to `process` and</span>
+<span class="sd">    then returns it for a finish call.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+
+    <span class="n">x</span> <span class="o">=</span> <span class="kc">None</span>
+
+<div class="viewcode-block" id="ReturnFirstInputOnFinish.process"><a class="viewcode-back" href="../../../_autosummary/draco.core.task.html#draco.core.task.ReturnFirstInputOnFinish.process">[docs]</a>    <span class="k">def</span> <span class="nf">process</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">x</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Take a reference to the input.</span>
+
+<span class="sd">        Parameters</span>
+<span class="sd">        ----------</span>
+<span class="sd">        x : object</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">x</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">x</span> <span class="o">=</span> <span class="n">x</span></div>
+
+<div class="viewcode-block" id="ReturnFirstInputOnFinish.process_finish"><a class="viewcode-back" href="../../../_autosummary/draco.core.task.html#draco.core.task.ReturnFirstInputOnFinish.process_finish">[docs]</a>    <span class="k">def</span> <span class="nf">process_finish</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Return the last input to process.</span>
+
+<span class="sd">        Returns</span>
+<span class="sd">        -------</span>
+<span class="sd">        x : object</span>
+<span class="sd">            Last input to process.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">x</span></div></div>
+
+
+<div class="viewcode-block" id="Delete"><a class="viewcode-back" href="../../../_autosummary/draco.core.task.html#draco.core.task.Delete">[docs]</a><span class="k">class</span> <span class="nc">Delete</span><span class="p">(</span><span class="n">SingleTask</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;Delete pipeline products to free memory.&quot;&quot;&quot;</span>
+
+<div class="viewcode-block" id="Delete.process"><a class="viewcode-back" href="../../../_autosummary/draco.core.task.html#draco.core.task.Delete.process">[docs]</a>    <span class="k">def</span> <span class="nf">process</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">x</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Delete the input and collect garbage.</span>
+
+<span class="sd">        Parameters</span>
+<span class="sd">        ----------</span>
+<span class="sd">        x : object</span>
+<span class="sd">            The object to be deleted.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="kn">import</span> <span class="nn">gc</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">log</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s2">&quot;Deleting </span><span class="si">%s</span><span class="s2">&quot;</span> <span class="o">%</span> <span class="nb">type</span><span class="p">(</span><span class="n">x</span><span class="p">))</span>
+        <span class="k">del</span> <span class="n">x</span>
+        <span class="n">gc</span><span class="o">.</span><span class="n">collect</span><span class="p">()</span>
+
+        <span class="k">return</span> <span class="kc">None</span></div></div>
+</pre></div>
+
+           </div>
+           
+          </div>
+          <footer>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>
+        &#169; Copyright 2016, Richard Shaw.
+
+    </p>
+  </div>
+    
+    
+    
+    Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    
+    provided by <a href="https://readthedocs.org">Read the Docs</a>. 
+
+</footer>
+        </div>
+      </div>
+
+    </section>
+
+  </div>
+  
+
+  <script type="text/javascript">
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script>
+
+  
+  
+    
+   
+
+</body>
+</html>

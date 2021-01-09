@@ -1,0 +1,783 @@
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" >
+<head>
+  <meta charset="utf-8" />
+  
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  
+  <title>draco.analysis.sidereal &mdash; draco 0+untagged.1.g43914e3 documentation</title>
+  
+
+  
+  <link rel="stylesheet" href="../../../_static/css/theme.css" type="text/css" />
+  <link rel="stylesheet" href="../../../_static/pygments.css" type="text/css" />
+
+  
+  
+
+  
+  
+
+  
+
+  
+  <!--[if lt IE 9]>
+    <script src="../../../_static/js/html5shiv.min.js"></script>
+  <![endif]-->
+  
+    
+      <script type="text/javascript" id="documentation_options" data-url_root="../../../" src="../../../_static/documentation_options.js"></script>
+        <script src="../../../_static/jquery.js"></script>
+        <script src="../../../_static/underscore.js"></script>
+        <script src="../../../_static/doctools.js"></script>
+        <script async="async" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/2.7.7/latest.js?config=TeX-AMS-MML_HTMLorMML"></script>
+    
+    <script type="text/javascript" src="../../../_static/js/theme.js"></script>
+
+    
+    <link rel="index" title="Index" href="../../../genindex.html" />
+    <link rel="search" title="Search" href="../../../search.html" /> 
+</head>
+
+<body class="wy-body-for-nav">
+
+   
+  <div class="wy-grid-for-nav">
+    
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+          
+
+          
+            <a href="../../../index.html" class="icon icon-home"> draco
+          
+
+          
+          </a>
+
+          
+            
+            
+              <div class="version">
+                0+untagged.1.g43914e3
+              </div>
+            
+          
+
+          
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../../../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+
+          
+        </div>
+
+        
+        <div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="main navigation">
+          
+            
+            
+              
+            
+            
+              <ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../tutorial.html">Tutorial</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../reference.html">API Reference</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../dev.html">Development Guidelines</a></li>
+</ul>
+
+            
+          
+        </div>
+        
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap">
+
+      
+      <nav class="wy-nav-top" aria-label="top navigation">
+        
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../../../index.html">draco</a>
+        
+      </nav>
+
+
+      <div class="wy-nav-content">
+        
+        <div class="rst-content">
+        
+          
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<div role="navigation" aria-label="breadcrumbs navigation">
+
+  <ul class="wy-breadcrumbs">
+    
+      <li><a href="../../../index.html" class="icon icon-home"></a> &raquo;</li>
+        
+          <li><a href="../../index.html">Module code</a> &raquo;</li>
+        
+      <li>draco.analysis.sidereal</li>
+    
+    
+      <li class="wy-breadcrumbs-aside">
+        
+      </li>
+    
+  </ul>
+
+  
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+            
+  <h1>Source code for draco.analysis.sidereal</h1><div class="highlight"><pre>
+<span></span><span class="sd">&quot;&quot;&quot;Take timestream data and regridding it into sidereal days which can be stacked.</span>
+
+<span class="sd">Usage</span>
+<span class="sd">=====</span>
+
+<span class="sd">Generally you would want to use these tasks together. Sending time stream data</span>
+<span class="sd">into  :class:`SiderealGrouper`, then feeding that into</span>
+<span class="sd">:class:`SiderealRegridder` to grid onto each sidereal day, and then into</span>
+<span class="sd">:class:`SiderealStacker` if you want to combine the different days.</span>
+<span class="sd">&quot;&quot;&quot;</span>
+
+
+<span class="kn">import</span> <span class="nn">numpy</span> <span class="k">as</span> <span class="nn">np</span>
+
+<span class="kn">from</span> <span class="nn">caput</span> <span class="kn">import</span> <span class="n">config</span><span class="p">,</span> <span class="n">mpiutil</span><span class="p">,</span> <span class="n">mpiarray</span><span class="p">,</span> <span class="n">tod</span>
+<span class="kn">from</span> <span class="nn">cora.util</span> <span class="kn">import</span> <span class="n">units</span>
+
+<span class="kn">from</span> <span class="nn">.transform</span> <span class="kn">import</span> <span class="n">Regridder</span>
+<span class="kn">from</span> <span class="nn">..core</span> <span class="kn">import</span> <span class="n">task</span><span class="p">,</span> <span class="n">containers</span><span class="p">,</span> <span class="n">io</span>
+<span class="kn">from</span> <span class="nn">..util</span> <span class="kn">import</span> <span class="n">tools</span>
+
+
+<div class="viewcode-block" id="SiderealGrouper"><a class="viewcode-back" href="../../../_autosummary/draco.analysis.sidereal.html#draco.analysis.sidereal.SiderealGrouper">[docs]</a><span class="k">class</span> <span class="nc">SiderealGrouper</span><span class="p">(</span><span class="n">task</span><span class="o">.</span><span class="n">SingleTask</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;Group individual timestreams together into whole Sidereal days.</span>
+
+<span class="sd">    Attributes</span>
+<span class="sd">    ----------</span>
+<span class="sd">    padding : float</span>
+<span class="sd">        Extra amount of a sidereal day to pad each timestream by. Useful for</span>
+<span class="sd">        getting rid of interpolation artifacts.</span>
+<span class="sd">    offset : float</span>
+<span class="sd">        Time in seconds to subtract before determining the LSD.  Useful if the</span>
+<span class="sd">        desired output is not a full sideral stream, but rather a narrow window</span>
+<span class="sd">        around source transits on different sideral days.  In that case, one</span>
+<span class="sd">        should set this quantity to `240 * (source_ra - 180)`.</span>
+<span class="sd">    min_day_length : float</span>
+<span class="sd">        Require at least this fraction of a full sidereal day to process.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+
+    <span class="n">padding</span> <span class="o">=</span> <span class="n">config</span><span class="o">.</span><span class="n">Property</span><span class="p">(</span><span class="n">proptype</span><span class="o">=</span><span class="nb">float</span><span class="p">,</span> <span class="n">default</span><span class="o">=</span><span class="mf">0.0</span><span class="p">)</span>
+    <span class="n">offset</span> <span class="o">=</span> <span class="n">config</span><span class="o">.</span><span class="n">Property</span><span class="p">(</span><span class="n">proptype</span><span class="o">=</span><span class="nb">float</span><span class="p">,</span> <span class="n">default</span><span class="o">=</span><span class="mf">0.0</span><span class="p">)</span>
+    <span class="n">min_day_length</span> <span class="o">=</span> <span class="n">config</span><span class="o">.</span><span class="n">Property</span><span class="p">(</span><span class="n">proptype</span><span class="o">=</span><span class="nb">float</span><span class="p">,</span> <span class="n">default</span><span class="o">=</span><span class="mf">0.10</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="nb">super</span><span class="p">(</span><span class="n">SiderealGrouper</span><span class="p">,</span> <span class="bp">self</span><span class="p">)</span><span class="o">.</span><span class="fm">__init__</span><span class="p">()</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">_timestream_list</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_current_lsd</span> <span class="o">=</span> <span class="kc">None</span>
+
+<div class="viewcode-block" id="SiderealGrouper.setup"><a class="viewcode-back" href="../../../_autosummary/draco.analysis.sidereal.html#draco.analysis.sidereal.SiderealGrouper.setup">[docs]</a>    <span class="k">def</span> <span class="nf">setup</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">manager</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Set the local observers position.</span>
+
+<span class="sd">        Parameters</span>
+<span class="sd">        ----------</span>
+<span class="sd">        observer : :class:`~caput.time.Observer`</span>
+<span class="sd">            An Observer object holding the geographic location of the telescope.</span>
+<span class="sd">            Note that :class:`~drift.core.TransitTelescope` instances are also</span>
+<span class="sd">            Observers.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="c1"># Need an observer object holding the geographic location of the telescope.</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">observer</span> <span class="o">=</span> <span class="n">io</span><span class="o">.</span><span class="n">get_telescope</span><span class="p">(</span><span class="n">manager</span><span class="p">)</span></div>
+
+<div class="viewcode-block" id="SiderealGrouper.process"><a class="viewcode-back" href="../../../_autosummary/draco.analysis.sidereal.html#draco.analysis.sidereal.SiderealGrouper.process">[docs]</a>    <span class="k">def</span> <span class="nf">process</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">tstream</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Load in each sidereal day.</span>
+
+<span class="sd">        Parameters</span>
+<span class="sd">        ----------</span>
+<span class="sd">        tstream : containers.TimeStream</span>
+<span class="sd">            Timestream to group together.</span>
+
+<span class="sd">        Returns</span>
+<span class="sd">        -------</span>
+<span class="sd">        ts : containers.TimeStream or None</span>
+<span class="sd">            Returns the timestream of each sidereal day when we have received</span>
+<span class="sd">            the last file, otherwise returns :obj:`None`.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+
+        <span class="c1"># This is the start and the end of the LSDs of the file only if padding</span>
+        <span class="c1"># is chosen to be 0 (default). If padding is set to some value then &#39;lsd_start&#39;</span>
+        <span class="c1"># will actually correspond to the start of of the requested time frame (incl</span>
+        <span class="c1"># padding)</span>
+        <span class="n">lsd_start</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">observer</span><span class="o">.</span><span class="n">unix_to_lsd</span><span class="p">(</span><span class="n">tstream</span><span class="o">.</span><span class="n">time</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">-</span> <span class="bp">self</span><span class="o">.</span><span class="n">padding</span> <span class="o">-</span> <span class="bp">self</span><span class="o">.</span><span class="n">offset</span><span class="p">)</span>
+        <span class="p">)</span>
+        <span class="n">lsd_end</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">observer</span><span class="o">.</span><span class="n">unix_to_lsd</span><span class="p">(</span><span class="n">tstream</span><span class="o">.</span><span class="n">time</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span> <span class="o">+</span> <span class="bp">self</span><span class="o">.</span><span class="n">padding</span> <span class="o">-</span> <span class="bp">self</span><span class="o">.</span><span class="n">offset</span><span class="p">)</span>
+        <span class="p">)</span>
+
+        <span class="c1"># If current_lsd is None then this is the first time we&#39;ve run</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_current_lsd</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_current_lsd</span> <span class="o">=</span> <span class="n">lsd_start</span>
+
+        <span class="c1"># If this file started during the current lsd add it onto the list</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_current_lsd</span> <span class="o">==</span> <span class="n">lsd_start</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_timestream_list</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">tstream</span><span class="p">)</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">log</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s2">&quot;Adding file into group for LSD:</span><span class="si">%i</span><span class="s2">&quot;</span><span class="p">,</span> <span class="n">lsd_start</span><span class="p">)</span>
+
+        <span class="c1"># If this file ends during a later LSD then we need to process the</span>
+        <span class="c1"># current list and restart the system</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_current_lsd</span> <span class="o">&lt;</span> <span class="n">lsd_end</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">log</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s2">&quot;Concatenating files for LSD:</span><span class="si">%i</span><span class="s2">&quot;</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">_current_lsd</span><span class="p">)</span>
+
+            <span class="c1"># Combine timestreams into a single container for the whole day this</span>
+            <span class="c1"># could get returned as None if there wasn&#39;t enough data</span>
+            <span class="n">tstream_all</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_process_current_lsd</span><span class="p">()</span>
+
+            <span class="c1"># Reset list and current LSD for the new file</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_timestream_list</span> <span class="o">=</span> <span class="p">[</span><span class="n">tstream</span><span class="p">]</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_current_lsd</span> <span class="o">=</span> <span class="n">lsd_end</span>
+
+            <span class="k">return</span> <span class="n">tstream_all</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="k">return</span> <span class="kc">None</span></div>
+
+<div class="viewcode-block" id="SiderealGrouper.process_finish"><a class="viewcode-back" href="../../../_autosummary/draco.analysis.sidereal.html#draco.analysis.sidereal.SiderealGrouper.process_finish">[docs]</a>    <span class="k">def</span> <span class="nf">process_finish</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Return the final sidereal day.</span>
+
+<span class="sd">        Returns</span>
+<span class="sd">        -------</span>
+<span class="sd">        ts : containers.TimeStream or None</span>
+<span class="sd">            Returns the timestream of the final sidereal day if it&#39;s long</span>
+<span class="sd">            enough, otherwise returns :obj:`None`.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="c1"># If we are here there is no more data coming, we just need to process any remaining data</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_process_current_lsd</span><span class="p">()</span> <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_timestream_list</span> <span class="k">else</span> <span class="kc">None</span></div>
+
+    <span class="k">def</span> <span class="nf">_process_current_lsd</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="c1"># Combine the current set of files into a timestream</span>
+
+        <span class="n">lsd</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_current_lsd</span>
+
+        <span class="c1"># Calculate the length of data in this current LSD</span>
+        <span class="n">start</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">observer</span><span class="o">.</span><span class="n">unix_to_lsd</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_timestream_list</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">time</span><span class="p">[</span><span class="mi">0</span><span class="p">])</span>
+        <span class="n">end</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">observer</span><span class="o">.</span><span class="n">unix_to_lsd</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_timestream_list</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span><span class="o">.</span><span class="n">time</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">])</span>
+        <span class="n">day_length</span> <span class="o">=</span> <span class="nb">min</span><span class="p">(</span><span class="n">end</span><span class="p">,</span> <span class="n">lsd</span> <span class="o">+</span> <span class="mi">1</span><span class="p">)</span> <span class="o">-</span> <span class="nb">max</span><span class="p">(</span><span class="n">start</span><span class="p">,</span> <span class="n">lsd</span><span class="p">)</span>
+
+        <span class="c1"># If the amount of data for this day is too small, then just skip</span>
+        <span class="k">if</span> <span class="n">day_length</span> <span class="o">&lt;</span> <span class="bp">self</span><span class="o">.</span><span class="n">min_day_length</span><span class="p">:</span>
+            <span class="k">return</span> <span class="kc">None</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">log</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s2">&quot;Constructing LSD:</span><span class="si">%i</span><span class="s2"> [</span><span class="si">%i</span><span class="s2"> files]&quot;</span><span class="p">,</span> <span class="n">lsd</span><span class="p">,</span> <span class="nb">len</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_timestream_list</span><span class="p">))</span>
+
+        <span class="c1"># Construct the combined timestream</span>
+        <span class="n">ts</span> <span class="o">=</span> <span class="n">tod</span><span class="o">.</span><span class="n">concatenate</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_timestream_list</span><span class="p">)</span>
+
+        <span class="c1"># Add attributes for the LSD and a tag for labelling saved files</span>
+        <span class="n">ts</span><span class="o">.</span><span class="n">attrs</span><span class="p">[</span><span class="s2">&quot;tag&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="s2">&quot;lsd_</span><span class="si">%i</span><span class="s2">&quot;</span> <span class="o">%</span> <span class="n">lsd</span>
+        <span class="n">ts</span><span class="o">.</span><span class="n">attrs</span><span class="p">[</span><span class="s2">&quot;lsd&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">lsd</span>
+
+        <span class="k">return</span> <span class="n">ts</span></div>
+
+
+<div class="viewcode-block" id="SiderealRegridder"><a class="viewcode-back" href="../../../_autosummary/draco.analysis.sidereal.html#draco.analysis.sidereal.SiderealRegridder">[docs]</a><span class="k">class</span> <span class="nc">SiderealRegridder</span><span class="p">(</span><span class="n">Regridder</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;Take a sidereal days worth of data, and put onto a regular grid.</span>
+
+<span class="sd">    Uses a maximum-likelihood inverse of a Lanczos interpolation to do the</span>
+<span class="sd">    regridding. This gives a reasonably local regridding, that is pretty well</span>
+<span class="sd">    behaved in m-space.</span>
+
+<span class="sd">    Attributes</span>
+<span class="sd">    ----------</span>
+<span class="sd">    samples : int</span>
+<span class="sd">        Number of samples across the sidereal day.</span>
+<span class="sd">    lanczos_width : int</span>
+<span class="sd">        Width of the Lanczos interpolation kernel.</span>
+<span class="sd">    snr_cov: float</span>
+<span class="sd">        Ratio of signal covariance to noise covariance (used for Wiener filter).</span>
+<span class="sd">    down_mix: bool</span>
+<span class="sd">        Down mix the visibility prior to interpolation using the fringe rate</span>
+<span class="sd">        of a source at zenith.  This is un-done after the interpolation.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+
+    <span class="n">down_mix</span> <span class="o">=</span> <span class="n">config</span><span class="o">.</span><span class="n">Property</span><span class="p">(</span><span class="n">proptype</span><span class="o">=</span><span class="nb">bool</span><span class="p">,</span> <span class="n">default</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
+
+<div class="viewcode-block" id="SiderealRegridder.setup"><a class="viewcode-back" href="../../../_autosummary/draco.analysis.sidereal.html#draco.analysis.sidereal.SiderealRegridder.setup">[docs]</a>    <span class="k">def</span> <span class="nf">setup</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">manager</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Set the local observers position.</span>
+
+<span class="sd">        Parameters</span>
+<span class="sd">        ----------</span>
+<span class="sd">        observer : :class:`~caput.time.Observer`</span>
+<span class="sd">            An Observer object holding the geographic location of the telescope.</span>
+<span class="sd">            Note that :class:`~drift.core.TransitTelescope` instances are also</span>
+<span class="sd">            Observers.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="c1"># Need an Observer object holding the geographic location of the telescope.</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">observer</span> <span class="o">=</span> <span class="n">io</span><span class="o">.</span><span class="n">get_telescope</span><span class="p">(</span><span class="n">manager</span><span class="p">)</span></div>
+
+<div class="viewcode-block" id="SiderealRegridder.process"><a class="viewcode-back" href="../../../_autosummary/draco.analysis.sidereal.html#draco.analysis.sidereal.SiderealRegridder.process">[docs]</a>    <span class="k">def</span> <span class="nf">process</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">data</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Regrid the sidereal day.</span>
+
+<span class="sd">        Parameters</span>
+<span class="sd">        ----------</span>
+<span class="sd">        data : containers.TimeStream</span>
+<span class="sd">            Timestream data for the day (must have a `LSD` attribute).</span>
+
+<span class="sd">        Returns</span>
+<span class="sd">        -------</span>
+<span class="sd">        sdata : containers.SiderealStream</span>
+<span class="sd">            The regularly gridded sidereal timestream.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">log</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s2">&quot;Regridding LSD:</span><span class="si">%i</span><span class="s2">&quot;</span><span class="p">,</span> <span class="n">data</span><span class="o">.</span><span class="n">attrs</span><span class="p">[</span><span class="s2">&quot;lsd&quot;</span><span class="p">])</span>
+
+        <span class="c1"># Redistribute if needed too</span>
+        <span class="n">data</span><span class="o">.</span><span class="n">redistribute</span><span class="p">(</span><span class="s2">&quot;freq&quot;</span><span class="p">)</span>
+
+        <span class="n">sfreq</span> <span class="o">=</span> <span class="n">data</span><span class="o">.</span><span class="n">vis</span><span class="o">.</span><span class="n">local_offset</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+        <span class="n">efreq</span> <span class="o">=</span> <span class="n">sfreq</span> <span class="o">+</span> <span class="n">data</span><span class="o">.</span><span class="n">vis</span><span class="o">.</span><span class="n">local_shape</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+        <span class="n">freq</span> <span class="o">=</span> <span class="n">data</span><span class="o">.</span><span class="n">freq</span><span class="p">[</span><span class="n">sfreq</span><span class="p">:</span><span class="n">efreq</span><span class="p">]</span>
+
+        <span class="c1"># Convert data timestamps into LSDs</span>
+        <span class="n">timestamp_lsd</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">observer</span><span class="o">.</span><span class="n">unix_to_lsd</span><span class="p">(</span><span class="n">data</span><span class="o">.</span><span class="n">time</span><span class="p">)</span>
+
+        <span class="c1"># Fetch which LSD this is to set bounds</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">start</span> <span class="o">=</span> <span class="n">data</span><span class="o">.</span><span class="n">attrs</span><span class="p">[</span><span class="s2">&quot;lsd&quot;</span><span class="p">]</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">end</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">start</span> <span class="o">+</span> <span class="mi">1</span>
+
+        <span class="c1"># Get view of data</span>
+        <span class="n">weight</span> <span class="o">=</span> <span class="n">data</span><span class="o">.</span><span class="n">weight</span><span class="p">[:]</span><span class="o">.</span><span class="n">view</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">)</span>
+        <span class="n">vis_data</span> <span class="o">=</span> <span class="n">data</span><span class="o">.</span><span class="n">vis</span><span class="p">[:]</span><span class="o">.</span><span class="n">view</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">)</span>
+
+        <span class="c1"># Mix down</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">down_mix</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">log</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s2">&quot;Downmixing before regridding.&quot;</span><span class="p">)</span>
+            <span class="n">phase</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_get_phase</span><span class="p">(</span><span class="n">freq</span><span class="p">,</span> <span class="n">data</span><span class="o">.</span><span class="n">prodstack</span><span class="p">,</span> <span class="n">timestamp_lsd</span><span class="p">)</span>
+            <span class="n">vis_data</span> <span class="o">*=</span> <span class="n">phase</span>
+
+        <span class="c1"># perform regridding</span>
+        <span class="n">new_grid</span><span class="p">,</span> <span class="n">sts</span><span class="p">,</span> <span class="n">ni</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_regrid</span><span class="p">(</span><span class="n">vis_data</span><span class="p">,</span> <span class="n">weight</span><span class="p">,</span> <span class="n">timestamp_lsd</span><span class="p">)</span>
+
+        <span class="c1"># Mix back up</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">down_mix</span><span class="p">:</span>
+            <span class="n">phase</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_get_phase</span><span class="p">(</span><span class="n">freq</span><span class="p">,</span> <span class="n">data</span><span class="o">.</span><span class="n">prodstack</span><span class="p">,</span> <span class="n">new_grid</span><span class="p">)</span><span class="o">.</span><span class="n">conj</span><span class="p">()</span>
+            <span class="n">sts</span> <span class="o">*=</span> <span class="n">phase</span>
+            <span class="n">ni</span> <span class="o">*=</span> <span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">abs</span><span class="p">(</span><span class="n">phase</span><span class="p">)</span> <span class="o">&gt;</span> <span class="mf">0.0</span><span class="p">)</span><span class="o">.</span><span class="n">astype</span><span class="p">(</span><span class="n">ni</span><span class="o">.</span><span class="n">dtype</span><span class="p">)</span>
+
+        <span class="c1"># Wrap to produce MPIArray</span>
+        <span class="n">sts</span> <span class="o">=</span> <span class="n">mpiarray</span><span class="o">.</span><span class="n">MPIArray</span><span class="o">.</span><span class="n">wrap</span><span class="p">(</span><span class="n">sts</span><span class="p">,</span> <span class="n">axis</span><span class="o">=</span><span class="mi">0</span><span class="p">)</span>
+        <span class="n">ni</span> <span class="o">=</span> <span class="n">mpiarray</span><span class="o">.</span><span class="n">MPIArray</span><span class="o">.</span><span class="n">wrap</span><span class="p">(</span><span class="n">ni</span><span class="p">,</span> <span class="n">axis</span><span class="o">=</span><span class="mi">0</span><span class="p">)</span>
+
+        <span class="c1"># FYI this whole process creates an extra copy of the sidereal stack.</span>
+        <span class="c1"># This could probably be optimised out with a little work.</span>
+        <span class="n">sdata</span> <span class="o">=</span> <span class="n">containers</span><span class="o">.</span><span class="n">SiderealStream</span><span class="p">(</span><span class="n">axes_from</span><span class="o">=</span><span class="n">data</span><span class="p">,</span> <span class="n">ra</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">samples</span><span class="p">)</span>
+        <span class="n">sdata</span><span class="o">.</span><span class="n">redistribute</span><span class="p">(</span><span class="s2">&quot;freq&quot;</span><span class="p">)</span>
+        <span class="n">sdata</span><span class="o">.</span><span class="n">vis</span><span class="p">[:]</span> <span class="o">=</span> <span class="n">sts</span>
+        <span class="n">sdata</span><span class="o">.</span><span class="n">weight</span><span class="p">[:]</span> <span class="o">=</span> <span class="n">ni</span>
+        <span class="n">sdata</span><span class="o">.</span><span class="n">attrs</span><span class="p">[</span><span class="s2">&quot;lsd&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">start</span>
+        <span class="n">sdata</span><span class="o">.</span><span class="n">attrs</span><span class="p">[</span><span class="s2">&quot;tag&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="s2">&quot;lsd_</span><span class="si">%i</span><span class="s2">&quot;</span> <span class="o">%</span> <span class="bp">self</span><span class="o">.</span><span class="n">start</span>
+
+        <span class="k">return</span> <span class="n">sdata</span></div>
+
+    <span class="k">def</span> <span class="nf">_get_phase</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">freq</span><span class="p">,</span> <span class="n">prod</span><span class="p">,</span> <span class="n">lsd</span><span class="p">):</span>
+
+        <span class="c1"># Determine if any baselines contains masked feeds</span>
+        <span class="c1"># These baselines will be flagged since they do not</span>
+        <span class="c1"># have valid baseline distances.</span>
+        <span class="n">aa</span><span class="p">,</span> <span class="n">bb</span> <span class="o">=</span> <span class="n">prod</span><span class="p">[</span><span class="s2">&quot;input_a&quot;</span><span class="p">],</span> <span class="n">prod</span><span class="p">[</span><span class="s2">&quot;input_b&quot;</span><span class="p">]</span>
+
+        <span class="n">mask</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">observer</span><span class="o">.</span><span class="n">feedmask</span><span class="p">[(</span><span class="n">aa</span><span class="p">,</span> <span class="n">bb</span><span class="p">)]</span><span class="o">.</span><span class="n">astype</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">float32</span><span class="p">)[</span>
+            <span class="n">np</span><span class="o">.</span><span class="n">newaxis</span><span class="p">,</span> <span class="p">:,</span> <span class="n">np</span><span class="o">.</span><span class="n">newaxis</span>
+        <span class="p">]</span>
+
+        <span class="c1"># Calculate the fringe rate assuming that ha = 0.0 and dec = lat</span>
+        <span class="n">lmbda</span> <span class="o">=</span> <span class="n">units</span><span class="o">.</span><span class="n">c</span> <span class="o">/</span> <span class="p">(</span><span class="n">freq</span> <span class="o">*</span> <span class="mf">1e6</span><span class="p">)</span>
+        <span class="n">u</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">observer</span><span class="o">.</span><span class="n">baselines</span><span class="p">[</span><span class="n">np</span><span class="o">.</span><span class="n">newaxis</span><span class="p">,</span> <span class="p">:,</span> <span class="mi">0</span><span class="p">]</span> <span class="o">/</span> <span class="n">lmbda</span><span class="p">[:,</span> <span class="n">np</span><span class="o">.</span><span class="n">newaxis</span><span class="p">]</span>
+
+        <span class="n">omega</span> <span class="o">=</span> <span class="o">-</span><span class="mf">2.0</span> <span class="o">*</span> <span class="n">np</span><span class="o">.</span><span class="n">pi</span> <span class="o">*</span> <span class="n">u</span> <span class="o">*</span> <span class="n">np</span><span class="o">.</span><span class="n">cos</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">radians</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">observer</span><span class="o">.</span><span class="n">latitude</span><span class="p">))</span>
+
+        <span class="c1"># Calculate the local sidereal angle</span>
+        <span class="n">dphi</span> <span class="o">=</span> <span class="mf">2.0</span> <span class="o">*</span> <span class="n">np</span><span class="o">.</span><span class="n">pi</span> <span class="o">*</span> <span class="p">(</span><span class="n">lsd</span> <span class="o">-</span> <span class="n">np</span><span class="o">.</span><span class="n">floor</span><span class="p">(</span><span class="n">lsd</span><span class="p">))</span>
+
+        <span class="c1"># Construct a complex sinusoid whose frequency</span>
+        <span class="c1"># is equal to each baselines fringe rate</span>
+        <span class="n">phase</span> <span class="o">=</span> <span class="n">mask</span> <span class="o">*</span> <span class="n">np</span><span class="o">.</span><span class="n">exp</span><span class="p">(</span>
+            <span class="o">-</span><span class="mf">1.0</span><span class="n">j</span> <span class="o">*</span> <span class="n">omega</span><span class="p">[:,</span> <span class="p">:,</span> <span class="n">np</span><span class="o">.</span><span class="n">newaxis</span><span class="p">]</span> <span class="o">*</span> <span class="n">dphi</span><span class="p">[</span><span class="n">np</span><span class="o">.</span><span class="n">newaxis</span><span class="p">,</span> <span class="n">np</span><span class="o">.</span><span class="n">newaxis</span><span class="p">,</span> <span class="p">:]</span>
+        <span class="p">)</span>
+
+        <span class="k">return</span> <span class="n">phase</span></div>
+
+
+<span class="k">def</span> <span class="nf">_search_nearest</span><span class="p">(</span><span class="n">x</span><span class="p">,</span> <span class="n">xeval</span><span class="p">):</span>
+
+    <span class="n">index_next</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">searchsorted</span><span class="p">(</span><span class="n">x</span><span class="p">,</span> <span class="n">xeval</span><span class="p">,</span> <span class="n">side</span><span class="o">=</span><span class="s2">&quot;left&quot;</span><span class="p">)</span>
+
+    <span class="n">index_previous</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">maximum</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="n">index_next</span> <span class="o">-</span> <span class="mi">1</span><span class="p">)</span>
+    <span class="n">index_next</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">minimum</span><span class="p">(</span><span class="n">x</span><span class="o">.</span><span class="n">size</span> <span class="o">-</span> <span class="mi">1</span><span class="p">,</span> <span class="n">index_next</span><span class="p">)</span>
+
+    <span class="n">index</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">where</span><span class="p">(</span>
+        <span class="n">np</span><span class="o">.</span><span class="n">abs</span><span class="p">(</span><span class="n">xeval</span> <span class="o">-</span> <span class="n">x</span><span class="p">[</span><span class="n">index_previous</span><span class="p">])</span> <span class="o">&lt;</span> <span class="n">np</span><span class="o">.</span><span class="n">abs</span><span class="p">(</span><span class="n">xeval</span> <span class="o">-</span> <span class="n">x</span><span class="p">[</span><span class="n">index_next</span><span class="p">]),</span>
+        <span class="n">index_previous</span><span class="p">,</span>
+        <span class="n">index_next</span><span class="p">,</span>
+    <span class="p">)</span>
+
+    <span class="k">return</span> <span class="n">index</span>
+
+
+<div class="viewcode-block" id="SiderealRegridderNearest"><a class="viewcode-back" href="../../../_autosummary/draco.analysis.sidereal.html#draco.analysis.sidereal.SiderealRegridderNearest">[docs]</a><span class="k">class</span> <span class="nc">SiderealRegridderNearest</span><span class="p">(</span><span class="n">SiderealRegridder</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;Regrid onto the sidereal day using nearest neighbor interpolation.&quot;&quot;&quot;</span>
+
+    <span class="k">def</span> <span class="nf">_regrid</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">vis</span><span class="p">,</span> <span class="n">weight</span><span class="p">,</span> <span class="n">lsd</span><span class="p">):</span>
+
+        <span class="c1"># Create a regular grid</span>
+        <span class="n">interp_grid</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">arange</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">samples</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">float64</span><span class="p">)</span> <span class="o">/</span> <span class="bp">self</span><span class="o">.</span><span class="n">samples</span>
+        <span class="n">interp_grid</span> <span class="o">=</span> <span class="n">interp_grid</span> <span class="o">*</span> <span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">end</span> <span class="o">-</span> <span class="bp">self</span><span class="o">.</span><span class="n">start</span><span class="p">)</span> <span class="o">+</span> <span class="bp">self</span><span class="o">.</span><span class="n">start</span>
+
+        <span class="c1"># Find the data points that are closest to the fixed points on the grid</span>
+        <span class="n">index</span> <span class="o">=</span> <span class="n">_search_nearest</span><span class="p">(</span><span class="n">lsd</span><span class="p">,</span> <span class="n">interp_grid</span><span class="p">)</span>
+
+        <span class="n">interp_vis</span> <span class="o">=</span> <span class="n">vis</span><span class="p">[</span><span class="o">...</span><span class="p">,</span> <span class="n">index</span><span class="p">]</span>
+        <span class="n">interp_weight</span> <span class="o">=</span> <span class="n">weight</span><span class="p">[</span><span class="o">...</span><span class="p">,</span> <span class="n">index</span><span class="p">]</span>
+
+        <span class="c1"># Flag the re-gridded data if the nearest neighbor was more than one</span>
+        <span class="c1"># sample spacing away.  This can occur if the input data does not have</span>
+        <span class="c1"># complete sidereal coverage.</span>
+        <span class="n">delta</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">median</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">abs</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">diff</span><span class="p">(</span><span class="n">lsd</span><span class="p">)))</span>
+        <span class="n">distant</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">flatnonzero</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">abs</span><span class="p">(</span><span class="n">lsd</span><span class="p">[</span><span class="n">index</span><span class="p">]</span> <span class="o">-</span> <span class="n">interp_grid</span><span class="p">)</span> <span class="o">&gt;</span> <span class="n">delta</span><span class="p">)</span>
+        <span class="n">interp_weight</span><span class="p">[</span><span class="o">...</span><span class="p">,</span> <span class="n">distant</span><span class="p">]</span> <span class="o">=</span> <span class="mf">0.0</span>
+
+        <span class="k">return</span> <span class="n">interp_grid</span><span class="p">,</span> <span class="n">interp_vis</span><span class="p">,</span> <span class="n">interp_weight</span></div>
+
+
+<div class="viewcode-block" id="SiderealRegridderLinear"><a class="viewcode-back" href="../../../_autosummary/draco.analysis.sidereal.html#draco.analysis.sidereal.SiderealRegridderLinear">[docs]</a><span class="k">class</span> <span class="nc">SiderealRegridderLinear</span><span class="p">(</span><span class="n">SiderealRegridder</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;Regrid onto the sidereal day using linear interpolation.&quot;&quot;&quot;</span>
+
+    <span class="k">def</span> <span class="nf">_regrid</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">vis</span><span class="p">,</span> <span class="n">weight</span><span class="p">,</span> <span class="n">lsd</span><span class="p">):</span>
+
+        <span class="c1"># Create a regular grid</span>
+        <span class="n">interp_grid</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">arange</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">samples</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">float64</span><span class="p">)</span> <span class="o">/</span> <span class="bp">self</span><span class="o">.</span><span class="n">samples</span>
+        <span class="n">interp_grid</span> <span class="o">=</span> <span class="n">interp_grid</span> <span class="o">*</span> <span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">end</span> <span class="o">-</span> <span class="bp">self</span><span class="o">.</span><span class="n">start</span><span class="p">)</span> <span class="o">+</span> <span class="bp">self</span><span class="o">.</span><span class="n">start</span>
+
+        <span class="c1"># Find the data points that lie on either side of each point in the fixed grid</span>
+        <span class="n">index</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">searchsorted</span><span class="p">(</span><span class="n">lsd</span><span class="p">,</span> <span class="n">interp_grid</span><span class="p">,</span> <span class="n">side</span><span class="o">=</span><span class="s2">&quot;left&quot;</span><span class="p">)</span>
+
+        <span class="n">ind1</span> <span class="o">=</span> <span class="n">index</span> <span class="o">-</span> <span class="mi">1</span>
+        <span class="n">ind2</span> <span class="o">=</span> <span class="n">index</span>
+
+        <span class="c1"># If the fixed grid is outside the range covered by the data,</span>
+        <span class="c1"># then we will extrapolate and later flag as bad.</span>
+        <span class="n">below</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">flatnonzero</span><span class="p">(</span><span class="n">ind1</span> <span class="o">==</span> <span class="o">-</span><span class="mi">1</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">below</span><span class="o">.</span><span class="n">size</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="p">:</span>
+            <span class="n">ind1</span><span class="p">[</span><span class="n">below</span><span class="p">]</span> <span class="o">=</span> <span class="mi">0</span>
+            <span class="n">ind2</span><span class="p">[</span><span class="n">below</span><span class="p">]</span> <span class="o">=</span> <span class="mi">1</span>
+
+        <span class="n">above</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">flatnonzero</span><span class="p">(</span><span class="n">ind2</span> <span class="o">==</span> <span class="n">lsd</span><span class="o">.</span><span class="n">size</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">above</span><span class="o">.</span><span class="n">size</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="p">:</span>
+            <span class="n">ind1</span><span class="p">[</span><span class="n">above</span><span class="p">]</span> <span class="o">=</span> <span class="n">lsd</span><span class="o">.</span><span class="n">size</span> <span class="o">-</span> <span class="mi">2</span>
+            <span class="n">ind2</span><span class="p">[</span><span class="n">above</span><span class="p">]</span> <span class="o">=</span> <span class="n">lsd</span><span class="o">.</span><span class="n">size</span> <span class="o">-</span> <span class="mi">1</span>
+
+        <span class="c1"># If the closest data points to the fixed grid point are more than one</span>
+        <span class="c1"># sample spacing away, then we will later flag that data as bad.</span>
+        <span class="c1"># This will occur if the input data does not cover the full sidereal day.</span>
+        <span class="n">delta</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">median</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">abs</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">diff</span><span class="p">(</span><span class="n">lsd</span><span class="p">)))</span>
+        <span class="n">distant</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">flatnonzero</span><span class="p">(</span>
+            <span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">abs</span><span class="p">(</span><span class="n">lsd</span><span class="p">[</span><span class="n">ind1</span><span class="p">]</span> <span class="o">-</span> <span class="n">interp_grid</span><span class="p">)</span> <span class="o">&gt;</span> <span class="n">delta</span><span class="p">)</span>
+            <span class="o">|</span> <span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">abs</span><span class="p">(</span><span class="n">lsd</span><span class="p">[</span><span class="n">ind2</span><span class="p">]</span> <span class="o">-</span> <span class="n">interp_grid</span><span class="p">)</span> <span class="o">&gt;</span> <span class="n">delta</span><span class="p">)</span>
+        <span class="p">)</span>
+
+        <span class="c1"># Calculate the coefficients for the linear interpolation</span>
+        <span class="n">dx1</span> <span class="o">=</span> <span class="n">interp_grid</span> <span class="o">-</span> <span class="n">lsd</span><span class="p">[</span><span class="n">ind1</span><span class="p">]</span>
+        <span class="n">dx2</span> <span class="o">=</span> <span class="n">lsd</span><span class="p">[</span><span class="n">ind2</span><span class="p">]</span> <span class="o">-</span> <span class="n">interp_grid</span>
+
+        <span class="n">norm</span> <span class="o">=</span> <span class="n">tools</span><span class="o">.</span><span class="n">invert_no_zero</span><span class="p">(</span><span class="n">dx1</span> <span class="o">+</span> <span class="n">dx2</span><span class="p">)</span>
+        <span class="n">coeff1</span> <span class="o">=</span> <span class="n">dx2</span> <span class="o">*</span> <span class="n">norm</span>
+        <span class="n">coeff2</span> <span class="o">=</span> <span class="n">dx1</span> <span class="o">*</span> <span class="n">norm</span>
+
+        <span class="c1"># Initialize the output arrays</span>
+        <span class="n">shp</span> <span class="o">=</span> <span class="n">vis</span><span class="o">.</span><span class="n">shape</span><span class="p">[:</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span> <span class="o">+</span> <span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">samples</span><span class="p">,)</span>
+
+        <span class="n">interp_vis</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">zeros</span><span class="p">(</span><span class="n">shp</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">vis</span><span class="o">.</span><span class="n">dtype</span><span class="p">)</span>
+        <span class="n">interp_weight</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">zeros</span><span class="p">(</span><span class="n">shp</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">weight</span><span class="o">.</span><span class="n">dtype</span><span class="p">)</span>
+
+        <span class="c1"># Loop over frequencies to reduce memory usage</span>
+        <span class="k">for</span> <span class="n">ff</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">shp</span><span class="p">[</span><span class="mi">0</span><span class="p">]):</span>
+
+            <span class="n">fvis</span> <span class="o">=</span> <span class="n">vis</span><span class="p">[</span><span class="n">ff</span><span class="p">]</span>
+            <span class="n">fweight</span> <span class="o">=</span> <span class="n">weight</span><span class="p">[</span><span class="n">ff</span><span class="p">]</span>
+
+            <span class="c1"># Consider the data valid if it has nonzero weight</span>
+            <span class="n">fflag</span> <span class="o">=</span> <span class="n">fweight</span> <span class="o">&gt;</span> <span class="mf">0.0</span>
+
+            <span class="c1"># Determine the variance from the inverse weight</span>
+            <span class="n">fvar</span> <span class="o">=</span> <span class="n">tools</span><span class="o">.</span><span class="n">invert_no_zero</span><span class="p">(</span><span class="n">fweight</span><span class="p">)</span>
+
+            <span class="c1"># Require both data points to be valid for the interpolated value to be valid</span>
+            <span class="n">finterp_flag</span> <span class="o">=</span> <span class="n">fflag</span><span class="p">[:,</span> <span class="n">ind1</span><span class="p">]</span> <span class="o">&amp;</span> <span class="n">fflag</span><span class="p">[:,</span> <span class="n">ind2</span><span class="p">]</span>
+
+            <span class="c1"># Interpolate the visibilities and propagate the weights</span>
+            <span class="n">interp_vis</span><span class="p">[</span><span class="n">ff</span><span class="p">]</span> <span class="o">=</span> <span class="n">coeff1</span> <span class="o">*</span> <span class="n">fvis</span><span class="p">[:,</span> <span class="n">ind1</span><span class="p">]</span> <span class="o">+</span> <span class="n">coeff2</span> <span class="o">*</span> <span class="n">fvis</span><span class="p">[:,</span> <span class="n">ind2</span><span class="p">]</span>
+
+            <span class="n">interp_weight</span><span class="p">[</span><span class="n">ff</span><span class="p">]</span> <span class="o">=</span> <span class="n">tools</span><span class="o">.</span><span class="n">invert_no_zero</span><span class="p">(</span>
+                <span class="n">coeff1</span> <span class="o">**</span> <span class="mi">2</span> <span class="o">*</span> <span class="n">fvar</span><span class="p">[:,</span> <span class="n">ind1</span><span class="p">]</span> <span class="o">+</span> <span class="n">coeff2</span> <span class="o">**</span> <span class="mi">2</span> <span class="o">*</span> <span class="n">fvar</span><span class="p">[:,</span> <span class="n">ind2</span><span class="p">]</span>
+            <span class="p">)</span> <span class="o">*</span> <span class="n">finterp_flag</span><span class="o">.</span><span class="n">astype</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">float32</span><span class="p">)</span>
+
+        <span class="c1"># Flag as bad any values that were extrapolated or that used distant points</span>
+        <span class="n">interp_weight</span><span class="p">[</span><span class="o">...</span><span class="p">,</span> <span class="n">below</span><span class="p">]</span> <span class="o">=</span> <span class="mf">0.0</span>
+        <span class="n">interp_weight</span><span class="p">[</span><span class="o">...</span><span class="p">,</span> <span class="n">above</span><span class="p">]</span> <span class="o">=</span> <span class="mf">0.0</span>
+        <span class="n">interp_weight</span><span class="p">[</span><span class="o">...</span><span class="p">,</span> <span class="n">distant</span><span class="p">]</span> <span class="o">=</span> <span class="mf">0.0</span>
+
+        <span class="k">return</span> <span class="n">interp_grid</span><span class="p">,</span> <span class="n">interp_vis</span><span class="p">,</span> <span class="n">interp_weight</span></div>
+
+
+<div class="viewcode-block" id="SiderealRegridderCubic"><a class="viewcode-back" href="../../../_autosummary/draco.analysis.sidereal.html#draco.analysis.sidereal.SiderealRegridderCubic">[docs]</a><span class="k">class</span> <span class="nc">SiderealRegridderCubic</span><span class="p">(</span><span class="n">SiderealRegridder</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;Regrid onto the sidereal day using cubic Hermite spline interpolation.&quot;&quot;&quot;</span>
+
+    <span class="k">def</span> <span class="nf">_regrid</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">vis</span><span class="p">,</span> <span class="n">weight</span><span class="p">,</span> <span class="n">lsd</span><span class="p">):</span>
+
+        <span class="c1"># Create a regular grid</span>
+        <span class="n">interp_grid</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">arange</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">samples</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">float64</span><span class="p">)</span> <span class="o">/</span> <span class="bp">self</span><span class="o">.</span><span class="n">samples</span>
+        <span class="n">interp_grid</span> <span class="o">=</span> <span class="n">interp_grid</span> <span class="o">*</span> <span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">end</span> <span class="o">-</span> <span class="bp">self</span><span class="o">.</span><span class="n">start</span><span class="p">)</span> <span class="o">+</span> <span class="bp">self</span><span class="o">.</span><span class="n">start</span>
+
+        <span class="c1"># Find the data point just after each point on the fixed grid</span>
+        <span class="n">index</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">searchsorted</span><span class="p">(</span><span class="n">lsd</span><span class="p">,</span> <span class="n">interp_grid</span><span class="p">,</span> <span class="n">side</span><span class="o">=</span><span class="s2">&quot;left&quot;</span><span class="p">)</span>
+
+        <span class="c1"># Find the 4 data points that will be used to interpolate</span>
+        <span class="c1"># each point on the fixed grid</span>
+        <span class="n">index</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">vstack</span><span class="p">([</span><span class="n">index</span> <span class="o">+</span> <span class="n">i</span> <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="o">-</span><span class="mi">2</span><span class="p">,</span> <span class="mi">2</span><span class="p">)])</span>
+
+        <span class="c1"># If the fixed grid is outside the range covered by the data,</span>
+        <span class="c1"># then we will extrapolate and later flag as bad</span>
+        <span class="n">below</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">flatnonzero</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">any</span><span class="p">(</span><span class="n">index</span> <span class="o">&lt;</span> <span class="mi">0</span><span class="p">,</span> <span class="n">axis</span><span class="o">=</span><span class="mi">0</span><span class="p">))</span>
+        <span class="k">if</span> <span class="n">below</span><span class="o">.</span><span class="n">size</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="p">:</span>
+            <span class="n">index</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">maximum</span><span class="p">(</span><span class="n">index</span><span class="p">,</span> <span class="mi">0</span><span class="p">)</span>
+
+        <span class="n">above</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">flatnonzero</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">any</span><span class="p">(</span><span class="n">index</span> <span class="o">&gt;=</span> <span class="n">lsd</span><span class="o">.</span><span class="n">size</span><span class="p">,</span> <span class="n">axis</span><span class="o">=</span><span class="mi">0</span><span class="p">))</span>
+        <span class="k">if</span> <span class="n">above</span><span class="o">.</span><span class="n">size</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="p">:</span>
+            <span class="n">index</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">minimum</span><span class="p">(</span><span class="n">index</span><span class="p">,</span> <span class="n">lsd</span><span class="o">.</span><span class="n">size</span> <span class="o">-</span> <span class="mi">1</span><span class="p">)</span>
+
+        <span class="c1"># If the closest data points to the fixed grid point are more than one</span>
+        <span class="c1"># sample spacing away, then we will later flag that data as bad.</span>
+        <span class="c1"># This will occur if the input data does not cover the full sidereal day.</span>
+        <span class="n">delta</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">median</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">abs</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">diff</span><span class="p">(</span><span class="n">lsd</span><span class="p">)))</span>
+        <span class="n">distant</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">flatnonzero</span><span class="p">(</span>
+            <span class="n">np</span><span class="o">.</span><span class="n">any</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">abs</span><span class="p">(</span><span class="n">interp_grid</span> <span class="o">-</span> <span class="n">lsd</span><span class="p">[</span><span class="n">index</span><span class="p">])</span> <span class="o">&gt;</span> <span class="p">(</span><span class="mf">2.0</span> <span class="o">*</span> <span class="n">delta</span><span class="p">),</span> <span class="n">axis</span><span class="o">=</span><span class="mi">0</span><span class="p">)</span>
+        <span class="p">)</span>
+
+        <span class="c1"># Calculate the coefficients for the interpolation</span>
+        <span class="n">u</span> <span class="o">=</span> <span class="p">(</span><span class="n">interp_grid</span> <span class="o">-</span> <span class="n">lsd</span><span class="p">[</span><span class="n">index</span><span class="p">[</span><span class="mi">1</span><span class="p">]])</span> <span class="o">*</span> <span class="n">tools</span><span class="o">.</span><span class="n">invert_no_zero</span><span class="p">(</span>
+            <span class="n">lsd</span><span class="p">[</span><span class="n">index</span><span class="p">[</span><span class="mi">2</span><span class="p">]]</span> <span class="o">-</span> <span class="n">lsd</span><span class="p">[</span><span class="n">index</span><span class="p">[</span><span class="mi">1</span><span class="p">]]</span>
+        <span class="p">)</span>
+
+        <span class="n">coeff</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">zeros</span><span class="p">((</span><span class="mi">4</span><span class="p">,</span> <span class="n">u</span><span class="o">.</span><span class="n">size</span><span class="p">),</span> <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">float64</span><span class="p">)</span>
+        <span class="n">coeff</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">=</span> <span class="n">u</span> <span class="o">*</span> <span class="p">((</span><span class="mi">2</span> <span class="o">-</span> <span class="n">u</span><span class="p">)</span> <span class="o">*</span> <span class="n">u</span> <span class="o">-</span> <span class="mi">1</span><span class="p">)</span>
+        <span class="n">coeff</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span> <span class="o">=</span> <span class="n">u</span> <span class="o">**</span> <span class="mi">2</span> <span class="o">*</span> <span class="p">(</span><span class="mi">3</span> <span class="o">*</span> <span class="n">u</span> <span class="o">-</span> <span class="mi">5</span><span class="p">)</span> <span class="o">+</span> <span class="mi">2</span>
+        <span class="n">coeff</span><span class="p">[</span><span class="mi">2</span><span class="p">]</span> <span class="o">=</span> <span class="n">u</span> <span class="o">*</span> <span class="p">((</span><span class="mi">4</span> <span class="o">-</span> <span class="mi">3</span> <span class="o">*</span> <span class="n">u</span><span class="p">)</span> <span class="o">*</span> <span class="n">u</span> <span class="o">+</span> <span class="mi">1</span><span class="p">)</span>
+        <span class="n">coeff</span><span class="p">[</span><span class="mi">3</span><span class="p">]</span> <span class="o">=</span> <span class="n">u</span> <span class="o">**</span> <span class="mi">2</span> <span class="o">*</span> <span class="p">(</span><span class="n">u</span> <span class="o">-</span> <span class="mi">1</span><span class="p">)</span>
+        <span class="n">coeff</span> <span class="o">*=</span> <span class="mf">0.5</span>
+
+        <span class="c1"># Initialize the output arrays</span>
+        <span class="n">shp</span> <span class="o">=</span> <span class="n">vis</span><span class="o">.</span><span class="n">shape</span><span class="p">[:</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span> <span class="o">+</span> <span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">samples</span><span class="p">,)</span>
+
+        <span class="n">interp_vis</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">zeros</span><span class="p">(</span><span class="n">shp</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">vis</span><span class="o">.</span><span class="n">dtype</span><span class="p">)</span>
+        <span class="n">interp_weight</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">zeros</span><span class="p">(</span><span class="n">shp</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">weight</span><span class="o">.</span><span class="n">dtype</span><span class="p">)</span>
+
+        <span class="c1"># Loop over frequencies to reduce memory usage</span>
+        <span class="k">for</span> <span class="n">ff</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">shp</span><span class="p">[</span><span class="mi">0</span><span class="p">]):</span>
+
+            <span class="n">fvis</span> <span class="o">=</span> <span class="n">vis</span><span class="p">[</span><span class="n">ff</span><span class="p">]</span>
+            <span class="n">fweight</span> <span class="o">=</span> <span class="n">weight</span><span class="p">[</span><span class="n">ff</span><span class="p">]</span>
+
+            <span class="c1"># Consider the data valid if it has nonzero weight</span>
+            <span class="n">fflag</span> <span class="o">=</span> <span class="n">fweight</span> <span class="o">&gt;</span> <span class="mf">0.0</span>
+
+            <span class="c1"># Determine the variance from the inverse weight</span>
+            <span class="n">fvar</span> <span class="o">=</span> <span class="n">tools</span><span class="o">.</span><span class="n">invert_no_zero</span><span class="p">(</span><span class="n">fweight</span><span class="p">)</span>
+
+            <span class="c1"># Interpolate the visibilities and propagate the weights</span>
+            <span class="n">finterp_flag</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">ones</span><span class="p">(</span><span class="n">shp</span><span class="p">[</span><span class="mi">1</span><span class="p">:],</span> <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">bool</span><span class="p">)</span>
+            <span class="n">finterp_var</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">zeros</span><span class="p">(</span><span class="n">shp</span><span class="p">[</span><span class="mi">1</span><span class="p">:],</span> <span class="n">dtype</span><span class="o">=</span><span class="n">weight</span><span class="o">.</span><span class="n">dtype</span><span class="p">)</span>
+
+            <span class="k">for</span> <span class="n">ii</span><span class="p">,</span> <span class="n">cc</span> <span class="ow">in</span> <span class="nb">zip</span><span class="p">(</span><span class="n">index</span><span class="p">,</span> <span class="n">coeff</span><span class="p">):</span>
+
+                <span class="n">finterp_flag</span> <span class="o">&amp;=</span> <span class="n">fflag</span><span class="p">[:,</span> <span class="n">ii</span><span class="p">]</span>
+                <span class="n">finterp_var</span> <span class="o">+=</span> <span class="n">cc</span> <span class="o">**</span> <span class="mi">2</span> <span class="o">*</span> <span class="n">fvar</span><span class="p">[:,</span> <span class="n">ii</span><span class="p">]</span>
+
+                <span class="n">interp_vis</span><span class="p">[</span><span class="n">ff</span><span class="p">]</span> <span class="o">+=</span> <span class="n">cc</span> <span class="o">*</span> <span class="n">fvis</span><span class="p">[:,</span> <span class="n">ii</span><span class="p">]</span>
+
+            <span class="c1"># Invert the accumulated variances to get the weight</span>
+            <span class="c1"># Require all data points are valid for the interpolated value to be valid</span>
+            <span class="n">interp_weight</span><span class="p">[</span><span class="n">ff</span><span class="p">]</span> <span class="o">=</span> <span class="n">tools</span><span class="o">.</span><span class="n">invert_no_zero</span><span class="p">(</span><span class="n">finterp_var</span><span class="p">)</span> <span class="o">*</span> <span class="n">finterp_flag</span><span class="o">.</span><span class="n">astype</span><span class="p">(</span>
+                <span class="n">np</span><span class="o">.</span><span class="n">float32</span>
+            <span class="p">)</span>
+
+        <span class="c1"># Flag as bad any values that were extrapolated or that used distant points</span>
+        <span class="n">interp_weight</span><span class="p">[</span><span class="o">...</span><span class="p">,</span> <span class="n">below</span><span class="p">]</span> <span class="o">=</span> <span class="mf">0.0</span>
+        <span class="n">interp_weight</span><span class="p">[</span><span class="o">...</span><span class="p">,</span> <span class="n">above</span><span class="p">]</span> <span class="o">=</span> <span class="mf">0.0</span>
+        <span class="n">interp_weight</span><span class="p">[</span><span class="o">...</span><span class="p">,</span> <span class="n">distant</span><span class="p">]</span> <span class="o">=</span> <span class="mf">0.0</span>
+
+        <span class="k">return</span> <span class="n">interp_grid</span><span class="p">,</span> <span class="n">interp_vis</span><span class="p">,</span> <span class="n">interp_weight</span></div>
+
+
+<div class="viewcode-block" id="SiderealStacker"><a class="viewcode-back" href="../../../_autosummary/draco.analysis.sidereal.html#draco.analysis.sidereal.SiderealStacker">[docs]</a><span class="k">class</span> <span class="nc">SiderealStacker</span><span class="p">(</span><span class="n">task</span><span class="o">.</span><span class="n">SingleTask</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;Take in a set of sidereal days, and stack them up.</span>
+
+<span class="sd">    This will apply relative calibration.</span>
+
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    tag : str</span>
+<span class="sd">        The tag to give the stack.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+
+    <span class="n">stack</span> <span class="o">=</span> <span class="kc">None</span>
+    <span class="n">lsd_list</span> <span class="o">=</span> <span class="kc">None</span>
+
+    <span class="n">tag</span> <span class="o">=</span> <span class="n">config</span><span class="o">.</span><span class="n">Property</span><span class="p">(</span><span class="n">proptype</span><span class="o">=</span><span class="nb">str</span><span class="p">,</span> <span class="n">default</span><span class="o">=</span><span class="s2">&quot;stack&quot;</span><span class="p">)</span>
+
+<div class="viewcode-block" id="SiderealStacker.process"><a class="viewcode-back" href="../../../_autosummary/draco.analysis.sidereal.html#draco.analysis.sidereal.SiderealStacker.process">[docs]</a>    <span class="k">def</span> <span class="nf">process</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">sdata</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Stack up sidereal days.</span>
+
+<span class="sd">        Parameters</span>
+<span class="sd">        ----------</span>
+<span class="sd">        sdata : containers.SiderealStream</span>
+<span class="sd">            Individual sidereal day to stack up.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+
+        <span class="n">sdata</span><span class="o">.</span><span class="n">redistribute</span><span class="p">(</span><span class="s2">&quot;freq&quot;</span><span class="p">)</span>
+
+        <span class="c1"># Get the LSD label out of the data (resort to using a CSD if it&#39;s</span>
+        <span class="c1"># present). If there&#39;s no label just use a place holder and stack</span>
+        <span class="c1"># anyway.</span>
+        <span class="k">if</span> <span class="s2">&quot;lsd&quot;</span> <span class="ow">in</span> <span class="n">sdata</span><span class="o">.</span><span class="n">attrs</span><span class="p">:</span>
+            <span class="n">input_lsd</span> <span class="o">=</span> <span class="n">sdata</span><span class="o">.</span><span class="n">attrs</span><span class="p">[</span><span class="s2">&quot;lsd&quot;</span><span class="p">]</span>
+        <span class="k">elif</span> <span class="s2">&quot;csd&quot;</span> <span class="ow">in</span> <span class="n">sdata</span><span class="o">.</span><span class="n">attrs</span><span class="p">:</span>
+            <span class="n">input_lsd</span> <span class="o">=</span> <span class="n">sdata</span><span class="o">.</span><span class="n">attrs</span><span class="p">[</span><span class="s2">&quot;csd&quot;</span><span class="p">]</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">input_lsd</span> <span class="o">=</span> <span class="o">-</span><span class="mi">1</span>
+
+        <span class="n">input_lsd</span> <span class="o">=</span> <span class="n">_ensure_list</span><span class="p">(</span><span class="n">input_lsd</span><span class="p">)</span>
+
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">stack</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+
+            <span class="bp">self</span><span class="o">.</span><span class="n">stack</span> <span class="o">=</span> <span class="n">containers</span><span class="o">.</span><span class="n">empty_like</span><span class="p">(</span><span class="n">sdata</span><span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">stack</span><span class="o">.</span><span class="n">redistribute</span><span class="p">(</span><span class="s2">&quot;freq&quot;</span><span class="p">)</span>
+
+            <span class="bp">self</span><span class="o">.</span><span class="n">stack</span><span class="o">.</span><span class="n">vis</span><span class="p">[:]</span> <span class="o">=</span> <span class="n">sdata</span><span class="o">.</span><span class="n">vis</span><span class="p">[:]</span> <span class="o">*</span> <span class="n">sdata</span><span class="o">.</span><span class="n">weight</span><span class="p">[:]</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">stack</span><span class="o">.</span><span class="n">weight</span><span class="p">[:]</span> <span class="o">=</span> <span class="n">sdata</span><span class="o">.</span><span class="n">weight</span><span class="p">[:]</span>
+
+            <span class="bp">self</span><span class="o">.</span><span class="n">lsd_list</span> <span class="o">=</span> <span class="n">input_lsd</span>
+
+            <span class="bp">self</span><span class="o">.</span><span class="n">log</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s2">&quot;Starting stack with LSD:</span><span class="si">%i</span><span class="s2">&quot;</span><span class="p">,</span> <span class="n">sdata</span><span class="o">.</span><span class="n">attrs</span><span class="p">[</span><span class="s2">&quot;lsd&quot;</span><span class="p">])</span>
+
+            <span class="k">return</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">log</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s2">&quot;Adding LSD:</span><span class="si">%i</span><span class="s2"> to stack&quot;</span><span class="p">,</span> <span class="n">sdata</span><span class="o">.</span><span class="n">attrs</span><span class="p">[</span><span class="s2">&quot;lsd&quot;</span><span class="p">])</span>
+
+        <span class="c1"># note: Eventually we should fix up gains</span>
+
+        <span class="c1"># Combine stacks with inverse `noise&#39; weighting</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">stack</span><span class="o">.</span><span class="n">vis</span><span class="p">[:]</span> <span class="o">+=</span> <span class="n">sdata</span><span class="o">.</span><span class="n">vis</span><span class="p">[:]</span> <span class="o">*</span> <span class="n">sdata</span><span class="o">.</span><span class="n">weight</span><span class="p">[:]</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">stack</span><span class="o">.</span><span class="n">weight</span><span class="p">[:]</span> <span class="o">+=</span> <span class="n">sdata</span><span class="o">.</span><span class="n">weight</span><span class="p">[:]</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">lsd_list</span> <span class="o">+=</span> <span class="n">input_lsd</span></div>
+
+<div class="viewcode-block" id="SiderealStacker.process_finish"><a class="viewcode-back" href="../../../_autosummary/draco.analysis.sidereal.html#draco.analysis.sidereal.SiderealStacker.process_finish">[docs]</a>    <span class="k">def</span> <span class="nf">process_finish</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Construct and emit sidereal stack.</span>
+
+<span class="sd">        Returns</span>
+<span class="sd">        -------</span>
+<span class="sd">        stack : containers.SiderealStream</span>
+<span class="sd">            Stack of sidereal days.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">stack</span><span class="o">.</span><span class="n">attrs</span><span class="p">[</span><span class="s2">&quot;tag&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">tag</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">stack</span><span class="o">.</span><span class="n">attrs</span><span class="p">[</span><span class="s2">&quot;lsd&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">lsd_list</span><span class="p">)</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">stack</span><span class="o">.</span><span class="n">vis</span><span class="p">[:]</span> <span class="o">*=</span> <span class="n">tools</span><span class="o">.</span><span class="n">invert_no_zero</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">stack</span><span class="o">.</span><span class="n">weight</span><span class="p">[:])</span>
+
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">stack</span></div></div>
+
+
+<span class="k">def</span> <span class="nf">_ensure_list</span><span class="p">(</span><span class="n">x</span><span class="p">):</span>
+
+    <span class="k">if</span> <span class="nb">hasattr</span><span class="p">(</span><span class="n">x</span><span class="p">,</span> <span class="s2">&quot;__iter__&quot;</span><span class="p">):</span>
+        <span class="n">y</span> <span class="o">=</span> <span class="p">[</span><span class="n">xx</span> <span class="k">for</span> <span class="n">xx</span> <span class="ow">in</span> <span class="n">x</span><span class="p">]</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="n">y</span> <span class="o">=</span> <span class="p">[</span><span class="n">x</span><span class="p">]</span>
+
+    <span class="k">return</span> <span class="n">y</span>
+</pre></div>
+
+           </div>
+           
+          </div>
+          <footer>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>
+        &#169; Copyright 2016, Richard Shaw.
+
+    </p>
+  </div>
+    
+    
+    
+    Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    
+    provided by <a href="https://readthedocs.org">Read the Docs</a>. 
+
+</footer>
+        </div>
+      </div>
+
+    </section>
+
+  </div>
+  
+
+  <script type="text/javascript">
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script>
+
+  
+  
+    
+   
+
+</body>
+</html>

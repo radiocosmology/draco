@@ -1,0 +1,605 @@
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" >
+<head>
+  <meta charset="utf-8" />
+  
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  
+  <title>draco.core.task &mdash; draco 0+untagged.1.g43914e3 documentation</title>
+  
+
+  
+  <link rel="stylesheet" href="../_static/css/theme.css" type="text/css" />
+  <link rel="stylesheet" href="../_static/pygments.css" type="text/css" />
+
+  
+  
+
+  
+  
+
+  
+
+  
+  <!--[if lt IE 9]>
+    <script src="../_static/js/html5shiv.min.js"></script>
+  <![endif]-->
+  
+    
+      <script type="text/javascript" id="documentation_options" data-url_root="../" src="../_static/documentation_options.js"></script>
+        <script src="../_static/jquery.js"></script>
+        <script src="../_static/underscore.js"></script>
+        <script src="../_static/doctools.js"></script>
+        <script async="async" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/2.7.7/latest.js?config=TeX-AMS-MML_HTMLorMML"></script>
+    
+    <script type="text/javascript" src="../_static/js/theme.js"></script>
+
+    
+    <link rel="index" title="Index" href="../genindex.html" />
+    <link rel="search" title="Search" href="../search.html" />
+    <link rel="next" title="draco.synthesis" href="draco.synthesis.html" />
+    <link rel="prev" title="draco.core.misc" href="draco.core.misc.html" /> 
+</head>
+
+<body class="wy-body-for-nav">
+
+   
+  <div class="wy-grid-for-nav">
+    
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+          
+
+          
+            <a href="../index.html" class="icon icon-home"> draco
+          
+
+          
+          </a>
+
+          
+            
+            
+              <div class="version">
+                0+untagged.1.g43914e3
+              </div>
+            
+          
+
+          
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+
+          
+        </div>
+
+        
+        <div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="main navigation">
+          
+            
+            
+              
+            
+            
+              <ul class="current">
+<li class="toctree-l1"><a class="reference internal" href="../tutorial.html">Tutorial</a></li>
+<li class="toctree-l1 current"><a class="reference internal" href="../reference.html">API Reference</a><ul class="current">
+<li class="toctree-l2 current"><a class="reference internal" href="../reference.html#submodules">Submodules</a><ul class="current">
+<li class="toctree-l3"><a class="reference internal" href="draco.analysis.html">draco.analysis</a></li>
+<li class="toctree-l3 current"><a class="reference internal" href="draco.core.html">draco.core</a><ul class="current">
+<li class="toctree-l4"><a class="reference internal" href="draco.core.containers.html">draco.core.containers</a></li>
+<li class="toctree-l4"><a class="reference internal" href="draco.core.io.html">draco.core.io</a></li>
+<li class="toctree-l4"><a class="reference internal" href="draco.core.misc.html">draco.core.misc</a></li>
+<li class="toctree-l4 current"><a class="current reference internal" href="#">draco.core.task</a></li>
+</ul>
+</li>
+<li class="toctree-l3"><a class="reference internal" href="draco.synthesis.html">draco.synthesis</a></li>
+<li class="toctree-l3"><a class="reference internal" href="draco.util.html">draco.util</a></li>
+</ul>
+</li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="../dev.html">Development Guidelines</a></li>
+</ul>
+
+            
+          
+        </div>
+        
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap">
+
+      
+      <nav class="wy-nav-top" aria-label="top navigation">
+        
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../index.html">draco</a>
+        
+      </nav>
+
+
+      <div class="wy-nav-content">
+        
+        <div class="rst-content">
+        
+          
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<div role="navigation" aria-label="breadcrumbs navigation">
+
+  <ul class="wy-breadcrumbs">
+    
+      <li><a href="../index.html" class="icon icon-home"></a> &raquo;</li>
+        
+          <li><a href="../reference.html">API Reference</a> &raquo;</li>
+        
+          <li><a href="draco.core.html">draco.core</a> &raquo;</li>
+        
+      <li>draco.core.task</li>
+    
+    
+      <li class="wy-breadcrumbs-aside">
+        
+          
+            <a href="../_sources/_autosummary/draco.core.task.rst.txt" rel="nofollow"> View page source</a>
+          
+        
+      </li>
+    
+  </ul>
+
+  
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+            
+  <div class="section" id="module-draco.core.task">
+<span id="draco-core-task"></span><h1>draco.core.task<a class="headerlink" href="#module-draco.core.task" title="Permalink to this headline">¶</a></h1>
+<p>An improved base task implementing easy (and explicit) saving of outputs.</p>
+<p class="rubric">Classes</p>
+<table class="longtable docutils align-default">
+<colgroup>
+<col style="width: 10%" />
+<col style="width: 90%" />
+</colgroup>
+<tbody>
+<tr class="row-odd"><td><p><a class="reference internal" href="#draco.core.task.Delete" title="draco.core.task.Delete"><code class="xref py py-obj docutils literal notranslate"><span class="pre">Delete</span></code></a>()</p></td>
+<td><p>Delete pipeline products to free memory.</p></td>
+</tr>
+<tr class="row-even"><td><p><a class="reference internal" href="#draco.core.task.LoggedTask" title="draco.core.task.LoggedTask"><code class="xref py py-obj docutils literal notranslate"><span class="pre">LoggedTask</span></code></a>()</p></td>
+<td><p>A task with logger support.</p></td>
+</tr>
+<tr class="row-odd"><td><p><a class="reference internal" href="#draco.core.task.MPILogFilter" title="draco.core.task.MPILogFilter"><code class="xref py py-obj docutils literal notranslate"><span class="pre">MPILogFilter</span></code></a>([add_mpi_info, level_rank0, …])</p></td>
+<td><p>Filter log entries by MPI rank.</p></td>
+</tr>
+<tr class="row-even"><td><p><a class="reference internal" href="#draco.core.task.MPILoggedTask" title="draco.core.task.MPILoggedTask"><code class="xref py py-obj docutils literal notranslate"><span class="pre">MPILoggedTask</span></code></a>()</p></td>
+<td><p>A task base that has MPI aware logging.</p></td>
+</tr>
+<tr class="row-odd"><td><p><a class="reference internal" href="#draco.core.task.MPITask" title="draco.core.task.MPITask"><code class="xref py py-obj docutils literal notranslate"><span class="pre">MPITask</span></code></a>()</p></td>
+<td><p>Base class for MPI using tasks.</p></td>
+</tr>
+<tr class="row-even"><td><p><a class="reference internal" href="#draco.core.task.ReturnFirstInputOnFinish" title="draco.core.task.ReturnFirstInputOnFinish"><code class="xref py py-obj docutils literal notranslate"><span class="pre">ReturnFirstInputOnFinish</span></code></a>()</p></td>
+<td><p>Workaround for <cite>caput.pipeline</cite> issues.</p></td>
+</tr>
+<tr class="row-odd"><td><p><a class="reference internal" href="#draco.core.task.ReturnLastInputOnFinish" title="draco.core.task.ReturnLastInputOnFinish"><code class="xref py py-obj docutils literal notranslate"><span class="pre">ReturnLastInputOnFinish</span></code></a>()</p></td>
+<td><p>Workaround for <cite>caput.pipeline</cite> issues.</p></td>
+</tr>
+<tr class="row-even"><td><p><a class="reference internal" href="#draco.core.task.SetMPILogging" title="draco.core.task.SetMPILogging"><code class="xref py py-obj docutils literal notranslate"><span class="pre">SetMPILogging</span></code></a>()</p></td>
+<td><p>A task used to configure MPI aware logging.</p></td>
+</tr>
+<tr class="row-odd"><td><p><a class="reference internal" href="#draco.core.task.SingleTask" title="draco.core.task.SingleTask"><code class="xref py py-obj docutils literal notranslate"><span class="pre">SingleTask</span></code></a>()</p></td>
+<td><p>Process a task with at most one input and output.</p></td>
+</tr>
+</tbody>
+</table>
+<dl class="py class">
+<dt id="draco.core.task.Delete">
+<em class="property">class </em><code class="sig-prename descclassname">draco.core.task.</code><code class="sig-name descname">Delete</code><a class="reference internal" href="../_modules/draco/core/task.html#Delete"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#draco.core.task.Delete" title="Permalink to this definition">¶</a></dt>
+<dd><p>Bases: <a class="reference internal" href="#draco.core.task.SingleTask" title="draco.core.task.SingleTask"><code class="xref py py-class docutils literal notranslate"><span class="pre">draco.core.task.SingleTask</span></code></a></p>
+<p>Delete pipeline products to free memory.</p>
+<p>Initialize pipeline task.</p>
+<p>May be overridden with no arguments.  Will be called after any
+<cite>config.Property</cite> attributes are set and after ‘input’ and ‘requires’
+keys are set up.</p>
+<dl class="py method">
+<dt id="draco.core.task.Delete.process">
+<code class="sig-name descname">process</code><span class="sig-paren">(</span><em class="sig-param"><span class="n">x</span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/draco/core/task.html#Delete.process"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#draco.core.task.Delete.process" title="Permalink to this definition">¶</a></dt>
+<dd><p>Delete the input and collect garbage.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><p><strong>x</strong> (<em>object</em>) – The object to be deleted.</p>
+</dd>
+</dl>
+</dd></dl>
+
+</dd></dl>
+
+<dl class="py class">
+<dt id="draco.core.task.LoggedTask">
+<em class="property">class </em><code class="sig-prename descclassname">draco.core.task.</code><code class="sig-name descname">LoggedTask</code><a class="reference internal" href="../_modules/draco/core/task.html#LoggedTask"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#draco.core.task.LoggedTask" title="Permalink to this definition">¶</a></dt>
+<dd><p>Bases: <code class="xref py py-class docutils literal notranslate"><span class="pre">caput.pipeline.TaskBase</span></code></p>
+<p>A task with logger support.</p>
+<p>Initialize pipeline task.</p>
+<p>May be overridden with no arguments.  Will be called after any
+<cite>config.Property</cite> attributes are set and after ‘input’ and ‘requires’
+keys are set up.</p>
+<dl class="py method">
+<dt id="draco.core.task.LoggedTask.log">
+<em class="property">property </em><code class="sig-name descname">log</code><a class="headerlink" href="#draco.core.task.LoggedTask.log" title="Permalink to this definition">¶</a></dt>
+<dd><p>The logger object for this task.</p>
+</dd></dl>
+
+</dd></dl>
+
+<dl class="py class">
+<dt id="draco.core.task.MPILogFilter">
+<em class="property">class </em><code class="sig-prename descclassname">draco.core.task.</code><code class="sig-name descname">MPILogFilter</code><span class="sig-paren">(</span><em class="sig-param"><span class="n">add_mpi_info</span><span class="o">=</span><span class="default_value">True</span></em>, <em class="sig-param"><span class="n">level_rank0</span><span class="o">=</span><span class="default_value">20</span></em>, <em class="sig-param"><span class="n">level_all</span><span class="o">=</span><span class="default_value">30</span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/draco/core/task.html#MPILogFilter"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#draco.core.task.MPILogFilter" title="Permalink to this definition">¶</a></dt>
+<dd><p>Bases: <code class="xref py py-class docutils literal notranslate"><span class="pre">logging.Filter</span></code></p>
+<p>Filter log entries by MPI rank.</p>
+<p>Also this will optionally add MPI rank information, and add an elapsed time
+entry.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>add_mpi_info</strong> (<em>boolean</em><em>, </em><em>optional</em>) – Add MPI rank/size info to log records that don’t already have it.</p></li>
+<li><p><strong>level_rank0</strong> (<em>int</em>) – Log level for messages from rank=0.</p></li>
+<li><p><strong>level_all</strong> (<em>int</em>) – Log level for messages from all other ranks.</p></li>
+</ul>
+</dd>
+</dl>
+<p>Initialize a filter.</p>
+<p>Initialize with the name of the logger which, together with its
+children, will have its events allowed through the filter. If no
+name is specified, allow every event.</p>
+<dl class="py method">
+<dt id="draco.core.task.MPILogFilter.filter">
+<code class="sig-name descname">filter</code><span class="sig-paren">(</span><em class="sig-param"><span class="n">record</span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/draco/core/task.html#MPILogFilter.filter"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#draco.core.task.MPILogFilter.filter" title="Permalink to this definition">¶</a></dt>
+<dd><p>Determine if the specified record is to be logged.</p>
+<p>Returns True if the record should be logged, or False otherwise.
+If deemed appropriate, the record may be modified in-place.</p>
+</dd></dl>
+
+</dd></dl>
+
+<dl class="py class">
+<dt id="draco.core.task.MPILoggedTask">
+<em class="property">class </em><code class="sig-prename descclassname">draco.core.task.</code><code class="sig-name descname">MPILoggedTask</code><a class="reference internal" href="../_modules/draco/core/task.html#MPILoggedTask"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#draco.core.task.MPILoggedTask" title="Permalink to this definition">¶</a></dt>
+<dd><p>Bases: <a class="reference internal" href="#draco.core.task.MPITask" title="draco.core.task.MPITask"><code class="xref py py-class docutils literal notranslate"><span class="pre">draco.core.task.MPITask</span></code></a>, <a class="reference internal" href="#draco.core.task.LoggedTask" title="draco.core.task.LoggedTask"><code class="xref py py-class docutils literal notranslate"><span class="pre">draco.core.task.LoggedTask</span></code></a></p>
+<p>A task base that has MPI aware logging.</p>
+<p>Initialize pipeline task.</p>
+<p>May be overridden with no arguments.  Will be called after any
+<cite>config.Property</cite> attributes are set and after ‘input’ and ‘requires’
+keys are set up.</p>
+</dd></dl>
+
+<dl class="py class">
+<dt id="draco.core.task.MPITask">
+<em class="property">class </em><code class="sig-prename descclassname">draco.core.task.</code><code class="sig-name descname">MPITask</code><a class="reference internal" href="../_modules/draco/core/task.html#MPITask"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#draco.core.task.MPITask" title="Permalink to this definition">¶</a></dt>
+<dd><p>Bases: <code class="xref py py-class docutils literal notranslate"><span class="pre">caput.pipeline.TaskBase</span></code></p>
+<p>Base class for MPI using tasks. Just ensures that the task gets a <cite>comm</cite>
+attribute.</p>
+<p>Initialize pipeline task.</p>
+<p>May be overridden with no arguments.  Will be called after any
+<cite>config.Property</cite> attributes are set and after ‘input’ and ‘requires’
+keys are set up.</p>
+</dd></dl>
+
+<dl class="py class">
+<dt id="draco.core.task.ReturnFirstInputOnFinish">
+<em class="property">class </em><code class="sig-prename descclassname">draco.core.task.</code><code class="sig-name descname">ReturnFirstInputOnFinish</code><a class="reference internal" href="../_modules/draco/core/task.html#ReturnFirstInputOnFinish"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#draco.core.task.ReturnFirstInputOnFinish" title="Permalink to this definition">¶</a></dt>
+<dd><p>Bases: <a class="reference internal" href="#draco.core.task.SingleTask" title="draco.core.task.SingleTask"><code class="xref py py-class docutils literal notranslate"><span class="pre">draco.core.task.SingleTask</span></code></a></p>
+<p>Workaround for <cite>caput.pipeline</cite> issues.</p>
+<p>This caches its input on the first call to <cite>process</cite> and
+then returns it for a finish call.</p>
+<p>Initialize pipeline task.</p>
+<p>May be overridden with no arguments.  Will be called after any
+<cite>config.Property</cite> attributes are set and after ‘input’ and ‘requires’
+keys are set up.</p>
+<dl class="py method">
+<dt id="draco.core.task.ReturnFirstInputOnFinish.process">
+<code class="sig-name descname">process</code><span class="sig-paren">(</span><em class="sig-param"><span class="n">x</span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/draco/core/task.html#ReturnFirstInputOnFinish.process"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#draco.core.task.ReturnFirstInputOnFinish.process" title="Permalink to this definition">¶</a></dt>
+<dd><p>Take a reference to the input.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><p><strong>x</strong> (<em>object</em>) – </p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt id="draco.core.task.ReturnFirstInputOnFinish.process_finish">
+<code class="sig-name descname">process_finish</code><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="../_modules/draco/core/task.html#ReturnFirstInputOnFinish.process_finish"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#draco.core.task.ReturnFirstInputOnFinish.process_finish" title="Permalink to this definition">¶</a></dt>
+<dd><p>Return the last input to process.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Returns</dt>
+<dd class="field-odd"><p><strong>x</strong> – Last input to process.</p>
+</dd>
+<dt class="field-even">Return type</dt>
+<dd class="field-even"><p>object</p>
+</dd>
+</dl>
+</dd></dl>
+
+</dd></dl>
+
+<dl class="py class">
+<dt id="draco.core.task.ReturnLastInputOnFinish">
+<em class="property">class </em><code class="sig-prename descclassname">draco.core.task.</code><code class="sig-name descname">ReturnLastInputOnFinish</code><a class="reference internal" href="../_modules/draco/core/task.html#ReturnLastInputOnFinish"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#draco.core.task.ReturnLastInputOnFinish" title="Permalink to this definition">¶</a></dt>
+<dd><p>Bases: <a class="reference internal" href="#draco.core.task.SingleTask" title="draco.core.task.SingleTask"><code class="xref py py-class docutils literal notranslate"><span class="pre">draco.core.task.SingleTask</span></code></a></p>
+<p>Workaround for <cite>caput.pipeline</cite> issues.</p>
+<p>This caches its input on every call to <cite>process</cite> and then returns
+the last one for a finish call.</p>
+<p>Initialize pipeline task.</p>
+<p>May be overridden with no arguments.  Will be called after any
+<cite>config.Property</cite> attributes are set and after ‘input’ and ‘requires’
+keys are set up.</p>
+<dl class="py method">
+<dt id="draco.core.task.ReturnLastInputOnFinish.process">
+<code class="sig-name descname">process</code><span class="sig-paren">(</span><em class="sig-param"><span class="n">x</span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/draco/core/task.html#ReturnLastInputOnFinish.process"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#draco.core.task.ReturnLastInputOnFinish.process" title="Permalink to this definition">¶</a></dt>
+<dd><p>Take a reference to the input.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><p><strong>x</strong> (<em>object</em>) – </p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt id="draco.core.task.ReturnLastInputOnFinish.process_finish">
+<code class="sig-name descname">process_finish</code><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="../_modules/draco/core/task.html#ReturnLastInputOnFinish.process_finish"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#draco.core.task.ReturnLastInputOnFinish.process_finish" title="Permalink to this definition">¶</a></dt>
+<dd><p>Return the last input to process.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Returns</dt>
+<dd class="field-odd"><p><strong>x</strong> – Last input to process.</p>
+</dd>
+<dt class="field-even">Return type</dt>
+<dd class="field-even"><p>object</p>
+</dd>
+</dl>
+</dd></dl>
+
+</dd></dl>
+
+<dl class="py class">
+<dt id="draco.core.task.SetMPILogging">
+<em class="property">class </em><code class="sig-prename descclassname">draco.core.task.</code><code class="sig-name descname">SetMPILogging</code><a class="reference internal" href="../_modules/draco/core/task.html#SetMPILogging"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#draco.core.task.SetMPILogging" title="Permalink to this definition">¶</a></dt>
+<dd><p>Bases: <code class="xref py py-class docutils literal notranslate"><span class="pre">caput.pipeline.TaskBase</span></code></p>
+<p>A task used to configure MPI aware logging.</p>
+<dl class="py attribute">
+<dt>
+<code class="sig-name descname">level_rank0, level_all</code></dt>
+<dd><p>Log level for rank=0, and other ranks respectively.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type</dt>
+<dd class="field-odd"><p>int or str</p>
+</dd>
+</dl>
+</dd></dl>
+
+<p>Initialize pipeline task.</p>
+<p>May be overridden with no arguments.  Will be called after any
+<cite>config.Property</cite> attributes are set and after ‘input’ and ‘requires’
+keys are set up.</p>
+</dd></dl>
+
+<dl class="py class">
+<dt id="draco.core.task.SingleTask">
+<em class="property">class </em><code class="sig-prename descclassname">draco.core.task.</code><code class="sig-name descname">SingleTask</code><a class="reference internal" href="../_modules/draco/core/task.html#SingleTask"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#draco.core.task.SingleTask" title="Permalink to this definition">¶</a></dt>
+<dd><p>Bases: <a class="reference internal" href="#draco.core.task.MPILoggedTask" title="draco.core.task.MPILoggedTask"><code class="xref py py-class docutils literal notranslate"><span class="pre">draco.core.task.MPILoggedTask</span></code></a>, <code class="xref py py-class docutils literal notranslate"><span class="pre">caput.pipeline.BasicContMixin</span></code></p>
+<p>Process a task with at most one input and output.</p>
+<p>Both input and output are expected to be <code class="xref py py-class docutils literal notranslate"><span class="pre">memh5.BasicCont</span></code> objects.
+This class allows writing of the output when requested.</p>
+<p>Tasks inheriting from this class should override <cite>process</cite> and optionally
+<code class="xref py py-meth docutils literal notranslate"><span class="pre">setup()</span></code> or <a class="reference internal" href="#draco.core.task.SingleTask.finish" title="draco.core.task.SingleTask.finish"><code class="xref py py-meth docutils literal notranslate"><span class="pre">finish()</span></code></a>. They should not override <a class="reference internal" href="#draco.core.task.SingleTask.next" title="draco.core.task.SingleTask.next"><code class="xref py py-meth docutils literal notranslate"><span class="pre">next()</span></code></a>.</p>
+<p>If the value of <code class="xref py py-attr docutils literal notranslate"><span class="pre">input_root</span></code> is anything other than the string “None”
+then the input will be read (using <code class="xref py py-meth docutils literal notranslate"><span class="pre">read_input()</span></code>) from the file
+<code class="docutils literal notranslate"><span class="pre">self.input_root</span> <span class="pre">+</span> <span class="pre">self.input_filename</span></code>.  If the input is specified both as
+a filename and as a product key in the pipeline configuration, an error
+will be raised upon initialization.</p>
+<p>If the value of <a class="reference internal" href="#draco.core.task.SingleTask.output_root" title="draco.core.task.SingleTask.output_root"><code class="xref py py-attr docutils literal notranslate"><span class="pre">output_root</span></code></a> is anything other than the string
+“None” then the output will be written (using <code class="xref py py-meth docutils literal notranslate"><span class="pre">write_output()</span></code>) to the
+file <code class="docutils literal notranslate"><span class="pre">self.output_root</span> <span class="pre">+</span> <span class="pre">self.output_filename</span></code>.</p>
+<dl class="py attribute">
+<dt id="draco.core.task.SingleTask.save">
+<code class="sig-name descname">save</code><a class="headerlink" href="#draco.core.task.SingleTask.save" title="Permalink to this definition">¶</a></dt>
+<dd><p>Whether to save the output to disk or not.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type</dt>
+<dd class="field-odd"><p>bool</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt id="draco.core.task.SingleTask.output_name">
+<code class="sig-name descname">output_name</code><a class="headerlink" href="#draco.core.task.SingleTask.output_name" title="Permalink to this definition">¶</a></dt>
+<dd><dl class="simple">
+<dt>A python format string used to construct the filename. Valid identifiers are:</dt><dd><ul class="simple">
+<li><p><cite>count</cite>: an integer giving which iteration of the task is this.</p></li>
+<li><dl class="simple">
+<dt><cite>tag</cite>: a string identifier for the output derived from the</dt><dd><p>containers <cite>tag</cite> attribute. If that attribute is not present
+<cite>count</cite> is used instead.</p>
+</dd>
+</dl>
+</li>
+<li><p><cite>key</cite>: the name of the output key.</p></li>
+<li><p><cite>task</cite>: the (unqualified) name of the task.</p></li>
+<li><dl class="simple">
+<dt><cite>output_root</cite>: the value of the output root argument. This is deprecated</dt><dd><p>and is just used for legacy support. The default value of
+<cite>output_name</cite> means the previous behaviour works.</p>
+</dd>
+</dl>
+</li>
+</ul>
+</dd>
+</dl>
+<dl class="field-list simple">
+<dt class="field-odd">Type</dt>
+<dd class="field-odd"><p>string</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt id="draco.core.task.SingleTask.output_root">
+<code class="sig-name descname">output_root</code><a class="headerlink" href="#draco.core.task.SingleTask.output_root" title="Permalink to this definition">¶</a></dt>
+<dd><p>Pipeline settable parameter giving the first part of the output path.
+Deprecated in favour of <cite>output_name</cite>.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type</dt>
+<dd class="field-odd"><p>string</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt id="draco.core.task.SingleTask.nan_check">
+<code class="sig-name descname">nan_check</code><a class="headerlink" href="#draco.core.task.SingleTask.nan_check" title="Permalink to this definition">¶</a></dt>
+<dd><p>Check the output for NaNs (and infs) logging if they are present.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type</dt>
+<dd class="field-odd"><p>bool</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt id="draco.core.task.SingleTask.nan_dump">
+<code class="sig-name descname">nan_dump</code><a class="headerlink" href="#draco.core.task.SingleTask.nan_dump" title="Permalink to this definition">¶</a></dt>
+<dd><p>If NaN’s are found, dump the container to disk.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type</dt>
+<dd class="field-odd"><p>bool</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt id="draco.core.task.SingleTask.nan_skip">
+<code class="sig-name descname">nan_skip</code><a class="headerlink" href="#draco.core.task.SingleTask.nan_skip" title="Permalink to this definition">¶</a></dt>
+<dd><p>If NaN’s are found, don’t pass on the output.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type</dt>
+<dd class="field-odd"><p>bool</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt id="draco.core.task.SingleTask.versions">
+<code class="sig-name descname">versions</code><a class="headerlink" href="#draco.core.task.SingleTask.versions" title="Permalink to this definition">¶</a></dt>
+<dd><p>Keys are module names (str) and values are their version strings. This is
+attached to output metadata.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type</dt>
+<dd class="field-odd"><p>dict</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt id="draco.core.task.SingleTask.pipeline_config">
+<code class="sig-name descname">pipeline_config</code><a class="headerlink" href="#draco.core.task.SingleTask.pipeline_config" title="Permalink to this definition">¶</a></dt>
+<dd><p>Global pipeline configuration. This is attached to output metadata.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type</dt>
+<dd class="field-odd"><p>dict</p>
+</dd>
+</dl>
+</dd></dl>
+
+<p>Initialize pipeline task.</p>
+<p>May be overridden with no arguments.  Will be called after any
+<cite>config.Property</cite> attributes are set and after ‘input’ and ‘requires’
+keys are set up.</p>
+<dl class="py method">
+<dt id="draco.core.task.SingleTask.finish">
+<code class="sig-name descname">finish</code><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="../_modules/draco/core/task.html#SingleTask.finish"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#draco.core.task.SingleTask.finish" title="Permalink to this definition">¶</a></dt>
+<dd><p>Should not need to override. Implement <cite>process_finish</cite> instead.</p>
+</dd></dl>
+
+<dl class="py method">
+<dt id="draco.core.task.SingleTask.next">
+<code class="sig-name descname">next</code><span class="sig-paren">(</span><em class="sig-param"><span class="o">*</span><span class="n">input</span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/draco/core/task.html#SingleTask.next"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#draco.core.task.SingleTask.next" title="Permalink to this definition">¶</a></dt>
+<dd><p>Should not need to override. Implement <cite>process</cite> instead.</p>
+</dd></dl>
+
+</dd></dl>
+
+</div>
+
+
+           </div>
+           
+          </div>
+          <footer>
+    <div class="rst-footer-buttons" role="navigation" aria-label="footer navigation">
+        <a href="draco.synthesis.html" class="btn btn-neutral float-right" title="draco.synthesis" accesskey="n" rel="next">Next <span class="fa fa-arrow-circle-right" aria-hidden="true"></span></a>
+        <a href="draco.core.misc.html" class="btn btn-neutral float-left" title="draco.core.misc" accesskey="p" rel="prev"><span class="fa fa-arrow-circle-left" aria-hidden="true"></span> Previous</a>
+    </div>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>
+        &#169; Copyright 2016, Richard Shaw.
+
+    </p>
+  </div>
+    
+    
+    
+    Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    
+    provided by <a href="https://readthedocs.org">Read the Docs</a>. 
+
+</footer>
+        </div>
+      </div>
+
+    </section>
+
+  </div>
+  
+
+  <script type="text/javascript">
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script>
+
+  
+  
+    
+   
+
+</body>
+</html>

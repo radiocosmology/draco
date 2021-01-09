@@ -1,0 +1,402 @@
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" >
+<head>
+  <meta charset="utf-8" />
+  
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  
+  <title>draco.util.rfi &mdash; draco 0+untagged.1.g43914e3 documentation</title>
+  
+
+  
+  <link rel="stylesheet" href="../../../_static/css/theme.css" type="text/css" />
+  <link rel="stylesheet" href="../../../_static/pygments.css" type="text/css" />
+
+  
+  
+
+  
+  
+
+  
+
+  
+  <!--[if lt IE 9]>
+    <script src="../../../_static/js/html5shiv.min.js"></script>
+  <![endif]-->
+  
+    
+      <script type="text/javascript" id="documentation_options" data-url_root="../../../" src="../../../_static/documentation_options.js"></script>
+        <script src="../../../_static/jquery.js"></script>
+        <script src="../../../_static/underscore.js"></script>
+        <script src="../../../_static/doctools.js"></script>
+        <script async="async" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/2.7.7/latest.js?config=TeX-AMS-MML_HTMLorMML"></script>
+    
+    <script type="text/javascript" src="../../../_static/js/theme.js"></script>
+
+    
+    <link rel="index" title="Index" href="../../../genindex.html" />
+    <link rel="search" title="Search" href="../../../search.html" /> 
+</head>
+
+<body class="wy-body-for-nav">
+
+   
+  <div class="wy-grid-for-nav">
+    
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+          
+
+          
+            <a href="../../../index.html" class="icon icon-home"> draco
+          
+
+          
+          </a>
+
+          
+            
+            
+              <div class="version">
+                0+untagged.1.g43914e3
+              </div>
+            
+          
+
+          
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../../../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+
+          
+        </div>
+
+        
+        <div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="main navigation">
+          
+            
+            
+              
+            
+            
+              <ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../tutorial.html">Tutorial</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../reference.html">API Reference</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../dev.html">Development Guidelines</a></li>
+</ul>
+
+            
+          
+        </div>
+        
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap">
+
+      
+      <nav class="wy-nav-top" aria-label="top navigation">
+        
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../../../index.html">draco</a>
+        
+      </nav>
+
+
+      <div class="wy-nav-content">
+        
+        <div class="rst-content">
+        
+          
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<div role="navigation" aria-label="breadcrumbs navigation">
+
+  <ul class="wy-breadcrumbs">
+    
+      <li><a href="../../../index.html" class="icon icon-home"></a> &raquo;</li>
+        
+          <li><a href="../../index.html">Module code</a> &raquo;</li>
+        
+      <li>draco.util.rfi</li>
+    
+    
+      <li class="wy-breadcrumbs-aside">
+        
+      </li>
+    
+  </ul>
+
+  
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+            
+  <h1>Source code for draco.util.rfi</h1><div class="highlight"><pre>
+<span></span><span class="sd">&quot;&quot;&quot;Collection of routines for RFI excision.&quot;&quot;&quot;</span>
+<span class="kn">import</span> <span class="nn">numpy</span> <span class="k">as</span> <span class="nn">np</span>
+<span class="kn">from</span> <span class="nn">scipy.ndimage</span> <span class="kn">import</span> <span class="n">convolve1d</span>
+
+
+<div class="viewcode-block" id="sumthreshold_py"><a class="viewcode-back" href="../../../_autosummary/draco.util.rfi.html#draco.util.rfi.sumthreshold_py">[docs]</a><span class="k">def</span> <span class="nf">sumthreshold_py</span><span class="p">(</span>
+    <span class="n">data</span><span class="p">,</span>
+    <span class="n">max_m</span><span class="o">=</span><span class="mi">16</span><span class="p">,</span>
+    <span class="n">start_flag</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
+    <span class="n">threshold1</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
+    <span class="n">remove_median</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
+    <span class="n">correct_for_missing</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
+<span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;SumThreshold outlier detection algorithm.</span>
+
+<span class="sd">    See http://www.astro.rug.nl/~offringa/SumThreshold.pdf for description of</span>
+<span class="sd">    the algorithm.</span>
+
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    data : np.ndarray[:, :]</span>
+<span class="sd">        The data to flag.</span>
+<span class="sd">    max_m : int, optional</span>
+<span class="sd">        Maximum size to expand to.</span>
+<span class="sd">    start_flag : np.ndarray[:, :], optional</span>
+<span class="sd">        A boolean array of the initially flagged data.</span>
+<span class="sd">    threshold1 : float, optional</span>
+<span class="sd">        Initial threshold. By default use the 95 percentile.</span>
+<span class="sd">    remove_median : bool, optional</span>
+<span class="sd">        Subtract the median of the full 2D dataset. Default is True.</span>
+<span class="sd">    correct_for_missing : bool, optional</span>
+
+<span class="sd">    Returns</span>
+<span class="sd">    -------</span>
+<span class="sd">    mask : np.ndarray[:, :]</span>
+<span class="sd">        Boolean array, with `True` entries marking outlier data.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+
+    <span class="n">m_min</span> <span class="o">=</span> <span class="mi">4</span>  <span class="c1"># Minimum value of m to reach</span>
+    <span class="n">data</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">copy</span><span class="p">(</span><span class="n">data</span><span class="p">)</span>
+    <span class="p">(</span><span class="n">ny</span><span class="p">,</span> <span class="n">nx</span><span class="p">)</span> <span class="o">=</span> <span class="n">data</span><span class="o">.</span><span class="n">shape</span>
+
+    <span class="k">if</span> <span class="n">start_flag</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="n">start_flag</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">isnan</span><span class="p">(</span><span class="n">data</span><span class="p">)</span>
+    <span class="n">flag</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">copy</span><span class="p">(</span><span class="n">start_flag</span><span class="p">)</span>
+
+    <span class="k">if</span> <span class="n">remove_median</span><span class="p">:</span>
+        <span class="n">data</span> <span class="o">-=</span> <span class="n">np</span><span class="o">.</span><span class="n">median</span><span class="p">(</span><span class="n">data</span><span class="p">[</span><span class="o">~</span><span class="n">flag</span><span class="p">])</span>
+
+    <span class="k">if</span> <span class="n">threshold1</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="n">threshold1</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">percentile</span><span class="p">(</span><span class="n">data</span><span class="p">[</span><span class="o">~</span><span class="n">flag</span><span class="p">],</span> <span class="mf">95.0</span><span class="p">)</span>
+
+    <span class="n">m</span> <span class="o">=</span> <span class="mi">1</span>
+    <span class="k">while</span> <span class="n">m</span> <span class="o">&lt;=</span> <span class="n">max_m</span><span class="p">:</span>
+
+        <span class="k">if</span> <span class="n">m</span> <span class="o">==</span> <span class="mi">1</span><span class="p">:</span>
+            <span class="n">threshold</span> <span class="o">=</span> <span class="n">threshold1</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">threshold</span> <span class="o">=</span> <span class="n">threshold1</span> <span class="o">/</span> <span class="mf">1.5</span> <span class="o">**</span> <span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">log2</span><span class="p">(</span><span class="n">m</span><span class="p">))</span>
+        <span class="n">data_rms</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">std</span><span class="p">(</span><span class="n">data</span><span class="p">[</span><span class="o">~</span><span class="n">flag</span><span class="p">])</span>
+
+        <span class="c1"># The centre of the window for even windows is the bin right to the left of centre.</span>
+        <span class="c1"># I want the origin at the leftmost bin</span>
+        <span class="k">if</span> <span class="n">m</span> <span class="o">==</span> <span class="mi">1</span><span class="p">:</span>
+            <span class="n">centre</span> <span class="o">=</span> <span class="mi">0</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">centre</span> <span class="o">=</span> <span class="n">m</span> <span class="o">//</span> <span class="mi">2</span> <span class="o">-</span> <span class="mi">1</span>
+
+        <span class="c1">## X-axis</span>
+
+        <span class="n">data</span><span class="p">[</span><span class="n">flag</span><span class="p">]</span> <span class="o">=</span> <span class="mf">0.0</span>
+        <span class="n">count</span> <span class="o">=</span> <span class="p">(</span><span class="o">~</span><span class="n">flag</span><span class="p">)</span><span class="o">.</span><span class="n">astype</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">float</span><span class="p">)</span>
+
+        <span class="c1"># Convolution of the data</span>
+        <span class="n">dconv</span> <span class="o">=</span> <span class="n">convolve1d</span><span class="p">(</span>
+            <span class="n">data</span><span class="p">,</span> <span class="n">weights</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">ones</span><span class="p">(</span><span class="n">m</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="nb">float</span><span class="p">),</span> <span class="n">origin</span><span class="o">=-</span><span class="n">centre</span><span class="p">,</span> <span class="n">axis</span><span class="o">=</span><span class="mi">1</span>
+        <span class="p">)[:,</span> <span class="p">:</span> <span class="p">(</span><span class="n">nx</span> <span class="o">-</span> <span class="n">m</span> <span class="o">+</span> <span class="mi">1</span><span class="p">)]</span>
+
+        <span class="c1"># Convolution of the counts</span>
+        <span class="n">cconv</span> <span class="o">=</span> <span class="n">convolve1d</span><span class="p">(</span>
+            <span class="n">count</span><span class="p">,</span> <span class="n">weights</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">ones</span><span class="p">(</span><span class="n">m</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="nb">float</span><span class="p">),</span> <span class="n">origin</span><span class="o">=-</span><span class="n">centre</span><span class="p">,</span> <span class="n">axis</span><span class="o">=</span><span class="mi">1</span>
+        <span class="p">)[:,</span> <span class="p">:</span> <span class="p">(</span><span class="n">nx</span> <span class="o">-</span> <span class="n">m</span> <span class="o">+</span> <span class="mi">1</span><span class="p">)]</span>
+        <span class="k">if</span> <span class="n">correct_for_missing</span><span class="p">:</span>
+            <span class="n">cconv</span> <span class="o">=</span> <span class="n">m</span> <span class="o">**</span> <span class="mf">0.5</span> <span class="o">*</span> <span class="n">cconv</span> <span class="o">**</span> <span class="mf">0.5</span>
+        <span class="n">flag_temp</span> <span class="o">=</span> <span class="n">dconv</span> <span class="o">&gt;</span> <span class="n">cconv</span> <span class="o">*</span> <span class="n">threshold</span>
+        <span class="n">flag_temp</span> <span class="o">+=</span> <span class="n">dconv</span> <span class="o">&lt;</span> <span class="o">-</span><span class="n">cconv</span> <span class="o">*</span> <span class="n">threshold</span>
+        <span class="k">for</span> <span class="n">ii</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">flag_temp</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">1</span><span class="p">]):</span>
+            <span class="n">flag</span><span class="p">[:,</span> <span class="n">ii</span> <span class="p">:</span> <span class="p">(</span><span class="n">ii</span> <span class="o">+</span> <span class="n">m</span><span class="p">)]</span> <span class="o">+=</span> <span class="n">flag_temp</span><span class="p">[:,</span> <span class="n">ii</span><span class="p">][:,</span> <span class="n">np</span><span class="o">.</span><span class="n">newaxis</span><span class="p">]</span>
+
+        <span class="c1">## Y-axis</span>
+
+        <span class="n">data</span><span class="p">[</span><span class="n">flag</span><span class="p">]</span> <span class="o">=</span> <span class="mf">0.0</span>
+        <span class="n">count</span> <span class="o">=</span> <span class="p">(</span><span class="o">~</span><span class="n">flag</span><span class="p">)</span><span class="o">.</span><span class="n">astype</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">float</span><span class="p">)</span>
+        <span class="c1"># Convolution of the data</span>
+        <span class="n">dconv</span> <span class="o">=</span> <span class="n">convolve1d</span><span class="p">(</span>
+            <span class="n">data</span><span class="p">,</span> <span class="n">weights</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">ones</span><span class="p">(</span><span class="n">m</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="nb">float</span><span class="p">),</span> <span class="n">origin</span><span class="o">=-</span><span class="n">centre</span><span class="p">,</span> <span class="n">axis</span><span class="o">=</span><span class="mi">0</span>
+        <span class="p">)[:</span> <span class="p">(</span><span class="n">ny</span> <span class="o">-</span> <span class="n">m</span> <span class="o">+</span> <span class="mi">1</span><span class="p">),</span> <span class="p">:]</span>
+        <span class="c1"># Convolution of the counts</span>
+        <span class="n">cconv</span> <span class="o">=</span> <span class="n">convolve1d</span><span class="p">(</span>
+            <span class="n">count</span><span class="p">,</span> <span class="n">weights</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">ones</span><span class="p">(</span><span class="n">m</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="nb">float</span><span class="p">),</span> <span class="n">origin</span><span class="o">=-</span><span class="n">centre</span><span class="p">,</span> <span class="n">axis</span><span class="o">=</span><span class="mi">0</span>
+        <span class="p">)[:</span> <span class="p">(</span><span class="n">ny</span> <span class="o">-</span> <span class="n">m</span> <span class="o">+</span> <span class="mi">1</span><span class="p">),</span> <span class="p">:]</span>
+        <span class="k">if</span> <span class="n">correct_for_missing</span><span class="p">:</span>
+            <span class="n">cconv</span> <span class="o">=</span> <span class="n">m</span> <span class="o">**</span> <span class="mf">0.5</span> <span class="o">*</span> <span class="n">cconv</span> <span class="o">**</span> <span class="mf">0.5</span>
+        <span class="n">flag_temp</span> <span class="o">=</span> <span class="n">dconv</span> <span class="o">&gt;</span> <span class="n">cconv</span> <span class="o">*</span> <span class="n">threshold</span>
+        <span class="n">flag_temp</span> <span class="o">+=</span> <span class="n">dconv</span> <span class="o">&lt;</span> <span class="o">-</span><span class="n">cconv</span> <span class="o">*</span> <span class="n">threshold</span>
+
+        <span class="k">for</span> <span class="n">ii</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">flag_temp</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">]):</span>
+            <span class="n">flag</span><span class="p">[</span><span class="n">ii</span> <span class="p">:</span> <span class="n">ii</span> <span class="o">+</span> <span class="n">m</span><span class="p">,</span> <span class="p">:]</span> <span class="o">+=</span> <span class="n">flag_temp</span><span class="p">[</span><span class="n">ii</span><span class="p">,</span> <span class="p">:][</span><span class="n">np</span><span class="o">.</span><span class="n">newaxis</span><span class="p">,</span> <span class="p">:]</span>
+
+        <span class="n">m</span> <span class="o">*=</span> <span class="mi">2</span>
+
+    <span class="k">return</span> <span class="n">flag</span></div>
+
+
+<span class="c1"># This routine might be substituted by a faster one later</span>
+<span class="n">sumthreshold</span> <span class="o">=</span> <span class="n">sumthreshold_py</span>
+
+<span class="c1"># Scale-invariant rank (SIR) functions</span>
+<div class="viewcode-block" id="sir1d"><a class="viewcode-back" href="../../../_autosummary/draco.util.rfi.html#draco.util.rfi.sir1d">[docs]</a><span class="k">def</span> <span class="nf">sir1d</span><span class="p">(</span><span class="n">basemask</span><span class="p">,</span> <span class="n">eta</span><span class="o">=</span><span class="mf">0.2</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;Numpy implementation of the scale-invariant rank (SIR) operator.</span>
+
+<span class="sd">    For more information, see arXiv:1201.3364v2.</span>
+
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    basemask : numpy 1D array of boolean type</span>
+<span class="sd">        Array with the threshold mask previously generated.</span>
+<span class="sd">        1 (True) for flagged points, 0 (False) otherwise.</span>
+<span class="sd">    eta : float</span>
+<span class="sd">        Aggressiveness of the method: with eta=0, no additional samples are</span>
+<span class="sd">        flagged and the function returns basemask. With eta=1, all samples</span>
+<span class="sd">        will be flagged. The authors in arXiv:1201.3364v2 seem to be convinced</span>
+<span class="sd">        that 0.2 is a mostly universally optimal value, but no optimization</span>
+<span class="sd">        has been done on CHIME data.</span>
+
+<span class="sd">    Returns</span>
+<span class="sd">    -------</span>
+<span class="sd">    mask : numpy 1D array of boolean type</span>
+<span class="sd">        The mask after the application of the (SIR) operator. Same shape and</span>
+<span class="sd">        type as basemask.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">n</span> <span class="o">=</span> <span class="n">basemask</span><span class="o">.</span><span class="n">size</span>
+    <span class="n">psi</span> <span class="o">=</span> <span class="n">basemask</span><span class="o">.</span><span class="n">astype</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">float</span><span class="p">)</span> <span class="o">-</span> <span class="mf">1.0</span> <span class="o">+</span> <span class="n">eta</span>
+
+    <span class="n">M</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">zeros</span><span class="p">(</span><span class="n">n</span> <span class="o">+</span> <span class="mi">1</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">float</span><span class="p">)</span>
+    <span class="n">M</span><span class="p">[</span><span class="mi">1</span><span class="p">:]</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">cumsum</span><span class="p">(</span><span class="n">psi</span><span class="p">)</span>
+
+    <span class="n">MP</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">minimum</span><span class="o">.</span><span class="n">accumulate</span><span class="p">(</span><span class="n">M</span><span class="p">)[:</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span>
+    <span class="n">MQ</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">concatenate</span><span class="p">((</span><span class="n">np</span><span class="o">.</span><span class="n">maximum</span><span class="o">.</span><span class="n">accumulate</span><span class="p">(</span><span class="n">M</span><span class="p">[</span><span class="o">-</span><span class="mi">2</span><span class="p">::</span><span class="o">-</span><span class="mi">1</span><span class="p">])[</span><span class="o">-</span><span class="mi">2</span><span class="p">::</span><span class="o">-</span><span class="mi">1</span><span class="p">],</span> <span class="n">M</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">,</span> <span class="n">np</span><span class="o">.</span><span class="n">newaxis</span><span class="p">]))</span>
+
+    <span class="k">return</span> <span class="p">(</span><span class="n">MQ</span> <span class="o">-</span> <span class="n">MP</span><span class="p">)</span> <span class="o">&gt;=</span> <span class="mf">0.0</span></div>
+
+
+<div class="viewcode-block" id="sir"><a class="viewcode-back" href="../../../_autosummary/draco.util.rfi.html#draco.util.rfi.sir">[docs]</a><span class="k">def</span> <span class="nf">sir</span><span class="p">(</span><span class="n">basemask</span><span class="p">,</span> <span class="n">eta</span><span class="o">=</span><span class="mf">0.2</span><span class="p">,</span> <span class="n">only_freq</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span> <span class="n">only_time</span><span class="o">=</span><span class="kc">False</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;Apply the SIR operator over the frequency and time axes for each product.</span>
+
+<span class="sd">    This is a wrapper for `sir1d`.  It loops over times, applying `sir1d`</span>
+<span class="sd">    across the frequency axis.  It then loops over frequencies, applying `sir1d`</span>
+<span class="sd">    across the time axis.  It returns the logical OR of these two masks.</span>
+
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    basemask : np.ndarray[nfreq, nprod, ntime] of boolean type</span>
+<span class="sd">        The previously generated threshold mask.</span>
+<span class="sd">        1 (True) for masked points, 0 (False) otherwise.</span>
+<span class="sd">    eta : float</span>
+<span class="sd">        Aggressiveness of the method: with eta=0, no additional samples are</span>
+<span class="sd">        flagged and the function returns basemask. With eta=1, all samples</span>
+<span class="sd">        will be flagged.</span>
+<span class="sd">    only_freq : bool</span>
+<span class="sd">        Only apply the SIR operator across the frequency axis.</span>
+<span class="sd">    only_time : bool</span>
+<span class="sd">        Only apply the SIR operator across the time axis.</span>
+
+<span class="sd">    Returns</span>
+<span class="sd">    -------</span>
+<span class="sd">    mask : np.ndarray[nfreq, nprod, ntime] of boolean type</span>
+<span class="sd">        The mask after the application of the SIR operator.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">if</span> <span class="n">only_freq</span> <span class="ow">and</span> <span class="n">only_time</span><span class="p">:</span>
+        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;Only one of only_freq and only_time can be True.&quot;</span><span class="p">)</span>
+
+    <span class="n">nfreq</span><span class="p">,</span> <span class="n">nprod</span><span class="p">,</span> <span class="n">ntime</span> <span class="o">=</span> <span class="n">basemask</span><span class="o">.</span><span class="n">shape</span>
+
+    <span class="n">newmask</span> <span class="o">=</span> <span class="n">basemask</span><span class="o">.</span><span class="n">astype</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">bool</span><span class="p">)</span><span class="o">.</span><span class="n">copy</span><span class="p">()</span>
+
+    <span class="k">for</span> <span class="n">pp</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">nprod</span><span class="p">):</span>
+
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">only_time</span><span class="p">:</span>
+            <span class="k">for</span> <span class="n">tt</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">ntime</span><span class="p">):</span>
+                <span class="n">newmask</span><span class="p">[:,</span> <span class="n">pp</span><span class="p">,</span> <span class="n">tt</span><span class="p">]</span> <span class="o">|=</span> <span class="n">sir1d</span><span class="p">(</span><span class="n">basemask</span><span class="p">[:,</span> <span class="n">pp</span><span class="p">,</span> <span class="n">tt</span><span class="p">],</span> <span class="n">eta</span><span class="o">=</span><span class="n">eta</span><span class="p">)</span>
+
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">only_freq</span><span class="p">:</span>
+            <span class="k">for</span> <span class="n">ff</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">nfreq</span><span class="p">):</span>
+                <span class="n">newmask</span><span class="p">[</span><span class="n">ff</span><span class="p">,</span> <span class="n">pp</span><span class="p">,</span> <span class="p">:]</span> <span class="o">|=</span> <span class="n">sir1d</span><span class="p">(</span><span class="n">basemask</span><span class="p">[</span><span class="n">ff</span><span class="p">,</span> <span class="n">pp</span><span class="p">,</span> <span class="p">:],</span> <span class="n">eta</span><span class="o">=</span><span class="n">eta</span><span class="p">)</span>
+
+    <span class="k">return</span> <span class="n">newmask</span></div>
+</pre></div>
+
+           </div>
+           
+          </div>
+          <footer>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>
+        &#169; Copyright 2016, Richard Shaw.
+
+    </p>
+  </div>
+    
+    
+    
+    Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    
+    provided by <a href="https://readthedocs.org">Read the Docs</a>. 
+
+</footer>
+        </div>
+      </div>
+
+    </section>
+
+  </div>
+  
+
+  <script type="text/javascript">
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script>
+
+  
+  
+    
+   
+
+</body>
+</html>

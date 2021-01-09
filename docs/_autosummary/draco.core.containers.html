@@ -1,0 +1,949 @@
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" >
+<head>
+  <meta charset="utf-8" />
+  
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  
+  <title>draco.core.containers &mdash; draco 0+untagged.1.g43914e3 documentation</title>
+  
+
+  
+  <link rel="stylesheet" href="../_static/css/theme.css" type="text/css" />
+  <link rel="stylesheet" href="../_static/pygments.css" type="text/css" />
+
+  
+  
+
+  
+  
+
+  
+
+  
+  <!--[if lt IE 9]>
+    <script src="../_static/js/html5shiv.min.js"></script>
+  <![endif]-->
+  
+    
+      <script type="text/javascript" id="documentation_options" data-url_root="../" src="../_static/documentation_options.js"></script>
+        <script src="../_static/jquery.js"></script>
+        <script src="../_static/underscore.js"></script>
+        <script src="../_static/doctools.js"></script>
+        <script async="async" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/2.7.7/latest.js?config=TeX-AMS-MML_HTMLorMML"></script>
+    
+    <script type="text/javascript" src="../_static/js/theme.js"></script>
+
+    
+    <link rel="index" title="Index" href="../genindex.html" />
+    <link rel="search" title="Search" href="../search.html" />
+    <link rel="next" title="draco.core.io" href="draco.core.io.html" />
+    <link rel="prev" title="draco.core" href="draco.core.html" /> 
+</head>
+
+<body class="wy-body-for-nav">
+
+   
+  <div class="wy-grid-for-nav">
+    
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+          
+
+          
+            <a href="../index.html" class="icon icon-home"> draco
+          
+
+          
+          </a>
+
+          
+            
+            
+              <div class="version">
+                0+untagged.1.g43914e3
+              </div>
+            
+          
+
+          
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+
+          
+        </div>
+
+        
+        <div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="main navigation">
+          
+            
+            
+              
+            
+            
+              <ul class="current">
+<li class="toctree-l1"><a class="reference internal" href="../tutorial.html">Tutorial</a></li>
+<li class="toctree-l1 current"><a class="reference internal" href="../reference.html">API Reference</a><ul class="current">
+<li class="toctree-l2 current"><a class="reference internal" href="../reference.html#submodules">Submodules</a><ul class="current">
+<li class="toctree-l3"><a class="reference internal" href="draco.analysis.html">draco.analysis</a></li>
+<li class="toctree-l3 current"><a class="reference internal" href="draco.core.html">draco.core</a><ul class="current">
+<li class="toctree-l4 current"><a class="current reference internal" href="#">draco.core.containers</a></li>
+<li class="toctree-l4"><a class="reference internal" href="draco.core.io.html">draco.core.io</a></li>
+<li class="toctree-l4"><a class="reference internal" href="draco.core.misc.html">draco.core.misc</a></li>
+<li class="toctree-l4"><a class="reference internal" href="draco.core.task.html">draco.core.task</a></li>
+</ul>
+</li>
+<li class="toctree-l3"><a class="reference internal" href="draco.synthesis.html">draco.synthesis</a></li>
+<li class="toctree-l3"><a class="reference internal" href="draco.util.html">draco.util</a></li>
+</ul>
+</li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="../dev.html">Development Guidelines</a></li>
+</ul>
+
+            
+          
+        </div>
+        
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap">
+
+      
+      <nav class="wy-nav-top" aria-label="top navigation">
+        
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../index.html">draco</a>
+        
+      </nav>
+
+
+      <div class="wy-nav-content">
+        
+        <div class="rst-content">
+        
+          
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<div role="navigation" aria-label="breadcrumbs navigation">
+
+  <ul class="wy-breadcrumbs">
+    
+      <li><a href="../index.html" class="icon icon-home"></a> &raquo;</li>
+        
+          <li><a href="../reference.html">API Reference</a> &raquo;</li>
+        
+          <li><a href="draco.core.html">draco.core</a> &raquo;</li>
+        
+      <li>draco.core.containers</li>
+    
+    
+      <li class="wy-breadcrumbs-aside">
+        
+          
+            <a href="../_sources/_autosummary/draco.core.containers.rst.txt" rel="nofollow"> View page source</a>
+          
+        
+      </li>
+    
+  </ul>
+
+  
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+            
+  <div class="section" id="module-draco.core.containers">
+<span id="draco-core-containers"></span><h1>draco.core.containers<a class="headerlink" href="#module-draco.core.containers" title="Permalink to this headline">¶</a></h1>
+<p>Distributed containers for holding various types of analysis data.</p>
+<p class="rubric">Functions</p>
+<table class="longtable docutils align-default">
+<colgroup>
+<col style="width: 10%" />
+<col style="width: 90%" />
+</colgroup>
+<tbody>
+<tr class="row-odd"><td><p><a class="reference internal" href="#draco.core.containers.empty_like" title="draco.core.containers.empty_like"><code class="xref py py-obj docutils literal notranslate"><span class="pre">empty_like</span></code></a>(obj, **kwargs)</p></td>
+<td><p>Create an empty container like <cite>obj</cite>.</p></td>
+</tr>
+<tr class="row-even"><td><p><a class="reference internal" href="#draco.core.containers.empty_timestream" title="draco.core.containers.empty_timestream"><code class="xref py py-obj docutils literal notranslate"><span class="pre">empty_timestream</span></code></a>(**kwargs)</p></td>
+<td><p>Create a new timestream container.</p></td>
+</tr>
+</tbody>
+</table>
+<p class="rubric">Classes</p>
+<table class="longtable docutils align-default">
+<colgroup>
+<col style="width: 10%" />
+<col style="width: 90%" />
+</colgroup>
+<tbody>
+<tr class="row-odd"><td><p><a class="reference internal" href="#draco.core.containers.CommonModeGainData" title="draco.core.containers.CommonModeGainData"><code class="xref py py-obj docutils literal notranslate"><span class="pre">CommonModeGainData</span></code></a>(*args, **kwargs)</p></td>
+<td><p>Parallel container for holding gain data common to all inputs.</p></td>
+</tr>
+<tr class="row-even"><td><p><a class="reference internal" href="#draco.core.containers.CommonModeSiderealGainData" title="draco.core.containers.CommonModeSiderealGainData"><code class="xref py py-obj docutils literal notranslate"><span class="pre">CommonModeSiderealGainData</span></code></a>(*args, **kwargs)</p></td>
+<td><p>Parallel container for holding sidereal gain data common to all inputs.</p></td>
+</tr>
+<tr class="row-odd"><td><p><a class="reference internal" href="#draco.core.containers.ContainerBase" title="draco.core.containers.ContainerBase"><code class="xref py py-obj docutils literal notranslate"><span class="pre">ContainerBase</span></code></a>(*args, **kwargs)</p></td>
+<td><p>A base class for pipeline containers.</p></td>
+</tr>
+<tr class="row-even"><td><p><a class="reference internal" href="#draco.core.containers.DelaySpectrum" title="draco.core.containers.DelaySpectrum"><code class="xref py py-obj docutils literal notranslate"><span class="pre">DelaySpectrum</span></code></a>(*args, **kwargs)</p></td>
+<td><p>Container for a delay spectrum.</p></td>
+</tr>
+<tr class="row-odd"><td><p><a class="reference internal" href="#draco.core.containers.FormedBeam" title="draco.core.containers.FormedBeam"><code class="xref py py-obj docutils literal notranslate"><span class="pre">FormedBeam</span></code></a>(*args, **kwargs)</p></td>
+<td><p>Container for formed beams.</p></td>
+</tr>
+<tr class="row-even"><td><p><a class="reference internal" href="#draco.core.containers.FormedBeamHA" title="draco.core.containers.FormedBeamHA"><code class="xref py py-obj docutils literal notranslate"><span class="pre">FormedBeamHA</span></code></a>(*args, **kwargs)</p></td>
+<td><p>Container for formed beams.</p></td>
+</tr>
+<tr class="row-odd"><td><p><a class="reference internal" href="#draco.core.containers.FrequencyStack" title="draco.core.containers.FrequencyStack"><code class="xref py py-obj docutils literal notranslate"><span class="pre">FrequencyStack</span></code></a>(*args, **kwargs)</p></td>
+<td><p>Container for a frequency stack.</p></td>
+</tr>
+<tr class="row-even"><td><p><a class="reference internal" href="#draco.core.containers.GainData" title="draco.core.containers.GainData"><code class="xref py py-obj docutils literal notranslate"><span class="pre">GainData</span></code></a>(*args, **kwargs)</p></td>
+<td><p>Parallel container for holding gain data.</p></td>
+</tr>
+<tr class="row-odd"><td><p><a class="reference internal" href="#draco.core.containers.GridBeam" title="draco.core.containers.GridBeam"><code class="xref py py-obj docutils literal notranslate"><span class="pre">GridBeam</span></code></a>([coords])</p></td>
+<td><p>Generic container for representing the 2-d beam in spherical coordinates on a rectangular grid.</p></td>
+</tr>
+<tr class="row-even"><td><p><a class="reference internal" href="#draco.core.containers.KLModes" title="draco.core.containers.KLModes"><code class="xref py py-obj docutils literal notranslate"><span class="pre">KLModes</span></code></a>([mmax])</p></td>
+<td><p>Parallel container for holding KL filtered m-mode data.</p></td>
+</tr>
+<tr class="row-odd"><td><p><a class="reference internal" href="#draco.core.containers.MModes" title="draco.core.containers.MModes"><code class="xref py py-obj docutils literal notranslate"><span class="pre">MModes</span></code></a>([mmax])</p></td>
+<td><p>Parallel container for holding m-mode data.</p></td>
+</tr>
+<tr class="row-even"><td><p><a class="reference internal" href="#draco.core.containers.Map" title="draco.core.containers.Map"><code class="xref py py-obj docutils literal notranslate"><span class="pre">Map</span></code></a>([nside, polarisation])</p></td>
+<td><p>Container for holding multifrequency sky maps.</p></td>
+</tr>
+<tr class="row-odd"><td><p><a class="reference internal" href="#draco.core.containers.Powerspectrum2D" title="draco.core.containers.Powerspectrum2D"><code class="xref py py-obj docutils literal notranslate"><span class="pre">Powerspectrum2D</span></code></a>([kperp_edges, kpar_edges])</p></td>
+<td><p>Container for a 2D cartesian power spectrum.</p></td>
+</tr>
+<tr class="row-even"><td><p><a class="reference internal" href="#draco.core.containers.RFIMask" title="draco.core.containers.RFIMask"><code class="xref py py-obj docutils literal notranslate"><span class="pre">RFIMask</span></code></a>(*args, **kwargs)</p></td>
+<td><p>A container for holding RFI mask.</p></td>
+</tr>
+<tr class="row-odd"><td><p><a class="reference internal" href="#draco.core.containers.SVDModes" title="draco.core.containers.SVDModes"><code class="xref py py-obj docutils literal notranslate"><span class="pre">SVDModes</span></code></a>([mmax])</p></td>
+<td><p>Parallel container for holding SVD m-mode data.</p></td>
+</tr>
+<tr class="row-even"><td><p><a class="reference internal" href="#draco.core.containers.SVDSpectrum" title="draco.core.containers.SVDSpectrum"><code class="xref py py-obj docutils literal notranslate"><span class="pre">SVDSpectrum</span></code></a>(*args, **kwargs)</p></td>
+<td><p>Container for an m-mode SVD spectrum.</p></td>
+</tr>
+<tr class="row-odd"><td><p><a class="reference internal" href="#draco.core.containers.SiderealGainData" title="draco.core.containers.SiderealGainData"><code class="xref py py-obj docutils literal notranslate"><span class="pre">SiderealGainData</span></code></a>(*args, **kwargs)</p></td>
+<td><p>Parallel container for holding sidereal gain data.</p></td>
+</tr>
+<tr class="row-even"><td><p><a class="reference internal" href="#draco.core.containers.SiderealStream" title="draco.core.containers.SiderealStream"><code class="xref py py-obj docutils literal notranslate"><span class="pre">SiderealStream</span></code></a>([ra])</p></td>
+<td><p>A container for holding a visibility dataset in sidereal time.</p></td>
+</tr>
+<tr class="row-odd"><td><p><a class="reference internal" href="#draco.core.containers.SourceCatalog" title="draco.core.containers.SourceCatalog"><code class="xref py py-obj docutils literal notranslate"><span class="pre">SourceCatalog</span></code></a>(*args, **kwargs)</p></td>
+<td><p>A basic container for holding astronomical source catalogs.</p></td>
+</tr>
+<tr class="row-even"><td><p><a class="reference internal" href="#draco.core.containers.SpectroscopicCatalog" title="draco.core.containers.SpectroscopicCatalog"><code class="xref py py-obj docutils literal notranslate"><span class="pre">SpectroscopicCatalog</span></code></a>(*args, **kwargs)</p></td>
+<td><p>A container for spectroscopic catalogs.</p></td>
+</tr>
+<tr class="row-odd"><td><p><a class="reference internal" href="#draco.core.containers.StaticGainData" title="draco.core.containers.StaticGainData"><code class="xref py py-obj docutils literal notranslate"><span class="pre">StaticGainData</span></code></a>(*args, **kwargs)</p></td>
+<td><p>Parallel container for holding static gain data (i.e.</p></td>
+</tr>
+<tr class="row-even"><td><p><a class="reference internal" href="#draco.core.containers.SystemSensitivity" title="draco.core.containers.SystemSensitivity"><code class="xref py py-obj docutils literal notranslate"><span class="pre">SystemSensitivity</span></code></a>(*args, **kwargs)</p></td>
+<td><p>A container for holding the total system sensitivity.</p></td>
+</tr>
+<tr class="row-odd"><td><p><a class="reference internal" href="#draco.core.containers.TODContainer" title="draco.core.containers.TODContainer"><code class="xref py py-obj docutils literal notranslate"><span class="pre">TODContainer</span></code></a>(*args, **kwargs)</p></td>
+<td><p>A pipeline container for time ordered data.</p></td>
+</tr>
+<tr class="row-even"><td><p><a class="reference internal" href="#draco.core.containers.TableBase" title="draco.core.containers.TableBase"><code class="xref py py-obj docutils literal notranslate"><span class="pre">TableBase</span></code></a>(*args, **kwargs)</p></td>
+<td><p>A base class for containers holding tables of data.</p></td>
+</tr>
+<tr class="row-odd"><td><p><a class="reference internal" href="#draco.core.containers.TimeStream" title="draco.core.containers.TimeStream"><code class="xref py py-obj docutils literal notranslate"><span class="pre">TimeStream</span></code></a>(*args, **kwargs)</p></td>
+<td><p>A container for holding a visibility dataset in time.</p></td>
+</tr>
+<tr class="row-even"><td><p><a class="reference internal" href="#draco.core.containers.TrackBeam" title="draco.core.containers.TrackBeam"><code class="xref py py-obj docutils literal notranslate"><span class="pre">TrackBeam</span></code></a>([theta, phi, coords, track_type])</p></td>
+<td><p>Container for a sequence of beam samples at arbitrary locations on the sphere.</p></td>
+</tr>
+<tr class="row-odd"><td><p><a class="reference internal" href="#draco.core.containers.VisContainer" title="draco.core.containers.VisContainer"><code class="xref py py-obj docutils literal notranslate"><span class="pre">VisContainer</span></code></a>(*args, **kwargs)</p></td>
+<td><p>A base container for holding a visibility dataset.</p></td>
+</tr>
+</tbody>
+</table>
+<dl class="py class">
+<dt id="draco.core.containers.CommonModeGainData">
+<em class="property">class </em><code class="sig-prename descclassname">draco.core.containers.</code><code class="sig-name descname">CommonModeGainData</code><span class="sig-paren">(</span><em class="sig-param"><span class="o">*</span><span class="n">args</span></em>, <em class="sig-param"><span class="o">**</span><span class="n">kwargs</span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/draco/core/containers.html#CommonModeGainData"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#draco.core.containers.CommonModeGainData" title="Permalink to this definition">¶</a></dt>
+<dd><p>Bases: <a class="reference internal" href="#draco.core.containers.TODContainer" title="draco.core.containers.TODContainer"><code class="xref py py-class docutils literal notranslate"><span class="pre">draco.core.containers.TODContainer</span></code></a></p>
+<p>Parallel container for holding gain data common to all inputs.</p>
+</dd></dl>
+
+<dl class="py class">
+<dt id="draco.core.containers.CommonModeSiderealGainData">
+<em class="property">class </em><code class="sig-prename descclassname">draco.core.containers.</code><code class="sig-name descname">CommonModeSiderealGainData</code><span class="sig-paren">(</span><em class="sig-param"><span class="o">*</span><span class="n">args</span></em>, <em class="sig-param"><span class="o">**</span><span class="n">kwargs</span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/draco/core/containers.html#CommonModeSiderealGainData"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#draco.core.containers.CommonModeSiderealGainData" title="Permalink to this definition">¶</a></dt>
+<dd><p>Bases: <a class="reference internal" href="#draco.core.containers.ContainerBase" title="draco.core.containers.ContainerBase"><code class="xref py py-class docutils literal notranslate"><span class="pre">draco.core.containers.ContainerBase</span></code></a></p>
+<p>Parallel container for holding sidereal gain data common to all inputs.</p>
+</dd></dl>
+
+<dl class="py class">
+<dt id="draco.core.containers.ContainerBase">
+<em class="property">class </em><code class="sig-prename descclassname">draco.core.containers.</code><code class="sig-name descname">ContainerBase</code><span class="sig-paren">(</span><em class="sig-param"><span class="o">*</span><span class="n">args</span></em>, <em class="sig-param"><span class="o">**</span><span class="n">kwargs</span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/draco/core/containers.html#ContainerBase"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#draco.core.containers.ContainerBase" title="Permalink to this definition">¶</a></dt>
+<dd><p>Bases: <code class="xref py py-class docutils literal notranslate"><span class="pre">caput.memh5.BasicCont</span></code></p>
+<p>A base class for pipeline containers.</p>
+<p>This class is designed to do much of the work of setting up pipeline
+containers. It should be derived from, and two variables set <cite>_axes</cite> and
+<cite>_dataset_spec</cite>. See the <a class="reference internal" href="#containerbase-notes"><span class="std std-ref">Notes</span></a> section for details.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>axes_from</strong> (<cite>memh5.BasicCont</cite>, optional) – Another container to copy axis definitions from. Must be supplied as
+keyword argument.</p></li>
+<li><p><strong>attrs_from</strong> (<cite>memh5.BasicCont</cite>, optional) – Another container to copy attributes from. Must be supplied as keyword
+argument. This applies to attributes in default datasets too.</p></li>
+<li><p><strong>skip_datasets</strong> (<em>bool</em><em>, </em><em>optional</em>) – Skip creating datasets. They must all be added manually with
+<cite>.add_dataset</cite> regardless of the entry in <cite>.dataset_spec</cite>. Default is False.</p></li>
+<li><p><strong>kwargs</strong> (<em>dict</em>) – Should contain entries for all other axes.</p></li>
+</ul>
+</dd>
+</dl>
+<p class="rubric">Notes</p>
+<p id="containerbase-notes">Inheritance from other <cite>ContainerBase</cite> subclasses should work as expected,
+with datasets defined in super classes appearing as expected, and being
+overriden where they are redefined in the derived class.</p>
+<p>The variable <cite>_axes</cite> should be a tuple containing the names of axes that
+datasets in this container will use.</p>
+<p>The variable <cite>_dataset_spec</cite> should define the datasets. It’s a dictionary
+with the name of the dataset as key. Each entry should be another
+dictionary, the entry ‘axes’ is mandatory and should be a list of the axes
+the dataset has (these should correspond to entries in <cite>_axes</cite>), as is
+<cite>dtype</cite> which should be a datatype understood by numpy. Other possible
+entries are:</p>
+<ul class="simple">
+<li><p><cite>initialise</cite> : if set to <cite>True</cite> the dataset will be created as the
+container is initialised.</p></li>
+<li><p><cite>distributed</cite> : the dataset will be distributed if the entry is <cite>True</cite>, if
+<cite>False</cite> it won’t be, and if not set it will be distributed if the
+container is set to be.</p></li>
+<li><p><cite>distributed_axis</cite> : the axis to distribute over. Should be a name given
+in the <cite>axes</cite> entry.</p></li>
+</ul>
+<dl class="py method">
+<dt id="draco.core.containers.ContainerBase.add_dataset">
+<code class="sig-name descname">add_dataset</code><span class="sig-paren">(</span><em class="sig-param"><span class="n">name</span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/draco/core/containers.html#ContainerBase.add_dataset"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#draco.core.containers.ContainerBase.add_dataset" title="Permalink to this definition">¶</a></dt>
+<dd><p>Create an empty dataset.</p>
+<p>The dataset must be defined in the specification for the container.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><p><strong>name</strong> (<em>string</em>) – Name of the dataset to create.</p>
+</dd>
+<dt class="field-even">Returns</dt>
+<dd class="field-even"><p><strong>dset</strong></p>
+</dd>
+<dt class="field-odd">Return type</dt>
+<dd class="field-odd"><p><cite>memh5.MemDataset</cite></p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt id="draco.core.containers.ContainerBase.axes">
+<em class="property">property </em><code class="sig-name descname">axes</code><a class="headerlink" href="#draco.core.containers.ContainerBase.axes" title="Permalink to this definition">¶</a></dt>
+<dd><p>The set of axes for this container including any defined on the instance.</p>
+</dd></dl>
+
+<dl class="py method">
+<dt id="draco.core.containers.ContainerBase.copy">
+<code class="sig-name descname">copy</code><span class="sig-paren">(</span><em class="sig-param"><span class="n">shared</span><span class="o">=</span><span class="default_value">None</span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/draco/core/containers.html#ContainerBase.copy"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#draco.core.containers.ContainerBase.copy" title="Permalink to this definition">¶</a></dt>
+<dd><p>Copy this container, optionally sharing the source datasets.</p>
+<p>This routine will create a copy of the container. By default this is
+as full copy with the contents fully independent. However, a set of
+dataset names can be given that will share the same data as the
+source to save memory for large datasets. These will just view the
+same memory, so any modification to either the original or the copy
+will be visible to the other. This includes all write operations,
+addition and removal of attributes, redistribution etc. This
+functionality should be used with caution and clearly documented.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><p><strong>shared</strong> (<em>list</em><em>, </em><em>optional</em>) – A list of datasets whose content will be shared with the original.</p>
+</dd>
+<dt class="field-even">Returns</dt>
+<dd class="field-even"><p><strong>copy</strong> – The copied container.</p>
+</dd>
+<dt class="field-odd">Return type</dt>
+<dd class="field-odd"><p>subclass of ContainerBase</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt id="draco.core.containers.ContainerBase.dataset_spec">
+<em class="property">property </em><code class="sig-name descname">dataset_spec</code><a class="headerlink" href="#draco.core.containers.ContainerBase.dataset_spec" title="Permalink to this definition">¶</a></dt>
+<dd><p>Return a copy of the fully resolved dataset specifiction as a
+dictionary.</p>
+</dd></dl>
+
+<dl class="py method">
+<dt id="draco.core.containers.ContainerBase.datasets">
+<em class="property">property </em><code class="sig-name descname">datasets</code><a class="headerlink" href="#draco.core.containers.ContainerBase.datasets" title="Permalink to this definition">¶</a></dt>
+<dd><p>Return the datasets in this container.</p>
+<p>Do not try to add a new dataset by assigning to an item of this
+property. Use <cite>create_dataset</cite> instead.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Returns</dt>
+<dd class="field-odd"><p><strong>datasets</strong> – Entries are <code class="xref py py-mod docutils literal notranslate"><span class="pre">caput.memh5</span></code> datasets.</p>
+</dd>
+<dt class="field-even">Return type</dt>
+<dd class="field-even"><p>read only dictionary</p>
+</dd>
+</dl>
+</dd></dl>
+
+</dd></dl>
+
+<dl class="py class">
+<dt id="draco.core.containers.DelaySpectrum">
+<em class="property">class </em><code class="sig-prename descclassname">draco.core.containers.</code><code class="sig-name descname">DelaySpectrum</code><span class="sig-paren">(</span><em class="sig-param"><span class="o">*</span><span class="n">args</span></em>, <em class="sig-param"><span class="o">**</span><span class="n">kwargs</span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/draco/core/containers.html#DelaySpectrum"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#draco.core.containers.DelaySpectrum" title="Permalink to this definition">¶</a></dt>
+<dd><p>Bases: <a class="reference internal" href="#draco.core.containers.ContainerBase" title="draco.core.containers.ContainerBase"><code class="xref py py-class docutils literal notranslate"><span class="pre">draco.core.containers.ContainerBase</span></code></a></p>
+<p>Container for a delay spectrum.</p>
+</dd></dl>
+
+<dl class="py class">
+<dt id="draco.core.containers.FormedBeam">
+<em class="property">class </em><code class="sig-prename descclassname">draco.core.containers.</code><code class="sig-name descname">FormedBeam</code><span class="sig-paren">(</span><em class="sig-param"><span class="o">*</span><span class="n">args</span></em>, <em class="sig-param"><span class="o">**</span><span class="n">kwargs</span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/draco/core/containers.html#FormedBeam"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#draco.core.containers.FormedBeam" title="Permalink to this definition">¶</a></dt>
+<dd><p>Bases: <a class="reference internal" href="#draco.core.containers.ContainerBase" title="draco.core.containers.ContainerBase"><code class="xref py py-class docutils literal notranslate"><span class="pre">draco.core.containers.ContainerBase</span></code></a></p>
+<p>Container for formed beams.</p>
+</dd></dl>
+
+<dl class="py class">
+<dt id="draco.core.containers.FormedBeamHA">
+<em class="property">class </em><code class="sig-prename descclassname">draco.core.containers.</code><code class="sig-name descname">FormedBeamHA</code><span class="sig-paren">(</span><em class="sig-param"><span class="o">*</span><span class="n">args</span></em>, <em class="sig-param"><span class="o">**</span><span class="n">kwargs</span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/draco/core/containers.html#FormedBeamHA"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#draco.core.containers.FormedBeamHA" title="Permalink to this definition">¶</a></dt>
+<dd><p>Bases: <a class="reference internal" href="#draco.core.containers.FormedBeam" title="draco.core.containers.FormedBeam"><code class="xref py py-class docutils literal notranslate"><span class="pre">draco.core.containers.FormedBeam</span></code></a></p>
+<p>Container for formed beams.
+These have not been collapsed in the hour angle (HA) axis</p>
+</dd></dl>
+
+<dl class="py class">
+<dt id="draco.core.containers.FrequencyStack">
+<em class="property">class </em><code class="sig-prename descclassname">draco.core.containers.</code><code class="sig-name descname">FrequencyStack</code><span class="sig-paren">(</span><em class="sig-param"><span class="o">*</span><span class="n">args</span></em>, <em class="sig-param"><span class="o">**</span><span class="n">kwargs</span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/draco/core/containers.html#FrequencyStack"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#draco.core.containers.FrequencyStack" title="Permalink to this definition">¶</a></dt>
+<dd><p>Bases: <a class="reference internal" href="#draco.core.containers.ContainerBase" title="draco.core.containers.ContainerBase"><code class="xref py py-class docutils literal notranslate"><span class="pre">draco.core.containers.ContainerBase</span></code></a></p>
+<p>Container for a frequency stack.</p>
+<p>In general used to hold the product of <cite>draco.analysis.SourceStack</cite>
+The stacked signal of frequency slices of the data in the direction
+of sources of interest.</p>
+</dd></dl>
+
+<dl class="py class">
+<dt id="draco.core.containers.GainData">
+<em class="property">class </em><code class="sig-prename descclassname">draco.core.containers.</code><code class="sig-name descname">GainData</code><span class="sig-paren">(</span><em class="sig-param"><span class="o">*</span><span class="n">args</span></em>, <em class="sig-param"><span class="o">**</span><span class="n">kwargs</span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/draco/core/containers.html#GainData"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#draco.core.containers.GainData" title="Permalink to this definition">¶</a></dt>
+<dd><p>Bases: <a class="reference internal" href="#draco.core.containers.TODContainer" title="draco.core.containers.TODContainer"><code class="xref py py-class docutils literal notranslate"><span class="pre">draco.core.containers.TODContainer</span></code></a></p>
+<p>Parallel container for holding gain data.</p>
+</dd></dl>
+
+<dl class="py class">
+<dt id="draco.core.containers.GridBeam">
+<em class="property">class </em><code class="sig-prename descclassname">draco.core.containers.</code><code class="sig-name descname">GridBeam</code><span class="sig-paren">(</span><em class="sig-param"><span class="n">coords</span><span class="o">=</span><span class="default_value">'celestial'</span></em>, <em class="sig-param"><span class="o">*</span><span class="n">args</span></em>, <em class="sig-param"><span class="o">**</span><span class="n">kwargs</span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/draco/core/containers.html#GridBeam"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#draco.core.containers.GridBeam" title="Permalink to this definition">¶</a></dt>
+<dd><p>Bases: <a class="reference internal" href="#draco.core.containers.ContainerBase" title="draco.core.containers.ContainerBase"><code class="xref py py-class docutils literal notranslate"><span class="pre">draco.core.containers.ContainerBase</span></code></a></p>
+<p>Generic container for representing the 2-d beam in spherical
+coordinates on a rectangular grid.</p>
+</dd></dl>
+
+<dl class="py class">
+<dt id="draco.core.containers.KLModes">
+<em class="property">class </em><code class="sig-prename descclassname">draco.core.containers.</code><code class="sig-name descname">KLModes</code><span class="sig-paren">(</span><em class="sig-param"><span class="n">mmax</span><span class="o">=</span><span class="default_value">None</span></em>, <em class="sig-param"><span class="o">*</span><span class="n">args</span></em>, <em class="sig-param"><span class="o">**</span><span class="n">kwargs</span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/draco/core/containers.html#KLModes"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#draco.core.containers.KLModes" title="Permalink to this definition">¶</a></dt>
+<dd><p>Bases: <a class="reference internal" href="#draco.core.containers.SVDModes" title="draco.core.containers.SVDModes"><code class="xref py py-class docutils literal notranslate"><span class="pre">draco.core.containers.SVDModes</span></code></a></p>
+<p>Parallel container for holding KL filtered m-mode data.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><p><strong>mmax</strong> (<em>integer</em><em>, </em><em>optional</em>) – Largest m to be held.</p>
+</dd>
+</dl>
+<dl class="py attribute">
+<dt id="draco.core.containers.KLModes.vis">
+<code class="sig-name descname">vis</code><a class="headerlink" href="#draco.core.containers.KLModes.vis" title="Permalink to this definition">¶</a></dt>
+<dd><p>Visibility array.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type</dt>
+<dd class="field-odd"><p>mpidataset.MPIArray</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt id="draco.core.containers.KLModes.weight">
+<code class="sig-name descname">weight</code><a class="headerlink" href="#draco.core.containers.KLModes.weight" title="Permalink to this definition">¶</a></dt>
+<dd><p>Array of weights for each point.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type</dt>
+<dd class="field-odd"><p>mpidataset.MPIArray</p>
+</dd>
+</dl>
+</dd></dl>
+
+</dd></dl>
+
+<dl class="py class">
+<dt id="draco.core.containers.MModes">
+<em class="property">class </em><code class="sig-prename descclassname">draco.core.containers.</code><code class="sig-name descname">MModes</code><span class="sig-paren">(</span><em class="sig-param"><span class="n">mmax</span><span class="o">=</span><span class="default_value">None</span></em>, <em class="sig-param"><span class="o">*</span><span class="n">args</span></em>, <em class="sig-param"><span class="o">**</span><span class="n">kwargs</span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/draco/core/containers.html#MModes"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#draco.core.containers.MModes" title="Permalink to this definition">¶</a></dt>
+<dd><p>Bases: <a class="reference internal" href="#draco.core.containers.VisContainer" title="draco.core.containers.VisContainer"><code class="xref py py-class docutils literal notranslate"><span class="pre">draco.core.containers.VisContainer</span></code></a></p>
+<p>Parallel container for holding m-mode data.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><p><strong>mmax</strong> (<em>integer</em><em>, </em><em>optional</em>) – Largest m to be held.</p>
+</dd>
+</dl>
+<dl class="py attribute">
+<dt id="draco.core.containers.MModes.vis">
+<code class="sig-name descname">vis</code><a class="headerlink" href="#draco.core.containers.MModes.vis" title="Permalink to this definition">¶</a></dt>
+<dd><p>Visibility array.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type</dt>
+<dd class="field-odd"><p>mpidataset.MPIArray</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt id="draco.core.containers.MModes.weight">
+<code class="sig-name descname">weight</code><a class="headerlink" href="#draco.core.containers.MModes.weight" title="Permalink to this definition">¶</a></dt>
+<dd><p>Array of weights for each point.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type</dt>
+<dd class="field-odd"><p>mpidataset.MPIArray</p>
+</dd>
+</dl>
+</dd></dl>
+
+</dd></dl>
+
+<dl class="py class">
+<dt id="draco.core.containers.Map">
+<em class="property">class </em><code class="sig-prename descclassname">draco.core.containers.</code><code class="sig-name descname">Map</code><span class="sig-paren">(</span><em class="sig-param"><span class="n">nside</span><span class="o">=</span><span class="default_value">None</span></em>, <em class="sig-param"><span class="n">polarisation</span><span class="o">=</span><span class="default_value">True</span></em>, <em class="sig-param"><span class="o">*</span><span class="n">args</span></em>, <em class="sig-param"><span class="o">**</span><span class="n">kwargs</span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/draco/core/containers.html#Map"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#draco.core.containers.Map" title="Permalink to this definition">¶</a></dt>
+<dd><p>Bases: <a class="reference internal" href="#draco.core.containers.ContainerBase" title="draco.core.containers.ContainerBase"><code class="xref py py-class docutils literal notranslate"><span class="pre">draco.core.containers.ContainerBase</span></code></a></p>
+<p>Container for holding multifrequency sky maps.</p>
+<p>The maps are packed in format <cite>[freq, pol, pixel]</cite> where the polarisations
+are Stokes I, Q, U and V, and the pixel dimension stores a Healpix map.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>nside</strong> (<em>int</em>) – The nside of the Healpix maps.</p></li>
+<li><p><strong>polarisation</strong> (<em>bool</em><em>, </em><em>optional</em>) – If <cite>True</cite> all Stokes parameters are stored, if <cite>False</cite> only Stokes I is
+stored.</p></li>
+</ul>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py class">
+<dt id="draco.core.containers.Powerspectrum2D">
+<em class="property">class </em><code class="sig-prename descclassname">draco.core.containers.</code><code class="sig-name descname">Powerspectrum2D</code><span class="sig-paren">(</span><em class="sig-param"><span class="n">kperp_edges</span><span class="o">=</span><span class="default_value">None</span></em>, <em class="sig-param"><span class="n">kpar_edges</span><span class="o">=</span><span class="default_value">None</span></em>, <em class="sig-param"><span class="o">*</span><span class="n">args</span></em>, <em class="sig-param"><span class="o">**</span><span class="n">kwargs</span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/draco/core/containers.html#Powerspectrum2D"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#draco.core.containers.Powerspectrum2D" title="Permalink to this definition">¶</a></dt>
+<dd><p>Bases: <a class="reference internal" href="#draco.core.containers.ContainerBase" title="draco.core.containers.ContainerBase"><code class="xref py py-class docutils literal notranslate"><span class="pre">draco.core.containers.ContainerBase</span></code></a></p>
+<p>Container for a 2D cartesian power spectrum.</p>
+<p>Generally you should set the standard attributes <cite>z_start</cite> and <cite>z_end</cite> with
+the redshift range included in the power spectrum estimate, and the <cite>type</cite>
+attribute with a description of the estimator type. Suggested valued for
+<cite>type</cite> are:</p>
+<dl class="simple">
+<dt><cite>unwindowed</cite></dt><dd><p>The standard unbiased quadratic estimator.</p>
+</dd>
+<dt><cite>minimum_variance</cite></dt><dd><p>The minimum variance, but highly correlated, estimator. Just a rescaled
+version of the q-estimator.</p>
+</dd>
+<dt><cite>uncorrelated</cite></dt><dd><p>The uncorrelated estimator using the root of the Fisher matrix.</p>
+</dd>
+</dl>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>kpar_edges</strong> (<em>np.ndarray</em>) – Array of the power spectrum bin boundaries.</p></li>
+<li><p><strong>kperp_edges</strong> (<em>np.ndarray</em>) – Array of the power spectrum bin boundaries.</p></li>
+</ul>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py class">
+<dt id="draco.core.containers.RFIMask">
+<em class="property">class </em><code class="sig-prename descclassname">draco.core.containers.</code><code class="sig-name descname">RFIMask</code><span class="sig-paren">(</span><em class="sig-param"><span class="o">*</span><span class="n">args</span></em>, <em class="sig-param"><span class="o">**</span><span class="n">kwargs</span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/draco/core/containers.html#RFIMask"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#draco.core.containers.RFIMask" title="Permalink to this definition">¶</a></dt>
+<dd><p>Bases: <a class="reference internal" href="#draco.core.containers.TODContainer" title="draco.core.containers.TODContainer"><code class="xref py py-class docutils literal notranslate"><span class="pre">draco.core.containers.TODContainer</span></code></a></p>
+<p>A container for holding RFI mask.</p>
+<p>The mask is <cite>True</cite> for contaminated samples that should be excluded, and
+<cite>False</cite> for clean samples.</p>
+</dd></dl>
+
+<dl class="py class">
+<dt id="draco.core.containers.SVDModes">
+<em class="property">class </em><code class="sig-prename descclassname">draco.core.containers.</code><code class="sig-name descname">SVDModes</code><span class="sig-paren">(</span><em class="sig-param"><span class="n">mmax</span><span class="o">=</span><span class="default_value">None</span></em>, <em class="sig-param"><span class="o">*</span><span class="n">args</span></em>, <em class="sig-param"><span class="o">**</span><span class="n">kwargs</span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/draco/core/containers.html#SVDModes"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#draco.core.containers.SVDModes" title="Permalink to this definition">¶</a></dt>
+<dd><p>Bases: <a class="reference internal" href="#draco.core.containers.ContainerBase" title="draco.core.containers.ContainerBase"><code class="xref py py-class docutils literal notranslate"><span class="pre">draco.core.containers.ContainerBase</span></code></a></p>
+<p>Parallel container for holding SVD m-mode data.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><p><strong>mmax</strong> (<em>integer</em><em>, </em><em>optional</em>) – Largest m to be held.</p>
+</dd>
+</dl>
+<dl class="py attribute">
+<dt id="draco.core.containers.SVDModes.vis">
+<code class="sig-name descname">vis</code><a class="headerlink" href="#draco.core.containers.SVDModes.vis" title="Permalink to this definition">¶</a></dt>
+<dd><p>Visibility array.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type</dt>
+<dd class="field-odd"><p>mpidataset.MPIArray</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt id="draco.core.containers.SVDModes.weight">
+<code class="sig-name descname">weight</code><a class="headerlink" href="#draco.core.containers.SVDModes.weight" title="Permalink to this definition">¶</a></dt>
+<dd><p>Array of weights for each point.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type</dt>
+<dd class="field-odd"><p>mpidataset.MPIArray</p>
+</dd>
+</dl>
+</dd></dl>
+
+</dd></dl>
+
+<dl class="py class">
+<dt id="draco.core.containers.SVDSpectrum">
+<em class="property">class </em><code class="sig-prename descclassname">draco.core.containers.</code><code class="sig-name descname">SVDSpectrum</code><span class="sig-paren">(</span><em class="sig-param"><span class="o">*</span><span class="n">args</span></em>, <em class="sig-param"><span class="o">**</span><span class="n">kwargs</span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/draco/core/containers.html#SVDSpectrum"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#draco.core.containers.SVDSpectrum" title="Permalink to this definition">¶</a></dt>
+<dd><p>Bases: <a class="reference internal" href="#draco.core.containers.ContainerBase" title="draco.core.containers.ContainerBase"><code class="xref py py-class docutils literal notranslate"><span class="pre">draco.core.containers.ContainerBase</span></code></a></p>
+<p>Container for an m-mode SVD spectrum.</p>
+</dd></dl>
+
+<dl class="py class">
+<dt id="draco.core.containers.SiderealGainData">
+<em class="property">class </em><code class="sig-prename descclassname">draco.core.containers.</code><code class="sig-name descname">SiderealGainData</code><span class="sig-paren">(</span><em class="sig-param"><span class="o">*</span><span class="n">args</span></em>, <em class="sig-param"><span class="o">**</span><span class="n">kwargs</span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/draco/core/containers.html#SiderealGainData"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#draco.core.containers.SiderealGainData" title="Permalink to this definition">¶</a></dt>
+<dd><p>Bases: <a class="reference internal" href="#draco.core.containers.ContainerBase" title="draco.core.containers.ContainerBase"><code class="xref py py-class docutils literal notranslate"><span class="pre">draco.core.containers.ContainerBase</span></code></a></p>
+<p>Parallel container for holding sidereal gain data.</p>
+</dd></dl>
+
+<dl class="py class">
+<dt id="draco.core.containers.SiderealStream">
+<em class="property">class </em><code class="sig-prename descclassname">draco.core.containers.</code><code class="sig-name descname">SiderealStream</code><span class="sig-paren">(</span><em class="sig-param"><span class="n">ra</span><span class="o">=</span><span class="default_value">None</span></em>, <em class="sig-param"><span class="o">*</span><span class="n">args</span></em>, <em class="sig-param"><span class="o">**</span><span class="n">kwargs</span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/draco/core/containers.html#SiderealStream"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#draco.core.containers.SiderealStream" title="Permalink to this definition">¶</a></dt>
+<dd><p>Bases: <a class="reference internal" href="#draco.core.containers.VisContainer" title="draco.core.containers.VisContainer"><code class="xref py py-class docutils literal notranslate"><span class="pre">draco.core.containers.VisContainer</span></code></a></p>
+<p>A container for holding a visibility dataset in sidereal time.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><p><strong>ra</strong> (<em>int</em>) – The number of points to divide the RA axis up into.</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py class">
+<dt id="draco.core.containers.SourceCatalog">
+<em class="property">class </em><code class="sig-prename descclassname">draco.core.containers.</code><code class="sig-name descname">SourceCatalog</code><span class="sig-paren">(</span><em class="sig-param"><span class="o">*</span><span class="n">args</span></em>, <em class="sig-param"><span class="o">**</span><span class="n">kwargs</span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/draco/core/containers.html#SourceCatalog"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#draco.core.containers.SourceCatalog" title="Permalink to this definition">¶</a></dt>
+<dd><p>Bases: <a class="reference internal" href="#draco.core.containers.TableBase" title="draco.core.containers.TableBase"><code class="xref py py-class docutils literal notranslate"><span class="pre">draco.core.containers.TableBase</span></code></a></p>
+<p>A basic container for holding astronomical source catalogs.</p>
+<p class="rubric">Notes</p>
+<p>The <cite>ra</cite> and <cite>dec</cite> coordinates should be ICRS.</p>
+</dd></dl>
+
+<dl class="py class">
+<dt id="draco.core.containers.SpectroscopicCatalog">
+<em class="property">class </em><code class="sig-prename descclassname">draco.core.containers.</code><code class="sig-name descname">SpectroscopicCatalog</code><span class="sig-paren">(</span><em class="sig-param"><span class="o">*</span><span class="n">args</span></em>, <em class="sig-param"><span class="o">**</span><span class="n">kwargs</span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/draco/core/containers.html#SpectroscopicCatalog"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#draco.core.containers.SpectroscopicCatalog" title="Permalink to this definition">¶</a></dt>
+<dd><p>Bases: <a class="reference internal" href="#draco.core.containers.SourceCatalog" title="draco.core.containers.SourceCatalog"><code class="xref py py-class docutils literal notranslate"><span class="pre">draco.core.containers.SourceCatalog</span></code></a></p>
+<p>A container for spectroscopic catalogs.</p>
+</dd></dl>
+
+<dl class="py class">
+<dt id="draco.core.containers.StaticGainData">
+<em class="property">class </em><code class="sig-prename descclassname">draco.core.containers.</code><code class="sig-name descname">StaticGainData</code><span class="sig-paren">(</span><em class="sig-param"><span class="o">*</span><span class="n">args</span></em>, <em class="sig-param"><span class="o">**</span><span class="n">kwargs</span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/draco/core/containers.html#StaticGainData"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#draco.core.containers.StaticGainData" title="Permalink to this definition">¶</a></dt>
+<dd><p>Bases: <a class="reference internal" href="#draco.core.containers.ContainerBase" title="draco.core.containers.ContainerBase"><code class="xref py py-class docutils literal notranslate"><span class="pre">draco.core.containers.ContainerBase</span></code></a></p>
+<p>Parallel container for holding static gain data (i.e. non time varying).</p>
+</dd></dl>
+
+<dl class="py class">
+<dt id="draco.core.containers.SystemSensitivity">
+<em class="property">class </em><code class="sig-prename descclassname">draco.core.containers.</code><code class="sig-name descname">SystemSensitivity</code><span class="sig-paren">(</span><em class="sig-param"><span class="o">*</span><span class="n">args</span></em>, <em class="sig-param"><span class="o">**</span><span class="n">kwargs</span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/draco/core/containers.html#SystemSensitivity"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#draco.core.containers.SystemSensitivity" title="Permalink to this definition">¶</a></dt>
+<dd><p>Bases: <a class="reference internal" href="#draco.core.containers.TODContainer" title="draco.core.containers.TODContainer"><code class="xref py py-class docutils literal notranslate"><span class="pre">draco.core.containers.TODContainer</span></code></a></p>
+<p>A container for holding the total system sensitivity.</p>
+<p>This should be averaged/collapsed in the stack/prod axis
+to provide an overall summary of the system sensitivity.
+Two datasets are available: the measured noise from the
+visibility weights and the radiometric estimate of the
+noise from the autocorrelations.</p>
+</dd></dl>
+
+<dl class="py class">
+<dt id="draco.core.containers.TODContainer">
+<em class="property">class </em><code class="sig-prename descclassname">draco.core.containers.</code><code class="sig-name descname">TODContainer</code><span class="sig-paren">(</span><em class="sig-param"><span class="o">*</span><span class="n">args</span></em>, <em class="sig-param"><span class="o">**</span><span class="n">kwargs</span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/draco/core/containers.html#TODContainer"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#draco.core.containers.TODContainer" title="Permalink to this definition">¶</a></dt>
+<dd><p>Bases: <a class="reference internal" href="#draco.core.containers.ContainerBase" title="draco.core.containers.ContainerBase"><code class="xref py py-class docutils literal notranslate"><span class="pre">draco.core.containers.ContainerBase</span></code></a>, <code class="xref py py-class docutils literal notranslate"><span class="pre">caput.tod.TOData</span></code></p>
+<p>A pipeline container for time ordered data.</p>
+<p>This works like a normal <a class="reference internal" href="#draco.core.containers.ContainerBase" title="draco.core.containers.ContainerBase"><code class="xref py py-class docutils literal notranslate"><span class="pre">ContainerBase</span></code></a> container, with the added
+ability to be concatenated, and treated like a a <code class="xref py py-class docutils literal notranslate"><span class="pre">tod.TOData</span></code>
+instance.</p>
+<dl class="py method">
+<dt id="draco.core.containers.TODContainer.time">
+<em class="property">property </em><code class="sig-name descname">time</code><a class="headerlink" href="#draco.core.containers.TODContainer.time" title="Permalink to this definition">¶</a></dt>
+<dd><p>Representation of the “time” axis.</p>
+<p>The value of <code class="docutils literal notranslate"><span class="pre">self.index_map['time']</span></code>.</p>
+</dd></dl>
+
+</dd></dl>
+
+<dl class="py class">
+<dt id="draco.core.containers.TableBase">
+<em class="property">class </em><code class="sig-prename descclassname">draco.core.containers.</code><code class="sig-name descname">TableBase</code><span class="sig-paren">(</span><em class="sig-param"><span class="o">*</span><span class="n">args</span></em>, <em class="sig-param"><span class="o">**</span><span class="n">kwargs</span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/draco/core/containers.html#TableBase"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#draco.core.containers.TableBase" title="Permalink to this definition">¶</a></dt>
+<dd><p>Bases: <a class="reference internal" href="#draco.core.containers.ContainerBase" title="draco.core.containers.ContainerBase"><code class="xref py py-class docutils literal notranslate"><span class="pre">draco.core.containers.ContainerBase</span></code></a></p>
+<p>A base class for containers holding tables of data.</p>
+<p>Similar to the <cite>ContainerBase</cite> class, the container is defined through a
+dictionary given as a <cite>_table_spec</cite> class attribute. The container may also
+hold generic datasets by specifying <cite>_dataset_spec</cite> as with <cite>ContainerBase</cite>.
+See <a class="reference internal" href="#tablebase-notes"><span class="std std-ref">Notes</span></a> for details.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>axes_from</strong> (<cite>memh5.BasicCont</cite>, optional) – Another container to copy axis definitions from. Must be supplied as
+keyword argument.</p></li>
+<li><p><strong>attrs_from</strong> (<cite>memh5.BasicCont</cite>, optional) – Another container to copy attributes from. Must be supplied as keyword
+argument. This applies to attributes in default datasets too.</p></li>
+<li><p><strong>kwargs</strong> (<em>dict</em>) – Should contain definitions for all other table axes.</p></li>
+</ul>
+</dd>
+</dl>
+<p class="rubric">Notes</p>
+<p id="tablebase-notes">A <cite>_table_spec</cite> consists of a dictionary mapping table names into a
+description of the table. That description is another dictionary containing
+several entries.</p>
+<ul class="simple">
+<li><p><cite>columns</cite> : the set of columns in the table. Given as a list of
+<cite>(name, dtype)</cite> pairs.</p></li>
+<li><p><cite>axis</cite> : an optional name for the rows of the table. This is automatically
+generated as <cite>‘&lt;tablename&gt;_index’</cite> if not explicitly set. This corresponds
+to an <cite>index_map</cite> entry on the container.</p></li>
+<li><p><cite>initialise</cite> : whether to create the table by default.</p></li>
+<li><p><cite>distributed</cite> : whether the table is distributed, or common across all MPI ranks.</p></li>
+</ul>
+<p>An example <cite>_table_spec</cite> entry is:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">_table_spec</span> <span class="o">=</span> <span class="p">{</span>
+    <span class="s1">&#39;quasars&#39;</span><span class="p">:</span> <span class="p">{</span>
+        <span class="s1">&#39;columns&#39;</span><span class="p">:</span> <span class="p">[</span>
+            <span class="p">[</span><span class="s1">&#39;ra&#39;</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">float64</span><span class="p">],</span>
+            <span class="p">[</span><span class="s1">&#39;dec&#39;</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">float64</span><span class="p">],</span>
+            <span class="p">[</span><span class="s1">&#39;z&#39;</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">float64</span><span class="p">]</span>
+        <span class="p">],</span>
+        <span class="s1">&#39;distributed&#39;</span><span class="p">:</span> <span class="kc">False</span><span class="p">,</span>
+        <span class="s1">&#39;axis&#39;</span><span class="p">:</span> <span class="s1">&#39;quasar_id&#39;</span>
+    <span class="p">}</span>
+    <span class="s1">&#39;quasar_mask&#39;</span><span class="p">:</span> <span class="p">{</span>
+        <span class="s1">&#39;columns&#39;</span><span class="p">:</span> <span class="p">[</span>
+            <span class="p">[</span><span class="s1">&#39;mask&#39;</span><span class="p">,</span> <span class="n">np</span><span class="o">.</span><span class="n">bool</span><span class="p">]</span>
+        <span class="p">],</span>
+        <span class="s1">&#39;axis&#39;</span><span class="p">:</span> <span class="s1">&#39;quasar_id&#39;</span>
+    <span class="p">}</span>
+<span class="p">}</span>
+</pre></div>
+</div>
+<dl class="py method">
+<dt id="draco.core.containers.TableBase.table_spec">
+<em class="property">property </em><code class="sig-name descname">table_spec</code><a class="headerlink" href="#draco.core.containers.TableBase.table_spec" title="Permalink to this definition">¶</a></dt>
+<dd><p>Return a copy of the fully resolved table specifiction as a
+dictionary.</p>
+</dd></dl>
+
+</dd></dl>
+
+<dl class="py class">
+<dt id="draco.core.containers.TimeStream">
+<em class="property">class </em><code class="sig-prename descclassname">draco.core.containers.</code><code class="sig-name descname">TimeStream</code><span class="sig-paren">(</span><em class="sig-param"><span class="o">*</span><span class="n">args</span></em>, <em class="sig-param"><span class="o">**</span><span class="n">kwargs</span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/draco/core/containers.html#TimeStream"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#draco.core.containers.TimeStream" title="Permalink to this definition">¶</a></dt>
+<dd><p>Bases: <a class="reference internal" href="#draco.core.containers.VisContainer" title="draco.core.containers.VisContainer"><code class="xref py py-class docutils literal notranslate"><span class="pre">draco.core.containers.VisContainer</span></code></a>, <a class="reference internal" href="#draco.core.containers.TODContainer" title="draco.core.containers.TODContainer"><code class="xref py py-class docutils literal notranslate"><span class="pre">draco.core.containers.TODContainer</span></code></a></p>
+<p>A container for holding a visibility dataset in time.</p>
+<p>This should look similar enough to the CHIME
+<code class="xref py py-class docutils literal notranslate"><span class="pre">CorrData</span></code> container that they can be used
+interchangably in most cases.</p>
+</dd></dl>
+
+<dl class="py class">
+<dt id="draco.core.containers.TrackBeam">
+<em class="property">class </em><code class="sig-prename descclassname">draco.core.containers.</code><code class="sig-name descname">TrackBeam</code><span class="sig-paren">(</span><em class="sig-param"><span class="n">theta</span><span class="o">=</span><span class="default_value">None</span></em>, <em class="sig-param"><span class="n">phi</span><span class="o">=</span><span class="default_value">None</span></em>, <em class="sig-param"><span class="n">coords</span><span class="o">=</span><span class="default_value">'celestial'</span></em>, <em class="sig-param"><span class="n">track_type</span><span class="o">=</span><span class="default_value">'drift'</span></em>, <em class="sig-param"><span class="o">*</span><span class="n">args</span></em>, <em class="sig-param"><span class="o">**</span><span class="n">kwargs</span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/draco/core/containers.html#TrackBeam"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#draco.core.containers.TrackBeam" title="Permalink to this definition">¶</a></dt>
+<dd><p>Bases: <a class="reference internal" href="#draco.core.containers.ContainerBase" title="draco.core.containers.ContainerBase"><code class="xref py py-class docutils literal notranslate"><span class="pre">draco.core.containers.ContainerBase</span></code></a></p>
+<p>Container for a sequence of beam samples at arbitrary locations
+on the sphere. The axis of the beam samples is ‘pix’, defined by
+the numpy.dtype [(‘theta’, np.float32), (‘phi’, np.float32)].</p>
+</dd></dl>
+
+<dl class="py class">
+<dt id="draco.core.containers.VisContainer">
+<em class="property">class </em><code class="sig-prename descclassname">draco.core.containers.</code><code class="sig-name descname">VisContainer</code><span class="sig-paren">(</span><em class="sig-param"><span class="o">*</span><span class="n">args</span></em>, <em class="sig-param"><span class="o">**</span><span class="n">kwargs</span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/draco/core/containers.html#VisContainer"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#draco.core.containers.VisContainer" title="Permalink to this definition">¶</a></dt>
+<dd><p>Bases: <a class="reference internal" href="#draco.core.containers.ContainerBase" title="draco.core.containers.ContainerBase"><code class="xref py py-class docutils literal notranslate"><span class="pre">draco.core.containers.ContainerBase</span></code></a></p>
+<p>A base container for holding a visibility dataset.</p>
+<p>This works like a <a class="reference internal" href="#draco.core.containers.ContainerBase" title="draco.core.containers.ContainerBase"><code class="xref py py-class docutils literal notranslate"><span class="pre">ContainerBase</span></code></a> container, with the
+ability to create visibility specific axes, if they are not
+passed as a kwargs parameter.</p>
+<p>Additionally this container has visibility specific defined properties
+such as ‘vis’, ‘weight’, ‘freq’, ‘input’, ‘prod’, ‘stack’,
+‘prodstack’, ‘conjugate’.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>axes_from</strong> (<cite>memh5.BasicCont</cite>, optional) – Another container to copy axis definitions from. Must be supplied as
+keyword argument.</p></li>
+<li><p><strong>attrs_from</strong> (<cite>memh5.BasicCont</cite>, optional) – Another container to copy attributes from. Must be supplied as keyword
+argument. This applies to attributes in default datasets too.</p></li>
+<li><p><strong>kwargs</strong> (<em>dict</em>) – Should contain entries for all other axes.</p></li>
+</ul>
+</dd>
+</dl>
+<dl class="py method">
+<dt id="draco.core.containers.VisContainer.freq">
+<em class="property">property </em><code class="sig-name descname">freq</code><a class="headerlink" href="#draco.core.containers.VisContainer.freq" title="Permalink to this definition">¶</a></dt>
+<dd><p>The frequency axis.</p>
+</dd></dl>
+
+<dl class="py method">
+<dt id="draco.core.containers.VisContainer.input">
+<em class="property">property </em><code class="sig-name descname">input</code><a class="headerlink" href="#draco.core.containers.VisContainer.input" title="Permalink to this definition">¶</a></dt>
+<dd><p>The correlated inputs.</p>
+</dd></dl>
+
+<dl class="py method">
+<dt id="draco.core.containers.VisContainer.is_stacked">
+<em class="property">property </em><code class="sig-name descname">is_stacked</code><a class="headerlink" href="#draco.core.containers.VisContainer.is_stacked" title="Permalink to this definition">¶</a></dt>
+<dd><p>Test if the data has been stacked or not.</p>
+</dd></dl>
+
+<dl class="py method">
+<dt id="draco.core.containers.VisContainer.prod">
+<em class="property">property </em><code class="sig-name descname">prod</code><a class="headerlink" href="#draco.core.containers.VisContainer.prod" title="Permalink to this definition">¶</a></dt>
+<dd><p>All the pairwise products that are represented in the data.</p>
+</dd></dl>
+
+<dl class="py method">
+<dt id="draco.core.containers.VisContainer.prodstack">
+<em class="property">property </em><code class="sig-name descname">prodstack</code><a class="headerlink" href="#draco.core.containers.VisContainer.prodstack" title="Permalink to this definition">¶</a></dt>
+<dd><p>A pair of input indices representative of those in the stack.</p>
+<p>Note, these are correctly conjugated on return, and so calculations
+of the baseline and polarisation can be done without additionally
+looking up the stack conjugation.</p>
+</dd></dl>
+
+<dl class="py method">
+<dt id="draco.core.containers.VisContainer.stack">
+<em class="property">property </em><code class="sig-name descname">stack</code><a class="headerlink" href="#draco.core.containers.VisContainer.stack" title="Permalink to this definition">¶</a></dt>
+<dd><p>The stacks definition as an index (and conjugation) of a member product.</p>
+</dd></dl>
+
+<dl class="py method">
+<dt id="draco.core.containers.VisContainer.vis">
+<em class="property">property </em><code class="sig-name descname">vis</code><a class="headerlink" href="#draco.core.containers.VisContainer.vis" title="Permalink to this definition">¶</a></dt>
+<dd><p>The visibility like dataset.</p>
+</dd></dl>
+
+<dl class="py method">
+<dt id="draco.core.containers.VisContainer.weight">
+<em class="property">property </em><code class="sig-name descname">weight</code><a class="headerlink" href="#draco.core.containers.VisContainer.weight" title="Permalink to this definition">¶</a></dt>
+<dd><p>The visibility weights.</p>
+</dd></dl>
+
+</dd></dl>
+
+<dl class="py function">
+<dt id="draco.core.containers.empty_like">
+<code class="sig-prename descclassname">draco.core.containers.</code><code class="sig-name descname">empty_like</code><span class="sig-paren">(</span><em class="sig-param"><span class="n">obj</span></em>, <em class="sig-param"><span class="o">**</span><span class="n">kwargs</span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/draco/core/containers.html#empty_like"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#draco.core.containers.empty_like" title="Permalink to this definition">¶</a></dt>
+<dd><p>Create an empty container like <cite>obj</cite>.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>obj</strong> (<a class="reference internal" href="#draco.core.containers.ContainerBase" title="draco.core.containers.ContainerBase"><em>ContainerBase</em></a>) – Container to base this one off.</p></li>
+<li><p><strong>kwargs</strong> (<em>optional</em>) – Optional definitions of specific axes we want to override. Works in the
+same way as the <cite>ContainerBase</cite> constructor, though <cite>axes_from=obj</cite> and
+<cite>attrs_from=obj</cite> are implied.</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns</dt>
+<dd class="field-even"><p><strong>newobj</strong> – New data container.</p>
+</dd>
+<dt class="field-odd">Return type</dt>
+<dd class="field-odd"><p>container.ContainerBase</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py function">
+<dt id="draco.core.containers.empty_timestream">
+<code class="sig-prename descclassname">draco.core.containers.</code><code class="sig-name descname">empty_timestream</code><span class="sig-paren">(</span><em class="sig-param"><span class="o">**</span><span class="n">kwargs</span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/draco/core/containers.html#empty_timestream"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#draco.core.containers.empty_timestream" title="Permalink to this definition">¶</a></dt>
+<dd><p>Create a new timestream container.</p>
+<p>This indirect call exists so it can be replaced to return custom timestream
+types.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><p><strong>kwargs</strong> (<em>optional</em>) – Arguments to pass to the timestream constructor.</p>
+</dd>
+<dt class="field-even">Returns</dt>
+<dd class="field-even"><p><strong>ts</strong></p>
+</dd>
+<dt class="field-odd">Return type</dt>
+<dd class="field-odd"><p><a class="reference internal" href="#draco.core.containers.TimeStream" title="draco.core.containers.TimeStream">TimeStream</a></p>
+</dd>
+</dl>
+</dd></dl>
+
+</div>
+
+
+           </div>
+           
+          </div>
+          <footer>
+    <div class="rst-footer-buttons" role="navigation" aria-label="footer navigation">
+        <a href="draco.core.io.html" class="btn btn-neutral float-right" title="draco.core.io" accesskey="n" rel="next">Next <span class="fa fa-arrow-circle-right" aria-hidden="true"></span></a>
+        <a href="draco.core.html" class="btn btn-neutral float-left" title="draco.core" accesskey="p" rel="prev"><span class="fa fa-arrow-circle-left" aria-hidden="true"></span> Previous</a>
+    </div>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>
+        &#169; Copyright 2016, Richard Shaw.
+
+    </p>
+  </div>
+    
+    
+    
+    Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    
+    provided by <a href="https://readthedocs.org">Read the Docs</a>. 
+
+</footer>
+        </div>
+      </div>
+
+    </section>
+
+  </div>
+  
+
+  <script type="text/javascript">
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script>
+
+  
+  
+    
+   
+
+</body>
+</html>

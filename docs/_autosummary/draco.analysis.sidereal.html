@@ -1,0 +1,534 @@
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" >
+<head>
+  <meta charset="utf-8" />
+  
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  
+  <title>draco.analysis.sidereal &mdash; draco 0+untagged.1.g43914e3 documentation</title>
+  
+
+  
+  <link rel="stylesheet" href="../_static/css/theme.css" type="text/css" />
+  <link rel="stylesheet" href="../_static/pygments.css" type="text/css" />
+
+  
+  
+
+  
+  
+
+  
+
+  
+  <!--[if lt IE 9]>
+    <script src="../_static/js/html5shiv.min.js"></script>
+  <![endif]-->
+  
+    
+      <script type="text/javascript" id="documentation_options" data-url_root="../" src="../_static/documentation_options.js"></script>
+        <script src="../_static/jquery.js"></script>
+        <script src="../_static/underscore.js"></script>
+        <script src="../_static/doctools.js"></script>
+        <script async="async" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/2.7.7/latest.js?config=TeX-AMS-MML_HTMLorMML"></script>
+    
+    <script type="text/javascript" src="../_static/js/theme.js"></script>
+
+    
+    <link rel="index" title="Index" href="../genindex.html" />
+    <link rel="search" title="Search" href="../search.html" />
+    <link rel="next" title="draco.analysis.sourcestack" href="draco.analysis.sourcestack.html" />
+    <link rel="prev" title="draco.analysis.sensitivity" href="draco.analysis.sensitivity.html" /> 
+</head>
+
+<body class="wy-body-for-nav">
+
+   
+  <div class="wy-grid-for-nav">
+    
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+          
+
+          
+            <a href="../index.html" class="icon icon-home"> draco
+          
+
+          
+          </a>
+
+          
+            
+            
+              <div class="version">
+                0+untagged.1.g43914e3
+              </div>
+            
+          
+
+          
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+
+          
+        </div>
+
+        
+        <div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="main navigation">
+          
+            
+            
+              
+            
+            
+              <ul class="current">
+<li class="toctree-l1"><a class="reference internal" href="../tutorial.html">Tutorial</a></li>
+<li class="toctree-l1 current"><a class="reference internal" href="../reference.html">API Reference</a><ul class="current">
+<li class="toctree-l2 current"><a class="reference internal" href="../reference.html#submodules">Submodules</a><ul class="current">
+<li class="toctree-l3 current"><a class="reference internal" href="draco.analysis.html">draco.analysis</a><ul class="current">
+<li class="toctree-l4"><a class="reference internal" href="draco.analysis.beamform.html">draco.analysis.beamform</a></li>
+<li class="toctree-l4"><a class="reference internal" href="draco.analysis.delay.html">draco.analysis.delay</a></li>
+<li class="toctree-l4"><a class="reference internal" href="draco.analysis.fgfilter.html">draco.analysis.fgfilter</a></li>
+<li class="toctree-l4"><a class="reference internal" href="draco.analysis.flagging.html">draco.analysis.flagging</a></li>
+<li class="toctree-l4"><a class="reference internal" href="draco.analysis.mapmaker.html">draco.analysis.mapmaker</a></li>
+<li class="toctree-l4"><a class="reference internal" href="draco.analysis.powerspectrum.html">draco.analysis.powerspectrum</a></li>
+<li class="toctree-l4"><a class="reference internal" href="draco.analysis.sensitivity.html">draco.analysis.sensitivity</a></li>
+<li class="toctree-l4 current"><a class="current reference internal" href="#">draco.analysis.sidereal</a></li>
+<li class="toctree-l4"><a class="reference internal" href="draco.analysis.sourcestack.html">draco.analysis.sourcestack</a></li>
+<li class="toctree-l4"><a class="reference internal" href="draco.analysis.svdfilter.html">draco.analysis.svdfilter</a></li>
+<li class="toctree-l4"><a class="reference internal" href="draco.analysis.transform.html">draco.analysis.transform</a></li>
+</ul>
+</li>
+<li class="toctree-l3"><a class="reference internal" href="draco.core.html">draco.core</a></li>
+<li class="toctree-l3"><a class="reference internal" href="draco.synthesis.html">draco.synthesis</a></li>
+<li class="toctree-l3"><a class="reference internal" href="draco.util.html">draco.util</a></li>
+</ul>
+</li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="../dev.html">Development Guidelines</a></li>
+</ul>
+
+            
+          
+        </div>
+        
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap">
+
+      
+      <nav class="wy-nav-top" aria-label="top navigation">
+        
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../index.html">draco</a>
+        
+      </nav>
+
+
+      <div class="wy-nav-content">
+        
+        <div class="rst-content">
+        
+          
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<div role="navigation" aria-label="breadcrumbs navigation">
+
+  <ul class="wy-breadcrumbs">
+    
+      <li><a href="../index.html" class="icon icon-home"></a> &raquo;</li>
+        
+          <li><a href="../reference.html">API Reference</a> &raquo;</li>
+        
+          <li><a href="draco.analysis.html">draco.analysis</a> &raquo;</li>
+        
+      <li>draco.analysis.sidereal</li>
+    
+    
+      <li class="wy-breadcrumbs-aside">
+        
+          
+            <a href="../_sources/_autosummary/draco.analysis.sidereal.rst.txt" rel="nofollow"> View page source</a>
+          
+        
+      </li>
+    
+  </ul>
+
+  
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+            
+  <div class="section" id="module-draco.analysis.sidereal">
+<span id="draco-analysis-sidereal"></span><h1>draco.analysis.sidereal<a class="headerlink" href="#module-draco.analysis.sidereal" title="Permalink to this headline">¶</a></h1>
+<p>Take timestream data and regridding it into sidereal days which can be stacked.</p>
+<div class="section" id="usage">
+<h2>Usage<a class="headerlink" href="#usage" title="Permalink to this headline">¶</a></h2>
+<p>Generally you would want to use these tasks together. Sending time stream data
+into  <a class="reference internal" href="#draco.analysis.sidereal.SiderealGrouper" title="draco.analysis.sidereal.SiderealGrouper"><code class="xref py py-class docutils literal notranslate"><span class="pre">SiderealGrouper</span></code></a>, then feeding that into
+<a class="reference internal" href="#draco.analysis.sidereal.SiderealRegridder" title="draco.analysis.sidereal.SiderealRegridder"><code class="xref py py-class docutils literal notranslate"><span class="pre">SiderealRegridder</span></code></a> to grid onto each sidereal day, and then into
+<a class="reference internal" href="#draco.analysis.sidereal.SiderealStacker" title="draco.analysis.sidereal.SiderealStacker"><code class="xref py py-class docutils literal notranslate"><span class="pre">SiderealStacker</span></code></a> if you want to combine the different days.</p>
+<p class="rubric">Classes</p>
+<table class="longtable docutils align-default">
+<colgroup>
+<col style="width: 10%" />
+<col style="width: 90%" />
+</colgroup>
+<tbody>
+<tr class="row-odd"><td><p><a class="reference internal" href="#draco.analysis.sidereal.SiderealGrouper" title="draco.analysis.sidereal.SiderealGrouper"><code class="xref py py-obj docutils literal notranslate"><span class="pre">SiderealGrouper</span></code></a>()</p></td>
+<td><p>Group individual timestreams together into whole Sidereal days.</p></td>
+</tr>
+<tr class="row-even"><td><p><a class="reference internal" href="#draco.analysis.sidereal.SiderealRegridder" title="draco.analysis.sidereal.SiderealRegridder"><code class="xref py py-obj docutils literal notranslate"><span class="pre">SiderealRegridder</span></code></a>()</p></td>
+<td><p>Take a sidereal days worth of data, and put onto a regular grid.</p></td>
+</tr>
+<tr class="row-odd"><td><p><a class="reference internal" href="#draco.analysis.sidereal.SiderealRegridderCubic" title="draco.analysis.sidereal.SiderealRegridderCubic"><code class="xref py py-obj docutils literal notranslate"><span class="pre">SiderealRegridderCubic</span></code></a>()</p></td>
+<td><p>Regrid onto the sidereal day using cubic Hermite spline interpolation.</p></td>
+</tr>
+<tr class="row-even"><td><p><a class="reference internal" href="#draco.analysis.sidereal.SiderealRegridderLinear" title="draco.analysis.sidereal.SiderealRegridderLinear"><code class="xref py py-obj docutils literal notranslate"><span class="pre">SiderealRegridderLinear</span></code></a>()</p></td>
+<td><p>Regrid onto the sidereal day using linear interpolation.</p></td>
+</tr>
+<tr class="row-odd"><td><p><a class="reference internal" href="#draco.analysis.sidereal.SiderealRegridderNearest" title="draco.analysis.sidereal.SiderealRegridderNearest"><code class="xref py py-obj docutils literal notranslate"><span class="pre">SiderealRegridderNearest</span></code></a>()</p></td>
+<td><p>Regrid onto the sidereal day using nearest neighbor interpolation.</p></td>
+</tr>
+<tr class="row-even"><td><p><a class="reference internal" href="#draco.analysis.sidereal.SiderealStacker" title="draco.analysis.sidereal.SiderealStacker"><code class="xref py py-obj docutils literal notranslate"><span class="pre">SiderealStacker</span></code></a>()</p></td>
+<td><p>Take in a set of sidereal days, and stack them up.</p></td>
+</tr>
+</tbody>
+</table>
+<dl class="py class">
+<dt id="draco.analysis.sidereal.SiderealGrouper">
+<em class="property">class </em><code class="sig-prename descclassname">draco.analysis.sidereal.</code><code class="sig-name descname">SiderealGrouper</code><a class="reference internal" href="../_modules/draco/analysis/sidereal.html#SiderealGrouper"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#draco.analysis.sidereal.SiderealGrouper" title="Permalink to this definition">¶</a></dt>
+<dd><p>Bases: <a class="reference internal" href="draco.core.task.html#draco.core.task.SingleTask" title="draco.core.task.SingleTask"><code class="xref py py-class docutils literal notranslate"><span class="pre">draco.core.task.SingleTask</span></code></a></p>
+<p>Group individual timestreams together into whole Sidereal days.</p>
+<dl class="py attribute">
+<dt id="draco.analysis.sidereal.SiderealGrouper.padding">
+<code class="sig-name descname">padding</code><a class="headerlink" href="#draco.analysis.sidereal.SiderealGrouper.padding" title="Permalink to this definition">¶</a></dt>
+<dd><p>Extra amount of a sidereal day to pad each timestream by. Useful for
+getting rid of interpolation artifacts.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type</dt>
+<dd class="field-odd"><p>float</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt id="draco.analysis.sidereal.SiderealGrouper.offset">
+<code class="sig-name descname">offset</code><a class="headerlink" href="#draco.analysis.sidereal.SiderealGrouper.offset" title="Permalink to this definition">¶</a></dt>
+<dd><p>Time in seconds to subtract before determining the LSD.  Useful if the
+desired output is not a full sideral stream, but rather a narrow window
+around source transits on different sideral days.  In that case, one
+should set this quantity to <cite>240 * (source_ra - 180)</cite>.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type</dt>
+<dd class="field-odd"><p>float</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt id="draco.analysis.sidereal.SiderealGrouper.min_day_length">
+<code class="sig-name descname">min_day_length</code><a class="headerlink" href="#draco.analysis.sidereal.SiderealGrouper.min_day_length" title="Permalink to this definition">¶</a></dt>
+<dd><p>Require at least this fraction of a full sidereal day to process.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type</dt>
+<dd class="field-odd"><p>float</p>
+</dd>
+</dl>
+</dd></dl>
+
+<p>Initialize pipeline task.</p>
+<p>May be overridden with no arguments.  Will be called after any
+<cite>config.Property</cite> attributes are set and after ‘input’ and ‘requires’
+keys are set up.</p>
+<dl class="py method">
+<dt id="draco.analysis.sidereal.SiderealGrouper.process">
+<code class="sig-name descname">process</code><span class="sig-paren">(</span><em class="sig-param"><span class="n">tstream</span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/draco/analysis/sidereal.html#SiderealGrouper.process"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#draco.analysis.sidereal.SiderealGrouper.process" title="Permalink to this definition">¶</a></dt>
+<dd><p>Load in each sidereal day.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><p><strong>tstream</strong> (<a class="reference internal" href="draco.core.containers.html#draco.core.containers.TimeStream" title="draco.core.containers.TimeStream"><em>containers.TimeStream</em></a>) – Timestream to group together.</p>
+</dd>
+<dt class="field-even">Returns</dt>
+<dd class="field-even"><p><strong>ts</strong> – Returns the timestream of each sidereal day when we have received
+the last file, otherwise returns <code class="xref py py-obj docutils literal notranslate"><span class="pre">None</span></code>.</p>
+</dd>
+<dt class="field-odd">Return type</dt>
+<dd class="field-odd"><p><a class="reference internal" href="draco.core.containers.html#draco.core.containers.TimeStream" title="draco.core.containers.TimeStream">containers.TimeStream</a> or None</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt id="draco.analysis.sidereal.SiderealGrouper.process_finish">
+<code class="sig-name descname">process_finish</code><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="../_modules/draco/analysis/sidereal.html#SiderealGrouper.process_finish"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#draco.analysis.sidereal.SiderealGrouper.process_finish" title="Permalink to this definition">¶</a></dt>
+<dd><p>Return the final sidereal day.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Returns</dt>
+<dd class="field-odd"><p><strong>ts</strong> – Returns the timestream of the final sidereal day if it’s long
+enough, otherwise returns <code class="xref py py-obj docutils literal notranslate"><span class="pre">None</span></code>.</p>
+</dd>
+<dt class="field-even">Return type</dt>
+<dd class="field-even"><p><a class="reference internal" href="draco.core.containers.html#draco.core.containers.TimeStream" title="draco.core.containers.TimeStream">containers.TimeStream</a> or None</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt id="draco.analysis.sidereal.SiderealGrouper.setup">
+<code class="sig-name descname">setup</code><span class="sig-paren">(</span><em class="sig-param"><span class="n">manager</span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/draco/analysis/sidereal.html#SiderealGrouper.setup"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#draco.analysis.sidereal.SiderealGrouper.setup" title="Permalink to this definition">¶</a></dt>
+<dd><p>Set the local observers position.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><p><strong>observer</strong> (<code class="xref py py-class docutils literal notranslate"><span class="pre">Observer</span></code>) – An Observer object holding the geographic location of the telescope.
+Note that <code class="xref py py-class docutils literal notranslate"><span class="pre">TransitTelescope</span></code> instances are also
+Observers.</p>
+</dd>
+</dl>
+</dd></dl>
+
+</dd></dl>
+
+<dl class="py class">
+<dt id="draco.analysis.sidereal.SiderealRegridder">
+<em class="property">class </em><code class="sig-prename descclassname">draco.analysis.sidereal.</code><code class="sig-name descname">SiderealRegridder</code><a class="reference internal" href="../_modules/draco/analysis/sidereal.html#SiderealRegridder"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#draco.analysis.sidereal.SiderealRegridder" title="Permalink to this definition">¶</a></dt>
+<dd><p>Bases: <a class="reference internal" href="draco.analysis.transform.html#draco.analysis.transform.Regridder" title="draco.analysis.transform.Regridder"><code class="xref py py-class docutils literal notranslate"><span class="pre">draco.analysis.transform.Regridder</span></code></a></p>
+<p>Take a sidereal days worth of data, and put onto a regular grid.</p>
+<p>Uses a maximum-likelihood inverse of a Lanczos interpolation to do the
+regridding. This gives a reasonably local regridding, that is pretty well
+behaved in m-space.</p>
+<dl class="py attribute">
+<dt id="draco.analysis.sidereal.SiderealRegridder.samples">
+<code class="sig-name descname">samples</code><a class="headerlink" href="#draco.analysis.sidereal.SiderealRegridder.samples" title="Permalink to this definition">¶</a></dt>
+<dd><p>Number of samples across the sidereal day.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type</dt>
+<dd class="field-odd"><p>int</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt id="draco.analysis.sidereal.SiderealRegridder.lanczos_width">
+<code class="sig-name descname">lanczos_width</code><a class="headerlink" href="#draco.analysis.sidereal.SiderealRegridder.lanczos_width" title="Permalink to this definition">¶</a></dt>
+<dd><p>Width of the Lanczos interpolation kernel.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type</dt>
+<dd class="field-odd"><p>int</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt id="draco.analysis.sidereal.SiderealRegridder.snr_cov">
+<code class="sig-name descname">snr_cov</code><a class="headerlink" href="#draco.analysis.sidereal.SiderealRegridder.snr_cov" title="Permalink to this definition">¶</a></dt>
+<dd><p>Ratio of signal covariance to noise covariance (used for Wiener filter).</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type</dt>
+<dd class="field-odd"><p>float</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt id="draco.analysis.sidereal.SiderealRegridder.down_mix">
+<code class="sig-name descname">down_mix</code><a class="headerlink" href="#draco.analysis.sidereal.SiderealRegridder.down_mix" title="Permalink to this definition">¶</a></dt>
+<dd><p>Down mix the visibility prior to interpolation using the fringe rate
+of a source at zenith.  This is un-done after the interpolation.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type</dt>
+<dd class="field-odd"><p>bool</p>
+</dd>
+</dl>
+</dd></dl>
+
+<p>Initialize pipeline task.</p>
+<p>May be overridden with no arguments.  Will be called after any
+<cite>config.Property</cite> attributes are set and after ‘input’ and ‘requires’
+keys are set up.</p>
+<dl class="py method">
+<dt id="draco.analysis.sidereal.SiderealRegridder.process">
+<code class="sig-name descname">process</code><span class="sig-paren">(</span><em class="sig-param"><span class="n">data</span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/draco/analysis/sidereal.html#SiderealRegridder.process"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#draco.analysis.sidereal.SiderealRegridder.process" title="Permalink to this definition">¶</a></dt>
+<dd><p>Regrid the sidereal day.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><p><strong>data</strong> (<a class="reference internal" href="draco.core.containers.html#draco.core.containers.TimeStream" title="draco.core.containers.TimeStream"><em>containers.TimeStream</em></a>) – Timestream data for the day (must have a <cite>LSD</cite> attribute).</p>
+</dd>
+<dt class="field-even">Returns</dt>
+<dd class="field-even"><p><strong>sdata</strong> – The regularly gridded sidereal timestream.</p>
+</dd>
+<dt class="field-odd">Return type</dt>
+<dd class="field-odd"><p><a class="reference internal" href="draco.core.containers.html#draco.core.containers.SiderealStream" title="draco.core.containers.SiderealStream">containers.SiderealStream</a></p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt id="draco.analysis.sidereal.SiderealRegridder.setup">
+<code class="sig-name descname">setup</code><span class="sig-paren">(</span><em class="sig-param"><span class="n">manager</span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/draco/analysis/sidereal.html#SiderealRegridder.setup"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#draco.analysis.sidereal.SiderealRegridder.setup" title="Permalink to this definition">¶</a></dt>
+<dd><p>Set the local observers position.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><p><strong>observer</strong> (<code class="xref py py-class docutils literal notranslate"><span class="pre">Observer</span></code>) – An Observer object holding the geographic location of the telescope.
+Note that <code class="xref py py-class docutils literal notranslate"><span class="pre">TransitTelescope</span></code> instances are also
+Observers.</p>
+</dd>
+</dl>
+</dd></dl>
+
+</dd></dl>
+
+<dl class="py class">
+<dt id="draco.analysis.sidereal.SiderealRegridderCubic">
+<em class="property">class </em><code class="sig-prename descclassname">draco.analysis.sidereal.</code><code class="sig-name descname">SiderealRegridderCubic</code><a class="reference internal" href="../_modules/draco/analysis/sidereal.html#SiderealRegridderCubic"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#draco.analysis.sidereal.SiderealRegridderCubic" title="Permalink to this definition">¶</a></dt>
+<dd><p>Bases: <a class="reference internal" href="#draco.analysis.sidereal.SiderealRegridder" title="draco.analysis.sidereal.SiderealRegridder"><code class="xref py py-class docutils literal notranslate"><span class="pre">draco.analysis.sidereal.SiderealRegridder</span></code></a></p>
+<p>Regrid onto the sidereal day using cubic Hermite spline interpolation.</p>
+<p>Initialize pipeline task.</p>
+<p>May be overridden with no arguments.  Will be called after any
+<cite>config.Property</cite> attributes are set and after ‘input’ and ‘requires’
+keys are set up.</p>
+</dd></dl>
+
+<dl class="py class">
+<dt id="draco.analysis.sidereal.SiderealRegridderLinear">
+<em class="property">class </em><code class="sig-prename descclassname">draco.analysis.sidereal.</code><code class="sig-name descname">SiderealRegridderLinear</code><a class="reference internal" href="../_modules/draco/analysis/sidereal.html#SiderealRegridderLinear"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#draco.analysis.sidereal.SiderealRegridderLinear" title="Permalink to this definition">¶</a></dt>
+<dd><p>Bases: <a class="reference internal" href="#draco.analysis.sidereal.SiderealRegridder" title="draco.analysis.sidereal.SiderealRegridder"><code class="xref py py-class docutils literal notranslate"><span class="pre">draco.analysis.sidereal.SiderealRegridder</span></code></a></p>
+<p>Regrid onto the sidereal day using linear interpolation.</p>
+<p>Initialize pipeline task.</p>
+<p>May be overridden with no arguments.  Will be called after any
+<cite>config.Property</cite> attributes are set and after ‘input’ and ‘requires’
+keys are set up.</p>
+</dd></dl>
+
+<dl class="py class">
+<dt id="draco.analysis.sidereal.SiderealRegridderNearest">
+<em class="property">class </em><code class="sig-prename descclassname">draco.analysis.sidereal.</code><code class="sig-name descname">SiderealRegridderNearest</code><a class="reference internal" href="../_modules/draco/analysis/sidereal.html#SiderealRegridderNearest"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#draco.analysis.sidereal.SiderealRegridderNearest" title="Permalink to this definition">¶</a></dt>
+<dd><p>Bases: <a class="reference internal" href="#draco.analysis.sidereal.SiderealRegridder" title="draco.analysis.sidereal.SiderealRegridder"><code class="xref py py-class docutils literal notranslate"><span class="pre">draco.analysis.sidereal.SiderealRegridder</span></code></a></p>
+<p>Regrid onto the sidereal day using nearest neighbor interpolation.</p>
+<p>Initialize pipeline task.</p>
+<p>May be overridden with no arguments.  Will be called after any
+<cite>config.Property</cite> attributes are set and after ‘input’ and ‘requires’
+keys are set up.</p>
+</dd></dl>
+
+<dl class="py class">
+<dt id="draco.analysis.sidereal.SiderealStacker">
+<em class="property">class </em><code class="sig-prename descclassname">draco.analysis.sidereal.</code><code class="sig-name descname">SiderealStacker</code><a class="reference internal" href="../_modules/draco/analysis/sidereal.html#SiderealStacker"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#draco.analysis.sidereal.SiderealStacker" title="Permalink to this definition">¶</a></dt>
+<dd><p>Bases: <a class="reference internal" href="draco.core.task.html#draco.core.task.SingleTask" title="draco.core.task.SingleTask"><code class="xref py py-class docutils literal notranslate"><span class="pre">draco.core.task.SingleTask</span></code></a></p>
+<p>Take in a set of sidereal days, and stack them up.</p>
+<p>This will apply relative calibration.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><p><strong>tag</strong> (<em>str</em>) – The tag to give the stack.</p>
+</dd>
+</dl>
+<p>Initialize pipeline task.</p>
+<p>May be overridden with no arguments.  Will be called after any
+<cite>config.Property</cite> attributes are set and after ‘input’ and ‘requires’
+keys are set up.</p>
+<dl class="py method">
+<dt id="draco.analysis.sidereal.SiderealStacker.process">
+<code class="sig-name descname">process</code><span class="sig-paren">(</span><em class="sig-param"><span class="n">sdata</span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/draco/analysis/sidereal.html#SiderealStacker.process"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#draco.analysis.sidereal.SiderealStacker.process" title="Permalink to this definition">¶</a></dt>
+<dd><p>Stack up sidereal days.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><p><strong>sdata</strong> (<a class="reference internal" href="draco.core.containers.html#draco.core.containers.SiderealStream" title="draco.core.containers.SiderealStream"><em>containers.SiderealStream</em></a>) – Individual sidereal day to stack up.</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt id="draco.analysis.sidereal.SiderealStacker.process_finish">
+<code class="sig-name descname">process_finish</code><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="../_modules/draco/analysis/sidereal.html#SiderealStacker.process_finish"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#draco.analysis.sidereal.SiderealStacker.process_finish" title="Permalink to this definition">¶</a></dt>
+<dd><p>Construct and emit sidereal stack.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Returns</dt>
+<dd class="field-odd"><p><strong>stack</strong> – Stack of sidereal days.</p>
+</dd>
+<dt class="field-even">Return type</dt>
+<dd class="field-even"><p><a class="reference internal" href="draco.core.containers.html#draco.core.containers.SiderealStream" title="draco.core.containers.SiderealStream">containers.SiderealStream</a></p>
+</dd>
+</dl>
+</dd></dl>
+
+</dd></dl>
+
+</div>
+</div>
+
+
+           </div>
+           
+          </div>
+          <footer>
+    <div class="rst-footer-buttons" role="navigation" aria-label="footer navigation">
+        <a href="draco.analysis.sourcestack.html" class="btn btn-neutral float-right" title="draco.analysis.sourcestack" accesskey="n" rel="next">Next <span class="fa fa-arrow-circle-right" aria-hidden="true"></span></a>
+        <a href="draco.analysis.sensitivity.html" class="btn btn-neutral float-left" title="draco.analysis.sensitivity" accesskey="p" rel="prev"><span class="fa fa-arrow-circle-left" aria-hidden="true"></span> Previous</a>
+    </div>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>
+        &#169; Copyright 2016, Richard Shaw.
+
+    </p>
+  </div>
+    
+    
+    
+    Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    
+    provided by <a href="https://readthedocs.org">Read the Docs</a>. 
+
+</footer>
+        </div>
+      </div>
+
+    </section>
+
+  </div>
+  
+
+  <script type="text/javascript">
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script>
+
+  
+  
+    
+   
+
+</body>
+</html>

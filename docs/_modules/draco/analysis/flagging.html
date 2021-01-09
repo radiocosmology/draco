@@ -1,0 +1,1378 @@
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" >
+<head>
+  <meta charset="utf-8" />
+  
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  
+  <title>draco.analysis.flagging &mdash; draco 0+untagged.1.g43914e3 documentation</title>
+  
+
+  
+  <link rel="stylesheet" href="../../../_static/css/theme.css" type="text/css" />
+  <link rel="stylesheet" href="../../../_static/pygments.css" type="text/css" />
+
+  
+  
+
+  
+  
+
+  
+
+  
+  <!--[if lt IE 9]>
+    <script src="../../../_static/js/html5shiv.min.js"></script>
+  <![endif]-->
+  
+    
+      <script type="text/javascript" id="documentation_options" data-url_root="../../../" src="../../../_static/documentation_options.js"></script>
+        <script src="../../../_static/jquery.js"></script>
+        <script src="../../../_static/underscore.js"></script>
+        <script src="../../../_static/doctools.js"></script>
+        <script async="async" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/2.7.7/latest.js?config=TeX-AMS-MML_HTMLorMML"></script>
+    
+    <script type="text/javascript" src="../../../_static/js/theme.js"></script>
+
+    
+    <link rel="index" title="Index" href="../../../genindex.html" />
+    <link rel="search" title="Search" href="../../../search.html" /> 
+</head>
+
+<body class="wy-body-for-nav">
+
+   
+  <div class="wy-grid-for-nav">
+    
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+          
+
+          
+            <a href="../../../index.html" class="icon icon-home"> draco
+          
+
+          
+          </a>
+
+          
+            
+            
+              <div class="version">
+                0+untagged.1.g43914e3
+              </div>
+            
+          
+
+          
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../../../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+
+          
+        </div>
+
+        
+        <div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="main navigation">
+          
+            
+            
+              
+            
+            
+              <ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../tutorial.html">Tutorial</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../reference.html">API Reference</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../dev.html">Development Guidelines</a></li>
+</ul>
+
+            
+          
+        </div>
+        
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap">
+
+      
+      <nav class="wy-nav-top" aria-label="top navigation">
+        
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../../../index.html">draco</a>
+        
+      </nav>
+
+
+      <div class="wy-nav-content">
+        
+        <div class="rst-content">
+        
+          
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<div role="navigation" aria-label="breadcrumbs navigation">
+
+  <ul class="wy-breadcrumbs">
+    
+      <li><a href="../../../index.html" class="icon icon-home"></a> &raquo;</li>
+        
+          <li><a href="../../index.html">Module code</a> &raquo;</li>
+        
+      <li>draco.analysis.flagging</li>
+    
+    
+      <li class="wy-breadcrumbs-aside">
+        
+      </li>
+    
+  </ul>
+
+  
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+            
+  <h1>Source code for draco.analysis.flagging</h1><div class="highlight"><pre>
+<span></span><span class="sd">&quot;&quot;&quot;Tasks for flagging out bad or unwanted data.</span>
+
+<span class="sd">This includes data quality flagging on timestream data; sun excision on sidereal</span>
+<span class="sd">data; and pre-map making flagging on m-modes.</span>
+<span class="sd">&quot;&quot;&quot;</span>
+
+<span class="kn">import</span> <span class="nn">numpy</span> <span class="k">as</span> <span class="nn">np</span>
+<span class="kn">from</span> <span class="nn">scipy.ndimage</span> <span class="kn">import</span> <span class="n">median_filter</span>
+
+<span class="kn">from</span> <span class="nn">caput</span> <span class="kn">import</span> <span class="n">config</span><span class="p">,</span> <span class="n">weighted_median</span><span class="p">,</span> <span class="n">mpiarray</span>
+
+<span class="kn">from</span> <span class="nn">..core</span> <span class="kn">import</span> <span class="n">task</span><span class="p">,</span> <span class="n">containers</span><span class="p">,</span> <span class="n">io</span>
+<span class="kn">from</span> <span class="nn">..util</span> <span class="kn">import</span> <span class="n">tools</span>
+<span class="kn">from</span> <span class="nn">..util</span> <span class="kn">import</span> <span class="n">rfi</span>
+
+
+<div class="viewcode-block" id="DayMask"><a class="viewcode-back" href="../../../_autosummary/draco.analysis.flagging.html#draco.analysis.flagging.DayMask">[docs]</a><span class="k">class</span> <span class="nc">DayMask</span><span class="p">(</span><span class="n">task</span><span class="o">.</span><span class="n">SingleTask</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;Crudely simulate a masking out of the daytime data.</span>
+
+<span class="sd">    Attributes</span>
+<span class="sd">    ----------</span>
+<span class="sd">    start, end : float</span>
+<span class="sd">        Start and end of masked out region.</span>
+<span class="sd">    width : float</span>
+<span class="sd">        Use a smooth transition of given width between the fully masked and</span>
+<span class="sd">        unmasked data. This is interior to the region marked by start and end.</span>
+<span class="sd">    zero_data : bool, optional</span>
+<span class="sd">        Zero the data in addition to modifying the noise weights</span>
+<span class="sd">        (default is True).</span>
+<span class="sd">    remove_average : bool, optional</span>
+<span class="sd">        Estimate and remove the mean level from each visibilty. This estimate</span>
+<span class="sd">        does not use data from the masked region.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+
+    <span class="n">start</span> <span class="o">=</span> <span class="n">config</span><span class="o">.</span><span class="n">Property</span><span class="p">(</span><span class="n">proptype</span><span class="o">=</span><span class="nb">float</span><span class="p">,</span> <span class="n">default</span><span class="o">=</span><span class="mf">90.0</span><span class="p">)</span>
+    <span class="n">end</span> <span class="o">=</span> <span class="n">config</span><span class="o">.</span><span class="n">Property</span><span class="p">(</span><span class="n">proptype</span><span class="o">=</span><span class="nb">float</span><span class="p">,</span> <span class="n">default</span><span class="o">=</span><span class="mf">270.0</span><span class="p">)</span>
+
+    <span class="n">width</span> <span class="o">=</span> <span class="n">config</span><span class="o">.</span><span class="n">Property</span><span class="p">(</span><span class="n">proptype</span><span class="o">=</span><span class="nb">float</span><span class="p">,</span> <span class="n">default</span><span class="o">=</span><span class="mf">60.0</span><span class="p">)</span>
+
+    <span class="n">zero_data</span> <span class="o">=</span> <span class="n">config</span><span class="o">.</span><span class="n">Property</span><span class="p">(</span><span class="n">proptype</span><span class="o">=</span><span class="nb">bool</span><span class="p">,</span> <span class="n">default</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+    <span class="n">remove_average</span> <span class="o">=</span> <span class="n">config</span><span class="o">.</span><span class="n">Property</span><span class="p">(</span><span class="n">proptype</span><span class="o">=</span><span class="nb">bool</span><span class="p">,</span> <span class="n">default</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+
+<div class="viewcode-block" id="DayMask.process"><a class="viewcode-back" href="../../../_autosummary/draco.analysis.flagging.html#draco.analysis.flagging.DayMask.process">[docs]</a>    <span class="k">def</span> <span class="nf">process</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">sstream</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Apply a day time mask.</span>
+
+<span class="sd">        Parameters</span>
+<span class="sd">        ----------</span>
+<span class="sd">        sstream : containers.SiderealStream</span>
+<span class="sd">            Unmasked sidereal stack.</span>
+
+<span class="sd">        Returns</span>
+<span class="sd">        -------</span>
+<span class="sd">        mstream : containers.SiderealStream</span>
+<span class="sd">            Masked sidereal stream.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+
+        <span class="n">sstream</span><span class="o">.</span><span class="n">redistribute</span><span class="p">(</span><span class="s2">&quot;freq&quot;</span><span class="p">)</span>
+
+        <span class="n">ra_shift</span> <span class="o">=</span> <span class="p">(</span><span class="n">sstream</span><span class="o">.</span><span class="n">ra</span><span class="p">[:]</span> <span class="o">-</span> <span class="bp">self</span><span class="o">.</span><span class="n">start</span><span class="p">)</span> <span class="o">%</span> <span class="mf">360.0</span>
+        <span class="n">end_shift</span> <span class="o">=</span> <span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">end</span> <span class="o">-</span> <span class="bp">self</span><span class="o">.</span><span class="n">start</span><span class="p">)</span> <span class="o">%</span> <span class="mf">360.0</span>
+
+        <span class="c1"># Crudely mask the on and off regions</span>
+        <span class="n">mask_bool</span> <span class="o">=</span> <span class="n">ra_shift</span> <span class="o">&gt;</span> <span class="n">end_shift</span>
+
+        <span class="c1"># Put in the transition at the start of the day</span>
+        <span class="n">mask</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">where</span><span class="p">(</span>
+            <span class="n">ra_shift</span> <span class="o">&lt;</span> <span class="bp">self</span><span class="o">.</span><span class="n">width</span><span class="p">,</span>
+            <span class="mf">0.5</span> <span class="o">*</span> <span class="p">(</span><span class="mi">1</span> <span class="o">+</span> <span class="n">np</span><span class="o">.</span><span class="n">cos</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">pi</span> <span class="o">*</span> <span class="p">(</span><span class="n">ra_shift</span> <span class="o">/</span> <span class="bp">self</span><span class="o">.</span><span class="n">width</span><span class="p">))),</span>
+            <span class="n">mask_bool</span><span class="p">,</span>
+        <span class="p">)</span>
+
+        <span class="c1"># Put the transition at the end of the day</span>
+        <span class="n">mask</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">where</span><span class="p">(</span>
+            <span class="n">np</span><span class="o">.</span><span class="n">logical_and</span><span class="p">(</span><span class="n">ra_shift</span> <span class="o">&gt;</span> <span class="n">end_shift</span> <span class="o">-</span> <span class="bp">self</span><span class="o">.</span><span class="n">width</span><span class="p">,</span> <span class="n">ra_shift</span> <span class="o">&lt;=</span> <span class="n">end_shift</span><span class="p">),</span>
+            <span class="mf">0.5</span> <span class="o">*</span> <span class="p">(</span><span class="mi">1</span> <span class="o">+</span> <span class="n">np</span><span class="o">.</span><span class="n">cos</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">pi</span> <span class="o">*</span> <span class="p">((</span><span class="n">ra_shift</span> <span class="o">-</span> <span class="n">end_shift</span><span class="p">)</span> <span class="o">/</span> <span class="bp">self</span><span class="o">.</span><span class="n">width</span><span class="p">))),</span>
+            <span class="n">mask</span><span class="p">,</span>
+        <span class="p">)</span>
+
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">remove_average</span><span class="p">:</span>
+            <span class="c1"># Estimate the mean level from unmasked data</span>
+            <span class="kn">import</span> <span class="nn">scipy.stats</span>
+
+            <span class="n">nanvis</span> <span class="o">=</span> <span class="p">(</span>
+                <span class="n">sstream</span><span class="o">.</span><span class="n">vis</span><span class="p">[:]</span>
+                <span class="o">*</span> <span class="n">np</span><span class="o">.</span><span class="n">where</span><span class="p">(</span><span class="n">mask_bool</span><span class="p">,</span> <span class="mf">1.0</span><span class="p">,</span> <span class="n">np</span><span class="o">.</span><span class="n">nan</span><span class="p">)[</span><span class="n">np</span><span class="o">.</span><span class="n">newaxis</span><span class="p">,</span> <span class="n">np</span><span class="o">.</span><span class="n">newaxis</span><span class="p">,</span> <span class="p">:]</span>
+            <span class="p">)</span>
+            <span class="n">average</span> <span class="o">=</span> <span class="n">scipy</span><span class="o">.</span><span class="n">stats</span><span class="o">.</span><span class="n">nanmedian</span><span class="p">(</span><span class="n">nanvis</span><span class="p">,</span> <span class="n">axis</span><span class="o">=-</span><span class="mi">1</span><span class="p">)[:,</span> <span class="p">:,</span> <span class="n">np</span><span class="o">.</span><span class="n">newaxis</span><span class="p">]</span>
+            <span class="n">sstream</span><span class="o">.</span><span class="n">vis</span><span class="p">[:]</span> <span class="o">-=</span> <span class="n">average</span>
+
+        <span class="c1"># Apply the mask to the data</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">zero_data</span><span class="p">:</span>
+            <span class="n">sstream</span><span class="o">.</span><span class="n">vis</span><span class="p">[:]</span> <span class="o">*=</span> <span class="n">mask</span>
+
+        <span class="c1"># Modify the noise weights</span>
+        <span class="n">sstream</span><span class="o">.</span><span class="n">weight</span><span class="p">[:]</span> <span class="o">*=</span> <span class="n">mask</span> <span class="o">**</span> <span class="mi">2</span>
+
+        <span class="k">return</span> <span class="n">sstream</span></div></div>
+
+
+<div class="viewcode-block" id="MaskData"><a class="viewcode-back" href="../../../_autosummary/draco.analysis.flagging.html#draco.analysis.flagging.MaskData">[docs]</a><span class="k">class</span> <span class="nc">MaskData</span><span class="p">(</span><span class="n">task</span><span class="o">.</span><span class="n">SingleTask</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;Mask out data ahead of map making.</span>
+
+<span class="sd">    Attributes</span>
+<span class="sd">    ----------</span>
+<span class="sd">    auto_correlations : bool</span>
+<span class="sd">        Exclude auto correlations if set (default=False).</span>
+<span class="sd">    m_zero : bool</span>
+<span class="sd">        Ignore the m=0 mode (default=False).</span>
+<span class="sd">    positive_m : bool</span>
+<span class="sd">        Include positive m-modes (default=True).</span>
+<span class="sd">    negative_m : bool</span>
+<span class="sd">        Include negative m-modes (default=True).</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+
+    <span class="n">auto_correlations</span> <span class="o">=</span> <span class="n">config</span><span class="o">.</span><span class="n">Property</span><span class="p">(</span><span class="n">proptype</span><span class="o">=</span><span class="nb">bool</span><span class="p">,</span> <span class="n">default</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
+    <span class="n">m_zero</span> <span class="o">=</span> <span class="n">config</span><span class="o">.</span><span class="n">Property</span><span class="p">(</span><span class="n">proptype</span><span class="o">=</span><span class="nb">bool</span><span class="p">,</span> <span class="n">default</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
+    <span class="n">positive_m</span> <span class="o">=</span> <span class="n">config</span><span class="o">.</span><span class="n">Property</span><span class="p">(</span><span class="n">proptype</span><span class="o">=</span><span class="nb">bool</span><span class="p">,</span> <span class="n">default</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+    <span class="n">negative_m</span> <span class="o">=</span> <span class="n">config</span><span class="o">.</span><span class="n">Property</span><span class="p">(</span><span class="n">proptype</span><span class="o">=</span><span class="nb">bool</span><span class="p">,</span> <span class="n">default</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+
+<div class="viewcode-block" id="MaskData.process"><a class="viewcode-back" href="../../../_autosummary/draco.analysis.flagging.html#draco.analysis.flagging.MaskData.process">[docs]</a>    <span class="k">def</span> <span class="nf">process</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">mmodes</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Mask out unwanted datain the m-modes.</span>
+
+<span class="sd">        Parameters</span>
+<span class="sd">        ----------</span>
+<span class="sd">        mmodes : containers.MModes</span>
+
+<span class="sd">        Returns</span>
+<span class="sd">        -------</span>
+<span class="sd">        mmodes : containers.MModes</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">mmodes</span><span class="o">.</span><span class="n">redistribute</span><span class="p">(</span><span class="s2">&quot;freq&quot;</span><span class="p">)</span>
+
+        <span class="n">mw</span> <span class="o">=</span> <span class="n">mmodes</span><span class="o">.</span><span class="n">weight</span><span class="p">[:]</span>
+
+        <span class="c1"># Exclude auto correlations if set</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">auto_correlations</span><span class="p">:</span>
+            <span class="k">for</span> <span class="n">pi</span><span class="p">,</span> <span class="p">(</span><span class="n">fi</span><span class="p">,</span> <span class="n">fj</span><span class="p">)</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">mmodes</span><span class="o">.</span><span class="n">prodstack</span><span class="p">):</span>
+                <span class="k">if</span> <span class="n">fi</span> <span class="o">==</span> <span class="n">fj</span><span class="p">:</span>
+                    <span class="n">mw</span><span class="p">[</span><span class="o">...</span><span class="p">,</span> <span class="n">pi</span><span class="p">]</span> <span class="o">=</span> <span class="mf">0.0</span>
+
+        <span class="c1"># Apply m based masks</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">m_zero</span><span class="p">:</span>
+            <span class="n">mw</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">=</span> <span class="mf">0.0</span>
+
+        <span class="k">if</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">positive_m</span><span class="p">:</span>
+            <span class="n">mw</span><span class="p">[</span><span class="mi">1</span><span class="p">:,</span> <span class="mi">0</span><span class="p">]</span> <span class="o">=</span> <span class="mf">0.0</span>
+
+        <span class="k">if</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">negative_m</span><span class="p">:</span>
+            <span class="n">mw</span><span class="p">[</span><span class="mi">1</span><span class="p">:,</span> <span class="mi">1</span><span class="p">]</span> <span class="o">=</span> <span class="mf">0.0</span>
+
+        <span class="k">return</span> <span class="n">mmodes</span></div></div>
+
+
+<div class="viewcode-block" id="MaskBaselines"><a class="viewcode-back" href="../../../_autosummary/draco.analysis.flagging.html#draco.analysis.flagging.MaskBaselines">[docs]</a><span class="k">class</span> <span class="nc">MaskBaselines</span><span class="p">(</span><span class="n">task</span><span class="o">.</span><span class="n">SingleTask</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;Mask out baselines from a dataset.</span>
+
+<span class="sd">    This task may produce output with shared datasets. Be warned that</span>
+<span class="sd">    this can produce unexpected outputs if not properly taken into</span>
+<span class="sd">    account.</span>
+
+<span class="sd">    Attributes</span>
+<span class="sd">    ----------</span>
+<span class="sd">    mask_long_ns : float</span>
+<span class="sd">        Mask out baselines longer than a given distance in the N/S direction.</span>
+<span class="sd">    mask_short : float</span>
+<span class="sd">        Mask out baselines shorter than a given distance.</span>
+<span class="sd">    mask_short_ew : float</span>
+<span class="sd">        Mask out baselines shorter then a given distance in the East-West</span>
+<span class="sd">        direction. Useful for masking out intra-cylinder baselines for</span>
+<span class="sd">        North-South oriented cylindrical telescopes.</span>
+<span class="sd">    zero_data : bool, optional</span>
+<span class="sd">        Zero the data in addition to modifying the noise weights</span>
+<span class="sd">        (default is False).</span>
+<span class="sd">    share : {&quot;all&quot;, &quot;none&quot;, &quot;vis&quot;}</span>
+<span class="sd">        Which datasets should we share with the input. If &quot;none&quot; we create a</span>
+<span class="sd">        full copy of the data, if &quot;vis&quot; we create a copy only of the modified</span>
+<span class="sd">        weight dataset and the unmodified vis dataset is shared, if &quot;all&quot; we</span>
+<span class="sd">        modify in place and return the input container.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+
+    <span class="n">mask_long_ns</span> <span class="o">=</span> <span class="n">config</span><span class="o">.</span><span class="n">Property</span><span class="p">(</span><span class="n">proptype</span><span class="o">=</span><span class="nb">float</span><span class="p">,</span> <span class="n">default</span><span class="o">=</span><span class="kc">None</span><span class="p">)</span>
+    <span class="n">mask_short</span> <span class="o">=</span> <span class="n">config</span><span class="o">.</span><span class="n">Property</span><span class="p">(</span><span class="n">proptype</span><span class="o">=</span><span class="nb">float</span><span class="p">,</span> <span class="n">default</span><span class="o">=</span><span class="kc">None</span><span class="p">)</span>
+    <span class="n">mask_short_ew</span> <span class="o">=</span> <span class="n">config</span><span class="o">.</span><span class="n">Property</span><span class="p">(</span><span class="n">proptype</span><span class="o">=</span><span class="nb">float</span><span class="p">,</span> <span class="n">default</span><span class="o">=</span><span class="kc">None</span><span class="p">)</span>
+
+    <span class="n">zero_data</span> <span class="o">=</span> <span class="n">config</span><span class="o">.</span><span class="n">Property</span><span class="p">(</span><span class="n">proptype</span><span class="o">=</span><span class="nb">bool</span><span class="p">,</span> <span class="n">default</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
+
+    <span class="n">share</span> <span class="o">=</span> <span class="n">config</span><span class="o">.</span><span class="n">enum</span><span class="p">([</span><span class="s2">&quot;none&quot;</span><span class="p">,</span> <span class="s2">&quot;vis&quot;</span><span class="p">,</span> <span class="s2">&quot;all&quot;</span><span class="p">],</span> <span class="n">default</span><span class="o">=</span><span class="s2">&quot;all&quot;</span><span class="p">)</span>
+
+<div class="viewcode-block" id="MaskBaselines.setup"><a class="viewcode-back" href="../../../_autosummary/draco.analysis.flagging.html#draco.analysis.flagging.MaskBaselines.setup">[docs]</a>    <span class="k">def</span> <span class="nf">setup</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">telescope</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Set the telescope model.</span>
+
+<span class="sd">        Parameters</span>
+<span class="sd">        ----------</span>
+<span class="sd">        telescope : TransitTelescope</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">telescope</span> <span class="o">=</span> <span class="n">io</span><span class="o">.</span><span class="n">get_telescope</span><span class="p">(</span><span class="n">telescope</span><span class="p">)</span>
+
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">zero_data</span> <span class="ow">and</span> <span class="bp">self</span><span class="o">.</span><span class="n">share</span> <span class="o">==</span> <span class="s2">&quot;vis&quot;</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">log</span><span class="o">.</span><span class="n">warn</span><span class="p">(</span>
+                <span class="s2">&quot;Setting `zero_data = True` and `share = vis` doesn&#39;t make much sense.&quot;</span>
+            <span class="p">)</span></div>
+
+<div class="viewcode-block" id="MaskBaselines.process"><a class="viewcode-back" href="../../../_autosummary/draco.analysis.flagging.html#draco.analysis.flagging.MaskBaselines.process">[docs]</a>    <span class="k">def</span> <span class="nf">process</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">ss</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Apply the mask to data.</span>
+
+<span class="sd">        Parameters</span>
+<span class="sd">        ----------</span>
+<span class="sd">        ss : SiderealStream or TimeStream</span>
+<span class="sd">            Data to mask. Applied in place.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+
+        <span class="n">ss</span><span class="o">.</span><span class="n">redistribute</span><span class="p">(</span><span class="s2">&quot;freq&quot;</span><span class="p">)</span>
+
+        <span class="n">baselines</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">telescope</span><span class="o">.</span><span class="n">baselines</span>
+        <span class="n">mask</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">ones_like</span><span class="p">(</span><span class="n">ss</span><span class="o">.</span><span class="n">weight</span><span class="p">[:],</span> <span class="n">dtype</span><span class="o">=</span><span class="nb">bool</span><span class="p">)</span>
+
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">mask_long_ns</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">long_ns_mask</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">abs</span><span class="p">(</span><span class="n">baselines</span><span class="p">[:,</span> <span class="mi">1</span><span class="p">])</span> <span class="o">&lt;</span> <span class="bp">self</span><span class="o">.</span><span class="n">mask_long_ns</span>
+            <span class="n">mask</span> <span class="o">*=</span> <span class="n">long_ns_mask</span><span class="p">[</span><span class="n">np</span><span class="o">.</span><span class="n">newaxis</span><span class="p">,</span> <span class="p">:,</span> <span class="n">np</span><span class="o">.</span><span class="n">newaxis</span><span class="p">]</span>
+
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">mask_short</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">short_mask</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">sum</span><span class="p">(</span><span class="n">baselines</span> <span class="o">**</span> <span class="mi">2</span><span class="p">,</span> <span class="n">axis</span><span class="o">=</span><span class="mi">1</span><span class="p">)</span> <span class="o">**</span> <span class="mf">0.5</span> <span class="o">&gt;</span> <span class="bp">self</span><span class="o">.</span><span class="n">mask_short</span>
+            <span class="n">mask</span> <span class="o">*=</span> <span class="n">short_mask</span><span class="p">[</span><span class="n">np</span><span class="o">.</span><span class="n">newaxis</span><span class="p">,</span> <span class="p">:,</span> <span class="n">np</span><span class="o">.</span><span class="n">newaxis</span><span class="p">]</span>
+
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">mask_short_ew</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">short_ew_mask</span> <span class="o">=</span> <span class="n">baselines</span><span class="p">[:,</span> <span class="mi">0</span><span class="p">]</span> <span class="o">&gt;</span> <span class="bp">self</span><span class="o">.</span><span class="n">mask_short_ew</span>
+            <span class="n">mask</span> <span class="o">*=</span> <span class="n">short_ew_mask</span><span class="p">[</span><span class="n">np</span><span class="o">.</span><span class="n">newaxis</span><span class="p">,</span> <span class="p">:,</span> <span class="n">np</span><span class="o">.</span><span class="n">newaxis</span><span class="p">]</span>
+
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">share</span> <span class="o">==</span> <span class="s2">&quot;all&quot;</span><span class="p">:</span>
+            <span class="n">ssc</span> <span class="o">=</span> <span class="n">ss</span>
+        <span class="k">elif</span> <span class="bp">self</span><span class="o">.</span><span class="n">share</span> <span class="o">==</span> <span class="s2">&quot;vis&quot;</span><span class="p">:</span>
+            <span class="n">ssc</span> <span class="o">=</span> <span class="n">ss</span><span class="o">.</span><span class="n">copy</span><span class="p">(</span><span class="n">shared</span><span class="o">=</span><span class="p">(</span><span class="s2">&quot;vis&quot;</span><span class="p">,))</span>
+        <span class="k">else</span><span class="p">:</span>  <span class="c1"># self.share == &quot;all&quot;</span>
+            <span class="n">ssc</span> <span class="o">=</span> <span class="n">ss</span><span class="o">.</span><span class="n">copy</span><span class="p">()</span>
+
+        <span class="c1"># Apply the mask to the weight</span>
+        <span class="n">ssc</span><span class="o">.</span><span class="n">weight</span><span class="p">[:]</span> <span class="o">*=</span> <span class="n">mask</span>
+        <span class="c1"># Apply the mask to the data</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">zero_data</span><span class="p">:</span>
+            <span class="n">ssc</span><span class="o">.</span><span class="n">vis</span><span class="p">[:]</span> <span class="o">*=</span> <span class="n">mask</span>
+
+        <span class="k">return</span> <span class="n">ssc</span></div></div>
+
+
+<div class="viewcode-block" id="RadiometerWeight"><a class="viewcode-back" href="../../../_autosummary/draco.analysis.flagging.html#draco.analysis.flagging.RadiometerWeight">[docs]</a><span class="k">class</span> <span class="nc">RadiometerWeight</span><span class="p">(</span><span class="n">task</span><span class="o">.</span><span class="n">SingleTask</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;Update vis_weight according to the radiometer equation:</span>
+
+<span class="sd">    .. math::</span>
+
+<span class="sd">        \text{weight}_{ij} = N_\text{samp} / V_{ii} V_{jj}</span>
+
+<span class="sd">    Attributes</span>
+<span class="sd">    ----------</span>
+<span class="sd">    replace : bool, optional</span>
+<span class="sd">        Replace any existing weights (default). If `False` then we multiply the</span>
+<span class="sd">        existing weights by the radiometer values.</span>
+
+<span class="sd">    &quot;&quot;&quot;</span>
+
+    <span class="n">replace</span> <span class="o">=</span> <span class="n">config</span><span class="o">.</span><span class="n">Property</span><span class="p">(</span><span class="n">proptype</span><span class="o">=</span><span class="nb">bool</span><span class="p">,</span> <span class="n">default</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+
+<div class="viewcode-block" id="RadiometerWeight.process"><a class="viewcode-back" href="../../../_autosummary/draco.analysis.flagging.html#draco.analysis.flagging.RadiometerWeight.process">[docs]</a>    <span class="k">def</span> <span class="nf">process</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">stream</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Change the vis weight.</span>
+
+<span class="sd">        Parameters</span>
+<span class="sd">        ----------</span>
+<span class="sd">        stream : SiderealStream or TimeStream</span>
+<span class="sd">            Data to be weighted. This is done in place.</span>
+
+<span class="sd">        Returns</span>
+<span class="sd">        --------</span>
+<span class="sd">        stream : SiderealStream or TimeStream</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+
+        <span class="kn">from</span> <span class="nn">caput.time</span> <span class="kn">import</span> <span class="n">STELLAR_S</span>
+
+        <span class="c1"># Redistribute over the frequency direction</span>
+        <span class="n">stream</span><span class="o">.</span><span class="n">redistribute</span><span class="p">(</span><span class="s2">&quot;freq&quot;</span><span class="p">)</span>
+
+        <span class="n">ninput</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">stream</span><span class="o">.</span><span class="n">index_map</span><span class="p">[</span><span class="s2">&quot;input&quot;</span><span class="p">])</span>
+        <span class="n">nprod</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">stream</span><span class="o">.</span><span class="n">index_map</span><span class="p">[</span><span class="s2">&quot;prod&quot;</span><span class="p">])</span>
+
+        <span class="k">if</span> <span class="n">nprod</span> <span class="o">!=</span> <span class="p">(</span><span class="n">ninput</span> <span class="o">*</span> <span class="p">(</span><span class="n">ninput</span> <span class="o">+</span> <span class="mi">1</span><span class="p">)</span> <span class="o">//</span> <span class="mi">2</span><span class="p">):</span>
+            <span class="k">raise</span> <span class="ne">RuntimeError</span><span class="p">(</span>
+                <span class="s2">&quot;Must have a input stream with the full correlation triangle.&quot;</span>
+            <span class="p">)</span>
+
+        <span class="n">freq_width</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">median</span><span class="p">(</span><span class="n">stream</span><span class="o">.</span><span class="n">index_map</span><span class="p">[</span><span class="s2">&quot;freq&quot;</span><span class="p">][</span><span class="s2">&quot;width&quot;</span><span class="p">])</span>
+
+        <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">stream</span><span class="p">,</span> <span class="n">containers</span><span class="o">.</span><span class="n">SiderealStream</span><span class="p">):</span>
+            <span class="n">RA_S</span> <span class="o">=</span> <span class="mi">240</span> <span class="o">*</span> <span class="n">STELLAR_S</span>  <span class="c1"># SI seconds in 1 deg of RA change</span>
+            <span class="n">int_time</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">median</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">abs</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">diff</span><span class="p">(</span><span class="n">stream</span><span class="o">.</span><span class="n">ra</span><span class="p">)))</span> <span class="o">/</span> <span class="n">RA_S</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">int_time</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">median</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">abs</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">diff</span><span class="p">(</span><span class="n">stream</span><span class="o">.</span><span class="n">index_map</span><span class="p">[</span><span class="s2">&quot;time&quot;</span><span class="p">])))</span>
+
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">replace</span><span class="p">:</span>
+            <span class="n">stream</span><span class="o">.</span><span class="n">weight</span><span class="p">[:]</span> <span class="o">=</span> <span class="mf">1.0</span>
+
+        <span class="c1"># Construct and set the correct weights in place</span>
+        <span class="n">nsamp</span> <span class="o">=</span> <span class="mf">1e6</span> <span class="o">*</span> <span class="n">freq_width</span> <span class="o">*</span> <span class="n">int_time</span>
+        <span class="n">autos</span> <span class="o">=</span> <span class="n">tools</span><span class="o">.</span><span class="n">extract_diagonal</span><span class="p">(</span><span class="n">stream</span><span class="o">.</span><span class="n">vis</span><span class="p">[:])</span><span class="o">.</span><span class="n">real</span>
+        <span class="n">weight_fac</span> <span class="o">=</span> <span class="n">nsamp</span> <span class="o">**</span> <span class="mf">0.5</span> <span class="o">/</span> <span class="n">autos</span>
+        <span class="n">tools</span><span class="o">.</span><span class="n">apply_gain</span><span class="p">(</span><span class="n">stream</span><span class="o">.</span><span class="n">weight</span><span class="p">[:],</span> <span class="n">weight_fac</span><span class="p">,</span> <span class="n">out</span><span class="o">=</span><span class="n">stream</span><span class="o">.</span><span class="n">weight</span><span class="p">[:])</span>
+
+        <span class="c1"># Return timestream with updated weights</span>
+        <span class="k">return</span> <span class="n">stream</span></div></div>
+
+
+<div class="viewcode-block" id="SmoothVisWeight"><a class="viewcode-back" href="../../../_autosummary/draco.analysis.flagging.html#draco.analysis.flagging.SmoothVisWeight">[docs]</a><span class="k">class</span> <span class="nc">SmoothVisWeight</span><span class="p">(</span><span class="n">task</span><span class="o">.</span><span class="n">SingleTask</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;Smooth the visibility weights with a median filter.</span>
+
+<span class="sd">    This is done in-place.</span>
+
+<span class="sd">    Attributes</span>
+<span class="sd">    ----------</span>
+<span class="sd">    kernel_size : int</span>
+<span class="sd">        Size of the kernel for the median filter in time points.</span>
+<span class="sd">        Default is 31, corresponding to ~5 minutes window for 10s cadence data.</span>
+
+<span class="sd">    &quot;&quot;&quot;</span>
+
+    <span class="c1"># 31 time points correspond to ~ 5min in 10s cadence</span>
+    <span class="n">kernel_size</span> <span class="o">=</span> <span class="n">config</span><span class="o">.</span><span class="n">Property</span><span class="p">(</span><span class="n">proptype</span><span class="o">=</span><span class="nb">int</span><span class="p">,</span> <span class="n">default</span><span class="o">=</span><span class="mi">31</span><span class="p">)</span>
+
+<div class="viewcode-block" id="SmoothVisWeight.process"><a class="viewcode-back" href="../../../_autosummary/draco.analysis.flagging.html#draco.analysis.flagging.SmoothVisWeight.process">[docs]</a>    <span class="k">def</span> <span class="nf">process</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">data</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Smooth the weights with a median filter.</span>
+
+<span class="sd">        Parameters</span>
+<span class="sd">        ----------</span>
+<span class="sd">        data : :class:`andata.CorrData` or :class:`containers.TimeStream` object</span>
+<span class="sd">            Data containing the weights to be smoothed</span>
+
+<span class="sd">        Returns</span>
+<span class="sd">        -------</span>
+<span class="sd">        data : Same object as data</span>
+<span class="sd">            Data object containing the same data as the input, but with the</span>
+<span class="sd">            weights substituted by the smoothed ones.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+
+        <span class="c1"># Ensure data is distributed in frequency:</span>
+        <span class="n">data</span><span class="o">.</span><span class="n">redistribute</span><span class="p">(</span><span class="s2">&quot;freq&quot;</span><span class="p">)</span>
+        <span class="c1"># Full slice reutrns an MPIArray</span>
+        <span class="n">weight</span> <span class="o">=</span> <span class="n">data</span><span class="o">.</span><span class="n">weight</span><span class="p">[:]</span>
+        <span class="c1"># Data will be distributed in frequency.</span>
+        <span class="c1"># So a frequency loop will not be too large.</span>
+        <span class="k">for</span> <span class="n">lfi</span><span class="p">,</span> <span class="n">gfi</span> <span class="ow">in</span> <span class="n">weight</span><span class="o">.</span><span class="n">enumerate</span><span class="p">(</span><span class="n">axis</span><span class="o">=</span><span class="mi">0</span><span class="p">):</span>
+
+            <span class="c1"># MPIArray takes the local index, returns a local np.ndarray</span>
+            <span class="c1"># Find values equal to zero to preserve them in final weights</span>
+            <span class="n">zeromask</span> <span class="o">=</span> <span class="n">weight</span><span class="p">[</span><span class="n">lfi</span><span class="p">]</span> <span class="o">==</span> <span class="mf">0.0</span>
+            <span class="c1"># Median filter. Mode=&#39;nearest&#39; to prevent steps close to</span>
+            <span class="c1"># the end from being washed</span>
+            <span class="n">weight</span><span class="p">[</span><span class="n">lfi</span><span class="p">]</span> <span class="o">=</span> <span class="n">median_filter</span><span class="p">(</span>
+                <span class="n">weight</span><span class="p">[</span><span class="n">lfi</span><span class="p">],</span> <span class="n">size</span><span class="o">=</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">kernel_size</span><span class="p">),</span> <span class="n">mode</span><span class="o">=</span><span class="s2">&quot;nearest&quot;</span>
+            <span class="p">)</span>
+            <span class="c1"># Ensure zero values are zero</span>
+            <span class="n">weight</span><span class="p">[</span><span class="n">lfi</span><span class="p">][</span><span class="n">zeromask</span><span class="p">]</span> <span class="o">=</span> <span class="mf">0.0</span>
+
+        <span class="k">return</span> <span class="n">data</span></div></div>
+
+
+<div class="viewcode-block" id="ThresholdVisWeight"><a class="viewcode-back" href="../../../_autosummary/draco.analysis.flagging.html#draco.analysis.flagging.ThresholdVisWeight">[docs]</a><span class="k">class</span> <span class="nc">ThresholdVisWeight</span><span class="p">(</span><span class="n">task</span><span class="o">.</span><span class="n">SingleTask</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;Set any weight less than the user specified threshold equal to zero.</span>
+
+<span class="sd">    Threshold is determined as `maximum(absolute_threshold,</span>
+<span class="sd">    relative_threshold * mean(weight))` and is evaluated per product/stack</span>
+<span class="sd">    entry.</span>
+
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    absolute_threshold : float</span>
+<span class="sd">        Any weights with values less than this number will be set to zero.</span>
+<span class="sd">    relative_threshold : float</span>
+<span class="sd">        Any weights with values less than this number times the average weight</span>
+<span class="sd">        will be set to zero.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+
+    <span class="n">absolute_threshold</span> <span class="o">=</span> <span class="n">config</span><span class="o">.</span><span class="n">Property</span><span class="p">(</span><span class="n">proptype</span><span class="o">=</span><span class="nb">float</span><span class="p">,</span> <span class="n">default</span><span class="o">=</span><span class="mf">1e-7</span><span class="p">)</span>
+    <span class="n">relative_threshold</span> <span class="o">=</span> <span class="n">config</span><span class="o">.</span><span class="n">Property</span><span class="p">(</span><span class="n">proptype</span><span class="o">=</span><span class="nb">float</span><span class="p">,</span> <span class="n">default</span><span class="o">=</span><span class="mf">0.0</span><span class="p">)</span>
+
+<div class="viewcode-block" id="ThresholdVisWeight.process"><a class="viewcode-back" href="../../../_autosummary/draco.analysis.flagging.html#draco.analysis.flagging.ThresholdVisWeight.process">[docs]</a>    <span class="k">def</span> <span class="nf">process</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">timestream</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Apply threshold to `weight` dataset.</span>
+
+<span class="sd">        Parameters</span>
+<span class="sd">        ----------</span>
+<span class="sd">        timestream : `.core.container` with `weight` attribute</span>
+
+<span class="sd">        Returns</span>
+<span class="sd">        -------</span>
+<span class="sd">        timestream : same as input timestream</span>
+<span class="sd">            The input container with modified weights.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">timestream</span><span class="o">.</span><span class="n">redistribute</span><span class="p">([</span><span class="s2">&quot;prod&quot;</span><span class="p">,</span> <span class="s2">&quot;stack&quot;</span><span class="p">])</span>
+
+        <span class="n">weight</span> <span class="o">=</span> <span class="n">timestream</span><span class="o">.</span><span class="n">weight</span><span class="p">[:]</span>
+
+        <span class="c1"># Average over the frequency and time axes to get a per baseline</span>
+        <span class="c1"># average</span>
+        <span class="n">mean_weight</span> <span class="o">=</span> <span class="n">weight</span><span class="o">.</span><span class="n">mean</span><span class="p">(</span><span class="n">axis</span><span class="o">=</span><span class="mi">2</span><span class="p">)</span><span class="o">.</span><span class="n">mean</span><span class="p">(</span><span class="n">axis</span><span class="o">=</span><span class="mi">0</span><span class="p">)</span>
+
+        <span class="c1"># Figure out which entries to keep</span>
+        <span class="n">threshold</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">maximum</span><span class="p">(</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">absolute_threshold</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">relative_threshold</span> <span class="o">*</span> <span class="n">mean_weight</span>
+        <span class="p">)</span>
+        <span class="n">keep</span> <span class="o">=</span> <span class="n">weight</span> <span class="o">&gt;</span> <span class="n">threshold</span><span class="p">[</span><span class="n">np</span><span class="o">.</span><span class="n">newaxis</span><span class="p">,</span> <span class="p">:,</span> <span class="n">np</span><span class="o">.</span><span class="n">newaxis</span><span class="p">]</span>
+
+        <span class="n">keep_total</span> <span class="o">=</span> <span class="n">timestream</span><span class="o">.</span><span class="n">comm</span><span class="o">.</span><span class="n">allreduce</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">sum</span><span class="p">(</span><span class="n">keep</span><span class="p">))</span>
+        <span class="n">keep_frac</span> <span class="o">=</span> <span class="n">keep_total</span> <span class="o">/</span> <span class="nb">float</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">prod</span><span class="p">(</span><span class="n">weight</span><span class="o">.</span><span class="n">global_shape</span><span class="p">))</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">log</span><span class="o">.</span><span class="n">info</span><span class="p">(</span>
+            <span class="s2">&quot;</span><span class="si">%0.5f%%</span><span class="s2"> of data is below the weight threshold&quot;</span>
+            <span class="o">%</span> <span class="p">(</span><span class="mf">100.0</span> <span class="o">*</span> <span class="p">(</span><span class="mf">1.0</span> <span class="o">-</span> <span class="n">keep_frac</span><span class="p">))</span>
+        <span class="p">)</span>
+
+        <span class="n">timestream</span><span class="o">.</span><span class="n">weight</span><span class="p">[:]</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">where</span><span class="p">(</span><span class="n">keep</span><span class="p">,</span> <span class="n">weight</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">)</span>
+
+        <span class="k">return</span> <span class="n">timestream</span></div></div>
+
+
+<div class="viewcode-block" id="RFISensitivityMask"><a class="viewcode-back" href="../../../_autosummary/draco.analysis.flagging.html#draco.analysis.flagging.RFISensitivityMask">[docs]</a><span class="k">class</span> <span class="nc">RFISensitivityMask</span><span class="p">(</span><span class="n">task</span><span class="o">.</span><span class="n">SingleTask</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;Slightly less crappy RFI masking.</span>
+
+<span class="sd">    Attributes</span>
+<span class="sd">    ----------</span>
+<span class="sd">    mask_type : string, optional</span>
+<span class="sd">        One of &#39;mad&#39;, &#39;sumthreshold&#39; or &#39;combine&#39;.</span>
+<span class="sd">        Default is combine, which uses the sumthreshold everywhere</span>
+<span class="sd">        except around the transits of the Sun, CasA and CygA where it</span>
+<span class="sd">        applies the MAD mask to avoid masking out the transits.</span>
+<span class="sd">    include_pol : list of strings, optional</span>
+<span class="sd">        The list of polarisations to include. Default is to use all</span>
+<span class="sd">        polarisations.</span>
+<span class="sd">    remove_median : bool, optional</span>
+<span class="sd">        Remove median accross times for each frequency?</span>
+<span class="sd">        Recomended. Default: True.</span>
+<span class="sd">    sir : bool, optional</span>
+<span class="sd">        Apply scale invariant rank (SIR) operator on top of final mask?</span>
+<span class="sd">        We find that this is advisable while we still haven&#39;t flagged</span>
+<span class="sd">        out all the static bands properly. Default: True.</span>
+<span class="sd">    sigma : float, optional</span>
+<span class="sd">        The false positive rate of the flagger given as sigma value assuming</span>
+<span class="sd">        the non-RFI samples are Gaussian.</span>
+<span class="sd">        Used for the MAD and TV station flaggers.</span>
+<span class="sd">    max_m : int, optional</span>
+<span class="sd">        Maximum size of the SumThreshold window to use.</span>
+<span class="sd">        The default (8) seems to work well with sensitivity data.</span>
+<span class="sd">    start_threshold_sigma : float, optional</span>
+<span class="sd">        The desired threshold for the SumThreshold algorythm at the</span>
+<span class="sd">        final window size (determined by max m) given as a</span>
+<span class="sd">        number of standard deviations (to be estimated from the</span>
+<span class="sd">        sensitivity map excluding weight and static masks).</span>
+<span class="sd">        The default (8) seems to work well with sensitivity data</span>
+<span class="sd">        using the default max_m.</span>
+<span class="sd">    tv_fraction : float, optional</span>
+<span class="sd">        Number of bad samples in a digital TV channel that cause the whole</span>
+<span class="sd">        channel to be flagged.</span>
+<span class="sd">    tv_base_size : [int, int]</span>
+<span class="sd">        The size of the region used to estimate the baseline for the TV channel</span>
+<span class="sd">        detection.</span>
+<span class="sd">    tv_mad_size : [int, int]</span>
+<span class="sd">        The size of the region used to estimate the MAD for the TV channel detection.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+
+    <span class="n">mask_type</span> <span class="o">=</span> <span class="n">config</span><span class="o">.</span><span class="n">enum</span><span class="p">([</span><span class="s2">&quot;mad&quot;</span><span class="p">,</span> <span class="s2">&quot;sumthreshold&quot;</span><span class="p">,</span> <span class="s2">&quot;combine&quot;</span><span class="p">],</span> <span class="n">default</span><span class="o">=</span><span class="s2">&quot;combine&quot;</span><span class="p">)</span>
+    <span class="n">include_pol</span> <span class="o">=</span> <span class="n">config</span><span class="o">.</span><span class="n">list_type</span><span class="p">(</span><span class="nb">str</span><span class="p">,</span> <span class="n">default</span><span class="o">=</span><span class="kc">None</span><span class="p">)</span>
+    <span class="n">remove_median</span> <span class="o">=</span> <span class="n">config</span><span class="o">.</span><span class="n">Property</span><span class="p">(</span><span class="n">proptype</span><span class="o">=</span><span class="nb">bool</span><span class="p">,</span> <span class="n">default</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+    <span class="n">sir</span> <span class="o">=</span> <span class="n">config</span><span class="o">.</span><span class="n">Property</span><span class="p">(</span><span class="n">proptype</span><span class="o">=</span><span class="nb">bool</span><span class="p">,</span> <span class="n">default</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+
+    <span class="n">sigma</span> <span class="o">=</span> <span class="n">config</span><span class="o">.</span><span class="n">Property</span><span class="p">(</span><span class="n">proptype</span><span class="o">=</span><span class="nb">float</span><span class="p">,</span> <span class="n">default</span><span class="o">=</span><span class="mf">5.0</span><span class="p">)</span>
+    <span class="n">max_m</span> <span class="o">=</span> <span class="n">config</span><span class="o">.</span><span class="n">Property</span><span class="p">(</span><span class="n">proptype</span><span class="o">=</span><span class="nb">int</span><span class="p">,</span> <span class="n">default</span><span class="o">=</span><span class="mi">8</span><span class="p">)</span>
+    <span class="n">start_threshold_sigma</span> <span class="o">=</span> <span class="n">config</span><span class="o">.</span><span class="n">Property</span><span class="p">(</span><span class="n">proptype</span><span class="o">=</span><span class="nb">float</span><span class="p">,</span> <span class="n">default</span><span class="o">=</span><span class="mi">8</span><span class="p">)</span>
+
+    <span class="n">tv_fraction</span> <span class="o">=</span> <span class="n">config</span><span class="o">.</span><span class="n">Property</span><span class="p">(</span><span class="n">proptype</span><span class="o">=</span><span class="nb">float</span><span class="p">,</span> <span class="n">default</span><span class="o">=</span><span class="mf">0.5</span><span class="p">)</span>
+    <span class="n">tv_base_size</span> <span class="o">=</span> <span class="n">config</span><span class="o">.</span><span class="n">list_type</span><span class="p">(</span><span class="nb">int</span><span class="p">,</span> <span class="n">length</span><span class="o">=</span><span class="mi">2</span><span class="p">,</span> <span class="n">default</span><span class="o">=</span><span class="p">(</span><span class="mi">11</span><span class="p">,</span> <span class="mi">3</span><span class="p">))</span>
+    <span class="n">tv_mad_size</span> <span class="o">=</span> <span class="n">config</span><span class="o">.</span><span class="n">list_type</span><span class="p">(</span><span class="nb">int</span><span class="p">,</span> <span class="n">length</span><span class="o">=</span><span class="mi">2</span><span class="p">,</span> <span class="n">default</span><span class="o">=</span><span class="p">(</span><span class="mi">201</span><span class="p">,</span> <span class="mi">51</span><span class="p">))</span>
+
+<div class="viewcode-block" id="RFISensitivityMask.process"><a class="viewcode-back" href="../../../_autosummary/draco.analysis.flagging.html#draco.analysis.flagging.RFISensitivityMask.process">[docs]</a>    <span class="k">def</span> <span class="nf">process</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">sensitivity</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Derive an RFI mask from sensitivity data.</span>
+
+<span class="sd">        Parameters</span>
+<span class="sd">        ----------</span>
+<span class="sd">        sensitivity : containers.SystemSensitivity</span>
+<span class="sd">            Sensitivity data to derive the RFI mask from.</span>
+
+<span class="sd">        Returns</span>
+<span class="sd">        -------</span>
+<span class="sd">        rfimask : containers.RFIMask</span>
+<span class="sd">            RFI mask derived from sensitivity.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="c1">## Constants</span>
+        <span class="c1"># Convert MAD to RMS</span>
+        <span class="n">MAD_TO_RMS</span> <span class="o">=</span> <span class="mf">1.4826</span>
+
+        <span class="c1"># The difference between the exponents in the usual</span>
+        <span class="c1"># scaling of the RMS (n**0.5) and the scaling used</span>
+        <span class="c1"># in the sumthreshold algorithm (n**log2(1.5))</span>
+        <span class="n">RMS_SCALING_DIFF</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">log2</span><span class="p">(</span><span class="mf">1.5</span><span class="p">)</span> <span class="o">-</span> <span class="mf">0.5</span>
+
+        <span class="c1"># Distribute over polarisation as we need all times and frequencies</span>
+        <span class="c1"># available simultaneously</span>
+        <span class="n">sensitivity</span><span class="o">.</span><span class="n">redistribute</span><span class="p">(</span><span class="s2">&quot;pol&quot;</span><span class="p">)</span>
+
+        <span class="c1"># Divide sensitivity to get a radiometer test</span>
+        <span class="n">radiometer</span> <span class="o">=</span> <span class="n">sensitivity</span><span class="o">.</span><span class="n">measured</span><span class="p">[:]</span> <span class="o">*</span> <span class="n">tools</span><span class="o">.</span><span class="n">invert_no_zero</span><span class="p">(</span>
+            <span class="n">sensitivity</span><span class="o">.</span><span class="n">radiometer</span><span class="p">[:]</span>
+        <span class="p">)</span>
+        <span class="n">radiometer</span> <span class="o">=</span> <span class="n">mpiarray</span><span class="o">.</span><span class="n">MPIArray</span><span class="o">.</span><span class="n">wrap</span><span class="p">(</span><span class="n">radiometer</span><span class="p">,</span> <span class="n">axis</span><span class="o">=</span><span class="mi">1</span><span class="p">)</span>
+
+        <span class="n">freq</span> <span class="o">=</span> <span class="n">sensitivity</span><span class="o">.</span><span class="n">freq</span>
+        <span class="n">npol</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">sensitivity</span><span class="o">.</span><span class="n">pol</span><span class="p">)</span>
+        <span class="n">nfreq</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">freq</span><span class="p">)</span>
+
+        <span class="n">static_flag</span> <span class="o">=</span> <span class="o">~</span><span class="bp">self</span><span class="o">.</span><span class="n">_static_rfi_mask_hook</span><span class="p">(</span><span class="n">freq</span><span class="p">)</span>
+
+        <span class="n">madmask</span> <span class="o">=</span> <span class="n">mpiarray</span><span class="o">.</span><span class="n">MPIArray</span><span class="p">(</span>
+            <span class="p">(</span><span class="n">npol</span><span class="p">,</span> <span class="n">nfreq</span><span class="p">,</span> <span class="nb">len</span><span class="p">(</span><span class="n">sensitivity</span><span class="o">.</span><span class="n">time</span><span class="p">)),</span> <span class="n">axis</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">bool</span>
+        <span class="p">)</span>
+        <span class="n">madmask</span><span class="p">[:]</span> <span class="o">=</span> <span class="kc">False</span>
+        <span class="n">stmask</span> <span class="o">=</span> <span class="n">mpiarray</span><span class="o">.</span><span class="n">MPIArray</span><span class="p">(</span>
+            <span class="p">(</span><span class="n">npol</span><span class="p">,</span> <span class="n">nfreq</span><span class="p">,</span> <span class="nb">len</span><span class="p">(</span><span class="n">sensitivity</span><span class="o">.</span><span class="n">time</span><span class="p">)),</span> <span class="n">axis</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">bool</span>
+        <span class="p">)</span>
+        <span class="n">stmask</span><span class="p">[:]</span> <span class="o">=</span> <span class="kc">False</span>
+
+        <span class="k">for</span> <span class="n">li</span><span class="p">,</span> <span class="n">ii</span> <span class="ow">in</span> <span class="n">madmask</span><span class="o">.</span><span class="n">enumerate</span><span class="p">(</span><span class="n">axis</span><span class="o">=</span><span class="mi">0</span><span class="p">):</span>
+
+            <span class="c1"># Only process this polarisation if we should be including it,</span>
+            <span class="c1"># otherwise skip and let it be implicitly set to False (i.e. not</span>
+            <span class="c1"># masked)</span>
+            <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">include_pol</span> <span class="ow">and</span> <span class="n">sensitivity</span><span class="o">.</span><span class="n">pol</span><span class="p">[</span><span class="n">ii</span><span class="p">]</span> <span class="ow">not</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">include_pol</span><span class="p">:</span>
+                <span class="k">continue</span>
+
+            <span class="c1"># Initial flag on weights equal to zero.</span>
+            <span class="n">origflag</span> <span class="o">=</span> <span class="n">sensitivity</span><span class="o">.</span><span class="n">weight</span><span class="p">[:,</span> <span class="n">ii</span><span class="p">]</span> <span class="o">==</span> <span class="mf">0.0</span>
+
+            <span class="c1"># Remove median at each frequency, if asked.</span>
+            <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">remove_median</span><span class="p">:</span>
+                <span class="k">for</span> <span class="n">ff</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">nfreq</span><span class="p">):</span>
+                    <span class="n">radiometer</span><span class="p">[</span><span class="n">ff</span><span class="p">,</span> <span class="n">li</span><span class="p">]</span> <span class="o">-=</span> <span class="n">np</span><span class="o">.</span><span class="n">median</span><span class="p">(</span>
+                        <span class="n">radiometer</span><span class="p">[</span><span class="n">ff</span><span class="p">,</span> <span class="n">li</span><span class="p">][</span><span class="o">~</span><span class="n">origflag</span><span class="p">[</span><span class="n">ff</span><span class="p">]]</span><span class="o">.</span><span class="n">view</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">)</span>
+                    <span class="p">)</span>
+
+            <span class="c1"># Combine weights with static flag</span>
+            <span class="n">start_flag</span> <span class="o">=</span> <span class="n">origflag</span> <span class="o">|</span> <span class="n">static_flag</span><span class="p">[:,</span> <span class="kc">None</span><span class="p">]</span>
+
+            <span class="c1"># Obtain MAD and TV masks</span>
+            <span class="n">this_madmask</span><span class="p">,</span> <span class="n">tvmask</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_mad_tv_mask</span><span class="p">(</span>
+                <span class="n">radiometer</span><span class="p">[:,</span> <span class="n">li</span><span class="p">],</span> <span class="n">start_flag</span><span class="p">,</span> <span class="n">freq</span>
+            <span class="p">)</span>
+
+            <span class="c1"># combine MAD and TV masks</span>
+            <span class="n">madmask</span><span class="p">[</span><span class="n">li</span><span class="p">]</span> <span class="o">=</span> <span class="n">this_madmask</span> <span class="o">|</span> <span class="n">tvmask</span>
+
+            <span class="c1"># Add TV channels to ST start flag.</span>
+            <span class="n">start_flag</span> <span class="o">=</span> <span class="n">start_flag</span> <span class="o">|</span> <span class="n">tvmask</span>
+
+            <span class="c1"># Determine initial threshold</span>
+            <span class="n">med</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">median</span><span class="p">(</span><span class="n">radiometer</span><span class="p">[:,</span> <span class="n">li</span><span class="p">][</span><span class="o">~</span><span class="n">start_flag</span><span class="p">]</span><span class="o">.</span><span class="n">view</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">))</span>
+            <span class="n">mad</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">median</span><span class="p">(</span><span class="nb">abs</span><span class="p">(</span><span class="n">radiometer</span><span class="p">[:,</span> <span class="n">li</span><span class="p">][</span><span class="o">~</span><span class="n">start_flag</span><span class="p">]</span><span class="o">.</span><span class="n">view</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">)</span> <span class="o">-</span> <span class="n">med</span><span class="p">))</span>
+            <span class="n">threshold1</span> <span class="o">=</span> <span class="p">(</span>
+                <span class="n">mad</span>
+                <span class="o">*</span> <span class="n">MAD_TO_RMS</span>
+                <span class="o">*</span> <span class="bp">self</span><span class="o">.</span><span class="n">start_threshold_sigma</span>
+                <span class="o">*</span> <span class="bp">self</span><span class="o">.</span><span class="n">max_m</span> <span class="o">**</span> <span class="n">RMS_SCALING_DIFF</span>
+            <span class="p">)</span>
+
+            <span class="c1"># SumThreshold mask</span>
+            <span class="n">stmask</span><span class="p">[</span><span class="n">li</span><span class="p">]</span> <span class="o">=</span> <span class="n">rfi</span><span class="o">.</span><span class="n">sumthreshold</span><span class="p">(</span>
+                <span class="n">radiometer</span><span class="p">[:,</span> <span class="n">li</span><span class="p">],</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">max_m</span><span class="p">,</span>
+                <span class="n">start_flag</span><span class="o">=</span><span class="n">start_flag</span><span class="p">,</span>
+                <span class="n">threshold1</span><span class="o">=</span><span class="n">threshold1</span><span class="p">,</span>
+                <span class="n">correct_for_missing</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
+            <span class="p">)</span>
+
+        <span class="c1"># Perform an OR (.any) along the pol axis and reform into an MPIArray</span>
+        <span class="c1"># along the freq axis</span>
+        <span class="n">madmask</span> <span class="o">=</span> <span class="n">mpiarray</span><span class="o">.</span><span class="n">MPIArray</span><span class="o">.</span><span class="n">wrap</span><span class="p">(</span><span class="n">madmask</span><span class="o">.</span><span class="n">redistribute</span><span class="p">(</span><span class="mi">1</span><span class="p">)</span><span class="o">.</span><span class="n">any</span><span class="p">(</span><span class="mi">0</span><span class="p">),</span> <span class="mi">0</span><span class="p">)</span>
+        <span class="n">stmask</span> <span class="o">=</span> <span class="n">mpiarray</span><span class="o">.</span><span class="n">MPIArray</span><span class="o">.</span><span class="n">wrap</span><span class="p">(</span><span class="n">stmask</span><span class="o">.</span><span class="n">redistribute</span><span class="p">(</span><span class="mi">1</span><span class="p">)</span><span class="o">.</span><span class="n">any</span><span class="p">(</span><span class="mi">0</span><span class="p">),</span> <span class="mi">0</span><span class="p">)</span>
+
+        <span class="c1"># Pick which of the MAD or SumThreshold mask to use (or blend them)</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">mask_type</span> <span class="o">==</span> <span class="s2">&quot;mad&quot;</span><span class="p">:</span>
+            <span class="n">finalmask</span> <span class="o">=</span> <span class="n">madmask</span>
+
+        <span class="k">elif</span> <span class="bp">self</span><span class="o">.</span><span class="n">mask_type</span> <span class="o">==</span> <span class="s2">&quot;sumthreshold&quot;</span><span class="p">:</span>
+            <span class="n">finalmask</span> <span class="o">=</span> <span class="n">stmask</span>
+
+        <span class="k">else</span><span class="p">:</span>
+            <span class="c1"># Combine ST and MAD masks</span>
+            <span class="n">madtimes</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_combine_st_mad_hook</span><span class="p">(</span><span class="n">sensitivity</span><span class="o">.</span><span class="n">time</span><span class="p">)</span>
+            <span class="n">finalmask</span> <span class="o">=</span> <span class="n">stmask</span>
+            <span class="n">finalmask</span><span class="p">[:,</span> <span class="n">madtimes</span><span class="p">]</span> <span class="o">=</span> <span class="n">madmask</span><span class="p">[:,</span> <span class="n">madtimes</span><span class="p">]</span>
+
+        <span class="c1"># Collect all parts of the mask onto rank 1 and then broadcast to all ranks</span>
+        <span class="n">finalmask</span> <span class="o">=</span> <span class="n">mpiarray</span><span class="o">.</span><span class="n">MPIArray</span><span class="o">.</span><span class="n">wrap</span><span class="p">(</span><span class="n">finalmask</span><span class="p">,</span> <span class="mi">0</span><span class="p">)</span><span class="o">.</span><span class="n">allgather</span><span class="p">()</span>
+
+        <span class="c1"># Apply scale invariant rank (SIR) operator, if asked for.</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">sir</span><span class="p">:</span>
+            <span class="n">finalmask</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_apply_sir</span><span class="p">(</span><span class="n">finalmask</span><span class="p">,</span> <span class="n">static_flag</span><span class="p">)</span>
+
+        <span class="c1"># Create container to hold mask</span>
+        <span class="n">rfimask</span> <span class="o">=</span> <span class="n">containers</span><span class="o">.</span><span class="n">RFIMask</span><span class="p">(</span><span class="n">axes_from</span><span class="o">=</span><span class="n">sensitivity</span><span class="p">)</span>
+        <span class="n">rfimask</span><span class="o">.</span><span class="n">mask</span><span class="p">[:]</span> <span class="o">=</span> <span class="n">finalmask</span>
+
+        <span class="k">return</span> <span class="n">rfimask</span></div>
+
+    <span class="k">def</span> <span class="nf">_combine_st_mad_hook</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">times</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Override this function to add a custom blending mask between the</span>
+<span class="sd">        SumThreshold and MAD flagged data.</span>
+
+<span class="sd">        This is useful to use the MAD algorithm around bright source</span>
+<span class="sd">        transits, where the SumThreshold begins to remove real signal.</span>
+
+<span class="sd">        Parameters</span>
+<span class="sd">        ----------</span>
+<span class="sd">        times : np.ndarray[ntime]</span>
+<span class="sd">            Times of the data at floating point UNIX time.</span>
+
+<span class="sd">        Returns</span>
+<span class="sd">        -------</span>
+<span class="sd">        combine : np.ndarray[ntime]</span>
+<span class="sd">            Mixing array as a function of time. If `True` that sample will be</span>
+<span class="sd">            filled from the MAD, if `False` use the SumThreshold algorithm.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="n">np</span><span class="o">.</span><span class="n">ones_like</span><span class="p">(</span><span class="n">times</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">bool</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">_static_rfi_mask_hook</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">freq</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Override this function to apply a static RFI mask to the data.</span>
+
+<span class="sd">        Parameters</span>
+<span class="sd">        ----------</span>
+<span class="sd">        freq : np.ndarray[nfreq]</span>
+<span class="sd">            1D array of frequencies in the data (in MHz).</span>
+
+<span class="sd">        Returns</span>
+<span class="sd">        -------</span>
+<span class="sd">        mask : np.ndarray[nfreq]</span>
+<span class="sd">            Mask array. True will include a frequency channel, False masks it out.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="n">np</span><span class="o">.</span><span class="n">ones_like</span><span class="p">(</span><span class="n">freq</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">bool</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">_apply_sir</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">mask</span><span class="p">,</span> <span class="n">baseflag</span><span class="p">,</span> <span class="n">eta</span><span class="o">=</span><span class="mf">0.2</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Expand the mask with SIR.&quot;&quot;&quot;</span>
+
+        <span class="c1"># Remove baseflag from mask and run SIR</span>
+        <span class="n">nobaseflag</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">copy</span><span class="p">(</span><span class="n">mask</span><span class="p">)</span>
+        <span class="n">nobaseflag</span><span class="p">[</span><span class="n">baseflag</span><span class="p">]</span> <span class="o">=</span> <span class="kc">False</span>
+        <span class="n">nobaseflagsir</span> <span class="o">=</span> <span class="n">rfi</span><span class="o">.</span><span class="n">sir</span><span class="p">(</span><span class="n">nobaseflag</span><span class="p">[:,</span> <span class="n">np</span><span class="o">.</span><span class="n">newaxis</span><span class="p">,</span> <span class="p">:],</span> <span class="n">eta</span><span class="o">=</span><span class="n">eta</span><span class="p">)[:,</span> <span class="mi">0</span><span class="p">,</span> <span class="p">:]</span>
+
+        <span class="c1"># Make sure the original mask (including baseflag) is still masked</span>
+        <span class="n">flagsir</span> <span class="o">=</span> <span class="n">nobaseflagsir</span> <span class="o">|</span> <span class="n">mask</span>
+
+        <span class="k">return</span> <span class="n">flagsir</span>
+
+    <span class="k">def</span> <span class="nf">_mad_tv_mask</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">data</span><span class="p">,</span> <span class="n">start_flag</span><span class="p">,</span> <span class="n">freq</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Use the specific scattered TV channel flagging.&quot;&quot;&quot;</span>
+        <span class="c1"># Make copy of data</span>
+        <span class="n">data</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">copy</span><span class="p">(</span><span class="n">data</span><span class="p">)</span>
+
+        <span class="c1"># Calculate the scaled deviations</span>
+        <span class="n">data</span><span class="p">[</span><span class="n">start_flag</span><span class="p">]</span> <span class="o">=</span> <span class="mf">0.0</span>
+        <span class="n">maddev</span> <span class="o">=</span> <span class="n">mad</span><span class="p">(</span>
+            <span class="n">data</span><span class="p">,</span> <span class="n">start_flag</span><span class="p">,</span> <span class="n">base_size</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">tv_base_size</span><span class="p">,</span> <span class="n">mad_size</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">tv_mad_size</span>
+        <span class="p">)</span>
+
+        <span class="c1"># Replace any NaNs (where too much data is missing) with a</span>
+        <span class="c1"># large enough value to always be flagged</span>
+        <span class="n">maddev</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">where</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">isnan</span><span class="p">(</span><span class="n">maddev</span><span class="p">),</span> <span class="mi">2</span> <span class="o">*</span> <span class="bp">self</span><span class="o">.</span><span class="n">sigma</span><span class="p">,</span> <span class="n">maddev</span><span class="p">)</span>
+
+        <span class="c1"># Reflag for scattered TV emission</span>
+        <span class="n">tvmask</span> <span class="o">=</span> <span class="n">tv_channels_flag</span><span class="p">(</span><span class="n">maddev</span><span class="p">,</span> <span class="n">freq</span><span class="p">,</span> <span class="n">sigma</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">sigma</span><span class="p">,</span> <span class="n">f</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">tv_fraction</span><span class="p">)</span>
+
+        <span class="c1"># Create MAD mask</span>
+        <span class="n">madmask</span> <span class="o">=</span> <span class="n">maddev</span> <span class="o">&gt;</span> <span class="bp">self</span><span class="o">.</span><span class="n">sigma</span>
+
+        <span class="c1"># Ensure start flag is masked</span>
+        <span class="n">madmask</span> <span class="o">=</span> <span class="n">madmask</span> <span class="o">|</span> <span class="n">start_flag</span>
+
+        <span class="k">return</span> <span class="n">madmask</span><span class="p">,</span> <span class="n">tvmask</span></div>
+
+
+<div class="viewcode-block" id="RFIMask"><a class="viewcode-back" href="../../../_autosummary/draco.analysis.flagging.html#draco.analysis.flagging.RFIMask">[docs]</a><span class="k">class</span> <span class="nc">RFIMask</span><span class="p">(</span><span class="n">task</span><span class="o">.</span><span class="n">SingleTask</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;Crappy RFI masking.</span>
+
+<span class="sd">    Attributes</span>
+<span class="sd">    ----------</span>
+<span class="sd">    sigma : float, optional</span>
+<span class="sd">        The false positive rate of the flagger given as sigma value assuming</span>
+<span class="sd">        the non-RFI samples are Gaussian.</span>
+<span class="sd">    tv_fraction : float, optional</span>
+<span class="sd">        Number of bad samples in a digital TV channel that cause the whole</span>
+<span class="sd">        channel to be flagged.</span>
+<span class="sd">    stack_ind : int</span>
+<span class="sd">        Which stack to process to derive flags for the whole dataset.</span>
+<span class="sd">    destripe : bool, optional</span>
+<span class="sd">        Deprecated option to remove the striping.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+
+    <span class="n">sigma</span> <span class="o">=</span> <span class="n">config</span><span class="o">.</span><span class="n">Property</span><span class="p">(</span><span class="n">proptype</span><span class="o">=</span><span class="nb">float</span><span class="p">,</span> <span class="n">default</span><span class="o">=</span><span class="mf">5.0</span><span class="p">)</span>
+    <span class="n">tv_fraction</span> <span class="o">=</span> <span class="n">config</span><span class="o">.</span><span class="n">Property</span><span class="p">(</span><span class="n">proptype</span><span class="o">=</span><span class="nb">float</span><span class="p">,</span> <span class="n">default</span><span class="o">=</span><span class="mf">0.5</span><span class="p">)</span>
+    <span class="n">stack_ind</span> <span class="o">=</span> <span class="n">config</span><span class="o">.</span><span class="n">Property</span><span class="p">(</span><span class="n">proptype</span><span class="o">=</span><span class="nb">int</span><span class="p">)</span>
+    <span class="n">destripe</span> <span class="o">=</span> <span class="n">config</span><span class="o">.</span><span class="n">Property</span><span class="p">(</span><span class="n">proptype</span><span class="o">=</span><span class="nb">bool</span><span class="p">,</span> <span class="n">default</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
+
+<div class="viewcode-block" id="RFIMask.process"><a class="viewcode-back" href="../../../_autosummary/draco.analysis.flagging.html#draco.analysis.flagging.RFIMask.process">[docs]</a>    <span class="k">def</span> <span class="nf">process</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">sstream</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Apply a day time mask.</span>
+
+<span class="sd">        Parameters</span>
+<span class="sd">        ----------</span>
+<span class="sd">        sstream : containers.SiderealStream</span>
+<span class="sd">            Unmasked sidereal stack.</span>
+
+<span class="sd">        Returns</span>
+<span class="sd">        -------</span>
+<span class="sd">        mstream : containers.SiderealStream</span>
+<span class="sd">            Masked sidereal stream.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+
+        <span class="n">sstream</span><span class="o">.</span><span class="n">redistribute</span><span class="p">(</span><span class="s2">&quot;stack&quot;</span><span class="p">)</span>
+
+        <span class="n">ssv</span> <span class="o">=</span> <span class="n">sstream</span><span class="o">.</span><span class="n">vis</span><span class="p">[:]</span>
+        <span class="n">ssw</span> <span class="o">=</span> <span class="n">sstream</span><span class="o">.</span><span class="n">weight</span><span class="p">[:]</span>
+
+        <span class="c1"># Figure out which rank actually has the requested index</span>
+        <span class="n">lstart</span> <span class="o">=</span> <span class="n">ssv</span><span class="o">.</span><span class="n">local_offset</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span>
+        <span class="n">lstop</span> <span class="o">=</span> <span class="n">lstart</span> <span class="o">+</span> <span class="n">ssv</span><span class="o">.</span><span class="n">local_shape</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span>
+        <span class="n">has_ind</span> <span class="o">=</span> <span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">stack_ind</span> <span class="o">&gt;=</span> <span class="n">lstart</span><span class="p">)</span> <span class="ow">and</span> <span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">stack_ind</span> <span class="o">&lt;</span> <span class="n">lstop</span><span class="p">)</span>
+        <span class="n">has_ind_list</span> <span class="o">=</span> <span class="n">sstream</span><span class="o">.</span><span class="n">comm</span><span class="o">.</span><span class="n">allgather</span><span class="p">(</span><span class="n">has_ind</span><span class="p">)</span>
+        <span class="n">rank_with_ind</span> <span class="o">=</span> <span class="n">has_ind_list</span><span class="o">.</span><span class="n">index</span><span class="p">(</span><span class="kc">True</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">log</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span>
+            <span class="s2">&quot;Rank </span><span class="si">%i</span><span class="s2"> has the requested index </span><span class="si">%i</span><span class="s2">&quot;</span><span class="p">,</span> <span class="n">rank_with_ind</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">stack_ind</span>
+        <span class="p">)</span>
+
+        <span class="n">newmask</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">zeros</span><span class="p">((</span><span class="n">ssv</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span> <span class="n">ssv</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">2</span><span class="p">]),</span> <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">bool</span><span class="p">)</span>
+
+        <span class="c1"># Get the rank with stack to create the new mask</span>
+        <span class="k">if</span> <span class="n">sstream</span><span class="o">.</span><span class="n">comm</span><span class="o">.</span><span class="n">rank</span> <span class="o">==</span> <span class="n">rank_with_ind</span><span class="p">:</span>
+
+            <span class="c1"># Cut out the right section</span>
+            <span class="n">wf</span> <span class="o">=</span> <span class="n">ssv</span><span class="p">[:,</span> <span class="bp">self</span><span class="o">.</span><span class="n">stack_ind</span> <span class="o">-</span> <span class="n">lstart</span><span class="p">]</span><span class="o">.</span><span class="n">view</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">)</span>
+            <span class="n">ww</span> <span class="o">=</span> <span class="n">ssw</span><span class="p">[:,</span> <span class="bp">self</span><span class="o">.</span><span class="n">stack_ind</span> <span class="o">-</span> <span class="n">lstart</span><span class="p">]</span><span class="o">.</span><span class="n">view</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">)</span>
+
+            <span class="c1"># Generate an initial mask and calculate the scaled deviations</span>
+            <span class="c1"># TODO: replace this magic threshold</span>
+            <span class="n">weight_cut</span> <span class="o">=</span> <span class="mf">1e-4</span> <span class="o">*</span> <span class="n">ww</span><span class="o">.</span><span class="n">mean</span><span class="p">()</span>  <span class="c1"># Ignore samples with small weights</span>
+            <span class="n">wm</span> <span class="o">=</span> <span class="n">ww</span> <span class="o">&lt;</span> <span class="n">weight_cut</span>
+            <span class="n">maddev</span> <span class="o">=</span> <span class="n">mad</span><span class="p">(</span><span class="n">wf</span><span class="p">,</span> <span class="n">wm</span><span class="p">)</span>
+
+            <span class="c1"># Replace any NaNs (where too much data is missing) with a large enough value to always</span>
+            <span class="c1"># be flagged</span>
+            <span class="n">maddev</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">where</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">isnan</span><span class="p">(</span><span class="n">maddev</span><span class="p">),</span> <span class="mi">2</span> <span class="o">*</span> <span class="bp">self</span><span class="o">.</span><span class="n">sigma</span><span class="p">,</span> <span class="n">maddev</span><span class="p">)</span>
+
+            <span class="c1"># Reflag for scattered TV emission</span>
+            <span class="n">tvmask</span> <span class="o">=</span> <span class="n">tv_channels_flag</span><span class="p">(</span>
+                <span class="n">maddev</span><span class="p">,</span> <span class="n">sstream</span><span class="o">.</span><span class="n">freq</span><span class="p">,</span> <span class="n">sigma</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">sigma</span><span class="p">,</span> <span class="n">f</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">tv_fraction</span>
+            <span class="p">)</span>
+
+            <span class="c1"># Construct the new mask</span>
+            <span class="n">newmask</span><span class="p">[:]</span> <span class="o">=</span> <span class="n">tvmask</span> <span class="o">|</span> <span class="p">(</span><span class="n">maddev</span> <span class="o">&gt;</span> <span class="bp">self</span><span class="o">.</span><span class="n">sigma</span><span class="p">)</span>
+
+        <span class="c1"># Broadcast the new flags to all ranks and then apply</span>
+        <span class="n">sstream</span><span class="o">.</span><span class="n">comm</span><span class="o">.</span><span class="n">Bcast</span><span class="p">(</span><span class="n">newmask</span><span class="p">,</span> <span class="n">root</span><span class="o">=</span><span class="n">rank_with_ind</span><span class="p">)</span>
+        <span class="n">ssw</span><span class="p">[:]</span> <span class="o">*=</span> <span class="p">(</span><span class="o">~</span><span class="n">newmask</span><span class="p">)[:,</span> <span class="n">np</span><span class="o">.</span><span class="n">newaxis</span><span class="p">,</span> <span class="p">:]</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">log</span><span class="o">.</span><span class="n">info</span><span class="p">(</span>
+            <span class="s2">&quot;Flagging </span><span class="si">%0.2f%%</span><span class="s2"> of data due to RFI.&quot;</span>
+            <span class="o">%</span> <span class="p">(</span><span class="mf">100.0</span> <span class="o">*</span> <span class="n">np</span><span class="o">.</span><span class="n">sum</span><span class="p">(</span><span class="n">newmask</span><span class="p">)</span> <span class="o">/</span> <span class="nb">float</span><span class="p">(</span><span class="n">newmask</span><span class="o">.</span><span class="n">size</span><span class="p">))</span>
+        <span class="p">)</span>
+
+        <span class="c1"># Remove the time average of the data. Should probably do this elsewhere to be honest</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">destripe</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">log</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s2">&quot;Destriping the data. This option is deprecated.&quot;</span><span class="p">)</span>
+            <span class="n">weight_cut</span> <span class="o">=</span> <span class="mf">1e-4</span> <span class="o">*</span> <span class="n">ssw</span><span class="o">.</span><span class="n">mean</span><span class="p">()</span>  <span class="c1"># Ignore samples with small weights</span>
+            <span class="n">ssv</span><span class="p">[:]</span> <span class="o">=</span> <span class="n">destripe</span><span class="p">(</span><span class="n">ssv</span><span class="p">,</span> <span class="n">ssw</span> <span class="o">&gt;</span> <span class="n">weight_cut</span><span class="p">)</span>
+
+        <span class="k">return</span> <span class="n">sstream</span></div></div>
+
+
+<div class="viewcode-block" id="ApplyRFIMask"><a class="viewcode-back" href="../../../_autosummary/draco.analysis.flagging.html#draco.analysis.flagging.ApplyRFIMask">[docs]</a><span class="k">class</span> <span class="nc">ApplyRFIMask</span><span class="p">(</span><span class="n">task</span><span class="o">.</span><span class="n">SingleTask</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;Apply an RFIMask to the data.</span>
+
+<span class="sd">    Mask out all inputs at times and frequencies contaminated by RFI.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+
+<div class="viewcode-block" id="ApplyRFIMask.process"><a class="viewcode-back" href="../../../_autosummary/draco.analysis.flagging.html#draco.analysis.flagging.ApplyRFIMask.process">[docs]</a>    <span class="k">def</span> <span class="nf">process</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">tstream</span><span class="p">,</span> <span class="n">rfimask</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Flag out RFI by zeroing the weights.</span>
+
+<span class="sd">        Parameters</span>
+<span class="sd">        ----------</span>
+<span class="sd">        tstream : timestream_like</span>
+<span class="sd">            A timestream like container. For example, `containers.TimeStream`</span>
+<span class="sd">            or `andata.CorrData`.</span>
+<span class="sd">        rfimask : containers.RFIMask</span>
+<span class="sd">            An RFI mask for the same period of time.</span>
+
+<span class="sd">        Returns</span>
+<span class="sd">        -------</span>
+<span class="sd">        tstream : timestream_like</span>
+<span class="sd">            The masked timestream. Note that the masking is done in place.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+
+        <span class="c1"># Validate the sizes</span>
+        <span class="k">if</span> <span class="p">(</span><span class="n">tstream</span><span class="o">.</span><span class="n">time</span> <span class="o">!=</span> <span class="n">rfimask</span><span class="o">.</span><span class="n">time</span><span class="p">)</span><span class="o">.</span><span class="n">all</span><span class="p">():</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;timestream and mask data have different time axes.&quot;</span><span class="p">)</span>
+
+        <span class="k">if</span> <span class="p">(</span><span class="n">tstream</span><span class="o">.</span><span class="n">freq</span> <span class="o">!=</span> <span class="n">rfimask</span><span class="o">.</span><span class="n">freq</span><span class="p">)</span><span class="o">.</span><span class="n">all</span><span class="p">():</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;timestream and mask data have different freq axes.&quot;</span><span class="p">)</span>
+
+        <span class="c1"># Ensure we are frequency distributed</span>
+        <span class="n">tstream</span><span class="o">.</span><span class="n">redistribute</span><span class="p">(</span><span class="s2">&quot;freq&quot;</span><span class="p">)</span>
+
+        <span class="c1"># Create a slice that broadcasts the mask to the final shape</span>
+        <span class="n">t_axes</span> <span class="o">=</span> <span class="n">tstream</span><span class="o">.</span><span class="n">weight</span><span class="o">.</span><span class="n">attrs</span><span class="p">[</span><span class="s2">&quot;axis&quot;</span><span class="p">]</span>
+        <span class="n">m_axes</span> <span class="o">=</span> <span class="n">rfimask</span><span class="o">.</span><span class="n">mask</span><span class="o">.</span><span class="n">attrs</span><span class="p">[</span><span class="s2">&quot;axis&quot;</span><span class="p">]</span>
+        <span class="n">bcast_slice</span> <span class="o">=</span> <span class="nb">tuple</span><span class="p">(</span>
+            <span class="nb">slice</span><span class="p">(</span><span class="kc">None</span><span class="p">)</span> <span class="k">if</span> <span class="n">ax</span> <span class="ow">in</span> <span class="n">m_axes</span> <span class="k">else</span> <span class="n">np</span><span class="o">.</span><span class="n">newaxis</span> <span class="k">for</span> <span class="n">ax</span> <span class="ow">in</span> <span class="n">t_axes</span>
+        <span class="p">)</span>
+
+        <span class="c1"># RFI Mask is not distributed, so we need to cut out the frequencies</span>
+        <span class="c1"># that are local for the tstream</span>
+        <span class="n">sf</span> <span class="o">=</span> <span class="n">tstream</span><span class="o">.</span><span class="n">weight</span><span class="o">.</span><span class="n">local_offset</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+        <span class="n">ef</span> <span class="o">=</span> <span class="n">sf</span> <span class="o">+</span> <span class="n">tstream</span><span class="o">.</span><span class="n">weight</span><span class="o">.</span><span class="n">local_shape</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+
+        <span class="c1"># Mask the data</span>
+        <span class="n">tstream</span><span class="o">.</span><span class="n">weight</span><span class="p">[:]</span> <span class="o">*=</span> <span class="p">(</span><span class="o">~</span><span class="n">rfimask</span><span class="o">.</span><span class="n">mask</span><span class="p">[</span><span class="n">sf</span><span class="p">:</span><span class="n">ef</span><span class="p">][</span><span class="n">bcast_slice</span><span class="p">])</span><span class="o">.</span><span class="n">astype</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">float32</span><span class="p">)</span>
+
+        <span class="k">return</span> <span class="n">tstream</span></div></div>
+
+
+<div class="viewcode-block" id="medfilt"><a class="viewcode-back" href="../../../_autosummary/draco.analysis.flagging.html#draco.analysis.flagging.medfilt">[docs]</a><span class="k">def</span> <span class="nf">medfilt</span><span class="p">(</span><span class="n">x</span><span class="p">,</span> <span class="n">mask</span><span class="p">,</span> <span class="n">size</span><span class="p">,</span> <span class="o">*</span><span class="n">args</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;Apply a moving median filter to masked data.</span>
+
+<span class="sd">    The application is done by iterative filling to</span>
+<span class="sd">    overcome the fact we don&#39;t have an actual implementation</span>
+<span class="sd">    of a nanmedian.</span>
+
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    x : np.ndarray</span>
+<span class="sd">        Data to filter.</span>
+<span class="sd">    mask : np.ndarray</span>
+<span class="sd">        Mask of data to filter out.</span>
+<span class="sd">    size : tuple</span>
+<span class="sd">        Size of the window in each dimension.</span>
+
+<span class="sd">    Returns</span>
+<span class="sd">    -------</span>
+<span class="sd">    y : np.ndarray</span>
+<span class="sd">        The masked data. Data within the mask is undefined.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+
+    <span class="k">if</span> <span class="n">np</span><span class="o">.</span><span class="n">iscomplexobj</span><span class="p">(</span><span class="n">x</span><span class="p">):</span>
+        <span class="k">return</span> <span class="n">medfilt</span><span class="p">(</span><span class="n">x</span><span class="o">.</span><span class="n">real</span><span class="p">,</span> <span class="n">mask</span><span class="p">,</span> <span class="n">size</span><span class="p">)</span> <span class="o">+</span> <span class="mf">1.0</span><span class="n">j</span> <span class="o">*</span> <span class="n">medfilt</span><span class="p">(</span><span class="n">x</span><span class="o">.</span><span class="n">imag</span><span class="p">,</span> <span class="n">mask</span><span class="p">,</span> <span class="n">size</span><span class="p">)</span>
+
+    <span class="c1"># Copy and do initial masking</span>
+    <span class="n">x</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">ascontiguousarray</span><span class="p">(</span><span class="n">x</span><span class="o">.</span><span class="n">astype</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">float64</span><span class="p">))</span>
+    <span class="n">w</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">ascontiguousarray</span><span class="p">((</span><span class="o">~</span><span class="n">mask</span><span class="p">)</span><span class="o">.</span><span class="n">astype</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">float64</span><span class="p">))</span>
+
+    <span class="k">return</span> <span class="n">weighted_median</span><span class="o">.</span><span class="n">moving_weighted_median</span><span class="p">(</span><span class="n">x</span><span class="p">,</span> <span class="n">w</span><span class="p">,</span> <span class="n">size</span><span class="p">,</span> <span class="o">*</span><span class="n">args</span><span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="mad"><a class="viewcode-back" href="../../../_autosummary/draco.analysis.flagging.html#draco.analysis.flagging.mad">[docs]</a><span class="k">def</span> <span class="nf">mad</span><span class="p">(</span><span class="n">x</span><span class="p">,</span> <span class="n">mask</span><span class="p">,</span> <span class="n">base_size</span><span class="o">=</span><span class="p">(</span><span class="mi">11</span><span class="p">,</span> <span class="mi">3</span><span class="p">),</span> <span class="n">mad_size</span><span class="o">=</span><span class="p">(</span><span class="mi">21</span><span class="p">,</span> <span class="mi">21</span><span class="p">),</span> <span class="n">debug</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span> <span class="n">sigma</span><span class="o">=</span><span class="kc">True</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;Calculate the MAD of freq-time data.</span>
+
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    x : np.ndarray</span>
+<span class="sd">        Data to filter.</span>
+<span class="sd">    mask : np.ndarray</span>
+<span class="sd">        Initial mask.</span>
+<span class="sd">    base_size : tuple</span>
+<span class="sd">        Size of the window to use in (freq, time) when</span>
+<span class="sd">        estimating the baseline.</span>
+<span class="sd">    mad_size : tuple</span>
+<span class="sd">        Size of the window to use in (freq, time) when</span>
+<span class="sd">        estimating the MAD.</span>
+<span class="sd">    sigma : bool, optional</span>
+<span class="sd">        Rescale the output into units of Gaussian sigmas.</span>
+
+<span class="sd">    Returns</span>
+<span class="sd">    -------</span>
+<span class="sd">    mad : np.ndarray</span>
+<span class="sd">        Size of deviation at each point in MAD units.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+
+    <span class="n">xs</span> <span class="o">=</span> <span class="n">medfilt</span><span class="p">(</span><span class="n">x</span><span class="p">,</span> <span class="n">mask</span><span class="p">,</span> <span class="n">size</span><span class="o">=</span><span class="n">base_size</span><span class="p">)</span>
+    <span class="n">dev</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">abs</span><span class="p">(</span><span class="n">x</span> <span class="o">-</span> <span class="n">xs</span><span class="p">)</span>
+
+    <span class="n">mad</span> <span class="o">=</span> <span class="n">medfilt</span><span class="p">(</span><span class="n">dev</span><span class="p">,</span> <span class="n">mask</span><span class="p">,</span> <span class="n">size</span><span class="o">=</span><span class="n">mad_size</span><span class="p">)</span>
+
+    <span class="k">if</span> <span class="n">sigma</span><span class="p">:</span>
+        <span class="n">mad</span> <span class="o">*=</span> <span class="mf">1.4826</span>  <span class="c1"># apply the conversion from MAD-&gt;sigma</span>
+
+    <span class="k">if</span> <span class="n">debug</span><span class="p">:</span>
+        <span class="k">return</span> <span class="n">dev</span> <span class="o">/</span> <span class="n">mad</span><span class="p">,</span> <span class="n">dev</span><span class="p">,</span> <span class="n">mad</span>
+
+    <span class="k">return</span> <span class="n">dev</span> <span class="o">/</span> <span class="n">mad</span></div>
+
+
+<div class="viewcode-block" id="inverse_binom_cdf_prob"><a class="viewcode-back" href="../../../_autosummary/draco.analysis.flagging.html#draco.analysis.flagging.inverse_binom_cdf_prob">[docs]</a><span class="k">def</span> <span class="nf">inverse_binom_cdf_prob</span><span class="p">(</span><span class="n">k</span><span class="p">,</span> <span class="n">N</span><span class="p">,</span> <span class="n">F</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;Calculate the trial probability that gives the CDF.</span>
+
+<span class="sd">    This gets the trial probability that gives an overall cumulative</span>
+<span class="sd">    probability for Pr(X &lt;= k; N, p) = F</span>
+
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    k : int</span>
+<span class="sd">        Maximum number of successes.</span>
+<span class="sd">    N : int</span>
+<span class="sd">        Total number of trials.</span>
+<span class="sd">    F : float</span>
+<span class="sd">        The cumulative probability for (k, N).</span>
+
+<span class="sd">    Returns</span>
+<span class="sd">    -------</span>
+<span class="sd">    p : float</span>
+<span class="sd">        The trial probability.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="c1"># This uses the result that we can write the cumulative probability of a</span>
+    <span class="c1"># binomial in terms of an incomplete beta function</span>
+
+    <span class="kn">import</span> <span class="nn">scipy.special</span> <span class="k">as</span> <span class="nn">sp</span>
+
+    <span class="k">return</span> <span class="n">sp</span><span class="o">.</span><span class="n">betaincinv</span><span class="p">(</span><span class="n">k</span> <span class="o">+</span> <span class="mi">1</span><span class="p">,</span> <span class="n">N</span> <span class="o">-</span> <span class="n">k</span><span class="p">,</span> <span class="mi">1</span> <span class="o">-</span> <span class="n">F</span><span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="sigma_to_p"><a class="viewcode-back" href="../../../_autosummary/draco.analysis.flagging.html#draco.analysis.flagging.sigma_to_p">[docs]</a><span class="k">def</span> <span class="nf">sigma_to_p</span><span class="p">(</span><span class="n">sigma</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;Get the probability of an excursion larger than sigma for a Gaussian.&quot;&quot;&quot;</span>
+    <span class="kn">import</span> <span class="nn">scipy.stats</span> <span class="k">as</span> <span class="nn">ss</span>
+
+    <span class="k">return</span> <span class="mi">2</span> <span class="o">*</span> <span class="n">ss</span><span class="o">.</span><span class="n">norm</span><span class="o">.</span><span class="n">sf</span><span class="p">(</span><span class="n">sigma</span><span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="p_to_sigma"><a class="viewcode-back" href="../../../_autosummary/draco.analysis.flagging.html#draco.analysis.flagging.p_to_sigma">[docs]</a><span class="k">def</span> <span class="nf">p_to_sigma</span><span class="p">(</span><span class="n">p</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;Get the sigma exceeded by the tails of a Gaussian with probability p.&quot;&quot;&quot;</span>
+    <span class="kn">import</span> <span class="nn">scipy.stats</span> <span class="k">as</span> <span class="nn">ss</span>
+
+    <span class="k">return</span> <span class="n">ss</span><span class="o">.</span><span class="n">norm</span><span class="o">.</span><span class="n">isf</span><span class="p">(</span><span class="n">p</span> <span class="o">/</span> <span class="mi">2</span><span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="tv_channels_flag"><a class="viewcode-back" href="../../../_autosummary/draco.analysis.flagging.html#draco.analysis.flagging.tv_channels_flag">[docs]</a><span class="k">def</span> <span class="nf">tv_channels_flag</span><span class="p">(</span><span class="n">x</span><span class="p">,</span> <span class="n">freq</span><span class="p">,</span> <span class="n">sigma</span><span class="o">=</span><span class="mi">5</span><span class="p">,</span> <span class="n">f</span><span class="o">=</span><span class="mf">0.5</span><span class="p">,</span> <span class="n">debug</span><span class="o">=</span><span class="kc">False</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;Perform a higher sensitivity flagging for the TV stations.</span>
+
+<span class="sd">    This flags a whole TV station band if more than fraction f of the samples</span>
+<span class="sd">    within a station band exceed a given threshold. The threshold is calculated</span>
+<span class="sd">    by wanting a fixed false positive rate (as described by sigma) for fraction</span>
+<span class="sd">    f of samples exceeding the threshold</span>
+
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    x : np.ndarray[freq, time]</span>
+<span class="sd">        Deviations of data in sigma units.</span>
+<span class="sd">    freq : np.ndarray[freq]</span>
+<span class="sd">        Frequency of samples in MHz.</span>
+<span class="sd">    sigma : float, optional</span>
+<span class="sd">        The probability of a false positive given as a sigma of a Gaussian.</span>
+<span class="sd">    f : float, optional</span>
+<span class="sd">        Fraction of bad samples within each channel before flagging the whole</span>
+<span class="sd">        thing.</span>
+<span class="sd">    debug : bool, optional</span>
+<span class="sd">        Returns (mask, fraction) instead to give extra debugging info.</span>
+
+<span class="sd">    Returns</span>
+<span class="sd">    -------</span>
+<span class="sd">    mask : np.ndarray[bool]</span>
+<span class="sd">        Mask of the input data.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+
+    <span class="n">p_false</span> <span class="o">=</span> <span class="n">sigma_to_p</span><span class="p">(</span><span class="n">sigma</span><span class="p">)</span>
+    <span class="n">frac</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">ones_like</span><span class="p">(</span><span class="n">x</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">float</span><span class="p">)</span>
+
+    <span class="n">tvstart_freq</span> <span class="o">=</span> <span class="mi">398</span>
+    <span class="n">tvwidth_freq</span> <span class="o">=</span> <span class="mi">6</span>
+
+    <span class="c1"># Calculate the boundaries of each frequency channel</span>
+    <span class="n">df</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">median</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">abs</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">diff</span><span class="p">(</span><span class="n">freq</span><span class="p">)))</span>
+    <span class="n">freq_start</span> <span class="o">=</span> <span class="n">freq</span> <span class="o">-</span> <span class="mf">0.5</span> <span class="o">*</span> <span class="n">df</span>
+    <span class="n">freq_end</span> <span class="o">=</span> <span class="n">freq</span> <span class="o">+</span> <span class="mf">0.5</span> <span class="o">*</span> <span class="n">df</span>
+
+    <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">67</span><span class="p">):</span>
+
+        <span class="c1"># Find all frequencies that lie wholly or partially within the TV channel</span>
+        <span class="n">fs</span> <span class="o">=</span> <span class="n">tvstart_freq</span> <span class="o">+</span> <span class="n">i</span> <span class="o">*</span> <span class="n">tvwidth_freq</span>
+        <span class="n">fe</span> <span class="o">=</span> <span class="n">fs</span> <span class="o">+</span> <span class="n">tvwidth_freq</span>
+        <span class="n">sel</span> <span class="o">=</span> <span class="p">(</span><span class="n">freq_end</span> <span class="o">&gt;=</span> <span class="n">fs</span><span class="p">)</span> <span class="o">&amp;</span> <span class="p">(</span><span class="n">freq_start</span> <span class="o">&lt;=</span> <span class="n">fe</span><span class="p">)</span>
+
+        <span class="c1"># Calculate the threshold to apply</span>
+        <span class="n">N</span> <span class="o">=</span> <span class="n">sel</span><span class="o">.</span><span class="n">sum</span><span class="p">()</span>
+        <span class="n">k</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="n">f</span> <span class="o">*</span> <span class="n">N</span><span class="p">)</span>
+
+        <span class="c1"># This is the Gaussian threshold required for there to be at most a p_false</span>
+        <span class="c1"># chance of more than k trials exceeding the threshold. This is the correct</span>
+        <span class="c1"># expression, and has been double checked by numerical trials.</span>
+        <span class="n">t</span> <span class="o">=</span> <span class="n">p_to_sigma</span><span class="p">(</span><span class="n">inverse_binom_cdf_prob</span><span class="p">(</span><span class="n">k</span><span class="p">,</span> <span class="n">N</span><span class="p">,</span> <span class="mi">1</span> <span class="o">-</span> <span class="n">p_false</span><span class="p">))</span>
+
+        <span class="n">frac</span><span class="p">[</span><span class="n">sel</span><span class="p">]</span> <span class="o">=</span> <span class="p">(</span><span class="n">x</span><span class="p">[</span><span class="n">sel</span><span class="p">]</span> <span class="o">&gt;</span> <span class="n">t</span><span class="p">)</span><span class="o">.</span><span class="n">mean</span><span class="p">(</span><span class="n">axis</span><span class="o">=</span><span class="mi">0</span><span class="p">)[</span><span class="n">np</span><span class="o">.</span><span class="n">newaxis</span><span class="p">,</span> <span class="p">:]</span>
+
+    <span class="n">mask</span> <span class="o">=</span> <span class="n">frac</span> <span class="o">&gt;</span> <span class="n">f</span>
+
+    <span class="k">if</span> <span class="n">debug</span><span class="p">:</span>
+        <span class="k">return</span> <span class="n">mask</span><span class="p">,</span> <span class="n">frac</span>
+
+    <span class="k">return</span> <span class="n">mask</span></div>
+
+
+<div class="viewcode-block" id="complex_med"><a class="viewcode-back" href="../../../_autosummary/draco.analysis.flagging.html#draco.analysis.flagging.complex_med">[docs]</a><span class="k">def</span> <span class="nf">complex_med</span><span class="p">(</span><span class="n">x</span><span class="p">,</span> <span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;Complex median, done by applying to the real/imag parts individually.</span>
+
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    x : np.ndarray</span>
+<span class="sd">        Array to apply to.</span>
+<span class="sd">    *args, **kwargs : list, dict</span>
+<span class="sd">        Passed straight through to `np.nanmedian`</span>
+
+<span class="sd">    Returns</span>
+<span class="sd">    -------</span>
+<span class="sd">    m : np.ndarray</span>
+<span class="sd">        Median.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">return</span> <span class="n">np</span><span class="o">.</span><span class="n">nanmedian</span><span class="p">(</span><span class="n">x</span><span class="o">.</span><span class="n">real</span><span class="p">,</span> <span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span> <span class="o">+</span> <span class="mi">1</span><span class="n">j</span> <span class="o">*</span> <span class="n">np</span><span class="o">.</span><span class="n">nanmedian</span><span class="p">(</span>
+        <span class="n">x</span><span class="o">.</span><span class="n">imag</span><span class="p">,</span> <span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span>
+    <span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="destripe"><a class="viewcode-back" href="../../../_autosummary/draco.analysis.flagging.html#draco.analysis.flagging.destripe">[docs]</a><span class="k">def</span> <span class="nf">destripe</span><span class="p">(</span><span class="n">x</span><span class="p">,</span> <span class="n">w</span><span class="p">,</span> <span class="n">axis</span><span class="o">=</span><span class="mi">1</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;Subtract the median along a specified axis.</span>
+
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    x : np.ndarray</span>
+<span class="sd">        Array to destripe.</span>
+<span class="sd">    w : np.ndarray</span>
+<span class="sd">        Mask array for points to include (True) or ignore (False).</span>
+<span class="sd">    axis : int, optional</span>
+<span class="sd">        Axis to apply destriping along.</span>
+
+<span class="sd">    Returns</span>
+<span class="sd">    -------</span>
+<span class="sd">    y : np.ndarray</span>
+<span class="sd">        Destriped array.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+
+    <span class="c1"># Calculate the average along the axis</span>
+    <span class="n">stripe</span> <span class="o">=</span> <span class="n">complex_med</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">where</span><span class="p">(</span><span class="n">w</span><span class="p">,</span> <span class="n">x</span><span class="p">,</span> <span class="n">np</span><span class="o">.</span><span class="n">nan</span><span class="p">),</span> <span class="n">axis</span><span class="o">=</span><span class="n">axis</span><span class="p">)</span>
+    <span class="n">stripe</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">nan_to_num</span><span class="p">(</span><span class="n">stripe</span><span class="p">)</span>
+
+    <span class="c1"># Construct a slice to broadcast back along the axis</span>
+    <span class="n">bsel</span> <span class="o">=</span> <span class="p">[</span><span class="nb">slice</span><span class="p">(</span><span class="kc">None</span><span class="p">)]</span> <span class="o">*</span> <span class="n">x</span><span class="o">.</span><span class="n">ndim</span>
+    <span class="n">bsel</span><span class="p">[</span><span class="n">axis</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span>
+    <span class="n">bsel</span> <span class="o">=</span> <span class="nb">tuple</span><span class="p">(</span><span class="n">bsel</span><span class="p">)</span>
+
+    <span class="k">return</span> <span class="n">x</span> <span class="o">-</span> <span class="n">stripe</span><span class="p">[</span><span class="n">bsel</span><span class="p">]</span></div>
+
+
+<div class="viewcode-block" id="BlendStack"><a class="viewcode-back" href="../../../_autosummary/draco.analysis.flagging.html#draco.analysis.flagging.BlendStack">[docs]</a><span class="k">class</span> <span class="nc">BlendStack</span><span class="p">(</span><span class="n">task</span><span class="o">.</span><span class="n">SingleTask</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;Mix a small amount of a stack into data to regularise RFI gaps.</span>
+
+<span class="sd">    This is designed to mix in a small amount of a stack into a day of data (which</span>
+<span class="sd">    will have RFI masked gaps) to attempt to regularise operations which struggle to</span>
+<span class="sd">    deal with time variable masks, e.g. `DelaySpectrumEstimator`.</span>
+
+<span class="sd">    Attributes</span>
+<span class="sd">    ----------</span>
+<span class="sd">    frac : float, optional</span>
+<span class="sd">        The relative weight to give the stack in the average. This multiplies the</span>
+<span class="sd">        weights already in the stack, and so it should be remembered that these may</span>
+<span class="sd">        already be significantly higher than the single day weights.</span>
+<span class="sd">    match_median : bool, optional</span>
+<span class="sd">        Estimate the median in the time/RA direction from the common samples and use</span>
+<span class="sd">        this to match any quasi time-independent bias of the data (e.g. cross talk).</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+
+    <span class="n">frac</span> <span class="o">=</span> <span class="n">config</span><span class="o">.</span><span class="n">Property</span><span class="p">(</span><span class="n">proptype</span><span class="o">=</span><span class="nb">float</span><span class="p">,</span> <span class="n">default</span><span class="o">=</span><span class="mf">1e-4</span><span class="p">)</span>
+    <span class="n">match_median</span> <span class="o">=</span> <span class="n">config</span><span class="o">.</span><span class="n">Property</span><span class="p">(</span><span class="n">proptype</span><span class="o">=</span><span class="nb">bool</span><span class="p">,</span> <span class="n">default</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+
+<div class="viewcode-block" id="BlendStack.setup"><a class="viewcode-back" href="../../../_autosummary/draco.analysis.flagging.html#draco.analysis.flagging.BlendStack.setup">[docs]</a>    <span class="k">def</span> <span class="nf">setup</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">data_stack</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Set the stacked data.</span>
+
+<span class="sd">        Parameters</span>
+<span class="sd">        ----------</span>
+<span class="sd">        stack : VisContainer</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">data_stack</span> <span class="o">=</span> <span class="n">data_stack</span></div>
+
+<div class="viewcode-block" id="BlendStack.process"><a class="viewcode-back" href="../../../_autosummary/draco.analysis.flagging.html#draco.analysis.flagging.BlendStack.process">[docs]</a>    <span class="k">def</span> <span class="nf">process</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">data</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Blend a small amount of the stack into the incoming data.</span>
+
+<span class="sd">        Parameters</span>
+<span class="sd">        ----------</span>
+<span class="sd">        data : VisContainer</span>
+<span class="sd">            The data to be blended into. This is modified in place.</span>
+
+<span class="sd">        Returns</span>
+<span class="sd">        -------</span>
+<span class="sd">        data_blend : VisContainer</span>
+<span class="sd">            The modified data. This is the same object as the input, and it has been</span>
+<span class="sd">            modified in place.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+
+        <span class="k">if</span> <span class="nb">type</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">data_stack</span><span class="p">)</span> <span class="o">!=</span> <span class="nb">type</span><span class="p">(</span><span class="n">data</span><span class="p">):</span>
+            <span class="k">raise</span> <span class="ne">TypeError</span><span class="p">(</span>
+                <span class="sa">f</span><span class="s2">&quot;type(data) (=</span><span class="si">{</span><span class="nb">type</span><span class="p">(</span><span class="n">data</span><span class="p">)</span><span class="si">}</span><span class="s2">) must match&quot;</span>
+                <span class="sa">f</span><span class="s2">&quot;type(data_stack) (=</span><span class="si">{</span><span class="nb">type</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">type</span><span class="p">)</span><span class="si">}</span><span class="s2">&quot;</span>
+            <span class="p">)</span>
+
+        <span class="c1"># Try and get both the stack and the incoming data to have the same</span>
+        <span class="c1"># distribution</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">data_stack</span><span class="o">.</span><span class="n">redistribute</span><span class="p">([</span><span class="s2">&quot;freq&quot;</span><span class="p">,</span> <span class="s2">&quot;time&quot;</span><span class="p">,</span> <span class="s2">&quot;ra&quot;</span><span class="p">])</span>
+        <span class="n">data</span><span class="o">.</span><span class="n">redistribute</span><span class="p">([</span><span class="s2">&quot;freq&quot;</span><span class="p">,</span> <span class="s2">&quot;time&quot;</span><span class="p">,</span> <span class="s2">&quot;ra&quot;</span><span class="p">])</span>
+
+        <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">containers</span><span class="o">.</span><span class="n">SiderealStream</span><span class="p">):</span>
+            <span class="n">dset_stack</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">data_stack</span><span class="o">.</span><span class="n">vis</span><span class="p">[:]</span>
+            <span class="n">dset</span> <span class="o">=</span> <span class="n">data</span><span class="o">.</span><span class="n">vis</span><span class="p">[:]</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">TypeError</span><span class="p">(</span>
+                <span class="s2">&quot;Only SiderealStream&#39;s are currently supported. &quot;</span>
+                <span class="sa">f</span><span class="s2">&quot;Got type(data) = </span><span class="si">{</span><span class="nb">type</span><span class="p">(</span><span class="n">data</span><span class="p">)</span><span class="si">}</span><span class="s2">&quot;</span>
+            <span class="p">)</span>
+
+        <span class="k">if</span> <span class="n">dset_stack</span><span class="o">.</span><span class="n">shape</span> <span class="o">!=</span> <span class="n">dset</span><span class="o">.</span><span class="n">shape</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+                <span class="sa">f</span><span class="s2">&quot;Size of data (</span><span class="si">{</span><span class="n">dset</span><span class="o">.</span><span class="n">shape</span><span class="si">}</span><span class="s2">) must match &quot;</span>
+                <span class="sa">f</span><span class="s2">&quot;data_stack (</span><span class="si">{</span><span class="n">dset_stack</span><span class="o">.</span><span class="n">shape</span><span class="si">}</span><span class="s2">)&quot;</span>
+            <span class="p">)</span>
+
+        <span class="n">weight_stack</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">data_stack</span><span class="o">.</span><span class="n">weight</span><span class="p">[:]</span>
+        <span class="n">weight</span> <span class="o">=</span> <span class="n">data</span><span class="o">.</span><span class="n">weight</span><span class="p">[:]</span>
+
+        <span class="c1"># Find the median offset between the stack and the daily data</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">match_median</span><span class="p">:</span>
+
+            <span class="c1"># Find the parts of the both the stack and the daily data that are both</span>
+            <span class="c1"># measured</span>
+            <span class="n">mask</span> <span class="o">=</span> <span class="p">(</span>
+                <span class="p">((</span><span class="n">weight</span><span class="p">[:]</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="p">)</span> <span class="o">&amp;</span> <span class="p">(</span><span class="n">weight_stack</span><span class="p">[:]</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="p">))</span>
+                <span class="o">.</span><span class="n">astype</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">float32</span><span class="p">)</span>
+                <span class="o">.</span><span class="n">view</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">)</span>
+            <span class="p">)</span>
+
+            <span class="c1"># ... get the median of the stack in this common subset</span>
+            <span class="n">stack_med_real</span> <span class="o">=</span> <span class="n">weighted_median</span><span class="o">.</span><span class="n">weighted_median</span><span class="p">(</span>
+                <span class="n">dset_stack</span><span class="o">.</span><span class="n">real</span><span class="o">.</span><span class="n">view</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">)</span><span class="o">.</span><span class="n">copy</span><span class="p">(),</span> <span class="n">mask</span>
+            <span class="p">)</span>
+            <span class="n">stack_med_imag</span> <span class="o">=</span> <span class="n">weighted_median</span><span class="o">.</span><span class="n">weighted_median</span><span class="p">(</span>
+                <span class="n">dset_stack</span><span class="o">.</span><span class="n">imag</span><span class="o">.</span><span class="n">view</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">)</span><span class="o">.</span><span class="n">copy</span><span class="p">(),</span> <span class="n">mask</span>
+            <span class="p">)</span>
+
+            <span class="c1"># ... get the median of the data in the common subset</span>
+            <span class="n">data_med_real</span> <span class="o">=</span> <span class="n">weighted_median</span><span class="o">.</span><span class="n">weighted_median</span><span class="p">(</span>
+                <span class="n">dset</span><span class="o">.</span><span class="n">real</span><span class="o">.</span><span class="n">view</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">)</span><span class="o">.</span><span class="n">copy</span><span class="p">(),</span> <span class="n">mask</span>
+            <span class="p">)</span>
+            <span class="n">data_med_imag</span> <span class="o">=</span> <span class="n">weighted_median</span><span class="o">.</span><span class="n">weighted_median</span><span class="p">(</span>
+                <span class="n">dset</span><span class="o">.</span><span class="n">imag</span><span class="o">.</span><span class="n">view</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">)</span><span class="o">.</span><span class="n">copy</span><span class="p">(),</span> <span class="n">mask</span>
+            <span class="p">)</span>
+
+            <span class="c1"># ... construct an offset to match the medians in the time/RA direction</span>
+            <span class="n">stack_offset</span> <span class="o">=</span> <span class="p">(</span>
+                <span class="p">(</span><span class="n">data_med_real</span> <span class="o">-</span> <span class="n">stack_med_real</span><span class="p">)</span>
+                <span class="o">+</span> <span class="mf">1.0</span><span class="n">j</span> <span class="o">*</span> <span class="p">(</span><span class="n">data_med_imag</span> <span class="o">-</span> <span class="n">stack_med_imag</span><span class="p">)</span>
+            <span class="p">)[</span><span class="o">...</span><span class="p">,</span> <span class="n">np</span><span class="o">.</span><span class="n">newaxis</span><span class="p">]</span>
+
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">stack_offset</span> <span class="o">=</span> <span class="mi">0</span>
+
+        <span class="c1"># Perform a weighted average of the data</span>
+        <span class="n">dset</span> <span class="o">*=</span> <span class="n">weight</span>
+        <span class="n">dset</span> <span class="o">+=</span> <span class="n">weight_stack</span> <span class="o">*</span> <span class="bp">self</span><span class="o">.</span><span class="n">frac</span> <span class="o">*</span> <span class="p">(</span><span class="n">dset_stack</span> <span class="o">+</span> <span class="n">stack_offset</span><span class="p">)</span>
+        <span class="n">weight</span> <span class="o">+=</span> <span class="n">weight_stack</span> <span class="o">*</span> <span class="bp">self</span><span class="o">.</span><span class="n">frac</span>
+
+        <span class="n">dset</span> <span class="o">*=</span> <span class="n">tools</span><span class="o">.</span><span class="n">invert_no_zero</span><span class="p">(</span><span class="n">weight</span><span class="p">)</span>
+
+        <span class="k">return</span> <span class="n">data</span></div></div>
+</pre></div>
+
+           </div>
+           
+          </div>
+          <footer>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>
+        &#169; Copyright 2016, Richard Shaw.
+
+    </p>
+  </div>
+    
+    
+    
+    Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    
+    provided by <a href="https://readthedocs.org">Read the Docs</a>. 
+
+</footer>
+        </div>
+      </div>
+
+    </section>
+
+  </div>
+  
+
+  <script type="text/javascript">
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script>
+
+  
+  
+    
+   
+
+</body>
+</html>

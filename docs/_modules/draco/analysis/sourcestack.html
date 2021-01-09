@@ -1,0 +1,431 @@
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" >
+<head>
+  <meta charset="utf-8" />
+  
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  
+  <title>draco.analysis.sourcestack &mdash; draco 0+untagged.1.g43914e3 documentation</title>
+  
+
+  
+  <link rel="stylesheet" href="../../../_static/css/theme.css" type="text/css" />
+  <link rel="stylesheet" href="../../../_static/pygments.css" type="text/css" />
+
+  
+  
+
+  
+  
+
+  
+
+  
+  <!--[if lt IE 9]>
+    <script src="../../../_static/js/html5shiv.min.js"></script>
+  <![endif]-->
+  
+    
+      <script type="text/javascript" id="documentation_options" data-url_root="../../../" src="../../../_static/documentation_options.js"></script>
+        <script src="../../../_static/jquery.js"></script>
+        <script src="../../../_static/underscore.js"></script>
+        <script src="../../../_static/doctools.js"></script>
+        <script async="async" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/2.7.7/latest.js?config=TeX-AMS-MML_HTMLorMML"></script>
+    
+    <script type="text/javascript" src="../../../_static/js/theme.js"></script>
+
+    
+    <link rel="index" title="Index" href="../../../genindex.html" />
+    <link rel="search" title="Search" href="../../../search.html" /> 
+</head>
+
+<body class="wy-body-for-nav">
+
+   
+  <div class="wy-grid-for-nav">
+    
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+          
+
+          
+            <a href="../../../index.html" class="icon icon-home"> draco
+          
+
+          
+          </a>
+
+          
+            
+            
+              <div class="version">
+                0+untagged.1.g43914e3
+              </div>
+            
+          
+
+          
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../../../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+
+          
+        </div>
+
+        
+        <div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="main navigation">
+          
+            
+            
+              
+            
+            
+              <ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../tutorial.html">Tutorial</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../reference.html">API Reference</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../dev.html">Development Guidelines</a></li>
+</ul>
+
+            
+          
+        </div>
+        
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap">
+
+      
+      <nav class="wy-nav-top" aria-label="top navigation">
+        
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../../../index.html">draco</a>
+        
+      </nav>
+
+
+      <div class="wy-nav-content">
+        
+        <div class="rst-content">
+        
+          
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<div role="navigation" aria-label="breadcrumbs navigation">
+
+  <ul class="wy-breadcrumbs">
+    
+      <li><a href="../../../index.html" class="icon icon-home"></a> &raquo;</li>
+        
+          <li><a href="../../index.html">Module code</a> &raquo;</li>
+        
+      <li>draco.analysis.sourcestack</li>
+    
+    
+      <li class="wy-breadcrumbs-aside">
+        
+      </li>
+    
+  </ul>
+
+  
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+            
+  <h1>Source code for draco.analysis.sourcestack</h1><div class="highlight"><pre>
+<span></span><span class="sd">&quot;&quot;&quot;Source Stack Analysis Tasks&quot;&quot;&quot;</span>
+
+<span class="kn">import</span> <span class="nn">numpy</span> <span class="k">as</span> <span class="nn">np</span>
+<span class="kn">from</span> <span class="nn">mpi4py</span> <span class="kn">import</span> <span class="n">MPI</span>
+
+<span class="kn">from</span> <span class="nn">caput</span> <span class="kn">import</span> <span class="n">config</span><span class="p">,</span> <span class="n">pipeline</span>
+<span class="kn">from</span> <span class="nn">cora.util</span> <span class="kn">import</span> <span class="n">units</span>
+
+<span class="kn">from</span> <span class="nn">..util.tools</span> <span class="kn">import</span> <span class="n">invert_no_zero</span>
+<span class="kn">from</span> <span class="nn">..util.random</span> <span class="kn">import</span> <span class="n">RandomTask</span>
+<span class="kn">from</span> <span class="nn">..core</span> <span class="kn">import</span> <span class="n">task</span><span class="p">,</span> <span class="n">containers</span>
+
+<span class="c1"># Constants</span>
+<span class="n">NU21</span> <span class="o">=</span> <span class="n">units</span><span class="o">.</span><span class="n">nu21</span>
+<span class="n">C</span> <span class="o">=</span> <span class="n">units</span><span class="o">.</span><span class="n">c</span>
+
+
+<div class="viewcode-block" id="SourceStack"><a class="viewcode-back" href="../../../_autosummary/draco.analysis.sourcestack.html#draco.analysis.sourcestack.SourceStack">[docs]</a><span class="k">class</span> <span class="nc">SourceStack</span><span class="p">(</span><span class="n">task</span><span class="o">.</span><span class="n">SingleTask</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;Stack the product of `draco.analysis.BeamForm` accross sources.</span>
+
+<span class="sd">    For this to work BeamForm must have been run with `collapse_ha = True` (default).</span>
+
+<span class="sd">    Attributes</span>
+<span class="sd">    ----------</span>
+<span class="sd">    freqside : int</span>
+<span class="sd">        Number of frequency bins to keep on each side of quasar</span>
+<span class="sd">        when stacking.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+
+    <span class="c1"># Number of frequencies to keep on each side of quasar RA</span>
+    <span class="c1"># Pick only frequencies around the quasar (50 on each side)</span>
+    <span class="n">freqside</span> <span class="o">=</span> <span class="n">config</span><span class="o">.</span><span class="n">Property</span><span class="p">(</span><span class="n">proptype</span><span class="o">=</span><span class="nb">int</span><span class="p">,</span> <span class="n">default</span><span class="o">=</span><span class="mi">50</span><span class="p">)</span>
+
+<div class="viewcode-block" id="SourceStack.process"><a class="viewcode-back" href="../../../_autosummary/draco.analysis.sourcestack.html#draco.analysis.sourcestack.SourceStack.process">[docs]</a>    <span class="k">def</span> <span class="nf">process</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">formed_beam</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Receives a formed beam object and stack across sources.</span>
+
+<span class="sd">        Parameters</span>
+<span class="sd">        ----------</span>
+<span class="sd">        formed_beam : `containers.FormedBeam` object</span>
+<span class="sd">            Formed beams to stack over sources.</span>
+
+<span class="sd">        Returns</span>
+<span class="sd">        -------</span>
+<span class="sd">        qstack : `containers.FrequencyStack` object</span>
+<span class="sd">            The stack of sources.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="c1"># Get communicator</span>
+        <span class="n">comm</span> <span class="o">=</span> <span class="n">formed_beam</span><span class="o">.</span><span class="n">comm</span>
+
+        <span class="c1"># Ensure formed_beam is distributed in sources</span>
+        <span class="n">formed_beam</span><span class="o">.</span><span class="n">redistribute</span><span class="p">(</span><span class="s2">&quot;object_id&quot;</span><span class="p">)</span>
+
+        <span class="c1"># local shape and offset</span>
+        <span class="n">loff</span> <span class="o">=</span> <span class="n">formed_beam</span><span class="o">.</span><span class="n">beam</span><span class="o">.</span><span class="n">local_offset</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+        <span class="n">lshape</span> <span class="o">=</span> <span class="n">formed_beam</span><span class="o">.</span><span class="n">beam</span><span class="o">.</span><span class="n">local_shape</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+
+        <span class="c1"># Frequency axis</span>
+        <span class="n">freq</span> <span class="o">=</span> <span class="n">formed_beam</span><span class="o">.</span><span class="n">freq</span>
+        <span class="n">nfreq</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">freq</span><span class="p">)</span>
+
+        <span class="c1"># Frequency of quasars</span>
+        <span class="n">qso_freq</span> <span class="o">=</span> <span class="n">NU21</span> <span class="o">/</span> <span class="p">(</span><span class="n">formed_beam</span><span class="p">[</span><span class="s2">&quot;redshift&quot;</span><span class="p">][</span><span class="s2">&quot;z&quot;</span><span class="p">]</span> <span class="o">+</span> <span class="mf">1.0</span><span class="p">)</span>  <span class="c1"># MHz.</span>
+        <span class="c1"># Size of quasar stack array</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">nstack</span> <span class="o">=</span> <span class="mi">2</span> <span class="o">*</span> <span class="bp">self</span><span class="o">.</span><span class="n">freqside</span> <span class="o">+</span> <span class="mi">1</span>
+
+        <span class="c1"># Construct frequency offset axis (for qstack container)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">stack_axis</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">copy</span><span class="p">(</span>
+            <span class="n">formed_beam</span><span class="o">.</span><span class="n">frequency</span><span class="p">[</span>
+                <span class="nb">int</span><span class="p">(</span><span class="n">nfreq</span> <span class="o">/</span> <span class="mi">2</span><span class="p">)</span> <span class="o">-</span> <span class="bp">self</span><span class="o">.</span><span class="n">freqside</span> <span class="p">:</span> <span class="nb">int</span><span class="p">(</span><span class="n">nfreq</span> <span class="o">/</span> <span class="mi">2</span><span class="p">)</span> <span class="o">+</span> <span class="bp">self</span><span class="o">.</span><span class="n">freqside</span> <span class="o">+</span> <span class="mi">1</span>
+            <span class="p">]</span>
+        <span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">stack_axis</span><span class="p">[</span><span class="s2">&quot;centre&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="p">(</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">stack_axis</span><span class="p">[</span><span class="s2">&quot;centre&quot;</span><span class="p">]</span> <span class="o">-</span> <span class="bp">self</span><span class="o">.</span><span class="n">stack_axis</span><span class="p">[</span><span class="s2">&quot;centre&quot;</span><span class="p">][</span><span class="bp">self</span><span class="o">.</span><span class="n">freqside</span><span class="p">]</span>
+        <span class="p">)</span>
+
+        <span class="c1"># Get f_mask and qs_indices</span>
+        <span class="n">freqdiff</span> <span class="o">=</span> <span class="n">freq</span><span class="p">[</span><span class="n">np</span><span class="o">.</span><span class="n">newaxis</span><span class="p">,</span> <span class="p">:]</span> <span class="o">-</span> <span class="n">qso_freq</span><span class="p">[:,</span> <span class="n">np</span><span class="o">.</span><span class="n">newaxis</span><span class="p">]</span>
+        <span class="c1"># Stack axis bin edges to digitize each quasar at.</span>
+        <span class="n">stackbins</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">stack_axis</span><span class="p">[</span><span class="s2">&quot;centre&quot;</span><span class="p">]</span> <span class="o">+</span> <span class="mf">0.5</span> <span class="o">*</span> <span class="bp">self</span><span class="o">.</span><span class="n">stack_axis</span><span class="p">[</span><span class="s2">&quot;width&quot;</span><span class="p">]</span>
+        <span class="n">stackbins</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">append</span><span class="p">(</span>
+            <span class="n">stackbins</span><span class="p">,</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">stack_axis</span><span class="p">[</span><span class="s2">&quot;centre&quot;</span><span class="p">][</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span> <span class="o">-</span> <span class="mf">0.5</span> <span class="o">*</span> <span class="bp">self</span><span class="o">.</span><span class="n">stack_axis</span><span class="p">[</span><span class="s2">&quot;width&quot;</span><span class="p">][</span><span class="o">-</span><span class="mi">1</span><span class="p">],</span>
+        <span class="p">)</span>
+        <span class="c1"># Index of each frequency in stack axis, for each quasar</span>
+        <span class="n">qs_indices</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">digitize</span><span class="p">(</span><span class="n">freqdiff</span><span class="p">,</span> <span class="n">stackbins</span><span class="p">)</span> <span class="o">-</span> <span class="mi">1</span>
+        <span class="c1"># Indices to be processed in full frequency axis for each quasar</span>
+        <span class="n">f_mask</span> <span class="o">=</span> <span class="p">(</span><span class="n">qs_indices</span> <span class="o">&gt;=</span> <span class="mi">0</span><span class="p">)</span> <span class="o">&amp;</span> <span class="p">(</span><span class="n">qs_indices</span> <span class="o">&lt;</span> <span class="bp">self</span><span class="o">.</span><span class="n">nstack</span><span class="p">)</span>
+        <span class="c1"># Only quasars in the frequency range of the data.</span>
+        <span class="n">qso_mask</span> <span class="o">=</span> <span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">sum</span><span class="p">(</span><span class="n">f_mask</span><span class="p">,</span> <span class="n">axis</span><span class="o">=</span><span class="mi">1</span><span class="p">)</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="p">)</span><span class="o">.</span><span class="n">astype</span><span class="p">(</span><span class="nb">bool</span><span class="p">)</span>
+
+        <span class="c1"># Reduce mask and indices to this process range</span>
+        <span class="c1"># to reduce striding through this data</span>
+        <span class="n">qso_mask</span> <span class="o">=</span> <span class="n">qso_mask</span><span class="p">[</span><span class="n">loff</span> <span class="p">:</span> <span class="n">loff</span> <span class="o">+</span> <span class="n">lshape</span><span class="p">]</span>
+        <span class="n">qs_indices</span> <span class="o">=</span> <span class="n">qs_indices</span><span class="p">[</span><span class="n">loff</span> <span class="p">:</span> <span class="n">loff</span> <span class="o">+</span> <span class="n">lshape</span><span class="p">]</span>
+        <span class="n">f_mask</span> <span class="o">=</span> <span class="n">f_mask</span><span class="p">[</span><span class="n">loff</span> <span class="p">:</span> <span class="n">loff</span> <span class="o">+</span> <span class="n">lshape</span><span class="p">]</span>
+
+        <span class="c1"># Quasar stack array.</span>
+        <span class="n">quasar_stack</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">zeros</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">nstack</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">float</span><span class="p">)</span>
+        <span class="n">quasar_weight</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">zeros</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">nstack</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">float</span><span class="p">)</span>
+
+        <span class="n">qcount</span> <span class="o">=</span> <span class="mi">0</span>  <span class="c1"># Quasar counter</span>
+        <span class="c1"># For each quasar in the range of this process</span>
+        <span class="k">for</span> <span class="n">lq</span><span class="p">,</span> <span class="n">gq</span> <span class="ow">in</span> <span class="n">formed_beam</span><span class="o">.</span><span class="n">beam</span><span class="p">[:]</span><span class="o">.</span><span class="n">enumerate</span><span class="p">(</span><span class="n">axis</span><span class="o">=</span><span class="mi">0</span><span class="p">):</span>
+            <span class="k">if</span> <span class="ow">not</span> <span class="n">qso_mask</span><span class="p">[</span><span class="n">lq</span><span class="p">]:</span>
+                <span class="c1"># Quasar not in the data redshift range</span>
+                <span class="k">continue</span>
+            <span class="n">qcount</span> <span class="o">+=</span> <span class="mi">1</span>
+            <span class="c1"># Indices and slice for frequencies included in the stack.</span>
+            <span class="n">f_indices</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">arange</span><span class="p">(</span><span class="n">nfreq</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">int32</span><span class="p">)[</span><span class="n">f_mask</span><span class="p">[</span><span class="n">lq</span><span class="p">]]</span>
+            <span class="n">f_slice</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">s_</span><span class="p">[</span><span class="n">f_indices</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="p">:</span> <span class="n">f_indices</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span> <span class="o">+</span> <span class="mi">1</span><span class="p">]</span>
+
+            <span class="n">quasar_stack</span> <span class="o">+=</span> <span class="n">np</span><span class="o">.</span><span class="n">bincount</span><span class="p">(</span>
+                <span class="n">qs_indices</span><span class="p">[</span><span class="n">lq</span><span class="p">][</span><span class="n">f_slice</span><span class="p">],</span>
+                <span class="n">weights</span><span class="o">=</span><span class="p">(</span>
+                    <span class="n">formed_beam</span><span class="o">.</span><span class="n">beam</span><span class="p">[</span><span class="n">gq</span><span class="p">,</span> <span class="mi">0</span><span class="p">][</span><span class="n">f_slice</span><span class="p">]</span>
+                    <span class="o">*</span> <span class="n">formed_beam</span><span class="o">.</span><span class="n">weight</span><span class="p">[</span><span class="n">gq</span><span class="p">,</span> <span class="mi">0</span><span class="p">][</span><span class="n">f_slice</span><span class="p">]</span>
+                <span class="p">),</span>
+                <span class="n">minlength</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">nstack</span><span class="p">,</span>
+            <span class="p">)</span>
+
+            <span class="n">quasar_weight</span> <span class="o">+=</span> <span class="n">np</span><span class="o">.</span><span class="n">bincount</span><span class="p">(</span>
+                <span class="n">qs_indices</span><span class="p">[</span><span class="n">lq</span><span class="p">][</span><span class="n">f_slice</span><span class="p">],</span>
+                <span class="n">weights</span><span class="o">=</span><span class="n">formed_beam</span><span class="o">.</span><span class="n">weight</span><span class="p">[</span><span class="n">gq</span><span class="p">,</span> <span class="mi">0</span><span class="p">][</span><span class="n">f_slice</span><span class="p">],</span>
+                <span class="n">minlength</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">nstack</span><span class="p">,</span>
+            <span class="p">)</span>
+
+        <span class="c1"># Gather quasar stack for all ranks. Each contains the sum</span>
+        <span class="c1"># over a different subset of quasars.</span>
+        <span class="n">quasar_stack_full</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">zeros</span><span class="p">(</span><span class="n">comm</span><span class="o">.</span><span class="n">size</span> <span class="o">*</span> <span class="bp">self</span><span class="o">.</span><span class="n">nstack</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">quasar_stack</span><span class="o">.</span><span class="n">dtype</span><span class="p">)</span>
+        <span class="n">quasar_weight_full</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">zeros</span><span class="p">(</span>
+            <span class="n">comm</span><span class="o">.</span><span class="n">size</span> <span class="o">*</span> <span class="bp">self</span><span class="o">.</span><span class="n">nstack</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">quasar_weight</span><span class="o">.</span><span class="n">dtype</span>
+        <span class="p">)</span>
+        <span class="c1"># Gather all ranks</span>
+        <span class="n">comm</span><span class="o">.</span><span class="n">Allgather</span><span class="p">(</span><span class="n">quasar_stack</span><span class="p">,</span> <span class="n">quasar_stack_full</span><span class="p">)</span>
+        <span class="n">comm</span><span class="o">.</span><span class="n">Allgather</span><span class="p">(</span><span class="n">quasar_weight</span><span class="p">,</span> <span class="n">quasar_weight_full</span><span class="p">)</span>
+
+        <span class="c1"># Container to hold the stack</span>
+        <span class="n">qstack</span> <span class="o">=</span> <span class="n">containers</span><span class="o">.</span><span class="n">FrequencyStack</span><span class="p">(</span><span class="n">freq</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">stack_axis</span><span class="p">)</span>
+        <span class="c1"># Sum across ranks</span>
+        <span class="n">qstack</span><span class="o">.</span><span class="n">weight</span><span class="p">[:]</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">sum</span><span class="p">(</span>
+            <span class="n">quasar_weight_full</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="n">comm</span><span class="o">.</span><span class="n">size</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">nstack</span><span class="p">),</span> <span class="n">axis</span><span class="o">=</span><span class="mi">0</span>
+        <span class="p">)</span>
+        <span class="n">qstack</span><span class="o">.</span><span class="n">stack</span><span class="p">[:]</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">sum</span><span class="p">(</span>
+            <span class="n">quasar_stack_full</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="n">comm</span><span class="o">.</span><span class="n">size</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">nstack</span><span class="p">),</span> <span class="n">axis</span><span class="o">=</span><span class="mi">0</span>
+        <span class="p">)</span> <span class="o">*</span> <span class="n">invert_no_zero</span><span class="p">(</span><span class="n">qstack</span><span class="o">.</span><span class="n">weight</span><span class="p">[:])</span>
+
+        <span class="c1"># Gather all ranks of qcount. Report number of quasars stacked</span>
+        <span class="n">full_qcount</span> <span class="o">=</span> <span class="n">comm</span><span class="o">.</span><span class="n">reduce</span><span class="p">(</span><span class="n">qcount</span><span class="p">,</span> <span class="n">op</span><span class="o">=</span><span class="n">MPI</span><span class="o">.</span><span class="n">SUM</span><span class="p">,</span> <span class="n">root</span><span class="o">=</span><span class="mi">0</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">comm</span><span class="o">.</span><span class="n">rank</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">log</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s2">&quot;Number of quasars stacked: </span><span class="si">{0}</span><span class="s2">&quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">full_qcount</span><span class="p">))</span>
+
+        <span class="k">return</span> <span class="n">qstack</span></div></div>
+
+
+<div class="viewcode-block" id="RandomSubset"><a class="viewcode-back" href="../../../_autosummary/draco.analysis.sourcestack.html#draco.analysis.sourcestack.RandomSubset">[docs]</a><span class="k">class</span> <span class="nc">RandomSubset</span><span class="p">(</span><span class="n">task</span><span class="o">.</span><span class="n">SingleTask</span><span class="p">,</span> <span class="n">RandomTask</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;Take a large mock catalog and draw `number` catalogs of a given `size`.</span>
+
+<span class="sd">    Attributes</span>
+<span class="sd">    ----------</span>
+<span class="sd">    number : int</span>
+<span class="sd">        Number of catalogs to construct.</span>
+<span class="sd">    size : int</span>
+<span class="sd">        Number of objects in each catalog.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+
+    <span class="n">number</span> <span class="o">=</span> <span class="n">config</span><span class="o">.</span><span class="n">Property</span><span class="p">(</span><span class="n">proptype</span><span class="o">=</span><span class="nb">int</span><span class="p">)</span>
+    <span class="n">size</span> <span class="o">=</span> <span class="n">config</span><span class="o">.</span><span class="n">Property</span><span class="p">(</span><span class="n">proptype</span><span class="o">=</span><span class="nb">int</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__init__</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">catalog_ind</span> <span class="o">=</span> <span class="mi">0</span>
+
+<div class="viewcode-block" id="RandomSubset.setup"><a class="viewcode-back" href="../../../_autosummary/draco.analysis.sourcestack.html#draco.analysis.sourcestack.RandomSubset.setup">[docs]</a>    <span class="k">def</span> <span class="nf">setup</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">catalog</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Set the full mock catalog.</span>
+
+<span class="sd">        Parameters</span>
+<span class="sd">        ----------</span>
+<span class="sd">        catalog : containers.SourceCatalog</span>
+<span class="sd">            The mock catalog to draw from.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">catalog</span> <span class="o">=</span> <span class="n">catalog</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">base_tag</span> <span class="o">=</span> <span class="sa">f</span><span class="s1">&#39;</span><span class="si">{</span><span class="n">catalog</span><span class="o">.</span><span class="n">attrs</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;tag&quot;</span><span class="p">,</span> <span class="s2">&quot;mock&quot;</span><span class="p">)</span><span class="si">}</span><span class="s1">_</span><span class="se">{{}}</span><span class="s1">&#39;</span></div>
+
+<div class="viewcode-block" id="RandomSubset.process"><a class="viewcode-back" href="../../../_autosummary/draco.analysis.sourcestack.html#draco.analysis.sourcestack.RandomSubset.process">[docs]</a>    <span class="k">def</span> <span class="nf">process</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Draw a new random catalog.</span>
+
+<span class="sd">        Returns</span>
+<span class="sd">        -------</span>
+<span class="sd">        new_catalog : containers.SourceCatalog subclass</span>
+<span class="sd">            A catalog of the same type as the input catalog, with a random set of</span>
+<span class="sd">            objects.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">catalog_ind</span> <span class="o">&gt;=</span> <span class="bp">self</span><span class="o">.</span><span class="n">number</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="n">pipeline</span><span class="o">.</span><span class="n">PipelineStopIteration</span>
+
+        <span class="n">objects</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">catalog</span><span class="o">.</span><span class="n">index_map</span><span class="p">[</span><span class="s2">&quot;object_id&quot;</span><span class="p">]</span>
+        <span class="n">num_cat</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">objects</span><span class="p">)</span>
+
+        <span class="c1"># NOTE: We need to be very careful here, the RNG is initialised at first access</span>
+        <span class="c1"># and this is a collective operation. So we need to ensure all ranks do it even</span>
+        <span class="c1"># though only rank=0 is going to use the RNG in this task</span>
+        <span class="n">rng</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">rng</span>
+
+        <span class="c1"># Generate a random selection of objects on rank=0 and broadcast to all other</span>
+        <span class="c1"># ranks</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">comm</span><span class="o">.</span><span class="n">rank</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
+            <span class="n">ind</span> <span class="o">=</span> <span class="n">rng</span><span class="o">.</span><span class="n">choice</span><span class="p">(</span><span class="n">num_cat</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">size</span><span class="p">,</span> <span class="n">replace</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">ind</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">zeros</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">size</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">int64</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">comm</span><span class="o">.</span><span class="n">Bcast</span><span class="p">(</span><span class="n">ind</span><span class="p">,</span> <span class="n">root</span><span class="o">=</span><span class="mi">0</span><span class="p">)</span>
+
+        <span class="n">new_catalog</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">catalog</span><span class="o">.</span><span class="vm">__class__</span><span class="p">(</span>
+            <span class="n">object_id</span><span class="o">=</span><span class="n">objects</span><span class="p">[</span><span class="n">ind</span><span class="p">],</span> <span class="n">attrs_from</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">catalog</span>
+        <span class="p">)</span>
+        <span class="n">new_catalog</span><span class="o">.</span><span class="n">attrs</span><span class="p">[</span><span class="s2">&quot;tag&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">base_tag</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">catalog_ind</span><span class="p">)</span>
+
+        <span class="c1"># Loop over all datasets and if they have an object_id axis, select the</span>
+        <span class="c1"># relevant objects along that axis</span>
+        <span class="k">for</span> <span class="n">name</span><span class="p">,</span> <span class="n">dset</span> <span class="ow">in</span> <span class="n">new_catalog</span><span class="o">.</span><span class="n">datasets</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+            <span class="k">if</span> <span class="n">dset</span><span class="o">.</span><span class="n">attrs</span><span class="p">[</span><span class="s2">&quot;axis&quot;</span><span class="p">][</span><span class="mi">0</span><span class="p">]</span> <span class="o">==</span> <span class="s2">&quot;object_id&quot;</span><span class="p">:</span>
+                <span class="n">dset</span><span class="p">[:]</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">catalog</span><span class="o">.</span><span class="n">datasets</span><span class="p">[</span><span class="n">name</span><span class="p">][</span><span class="n">ind</span><span class="p">]</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">catalog_ind</span> <span class="o">+=</span> <span class="mi">1</span>
+
+        <span class="k">return</span> <span class="n">new_catalog</span></div></div>
+</pre></div>
+
+           </div>
+           
+          </div>
+          <footer>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>
+        &#169; Copyright 2016, Richard Shaw.
+
+    </p>
+  </div>
+    
+    
+    
+    Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    
+    provided by <a href="https://readthedocs.org">Read the Docs</a>. 
+
+</footer>
+        </div>
+      </div>
+
+    </section>
+
+  </div>
+  
+
+  <script type="text/javascript">
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script>
+
+  
+  
+    
+   
+
+</body>
+</html>

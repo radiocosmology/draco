@@ -1,0 +1,398 @@
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" >
+<head>
+  <meta charset="utf-8" />
+  
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  
+  <title>draco.analysis.svdfilter &mdash; draco 0+untagged.1.g43914e3 documentation</title>
+  
+
+  
+  <link rel="stylesheet" href="../_static/css/theme.css" type="text/css" />
+  <link rel="stylesheet" href="../_static/pygments.css" type="text/css" />
+
+  
+  
+
+  
+  
+
+  
+
+  
+  <!--[if lt IE 9]>
+    <script src="../_static/js/html5shiv.min.js"></script>
+  <![endif]-->
+  
+    
+      <script type="text/javascript" id="documentation_options" data-url_root="../" src="../_static/documentation_options.js"></script>
+        <script src="../_static/jquery.js"></script>
+        <script src="../_static/underscore.js"></script>
+        <script src="../_static/doctools.js"></script>
+        <script async="async" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/2.7.7/latest.js?config=TeX-AMS-MML_HTMLorMML"></script>
+    
+    <script type="text/javascript" src="../_static/js/theme.js"></script>
+
+    
+    <link rel="index" title="Index" href="../genindex.html" />
+    <link rel="search" title="Search" href="../search.html" />
+    <link rel="next" title="draco.analysis.transform" href="draco.analysis.transform.html" />
+    <link rel="prev" title="draco.analysis.sourcestack" href="draco.analysis.sourcestack.html" /> 
+</head>
+
+<body class="wy-body-for-nav">
+
+   
+  <div class="wy-grid-for-nav">
+    
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+          
+
+          
+            <a href="../index.html" class="icon icon-home"> draco
+          
+
+          
+          </a>
+
+          
+            
+            
+              <div class="version">
+                0+untagged.1.g43914e3
+              </div>
+            
+          
+
+          
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+
+          
+        </div>
+
+        
+        <div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="main navigation">
+          
+            
+            
+              
+            
+            
+              <ul class="current">
+<li class="toctree-l1"><a class="reference internal" href="../tutorial.html">Tutorial</a></li>
+<li class="toctree-l1 current"><a class="reference internal" href="../reference.html">API Reference</a><ul class="current">
+<li class="toctree-l2 current"><a class="reference internal" href="../reference.html#submodules">Submodules</a><ul class="current">
+<li class="toctree-l3 current"><a class="reference internal" href="draco.analysis.html">draco.analysis</a><ul class="current">
+<li class="toctree-l4"><a class="reference internal" href="draco.analysis.beamform.html">draco.analysis.beamform</a></li>
+<li class="toctree-l4"><a class="reference internal" href="draco.analysis.delay.html">draco.analysis.delay</a></li>
+<li class="toctree-l4"><a class="reference internal" href="draco.analysis.fgfilter.html">draco.analysis.fgfilter</a></li>
+<li class="toctree-l4"><a class="reference internal" href="draco.analysis.flagging.html">draco.analysis.flagging</a></li>
+<li class="toctree-l4"><a class="reference internal" href="draco.analysis.mapmaker.html">draco.analysis.mapmaker</a></li>
+<li class="toctree-l4"><a class="reference internal" href="draco.analysis.powerspectrum.html">draco.analysis.powerspectrum</a></li>
+<li class="toctree-l4"><a class="reference internal" href="draco.analysis.sensitivity.html">draco.analysis.sensitivity</a></li>
+<li class="toctree-l4"><a class="reference internal" href="draco.analysis.sidereal.html">draco.analysis.sidereal</a></li>
+<li class="toctree-l4"><a class="reference internal" href="draco.analysis.sourcestack.html">draco.analysis.sourcestack</a></li>
+<li class="toctree-l4 current"><a class="current reference internal" href="#">draco.analysis.svdfilter</a></li>
+<li class="toctree-l4"><a class="reference internal" href="draco.analysis.transform.html">draco.analysis.transform</a></li>
+</ul>
+</li>
+<li class="toctree-l3"><a class="reference internal" href="draco.core.html">draco.core</a></li>
+<li class="toctree-l3"><a class="reference internal" href="draco.synthesis.html">draco.synthesis</a></li>
+<li class="toctree-l3"><a class="reference internal" href="draco.util.html">draco.util</a></li>
+</ul>
+</li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="../dev.html">Development Guidelines</a></li>
+</ul>
+
+            
+          
+        </div>
+        
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap">
+
+      
+      <nav class="wy-nav-top" aria-label="top navigation">
+        
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../index.html">draco</a>
+        
+      </nav>
+
+
+      <div class="wy-nav-content">
+        
+        <div class="rst-content">
+        
+          
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<div role="navigation" aria-label="breadcrumbs navigation">
+
+  <ul class="wy-breadcrumbs">
+    
+      <li><a href="../index.html" class="icon icon-home"></a> &raquo;</li>
+        
+          <li><a href="../reference.html">API Reference</a> &raquo;</li>
+        
+          <li><a href="draco.analysis.html">draco.analysis</a> &raquo;</li>
+        
+      <li>draco.analysis.svdfilter</li>
+    
+    
+      <li class="wy-breadcrumbs-aside">
+        
+          
+            <a href="../_sources/_autosummary/draco.analysis.svdfilter.rst.txt" rel="nofollow"> View page source</a>
+          
+        
+      </li>
+    
+  </ul>
+
+  
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+            
+  <div class="section" id="module-draco.analysis.svdfilter">
+<span id="draco-analysis-svdfilter"></span><h1>draco.analysis.svdfilter<a class="headerlink" href="#module-draco.analysis.svdfilter" title="Permalink to this headline">¶</a></h1>
+<p>A set of tasks for SVD filtering the m-modes.</p>
+<p class="rubric">Functions</p>
+<table class="longtable docutils align-default">
+<colgroup>
+<col style="width: 10%" />
+<col style="width: 90%" />
+</colgroup>
+<tbody>
+<tr class="row-odd"><td><p><a class="reference internal" href="#draco.analysis.svdfilter.svd_em" title="draco.analysis.svdfilter.svd_em"><code class="xref py py-obj docutils literal notranslate"><span class="pre">svd_em</span></code></a>(A, mask[, niter, rank, full_matrices])</p></td>
+<td><p>Perform an SVD with missing entries using Expectation-Maximisation.</p></td>
+</tr>
+</tbody>
+</table>
+<p class="rubric">Classes</p>
+<table class="longtable docutils align-default">
+<colgroup>
+<col style="width: 10%" />
+<col style="width: 90%" />
+</colgroup>
+<tbody>
+<tr class="row-odd"><td><p><a class="reference internal" href="#draco.analysis.svdfilter.SVDFilter" title="draco.analysis.svdfilter.SVDFilter"><code class="xref py py-obj docutils literal notranslate"><span class="pre">SVDFilter</span></code></a>()</p></td>
+<td><p>SVD filter the m-modes to remove the most correlated components.</p></td>
+</tr>
+<tr class="row-even"><td><p><a class="reference internal" href="#draco.analysis.svdfilter.SVDSpectrumEstimator" title="draco.analysis.svdfilter.SVDSpectrumEstimator"><code class="xref py py-obj docutils literal notranslate"><span class="pre">SVDSpectrumEstimator</span></code></a>()</p></td>
+<td><p>Calculate the SVD spectrum of a set of m-modes.</p></td>
+</tr>
+</tbody>
+</table>
+<dl class="py class">
+<dt id="draco.analysis.svdfilter.SVDFilter">
+<em class="property">class </em><code class="sig-prename descclassname">draco.analysis.svdfilter.</code><code class="sig-name descname">SVDFilter</code><a class="reference internal" href="../_modules/draco/analysis/svdfilter.html#SVDFilter"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#draco.analysis.svdfilter.SVDFilter" title="Permalink to this definition">¶</a></dt>
+<dd><p>Bases: <a class="reference internal" href="draco.core.task.html#draco.core.task.SingleTask" title="draco.core.task.SingleTask"><code class="xref py py-class docutils literal notranslate"><span class="pre">draco.core.task.SingleTask</span></code></a></p>
+<p>SVD filter the m-modes to remove the most correlated components.</p>
+<dl class="py attribute">
+<dt id="draco.analysis.svdfilter.SVDFilter.niter">
+<code class="sig-name descname">niter</code><a class="headerlink" href="#draco.analysis.svdfilter.SVDFilter.niter" title="Permalink to this definition">¶</a></dt>
+<dd><p>Number of iterations of EM to perform.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type</dt>
+<dd class="field-odd"><p>int</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt id="draco.analysis.svdfilter.SVDFilter.local_threshold">
+<code class="sig-name descname">local_threshold</code><a class="headerlink" href="#draco.analysis.svdfilter.SVDFilter.local_threshold" title="Permalink to this definition">¶</a></dt>
+<dd><p>Cut out modes with singular value higher than <cite>local_threshold</cite> times the
+largest mode on each m.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type</dt>
+<dd class="field-odd"><p>float</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt id="draco.analysis.svdfilter.SVDFilter.global_threshold">
+<code class="sig-name descname">global_threshold</code><a class="headerlink" href="#draco.analysis.svdfilter.SVDFilter.global_threshold" title="Permalink to this definition">¶</a></dt>
+<dd><p>Remove modes with singular value higher than <cite>global_threshold</cite> times the
+largest mode on any m</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type</dt>
+<dd class="field-odd"><p>float</p>
+</dd>
+</dl>
+</dd></dl>
+
+<p>Initialize pipeline task.</p>
+<p>May be overridden with no arguments.  Will be called after any
+<cite>config.Property</cite> attributes are set and after ‘input’ and ‘requires’
+keys are set up.</p>
+<dl class="py method">
+<dt id="draco.analysis.svdfilter.SVDFilter.process">
+<code class="sig-name descname">process</code><span class="sig-paren">(</span><em class="sig-param"><span class="n">mmodes</span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/draco/analysis/svdfilter.html#SVDFilter.process"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#draco.analysis.svdfilter.SVDFilter.process" title="Permalink to this definition">¶</a></dt>
+<dd><p>Filter MModes using an SVD.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><p><strong>mmodes</strong> (<em>container.MModes</em>) – </p>
+</dd>
+<dt class="field-even">Returns</dt>
+<dd class="field-even"><p><strong>mmodes</strong></p>
+</dd>
+<dt class="field-odd">Return type</dt>
+<dd class="field-odd"><p>container.MModes</p>
+</dd>
+</dl>
+</dd></dl>
+
+</dd></dl>
+
+<dl class="py class">
+<dt id="draco.analysis.svdfilter.SVDSpectrumEstimator">
+<em class="property">class </em><code class="sig-prename descclassname">draco.analysis.svdfilter.</code><code class="sig-name descname">SVDSpectrumEstimator</code><a class="reference internal" href="../_modules/draco/analysis/svdfilter.html#SVDSpectrumEstimator"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#draco.analysis.svdfilter.SVDSpectrumEstimator" title="Permalink to this definition">¶</a></dt>
+<dd><p>Bases: <a class="reference internal" href="draco.core.task.html#draco.core.task.SingleTask" title="draco.core.task.SingleTask"><code class="xref py py-class docutils literal notranslate"><span class="pre">draco.core.task.SingleTask</span></code></a></p>
+<p>Calculate the SVD spectrum of a set of m-modes.</p>
+<dl class="py attribute">
+<dt id="draco.analysis.svdfilter.SVDSpectrumEstimator.niter">
+<code class="sig-name descname">niter</code><a class="headerlink" href="#draco.analysis.svdfilter.SVDSpectrumEstimator.niter" title="Permalink to this definition">¶</a></dt>
+<dd><p>Number of iterations of EM to perform.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type</dt>
+<dd class="field-odd"><p>int</p>
+</dd>
+</dl>
+</dd></dl>
+
+<p>Initialize pipeline task.</p>
+<p>May be overridden with no arguments.  Will be called after any
+<cite>config.Property</cite> attributes are set and after ‘input’ and ‘requires’
+keys are set up.</p>
+<dl class="py method">
+<dt id="draco.analysis.svdfilter.SVDSpectrumEstimator.process">
+<code class="sig-name descname">process</code><span class="sig-paren">(</span><em class="sig-param"><span class="n">mmodes</span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/draco/analysis/svdfilter.html#SVDSpectrumEstimator.process"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#draco.analysis.svdfilter.SVDSpectrumEstimator.process" title="Permalink to this definition">¶</a></dt>
+<dd><p>Calculate the spectrum.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><p><strong>mmodes</strong> (<a class="reference internal" href="draco.core.containers.html#draco.core.containers.MModes" title="draco.core.containers.MModes"><em>containers.MModes</em></a>) – MModes to find the spectrum of.</p>
+</dd>
+<dt class="field-even">Returns</dt>
+<dd class="field-even"><p><strong>spectrum</strong></p>
+</dd>
+<dt class="field-odd">Return type</dt>
+<dd class="field-odd"><p><a class="reference internal" href="draco.core.containers.html#draco.core.containers.SVDSpectrum" title="draco.core.containers.SVDSpectrum">containers.SVDSpectrum</a></p>
+</dd>
+</dl>
+</dd></dl>
+
+</dd></dl>
+
+<dl class="py function">
+<dt id="draco.analysis.svdfilter.svd_em">
+<code class="sig-prename descclassname">draco.analysis.svdfilter.</code><code class="sig-name descname">svd_em</code><span class="sig-paren">(</span><em class="sig-param"><span class="n">A</span></em>, <em class="sig-param"><span class="n">mask</span></em>, <em class="sig-param"><span class="n">niter</span><span class="o">=</span><span class="default_value">5</span></em>, <em class="sig-param"><span class="n">rank</span><span class="o">=</span><span class="default_value">5</span></em>, <em class="sig-param"><span class="n">full_matrices</span><span class="o">=</span><span class="default_value">False</span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/draco/analysis/svdfilter.html#svd_em"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#draco.analysis.svdfilter.svd_em" title="Permalink to this definition">¶</a></dt>
+<dd><p>Perform an SVD with missing entries using Expectation-Maximisation.</p>
+<p>This assumes that the matrix is well approximated by only a few modes in
+order fill the missing entries. This is probably not a proper EM scheme, but
+is not far off.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>A</strong> (<em>np.ndarray</em>) – Matrix to SVD.</p></li>
+<li><p><strong>mask</strong> (<em>np.ndarray</em>) – Boolean array of masked values. Missing values are <cite>True</cite>.</p></li>
+<li><p><strong>niter</strong> (<em>int</em><em>, </em><em>optional</em>) – Number of iterations to perform.</p></li>
+<li><p><strong>rank</strong> (<em>int</em><em>, </em><em>optional</em>) – Set the rank of the approximation used to fill the missing values.</p></li>
+<li><p><strong>full_matrices</strong> (<em>bool</em><em>, </em><em>optional</em>) – Return the full span of eigenvectors and values (see <cite>scipy.linalg.svd</cite>
+for a fuller description).</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns</dt>
+<dd class="field-even"><p><strong>u, sig, vh</strong> – The singular values and vectors.</p>
+</dd>
+<dt class="field-odd">Return type</dt>
+<dd class="field-odd"><p>np.ndarray</p>
+</dd>
+</dl>
+</dd></dl>
+
+</div>
+
+
+           </div>
+           
+          </div>
+          <footer>
+    <div class="rst-footer-buttons" role="navigation" aria-label="footer navigation">
+        <a href="draco.analysis.transform.html" class="btn btn-neutral float-right" title="draco.analysis.transform" accesskey="n" rel="next">Next <span class="fa fa-arrow-circle-right" aria-hidden="true"></span></a>
+        <a href="draco.analysis.sourcestack.html" class="btn btn-neutral float-left" title="draco.analysis.sourcestack" accesskey="p" rel="prev"><span class="fa fa-arrow-circle-left" aria-hidden="true"></span> Previous</a>
+    </div>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>
+        &#169; Copyright 2016, Richard Shaw.
+
+    </p>
+  </div>
+    
+    
+    
+    Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    
+    provided by <a href="https://readthedocs.org">Read the Docs</a>. 
+
+</footer>
+        </div>
+      </div>
+
+    </section>
+
+  </div>
+  
+
+  <script type="text/javascript">
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script>
+
+  
+  
+    
+   
+
+</body>
+</html>

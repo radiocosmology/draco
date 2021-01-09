@@ -1,0 +1,642 @@
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" >
+<head>
+  <meta charset="utf-8" />
+  
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  
+  <title>draco.analysis.delay &mdash; draco 0+untagged.1.g43914e3 documentation</title>
+  
+
+  
+  <link rel="stylesheet" href="../_static/css/theme.css" type="text/css" />
+  <link rel="stylesheet" href="../_static/pygments.css" type="text/css" />
+
+  
+  
+
+  
+  
+
+  
+
+  
+  <!--[if lt IE 9]>
+    <script src="../_static/js/html5shiv.min.js"></script>
+  <![endif]-->
+  
+    
+      <script type="text/javascript" id="documentation_options" data-url_root="../" src="../_static/documentation_options.js"></script>
+        <script src="../_static/jquery.js"></script>
+        <script src="../_static/underscore.js"></script>
+        <script src="../_static/doctools.js"></script>
+        <script async="async" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/2.7.7/latest.js?config=TeX-AMS-MML_HTMLorMML"></script>
+    
+    <script type="text/javascript" src="../_static/js/theme.js"></script>
+
+    
+    <link rel="index" title="Index" href="../genindex.html" />
+    <link rel="search" title="Search" href="../search.html" />
+    <link rel="next" title="draco.analysis.fgfilter" href="draco.analysis.fgfilter.html" />
+    <link rel="prev" title="draco.analysis.beamform" href="draco.analysis.beamform.html" /> 
+</head>
+
+<body class="wy-body-for-nav">
+
+   
+  <div class="wy-grid-for-nav">
+    
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+          
+
+          
+            <a href="../index.html" class="icon icon-home"> draco
+          
+
+          
+          </a>
+
+          
+            
+            
+              <div class="version">
+                0+untagged.1.g43914e3
+              </div>
+            
+          
+
+          
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+
+          
+        </div>
+
+        
+        <div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="main navigation">
+          
+            
+            
+              
+            
+            
+              <ul class="current">
+<li class="toctree-l1"><a class="reference internal" href="../tutorial.html">Tutorial</a></li>
+<li class="toctree-l1 current"><a class="reference internal" href="../reference.html">API Reference</a><ul class="current">
+<li class="toctree-l2 current"><a class="reference internal" href="../reference.html#submodules">Submodules</a><ul class="current">
+<li class="toctree-l3 current"><a class="reference internal" href="draco.analysis.html">draco.analysis</a><ul class="current">
+<li class="toctree-l4"><a class="reference internal" href="draco.analysis.beamform.html">draco.analysis.beamform</a></li>
+<li class="toctree-l4 current"><a class="current reference internal" href="#">draco.analysis.delay</a></li>
+<li class="toctree-l4"><a class="reference internal" href="draco.analysis.fgfilter.html">draco.analysis.fgfilter</a></li>
+<li class="toctree-l4"><a class="reference internal" href="draco.analysis.flagging.html">draco.analysis.flagging</a></li>
+<li class="toctree-l4"><a class="reference internal" href="draco.analysis.mapmaker.html">draco.analysis.mapmaker</a></li>
+<li class="toctree-l4"><a class="reference internal" href="draco.analysis.powerspectrum.html">draco.analysis.powerspectrum</a></li>
+<li class="toctree-l4"><a class="reference internal" href="draco.analysis.sensitivity.html">draco.analysis.sensitivity</a></li>
+<li class="toctree-l4"><a class="reference internal" href="draco.analysis.sidereal.html">draco.analysis.sidereal</a></li>
+<li class="toctree-l4"><a class="reference internal" href="draco.analysis.sourcestack.html">draco.analysis.sourcestack</a></li>
+<li class="toctree-l4"><a class="reference internal" href="draco.analysis.svdfilter.html">draco.analysis.svdfilter</a></li>
+<li class="toctree-l4"><a class="reference internal" href="draco.analysis.transform.html">draco.analysis.transform</a></li>
+</ul>
+</li>
+<li class="toctree-l3"><a class="reference internal" href="draco.core.html">draco.core</a></li>
+<li class="toctree-l3"><a class="reference internal" href="draco.synthesis.html">draco.synthesis</a></li>
+<li class="toctree-l3"><a class="reference internal" href="draco.util.html">draco.util</a></li>
+</ul>
+</li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="../dev.html">Development Guidelines</a></li>
+</ul>
+
+            
+          
+        </div>
+        
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap">
+
+      
+      <nav class="wy-nav-top" aria-label="top navigation">
+        
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../index.html">draco</a>
+        
+      </nav>
+
+
+      <div class="wy-nav-content">
+        
+        <div class="rst-content">
+        
+          
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<div role="navigation" aria-label="breadcrumbs navigation">
+
+  <ul class="wy-breadcrumbs">
+    
+      <li><a href="../index.html" class="icon icon-home"></a> &raquo;</li>
+        
+          <li><a href="../reference.html">API Reference</a> &raquo;</li>
+        
+          <li><a href="draco.analysis.html">draco.analysis</a> &raquo;</li>
+        
+      <li>draco.analysis.delay</li>
+    
+    
+      <li class="wy-breadcrumbs-aside">
+        
+          
+            <a href="../_sources/_autosummary/draco.analysis.delay.rst.txt" rel="nofollow"> View page source</a>
+          
+        
+      </li>
+    
+  </ul>
+
+  
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+            
+  <div class="section" id="module-draco.analysis.delay">
+<span id="draco-analysis-delay"></span><h1>draco.analysis.delay<a class="headerlink" href="#module-draco.analysis.delay" title="Permalink to this headline">¶</a></h1>
+<p>Delay space spectrum estimation and filtering.</p>
+<p class="rubric">Functions</p>
+<table class="longtable docutils align-default">
+<colgroup>
+<col style="width: 10%" />
+<col style="width: 90%" />
+</colgroup>
+<tbody>
+<tr class="row-odd"><td><p><a class="reference internal" href="#draco.analysis.delay.delay_spectrum_gibbs" title="draco.analysis.delay.delay_spectrum_gibbs"><code class="xref py py-obj docutils literal notranslate"><span class="pre">delay_spectrum_gibbs</span></code></a>(data, N, Ni, initial_S)</p></td>
+<td><p>Estimate the delay spectrum by Gibbs sampling.</p></td>
+</tr>
+<tr class="row-even"><td><p><a class="reference internal" href="#draco.analysis.delay.fourier_matrix_c2r" title="draco.analysis.delay.fourier_matrix_c2r"><code class="xref py py-obj docutils literal notranslate"><span class="pre">fourier_matrix_c2r</span></code></a>(N[, fsel])</p></td>
+<td><p>Generate a Fourier matrix to represent a complex to real FFT.</p></td>
+</tr>
+<tr class="row-odd"><td><p><a class="reference internal" href="#draco.analysis.delay.fourier_matrix_r2c" title="draco.analysis.delay.fourier_matrix_r2c"><code class="xref py py-obj docutils literal notranslate"><span class="pre">fourier_matrix_r2c</span></code></a>(N[, fsel])</p></td>
+<td><p>Generate a Fourier matrix to represent a real to complex FFT.</p></td>
+</tr>
+<tr class="row-even"><td><p><a class="reference internal" href="#draco.analysis.delay.null_delay_filter" title="draco.analysis.delay.null_delay_filter"><code class="xref py py-obj docutils literal notranslate"><span class="pre">null_delay_filter</span></code></a>(freq, max_delay, mask[, …])</p></td>
+<td><p>Take frequency data and null out any delays below some value.</p></td>
+</tr>
+<tr class="row-odd"><td><p><a class="reference internal" href="#draco.analysis.delay.stokes_I" title="draco.analysis.delay.stokes_I"><code class="xref py py-obj docutils literal notranslate"><span class="pre">stokes_I</span></code></a>(sstream, tel)</p></td>
+<td><p>Extract instrumental Stokes I from a time/sidereal stream.</p></td>
+</tr>
+<tr class="row-even"><td><p><a class="reference internal" href="#draco.analysis.delay.window_generalised" title="draco.analysis.delay.window_generalised"><code class="xref py py-obj docutils literal notranslate"><span class="pre">window_generalised</span></code></a>(x[, window])</p></td>
+<td><p>A generalised high-order window at arbitrary locations.</p></td>
+</tr>
+</tbody>
+</table>
+<p class="rubric">Classes</p>
+<table class="longtable docutils align-default">
+<colgroup>
+<col style="width: 10%" />
+<col style="width: 90%" />
+</colgroup>
+<tbody>
+<tr class="row-odd"><td><p><a class="reference internal" href="#draco.analysis.delay.DelayFilter" title="draco.analysis.delay.DelayFilter"><code class="xref py py-obj docutils literal notranslate"><span class="pre">DelayFilter</span></code></a>()</p></td>
+<td><p>Remove delays less than a given threshold.</p></td>
+</tr>
+<tr class="row-even"><td><p><a class="reference internal" href="#draco.analysis.delay.DelaySpectrumEstimator" title="draco.analysis.delay.DelaySpectrumEstimator"><code class="xref py py-obj docutils literal notranslate"><span class="pre">DelaySpectrumEstimator</span></code></a>()</p></td>
+<td><p>Calculate the delay spectrum of a Sidereal/TimeStream for instrumental Stokes I.</p></td>
+</tr>
+</tbody>
+</table>
+<dl class="py class">
+<dt id="draco.analysis.delay.DelayFilter">
+<em class="property">class </em><code class="sig-prename descclassname">draco.analysis.delay.</code><code class="sig-name descname">DelayFilter</code><a class="reference internal" href="../_modules/draco/analysis/delay.html#DelayFilter"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#draco.analysis.delay.DelayFilter" title="Permalink to this definition">¶</a></dt>
+<dd><p>Bases: <a class="reference internal" href="draco.core.task.html#draco.core.task.SingleTask" title="draco.core.task.SingleTask"><code class="xref py py-class docutils literal notranslate"><span class="pre">draco.core.task.SingleTask</span></code></a></p>
+<p>Remove delays less than a given threshold.</p>
+<p>This is performed by projecting the data onto the null space that is orthogonal
+to any mode at low delays.</p>
+<dl class="py attribute">
+<dt id="draco.analysis.delay.DelayFilter.delay_cut">
+<code class="sig-name descname">delay_cut</code><a class="headerlink" href="#draco.analysis.delay.DelayFilter.delay_cut" title="Permalink to this definition">¶</a></dt>
+<dd><p>Delay value to filter at in seconds.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type</dt>
+<dd class="field-odd"><p>float</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt id="draco.analysis.delay.DelayFilter.za_cut">
+<code class="sig-name descname">za_cut</code><a class="headerlink" href="#draco.analysis.delay.DelayFilter.za_cut" title="Permalink to this definition">¶</a></dt>
+<dd><p>Sine of the maximum zenith angle included in baseline-dependent delay
+filtering. Default is 1 which corresponds to the horizon (ie: filters out all
+zenith angles). Setting to zero turns off baseline dependent cut.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type</dt>
+<dd class="field-odd"><p>float</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt id="draco.analysis.delay.DelayFilter.extra_cut">
+<code class="sig-name descname">extra_cut</code><a class="headerlink" href="#draco.analysis.delay.DelayFilter.extra_cut" title="Permalink to this definition">¶</a></dt>
+<dd><p>Increase the delay threshold beyond the baseline dependent term.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type</dt>
+<dd class="field-odd"><p>float</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt id="draco.analysis.delay.DelayFilter.weight_tol">
+<code class="sig-name descname">weight_tol</code><a class="headerlink" href="#draco.analysis.delay.DelayFilter.weight_tol" title="Permalink to this definition">¶</a></dt>
+<dd><p>Maximum weight kept in the masked data, as a fraction of the largest weight
+in the original dataset.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type</dt>
+<dd class="field-odd"><p>float</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt id="draco.analysis.delay.DelayFilter.telescope_orientation">
+<code class="sig-name descname">telescope_orientation</code><a class="headerlink" href="#draco.analysis.delay.DelayFilter.telescope_orientation" title="Permalink to this definition">¶</a></dt>
+<dd><p>Determines if the baseline-dependent delay cut is based on the north-south
+component, the east-west component or the full baseline length. For
+cylindrical telescopes oriented in the NS direction (like CHIME) use ‘NS’.
+The default is ‘NS’.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type</dt>
+<dd class="field-odd"><p>one of (‘NS’, ‘EW’, ‘none’)</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt id="draco.analysis.delay.DelayFilter.window">
+<code class="sig-name descname">window</code><a class="headerlink" href="#draco.analysis.delay.DelayFilter.window" title="Permalink to this definition">¶</a></dt>
+<dd><p>Apply the window function to the data when applying the filter.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type</dt>
+<dd class="field-odd"><p>bool</p>
+</dd>
+</dl>
+</dd></dl>
+
+<p class="rubric">Notes</p>
+<p>The delay cut applied is <cite>max(za_cut * baseline / c + extra_cut, delay_cut)</cite>.</p>
+<p>Initialize pipeline task.</p>
+<p>May be overridden with no arguments.  Will be called after any
+<cite>config.Property</cite> attributes are set and after ‘input’ and ‘requires’
+keys are set up.</p>
+<dl class="py method">
+<dt id="draco.analysis.delay.DelayFilter.process">
+<code class="sig-name descname">process</code><span class="sig-paren">(</span><em class="sig-param"><span class="n">ss</span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/draco/analysis/delay.html#DelayFilter.process"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#draco.analysis.delay.DelayFilter.process" title="Permalink to this definition">¶</a></dt>
+<dd><p>Filter out delays from a SiderealStream or TimeStream.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><p><strong>ss</strong> (<a class="reference internal" href="draco.core.containers.html#draco.core.containers.SiderealStream" title="draco.core.containers.SiderealStream"><em>containers.SiderealStream</em></a>) – Data to filter.</p>
+</dd>
+<dt class="field-even">Returns</dt>
+<dd class="field-even"><p><strong>ss_filt</strong> – Filtered dataset.</p>
+</dd>
+<dt class="field-odd">Return type</dt>
+<dd class="field-odd"><p><a class="reference internal" href="draco.core.containers.html#draco.core.containers.SiderealStream" title="draco.core.containers.SiderealStream">containers.SiderealStream</a></p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt id="draco.analysis.delay.DelayFilter.setup">
+<code class="sig-name descname">setup</code><span class="sig-paren">(</span><em class="sig-param"><span class="n">telescope</span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/draco/analysis/delay.html#DelayFilter.setup"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#draco.analysis.delay.DelayFilter.setup" title="Permalink to this definition">¶</a></dt>
+<dd><p>Set the telescope needed to obtain baselines.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><p><strong>telescope</strong> (<em>TransitTelescope</em>) – </p>
+</dd>
+</dl>
+</dd></dl>
+
+</dd></dl>
+
+<dl class="py class">
+<dt id="draco.analysis.delay.DelaySpectrumEstimator">
+<em class="property">class </em><code class="sig-prename descclassname">draco.analysis.delay.</code><code class="sig-name descname">DelaySpectrumEstimator</code><a class="reference internal" href="../_modules/draco/analysis/delay.html#DelaySpectrumEstimator"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#draco.analysis.delay.DelaySpectrumEstimator" title="Permalink to this definition">¶</a></dt>
+<dd><p>Bases: <a class="reference internal" href="draco.core.task.html#draco.core.task.SingleTask" title="draco.core.task.SingleTask"><code class="xref py py-class docutils literal notranslate"><span class="pre">draco.core.task.SingleTask</span></code></a>, <a class="reference internal" href="draco.util.random.html#draco.util.random.RandomTask" title="draco.util.random.RandomTask"><code class="xref py py-class docutils literal notranslate"><span class="pre">draco.util.random.RandomTask</span></code></a></p>
+<p>Calculate the delay spectrum of a Sidereal/TimeStream for instrumental Stokes I.</p>
+<p>The spectrum is calculated by Gibbs sampling. However, at the moment only
+the final sample is used to calculate the spectrum.</p>
+<dl class="py attribute">
+<dt id="draco.analysis.delay.DelaySpectrumEstimator.nsamp">
+<code class="sig-name descname">nsamp</code><a class="headerlink" href="#draco.analysis.delay.DelaySpectrumEstimator.nsamp" title="Permalink to this definition">¶</a></dt>
+<dd><p>The number of Gibbs samples to draw.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type</dt>
+<dd class="field-odd"><p>int, optional</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt id="draco.analysis.delay.DelaySpectrumEstimator.freq_zero">
+<code class="sig-name descname">freq_zero</code><a class="headerlink" href="#draco.analysis.delay.DelaySpectrumEstimator.freq_zero" title="Permalink to this definition">¶</a></dt>
+<dd><p>The physical frequency (in MHz) of the <em>zero</em> channel. That is the DC
+channel coming out of the F-engine. If not specified, use the first
+frequency channel of the stream.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type</dt>
+<dd class="field-odd"><p>float, optional</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt id="draco.analysis.delay.DelaySpectrumEstimator.freq_spacing">
+<code class="sig-name descname">freq_spacing</code><a class="headerlink" href="#draco.analysis.delay.DelaySpectrumEstimator.freq_spacing" title="Permalink to this definition">¶</a></dt>
+<dd><p>The spacing between the underlying channels (in MHz). This is conjugate
+to the length of a frame of time samples that is transformed. If not
+set, then use the smallest gap found between channels in the dataset.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type</dt>
+<dd class="field-odd"><p>float, optional</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt id="draco.analysis.delay.DelaySpectrumEstimator.nfreq">
+<code class="sig-name descname">nfreq</code><a class="headerlink" href="#draco.analysis.delay.DelaySpectrumEstimator.nfreq" title="Permalink to this definition">¶</a></dt>
+<dd><p>The number of frequency channels in the full set produced by the
+F-engine. If not set, assume the last included frequency is the last of
+the full set (or is the penultimate if <cite>skip_nyquist</cite> is set).</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type</dt>
+<dd class="field-odd"><p>int, optional</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt id="draco.analysis.delay.DelaySpectrumEstimator.skip_nyquist">
+<code class="sig-name descname">skip_nyquist</code><a class="headerlink" href="#draco.analysis.delay.DelaySpectrumEstimator.skip_nyquist" title="Permalink to this definition">¶</a></dt>
+<dd><p>Whether the Nyquist frequency is included in the data. This is <cite>True</cite> by
+default to align with the output of CASPER PFBs.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type</dt>
+<dd class="field-odd"><p>bool, optional</p>
+</dd>
+</dl>
+</dd></dl>
+
+<p>Initialize pipeline task.</p>
+<p>May be overridden with no arguments.  Will be called after any
+<cite>config.Property</cite> attributes are set and after ‘input’ and ‘requires’
+keys are set up.</p>
+<dl class="py method">
+<dt id="draco.analysis.delay.DelaySpectrumEstimator.process">
+<code class="sig-name descname">process</code><span class="sig-paren">(</span><em class="sig-param"><span class="n">ss</span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/draco/analysis/delay.html#DelaySpectrumEstimator.process"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#draco.analysis.delay.DelaySpectrumEstimator.process" title="Permalink to this definition">¶</a></dt>
+<dd><p>Estimate the delay spectrum.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><p><strong>ss</strong> (<a class="reference internal" href="draco.core.containers.html#draco.core.containers.SiderealStream" title="draco.core.containers.SiderealStream"><em>SiderealStream</em></a><em> or </em><a class="reference internal" href="draco.core.containers.html#draco.core.containers.TimeStream" title="draco.core.containers.TimeStream"><em>TimeStream</em></a>) – </p>
+</dd>
+<dt class="field-even">Returns</dt>
+<dd class="field-even"><p><strong>dspec</strong></p>
+</dd>
+<dt class="field-odd">Return type</dt>
+<dd class="field-odd"><p><a class="reference internal" href="draco.core.containers.html#draco.core.containers.DelaySpectrum" title="draco.core.containers.DelaySpectrum">DelaySpectrum</a></p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt id="draco.analysis.delay.DelaySpectrumEstimator.setup">
+<code class="sig-name descname">setup</code><span class="sig-paren">(</span><em class="sig-param"><span class="n">telescope</span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/draco/analysis/delay.html#DelaySpectrumEstimator.setup"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#draco.analysis.delay.DelaySpectrumEstimator.setup" title="Permalink to this definition">¶</a></dt>
+<dd><p>Set the telescope needed to generate Stokes I.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><p><strong>telescope</strong> (<em>TransitTelescope</em>) – </p>
+</dd>
+</dl>
+</dd></dl>
+
+</dd></dl>
+
+<dl class="py function">
+<dt id="draco.analysis.delay.delay_spectrum_gibbs">
+<code class="sig-prename descclassname">draco.analysis.delay.</code><code class="sig-name descname">delay_spectrum_gibbs</code><span class="sig-paren">(</span><em class="sig-param"><span class="n">data</span></em>, <em class="sig-param"><span class="n">N</span></em>, <em class="sig-param"><span class="n">Ni</span></em>, <em class="sig-param"><span class="n">initial_S</span></em>, <em class="sig-param"><span class="n">window</span><span class="o">=</span><span class="default_value">True</span></em>, <em class="sig-param"><span class="n">fsel</span><span class="o">=</span><span class="default_value">None</span></em>, <em class="sig-param"><span class="n">niter</span><span class="o">=</span><span class="default_value">20</span></em>, <em class="sig-param"><span class="n">rng</span><span class="o">=</span><span class="default_value">None</span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/draco/analysis/delay.html#delay_spectrum_gibbs"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#draco.analysis.delay.delay_spectrum_gibbs" title="Permalink to this definition">¶</a></dt>
+<dd><p>Estimate the delay spectrum by Gibbs sampling.</p>
+<p>This routine estimates the spectrum at the <cite>N</cite> delay samples conjugate to
+the frequency spectrum of <code class="docutils literal notranslate"><span class="pre">N/2</span> <span class="pre">+</span> <span class="pre">1</span></code> channels. A subset of these channels
+can be specified using the <cite>fsel</cite> argument.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>data</strong> (<em>np.ndarray</em><em>[</em><em>:</em><em>, </em><em>freq</em><em>]</em>) – Data to estimate the delay spectrum of.</p></li>
+<li><p><strong>N</strong> (<em>int</em>) – The length of the output delay spectrum. There are assumed to <cite>N/2 + 1</cite>
+total frequency channels.</p></li>
+<li><p><strong>Ni</strong> (<em>np.ndarray</em><em>[</em><em>freq</em><em>]</em>) – Inverse noise variance.</p></li>
+<li><p><strong>initial_S</strong> (<em>np.ndarray</em><em>[</em><em>delay</em><em>]</em>) – The initial delay spectrum guess.</p></li>
+<li><p><strong>window</strong> (<em>bool</em><em>, </em><em>optional</em>) – Apply a Nuttall apodisation function. Default is True.</p></li>
+<li><p><strong>fsel</strong> (<em>np.ndarray</em><em>[</em><em>freq</em><em>]</em><em>, </em><em>optional</em>) – Indices of channels that we have data at. By default assume all channels.</p></li>
+<li><p><strong>niter</strong> (<em>int</em><em>, </em><em>optional</em>) – Number of Gibbs samples to generate.</p></li>
+<li><p><strong>rng</strong> (<em>np.random.Generator</em><em>, </em><em>optional</em>) – A generator to use to produce the random samples.</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns</dt>
+<dd class="field-even"><p><strong>spec</strong> – List of spectrum samples.</p>
+</dd>
+<dt class="field-odd">Return type</dt>
+<dd class="field-odd"><p>list</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py function">
+<dt id="draco.analysis.delay.fourier_matrix_c2r">
+<code class="sig-prename descclassname">draco.analysis.delay.</code><code class="sig-name descname">fourier_matrix_c2r</code><span class="sig-paren">(</span><em class="sig-param"><span class="n">N</span></em>, <em class="sig-param"><span class="n">fsel</span><span class="o">=</span><span class="default_value">None</span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/draco/analysis/delay.html#fourier_matrix_c2r"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#draco.analysis.delay.fourier_matrix_c2r" title="Permalink to this definition">¶</a></dt>
+<dd><p>Generate a Fourier matrix to represent a complex to real FFT.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>N</strong> (<em>integer</em>) – Length of timestream that we are transforming to. Must be even.</p></li>
+<li><p><strong>fsel</strong> (<em>array_like</em><em>, </em><em>optional</em>) – Indexes of the frequency channels to include in the transformation
+matrix. By default, assume all channels.</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns</dt>
+<dd class="field-even"><p><strong>F</strong> – An array performing the Fourier transform from frequencies packed as
+alternating real and imaginary elements, to the real time series.</p>
+</dd>
+<dt class="field-odd">Return type</dt>
+<dd class="field-odd"><p>np.ndarray</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py function">
+<dt id="draco.analysis.delay.fourier_matrix_r2c">
+<code class="sig-prename descclassname">draco.analysis.delay.</code><code class="sig-name descname">fourier_matrix_r2c</code><span class="sig-paren">(</span><em class="sig-param"><span class="n">N</span></em>, <em class="sig-param"><span class="n">fsel</span><span class="o">=</span><span class="default_value">None</span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/draco/analysis/delay.html#fourier_matrix_r2c"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#draco.analysis.delay.fourier_matrix_r2c" title="Permalink to this definition">¶</a></dt>
+<dd><p>Generate a Fourier matrix to represent a real to complex FFT.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>N</strong> (<em>integer</em>) – Length of timestream that we are transforming to. Must be even.</p></li>
+<li><p><strong>fsel</strong> (<em>array_like</em><em>, </em><em>optional</em>) – Indexes of the frequency channels to include in the transformation
+matrix. By default, assume all channels.</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns</dt>
+<dd class="field-even"><p><strong>F</strong> – An array performing the Fourier transform from a real time series to
+frequencies packed as alternating real and imaginary elements,</p>
+</dd>
+<dt class="field-odd">Return type</dt>
+<dd class="field-odd"><p>np.ndarray</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py function">
+<dt id="draco.analysis.delay.null_delay_filter">
+<code class="sig-prename descclassname">draco.analysis.delay.</code><code class="sig-name descname">null_delay_filter</code><span class="sig-paren">(</span><em class="sig-param"><span class="n">freq</span></em>, <em class="sig-param"><span class="n">max_delay</span></em>, <em class="sig-param"><span class="n">mask</span></em>, <em class="sig-param"><span class="n">num_delay</span><span class="o">=</span><span class="default_value">200</span></em>, <em class="sig-param"><span class="n">tol</span><span class="o">=</span><span class="default_value">1e-08</span></em>, <em class="sig-param"><span class="n">window</span><span class="o">=</span><span class="default_value">True</span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/draco/analysis/delay.html#null_delay_filter"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#draco.analysis.delay.null_delay_filter" title="Permalink to this definition">¶</a></dt>
+<dd><p>Take frequency data and null out any delays below some value.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>freq</strong> (<em>np.ndarray</em><em>[</em><em>freq</em><em>]</em>) – Frequencies we have data at.</p></li>
+<li><p><strong>max_delay</strong> (<em>float</em>) – Maximum delay to keep.</p></li>
+<li><p><strong>mask</strong> (<em>np.ndarray</em><em>[</em><em>freq</em><em>]</em>) – Frequencies to mask out.</p></li>
+<li><p><strong>num_delay</strong> (<em>int</em><em>, </em><em>optional</em>) – Number of delay values to use.</p></li>
+<li><p><strong>tol</strong> (<em>float</em><em>, </em><em>optional</em>) – Cut off value for singular values.</p></li>
+<li><p><strong>window</strong> (<em>bool</em><em>, </em><em>optional</em>) – Apply a window function to the data while filtering.</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns</dt>
+<dd class="field-even"><p><strong>filter</strong> – The filter as a 2D matrix.</p>
+</dd>
+<dt class="field-odd">Return type</dt>
+<dd class="field-odd"><p>np.ndarray[freq, freq]</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py function">
+<dt id="draco.analysis.delay.stokes_I">
+<code class="sig-prename descclassname">draco.analysis.delay.</code><code class="sig-name descname">stokes_I</code><span class="sig-paren">(</span><em class="sig-param"><span class="n">sstream</span></em>, <em class="sig-param"><span class="n">tel</span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/draco/analysis/delay.html#stokes_I"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#draco.analysis.delay.stokes_I" title="Permalink to this definition">¶</a></dt>
+<dd><p>Extract instrumental Stokes I from a time/sidereal stream.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>sstream</strong> (<a class="reference internal" href="draco.core.containers.html#draco.core.containers.SiderealStream" title="draco.core.containers.SiderealStream"><em>containers.SiderealStream</em></a><em>, </em><em>container.TimeStream</em>) – Stream of correlation data.</p></li>
+<li><p><strong>tel</strong> (<em>TransitTelescope</em>) – Instance describing the telescope.</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns</dt>
+<dd class="field-even"><p><ul class="simple">
+<li><p><strong>vis_I</strong> (<em>mpiarray.MPIArray[nbase, nfreq, ntime]</em>) – The instrumental Stokes I visibilities, distributed over baselines.</p></li>
+<li><p><strong>vis_weight</strong> (<em>mpiarray.MPIArray[nbase, nfreq, ntime]</em>) – The weights for each visibility, distributed over baselines.</p></li>
+<li><p><strong>baselines</strong> (<em>np.ndarray[nbase, 2]</em>)</p></li>
+</ul>
+</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py function">
+<dt id="draco.analysis.delay.window_generalised">
+<code class="sig-prename descclassname">draco.analysis.delay.</code><code class="sig-name descname">window_generalised</code><span class="sig-paren">(</span><em class="sig-param"><span class="n">x</span></em>, <em class="sig-param"><span class="n">window</span><span class="o">=</span><span class="default_value">'nuttall'</span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/draco/analysis/delay.html#window_generalised"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#draco.analysis.delay.window_generalised" title="Permalink to this definition">¶</a></dt>
+<dd><p>A generalised high-order window at arbitrary locations.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>x</strong> (<em>np.ndarray</em><em>[</em><em>n</em><em>]</em>) – Location to evaluate at. Must be in the range 0 to 1.</p></li>
+<li><p><strong>window</strong> (<em>one of {'nuttall'</em><em>, </em><em>'blackman_nuttall'</em><em>, </em><em>'blackman_harris'}</em>) – Type of window function to return.</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns</dt>
+<dd class="field-even"><p><strong>w</strong> – Window function.</p>
+</dd>
+<dt class="field-odd">Return type</dt>
+<dd class="field-odd"><p>np.ndarray[n]</p>
+</dd>
+</dl>
+</dd></dl>
+
+</div>
+
+
+           </div>
+           
+          </div>
+          <footer>
+    <div class="rst-footer-buttons" role="navigation" aria-label="footer navigation">
+        <a href="draco.analysis.fgfilter.html" class="btn btn-neutral float-right" title="draco.analysis.fgfilter" accesskey="n" rel="next">Next <span class="fa fa-arrow-circle-right" aria-hidden="true"></span></a>
+        <a href="draco.analysis.beamform.html" class="btn btn-neutral float-left" title="draco.analysis.beamform" accesskey="p" rel="prev"><span class="fa fa-arrow-circle-left" aria-hidden="true"></span> Previous</a>
+    </div>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>
+        &#169; Copyright 2016, Richard Shaw.
+
+    </p>
+  </div>
+    
+    
+    
+    Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    
+    provided by <a href="https://readthedocs.org">Read the Docs</a>. 
+
+</footer>
+        </div>
+      </div>
+
+    </section>
+
+  </div>
+  
+
+  <script type="text/javascript">
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script>
+
+  
+  
+    
+   
+
+</body>
+</html>

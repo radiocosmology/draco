@@ -1,0 +1,445 @@
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" >
+<head>
+  <meta charset="utf-8" />
+  
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  
+  <title>draco.synthesis.stream &mdash; draco 0+untagged.1.g43914e3 documentation</title>
+  
+
+  
+  <link rel="stylesheet" href="../_static/css/theme.css" type="text/css" />
+  <link rel="stylesheet" href="../_static/pygments.css" type="text/css" />
+
+  
+  
+
+  
+  
+
+  
+
+  
+  <!--[if lt IE 9]>
+    <script src="../_static/js/html5shiv.min.js"></script>
+  <![endif]-->
+  
+    
+      <script type="text/javascript" id="documentation_options" data-url_root="../" src="../_static/documentation_options.js"></script>
+        <script src="../_static/jquery.js"></script>
+        <script src="../_static/underscore.js"></script>
+        <script src="../_static/doctools.js"></script>
+        <script async="async" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/2.7.7/latest.js?config=TeX-AMS-MML_HTMLorMML"></script>
+    
+    <script type="text/javascript" src="../_static/js/theme.js"></script>
+
+    
+    <link rel="index" title="Index" href="../genindex.html" />
+    <link rel="search" title="Search" href="../search.html" />
+    <link rel="next" title="draco.util" href="draco.util.html" />
+    <link rel="prev" title="draco.synthesis.noise" href="draco.synthesis.noise.html" /> 
+</head>
+
+<body class="wy-body-for-nav">
+
+   
+  <div class="wy-grid-for-nav">
+    
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+          
+
+          
+            <a href="../index.html" class="icon icon-home"> draco
+          
+
+          
+          </a>
+
+          
+            
+            
+              <div class="version">
+                0+untagged.1.g43914e3
+              </div>
+            
+          
+
+          
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+
+          
+        </div>
+
+        
+        <div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="main navigation">
+          
+            
+            
+              
+            
+            
+              <ul class="current">
+<li class="toctree-l1"><a class="reference internal" href="../tutorial.html">Tutorial</a></li>
+<li class="toctree-l1 current"><a class="reference internal" href="../reference.html">API Reference</a><ul class="current">
+<li class="toctree-l2 current"><a class="reference internal" href="../reference.html#submodules">Submodules</a><ul class="current">
+<li class="toctree-l3"><a class="reference internal" href="draco.analysis.html">draco.analysis</a></li>
+<li class="toctree-l3"><a class="reference internal" href="draco.core.html">draco.core</a></li>
+<li class="toctree-l3 current"><a class="reference internal" href="draco.synthesis.html">draco.synthesis</a><ul class="current">
+<li class="toctree-l4"><a class="reference internal" href="draco.synthesis.gain.html">draco.synthesis.gain</a></li>
+<li class="toctree-l4"><a class="reference internal" href="draco.synthesis.noise.html">draco.synthesis.noise</a></li>
+<li class="toctree-l4 current"><a class="current reference internal" href="#">draco.synthesis.stream</a></li>
+</ul>
+</li>
+<li class="toctree-l3"><a class="reference internal" href="draco.util.html">draco.util</a></li>
+</ul>
+</li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="../dev.html">Development Guidelines</a></li>
+</ul>
+
+            
+          
+        </div>
+        
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap">
+
+      
+      <nav class="wy-nav-top" aria-label="top navigation">
+        
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../index.html">draco</a>
+        
+      </nav>
+
+
+      <div class="wy-nav-content">
+        
+        <div class="rst-content">
+        
+          
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<div role="navigation" aria-label="breadcrumbs navigation">
+
+  <ul class="wy-breadcrumbs">
+    
+      <li><a href="../index.html" class="icon icon-home"></a> &raquo;</li>
+        
+          <li><a href="../reference.html">API Reference</a> &raquo;</li>
+        
+          <li><a href="draco.synthesis.html">draco.synthesis</a> &raquo;</li>
+        
+      <li>draco.synthesis.stream</li>
+    
+    
+      <li class="wy-breadcrumbs-aside">
+        
+          
+            <a href="../_sources/_autosummary/draco.synthesis.stream.rst.txt" rel="nofollow"> View page source</a>
+          
+        
+      </li>
+    
+  </ul>
+
+  
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+            
+  <div class="section" id="module-draco.synthesis.stream">
+<span id="draco-synthesis-stream"></span><h1>draco.synthesis.stream<a class="headerlink" href="#module-draco.synthesis.stream" title="Permalink to this headline">¶</a></h1>
+<p>Tasks for simulating sidereal and time stream data.</p>
+<p>A typical pattern would be to turn a map into a
+<code class="xref py py-class docutils literal notranslate"><span class="pre">containers.SiderealStream</span></code> with the <a class="reference internal" href="#draco.synthesis.stream.SimulateSidereal" title="draco.synthesis.stream.SimulateSidereal"><code class="xref py py-class docutils literal notranslate"><span class="pre">SimulateSidereal</span></code></a> task, then
+expand any redundant products with <a class="reference internal" href="#draco.synthesis.stream.ExpandProducts" title="draco.synthesis.stream.ExpandProducts"><code class="xref py py-class docutils literal notranslate"><span class="pre">ExpandProducts</span></code></a> and finally generate
+a set of time stream files with <a class="reference internal" href="#draco.synthesis.stream.MakeTimeStream" title="draco.synthesis.stream.MakeTimeStream"><code class="xref py py-class docutils literal notranslate"><span class="pre">MakeTimeStream</span></code></a>.</p>
+<p class="rubric">Classes</p>
+<table class="longtable docutils align-default">
+<colgroup>
+<col style="width: 10%" />
+<col style="width: 90%" />
+</colgroup>
+<tbody>
+<tr class="row-odd"><td><p><a class="reference internal" href="#draco.synthesis.stream.ExpandProducts" title="draco.synthesis.stream.ExpandProducts"><code class="xref py py-obj docutils literal notranslate"><span class="pre">ExpandProducts</span></code></a>()</p></td>
+<td><p>Un-wrap collated products to full triangle.</p></td>
+</tr>
+<tr class="row-even"><td><p><a class="reference internal" href="#draco.synthesis.stream.MakeSiderealDayStream" title="draco.synthesis.stream.MakeSiderealDayStream"><code class="xref py py-obj docutils literal notranslate"><span class="pre">MakeSiderealDayStream</span></code></a>()</p></td>
+<td><p>Task for simulating a set of sidereal days from a given stream.</p></td>
+</tr>
+<tr class="row-odd"><td><p><a class="reference internal" href="#draco.synthesis.stream.MakeTimeStream" title="draco.synthesis.stream.MakeTimeStream"><code class="xref py py-obj docutils literal notranslate"><span class="pre">MakeTimeStream</span></code></a>()</p></td>
+<td><p>Generate a series of time streams files from a sidereal stream.</p></td>
+</tr>
+<tr class="row-even"><td><p><a class="reference internal" href="#draco.synthesis.stream.SimulateSidereal" title="draco.synthesis.stream.SimulateSidereal"><code class="xref py py-obj docutils literal notranslate"><span class="pre">SimulateSidereal</span></code></a>()</p></td>
+<td><p>Create a simulated sidereal dataset from an input map.</p></td>
+</tr>
+</tbody>
+</table>
+<dl class="py class">
+<dt id="draco.synthesis.stream.ExpandProducts">
+<em class="property">class </em><code class="sig-prename descclassname">draco.synthesis.stream.</code><code class="sig-name descname">ExpandProducts</code><a class="reference internal" href="../_modules/draco/synthesis/stream.html#ExpandProducts"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#draco.synthesis.stream.ExpandProducts" title="Permalink to this definition">¶</a></dt>
+<dd><p>Bases: <a class="reference internal" href="draco.core.task.html#draco.core.task.SingleTask" title="draco.core.task.SingleTask"><code class="xref py py-class docutils literal notranslate"><span class="pre">draco.core.task.SingleTask</span></code></a></p>
+<p>Un-wrap collated products to full triangle.</p>
+<p>Initialize pipeline task.</p>
+<p>May be overridden with no arguments.  Will be called after any
+<cite>config.Property</cite> attributes are set and after ‘input’ and ‘requires’
+keys are set up.</p>
+<dl class="py method">
+<dt id="draco.synthesis.stream.ExpandProducts.process">
+<code class="sig-name descname">process</code><span class="sig-paren">(</span><em class="sig-param"><span class="n">sstream</span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/draco/synthesis/stream.html#ExpandProducts.process"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#draco.synthesis.stream.ExpandProducts.process" title="Permalink to this definition">¶</a></dt>
+<dd><p>Transform a sidereal stream to having a full product matrix.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><p><strong>sstream</strong> (<code class="xref py py-class docutils literal notranslate"><span class="pre">containers.SiderealStream</span></code>) – Sidereal stream to unwrap.</p>
+</dd>
+<dt class="field-even">Returns</dt>
+<dd class="field-even"><p><strong>new_sstream</strong> – Unwrapped sidereal stream.</p>
+</dd>
+<dt class="field-odd">Return type</dt>
+<dd class="field-odd"><p><code class="xref py py-class docutils literal notranslate"><span class="pre">containers.SiderealStream</span></code></p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt id="draco.synthesis.stream.ExpandProducts.setup">
+<code class="sig-name descname">setup</code><span class="sig-paren">(</span><em class="sig-param"><span class="n">telescope</span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/draco/synthesis/stream.html#ExpandProducts.setup"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#draco.synthesis.stream.ExpandProducts.setup" title="Permalink to this definition">¶</a></dt>
+<dd><p>Get a reference to the telescope class.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><p><strong>tel</strong> (<code class="xref py py-class docutils literal notranslate"><span class="pre">drift.core.TransitTelescope</span></code>) – Telescope object.</p>
+</dd>
+</dl>
+</dd></dl>
+
+</dd></dl>
+
+<dl class="py class">
+<dt id="draco.synthesis.stream.MakeSiderealDayStream">
+<em class="property">class </em><code class="sig-prename descclassname">draco.synthesis.stream.</code><code class="sig-name descname">MakeSiderealDayStream</code><a class="reference internal" href="../_modules/draco/synthesis/stream.html#MakeSiderealDayStream"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#draco.synthesis.stream.MakeSiderealDayStream" title="Permalink to this definition">¶</a></dt>
+<dd><p>Bases: <a class="reference internal" href="draco.core.task.html#draco.core.task.SingleTask" title="draco.core.task.SingleTask"><code class="xref py py-class docutils literal notranslate"><span class="pre">draco.core.task.SingleTask</span></code></a></p>
+<p>Task for simulating a set of sidereal days from a given stream.</p>
+<p>This creates a copy of the base stream for every LSD within the provided time
+range.</p>
+<dl class="py attribute">
+<dt>
+<code class="sig-name descname">start_time, end_time</code></dt>
+<dd><p>Start and end times of the sidereal streams to simulate. Needs to be either a
+<cite>float</cite> (UNIX time) or a <cite>datetime</cite> objects in UTC.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type</dt>
+<dd class="field-odd"><p>float or datetime</p>
+</dd>
+</dl>
+</dd></dl>
+
+<p>Initialize pipeline task.</p>
+<p>May be overridden with no arguments.  Will be called after any
+<cite>config.Property</cite> attributes are set and after ‘input’ and ‘requires’
+keys are set up.</p>
+<dl class="py method">
+<dt id="draco.synthesis.stream.MakeSiderealDayStream.process">
+<code class="sig-name descname">process</code><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="../_modules/draco/synthesis/stream.html#MakeSiderealDayStream.process"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#draco.synthesis.stream.MakeSiderealDayStream.process" title="Permalink to this definition">¶</a></dt>
+<dd><p>Generate a sidereal stream for the specific sidereal day.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Returns</dt>
+<dd class="field-odd"><p><strong>ss</strong> – Simulated sidereal day stream.</p>
+</dd>
+<dt class="field-even">Return type</dt>
+<dd class="field-even"><p><code class="xref py py-class docutils literal notranslate"><span class="pre">containers.SiderealStream</span></code></p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt id="draco.synthesis.stream.MakeSiderealDayStream.setup">
+<code class="sig-name descname">setup</code><span class="sig-paren">(</span><em class="sig-param"><span class="n">bt</span></em>, <em class="sig-param"><span class="n">sstream</span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/draco/synthesis/stream.html#MakeSiderealDayStream.setup"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#draco.synthesis.stream.MakeSiderealDayStream.setup" title="Permalink to this definition">¶</a></dt>
+<dd><p>Set up an observer and the data to use for this simulation.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>bt</strong> (<em>beamtransfer.BeamTransfer</em><em> or </em><em>manager.ProductManager</em>) – Sets up an observer holding the geographic location of the telscope.</p></li>
+<li><p><strong>sstream</strong> (<a class="reference internal" href="draco.core.containers.html#draco.core.containers.SiderealStream" title="draco.core.containers.SiderealStream"><em>containers.SiderealStream</em></a>) – The base sidereal data to use for this simulation.</p></li>
+</ul>
+</dd>
+</dl>
+</dd></dl>
+
+</dd></dl>
+
+<dl class="py class">
+<dt id="draco.synthesis.stream.MakeTimeStream">
+<em class="property">class </em><code class="sig-prename descclassname">draco.synthesis.stream.</code><code class="sig-name descname">MakeTimeStream</code><a class="reference internal" href="../_modules/draco/synthesis/stream.html#MakeTimeStream"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#draco.synthesis.stream.MakeTimeStream" title="Permalink to this definition">¶</a></dt>
+<dd><p>Bases: <a class="reference internal" href="draco.core.task.html#draco.core.task.SingleTask" title="draco.core.task.SingleTask"><code class="xref py py-class docutils literal notranslate"><span class="pre">draco.core.task.SingleTask</span></code></a></p>
+<p>Generate a series of time streams files from a sidereal stream.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>start_time</strong> (<em>float</em><em> or </em><em>datetime</em>) – Start and end times of the timestream to simulate. Needs to be either a
+<cite>float</cite> (UNIX time) or a <cite>datetime</cite> objects in UTC.</p></li>
+<li><p><strong>end_time</strong> (<em>float</em><em> or </em><em>datetime</em>) – Start and end times of the timestream to simulate. Needs to be either a
+<cite>float</cite> (UNIX time) or a <cite>datetime</cite> objects in UTC.</p></li>
+<li><p><strong>integration_time</strong> (<em>float</em><em>, </em><em>optional</em>) – Integration time in seconds. Takes precedence over <cite>integration_frame_exp</cite>.</p></li>
+<li><p><strong>integration_frame_exp</strong> (<em>int</em><em>, </em><em>optional</em>) – Specify the integration time in frames. The integration time is
+<cite>2**integration_frame_exp * 2.56 us</cite>.</p></li>
+<li><p><strong>samples_per_file</strong> (<em>int</em><em>, </em><em>optional</em>) – Number of samples per file.</p></li>
+</ul>
+</dd>
+</dl>
+<p>Initialize pipeline task.</p>
+<p>May be overridden with no arguments.  Will be called after any
+<cite>config.Property</cite> attributes are set and after ‘input’ and ‘requires’
+keys are set up.</p>
+<dl class="py method">
+<dt id="draco.synthesis.stream.MakeTimeStream.process">
+<code class="sig-name descname">process</code><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="../_modules/draco/synthesis/stream.html#MakeTimeStream.process"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#draco.synthesis.stream.MakeTimeStream.process" title="Permalink to this definition">¶</a></dt>
+<dd><p>Create a timestream file.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Returns</dt>
+<dd class="field-odd"><p><strong>tstream</strong> – Time stream object.</p>
+</dd>
+<dt class="field-even">Return type</dt>
+<dd class="field-even"><p><code class="xref py py-class docutils literal notranslate"><span class="pre">containers.TimeStream</span></code></p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt id="draco.synthesis.stream.MakeTimeStream.setup">
+<code class="sig-name descname">setup</code><span class="sig-paren">(</span><em class="sig-param"><span class="n">sstream</span></em>, <em class="sig-param"><span class="n">manager</span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/draco/synthesis/stream.html#MakeTimeStream.setup"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#draco.synthesis.stream.MakeTimeStream.setup" title="Permalink to this definition">¶</a></dt>
+<dd><p>Get the sidereal stream to turn into files.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>sstream</strong> (<a class="reference internal" href="draco.core.containers.html#draco.core.containers.SiderealStream" title="draco.core.containers.SiderealStream"><em>SiderealStream</em></a>) – The sidereal data to use.</p></li>
+<li><p><strong>manager</strong> (<em>ProductManager</em><em> or </em><em>BeamTransfer</em>) – Beam Transfer and telescope manager</p></li>
+</ul>
+</dd>
+</dl>
+</dd></dl>
+
+</dd></dl>
+
+<dl class="py class">
+<dt id="draco.synthesis.stream.SimulateSidereal">
+<em class="property">class </em><code class="sig-prename descclassname">draco.synthesis.stream.</code><code class="sig-name descname">SimulateSidereal</code><a class="reference internal" href="../_modules/draco/synthesis/stream.html#SimulateSidereal"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#draco.synthesis.stream.SimulateSidereal" title="Permalink to this definition">¶</a></dt>
+<dd><p>Bases: <a class="reference internal" href="draco.core.task.html#draco.core.task.SingleTask" title="draco.core.task.SingleTask"><code class="xref py py-class docutils literal notranslate"><span class="pre">draco.core.task.SingleTask</span></code></a></p>
+<p>Create a simulated sidereal dataset from an input map.</p>
+<p>Initialize pipeline task.</p>
+<p>May be overridden with no arguments.  Will be called after any
+<cite>config.Property</cite> attributes are set and after ‘input’ and ‘requires’
+keys are set up.</p>
+<dl class="py method">
+<dt id="draco.synthesis.stream.SimulateSidereal.process">
+<code class="sig-name descname">process</code><span class="sig-paren">(</span><em class="sig-param"><span class="n">map_</span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/draco/synthesis/stream.html#SimulateSidereal.process"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#draco.synthesis.stream.SimulateSidereal.process" title="Permalink to this definition">¶</a></dt>
+<dd><p>Simulate a SiderealStream</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><p><strong>map</strong> (<code class="xref py py-class docutils literal notranslate"><span class="pre">containers.Map</span></code>) – The sky map to process to into a sidereal stream. Frequencies in the
+map, must match the Beam Transfer matrices.</p>
+</dd>
+<dt class="field-even">Returns</dt>
+<dd class="field-even"><p><ul class="simple">
+<li><p><strong>ss</strong> (<em>SiderealStream</em>) – Stacked sidereal day.</p></li>
+<li><p><strong>feeds</strong> (<em>list of CorrInput</em>) – Description of the feeds simulated.</p></li>
+</ul>
+</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt id="draco.synthesis.stream.SimulateSidereal.setup">
+<code class="sig-name descname">setup</code><span class="sig-paren">(</span><em class="sig-param"><span class="n">bt</span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/draco/synthesis/stream.html#SimulateSidereal.setup"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#draco.synthesis.stream.SimulateSidereal.setup" title="Permalink to this definition">¶</a></dt>
+<dd><p>Setup the simulation.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><p><strong>bt</strong> (<em>ProductManager</em><em> or </em><em>BeamTransfer</em>) – Beam Transfer maanger.</p>
+</dd>
+</dl>
+</dd></dl>
+
+</dd></dl>
+
+</div>
+
+
+           </div>
+           
+          </div>
+          <footer>
+    <div class="rst-footer-buttons" role="navigation" aria-label="footer navigation">
+        <a href="draco.util.html" class="btn btn-neutral float-right" title="draco.util" accesskey="n" rel="next">Next <span class="fa fa-arrow-circle-right" aria-hidden="true"></span></a>
+        <a href="draco.synthesis.noise.html" class="btn btn-neutral float-left" title="draco.synthesis.noise" accesskey="p" rel="prev"><span class="fa fa-arrow-circle-left" aria-hidden="true"></span> Previous</a>
+    </div>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>
+        &#169; Copyright 2016, Richard Shaw.
+
+    </p>
+  </div>
+    
+    
+    
+    Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    
+    provided by <a href="https://readthedocs.org">Read the Docs</a>. 
+
+</footer>
+        </div>
+      </div>
+
+    </section>
+
+  </div>
+  
+
+  <script type="text/javascript">
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script>
+
+  
+  
+    
+   
+
+</body>
+</html>

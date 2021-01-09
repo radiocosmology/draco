@@ -1,0 +1,972 @@
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" >
+<head>
+  <meta charset="utf-8" />
+  
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  
+  <title>draco.analysis.transform &mdash; draco 0+untagged.1.g43914e3 documentation</title>
+  
+
+  
+  <link rel="stylesheet" href="../../../_static/css/theme.css" type="text/css" />
+  <link rel="stylesheet" href="../../../_static/pygments.css" type="text/css" />
+
+  
+  
+
+  
+  
+
+  
+
+  
+  <!--[if lt IE 9]>
+    <script src="../../../_static/js/html5shiv.min.js"></script>
+  <![endif]-->
+  
+    
+      <script type="text/javascript" id="documentation_options" data-url_root="../../../" src="../../../_static/documentation_options.js"></script>
+        <script src="../../../_static/jquery.js"></script>
+        <script src="../../../_static/underscore.js"></script>
+        <script src="../../../_static/doctools.js"></script>
+        <script async="async" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/2.7.7/latest.js?config=TeX-AMS-MML_HTMLorMML"></script>
+    
+    <script type="text/javascript" src="../../../_static/js/theme.js"></script>
+
+    
+    <link rel="index" title="Index" href="../../../genindex.html" />
+    <link rel="search" title="Search" href="../../../search.html" /> 
+</head>
+
+<body class="wy-body-for-nav">
+
+   
+  <div class="wy-grid-for-nav">
+    
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+          
+
+          
+            <a href="../../../index.html" class="icon icon-home"> draco
+          
+
+          
+          </a>
+
+          
+            
+            
+              <div class="version">
+                0+untagged.1.g43914e3
+              </div>
+            
+          
+
+          
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../../../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+
+          
+        </div>
+
+        
+        <div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="main navigation">
+          
+            
+            
+              
+            
+            
+              <ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../tutorial.html">Tutorial</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../reference.html">API Reference</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../dev.html">Development Guidelines</a></li>
+</ul>
+
+            
+          
+        </div>
+        
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap">
+
+      
+      <nav class="wy-nav-top" aria-label="top navigation">
+        
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../../../index.html">draco</a>
+        
+      </nav>
+
+
+      <div class="wy-nav-content">
+        
+        <div class="rst-content">
+        
+          
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<div role="navigation" aria-label="breadcrumbs navigation">
+
+  <ul class="wy-breadcrumbs">
+    
+      <li><a href="../../../index.html" class="icon icon-home"></a> &raquo;</li>
+        
+          <li><a href="../../index.html">Module code</a> &raquo;</li>
+        
+      <li>draco.analysis.transform</li>
+    
+    
+      <li class="wy-breadcrumbs-aside">
+        
+      </li>
+    
+  </ul>
+
+  
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+            
+  <h1>Source code for draco.analysis.transform</h1><div class="highlight"><pre>
+<span></span><span class="sd">&quot;&quot;&quot;Misc. transformations to do on data, from grouping frequencies and products to performing the m-mode transform.&quot;&quot;&quot;</span>
+
+<span class="kn">import</span> <span class="nn">numpy</span> <span class="k">as</span> <span class="nn">np</span>
+<span class="kn">from</span> <span class="nn">caput</span> <span class="kn">import</span> <span class="n">mpiarray</span><span class="p">,</span> <span class="n">config</span>
+<span class="kn">from</span> <span class="nn">caput</span> <span class="kn">import</span> <span class="n">mpiutil</span>
+
+<span class="kn">from</span> <span class="nn">..core</span> <span class="kn">import</span> <span class="n">containers</span><span class="p">,</span> <span class="n">task</span><span class="p">,</span> <span class="n">io</span>
+<span class="kn">from</span> <span class="nn">..util</span> <span class="kn">import</span> <span class="n">tools</span>
+<span class="kn">from</span> <span class="nn">..util</span> <span class="kn">import</span> <span class="n">regrid</span>
+
+
+<div class="viewcode-block" id="FrequencyRebin"><a class="viewcode-back" href="../../../_autosummary/draco.analysis.transform.html#draco.analysis.transform.FrequencyRebin">[docs]</a><span class="k">class</span> <span class="nc">FrequencyRebin</span><span class="p">(</span><span class="n">task</span><span class="o">.</span><span class="n">SingleTask</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;Rebin neighbouring frequency channels.</span>
+
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    channel_bin : int</span>
+<span class="sd">        Number of channels to in together.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+
+    <span class="n">channel_bin</span> <span class="o">=</span> <span class="n">config</span><span class="o">.</span><span class="n">Property</span><span class="p">(</span><span class="n">proptype</span><span class="o">=</span><span class="nb">int</span><span class="p">,</span> <span class="n">default</span><span class="o">=</span><span class="mi">1</span><span class="p">)</span>
+
+<div class="viewcode-block" id="FrequencyRebin.process"><a class="viewcode-back" href="../../../_autosummary/draco.analysis.transform.html#draco.analysis.transform.FrequencyRebin.process">[docs]</a>    <span class="k">def</span> <span class="nf">process</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">ss</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Take the input dataset and rebin the frequencies.</span>
+
+<span class="sd">        Parameters</span>
+<span class="sd">        ----------</span>
+<span class="sd">        ss : containers.SiderealStream or containers.TimeStream</span>
+<span class="sd">            Input data to rebin. Can also be an `andata.CorrData` instance,</span>
+<span class="sd">            however the output will be a `containers.TimeStream` instance.</span>
+
+<span class="sd">        Returns</span>
+<span class="sd">        -------</span>
+<span class="sd">        sb : containers.SiderealStream or containers.TimeStream</span>
+<span class="sd">            Rebinned data. Type should match the input.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+
+        <span class="k">if</span> <span class="s2">&quot;freq&quot;</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">ss</span><span class="o">.</span><span class="n">index_map</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">RuntimeError</span><span class="p">(</span><span class="s2">&quot;Data does not have a frequency axis.&quot;</span><span class="p">)</span>
+
+        <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">ss</span><span class="o">.</span><span class="n">freq</span><span class="p">)</span> <span class="o">%</span> <span class="bp">self</span><span class="o">.</span><span class="n">channel_bin</span> <span class="o">!=</span> <span class="mi">0</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">RuntimeError</span><span class="p">(</span><span class="s2">&quot;Binning must exactly divide the number of channels.&quot;</span><span class="p">)</span>
+
+        <span class="c1"># Get all frequencies onto same node</span>
+        <span class="n">ss</span><span class="o">.</span><span class="n">redistribute</span><span class="p">([</span><span class="s2">&quot;time&quot;</span><span class="p">,</span> <span class="s2">&quot;ra&quot;</span><span class="p">])</span>
+
+        <span class="c1"># Calculate the new frequency centres and widths</span>
+        <span class="n">fc</span> <span class="o">=</span> <span class="n">ss</span><span class="o">.</span><span class="n">index_map</span><span class="p">[</span><span class="s2">&quot;freq&quot;</span><span class="p">][</span><span class="s2">&quot;centre&quot;</span><span class="p">]</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">channel_bin</span><span class="p">)</span><span class="o">.</span><span class="n">mean</span><span class="p">(</span><span class="n">axis</span><span class="o">=-</span><span class="mi">1</span><span class="p">)</span>
+        <span class="n">fw</span> <span class="o">=</span> <span class="n">ss</span><span class="o">.</span><span class="n">index_map</span><span class="p">[</span><span class="s2">&quot;freq&quot;</span><span class="p">][</span><span class="s2">&quot;width&quot;</span><span class="p">]</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">channel_bin</span><span class="p">)</span><span class="o">.</span><span class="n">sum</span><span class="p">(</span><span class="n">axis</span><span class="o">=-</span><span class="mi">1</span><span class="p">)</span>
+
+        <span class="n">freq_map</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">empty</span><span class="p">(</span><span class="n">fc</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span> <span class="n">dtype</span><span class="o">=</span><span class="n">ss</span><span class="o">.</span><span class="n">index_map</span><span class="p">[</span><span class="s2">&quot;freq&quot;</span><span class="p">]</span><span class="o">.</span><span class="n">dtype</span><span class="p">)</span>
+        <span class="n">freq_map</span><span class="p">[</span><span class="s2">&quot;centre&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">fc</span>
+        <span class="n">freq_map</span><span class="p">[</span><span class="s2">&quot;width&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">fw</span>
+
+        <span class="c1"># Create new container for rebinned stream</span>
+        <span class="n">sb</span> <span class="o">=</span> <span class="n">containers</span><span class="o">.</span><span class="n">empty_like</span><span class="p">(</span><span class="n">ss</span><span class="p">,</span> <span class="n">freq</span><span class="o">=</span><span class="n">freq_map</span><span class="p">)</span>
+
+        <span class="c1"># Get all frequencies onto same node</span>
+        <span class="n">sb</span><span class="o">.</span><span class="n">redistribute</span><span class="p">([</span><span class="s2">&quot;time&quot;</span><span class="p">,</span> <span class="s2">&quot;ra&quot;</span><span class="p">])</span>
+
+        <span class="c1"># Rebin the arrays, do this with a loop to save memory</span>
+        <span class="k">for</span> <span class="n">fi</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">ss</span><span class="o">.</span><span class="n">freq</span><span class="p">)):</span>
+
+            <span class="c1"># Calculate rebinned index</span>
+            <span class="n">ri</span> <span class="o">=</span> <span class="n">fi</span> <span class="o">//</span> <span class="bp">self</span><span class="o">.</span><span class="n">channel_bin</span>
+
+            <span class="n">sb</span><span class="o">.</span><span class="n">vis</span><span class="p">[</span><span class="n">ri</span><span class="p">]</span> <span class="o">+=</span> <span class="n">ss</span><span class="o">.</span><span class="n">vis</span><span class="p">[</span><span class="n">fi</span><span class="p">]</span> <span class="o">*</span> <span class="n">ss</span><span class="o">.</span><span class="n">weight</span><span class="p">[</span><span class="n">fi</span><span class="p">]</span>
+            <span class="n">sb</span><span class="o">.</span><span class="n">gain</span><span class="p">[</span><span class="n">ri</span><span class="p">]</span> <span class="o">+=</span> <span class="p">(</span>
+                <span class="n">ss</span><span class="o">.</span><span class="n">gain</span><span class="p">[</span><span class="n">fi</span><span class="p">]</span> <span class="o">/</span> <span class="bp">self</span><span class="o">.</span><span class="n">channel_bin</span>
+            <span class="p">)</span>  <span class="c1"># Don&#39;t do weighted average for the moment</span>
+
+            <span class="n">sb</span><span class="o">.</span><span class="n">weight</span><span class="p">[</span><span class="n">ri</span><span class="p">]</span> <span class="o">+=</span> <span class="n">ss</span><span class="o">.</span><span class="n">weight</span><span class="p">[</span><span class="n">fi</span><span class="p">]</span>
+
+            <span class="c1"># If we are on the final sub-channel then divide the arrays through</span>
+            <span class="k">if</span> <span class="p">(</span><span class="n">fi</span> <span class="o">+</span> <span class="mi">1</span><span class="p">)</span> <span class="o">%</span> <span class="bp">self</span><span class="o">.</span><span class="n">channel_bin</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
+                <span class="n">sb</span><span class="o">.</span><span class="n">vis</span><span class="p">[</span><span class="n">ri</span><span class="p">]</span> <span class="o">*=</span> <span class="n">tools</span><span class="o">.</span><span class="n">invert_no_zero</span><span class="p">(</span><span class="n">sb</span><span class="o">.</span><span class="n">weight</span><span class="p">[</span><span class="n">ri</span><span class="p">])</span>
+
+        <span class="n">sb</span><span class="o">.</span><span class="n">redistribute</span><span class="p">(</span><span class="s2">&quot;freq&quot;</span><span class="p">)</span>
+
+        <span class="k">return</span> <span class="n">sb</span></div></div>
+
+
+<div class="viewcode-block" id="CollateProducts"><a class="viewcode-back" href="../../../_autosummary/draco.analysis.transform.html#draco.analysis.transform.CollateProducts">[docs]</a><span class="k">class</span> <span class="nc">CollateProducts</span><span class="p">(</span><span class="n">task</span><span class="o">.</span><span class="n">SingleTask</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;Extract and order the correlation products for map-making.</span>
+
+<span class="sd">    The task will take a sidereal task and format the products that are needed</span>
+<span class="sd">    or the map-making. It uses a BeamTransfer instance to figure out what these</span>
+<span class="sd">    products are, and how they should be ordered. It similarly selects only the</span>
+<span class="sd">    required frequencies.</span>
+
+<span class="sd">    It is important to note that while the input</span>
+<span class="sd">    :class:`~containers.SiderealStream` can contain more feeds and frequencies</span>
+<span class="sd">    than are contained in the BeamTransfers, the converse is not true. That is,</span>
+<span class="sd">    all the frequencies and feeds that are in the BeamTransfers must be found in</span>
+<span class="sd">    the timestream object.</span>
+
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    weight : string (&#39;natural&#39;, &#39;uniform&#39;, or &#39;inverse_variance&#39;)</span>
+<span class="sd">        How to weight the redundant baselines when stacking:</span>
+<span class="sd">            &#39;natural&#39; - each baseline weighted by its redundancy (default)</span>
+<span class="sd">            &#39;uniform&#39; - each baseline given equal weight</span>
+<span class="sd">            &#39;inverse_variance&#39; - each baseline weighted by the weight attribute</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+
+    <span class="n">weight</span> <span class="o">=</span> <span class="n">config</span><span class="o">.</span><span class="n">Property</span><span class="p">(</span><span class="n">proptype</span><span class="o">=</span><span class="nb">str</span><span class="p">,</span> <span class="n">default</span><span class="o">=</span><span class="s2">&quot;natural&quot;</span><span class="p">)</span>
+
+<div class="viewcode-block" id="CollateProducts.setup"><a class="viewcode-back" href="../../../_autosummary/draco.analysis.transform.html#draco.analysis.transform.CollateProducts.setup">[docs]</a>    <span class="k">def</span> <span class="nf">setup</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">tel</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Set the Telescope instance to use.</span>
+
+<span class="sd">        Parameters</span>
+<span class="sd">        ----------</span>
+<span class="sd">        tel : TransitTelescope</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">weight</span> <span class="ow">not</span> <span class="ow">in</span> <span class="p">[</span><span class="s2">&quot;natural&quot;</span><span class="p">,</span> <span class="s2">&quot;uniform&quot;</span><span class="p">,</span> <span class="s2">&quot;inverse_variance&quot;</span><span class="p">]:</span>
+            <span class="ne">KeyError</span><span class="p">(</span><span class="s2">&quot;Do not recognize weight = </span><span class="si">%s</span><span class="s2">&quot;</span> <span class="o">%</span> <span class="bp">self</span><span class="o">.</span><span class="n">weight</span><span class="p">)</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">telescope</span> <span class="o">=</span> <span class="n">io</span><span class="o">.</span><span class="n">get_telescope</span><span class="p">(</span><span class="n">tel</span><span class="p">)</span>
+
+        <span class="c1"># Precalculate the stack properties</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">bt_stack</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">(</span>
+            <span class="p">[</span>
+                <span class="p">(</span><span class="n">tools</span><span class="o">.</span><span class="n">cmap</span><span class="p">(</span><span class="n">upp</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span> <span class="n">upp</span><span class="p">[</span><span class="mi">1</span><span class="p">],</span> <span class="bp">self</span><span class="o">.</span><span class="n">telescope</span><span class="o">.</span><span class="n">nfeed</span><span class="p">),</span> <span class="mi">0</span><span class="p">)</span>
+                <span class="k">if</span> <span class="n">upp</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">&lt;=</span> <span class="n">upp</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span>
+                <span class="k">else</span> <span class="p">(</span><span class="n">tools</span><span class="o">.</span><span class="n">cmap</span><span class="p">(</span><span class="n">upp</span><span class="p">[</span><span class="mi">1</span><span class="p">],</span> <span class="n">upp</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span> <span class="bp">self</span><span class="o">.</span><span class="n">telescope</span><span class="o">.</span><span class="n">nfeed</span><span class="p">),</span> <span class="mi">1</span><span class="p">)</span>
+                <span class="k">for</span> <span class="n">upp</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">telescope</span><span class="o">.</span><span class="n">uniquepairs</span>
+            <span class="p">],</span>
+            <span class="n">dtype</span><span class="o">=</span><span class="p">[(</span><span class="s2">&quot;prod&quot;</span><span class="p">,</span> <span class="s2">&quot;&lt;u4&quot;</span><span class="p">),</span> <span class="p">(</span><span class="s2">&quot;conjugate&quot;</span><span class="p">,</span> <span class="s2">&quot;u1&quot;</span><span class="p">)],</span>
+        <span class="p">)</span>
+
+        <span class="c1"># Construct the equivalent prod and stack index_map for the telescope instance</span>
+        <span class="n">triu</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">triu_indices</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">telescope</span><span class="o">.</span><span class="n">nfeed</span><span class="p">)</span>
+        <span class="n">dt_prod</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">dtype</span><span class="p">([(</span><span class="s2">&quot;input_a&quot;</span><span class="p">,</span> <span class="s2">&quot;&lt;u2&quot;</span><span class="p">),</span> <span class="p">(</span><span class="s2">&quot;input_b&quot;</span><span class="p">,</span> <span class="s2">&quot;&lt;u2&quot;</span><span class="p">)])</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">bt_prod</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">(</span><span class="n">triu</span><span class="p">)</span><span class="o">.</span><span class="n">astype</span><span class="p">(</span><span class="s2">&quot;&lt;u2&quot;</span><span class="p">)</span><span class="o">.</span><span class="n">T</span><span class="o">.</span><span class="n">copy</span><span class="p">()</span><span class="o">.</span><span class="n">view</span><span class="p">(</span><span class="n">dt_prod</span><span class="p">)</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">)</span>
+
+        <span class="c1"># Construct the equivalent reverse_map stack for the telescope instance.</span>
+        <span class="c1"># Note that we identify invalid products here using an index that is the</span>
+        <span class="c1"># size of the stack axis.</span>
+        <span class="n">feedmask</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">telescope</span><span class="o">.</span><span class="n">feedmask</span><span class="p">[</span><span class="n">triu</span><span class="p">]</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">bt_rev</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">empty</span><span class="p">(</span>
+            <span class="n">feedmask</span><span class="o">.</span><span class="n">size</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="p">[(</span><span class="s2">&quot;stack&quot;</span><span class="p">,</span> <span class="s2">&quot;&lt;u4&quot;</span><span class="p">),</span> <span class="p">(</span><span class="s2">&quot;conjugate&quot;</span><span class="p">,</span> <span class="s2">&quot;u1&quot;</span><span class="p">)]</span>
+        <span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">bt_rev</span><span class="p">[</span><span class="s2">&quot;stack&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">where</span><span class="p">(</span>
+            <span class="n">feedmask</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">telescope</span><span class="o">.</span><span class="n">feedmap</span><span class="p">[</span><span class="n">triu</span><span class="p">],</span> <span class="bp">self</span><span class="o">.</span><span class="n">telescope</span><span class="o">.</span><span class="n">npairs</span>
+        <span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">bt_rev</span><span class="p">[</span><span class="s2">&quot;conjugate&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">where</span><span class="p">(</span><span class="n">feedmask</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">telescope</span><span class="o">.</span><span class="n">feedconj</span><span class="p">[</span><span class="n">triu</span><span class="p">],</span> <span class="mi">0</span><span class="p">)</span></div>
+
+<div class="viewcode-block" id="CollateProducts.process"><a class="viewcode-back" href="../../../_autosummary/draco.analysis.transform.html#draco.analysis.transform.CollateProducts.process">[docs]</a>    <span class="k">def</span> <span class="nf">process</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">ss</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Select and reorder the products.</span>
+
+<span class="sd">        Parameters</span>
+<span class="sd">        ----------</span>
+<span class="sd">        ss : SiderealStream</span>
+
+<span class="sd">        Returns</span>
+<span class="sd">        -------</span>
+<span class="sd">        sp : SiderealStream</span>
+<span class="sd">            Dataset containing only the required products.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="c1"># For each input in the file, find the corresponding index in the telescope instance</span>
+        <span class="n">input_ind</span> <span class="o">=</span> <span class="n">tools</span><span class="o">.</span><span class="n">find_inputs</span><span class="p">(</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">telescope</span><span class="o">.</span><span class="n">input_index</span><span class="p">,</span> <span class="n">ss</span><span class="o">.</span><span class="n">input</span><span class="p">,</span> <span class="n">require_match</span><span class="o">=</span><span class="kc">False</span>
+        <span class="p">)</span>
+
+        <span class="c1"># Figure out the reverse mapping (i.e., for each input in the telescope instance,</span>
+        <span class="c1"># find the corresponding index in file)</span>
+        <span class="n">rev_input_ind</span> <span class="o">=</span> <span class="n">tools</span><span class="o">.</span><span class="n">find_inputs</span><span class="p">(</span>
+            <span class="n">ss</span><span class="o">.</span><span class="n">input</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">telescope</span><span class="o">.</span><span class="n">input_index</span><span class="p">,</span> <span class="n">require_match</span><span class="o">=</span><span class="kc">True</span>
+        <span class="p">)</span>
+
+        <span class="c1"># Figure out mapping between the frequencies</span>
+        <span class="n">freq_ind</span> <span class="o">=</span> <span class="n">tools</span><span class="o">.</span><span class="n">find_keys</span><span class="p">(</span>
+            <span class="n">ss</span><span class="o">.</span><span class="n">freq</span><span class="p">[:],</span> <span class="bp">self</span><span class="o">.</span><span class="n">telescope</span><span class="o">.</span><span class="n">frequencies</span><span class="p">,</span> <span class="n">require_match</span><span class="o">=</span><span class="kc">True</span>
+        <span class="p">)</span>
+
+        <span class="n">bt_freq</span> <span class="o">=</span> <span class="n">ss</span><span class="o">.</span><span class="n">index_map</span><span class="p">[</span><span class="s2">&quot;freq&quot;</span><span class="p">][</span><span class="n">freq_ind</span><span class="p">]</span>
+
+        <span class="c1"># Determine the input product map and conjugation.</span>
+        <span class="c1"># If the input timestream is already stacked, then attempt to redefine</span>
+        <span class="c1"># its representative products so that they contain only feeds that exist</span>
+        <span class="c1"># and are not masked in the telescope instance.</span>
+        <span class="k">if</span> <span class="n">ss</span><span class="o">.</span><span class="n">is_stacked</span><span class="p">:</span>
+
+            <span class="n">stack_new</span><span class="p">,</span> <span class="n">stack_flag</span> <span class="o">=</span> <span class="n">tools</span><span class="o">.</span><span class="n">redefine_stack_index_map</span><span class="p">(</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">telescope</span><span class="p">,</span> <span class="n">ss</span><span class="o">.</span><span class="n">input</span><span class="p">,</span> <span class="n">ss</span><span class="o">.</span><span class="n">prod</span><span class="p">,</span> <span class="n">ss</span><span class="o">.</span><span class="n">stack</span><span class="p">,</span> <span class="n">ss</span><span class="o">.</span><span class="n">reverse_map</span><span class="p">[</span><span class="s2">&quot;stack&quot;</span><span class="p">]</span>
+            <span class="p">)</span>
+
+            <span class="k">if</span> <span class="ow">not</span> <span class="n">np</span><span class="o">.</span><span class="n">all</span><span class="p">(</span><span class="n">stack_flag</span><span class="p">):</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">log</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span>
+                    <span class="s2">&quot;There are </span><span class="si">%d</span><span class="s2"> stacked baselines that are masked &quot;</span>
+                    <span class="s2">&quot;in the telescope instance.&quot;</span> <span class="o">%</span> <span class="n">np</span><span class="o">.</span><span class="n">sum</span><span class="p">(</span><span class="o">~</span><span class="n">stack_flag</span><span class="p">)</span>
+                <span class="p">)</span>
+
+            <span class="n">ss_prod</span> <span class="o">=</span> <span class="n">ss</span><span class="o">.</span><span class="n">prod</span><span class="p">[</span><span class="n">stack_new</span><span class="p">[</span><span class="s2">&quot;prod&quot;</span><span class="p">]]</span>
+            <span class="n">ss_conj</span> <span class="o">=</span> <span class="n">stack_new</span><span class="p">[</span><span class="s2">&quot;conjugate&quot;</span><span class="p">]</span>
+
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">ss_prod</span> <span class="o">=</span> <span class="n">ss</span><span class="o">.</span><span class="n">prod</span>
+            <span class="n">ss_conj</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">zeros</span><span class="p">(</span><span class="n">ss_prod</span><span class="o">.</span><span class="n">size</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">bool</span><span class="p">)</span>
+
+        <span class="c1"># Create output container</span>
+        <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">ss</span><span class="p">,</span> <span class="n">containers</span><span class="o">.</span><span class="n">SiderealStream</span><span class="p">):</span>
+            <span class="n">OutputContainer</span> <span class="o">=</span> <span class="n">containers</span><span class="o">.</span><span class="n">SiderealStream</span>
+            <span class="n">output_kwargs</span> <span class="o">=</span> <span class="p">{</span><span class="s2">&quot;ra&quot;</span><span class="p">:</span> <span class="n">ss</span><span class="o">.</span><span class="n">ra</span><span class="p">[:]}</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">OutputContainer</span> <span class="o">=</span> <span class="n">containers</span><span class="o">.</span><span class="n">TimeStream</span>
+            <span class="n">output_kwargs</span> <span class="o">=</span> <span class="p">{</span><span class="s2">&quot;time&quot;</span><span class="p">:</span> <span class="n">ss</span><span class="o">.</span><span class="n">time</span><span class="p">[:]}</span>
+
+        <span class="n">sp</span> <span class="o">=</span> <span class="n">OutputContainer</span><span class="p">(</span>
+            <span class="n">freq</span><span class="o">=</span><span class="n">bt_freq</span><span class="p">,</span>
+            <span class="nb">input</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">telescope</span><span class="o">.</span><span class="n">input_index</span><span class="p">,</span>
+            <span class="n">prod</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">bt_prod</span><span class="p">,</span>
+            <span class="n">stack</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">bt_stack</span><span class="p">,</span>
+            <span class="n">reverse_map_stack</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">bt_rev</span><span class="p">,</span>
+            <span class="n">axes_from</span><span class="o">=</span><span class="n">ss</span><span class="p">,</span>
+            <span class="n">attrs_from</span><span class="o">=</span><span class="n">ss</span><span class="p">,</span>
+            <span class="n">distributed</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
+            <span class="n">comm</span><span class="o">=</span><span class="n">ss</span><span class="o">.</span><span class="n">comm</span><span class="p">,</span>
+            <span class="o">**</span><span class="n">output_kwargs</span>
+        <span class="p">)</span>
+
+        <span class="c1"># Add gain dataset.</span>
+        <span class="c1"># if &#39;gain&#39; in ss.datasets:</span>
+        <span class="c1">#     sp.add_dataset(&#39;gain&#39;)</span>
+
+        <span class="c1"># Ensure all frequencies and products are on each node</span>
+        <span class="n">ss</span><span class="o">.</span><span class="n">redistribute</span><span class="p">([</span><span class="s2">&quot;ra&quot;</span><span class="p">,</span> <span class="s2">&quot;time&quot;</span><span class="p">])</span>
+        <span class="n">sp</span><span class="o">.</span><span class="n">redistribute</span><span class="p">([</span><span class="s2">&quot;ra&quot;</span><span class="p">,</span> <span class="s2">&quot;time&quot;</span><span class="p">])</span>
+
+        <span class="c1"># Initialize datasets in output container</span>
+        <span class="n">sp</span><span class="o">.</span><span class="n">vis</span><span class="p">[:]</span> <span class="o">=</span> <span class="mf">0.0</span>
+        <span class="n">sp</span><span class="o">.</span><span class="n">weight</span><span class="p">[:]</span> <span class="o">=</span> <span class="mf">0.0</span>
+        <span class="n">sp</span><span class="o">.</span><span class="n">input_flags</span><span class="p">[:]</span> <span class="o">=</span> <span class="n">ss</span><span class="o">.</span><span class="n">input_flags</span><span class="p">[</span><span class="n">rev_input_ind</span><span class="p">,</span> <span class="p">:]</span>
+
+        <span class="c1"># The gain transfer below fails when distributed over multiple nodes,</span>
+        <span class="c1"># have to debug.</span>
+        <span class="c1"># if &#39;gain&#39; in ss.datasets:</span>
+        <span class="c1">#     sp.gain[:] = ss.gain[freq_ind][:, rev_input_ind, :]</span>
+
+        <span class="c1"># Infer number of products that went into each stack</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">weight</span> <span class="o">!=</span> <span class="s2">&quot;inverse_variance&quot;</span><span class="p">:</span>
+
+            <span class="n">ssi</span> <span class="o">=</span> <span class="n">ss</span><span class="o">.</span><span class="n">input_flags</span><span class="p">[:]</span>
+            <span class="n">ssp</span> <span class="o">=</span> <span class="n">ss</span><span class="o">.</span><span class="n">index_map</span><span class="p">[</span><span class="s2">&quot;prod&quot;</span><span class="p">][:]</span>
+            <span class="n">sss</span> <span class="o">=</span> <span class="n">ss</span><span class="o">.</span><span class="n">reverse_map</span><span class="p">[</span><span class="s2">&quot;stack&quot;</span><span class="p">][</span><span class="s2">&quot;stack&quot;</span><span class="p">][:]</span>
+            <span class="n">nstack</span> <span class="o">=</span> <span class="n">ss</span><span class="o">.</span><span class="n">vis</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span>
+
+            <span class="n">nprod_in_stack</span> <span class="o">=</span> <span class="n">tools</span><span class="o">.</span><span class="n">calculate_redundancy</span><span class="p">(</span><span class="n">ssi</span><span class="p">,</span> <span class="n">ssp</span><span class="p">,</span> <span class="n">sss</span><span class="p">,</span> <span class="n">nstack</span><span class="p">)</span>
+
+            <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">weight</span> <span class="o">==</span> <span class="s2">&quot;uniform&quot;</span><span class="p">:</span>
+                <span class="n">nprod_in_stack</span> <span class="o">=</span> <span class="p">(</span><span class="n">nprod_in_stack</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="p">)</span><span class="o">.</span><span class="n">astype</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">float32</span><span class="p">)</span>
+
+        <span class="c1"># Find the local times (necessary because nprod_in_stack is not distributed)</span>
+        <span class="n">ntt</span> <span class="o">=</span> <span class="n">ss</span><span class="o">.</span><span class="n">vis</span><span class="o">.</span><span class="n">local_shape</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span>
+        <span class="n">stt</span> <span class="o">=</span> <span class="n">ss</span><span class="o">.</span><span class="n">vis</span><span class="o">.</span><span class="n">local_offset</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span>
+        <span class="n">ett</span> <span class="o">=</span> <span class="n">stt</span> <span class="o">+</span> <span class="n">ntt</span>
+
+        <span class="c1"># Create counter to increment during the stacking.</span>
+        <span class="c1"># This will be used to normalize at the end.</span>
+        <span class="n">counter</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">zeros_like</span><span class="p">(</span><span class="n">sp</span><span class="o">.</span><span class="n">weight</span><span class="p">[:])</span>
+
+        <span class="c1"># Dereference the global slices now, there&#39;s a hidden MPI call in the [:] operation.</span>
+        <span class="n">spv</span> <span class="o">=</span> <span class="n">sp</span><span class="o">.</span><span class="n">vis</span><span class="p">[:]</span>
+        <span class="n">ssv</span> <span class="o">=</span> <span class="n">ss</span><span class="o">.</span><span class="n">vis</span><span class="p">[:]</span>
+        <span class="n">spw</span> <span class="o">=</span> <span class="n">sp</span><span class="o">.</span><span class="n">weight</span><span class="p">[:]</span>
+        <span class="n">ssw</span> <span class="o">=</span> <span class="n">ss</span><span class="o">.</span><span class="n">weight</span><span class="p">[:]</span>
+
+        <span class="c1"># Iterate over products (stacked) in the sidereal stream</span>
+        <span class="k">for</span> <span class="n">ss_pi</span><span class="p">,</span> <span class="p">((</span><span class="n">ii</span><span class="p">,</span> <span class="n">ij</span><span class="p">),</span> <span class="n">conj</span><span class="p">)</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="nb">zip</span><span class="p">(</span><span class="n">ss_prod</span><span class="p">,</span> <span class="n">ss_conj</span><span class="p">)):</span>
+
+            <span class="c1"># Map the feed indices into ones for the Telescope class</span>
+            <span class="n">bi</span><span class="p">,</span> <span class="n">bj</span> <span class="o">=</span> <span class="n">input_ind</span><span class="p">[</span><span class="n">ii</span><span class="p">],</span> <span class="n">input_ind</span><span class="p">[</span><span class="n">ij</span><span class="p">]</span>
+
+            <span class="c1"># If either feed is not in the telescope class, skip it.</span>
+            <span class="k">if</span> <span class="n">bi</span> <span class="ow">is</span> <span class="kc">None</span> <span class="ow">or</span> <span class="n">bj</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+                <span class="k">continue</span>
+
+            <span class="n">sp_pi</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">telescope</span><span class="o">.</span><span class="n">feedmap</span><span class="p">[</span><span class="n">bi</span><span class="p">,</span> <span class="n">bj</span><span class="p">]</span>
+            <span class="n">feedconj</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">telescope</span><span class="o">.</span><span class="n">feedconj</span><span class="p">[</span><span class="n">bi</span><span class="p">,</span> <span class="n">bj</span><span class="p">]</span>
+
+            <span class="c1"># Skip if product index is not valid</span>
+            <span class="k">if</span> <span class="n">sp_pi</span> <span class="o">&lt;</span> <span class="mi">0</span><span class="p">:</span>
+                <span class="k">continue</span>
+
+            <span class="c1"># Generate weight</span>
+            <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">weight</span> <span class="o">==</span> <span class="s2">&quot;inverse_variance&quot;</span><span class="p">:</span>
+                <span class="n">wss</span> <span class="o">=</span> <span class="n">ssw</span><span class="p">[</span><span class="n">freq_ind</span><span class="p">,</span> <span class="n">ss_pi</span><span class="p">]</span>
+
+            <span class="k">else</span><span class="p">:</span>
+                <span class="n">wss</span> <span class="o">=</span> <span class="p">(</span><span class="n">ssw</span><span class="p">[</span><span class="n">freq_ind</span><span class="p">,</span> <span class="n">ss_pi</span><span class="p">]</span> <span class="o">&gt;</span> <span class="mf">0.0</span><span class="p">)</span><span class="o">.</span><span class="n">astype</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">float32</span><span class="p">)</span>
+                <span class="n">wss</span> <span class="o">*=</span> <span class="n">nprod_in_stack</span><span class="p">[</span><span class="n">np</span><span class="o">.</span><span class="n">newaxis</span><span class="p">,</span> <span class="n">ss_pi</span><span class="p">,</span> <span class="n">stt</span><span class="p">:</span><span class="n">ett</span><span class="p">]</span>
+
+            <span class="c1"># Accumulate visibilities, conjugating if required</span>
+            <span class="k">if</span> <span class="n">feedconj</span> <span class="o">==</span> <span class="n">conj</span><span class="p">:</span>
+                <span class="n">spv</span><span class="p">[:,</span> <span class="n">sp_pi</span><span class="p">]</span> <span class="o">+=</span> <span class="n">wss</span> <span class="o">*</span> <span class="n">ssv</span><span class="p">[</span><span class="n">freq_ind</span><span class="p">,</span> <span class="n">ss_pi</span><span class="p">]</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="n">spv</span><span class="p">[:,</span> <span class="n">sp_pi</span><span class="p">]</span> <span class="o">+=</span> <span class="n">wss</span> <span class="o">*</span> <span class="n">ssv</span><span class="p">[</span><span class="n">freq_ind</span><span class="p">,</span> <span class="n">ss_pi</span><span class="p">]</span><span class="o">.</span><span class="n">conj</span><span class="p">()</span>
+
+            <span class="c1"># Accumulate variances in quadrature.  Save in the weight dataset.</span>
+            <span class="n">spw</span><span class="p">[:,</span> <span class="n">sp_pi</span><span class="p">]</span> <span class="o">+=</span> <span class="n">wss</span> <span class="o">**</span> <span class="mi">2</span> <span class="o">*</span> <span class="n">tools</span><span class="o">.</span><span class="n">invert_no_zero</span><span class="p">(</span><span class="n">ssw</span><span class="p">[</span><span class="n">freq_ind</span><span class="p">,</span> <span class="n">ss_pi</span><span class="p">])</span>
+
+            <span class="c1"># Increment counter</span>
+            <span class="n">counter</span><span class="p">[:,</span> <span class="n">sp_pi</span><span class="p">]</span> <span class="o">+=</span> <span class="n">wss</span>
+
+        <span class="c1"># Divide through by counter to get properly weighted visibility average</span>
+        <span class="n">sp</span><span class="o">.</span><span class="n">vis</span><span class="p">[:]</span> <span class="o">*=</span> <span class="n">tools</span><span class="o">.</span><span class="n">invert_no_zero</span><span class="p">(</span><span class="n">counter</span><span class="p">)</span>
+        <span class="n">sp</span><span class="o">.</span><span class="n">weight</span><span class="p">[:]</span> <span class="o">=</span> <span class="n">counter</span> <span class="o">**</span> <span class="mi">2</span> <span class="o">*</span> <span class="n">tools</span><span class="o">.</span><span class="n">invert_no_zero</span><span class="p">(</span><span class="n">sp</span><span class="o">.</span><span class="n">weight</span><span class="p">[:])</span>
+
+        <span class="c1"># Switch back to frequency distribution</span>
+        <span class="n">ss</span><span class="o">.</span><span class="n">redistribute</span><span class="p">(</span><span class="s2">&quot;freq&quot;</span><span class="p">)</span>
+        <span class="n">sp</span><span class="o">.</span><span class="n">redistribute</span><span class="p">(</span><span class="s2">&quot;freq&quot;</span><span class="p">)</span>
+
+        <span class="k">return</span> <span class="n">sp</span></div></div>
+
+
+<div class="viewcode-block" id="SelectFreq"><a class="viewcode-back" href="../../../_autosummary/draco.analysis.transform.html#draco.analysis.transform.SelectFreq">[docs]</a><span class="k">class</span> <span class="nc">SelectFreq</span><span class="p">(</span><span class="n">task</span><span class="o">.</span><span class="n">SingleTask</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;Select a subset of frequencies from a container.</span>
+
+<span class="sd">    Attributes</span>
+<span class="sd">    ----------</span>
+<span class="sd">    freq_physical : list</span>
+<span class="sd">        List of physical frequencies in MHz.</span>
+<span class="sd">        Given first priority.</span>
+<span class="sd">    channel_range : list</span>
+<span class="sd">        Range of frequency channel indices, either</span>
+<span class="sd">        [start, stop, step], [start, stop], or [stop]</span>
+<span class="sd">        is acceptable.  Given second priority.</span>
+<span class="sd">    channel_index : list</span>
+<span class="sd">        List of frequency channel indices.</span>
+<span class="sd">        Given third priority.</span>
+<span class="sd">    freq_physical_range : list</span>
+<span class="sd">        Range of physical frequencies to include given as (low_freq, high_freq).</span>
+<span class="sd">        Given fourth priority.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+
+    <span class="n">freq_physical</span> <span class="o">=</span> <span class="n">config</span><span class="o">.</span><span class="n">Property</span><span class="p">(</span><span class="n">proptype</span><span class="o">=</span><span class="nb">list</span><span class="p">,</span> <span class="n">default</span><span class="o">=</span><span class="p">[])</span>
+    <span class="n">freq_physical_range</span> <span class="o">=</span> <span class="n">config</span><span class="o">.</span><span class="n">Property</span><span class="p">(</span><span class="n">proptype</span><span class="o">=</span><span class="nb">list</span><span class="p">,</span> <span class="n">default</span><span class="o">=</span><span class="p">[])</span>
+    <span class="n">channel_range</span> <span class="o">=</span> <span class="n">config</span><span class="o">.</span><span class="n">Property</span><span class="p">(</span><span class="n">proptype</span><span class="o">=</span><span class="nb">list</span><span class="p">,</span> <span class="n">default</span><span class="o">=</span><span class="p">[])</span>
+    <span class="n">channel_index</span> <span class="o">=</span> <span class="n">config</span><span class="o">.</span><span class="n">Property</span><span class="p">(</span><span class="n">proptype</span><span class="o">=</span><span class="nb">list</span><span class="p">,</span> <span class="n">default</span><span class="o">=</span><span class="p">[])</span>
+
+<div class="viewcode-block" id="SelectFreq.process"><a class="viewcode-back" href="../../../_autosummary/draco.analysis.transform.html#draco.analysis.transform.SelectFreq.process">[docs]</a>    <span class="k">def</span> <span class="nf">process</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">data</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Selet a subset of the frequencies.</span>
+
+<span class="sd">        Parameters</span>
+<span class="sd">        ----------</span>
+<span class="sd">        data : containers.ContainerBase</span>
+<span class="sd">            A data container with a frequency axis.</span>
+
+<span class="sd">        Returns</span>
+<span class="sd">        -------</span>
+<span class="sd">        newdata : containers.ContainerBase</span>
+<span class="sd">            New container with trimmed frequencies.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+
+        <span class="c1"># Set up frequency selection.</span>
+        <span class="n">freq_map</span> <span class="o">=</span> <span class="n">data</span><span class="o">.</span><span class="n">index_map</span><span class="p">[</span><span class="s2">&quot;freq&quot;</span><span class="p">]</span>
+
+        <span class="c1"># Construct the frequency channel selection</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">freq_physical</span><span class="p">:</span>
+            <span class="n">newindex</span> <span class="o">=</span> <span class="nb">sorted</span><span class="p">(</span>
+                <span class="nb">set</span><span class="p">(</span>
+                    <span class="p">[</span>
+                        <span class="n">np</span><span class="o">.</span><span class="n">argmin</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">abs</span><span class="p">(</span><span class="n">freq_map</span><span class="p">[</span><span class="s2">&quot;centre&quot;</span><span class="p">]</span> <span class="o">-</span> <span class="n">freq</span><span class="p">))</span>
+                        <span class="k">for</span> <span class="n">freq</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">freq_physical</span>
+                    <span class="p">]</span>
+                <span class="p">)</span>
+            <span class="p">)</span>
+
+        <span class="k">elif</span> <span class="bp">self</span><span class="o">.</span><span class="n">channel_range</span> <span class="ow">and</span> <span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">channel_range</span><span class="p">)</span> <span class="o">&lt;=</span> <span class="mi">3</span><span class="p">):</span>
+            <span class="n">newindex</span> <span class="o">=</span> <span class="nb">slice</span><span class="p">(</span><span class="o">*</span><span class="bp">self</span><span class="o">.</span><span class="n">channel_range</span><span class="p">)</span>
+
+        <span class="k">elif</span> <span class="bp">self</span><span class="o">.</span><span class="n">channel_index</span><span class="p">:</span>
+            <span class="n">newindex</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">channel_index</span>
+
+        <span class="k">elif</span> <span class="bp">self</span><span class="o">.</span><span class="n">freq_physical_range</span><span class="p">:</span>
+            <span class="n">low</span><span class="p">,</span> <span class="n">high</span> <span class="o">=</span> <span class="nb">sorted</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">freq_physical_range</span><span class="p">)</span>
+            <span class="n">newindex</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">where</span><span class="p">(</span>
+                <span class="p">(</span><span class="n">freq_map</span><span class="p">[</span><span class="s2">&quot;centre&quot;</span><span class="p">]</span> <span class="o">&gt;=</span> <span class="n">low</span><span class="p">)</span> <span class="o">&amp;</span> <span class="p">(</span><span class="n">freq_map</span><span class="p">[</span><span class="s2">&quot;centre&quot;</span><span class="p">]</span> <span class="o">&lt;</span> <span class="n">high</span><span class="p">)</span>
+            <span class="p">)[</span><span class="mi">0</span><span class="p">]</span>
+
+        <span class="k">else</span><span class="p">:</span>
+            <span class="ne">ValueError</span><span class="p">(</span>
+                <span class="s2">&quot;Must specify either freq_physical, channel_range, or channel_index.&quot;</span>
+            <span class="p">)</span>
+
+        <span class="n">freq_map</span> <span class="o">=</span> <span class="n">freq_map</span><span class="p">[</span><span class="n">newindex</span><span class="p">]</span>
+
+        <span class="c1"># Destribute input container over ra or time.</span>
+        <span class="n">data</span><span class="o">.</span><span class="n">redistribute</span><span class="p">([</span><span class="s2">&quot;ra&quot;</span><span class="p">,</span> <span class="s2">&quot;time&quot;</span><span class="p">,</span> <span class="s2">&quot;pixel&quot;</span><span class="p">])</span>
+
+        <span class="c1"># Create new container with subset of frequencies.</span>
+        <span class="n">newdata</span> <span class="o">=</span> <span class="n">containers</span><span class="o">.</span><span class="n">empty_like</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">freq</span><span class="o">=</span><span class="n">freq_map</span><span class="p">)</span>
+
+        <span class="c1"># Make sure all datasets are initialised</span>
+        <span class="k">for</span> <span class="n">name</span> <span class="ow">in</span> <span class="n">data</span><span class="o">.</span><span class="n">datasets</span><span class="o">.</span><span class="n">keys</span><span class="p">():</span>
+            <span class="k">if</span> <span class="n">name</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">newdata</span><span class="o">.</span><span class="n">datasets</span><span class="p">:</span>
+                <span class="n">newdata</span><span class="o">.</span><span class="n">add_dataset</span><span class="p">(</span><span class="n">name</span><span class="p">)</span>
+
+        <span class="c1"># Redistribute new container over ra or time.</span>
+        <span class="n">newdata</span><span class="o">.</span><span class="n">redistribute</span><span class="p">([</span><span class="s2">&quot;ra&quot;</span><span class="p">,</span> <span class="s2">&quot;time&quot;</span><span class="p">,</span> <span class="s2">&quot;pixel&quot;</span><span class="p">])</span>
+
+        <span class="c1"># Copy over datasets. If the dataset has a frequency axis,</span>
+        <span class="c1"># then we only copy over the subset.</span>
+        <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">containers</span><span class="o">.</span><span class="n">ContainerBase</span><span class="p">):</span>
+
+            <span class="k">for</span> <span class="n">name</span><span class="p">,</span> <span class="n">dset</span> <span class="ow">in</span> <span class="n">data</span><span class="o">.</span><span class="n">datasets</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+
+                <span class="k">if</span> <span class="s2">&quot;freq&quot;</span> <span class="ow">in</span> <span class="n">dset</span><span class="o">.</span><span class="n">attrs</span><span class="p">[</span><span class="s2">&quot;axis&quot;</span><span class="p">]:</span>
+                    <span class="n">slc</span> <span class="o">=</span> <span class="p">[</span><span class="nb">slice</span><span class="p">(</span><span class="kc">None</span><span class="p">)]</span> <span class="o">*</span> <span class="nb">len</span><span class="p">(</span><span class="n">dset</span><span class="o">.</span><span class="n">shape</span><span class="p">)</span>
+                    <span class="n">slc</span><span class="p">[</span><span class="nb">list</span><span class="p">(</span><span class="n">dset</span><span class="o">.</span><span class="n">attrs</span><span class="p">[</span><span class="s2">&quot;axis&quot;</span><span class="p">])</span><span class="o">.</span><span class="n">index</span><span class="p">(</span><span class="s2">&quot;freq&quot;</span><span class="p">)]</span> <span class="o">=</span> <span class="n">newindex</span>
+                    <span class="n">newdata</span><span class="o">.</span><span class="n">datasets</span><span class="p">[</span><span class="n">name</span><span class="p">][:]</span> <span class="o">=</span> <span class="n">dset</span><span class="p">[</span><span class="n">slc</span><span class="p">]</span>
+                <span class="k">else</span><span class="p">:</span>
+                    <span class="n">newdata</span><span class="o">.</span><span class="n">datasets</span><span class="p">[</span><span class="n">name</span><span class="p">][:]</span> <span class="o">=</span> <span class="n">dset</span><span class="p">[:]</span>
+
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">newdata</span><span class="o">.</span><span class="n">vis</span><span class="p">[:]</span> <span class="o">=</span> <span class="n">data</span><span class="o">.</span><span class="n">vis</span><span class="p">[</span><span class="n">newindex</span><span class="p">]</span>
+            <span class="n">newdata</span><span class="o">.</span><span class="n">weight</span><span class="p">[:]</span> <span class="o">=</span> <span class="n">data</span><span class="o">.</span><span class="n">weight</span><span class="p">[</span><span class="n">newindex</span><span class="p">]</span>
+            <span class="n">newdata</span><span class="o">.</span><span class="n">gain</span><span class="p">[:]</span> <span class="o">=</span> <span class="n">data</span><span class="o">.</span><span class="n">gain</span><span class="p">[</span><span class="n">newindex</span><span class="p">]</span>
+
+            <span class="n">newdata</span><span class="o">.</span><span class="n">input_flags</span><span class="p">[:]</span> <span class="o">=</span> <span class="n">data</span><span class="o">.</span><span class="n">input_flags</span><span class="p">[:]</span>
+
+        <span class="c1"># Switch back to frequency distribution</span>
+        <span class="n">data</span><span class="o">.</span><span class="n">redistribute</span><span class="p">(</span><span class="s2">&quot;freq&quot;</span><span class="p">)</span>
+        <span class="n">newdata</span><span class="o">.</span><span class="n">redistribute</span><span class="p">(</span><span class="s2">&quot;freq&quot;</span><span class="p">)</span>
+
+        <span class="k">return</span> <span class="n">newdata</span></div></div>
+
+
+<div class="viewcode-block" id="MModeTransform"><a class="viewcode-back" href="../../../_autosummary/draco.analysis.transform.html#draco.analysis.transform.MModeTransform">[docs]</a><span class="k">class</span> <span class="nc">MModeTransform</span><span class="p">(</span><span class="n">task</span><span class="o">.</span><span class="n">SingleTask</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;Transform a sidereal stream to m-modes.</span>
+
+<span class="sd">    Currently ignores any noise weighting.</span>
+
+<span class="sd">    The maximum m used in the container is derived from the number of</span>
+<span class="sd">    time samples, or if a manager is supplied `telescope.mmax` is used.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+
+<div class="viewcode-block" id="MModeTransform.setup"><a class="viewcode-back" href="../../../_autosummary/draco.analysis.transform.html#draco.analysis.transform.MModeTransform.setup">[docs]</a>    <span class="k">def</span> <span class="nf">setup</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">manager</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Set the telescope instance if a manager object is given.</span>
+
+<span class="sd">        This is used to set the `mmax` used in the transform.</span>
+
+<span class="sd">        Parameters</span>
+<span class="sd">        ----------</span>
+<span class="sd">        manager : manager.ProductManager, optional</span>
+<span class="sd">            The telescope/manager used to set the `mmax`. If not set, `mmax`</span>
+<span class="sd">            is derived from the timestream.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="n">manager</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">telescope</span> <span class="o">=</span> <span class="n">io</span><span class="o">.</span><span class="n">get_telescope</span><span class="p">(</span><span class="n">manager</span><span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">telescope</span> <span class="o">=</span> <span class="kc">None</span></div>
+
+<div class="viewcode-block" id="MModeTransform.process"><a class="viewcode-back" href="../../../_autosummary/draco.analysis.transform.html#draco.analysis.transform.MModeTransform.process">[docs]</a>    <span class="k">def</span> <span class="nf">process</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">sstream</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Perform the m-mode transform.</span>
+
+<span class="sd">        Parameters</span>
+<span class="sd">        ----------</span>
+<span class="sd">        sstream : containers.SiderealStream</span>
+<span class="sd">            The input sidereal stream.</span>
+
+<span class="sd">        Returns</span>
+<span class="sd">        -------</span>
+<span class="sd">        mmodes : containers.MModes</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+
+        <span class="n">sstream</span><span class="o">.</span><span class="n">redistribute</span><span class="p">(</span><span class="s2">&quot;freq&quot;</span><span class="p">)</span>
+
+        <span class="c1"># Sum the noise variance over time samples, this will become the noise</span>
+        <span class="c1"># variance for the m-modes</span>
+        <span class="n">weight_sum</span> <span class="o">=</span> <span class="n">sstream</span><span class="o">.</span><span class="n">weight</span><span class="p">[:]</span><span class="o">.</span><span class="n">sum</span><span class="p">(</span><span class="n">axis</span><span class="o">=-</span><span class="mi">1</span><span class="p">)</span>
+
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">telescope</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">mmax</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">telescope</span><span class="o">.</span><span class="n">mmax</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">mmax</span> <span class="o">=</span> <span class="kc">None</span>
+
+        <span class="c1"># Construct the array of m-modes</span>
+        <span class="n">marray</span> <span class="o">=</span> <span class="n">_make_marray</span><span class="p">(</span><span class="n">sstream</span><span class="o">.</span><span class="n">vis</span><span class="p">[:],</span> <span class="n">mmax</span><span class="p">)</span>
+        <span class="n">marray</span> <span class="o">=</span> <span class="n">mpiarray</span><span class="o">.</span><span class="n">MPIArray</span><span class="o">.</span><span class="n">wrap</span><span class="p">(</span><span class="n">marray</span><span class="p">[:],</span> <span class="n">axis</span><span class="o">=</span><span class="mi">2</span><span class="p">,</span> <span class="n">comm</span><span class="o">=</span><span class="n">sstream</span><span class="o">.</span><span class="n">comm</span><span class="p">)</span>
+
+        <span class="c1"># Create the container to store the modes in</span>
+        <span class="n">mmax</span> <span class="o">=</span> <span class="n">marray</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">-</span> <span class="mi">1</span>
+        <span class="n">ma</span> <span class="o">=</span> <span class="n">containers</span><span class="o">.</span><span class="n">MModes</span><span class="p">(</span><span class="n">mmax</span><span class="o">=</span><span class="n">mmax</span><span class="p">,</span> <span class="n">axes_from</span><span class="o">=</span><span class="n">sstream</span><span class="p">,</span> <span class="n">comm</span><span class="o">=</span><span class="n">sstream</span><span class="o">.</span><span class="n">comm</span><span class="p">)</span>
+        <span class="n">ma</span><span class="o">.</span><span class="n">redistribute</span><span class="p">(</span><span class="s2">&quot;freq&quot;</span><span class="p">)</span>
+
+        <span class="c1"># Assign the visibilities and weights into the container</span>
+        <span class="n">ma</span><span class="o">.</span><span class="n">vis</span><span class="p">[:]</span> <span class="o">=</span> <span class="n">marray</span>
+        <span class="n">ma</span><span class="o">.</span><span class="n">weight</span><span class="p">[:]</span> <span class="o">=</span> <span class="n">weight_sum</span><span class="p">[</span><span class="n">np</span><span class="o">.</span><span class="n">newaxis</span><span class="p">,</span> <span class="n">np</span><span class="o">.</span><span class="n">newaxis</span><span class="p">,</span> <span class="p">:,</span> <span class="p">:]</span>
+
+        <span class="n">ma</span><span class="o">.</span><span class="n">redistribute</span><span class="p">(</span><span class="s2">&quot;m&quot;</span><span class="p">)</span>
+
+        <span class="k">return</span> <span class="n">ma</span></div></div>
+
+
+<span class="k">def</span> <span class="nf">_make_marray</span><span class="p">(</span><span class="n">ts</span><span class="p">,</span> <span class="n">mmax</span><span class="p">):</span>
+    <span class="c1"># Construct an array of m-modes from a sidereal time stream</span>
+    <span class="n">mmodes</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">fft</span><span class="o">.</span><span class="n">fft</span><span class="p">(</span><span class="n">ts</span><span class="p">,</span> <span class="n">axis</span><span class="o">=-</span><span class="mi">1</span><span class="p">)</span> <span class="o">/</span> <span class="n">ts</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span>
+    <span class="n">marray</span> <span class="o">=</span> <span class="n">_pack_marray</span><span class="p">(</span><span class="n">mmodes</span><span class="p">,</span> <span class="n">mmax</span><span class="p">)</span>
+
+    <span class="k">return</span> <span class="n">marray</span>
+
+
+<span class="k">def</span> <span class="nf">_pack_marray</span><span class="p">(</span><span class="n">mmodes</span><span class="p">,</span> <span class="n">mmax</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
+    <span class="c1"># Pack an FFT into the correct format for the m-modes (i.e. [m, freq, +/-,</span>
+    <span class="c1"># baseline])</span>
+
+    <span class="n">N</span> <span class="o">=</span> <span class="n">mmodes</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span>  <span class="c1"># Total number of modes</span>
+    <span class="n">N_pos_mmodes</span> <span class="o">=</span> <span class="n">N</span> <span class="o">//</span> <span class="mi">2</span>  <span class="c1"># Total number of positive modes</span>
+    <span class="k">if</span> <span class="n">mmax</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="n">mmax</span> <span class="o">=</span> <span class="n">mlim</span> <span class="o">=</span> <span class="n">N_pos_mmodes</span>
+        <span class="n">mlim_neg</span> <span class="o">=</span> <span class="n">mlim</span> <span class="o">-</span> <span class="mi">1</span> <span class="o">+</span> <span class="n">N</span> <span class="o">%</span> <span class="mi">2</span>  <span class="c1"># Index for negative modes</span>
+    <span class="k">elif</span> <span class="n">mmax</span> <span class="o">&gt;=</span> <span class="n">N_pos_mmodes</span><span class="p">:</span>  <span class="c1"># Modes larger than N_pos_mmodes set to 0.</span>
+        <span class="n">mlim</span> <span class="o">=</span> <span class="n">N_pos_mmodes</span>
+        <span class="n">mlim_neg</span> <span class="o">=</span> <span class="n">mlim</span> <span class="o">-</span> <span class="mi">1</span> <span class="o">+</span> <span class="n">N</span> <span class="o">%</span> <span class="mi">2</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="n">mlim</span> <span class="o">=</span> <span class="n">mmax</span>
+        <span class="n">mlim_neg</span> <span class="o">=</span> <span class="n">mlim</span>
+
+    <span class="n">shape</span> <span class="o">=</span> <span class="n">mmodes</span><span class="o">.</span><span class="n">shape</span><span class="p">[:</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span>
+
+    <span class="n">marray</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">zeros</span><span class="p">((</span><span class="n">mmax</span> <span class="o">+</span> <span class="mi">1</span><span class="p">,</span> <span class="mi">2</span><span class="p">)</span> <span class="o">+</span> <span class="n">shape</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">complex128</span><span class="p">)</span>
+
+    <span class="c1"># Non-negative modes</span>
+    <span class="n">marray</span><span class="p">[:</span> <span class="n">mlim</span> <span class="o">+</span> <span class="mi">1</span><span class="p">,</span> <span class="mi">0</span><span class="p">]</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">rollaxis</span><span class="p">(</span><span class="n">mmodes</span><span class="p">[</span><span class="o">...</span><span class="p">,</span> <span class="p">:</span> <span class="n">mlim</span> <span class="o">+</span> <span class="mi">1</span><span class="p">],</span> <span class="o">-</span><span class="mi">1</span><span class="p">,</span> <span class="mi">0</span><span class="p">)</span>
+    <span class="c1"># Negative modes</span>
+    <span class="n">marray</span><span class="p">[</span><span class="mi">1</span> <span class="p">:</span> <span class="n">mlim_neg</span> <span class="o">+</span> <span class="mi">1</span><span class="p">,</span> <span class="mi">1</span><span class="p">]</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">rollaxis</span><span class="p">(</span>
+        <span class="n">mmodes</span><span class="p">[</span><span class="o">...</span><span class="p">,</span> <span class="o">-</span><span class="mi">1</span> <span class="p">:</span> <span class="o">-</span><span class="p">(</span><span class="n">mlim_neg</span> <span class="o">+</span> <span class="mi">1</span><span class="p">)</span> <span class="p">:</span> <span class="o">-</span><span class="mi">1</span><span class="p">]</span><span class="o">.</span><span class="n">conj</span><span class="p">(),</span> <span class="o">-</span><span class="mi">1</span><span class="p">,</span> <span class="mi">0</span>
+    <span class="p">)</span>
+
+    <span class="k">return</span> <span class="n">marray</span>
+
+
+<div class="viewcode-block" id="MModeInverseTransform"><a class="viewcode-back" href="../../../_autosummary/draco.analysis.transform.html#draco.analysis.transform.MModeInverseTransform">[docs]</a><span class="k">class</span> <span class="nc">MModeInverseTransform</span><span class="p">(</span><span class="n">task</span><span class="o">.</span><span class="n">SingleTask</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;Transform m-modes to sidereal stream.</span>
+
+<span class="sd">    Currently ignores any noise weighting.</span>
+
+<span class="sd">    Attributes</span>
+<span class="sd">    ----------</span>
+<span class="sd">    n_time : int</span>
+<span class="sd">        Number of time bins in the output. Note that if</span>
+<span class="sd">        the number of samples does not Nyquist sample the</span>
+<span class="sd">        maximum m, information may be lost.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+
+    <span class="n">n_time</span> <span class="o">=</span> <span class="n">config</span><span class="o">.</span><span class="n">Property</span><span class="p">(</span><span class="n">proptype</span><span class="o">=</span><span class="nb">int</span><span class="p">,</span> <span class="n">default</span><span class="o">=</span><span class="kc">None</span><span class="p">)</span>
+
+<div class="viewcode-block" id="MModeInverseTransform.process"><a class="viewcode-back" href="../../../_autosummary/draco.analysis.transform.html#draco.analysis.transform.MModeInverseTransform.process">[docs]</a>    <span class="k">def</span> <span class="nf">process</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">mmodes</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Perform the m-mode inverse transform.</span>
+
+<span class="sd">        Parameters</span>
+<span class="sd">        ----------</span>
+<span class="sd">        mmodes : containers.MModes</span>
+<span class="sd">            The input m-modes.</span>
+
+<span class="sd">        Returns</span>
+<span class="sd">        -------</span>
+<span class="sd">        sstream : containers.SiderealStream</span>
+<span class="sd">            The output sidereal stream.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="c1"># NOTE: If n_time is smaller than Nyquist sampling the m-mode axis then</span>
+        <span class="c1"># the m-modes get clipped. If it is larger, they get zero padded. This</span>
+        <span class="c1"># is NOT passed directly as parameter &#39;n&#39; to `numpy.fft.ifft`, as this</span>
+        <span class="c1"># would give unwanted behaviour (https://github.com/numpy/numpy/pull/7593).</span>
+
+        <span class="c1"># Ensure m-modes are distributed in frequency</span>
+        <span class="n">mmodes</span><span class="o">.</span><span class="n">redistribute</span><span class="p">(</span><span class="s2">&quot;freq&quot;</span><span class="p">)</span>
+
+        <span class="c1"># Re-construct array of S-streams</span>
+        <span class="n">ssarray</span> <span class="o">=</span> <span class="n">_make_ssarray</span><span class="p">(</span><span class="n">mmodes</span><span class="o">.</span><span class="n">vis</span><span class="p">[:],</span> <span class="n">n</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">n_time</span><span class="p">)</span>
+        <span class="n">ntime</span> <span class="o">=</span> <span class="n">ssarray</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span>
+        <span class="n">ssarray</span> <span class="o">=</span> <span class="n">mpiarray</span><span class="o">.</span><span class="n">MPIArray</span><span class="o">.</span><span class="n">wrap</span><span class="p">(</span><span class="n">ssarray</span><span class="p">[:],</span> <span class="n">axis</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span> <span class="n">comm</span><span class="o">=</span><span class="n">mmodes</span><span class="o">.</span><span class="n">comm</span><span class="p">)</span>
+
+        <span class="c1"># Construct container and set visibility data</span>
+        <span class="n">sstream</span> <span class="o">=</span> <span class="n">containers</span><span class="o">.</span><span class="n">SiderealStream</span><span class="p">(</span>
+            <span class="n">ra</span><span class="o">=</span><span class="n">ntime</span><span class="p">,</span> <span class="n">axes_from</span><span class="o">=</span><span class="n">mmodes</span><span class="p">,</span> <span class="n">distributed</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">comm</span><span class="o">=</span><span class="n">mmodes</span><span class="o">.</span><span class="n">comm</span>
+        <span class="p">)</span>
+        <span class="n">sstream</span><span class="o">.</span><span class="n">redistribute</span><span class="p">(</span><span class="s2">&quot;freq&quot;</span><span class="p">)</span>
+
+        <span class="c1"># Assign the visibilities and weights into the container</span>
+        <span class="n">sstream</span><span class="o">.</span><span class="n">vis</span><span class="p">[:]</span> <span class="o">=</span> <span class="n">ssarray</span>
+        <span class="c1"># There is no way to recover time information for the weights.</span>
+        <span class="c1"># Just assign the time average to each baseline and frequency.</span>
+        <span class="n">sstream</span><span class="o">.</span><span class="n">weight</span><span class="p">[:]</span> <span class="o">=</span> <span class="n">mmodes</span><span class="o">.</span><span class="n">weight</span><span class="p">[</span><span class="mi">0</span><span class="p">,</span> <span class="mi">0</span><span class="p">,</span> <span class="p">:,</span> <span class="p">:][:,</span> <span class="p">:,</span> <span class="n">np</span><span class="o">.</span><span class="n">newaxis</span><span class="p">]</span> <span class="o">/</span> <span class="n">ntime</span>
+
+        <span class="k">return</span> <span class="n">sstream</span></div></div>
+
+
+<span class="k">def</span> <span class="nf">_make_ssarray</span><span class="p">(</span><span class="n">mmodes</span><span class="p">,</span> <span class="n">n</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
+    <span class="c1"># Construct an array of sidereal time streams from m-modes</span>
+    <span class="n">marray</span> <span class="o">=</span> <span class="n">_unpack_marray</span><span class="p">(</span><span class="n">mmodes</span><span class="p">,</span> <span class="n">n</span><span class="o">=</span><span class="n">n</span><span class="p">)</span>
+    <span class="n">ssarray</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">fft</span><span class="o">.</span><span class="n">ifft</span><span class="p">(</span><span class="n">marray</span> <span class="o">*</span> <span class="n">marray</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">],</span> <span class="n">axis</span><span class="o">=-</span><span class="mi">1</span><span class="p">)</span>
+
+    <span class="k">return</span> <span class="n">ssarray</span>
+
+
+<span class="k">def</span> <span class="nf">_unpack_marray</span><span class="p">(</span><span class="n">mmodes</span><span class="p">,</span> <span class="n">n</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
+    <span class="c1"># Unpack m-modes into the correct format for an FFT</span>
+    <span class="c1"># (i.e. from [m, +/-, freq, baseline] to [freq, baseline, time-FFT])</span>
+
+    <span class="n">shape</span> <span class="o">=</span> <span class="n">mmodes</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">2</span><span class="p">:]</span>
+    <span class="n">mmax_plus</span> <span class="o">=</span> <span class="n">mmodes</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">-</span> <span class="mi">1</span>
+    <span class="k">if</span> <span class="p">(</span><span class="n">mmodes</span><span class="p">[</span><span class="n">mmax_plus</span><span class="p">,</span> <span class="mi">1</span><span class="p">,</span> <span class="o">...</span><span class="p">]</span><span class="o">.</span><span class="n">flatten</span><span class="p">()</span> <span class="o">==</span> <span class="mi">0</span><span class="p">)</span><span class="o">.</span><span class="n">all</span><span class="p">():</span>
+        <span class="n">mmax_minus</span> <span class="o">=</span> <span class="n">mmax_plus</span> <span class="o">-</span> <span class="mi">1</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="n">mmax_minus</span> <span class="o">=</span> <span class="n">mmax_plus</span>
+
+    <span class="k">if</span> <span class="n">n</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="n">ntimes</span> <span class="o">=</span> <span class="n">mmax_plus</span> <span class="o">+</span> <span class="n">mmax_minus</span> <span class="o">+</span> <span class="mi">1</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="n">ntimes</span> <span class="o">=</span> <span class="n">n</span>
+        <span class="n">mmax_plus</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">amin</span><span class="p">((</span><span class="n">ntimes</span> <span class="o">//</span> <span class="mi">2</span><span class="p">,</span> <span class="n">mmax_plus</span><span class="p">))</span>
+        <span class="n">mmax_minus</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">amin</span><span class="p">(((</span><span class="n">ntimes</span> <span class="o">-</span> <span class="mi">1</span><span class="p">)</span> <span class="o">//</span> <span class="mi">2</span><span class="p">,</span> <span class="n">mmax_minus</span><span class="p">))</span>
+
+    <span class="c1"># Create array to contain mmodes</span>
+    <span class="n">marray</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">zeros</span><span class="p">(</span><span class="n">shape</span> <span class="o">+</span> <span class="p">(</span><span class="n">ntimes</span><span class="p">,),</span> <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">complex128</span><span class="p">)</span>
+    <span class="c1"># Add the DC bin</span>
+    <span class="n">marray</span><span class="p">[</span><span class="o">...</span><span class="p">,</span> <span class="mi">0</span><span class="p">]</span> <span class="o">=</span> <span class="n">mmodes</span><span class="p">[</span><span class="mi">0</span><span class="p">,</span> <span class="mi">0</span><span class="p">]</span>
+    <span class="c1"># Add all m-modes up to mmax_minus</span>
+    <span class="k">for</span> <span class="n">mi</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="n">mmax_minus</span> <span class="o">+</span> <span class="mi">1</span><span class="p">):</span>
+        <span class="n">marray</span><span class="p">[</span><span class="o">...</span><span class="p">,</span> <span class="n">mi</span><span class="p">]</span> <span class="o">=</span> <span class="n">mmodes</span><span class="p">[</span><span class="n">mi</span><span class="p">,</span> <span class="mi">0</span><span class="p">]</span>
+        <span class="n">marray</span><span class="p">[</span><span class="o">...</span><span class="p">,</span> <span class="o">-</span><span class="n">mi</span><span class="p">]</span> <span class="o">=</span> <span class="n">mmodes</span><span class="p">[</span><span class="n">mi</span><span class="p">,</span> <span class="mi">1</span><span class="p">]</span><span class="o">.</span><span class="n">conj</span><span class="p">()</span>
+
+    <span class="k">if</span> <span class="n">mmax_plus</span> <span class="o">!=</span> <span class="n">mmax_minus</span><span class="p">:</span>
+        <span class="c1"># In case of even number of samples. Add the Nyquist frequency.</span>
+        <span class="n">marray</span><span class="p">[</span><span class="o">...</span><span class="p">,</span> <span class="n">mmax_plus</span><span class="p">]</span> <span class="o">=</span> <span class="n">mmodes</span><span class="p">[</span><span class="n">mmax_plus</span><span class="p">,</span> <span class="mi">0</span><span class="p">]</span>
+
+    <span class="k">return</span> <span class="n">marray</span>
+
+
+<div class="viewcode-block" id="Regridder"><a class="viewcode-back" href="../../../_autosummary/draco.analysis.transform.html#draco.analysis.transform.Regridder">[docs]</a><span class="k">class</span> <span class="nc">Regridder</span><span class="p">(</span><span class="n">task</span><span class="o">.</span><span class="n">SingleTask</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;Interpolate time-ordered data onto a regular grid.</span>
+
+<span class="sd">    Uses a maximum-likelihood inverse of a Lanczos interpolation to do the</span>
+<span class="sd">    regridding. This gives a reasonably local regridding, that is pretty well</span>
+<span class="sd">    behaved in m-space.</span>
+
+<span class="sd">    Attributes</span>
+<span class="sd">    ----------</span>
+<span class="sd">    samples : int</span>
+<span class="sd">        Number of samples to interpolate onto.</span>
+<span class="sd">    start: float</span>
+<span class="sd">        Start of the interpolated samples.</span>
+<span class="sd">    end: float</span>
+<span class="sd">        End of the interpolated samples.</span>
+<span class="sd">    lanczos_width : int</span>
+<span class="sd">        Width of the Lanczos interpolation kernel.</span>
+<span class="sd">    snr_cov: float</span>
+<span class="sd">        Ratio of signal covariance to noise covariance (used for Wiener filter).</span>
+<span class="sd">    mask_zero_weight: bool</span>
+<span class="sd">        Mask the output noise weights at frequencies where the weights were</span>
+<span class="sd">        zero for all time samples.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+
+    <span class="n">samples</span> <span class="o">=</span> <span class="n">config</span><span class="o">.</span><span class="n">Property</span><span class="p">(</span><span class="n">proptype</span><span class="o">=</span><span class="nb">int</span><span class="p">,</span> <span class="n">default</span><span class="o">=</span><span class="mi">1024</span><span class="p">)</span>
+    <span class="n">start</span> <span class="o">=</span> <span class="n">config</span><span class="o">.</span><span class="n">Property</span><span class="p">(</span><span class="n">proptype</span><span class="o">=</span><span class="nb">float</span><span class="p">)</span>
+    <span class="n">end</span> <span class="o">=</span> <span class="n">config</span><span class="o">.</span><span class="n">Property</span><span class="p">(</span><span class="n">proptype</span><span class="o">=</span><span class="nb">float</span><span class="p">)</span>
+    <span class="n">lanczos_width</span> <span class="o">=</span> <span class="n">config</span><span class="o">.</span><span class="n">Property</span><span class="p">(</span><span class="n">proptype</span><span class="o">=</span><span class="nb">int</span><span class="p">,</span> <span class="n">default</span><span class="o">=</span><span class="mi">5</span><span class="p">)</span>
+    <span class="n">snr_cov</span> <span class="o">=</span> <span class="n">config</span><span class="o">.</span><span class="n">Property</span><span class="p">(</span><span class="n">proptype</span><span class="o">=</span><span class="nb">float</span><span class="p">,</span> <span class="n">default</span><span class="o">=</span><span class="mf">1e-8</span><span class="p">)</span>
+    <span class="n">mask_zero_weight</span> <span class="o">=</span> <span class="n">config</span><span class="o">.</span><span class="n">Property</span><span class="p">(</span><span class="n">proptype</span><span class="o">=</span><span class="nb">bool</span><span class="p">,</span> <span class="n">default</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
+
+<div class="viewcode-block" id="Regridder.setup"><a class="viewcode-back" href="../../../_autosummary/draco.analysis.transform.html#draco.analysis.transform.Regridder.setup">[docs]</a>    <span class="k">def</span> <span class="nf">setup</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">observer</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Set the local observers position.</span>
+
+<span class="sd">        Parameters</span>
+<span class="sd">        ----------</span>
+<span class="sd">        observer : :class:`~caput.time.Observer`</span>
+<span class="sd">            An Observer object holding the geographic location of the telescope.</span>
+<span class="sd">            Note that :class:`~drift.core.TransitTelescope` instances are also</span>
+<span class="sd">            Observers.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">observer</span> <span class="o">=</span> <span class="n">observer</span></div>
+
+<div class="viewcode-block" id="Regridder.process"><a class="viewcode-back" href="../../../_autosummary/draco.analysis.transform.html#draco.analysis.transform.Regridder.process">[docs]</a>    <span class="k">def</span> <span class="nf">process</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">data</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Regrid visibility data in the time direction.</span>
+
+<span class="sd">        Parameters</span>
+<span class="sd">        ----------</span>
+<span class="sd">        data : containers.TODContainer</span>
+<span class="sd">            Time-ordered data.</span>
+
+<span class="sd">        Returns</span>
+<span class="sd">        -------</span>
+<span class="sd">        new_data : containers.TODContainer</span>
+<span class="sd">            The regularly gridded interpolated timestream.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+
+        <span class="c1"># Redistribute if needed</span>
+        <span class="n">data</span><span class="o">.</span><span class="n">redistribute</span><span class="p">(</span><span class="s2">&quot;freq&quot;</span><span class="p">)</span>
+
+        <span class="c1"># View of data</span>
+        <span class="n">weight</span> <span class="o">=</span> <span class="n">data</span><span class="o">.</span><span class="n">weight</span><span class="p">[:]</span><span class="o">.</span><span class="n">view</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">)</span>
+        <span class="n">vis_data</span> <span class="o">=</span> <span class="n">data</span><span class="o">.</span><span class="n">vis</span><span class="p">[:]</span><span class="o">.</span><span class="n">view</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">)</span>
+
+        <span class="c1"># Get input time grid</span>
+        <span class="n">timelike_axis</span> <span class="o">=</span> <span class="n">data</span><span class="o">.</span><span class="n">vis</span><span class="o">.</span><span class="n">attrs</span><span class="p">[</span><span class="s2">&quot;axis&quot;</span><span class="p">][</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span>
+        <span class="n">times</span> <span class="o">=</span> <span class="n">data</span><span class="o">.</span><span class="n">index_map</span><span class="p">[</span><span class="n">timelike_axis</span><span class="p">][:]</span>
+
+        <span class="c1"># check bounds</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">start</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">start</span> <span class="o">=</span> <span class="n">times</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">end</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">end</span> <span class="o">=</span> <span class="n">times</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">start</span> <span class="o">&lt;</span> <span class="n">times</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="ow">or</span> <span class="bp">self</span><span class="o">.</span><span class="n">end</span> <span class="o">&gt;</span> <span class="n">times</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]:</span>
+            <span class="n">msg</span> <span class="o">=</span> <span class="s2">&quot;Start or end points for regridder fall outside bounds of input data.&quot;</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">log</span><span class="o">.</span><span class="n">error</span><span class="p">(</span><span class="n">msg</span><span class="p">)</span>
+            <span class="k">raise</span> <span class="ne">RuntimeError</span><span class="p">(</span><span class="n">msg</span><span class="p">)</span>
+
+        <span class="c1"># perform regridding</span>
+        <span class="n">new_grid</span><span class="p">,</span> <span class="n">new_vis</span><span class="p">,</span> <span class="n">ni</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_regrid</span><span class="p">(</span><span class="n">vis_data</span><span class="p">,</span> <span class="n">weight</span><span class="p">,</span> <span class="n">times</span><span class="p">)</span>
+
+        <span class="c1"># Wrap to produce MPIArray</span>
+        <span class="n">new_vis</span> <span class="o">=</span> <span class="n">mpiarray</span><span class="o">.</span><span class="n">MPIArray</span><span class="o">.</span><span class="n">wrap</span><span class="p">(</span><span class="n">new_vis</span><span class="p">,</span> <span class="n">axis</span><span class="o">=</span><span class="n">data</span><span class="o">.</span><span class="n">vis</span><span class="o">.</span><span class="n">distributed_axis</span><span class="p">)</span>
+        <span class="n">ni</span> <span class="o">=</span> <span class="n">mpiarray</span><span class="o">.</span><span class="n">MPIArray</span><span class="o">.</span><span class="n">wrap</span><span class="p">(</span><span class="n">ni</span><span class="p">,</span> <span class="n">axis</span><span class="o">=</span><span class="n">data</span><span class="o">.</span><span class="n">vis</span><span class="o">.</span><span class="n">distributed_axis</span><span class="p">)</span>
+
+        <span class="c1"># Create new container for output</span>
+        <span class="n">cont_type</span> <span class="o">=</span> <span class="n">data</span><span class="o">.</span><span class="vm">__class__</span>
+        <span class="n">new_data</span> <span class="o">=</span> <span class="n">cont_type</span><span class="p">(</span><span class="n">axes_from</span><span class="o">=</span><span class="n">data</span><span class="p">,</span> <span class="o">**</span><span class="p">{</span><span class="n">timelike_axis</span><span class="p">:</span> <span class="n">new_grid</span><span class="p">})</span>
+        <span class="n">new_data</span><span class="o">.</span><span class="n">redistribute</span><span class="p">(</span><span class="s2">&quot;freq&quot;</span><span class="p">)</span>
+        <span class="n">new_data</span><span class="o">.</span><span class="n">vis</span><span class="p">[:]</span> <span class="o">=</span> <span class="n">new_vis</span>
+        <span class="n">new_data</span><span class="o">.</span><span class="n">weight</span><span class="p">[:]</span> <span class="o">=</span> <span class="n">ni</span>
+
+        <span class="k">return</span> <span class="n">new_data</span></div>
+
+    <span class="k">def</span> <span class="nf">_regrid</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">vis_data</span><span class="p">,</span> <span class="n">weight</span><span class="p">,</span> <span class="n">times</span><span class="p">):</span>
+
+        <span class="c1"># Create a regular grid, padded at either end to supress interpolation issues</span>
+        <span class="n">pad</span> <span class="o">=</span> <span class="mi">5</span> <span class="o">*</span> <span class="bp">self</span><span class="o">.</span><span class="n">lanczos_width</span>
+        <span class="n">interp_grid</span> <span class="o">=</span> <span class="p">(</span>
+            <span class="n">np</span><span class="o">.</span><span class="n">arange</span><span class="p">(</span><span class="o">-</span><span class="n">pad</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">samples</span> <span class="o">+</span> <span class="n">pad</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">float64</span><span class="p">)</span> <span class="o">/</span> <span class="bp">self</span><span class="o">.</span><span class="n">samples</span>
+        <span class="p">)</span>
+        <span class="c1"># scale to specified range</span>
+        <span class="n">interp_grid</span> <span class="o">=</span> <span class="n">interp_grid</span> <span class="o">*</span> <span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">end</span> <span class="o">-</span> <span class="bp">self</span><span class="o">.</span><span class="n">start</span><span class="p">)</span> <span class="o">+</span> <span class="bp">self</span><span class="o">.</span><span class="n">start</span>
+
+        <span class="c1"># Construct regridding matrix for reverse problem</span>
+        <span class="n">lzf</span> <span class="o">=</span> <span class="n">regrid</span><span class="o">.</span><span class="n">lanczos_forward_matrix</span><span class="p">(</span>
+            <span class="n">interp_grid</span><span class="p">,</span> <span class="n">times</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">lanczos_width</span>
+        <span class="p">)</span><span class="o">.</span><span class="n">T</span><span class="o">.</span><span class="n">copy</span><span class="p">()</span>
+
+        <span class="c1"># Reshape data</span>
+        <span class="n">vr</span> <span class="o">=</span> <span class="n">vis_data</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">,</span> <span class="n">vis_data</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">])</span>
+        <span class="n">nr</span> <span class="o">=</span> <span class="n">weight</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">,</span> <span class="n">vis_data</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">])</span>
+
+        <span class="c1"># Construct a signal &#39;covariance&#39;</span>
+        <span class="n">Si</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">ones_like</span><span class="p">(</span><span class="n">interp_grid</span><span class="p">)</span> <span class="o">*</span> <span class="bp">self</span><span class="o">.</span><span class="n">snr_cov</span>
+
+        <span class="c1"># Calculate the interpolated data and a noise weight at the points in the padded grid</span>
+        <span class="n">sts</span><span class="p">,</span> <span class="n">ni</span> <span class="o">=</span> <span class="n">regrid</span><span class="o">.</span><span class="n">band_wiener</span><span class="p">(</span><span class="n">lzf</span><span class="p">,</span> <span class="n">nr</span><span class="p">,</span> <span class="n">Si</span><span class="p">,</span> <span class="n">vr</span><span class="p">,</span> <span class="mi">2</span> <span class="o">*</span> <span class="bp">self</span><span class="o">.</span><span class="n">lanczos_width</span> <span class="o">-</span> <span class="mi">1</span><span class="p">)</span>
+
+        <span class="c1"># Throw away the padded ends</span>
+        <span class="n">sts</span> <span class="o">=</span> <span class="n">sts</span><span class="p">[:,</span> <span class="n">pad</span><span class="p">:</span><span class="o">-</span><span class="n">pad</span><span class="p">]</span><span class="o">.</span><span class="n">copy</span><span class="p">()</span>
+        <span class="n">ni</span> <span class="o">=</span> <span class="n">ni</span><span class="p">[:,</span> <span class="n">pad</span><span class="p">:</span><span class="o">-</span><span class="n">pad</span><span class="p">]</span><span class="o">.</span><span class="n">copy</span><span class="p">()</span>
+        <span class="n">interp_grid</span> <span class="o">=</span> <span class="n">interp_grid</span><span class="p">[</span><span class="n">pad</span><span class="p">:</span><span class="o">-</span><span class="n">pad</span><span class="p">]</span><span class="o">.</span><span class="n">copy</span><span class="p">()</span>
+
+        <span class="c1"># Reshape to the correct shape</span>
+        <span class="n">sts</span> <span class="o">=</span> <span class="n">sts</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="n">vis_data</span><span class="o">.</span><span class="n">shape</span><span class="p">[:</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span> <span class="o">+</span> <span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">samples</span><span class="p">,))</span>
+        <span class="n">ni</span> <span class="o">=</span> <span class="n">ni</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="n">vis_data</span><span class="o">.</span><span class="n">shape</span><span class="p">[:</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span> <span class="o">+</span> <span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">samples</span><span class="p">,))</span>
+
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">mask_zero_weight</span><span class="p">:</span>
+            <span class="c1"># set weights to zero where there is no data</span>
+            <span class="n">w_mask</span> <span class="o">=</span> <span class="n">weight</span><span class="o">.</span><span class="n">sum</span><span class="p">(</span><span class="n">axis</span><span class="o">=-</span><span class="mi">1</span><span class="p">)</span> <span class="o">!=</span> <span class="mf">0.0</span>
+            <span class="n">ni</span> <span class="o">*=</span> <span class="n">w_mask</span><span class="p">[</span><span class="o">...</span><span class="p">,</span> <span class="n">np</span><span class="o">.</span><span class="n">newaxis</span><span class="p">]</span>
+
+        <span class="k">return</span> <span class="n">interp_grid</span><span class="p">,</span> <span class="n">sts</span><span class="p">,</span> <span class="n">ni</span></div>
+</pre></div>
+
+           </div>
+           
+          </div>
+          <footer>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>
+        &#169; Copyright 2016, Richard Shaw.
+
+    </p>
+  </div>
+    
+    
+    
+    Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    
+    provided by <a href="https://readthedocs.org">Read the Docs</a>. 
+
+</footer>
+        </div>
+      </div>
+
+    </section>
+
+  </div>
+  
+
+  <script type="text/javascript">
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script>
+
+  
+  
+    
+   
+
+</body>
+</html>

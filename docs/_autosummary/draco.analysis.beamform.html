@@ -1,0 +1,492 @@
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" >
+<head>
+  <meta charset="utf-8" />
+  
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  
+  <title>draco.analysis.beamform &mdash; draco 0+untagged.1.g43914e3 documentation</title>
+  
+
+  
+  <link rel="stylesheet" href="../_static/css/theme.css" type="text/css" />
+  <link rel="stylesheet" href="../_static/pygments.css" type="text/css" />
+
+  
+  
+
+  
+  
+
+  
+
+  
+  <!--[if lt IE 9]>
+    <script src="../_static/js/html5shiv.min.js"></script>
+  <![endif]-->
+  
+    
+      <script type="text/javascript" id="documentation_options" data-url_root="../" src="../_static/documentation_options.js"></script>
+        <script src="../_static/jquery.js"></script>
+        <script src="../_static/underscore.js"></script>
+        <script src="../_static/doctools.js"></script>
+        <script async="async" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/2.7.7/latest.js?config=TeX-AMS-MML_HTMLorMML"></script>
+    
+    <script type="text/javascript" src="../_static/js/theme.js"></script>
+
+    
+    <link rel="index" title="Index" href="../genindex.html" />
+    <link rel="search" title="Search" href="../search.html" />
+    <link rel="next" title="draco.analysis.delay" href="draco.analysis.delay.html" />
+    <link rel="prev" title="draco.analysis" href="draco.analysis.html" /> 
+</head>
+
+<body class="wy-body-for-nav">
+
+   
+  <div class="wy-grid-for-nav">
+    
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+          
+
+          
+            <a href="../index.html" class="icon icon-home"> draco
+          
+
+          
+          </a>
+
+          
+            
+            
+              <div class="version">
+                0+untagged.1.g43914e3
+              </div>
+            
+          
+
+          
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+
+          
+        </div>
+
+        
+        <div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="main navigation">
+          
+            
+            
+              
+            
+            
+              <ul class="current">
+<li class="toctree-l1"><a class="reference internal" href="../tutorial.html">Tutorial</a></li>
+<li class="toctree-l1 current"><a class="reference internal" href="../reference.html">API Reference</a><ul class="current">
+<li class="toctree-l2 current"><a class="reference internal" href="../reference.html#submodules">Submodules</a><ul class="current">
+<li class="toctree-l3 current"><a class="reference internal" href="draco.analysis.html">draco.analysis</a><ul class="current">
+<li class="toctree-l4 current"><a class="current reference internal" href="#">draco.analysis.beamform</a></li>
+<li class="toctree-l4"><a class="reference internal" href="draco.analysis.delay.html">draco.analysis.delay</a></li>
+<li class="toctree-l4"><a class="reference internal" href="draco.analysis.fgfilter.html">draco.analysis.fgfilter</a></li>
+<li class="toctree-l4"><a class="reference internal" href="draco.analysis.flagging.html">draco.analysis.flagging</a></li>
+<li class="toctree-l4"><a class="reference internal" href="draco.analysis.mapmaker.html">draco.analysis.mapmaker</a></li>
+<li class="toctree-l4"><a class="reference internal" href="draco.analysis.powerspectrum.html">draco.analysis.powerspectrum</a></li>
+<li class="toctree-l4"><a class="reference internal" href="draco.analysis.sensitivity.html">draco.analysis.sensitivity</a></li>
+<li class="toctree-l4"><a class="reference internal" href="draco.analysis.sidereal.html">draco.analysis.sidereal</a></li>
+<li class="toctree-l4"><a class="reference internal" href="draco.analysis.sourcestack.html">draco.analysis.sourcestack</a></li>
+<li class="toctree-l4"><a class="reference internal" href="draco.analysis.svdfilter.html">draco.analysis.svdfilter</a></li>
+<li class="toctree-l4"><a class="reference internal" href="draco.analysis.transform.html">draco.analysis.transform</a></li>
+</ul>
+</li>
+<li class="toctree-l3"><a class="reference internal" href="draco.core.html">draco.core</a></li>
+<li class="toctree-l3"><a class="reference internal" href="draco.synthesis.html">draco.synthesis</a></li>
+<li class="toctree-l3"><a class="reference internal" href="draco.util.html">draco.util</a></li>
+</ul>
+</li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="../dev.html">Development Guidelines</a></li>
+</ul>
+
+            
+          
+        </div>
+        
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap">
+
+      
+      <nav class="wy-nav-top" aria-label="top navigation">
+        
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../index.html">draco</a>
+        
+      </nav>
+
+
+      <div class="wy-nav-content">
+        
+        <div class="rst-content">
+        
+          
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<div role="navigation" aria-label="breadcrumbs navigation">
+
+  <ul class="wy-breadcrumbs">
+    
+      <li><a href="../index.html" class="icon icon-home"></a> &raquo;</li>
+        
+          <li><a href="../reference.html">API Reference</a> &raquo;</li>
+        
+          <li><a href="draco.analysis.html">draco.analysis</a> &raquo;</li>
+        
+      <li>draco.analysis.beamform</li>
+    
+    
+      <li class="wy-breadcrumbs-aside">
+        
+          
+            <a href="../_sources/_autosummary/draco.analysis.beamform.rst.txt" rel="nofollow"> View page source</a>
+          
+        
+      </li>
+    
+  </ul>
+
+  
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+            
+  <div class="section" id="module-draco.analysis.beamform">
+<span id="draco-analysis-beamform"></span><h1>draco.analysis.beamform<a class="headerlink" href="#module-draco.analysis.beamform" title="Permalink to this headline">¶</a></h1>
+<p>Beam Forming</p>
+<p class="rubric">Functions</p>
+<table class="longtable docutils align-default">
+<colgroup>
+<col style="width: 10%" />
+<col style="width: 90%" />
+</colgroup>
+<tbody>
+<tr class="row-odd"><td><p><a class="reference internal" href="#draco.analysis.beamform.icrs_to_cirs" title="draco.analysis.beamform.icrs_to_cirs"><code class="xref py py-obj docutils literal notranslate"><span class="pre">icrs_to_cirs</span></code></a>(ra, dec, epoch[, apparent])</p></td>
+<td><p>Convert a set of positions from ICRS to CIRS at a given data.</p></td>
+</tr>
+</tbody>
+</table>
+<p class="rubric">Classes</p>
+<table class="longtable docutils align-default">
+<colgroup>
+<col style="width: 10%" />
+<col style="width: 90%" />
+</colgroup>
+<tbody>
+<tr class="row-odd"><td><p><a class="reference internal" href="#draco.analysis.beamform.BeamForm" title="draco.analysis.beamform.BeamForm"><code class="xref py py-obj docutils literal notranslate"><span class="pre">BeamForm</span></code></a>()</p></td>
+<td><p>BeamForm for a single source catalog and multiple visibility datasets.</p></td>
+</tr>
+<tr class="row-even"><td><p><a class="reference internal" href="#draco.analysis.beamform.BeamFormBase" title="draco.analysis.beamform.BeamFormBase"><code class="xref py py-obj docutils literal notranslate"><span class="pre">BeamFormBase</span></code></a>()</p></td>
+<td><p>Base class for beam forming tasks.</p></td>
+</tr>
+<tr class="row-odd"><td><p><a class="reference internal" href="#draco.analysis.beamform.BeamFormCat" title="draco.analysis.beamform.BeamFormCat"><code class="xref py py-obj docutils literal notranslate"><span class="pre">BeamFormCat</span></code></a>()</p></td>
+<td><p>BeamForm for multiple source catalogs and a single visibility dataset.</p></td>
+</tr>
+</tbody>
+</table>
+<dl class="py class">
+<dt id="draco.analysis.beamform.BeamForm">
+<em class="property">class </em><code class="sig-prename descclassname">draco.analysis.beamform.</code><code class="sig-name descname">BeamForm</code><a class="reference internal" href="../_modules/draco/analysis/beamform.html#BeamForm"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#draco.analysis.beamform.BeamForm" title="Permalink to this definition">¶</a></dt>
+<dd><p>Bases: <a class="reference internal" href="#draco.analysis.beamform.BeamFormBase" title="draco.analysis.beamform.BeamFormBase"><code class="xref py py-class docutils literal notranslate"><span class="pre">draco.analysis.beamform.BeamFormBase</span></code></a></p>
+<p>BeamForm for a single source catalog and multiple visibility datasets.</p>
+<p>Initialize pipeline task.</p>
+<p>May be overridden with no arguments.  Will be called after any
+<cite>config.Property</cite> attributes are set and after ‘input’ and ‘requires’
+keys are set up.</p>
+<dl class="py method">
+<dt id="draco.analysis.beamform.BeamForm.process">
+<code class="sig-name descname">process</code><span class="sig-paren">(</span><em class="sig-param"><span class="n">data</span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/draco/analysis/beamform.html#BeamForm.process"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#draco.analysis.beamform.BeamForm.process" title="Permalink to this definition">¶</a></dt>
+<dd><p>Parse the visibility data and beamforms all sources.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><p><strong>data</strong> (<cite>containers.SiderealStream</cite> or <cite>containers.TimeStream</cite>) – Data to beamform on.</p>
+</dd>
+<dt class="field-even">Returns</dt>
+<dd class="field-even"><p><strong>formed_beam</strong> – Formed beams at each source.</p>
+</dd>
+<dt class="field-odd">Return type</dt>
+<dd class="field-odd"><p><cite>containers.FormedBeam</cite> or <cite>containers.FormedBeamHA</cite></p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt id="draco.analysis.beamform.BeamForm.setup">
+<code class="sig-name descname">setup</code><span class="sig-paren">(</span><em class="sig-param"><span class="n">manager</span></em>, <em class="sig-param"><span class="n">source_cat</span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/draco/analysis/beamform.html#BeamForm.setup"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#draco.analysis.beamform.BeamForm.setup" title="Permalink to this definition">¶</a></dt>
+<dd><p>Parse the source catalog and performs the generic setup.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>manager</strong> (either <cite>ProductManager</cite>, <cite>BeamTransfer</cite> or <cite>TransitTelescope</cite>) – Contains a TransitTelescope object describing the telescope.</p></li>
+<li><p><strong>source_cat</strong> (<code class="xref py py-class docutils literal notranslate"><span class="pre">containers.SourceCatalog</span></code>) – Catalog of points to beamform at.</p></li>
+</ul>
+</dd>
+</dl>
+</dd></dl>
+
+</dd></dl>
+
+<dl class="py class">
+<dt id="draco.analysis.beamform.BeamFormBase">
+<em class="property">class </em><code class="sig-prename descclassname">draco.analysis.beamform.</code><code class="sig-name descname">BeamFormBase</code><a class="reference internal" href="../_modules/draco/analysis/beamform.html#BeamFormBase"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#draco.analysis.beamform.BeamFormBase" title="Permalink to this definition">¶</a></dt>
+<dd><p>Bases: <a class="reference internal" href="draco.core.task.html#draco.core.task.SingleTask" title="draco.core.task.SingleTask"><code class="xref py py-class docutils literal notranslate"><span class="pre">draco.core.task.SingleTask</span></code></a></p>
+<p>Base class for beam forming tasks.</p>
+<p>Defines a few useful methods. Not to be used directly
+but as parent class for BeamForm and BeamFormCat.</p>
+<dl class="py attribute">
+<dt id="draco.analysis.beamform.BeamFormBase.collapse_ha">
+<code class="sig-name descname">collapse_ha</code><a class="headerlink" href="#draco.analysis.beamform.BeamFormBase.collapse_ha" title="Permalink to this definition">¶</a></dt>
+<dd><p>Wether or not to sum over hour-angle/time to complete
+the beamforming. Default is True, which sums over.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type</dt>
+<dd class="field-odd"><p>bool</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt id="draco.analysis.beamform.BeamFormBase.polarization">
+<code class="sig-name descname">polarization</code><a class="headerlink" href="#draco.analysis.beamform.BeamFormBase.polarization" title="Permalink to this definition">¶</a></dt>
+<dd><p>One of:
+‘I’ : Stokes I only.
+‘full’ : ‘XX’, ‘XY’, ‘YX’ and ‘YY’ in this order.
+‘copol’ : ‘XX’ and ‘YY’ only.
+‘stokes’ : ‘I’, ‘Q’, ‘U’ and ‘V’ in this order. Not implemented.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type</dt>
+<dd class="field-odd"><p>string</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt id="draco.analysis.beamform.BeamFormBase.weight">
+<code class="sig-name descname">weight</code><a class="headerlink" href="#draco.analysis.beamform.BeamFormBase.weight" title="Permalink to this definition">¶</a></dt>
+<dd><dl class="simple">
+<dt>How to weight the redundant baselines when adding:</dt><dd><p>‘natural’ - each baseline weighted by its redundancy (default)
+‘uniform’ - each baseline given equal weight
+‘inverse_variance’ - each baseline weighted by the weight attribute</p>
+</dd>
+</dl>
+<dl class="field-list simple">
+<dt class="field-odd">Type</dt>
+<dd class="field-odd"><p>string (‘natural’, ‘uniform’, or ‘inverse_variance’)</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt id="draco.analysis.beamform.BeamFormBase.timetrack">
+<code class="sig-name descname">timetrack</code><a class="headerlink" href="#draco.analysis.beamform.BeamFormBase.timetrack" title="Permalink to this definition">¶</a></dt>
+<dd><p>How long (in seconds) to track sources at each side of transit.
+Total transit time will be ~ 2 * timetrack.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type</dt>
+<dd class="field-odd"><p>float</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt id="draco.analysis.beamform.BeamFormBase.freqside">
+<code class="sig-name descname">freqside</code><a class="headerlink" href="#draco.analysis.beamform.BeamFormBase.freqside" title="Permalink to this definition">¶</a></dt>
+<dd><p>Number of frequencies to process at each side of the source.
+Default (None) processes all frequencies.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type</dt>
+<dd class="field-odd"><p>int</p>
+</dd>
+</dl>
+</dd></dl>
+
+<p>Initialize pipeline task.</p>
+<p>May be overridden with no arguments.  Will be called after any
+<cite>config.Property</cite> attributes are set and after ‘input’ and ‘requires’
+keys are set up.</p>
+<dl class="py method">
+<dt id="draco.analysis.beamform.BeamFormBase.process">
+<code class="sig-name descname">process</code><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="../_modules/draco/analysis/beamform.html#BeamFormBase.process"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#draco.analysis.beamform.BeamFormBase.process" title="Permalink to this definition">¶</a></dt>
+<dd><p>Generic process method.</p>
+<p>Performs all the beamforming,
+but not the data parsing. To be complemented by specific
+process methods in daughter tasks.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Returns</dt>
+<dd class="field-odd"><p><strong>formed_beam</strong> – Formed beams at each source. Shape depends on parameter
+<cite>collapse_ha</cite>.</p>
+</dd>
+<dt class="field-even">Return type</dt>
+<dd class="field-even"><p><cite>containers.FormedBeam</cite> or <cite>containers.FormedBeamHA</cite></p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt id="draco.analysis.beamform.BeamFormBase.setup">
+<code class="sig-name descname">setup</code><span class="sig-paren">(</span><em class="sig-param"><span class="n">manager</span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/draco/analysis/beamform.html#BeamFormBase.setup"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#draco.analysis.beamform.BeamFormBase.setup" title="Permalink to this definition">¶</a></dt>
+<dd><p>Generic setup method.</p>
+<p>To be complemented by specific
+setup methods in daughter tasks.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><p><strong>manager</strong> (either <cite>ProductManager</cite>, <cite>BeamTransfer</cite> or <cite>TransitTelescope</cite>) – Contains a TransitTelescope object describing the telescope.</p>
+</dd>
+</dl>
+</dd></dl>
+
+</dd></dl>
+
+<dl class="py class">
+<dt id="draco.analysis.beamform.BeamFormCat">
+<em class="property">class </em><code class="sig-prename descclassname">draco.analysis.beamform.</code><code class="sig-name descname">BeamFormCat</code><a class="reference internal" href="../_modules/draco/analysis/beamform.html#BeamFormCat"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#draco.analysis.beamform.BeamFormCat" title="Permalink to this definition">¶</a></dt>
+<dd><p>Bases: <a class="reference internal" href="#draco.analysis.beamform.BeamFormBase" title="draco.analysis.beamform.BeamFormBase"><code class="xref py py-class docutils literal notranslate"><span class="pre">draco.analysis.beamform.BeamFormBase</span></code></a></p>
+<p>BeamForm for multiple source catalogs and a single visibility dataset.</p>
+<p>Initialize pipeline task.</p>
+<p>May be overridden with no arguments.  Will be called after any
+<cite>config.Property</cite> attributes are set and after ‘input’ and ‘requires’
+keys are set up.</p>
+<dl class="py method">
+<dt id="draco.analysis.beamform.BeamFormCat.process">
+<code class="sig-name descname">process</code><span class="sig-paren">(</span><em class="sig-param"><span class="n">source_cat</span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/draco/analysis/beamform.html#BeamFormCat.process"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#draco.analysis.beamform.BeamFormCat.process" title="Permalink to this definition">¶</a></dt>
+<dd><p>Parse the source catalog and beamforms all sources.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><p><strong>source_cat</strong> (<code class="xref py py-class docutils literal notranslate"><span class="pre">containers.SourceCatalog</span></code>) – Catalog of points to beamform at.</p>
+</dd>
+<dt class="field-even">Returns</dt>
+<dd class="field-even"><p><strong>formed_beam</strong> – Formed beams at each source.</p>
+</dd>
+<dt class="field-odd">Return type</dt>
+<dd class="field-odd"><p><cite>containers.FormedBeam</cite> or <cite>containers.FormedBeamHA</cite></p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt id="draco.analysis.beamform.BeamFormCat.setup">
+<code class="sig-name descname">setup</code><span class="sig-paren">(</span><em class="sig-param"><span class="n">manager</span></em>, <em class="sig-param"><span class="n">data</span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/draco/analysis/beamform.html#BeamFormCat.setup"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#draco.analysis.beamform.BeamFormCat.setup" title="Permalink to this definition">¶</a></dt>
+<dd><p>Parse the visibility data and performs the generic setup.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>manager</strong> (either <cite>ProductManager</cite>, <cite>BeamTransfer</cite> or <cite>TransitTelescope</cite>) – Contains a TransitTelescope object describing the telescope.</p></li>
+<li><p><strong>data</strong> (<cite>containers.SiderealStream</cite> or <cite>containers.TimeStream</cite>) – Data to beamform on.</p></li>
+</ul>
+</dd>
+</dl>
+</dd></dl>
+
+</dd></dl>
+
+<dl class="py function">
+<dt id="draco.analysis.beamform.icrs_to_cirs">
+<code class="sig-prename descclassname">draco.analysis.beamform.</code><code class="sig-name descname">icrs_to_cirs</code><span class="sig-paren">(</span><em class="sig-param"><span class="n">ra</span></em>, <em class="sig-param"><span class="n">dec</span></em>, <em class="sig-param"><span class="n">epoch</span></em>, <em class="sig-param"><span class="n">apparent</span><span class="o">=</span><span class="default_value">True</span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/draco/analysis/beamform.html#icrs_to_cirs"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#draco.analysis.beamform.icrs_to_cirs" title="Permalink to this definition">¶</a></dt>
+<dd><p>Convert a set of positions from ICRS to CIRS at a given data.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>ra</strong> (<em>float</em><em> or </em><em>np.ndarray</em>) – Positions of source in ICRS coordinates including an optional
+redshift position.</p></li>
+<li><p><strong>dec</strong> (<em>float</em><em> or </em><em>np.ndarray</em>) – Positions of source in ICRS coordinates including an optional
+redshift position.</p></li>
+<li><p><strong>epoch</strong> (<em>time_like</em>) – Time to convert the positions to. Can be any type convertible to a
+time using <cite>caput.time.ensure_unix</cite>.</p></li>
+<li><p><strong>apparent</strong> (<em>bool</em>) – Calculate the apparent position (includes abberation and deflection).</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns</dt>
+<dd class="field-even"><p><strong>ra_cirs, dec_cirs</strong> – Arrays of the positions in <em>CIRS</em> coordiantes.</p>
+</dd>
+<dt class="field-odd">Return type</dt>
+<dd class="field-odd"><p>float or np.ndarray</p>
+</dd>
+</dl>
+</dd></dl>
+
+</div>
+
+
+           </div>
+           
+          </div>
+          <footer>
+    <div class="rst-footer-buttons" role="navigation" aria-label="footer navigation">
+        <a href="draco.analysis.delay.html" class="btn btn-neutral float-right" title="draco.analysis.delay" accesskey="n" rel="next">Next <span class="fa fa-arrow-circle-right" aria-hidden="true"></span></a>
+        <a href="draco.analysis.html" class="btn btn-neutral float-left" title="draco.analysis" accesskey="p" rel="prev"><span class="fa fa-arrow-circle-left" aria-hidden="true"></span> Previous</a>
+    </div>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>
+        &#169; Copyright 2016, Richard Shaw.
+
+    </p>
+  </div>
+    
+    
+    
+    Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    
+    provided by <a href="https://readthedocs.org">Read the Docs</a>. 
+
+</footer>
+        </div>
+      </div>
+
+    </section>
+
+  </div>
+  
+
+  <script type="text/javascript">
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script>
+
+  
+  
+    
+   
+
+</body>
+</html>

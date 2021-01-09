@@ -1,0 +1,809 @@
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" >
+<head>
+  <meta charset="utf-8" />
+  
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  
+  <title>draco.synthesis.gain &mdash; draco 0+untagged.1.g43914e3 documentation</title>
+  
+
+  
+  <link rel="stylesheet" href="../../../_static/css/theme.css" type="text/css" />
+  <link rel="stylesheet" href="../../../_static/pygments.css" type="text/css" />
+
+  
+  
+
+  
+  
+
+  
+
+  
+  <!--[if lt IE 9]>
+    <script src="../../../_static/js/html5shiv.min.js"></script>
+  <![endif]-->
+  
+    
+      <script type="text/javascript" id="documentation_options" data-url_root="../../../" src="../../../_static/documentation_options.js"></script>
+        <script src="../../../_static/jquery.js"></script>
+        <script src="../../../_static/underscore.js"></script>
+        <script src="../../../_static/doctools.js"></script>
+        <script async="async" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/2.7.7/latest.js?config=TeX-AMS-MML_HTMLorMML"></script>
+    
+    <script type="text/javascript" src="../../../_static/js/theme.js"></script>
+
+    
+    <link rel="index" title="Index" href="../../../genindex.html" />
+    <link rel="search" title="Search" href="../../../search.html" /> 
+</head>
+
+<body class="wy-body-for-nav">
+
+   
+  <div class="wy-grid-for-nav">
+    
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+          
+
+          
+            <a href="../../../index.html" class="icon icon-home"> draco
+          
+
+          
+          </a>
+
+          
+            
+            
+              <div class="version">
+                0+untagged.1.g43914e3
+              </div>
+            
+          
+
+          
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../../../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+
+          
+        </div>
+
+        
+        <div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="main navigation">
+          
+            
+            
+              
+            
+            
+              <ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../tutorial.html">Tutorial</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../reference.html">API Reference</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../dev.html">Development Guidelines</a></li>
+</ul>
+
+            
+          
+        </div>
+        
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap">
+
+      
+      <nav class="wy-nav-top" aria-label="top navigation">
+        
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../../../index.html">draco</a>
+        
+      </nav>
+
+
+      <div class="wy-nav-content">
+        
+        <div class="rst-content">
+        
+          
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<div role="navigation" aria-label="breadcrumbs navigation">
+
+  <ul class="wy-breadcrumbs">
+    
+      <li><a href="../../../index.html" class="icon icon-home"></a> &raquo;</li>
+        
+          <li><a href="../../index.html">Module code</a> &raquo;</li>
+        
+      <li>draco.synthesis.gain</li>
+    
+    
+      <li class="wy-breadcrumbs-aside">
+        
+      </li>
+    
+  </ul>
+
+  
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+            
+  <h1>Source code for draco.synthesis.gain</h1><div class="highlight"><pre>
+<span></span><span class="sd">&quot;&quot;&quot;Tasks for generating random gain fluctuations in the data and stacking them.&quot;&quot;&quot;</span>
+
+
+<span class="kn">import</span> <span class="nn">numpy</span> <span class="k">as</span> <span class="nn">np</span>
+
+<span class="kn">from</span> <span class="nn">caput</span> <span class="kn">import</span> <span class="n">config</span><span class="p">,</span> <span class="n">mpiarray</span><span class="p">,</span> <span class="n">pipeline</span>
+
+<span class="kn">from</span> <span class="nn">..core</span> <span class="kn">import</span> <span class="n">containers</span><span class="p">,</span> <span class="n">task</span><span class="p">,</span> <span class="n">io</span>
+
+
+<div class="viewcode-block" id="BaseGains"><a class="viewcode-back" href="../../../_autosummary/draco.synthesis.gain.html#draco.synthesis.gain.BaseGains">[docs]</a><span class="k">class</span> <span class="nc">BaseGains</span><span class="p">(</span><span class="n">task</span><span class="o">.</span><span class="n">SingleTask</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;Rudimentary class to generate gain timestreams.</span>
+
+<span class="sd">    The gains are drawn for times which match up to an input timestream file.</span>
+
+<span class="sd">    Attributes</span>
+<span class="sd">    ----------</span>
+<span class="sd">    amp: bool</span>
+<span class="sd">        Generate gain amplitude fluctuations. Default is True.</span>
+<span class="sd">    phase: bool</span>
+<span class="sd">        Generate gain phase fluctuations. Default is True.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+
+    <span class="n">amp</span> <span class="o">=</span> <span class="n">config</span><span class="o">.</span><span class="n">Property</span><span class="p">(</span><span class="n">default</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">proptype</span><span class="o">=</span><span class="nb">bool</span><span class="p">)</span>
+    <span class="n">phase</span> <span class="o">=</span> <span class="n">config</span><span class="o">.</span><span class="n">Property</span><span class="p">(</span><span class="n">default</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">proptype</span><span class="o">=</span><span class="nb">bool</span><span class="p">)</span>
+
+    <span class="n">_prev_time</span> <span class="o">=</span> <span class="kc">None</span>
+
+<div class="viewcode-block" id="BaseGains.process"><a class="viewcode-back" href="../../../_autosummary/draco.synthesis.gain.html#draco.synthesis.gain.BaseGains.process">[docs]</a>    <span class="k">def</span> <span class="nf">process</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">data</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Generate a gain timestream for the inputs and times in `data`.</span>
+
+<span class="sd">        Parameters</span>
+<span class="sd">        ----------</span>
+<span class="sd">        data : :class:`containers.TimeStream`</span>
+<span class="sd">            Generate gain errors for `data`.</span>
+
+<span class="sd">        Returns</span>
+<span class="sd">        -------</span>
+<span class="sd">        gain : :class:`containers.GainData`</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">data</span><span class="o">.</span><span class="n">redistribute</span><span class="p">(</span><span class="s2">&quot;freq&quot;</span><span class="p">)</span>
+
+        <span class="n">time</span> <span class="o">=</span> <span class="n">data</span><span class="o">.</span><span class="n">time</span>
+
+        <span class="n">gain_data</span> <span class="o">=</span> <span class="n">containers</span><span class="o">.</span><span class="n">GainData</span><span class="p">(</span><span class="n">time</span><span class="o">=</span><span class="n">time</span><span class="p">,</span> <span class="n">axes_from</span><span class="o">=</span><span class="n">data</span><span class="p">,</span> <span class="n">comm</span><span class="o">=</span><span class="n">data</span><span class="o">.</span><span class="n">comm</span><span class="p">)</span>
+        <span class="n">gain_data</span><span class="o">.</span><span class="n">redistribute</span><span class="p">(</span><span class="s2">&quot;input&quot;</span><span class="p">)</span>
+
+        <span class="c1"># Save some useful attributes</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">ninput_local</span> <span class="o">=</span> <span class="n">gain_data</span><span class="o">.</span><span class="n">gain</span><span class="o">.</span><span class="n">local_shape</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">ninput_global</span> <span class="o">=</span> <span class="n">gain_data</span><span class="o">.</span><span class="n">gain</span><span class="o">.</span><span class="n">global_shape</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">freq</span> <span class="o">=</span> <span class="n">data</span><span class="o">.</span><span class="n">index_map</span><span class="p">[</span><span class="s2">&quot;freq&quot;</span><span class="p">][</span><span class="s2">&quot;centre&quot;</span><span class="p">][:]</span>
+
+        <span class="n">gain_amp</span> <span class="o">=</span> <span class="mf">1.0</span>
+        <span class="n">gain_phase</span> <span class="o">=</span> <span class="mf">0.0</span>
+
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">amp</span><span class="p">:</span>
+            <span class="n">gain_amp</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_generate_amp</span><span class="p">(</span><span class="n">time</span><span class="p">)</span>
+
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">phase</span><span class="p">:</span>
+            <span class="n">gain_phase</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_generate_phase</span><span class="p">(</span><span class="n">time</span><span class="p">)</span>
+
+        <span class="c1"># Combine into an overall gain fluctuation</span>
+        <span class="n">gain_comb</span> <span class="o">=</span> <span class="n">gain_amp</span> <span class="o">*</span> <span class="n">np</span><span class="o">.</span><span class="n">exp</span><span class="p">(</span><span class="mf">1.0</span><span class="n">j</span> <span class="o">*</span> <span class="n">gain_phase</span><span class="p">)</span>
+
+        <span class="c1"># Copy the gain entries into the output container</span>
+        <span class="n">gain</span> <span class="o">=</span> <span class="n">mpiarray</span><span class="o">.</span><span class="n">MPIArray</span><span class="o">.</span><span class="n">wrap</span><span class="p">(</span><span class="n">gain_comb</span><span class="p">,</span> <span class="n">axis</span><span class="o">=</span><span class="mi">1</span><span class="p">,</span> <span class="n">comm</span><span class="o">=</span><span class="n">data</span><span class="o">.</span><span class="n">comm</span><span class="p">)</span>
+        <span class="n">gain_data</span><span class="o">.</span><span class="n">gain</span><span class="p">[:]</span> <span class="o">=</span> <span class="n">gain</span>
+
+        <span class="c1"># Keep a reference to time around for the next round</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_prev_time</span> <span class="o">=</span> <span class="n">time</span>
+
+        <span class="k">return</span> <span class="n">gain_data</span></div>
+
+    <span class="k">def</span> <span class="nf">_corr_func</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">zeta</span><span class="p">,</span> <span class="n">amp</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Generate the correlation function.</span>
+
+<span class="sd">        Parameters</span>
+<span class="sd">        ----------</span>
+<span class="sd">        zeta: float</span>
+<span class="sd">            Correlation length</span>
+<span class="sd">        amp : float</span>
+<span class="sd">            Amplitude (given as standard deviation) of fluctuations.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+
+        <span class="k">def</span> <span class="nf">_cf</span><span class="p">(</span><span class="n">x</span><span class="p">):</span>
+            <span class="n">dij</span> <span class="o">=</span> <span class="n">x</span><span class="p">[:,</span> <span class="n">np</span><span class="o">.</span><span class="n">newaxis</span><span class="p">]</span> <span class="o">-</span> <span class="n">x</span><span class="p">[</span><span class="n">np</span><span class="o">.</span><span class="n">newaxis</span><span class="p">,</span> <span class="p">:]</span>
+            <span class="k">return</span> <span class="n">amp</span> <span class="o">**</span> <span class="mi">2</span> <span class="o">*</span> <span class="n">np</span><span class="o">.</span><span class="n">exp</span><span class="p">(</span><span class="o">-</span><span class="mf">0.5</span> <span class="o">*</span> <span class="p">(</span><span class="n">dij</span> <span class="o">/</span> <span class="n">zeta</span><span class="p">)</span> <span class="o">**</span> <span class="mi">2</span><span class="p">)</span>
+
+        <span class="k">return</span> <span class="n">_cf</span>
+
+    <span class="k">def</span> <span class="nf">_generate_amp</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">time</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Generate phase gain errors.</span>
+
+<span class="sd">        This implementation is blank. Must be overriden.</span>
+
+<span class="sd">        Parameters</span>
+<span class="sd">        ----------</span>
+<span class="sd">        time : np.ndarray</span>
+<span class="sd">            Generate amplitude fluctuations for this time period.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">raise</span> <span class="ne">NotImplementedError</span>
+
+    <span class="k">def</span> <span class="nf">_generate_phase</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">time</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Generate phase gain errors.</span>
+
+<span class="sd">        This implementation is blank. Must be overriden.</span>
+
+<span class="sd">        Parameters</span>
+<span class="sd">        ----------</span>
+<span class="sd">        time : np.ndarray</span>
+<span class="sd">           Generate phase fluctuations for this time period.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">raise</span> <span class="ne">NotImplementedError</span></div>
+
+
+<div class="viewcode-block" id="SiderealGains"><a class="viewcode-back" href="../../../_autosummary/draco.synthesis.gain.html#draco.synthesis.gain.SiderealGains">[docs]</a><span class="k">class</span> <span class="nc">SiderealGains</span><span class="p">(</span><span class="n">BaseGains</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;Task for simulating sidereal gains.</span>
+
+<span class="sd">    This base class is useful for generating gain errors in sidereal time.</span>
+<span class="sd">    The simulation period is set by `start_time` and `end_time` and does not</span>
+<span class="sd">    need any input to `process`.</span>
+
+<span class="sd">    Attributes</span>
+<span class="sd">    ----------</span>
+<span class="sd">    start_time, end_time : float or datetime</span>
+<span class="sd">        Start and end times of the gain timestream to simulate. Needs to be either a</span>
+<span class="sd">        `float` (UNIX time) or a `datetime` objects in UTC. This determines the set</span>
+<span class="sd">        of LSDs to generate data for.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+
+    <span class="n">start_time</span> <span class="o">=</span> <span class="n">config</span><span class="o">.</span><span class="n">utc_time</span><span class="p">()</span>
+    <span class="n">end_time</span> <span class="o">=</span> <span class="n">config</span><span class="o">.</span><span class="n">utc_time</span><span class="p">()</span>
+
+<div class="viewcode-block" id="SiderealGains.setup"><a class="viewcode-back" href="../../../_autosummary/draco.synthesis.gain.html#draco.synthesis.gain.SiderealGains.setup">[docs]</a>    <span class="k">def</span> <span class="nf">setup</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">bt</span><span class="p">,</span> <span class="n">sstream</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Set up an observer and the data to use for this simulation.</span>
+
+<span class="sd">        Parameters</span>
+<span class="sd">        ----------</span>
+<span class="sd">        bt : beamtransfer.BeamTransfer or manager.ProductManager</span>
+<span class="sd">            Sets up an observer holding the geographic location of the telscope.</span>
+<span class="sd">        sstream : containers.SiderealStream</span>
+<span class="sd">            The sidereal data to use for this gain simulation.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">observer</span> <span class="o">=</span> <span class="n">io</span><span class="o">.</span><span class="n">get_telescope</span><span class="p">(</span><span class="n">bt</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">lsd_start</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">observer</span><span class="o">.</span><span class="n">unix_to_lsd</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">start_time</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">lsd_end</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">observer</span><span class="o">.</span><span class="n">unix_to_lsd</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">end_time</span><span class="p">)</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">log</span><span class="o">.</span><span class="n">info</span><span class="p">(</span>
+            <span class="s2">&quot;Sidereal period requested: LSD=</span><span class="si">%i</span><span class="s2"> to LSD=</span><span class="si">%i</span><span class="s2">&quot;</span><span class="p">,</span>
+            <span class="nb">int</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">lsd_start</span><span class="p">),</span>
+            <span class="nb">int</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">lsd_end</span><span class="p">),</span>
+        <span class="p">)</span>
+
+        <span class="c1"># Initialize the current lsd time</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_current_lsd</span> <span class="o">=</span> <span class="kc">None</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">sstream</span> <span class="o">=</span> <span class="n">sstream</span></div>
+
+<div class="viewcode-block" id="SiderealGains.process"><a class="viewcode-back" href="../../../_autosummary/draco.synthesis.gain.html#draco.synthesis.gain.SiderealGains.process">[docs]</a>    <span class="k">def</span> <span class="nf">process</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Generate a gain timestream for the inputs and times in `data`.</span>
+
+<span class="sd">        Returns</span>
+<span class="sd">        -------</span>
+<span class="sd">        gain : :class:`containers.SiderealGainData`</span>
+<span class="sd">            Simulated gain errors in sidereal time.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="c1"># If current_lsd is None then this is the first time we&#39;ve run</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_current_lsd</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="c1"># Check if lsd is an integer, if not add an lsd</span>
+            <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">lsd_start</span><span class="p">,</span> <span class="nb">int</span><span class="p">):</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">_current_lsd</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">lsd_start</span><span class="p">)</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">_current_lsd</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">lsd_start</span> <span class="o">+</span> <span class="mi">1</span><span class="p">)</span>
+
+        <span class="c1"># Check if we have reached the end of the requested time</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_current_lsd</span> <span class="o">&gt;=</span> <span class="bp">self</span><span class="o">.</span><span class="n">lsd_end</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="n">pipeline</span><span class="o">.</span><span class="n">PipelineStopIteration</span>
+
+        <span class="c1"># Convert the current lsd day to unix time</span>
+        <span class="n">unix_start</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">observer</span><span class="o">.</span><span class="n">lsd_to_unix</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_current_lsd</span><span class="p">)</span>
+        <span class="n">unix_end</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">observer</span><span class="o">.</span><span class="n">lsd_to_unix</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_current_lsd</span> <span class="o">+</span> <span class="mi">1</span><span class="p">)</span>
+
+        <span class="c1"># Distribute the sidereal data and create a time array</span>
+        <span class="n">data</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">sstream</span>
+        <span class="n">data</span><span class="o">.</span><span class="n">redistribute</span><span class="p">(</span><span class="s2">&quot;freq&quot;</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">freq</span> <span class="o">=</span> <span class="n">data</span><span class="o">.</span><span class="n">index_map</span><span class="p">[</span><span class="s2">&quot;freq&quot;</span><span class="p">][</span><span class="s2">&quot;centre&quot;</span><span class="p">][:]</span>
+        <span class="n">nra</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">data</span><span class="o">.</span><span class="n">ra</span><span class="p">)</span>
+        <span class="n">time</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">linspace</span><span class="p">(</span><span class="n">unix_start</span><span class="p">,</span> <span class="n">unix_end</span><span class="p">,</span> <span class="n">nra</span><span class="p">,</span> <span class="n">endpoint</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
+
+        <span class="c1"># Make a sidereal gain data container</span>
+        <span class="n">gain_data</span> <span class="o">=</span> <span class="n">containers</span><span class="o">.</span><span class="n">SiderealGainData</span><span class="p">(</span><span class="n">axes_from</span><span class="o">=</span><span class="n">data</span><span class="p">,</span> <span class="n">comm</span><span class="o">=</span><span class="n">data</span><span class="o">.</span><span class="n">comm</span><span class="p">)</span>
+        <span class="n">gain_data</span><span class="o">.</span><span class="n">redistribute</span><span class="p">(</span><span class="s2">&quot;input&quot;</span><span class="p">)</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">ninput_local</span> <span class="o">=</span> <span class="n">gain_data</span><span class="o">.</span><span class="n">gain</span><span class="o">.</span><span class="n">local_shape</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">ninput_global</span> <span class="o">=</span> <span class="n">gain_data</span><span class="o">.</span><span class="n">gain</span><span class="o">.</span><span class="n">global_shape</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span>
+
+        <span class="n">gain_amp</span> <span class="o">=</span> <span class="mf">1.0</span>
+        <span class="n">gain_phase</span> <span class="o">=</span> <span class="mf">0.0</span>
+
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">amp</span><span class="p">:</span>
+            <span class="n">gain_amp</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_generate_amp</span><span class="p">(</span><span class="n">time</span><span class="p">)</span>
+
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">phase</span><span class="p">:</span>
+            <span class="n">gain_phase</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_generate_phase</span><span class="p">(</span><span class="n">time</span><span class="p">)</span>
+
+        <span class="c1"># Combine into an overall gain fluctuation</span>
+        <span class="n">gain_comb</span> <span class="o">=</span> <span class="n">gain_amp</span> <span class="o">*</span> <span class="n">np</span><span class="o">.</span><span class="n">exp</span><span class="p">(</span><span class="mf">1.0</span><span class="n">j</span> <span class="o">*</span> <span class="n">gain_phase</span><span class="p">)</span>
+
+        <span class="c1"># Copy the gain entries into the output container</span>
+        <span class="n">gain</span> <span class="o">=</span> <span class="n">mpiarray</span><span class="o">.</span><span class="n">MPIArray</span><span class="o">.</span><span class="n">wrap</span><span class="p">(</span><span class="n">gain_comb</span><span class="p">,</span> <span class="n">axis</span><span class="o">=</span><span class="mi">1</span><span class="p">,</span> <span class="n">comm</span><span class="o">=</span><span class="n">data</span><span class="o">.</span><span class="n">comm</span><span class="p">)</span>
+        <span class="n">gain_data</span><span class="o">.</span><span class="n">gain</span><span class="p">[:]</span> <span class="o">=</span> <span class="n">gain</span>
+        <span class="n">gain_data</span><span class="o">.</span><span class="n">attrs</span><span class="p">[</span><span class="s2">&quot;lsd&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_current_lsd</span>
+        <span class="n">gain_data</span><span class="o">.</span><span class="n">attrs</span><span class="p">[</span><span class="s2">&quot;tag&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="s2">&quot;lsd_</span><span class="si">%i</span><span class="s2">&quot;</span> <span class="o">%</span> <span class="bp">self</span><span class="o">.</span><span class="n">_current_lsd</span>
+
+        <span class="c1"># Increment current lsd</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_current_lsd</span> <span class="o">+=</span> <span class="mi">1</span>
+
+        <span class="c1"># Keep a reference to time around for the next round</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_prev_time</span> <span class="o">=</span> <span class="n">time</span>
+
+        <span class="k">return</span> <span class="n">gain_data</span></div></div>
+
+
+<div class="viewcode-block" id="RandomGains"><a class="viewcode-back" href="../../../_autosummary/draco.synthesis.gain.html#draco.synthesis.gain.RandomGains">[docs]</a><span class="k">class</span> <span class="nc">RandomGains</span><span class="p">(</span><span class="n">BaseGains</span><span class="p">):</span>
+    <span class="sa">r</span><span class="sd">&quot;&quot;&quot;Generate random gains.</span>
+
+<span class="sd">    Notes</span>
+<span class="sd">    -----</span>
+<span class="sd">    The Random Gains class generates random fluctuations in gain amplitude and</span>
+<span class="sd">    phase.</span>
+
+<span class="sd">    Attributes</span>
+<span class="sd">    ----------</span>
+<span class="sd">    corr_length_amp, corr_length_phase : float</span>
+<span class="sd">        Correlation length for amplitude and phase fluctuations in seconds.</span>
+<span class="sd">    sigma_amp, sigma_phase : float</span>
+<span class="sd">        Size of fluctuations for amplitude (fractional), and phase (radians).</span>
+
+<span class="sd">    Notes</span>
+<span class="sd">    -----</span>
+<span class="sd">    This task generates gain time streams which are Gaussian distributed with</span>
+<span class="sd">    covariance</span>
+
+<span class="sd">    .. math::</span>
+<span class="sd">        C_{ij} = \sigma^2 \exp{\left(-\frac{1}{2 \xi^2}(t_i - t_j)^2\right)}</span>
+
+<span class="sd">    As the time stream is generated in separate pieces, to ensure that there is</span>
+<span class="sd">    consistency between them each gain time stream is drawn as a constrained</span>
+<span class="sd">    realisation against the previous file.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+
+    <span class="n">corr_length_amp</span> <span class="o">=</span> <span class="n">config</span><span class="o">.</span><span class="n">Property</span><span class="p">(</span><span class="n">default</span><span class="o">=</span><span class="mf">3600.0</span><span class="p">,</span> <span class="n">proptype</span><span class="o">=</span><span class="nb">float</span><span class="p">)</span>
+    <span class="n">corr_length_phase</span> <span class="o">=</span> <span class="n">config</span><span class="o">.</span><span class="n">Property</span><span class="p">(</span><span class="n">default</span><span class="o">=</span><span class="mf">3600.0</span><span class="p">,</span> <span class="n">proptype</span><span class="o">=</span><span class="nb">float</span><span class="p">)</span>
+
+    <span class="n">sigma_amp</span> <span class="o">=</span> <span class="n">config</span><span class="o">.</span><span class="n">Property</span><span class="p">(</span><span class="n">default</span><span class="o">=</span><span class="mf">0.02</span><span class="p">,</span> <span class="n">proptype</span><span class="o">=</span><span class="nb">float</span><span class="p">)</span>
+    <span class="n">sigma_phase</span> <span class="o">=</span> <span class="n">config</span><span class="o">.</span><span class="n">Property</span><span class="p">(</span><span class="n">default</span><span class="o">=</span><span class="mf">0.1</span><span class="p">,</span> <span class="n">proptype</span><span class="o">=</span><span class="nb">float</span><span class="p">)</span>
+
+    <span class="n">_prev_amp</span> <span class="o">=</span> <span class="kc">None</span>
+    <span class="n">_prev_phase</span> <span class="o">=</span> <span class="kc">None</span>
+
+    <span class="k">def</span> <span class="nf">_generate_amp</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">time</span><span class="p">):</span>
+
+        <span class="c1"># Generate the correlation function</span>
+        <span class="n">cf_amp</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_corr_func</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">corr_length_amp</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">sigma_amp</span><span class="p">)</span>
+        <span class="n">ninput</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">ninput_local</span>
+        <span class="n">num_realisations</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">freq</span><span class="p">)</span> <span class="o">*</span> <span class="n">ninput</span>
+        <span class="n">ntime</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">time</span><span class="p">)</span>
+
+        <span class="c1"># Generate amplitude fluctuations</span>
+        <span class="n">gain_amp</span> <span class="o">=</span> <span class="n">generate_fluctuations</span><span class="p">(</span>
+            <span class="n">time</span><span class="p">,</span> <span class="n">cf_amp</span><span class="p">,</span> <span class="n">num_realisations</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">_prev_time</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">_prev_amp</span>
+        <span class="p">)</span>
+
+        <span class="c1"># Save amplitude fluctuations to instannce</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_prev_amp</span> <span class="o">=</span> <span class="n">gain_amp</span>
+
+        <span class="n">gain_amp</span> <span class="o">=</span> <span class="n">gain_amp</span><span class="o">.</span><span class="n">reshape</span><span class="p">((</span><span class="nb">len</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">freq</span><span class="p">),</span> <span class="n">ninput</span><span class="p">,</span> <span class="n">ntime</span><span class="p">))</span>
+        <span class="n">gain_amp</span> <span class="o">=</span> <span class="mf">1.0</span> <span class="o">+</span> <span class="n">gain_amp</span>
+
+        <span class="k">return</span> <span class="n">gain_amp</span>
+
+    <span class="k">def</span> <span class="nf">_generate_phase</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">time</span><span class="p">):</span>
+
+        <span class="c1"># Generate the correlation function</span>
+        <span class="n">cf_phase</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_corr_func</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">corr_length_phase</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">sigma_phase</span><span class="p">)</span>
+        <span class="n">ninput</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">ninput_local</span>
+        <span class="n">num_realisations</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">freq</span><span class="p">)</span> <span class="o">*</span> <span class="n">ninput</span>
+        <span class="n">ntime</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">time</span><span class="p">)</span>
+
+        <span class="c1"># Generate phase fluctuations</span>
+        <span class="n">gain_phase_fluc</span> <span class="o">=</span> <span class="n">generate_fluctuations</span><span class="p">(</span>
+            <span class="n">time</span><span class="p">,</span> <span class="n">cf_phase</span><span class="p">,</span> <span class="n">num_realisations</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">_prev_time</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">_prev_phase</span>
+        <span class="p">)</span>
+
+        <span class="c1"># Save phase fluctuations to instannce</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_prev_phase</span> <span class="o">=</span> <span class="n">gain_phase_fluc</span>
+        <span class="c1"># Reshape to correct size</span>
+        <span class="n">gain_phase_fluc</span> <span class="o">=</span> <span class="n">gain_phase_fluc</span><span class="o">.</span><span class="n">reshape</span><span class="p">((</span><span class="nb">len</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">freq</span><span class="p">),</span> <span class="n">ninput</span><span class="p">,</span> <span class="n">ntime</span><span class="p">))</span>
+
+        <span class="k">return</span> <span class="n">gain_phase_fluc</span></div>
+
+
+<div class="viewcode-block" id="RandomSiderealGains"><a class="viewcode-back" href="../../../_autosummary/draco.synthesis.gain.html#draco.synthesis.gain.RandomSiderealGains">[docs]</a><span class="k">class</span> <span class="nc">RandomSiderealGains</span><span class="p">(</span><span class="n">RandomGains</span><span class="p">,</span> <span class="n">SiderealGains</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;Generate random gains on a Sidereal grid.</span>
+
+<span class="sd">    See the documentation for `RandomGains` and `SiderealGains` for more detail.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+
+    <span class="k">pass</span></div>
+
+
+<div class="viewcode-block" id="GainStacker"><a class="viewcode-back" href="../../../_autosummary/draco.synthesis.gain.html#draco.synthesis.gain.GainStacker">[docs]</a><span class="k">class</span> <span class="nc">GainStacker</span><span class="p">(</span><span class="n">task</span><span class="o">.</span><span class="n">SingleTask</span><span class="p">):</span>
+    <span class="sa">r</span><span class="sd">&quot;&quot;&quot;Take sidereal gain data, make products and stack them up.</span>
+
+<span class="sd">    Attributes</span>
+<span class="sd">    ----------</span>
+<span class="sd">    only_gains : bool</span>
+<span class="sd">        Whether to return only the stacked gains or the stacked gains</span>
+<span class="sd">        mulitplied with the visibilites. Default: False.</span>
+
+<span class="sd">    Notes</span>
+<span class="sd">    -----</span>
+<span class="sd">    This task generates products of gain time streams for every sidereal day and</span>
+<span class="sd">    stacks them up over the number of days in the simulation.</span>
+
+<span class="sd">    More formally a gain stack can be described as</span>
+
+<span class="sd">    .. math::</span>
+<span class="sd">        G_{ij} = \sum_{a}^{Ndays} g_{i}(t)^{a} g_j(t)^{*a}</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+
+    <span class="n">only_gains</span> <span class="o">=</span> <span class="n">config</span><span class="o">.</span><span class="n">Property</span><span class="p">(</span><span class="n">default</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span> <span class="n">proptype</span><span class="o">=</span><span class="nb">bool</span><span class="p">)</span>
+
+    <span class="n">gain_stack</span> <span class="o">=</span> <span class="kc">None</span>
+    <span class="n">lsd_list</span> <span class="o">=</span> <span class="kc">None</span>
+
+<div class="viewcode-block" id="GainStacker.setup"><a class="viewcode-back" href="../../../_autosummary/draco.synthesis.gain.html#draco.synthesis.gain.GainStacker.setup">[docs]</a>    <span class="k">def</span> <span class="nf">setup</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">stream</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Get the sidereal stream onto which we stack the simulated gain data.</span>
+
+<span class="sd">        Parameters</span>
+<span class="sd">        ----------</span>
+<span class="sd">        stream : containers.SiderealStream or containers.TimeStream</span>
+<span class="sd">            The sidereal or time data to use.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">stream</span> <span class="o">=</span> <span class="n">stream</span></div>
+
+<div class="viewcode-block" id="GainStacker.process"><a class="viewcode-back" href="../../../_autosummary/draco.synthesis.gain.html#draco.synthesis.gain.GainStacker.process">[docs]</a>    <span class="k">def</span> <span class="nf">process</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">gain</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Make sidereal gain products and stack them up.</span>
+
+<span class="sd">        Parameters</span>
+<span class="sd">        ----------</span>
+<span class="sd">        gain : containers.SiderealGainData or containers.GainData</span>
+<span class="sd">            Individual sidereal or time ordered gain data.</span>
+
+<span class="sd">        Returns</span>
+<span class="sd">        -------</span>
+<span class="sd">        gain_stack : containers.TimeStream or containers.SiderealStream</span>
+<span class="sd">            Stacked products of gains.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">stream</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">stream</span>
+
+        <span class="n">prod</span> <span class="o">=</span> <span class="n">stream</span><span class="o">.</span><span class="n">index_map</span><span class="p">[</span><span class="s2">&quot;prod&quot;</span><span class="p">]</span>
+
+        <span class="k">if</span> <span class="s2">&quot;lsd&quot;</span> <span class="ow">in</span> <span class="n">gain</span><span class="o">.</span><span class="n">attrs</span><span class="p">:</span>
+            <span class="n">input_lsd</span> <span class="o">=</span> <span class="n">gain</span><span class="o">.</span><span class="n">attrs</span><span class="p">[</span><span class="s2">&quot;lsd&quot;</span><span class="p">]</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">input_lsd</span> <span class="o">=</span> <span class="o">-</span><span class="mi">1</span>
+
+        <span class="n">input_lsd</span> <span class="o">=</span> <span class="n">_ensure_list</span><span class="p">(</span><span class="n">input_lsd</span><span class="p">)</span>
+
+        <span class="c1"># If gain_stack is None create an MPIArray to hold the product expanded</span>
+        <span class="c1"># gain data and redistribute over all freq</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">gain_stack</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">gain_stack</span> <span class="o">=</span> <span class="n">containers</span><span class="o">.</span><span class="n">empty_like</span><span class="p">(</span><span class="n">stream</span><span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">gain_stack</span><span class="o">.</span><span class="n">redistribute</span><span class="p">(</span><span class="s2">&quot;freq&quot;</span><span class="p">)</span>
+            <span class="n">gain</span><span class="o">.</span><span class="n">redistribute</span><span class="p">(</span><span class="s2">&quot;freq&quot;</span><span class="p">)</span>
+
+            <span class="n">gsv</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">gain_stack</span><span class="o">.</span><span class="n">vis</span><span class="p">[:]</span>
+            <span class="n">g</span> <span class="o">=</span> <span class="n">gain</span><span class="o">.</span><span class="n">gain</span><span class="p">[:]</span>
+
+            <span class="k">for</span> <span class="n">pi</span><span class="p">,</span> <span class="p">(</span><span class="n">ii</span><span class="p">,</span> <span class="n">jj</span><span class="p">)</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">prod</span><span class="p">):</span>
+                <span class="n">gsv</span><span class="p">[:,</span> <span class="n">pi</span><span class="p">,</span> <span class="p">:]</span> <span class="o">=</span> <span class="n">g</span><span class="p">[:,</span> <span class="n">ii</span><span class="p">]</span> <span class="o">*</span> <span class="n">np</span><span class="o">.</span><span class="n">conjugate</span><span class="p">(</span><span class="n">g</span><span class="p">[:,</span> <span class="n">jj</span><span class="p">])</span>
+
+            <span class="bp">self</span><span class="o">.</span><span class="n">gain_stack</span><span class="o">.</span><span class="n">weight</span><span class="p">[:]</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">ones</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">gain_stack</span><span class="o">.</span><span class="n">vis</span><span class="o">.</span><span class="n">local_shape</span><span class="p">)</span>
+
+            <span class="bp">self</span><span class="o">.</span><span class="n">lsd_list</span> <span class="o">=</span> <span class="n">input_lsd</span>
+
+            <span class="bp">self</span><span class="o">.</span><span class="n">log</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s2">&quot;Starting gain stack with LSD:</span><span class="si">%i</span><span class="s2">&quot;</span><span class="p">,</span> <span class="n">input_lsd</span><span class="p">[</span><span class="mi">0</span><span class="p">])</span>
+
+            <span class="k">return</span>
+
+        <span class="c1"># Keep gains around for next round, save current lsd to list, log</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">log</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s2">&quot;Adding LSD:</span><span class="si">%i</span><span class="s2"> to gain stack&quot;</span><span class="p">,</span> <span class="n">gain</span><span class="o">.</span><span class="n">attrs</span><span class="p">[</span><span class="s2">&quot;lsd&quot;</span><span class="p">])</span>
+
+        <span class="n">gain</span><span class="o">.</span><span class="n">redistribute</span><span class="p">(</span><span class="s2">&quot;freq&quot;</span><span class="p">)</span>
+        <span class="n">gsv</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">gain_stack</span><span class="o">.</span><span class="n">vis</span><span class="p">[:]</span>
+        <span class="n">g</span> <span class="o">=</span> <span class="n">gain</span><span class="o">.</span><span class="n">gain</span><span class="p">[:]</span>
+
+        <span class="c1"># Calculate the gain products</span>
+        <span class="k">for</span> <span class="n">pi</span><span class="p">,</span> <span class="p">(</span><span class="n">ii</span><span class="p">,</span> <span class="n">jj</span><span class="p">)</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">prod</span><span class="p">):</span>
+            <span class="n">gsv</span><span class="p">[:,</span> <span class="n">pi</span><span class="p">]</span> <span class="o">+=</span> <span class="n">g</span><span class="p">[:,</span> <span class="n">ii</span><span class="p">]</span> <span class="o">*</span> <span class="n">np</span><span class="o">.</span><span class="n">conjugate</span><span class="p">(</span><span class="n">g</span><span class="p">[:,</span> <span class="n">jj</span><span class="p">])</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">gain_stack</span><span class="o">.</span><span class="n">weight</span><span class="p">[:]</span> <span class="o">+=</span> <span class="n">np</span><span class="o">.</span><span class="n">ones</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">gain_stack</span><span class="o">.</span><span class="n">vis</span><span class="o">.</span><span class="n">local_shape</span><span class="p">)</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">lsd_list</span> <span class="o">+=</span> <span class="n">input_lsd</span></div>
+
+<div class="viewcode-block" id="GainStacker.process_finish"><a class="viewcode-back" href="../../../_autosummary/draco.synthesis.gain.html#draco.synthesis.gain.GainStacker.process_finish">[docs]</a>    <span class="k">def</span> <span class="nf">process_finish</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Multiply summed gain with sidereal stream.</span>
+
+<span class="sd">        Returns</span>
+<span class="sd">        -------</span>
+<span class="sd">        data : containers.SiderealStream or containers.TimeStream</span>
+<span class="sd">            Stack of sidereal data with gain applied.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="c1"># If requested, or shapes of visibilties and gain stack don&#39;t match then just return stack.</span>
+        <span class="k">if</span> <span class="p">(</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">stream</span><span class="o">.</span><span class="n">vis</span><span class="p">[:]</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span> <span class="o">!=</span> <span class="bp">self</span><span class="o">.</span><span class="n">gain_stack</span><span class="o">.</span><span class="n">vis</span><span class="p">[:]</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span>
+        <span class="p">)</span> <span class="ow">or</span> <span class="bp">self</span><span class="o">.</span><span class="n">only_gains</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">log</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s2">&quot;Saving only gain stack&quot;</span><span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">log</span><span class="o">.</span><span class="n">info</span><span class="p">(</span>
+                <span class="s2">&quot;Either requested or shapes of visibilites and gain stack do not match&quot;</span>
+            <span class="p">)</span>
+
+            <span class="bp">self</span><span class="o">.</span><span class="n">gain_stack</span><span class="o">.</span><span class="n">vis</span><span class="p">[:]</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">gain_stack</span><span class="o">.</span><span class="n">vis</span><span class="p">[:]</span> <span class="o">/</span> <span class="bp">self</span><span class="o">.</span><span class="n">gain_stack</span><span class="o">.</span><span class="n">weight</span><span class="p">[:]</span>
+
+            <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">gain_stack</span>
+
+        <span class="n">data</span> <span class="o">=</span> <span class="n">containers</span><span class="o">.</span><span class="n">empty_like</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">stream</span><span class="p">)</span>
+        <span class="n">data</span><span class="o">.</span><span class="n">redistribute</span><span class="p">(</span><span class="s2">&quot;freq&quot;</span><span class="p">)</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">gain_stack</span><span class="o">.</span><span class="n">vis</span><span class="p">[:]</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">gain_stack</span><span class="o">.</span><span class="n">vis</span><span class="p">[:]</span> <span class="o">/</span> <span class="bp">self</span><span class="o">.</span><span class="n">gain_stack</span><span class="o">.</span><span class="n">weight</span><span class="p">[:]</span>
+        <span class="n">data</span><span class="o">.</span><span class="n">vis</span><span class="p">[:]</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">stream</span><span class="o">.</span><span class="n">vis</span><span class="p">[:]</span> <span class="o">*</span> <span class="bp">self</span><span class="o">.</span><span class="n">gain_stack</span><span class="o">.</span><span class="n">vis</span><span class="p">[:]</span>
+        <span class="n">data</span><span class="o">.</span><span class="n">weight</span><span class="p">[:]</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">stream</span><span class="o">.</span><span class="n">weight</span><span class="p">[:]</span>
+
+        <span class="n">data</span><span class="o">.</span><span class="n">attrs</span><span class="p">[</span><span class="s2">&quot;tag&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="s2">&quot;gain_stack&quot;</span>
+
+        <span class="k">return</span> <span class="n">data</span></div></div>
+
+
+<span class="k">def</span> <span class="nf">_ensure_list</span><span class="p">(</span><span class="n">x</span><span class="p">):</span>
+
+    <span class="k">if</span> <span class="nb">hasattr</span><span class="p">(</span><span class="n">x</span><span class="p">,</span> <span class="s2">&quot;__iter__&quot;</span><span class="p">):</span>
+        <span class="n">y</span> <span class="o">=</span> <span class="p">[</span><span class="n">xx</span> <span class="k">for</span> <span class="n">xx</span> <span class="ow">in</span> <span class="n">x</span><span class="p">]</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="n">y</span> <span class="o">=</span> <span class="p">[</span><span class="n">x</span><span class="p">]</span>
+
+    <span class="k">return</span> <span class="n">y</span>
+
+
+<div class="viewcode-block" id="generate_fluctuations"><a class="viewcode-back" href="../../../_autosummary/draco.synthesis.gain.html#draco.synthesis.gain.generate_fluctuations">[docs]</a><span class="k">def</span> <span class="nf">generate_fluctuations</span><span class="p">(</span><span class="n">x</span><span class="p">,</span> <span class="n">corrfunc</span><span class="p">,</span> <span class="n">n</span><span class="p">,</span> <span class="n">prev_x</span><span class="p">,</span> <span class="n">prev_fluc</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;Generate correlated random streams.</span>
+
+<span class="sd">    Generates a Gaussian field from the given correlation function and (potentially)</span>
+<span class="sd">    correlated with prior data.</span>
+
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    x : np.ndarray[npoints]</span>
+<span class="sd">        Coordinates of samples in the new stream.</span>
+<span class="sd">    corrfunc : function</span>
+<span class="sd">        See documentation of `gaussian_realisation`.</span>
+<span class="sd">    prev_x : np.ndarray[npoints]</span>
+<span class="sd">        Coordinates of previous samples. Ignored if `prev_fluc` is None.</span>
+<span class="sd">    prev_fluc : np.ndarray[npoints]</span>
+<span class="sd">        Values of previous samples. If `None` the stream is initialised.</span>
+<span class="sd">    n : int</span>
+<span class="sd">        Number of realisations to generate.</span>
+
+<span class="sd">    Returns</span>
+<span class="sd">    -------</span>
+<span class="sd">    y : np.ndarray[n, npoints]</span>
+<span class="sd">        Realisations of the stream.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">nx</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">x</span><span class="p">)</span>
+
+    <span class="k">if</span> <span class="n">prev_fluc</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="n">fluctuations</span> <span class="o">=</span> <span class="n">gaussian_realisation</span><span class="p">(</span><span class="n">x</span><span class="p">,</span> <span class="n">corrfunc</span><span class="p">,</span> <span class="n">n</span><span class="p">)</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="n">n</span><span class="p">,</span> <span class="n">nx</span><span class="p">)</span>
+
+    <span class="k">else</span><span class="p">:</span>
+        <span class="n">fluctuations</span> <span class="o">=</span> <span class="n">constrained_gaussian_realisation</span><span class="p">(</span>
+            <span class="n">x</span><span class="p">,</span> <span class="n">corrfunc</span><span class="p">,</span> <span class="n">n</span><span class="p">,</span> <span class="n">prev_x</span><span class="p">,</span> <span class="n">prev_fluc</span>
+        <span class="p">)</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="n">n</span><span class="p">,</span> <span class="n">nx</span><span class="p">)</span>
+
+    <span class="k">return</span> <span class="n">fluctuations</span></div>
+
+
+<div class="viewcode-block" id="gaussian_realisation"><a class="viewcode-back" href="../../../_autosummary/draco.synthesis.gain.html#draco.synthesis.gain.gaussian_realisation">[docs]</a><span class="k">def</span> <span class="nf">gaussian_realisation</span><span class="p">(</span><span class="n">x</span><span class="p">,</span> <span class="n">corrfunc</span><span class="p">,</span> <span class="n">n</span><span class="p">,</span> <span class="n">rcond</span><span class="o">=</span><span class="mf">1e-12</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;Generate a Gaussian random field.</span>
+
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    x : np.ndarray[npoints] or np.ndarray[npoints, ndim]</span>
+<span class="sd">        Co-ordinates of points to generate.</span>
+<span class="sd">    corrfunc : function(x) -&gt; covariance matrix</span>
+<span class="sd">        Function that take (vectorized) co-ordinates and returns their</span>
+<span class="sd">        covariance functions.</span>
+<span class="sd">    n : integer</span>
+<span class="sd">        Number of realisations to generate.</span>
+<span class="sd">    rcond : float, optional</span>
+<span class="sd">        Ignore eigenmodes smaller than `rcond` times the largest eigenvalue.</span>
+
+<span class="sd">    Returns</span>
+<span class="sd">    -------</span>
+<span class="sd">    y : np.ndarray[n, npoints]</span>
+<span class="sd">        Realisations of the gaussian field.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">return</span> <span class="n">_realisation</span><span class="p">(</span><span class="n">corrfunc</span><span class="p">(</span><span class="n">x</span><span class="p">),</span> <span class="n">n</span><span class="p">,</span> <span class="n">rcond</span><span class="p">)</span></div>
+
+
+<span class="k">def</span> <span class="nf">_realisation</span><span class="p">(</span><span class="n">C</span><span class="p">,</span> <span class="n">n</span><span class="p">,</span> <span class="n">rcond</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;Create a realisation of the given covariance matrix. Regularise by</span>
+<span class="sd">    throwing away small eigenvalues.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="kn">import</span> <span class="nn">scipy.linalg</span> <span class="k">as</span> <span class="nn">la</span>
+
+    <span class="c1"># Find the eigendecomposition, truncate small modes, and use this to</span>
+    <span class="c1"># construct a matrix projecting from the non-singular space</span>
+    <span class="n">evals</span><span class="p">,</span> <span class="n">evecs</span> <span class="o">=</span> <span class="n">la</span><span class="o">.</span><span class="n">eigh</span><span class="p">(</span><span class="n">C</span><span class="p">)</span>
+    <span class="n">num</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">sum</span><span class="p">(</span><span class="n">evals</span> <span class="o">&gt;</span> <span class="n">rcond</span> <span class="o">*</span> <span class="n">evals</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">])</span>
+    <span class="n">R</span> <span class="o">=</span> <span class="n">evecs</span><span class="p">[:,</span> <span class="o">-</span><span class="n">num</span><span class="p">:]</span> <span class="o">*</span> <span class="n">evals</span><span class="p">[</span><span class="n">np</span><span class="o">.</span><span class="n">newaxis</span><span class="p">,</span> <span class="o">-</span><span class="n">num</span><span class="p">:]</span> <span class="o">**</span> <span class="mf">0.5</span>
+
+    <span class="c1"># Generate independent gaussian variables</span>
+    <span class="n">w</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">random</span><span class="o">.</span><span class="n">standard_normal</span><span class="p">((</span><span class="n">n</span><span class="p">,</span> <span class="n">num</span><span class="p">))</span>
+
+    <span class="c1"># Apply projection to get random field</span>
+    <span class="k">return</span> <span class="n">np</span><span class="o">.</span><span class="n">dot</span><span class="p">(</span><span class="n">w</span><span class="p">,</span> <span class="n">R</span><span class="o">.</span><span class="n">T</span><span class="p">)</span>
+
+
+<div class="viewcode-block" id="constrained_gaussian_realisation"><a class="viewcode-back" href="../../../_autosummary/draco.synthesis.gain.html#draco.synthesis.gain.constrained_gaussian_realisation">[docs]</a><span class="k">def</span> <span class="nf">constrained_gaussian_realisation</span><span class="p">(</span><span class="n">x</span><span class="p">,</span> <span class="n">corrfunc</span><span class="p">,</span> <span class="n">n</span><span class="p">,</span> <span class="n">x2</span><span class="p">,</span> <span class="n">y2</span><span class="p">,</span> <span class="n">rcond</span><span class="o">=</span><span class="mf">1e-12</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;Generate a constrained Gaussian random field.</span>
+
+<span class="sd">    Given a correlation function generate a Gaussian random field that is</span>
+<span class="sd">    consistent with an existing set of values of parameter `y2` located at</span>
+<span class="sd">    co-ordinates in parameter `x2`.</span>
+
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    x : np.ndarray[npoints] or np.ndarray[npoints, ndim]</span>
+<span class="sd">        Co-ordinates of points to generate.</span>
+<span class="sd">    corrfunc : function(x) -&gt; covariance matrix</span>
+<span class="sd">        Function that take (vectorized) co-ordinates and returns their</span>
+<span class="sd">        covariance functions.</span>
+<span class="sd">    n : integer</span>
+<span class="sd">        Number of realisations to generate.</span>
+<span class="sd">    x2 : np.ndarray[npoints] or np.ndarray[npoints, ndim]</span>
+<span class="sd">        Co-ordinates of existing points.</span>
+<span class="sd">    y2 : np.ndarray[npoints] or np.ndarray[n, npoints]</span>
+<span class="sd">        Existing values of the random field.</span>
+<span class="sd">    rcond : float, optional</span>
+<span class="sd">        Ignore eigenmodes smaller than `rcond` times the largest eigenvalue.</span>
+
+<span class="sd">    Returns</span>
+<span class="sd">    -------</span>
+<span class="sd">    y : np.ndarray[n, npoints]</span>
+<span class="sd">        Realisations of the gaussian field.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="kn">import</span> <span class="nn">scipy.linalg</span> <span class="k">as</span> <span class="nn">la</span>
+
+    <span class="k">if</span> <span class="p">(</span><span class="n">y2</span><span class="o">.</span><span class="n">ndim</span> <span class="o">&gt;=</span> <span class="mi">2</span><span class="p">)</span> <span class="ow">and</span> <span class="p">(</span><span class="n">n</span> <span class="o">!=</span> <span class="n">y2</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">]):</span>
+        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;Array y2 of existing data has the wrong shape.&quot;</span><span class="p">)</span>
+
+    <span class="c1"># Calculate the covariance matrix for the full dataset</span>
+    <span class="n">xc</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">concatenate</span><span class="p">([</span><span class="n">x</span><span class="p">,</span> <span class="n">x2</span><span class="p">])</span>
+    <span class="n">M</span> <span class="o">=</span> <span class="n">corrfunc</span><span class="p">(</span><span class="n">xc</span><span class="p">)</span>
+
+    <span class="c1"># Select out the different blocks</span>
+    <span class="n">l</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">x</span><span class="p">)</span>
+    <span class="n">A</span> <span class="o">=</span> <span class="n">M</span><span class="p">[:</span><span class="n">l</span><span class="p">,</span> <span class="p">:</span><span class="n">l</span><span class="p">]</span>
+    <span class="n">B</span> <span class="o">=</span> <span class="n">M</span><span class="p">[:</span><span class="n">l</span><span class="p">,</span> <span class="n">l</span><span class="p">:]</span>
+    <span class="n">C</span> <span class="o">=</span> <span class="n">M</span><span class="p">[</span><span class="n">l</span><span class="p">:,</span> <span class="n">l</span><span class="p">:]</span>
+
+    <span class="c1"># This method tends to be unstable when there are singular modes in the</span>
+    <span class="c1"># covariance matrix (i.e. modes with zero variance). We can remove these by</span>
+    <span class="c1"># projecting onto the non-singular modes.</span>
+
+    <span class="c1"># Find the eigendecomposition and construct projection matrices onto the</span>
+    <span class="c1"># non-singular space</span>
+    <span class="n">evals_A</span><span class="p">,</span> <span class="n">evecs_A</span> <span class="o">=</span> <span class="n">la</span><span class="o">.</span><span class="n">eigh</span><span class="p">(</span><span class="n">A</span><span class="p">)</span>
+    <span class="n">evals_C</span><span class="p">,</span> <span class="n">evecs_C</span> <span class="o">=</span> <span class="n">la</span><span class="o">.</span><span class="n">eigh</span><span class="p">(</span><span class="n">C</span><span class="p">)</span>
+
+    <span class="n">num_A</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">sum</span><span class="p">(</span><span class="n">evals_A</span> <span class="o">&gt;</span> <span class="n">rcond</span> <span class="o">*</span> <span class="n">evals_A</span><span class="o">.</span><span class="n">max</span><span class="p">())</span>
+    <span class="n">num_C</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">sum</span><span class="p">(</span><span class="n">evals_C</span> <span class="o">&gt;</span> <span class="n">rcond</span> <span class="o">*</span> <span class="n">evals_C</span><span class="o">.</span><span class="n">max</span><span class="p">())</span>
+
+    <span class="n">R_A</span> <span class="o">=</span> <span class="n">evecs_A</span><span class="p">[:,</span> <span class="o">-</span><span class="n">num_A</span><span class="p">:]</span>
+    <span class="n">R_C</span> <span class="o">=</span> <span class="n">evecs_C</span><span class="p">[:,</span> <span class="o">-</span><span class="n">num_C</span><span class="p">:]</span>
+
+    <span class="c1"># Construct the covariance blocks in the reduced basis</span>
+    <span class="n">A_r</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">diag</span><span class="p">(</span><span class="n">evals_A</span><span class="p">[</span><span class="o">-</span><span class="n">num_A</span><span class="p">:])</span>
+    <span class="n">B_r</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">dot</span><span class="p">(</span><span class="n">R_A</span><span class="o">.</span><span class="n">T</span><span class="p">,</span> <span class="n">np</span><span class="o">.</span><span class="n">dot</span><span class="p">(</span><span class="n">B</span><span class="p">,</span> <span class="n">R_C</span><span class="p">))</span>
+    <span class="n">Ci_r</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">diag</span><span class="p">(</span><span class="mf">1.0</span> <span class="o">/</span> <span class="n">evals_C</span><span class="p">[</span><span class="o">-</span><span class="n">num_C</span><span class="p">:])</span>
+
+    <span class="c1"># Project the existing data into the new basis</span>
+    <span class="n">y2_r</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">dot</span><span class="p">(</span><span class="n">y2</span><span class="p">,</span> <span class="n">R_C</span><span class="p">)</span>
+
+    <span class="c1"># Calculate the mean of the new variables</span>
+    <span class="n">z_r</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">dot</span><span class="p">(</span><span class="n">y2_r</span><span class="p">,</span> <span class="n">np</span><span class="o">.</span><span class="n">dot</span><span class="p">(</span><span class="n">Ci_r</span><span class="p">,</span> <span class="n">B_r</span><span class="o">.</span><span class="n">T</span><span class="p">))</span>
+
+    <span class="c1"># Generate fluctuations for the new variables (in the reduced basis)</span>
+    <span class="n">Ap_r</span> <span class="o">=</span> <span class="n">A_r</span> <span class="o">-</span> <span class="n">np</span><span class="o">.</span><span class="n">dot</span><span class="p">(</span><span class="n">B_r</span><span class="p">,</span> <span class="n">np</span><span class="o">.</span><span class="n">dot</span><span class="p">(</span><span class="n">Ci_r</span><span class="p">,</span> <span class="n">B_r</span><span class="o">.</span><span class="n">T</span><span class="p">))</span>
+    <span class="n">y_r</span> <span class="o">=</span> <span class="n">_realisation</span><span class="p">(</span><span class="n">Ap_r</span><span class="p">,</span> <span class="n">n</span><span class="p">,</span> <span class="n">rcond</span><span class="p">)</span>
+
+    <span class="c1"># Project into the original basis for A</span>
+    <span class="n">y</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">dot</span><span class="p">(</span><span class="n">z_r</span> <span class="o">+</span> <span class="n">y_r</span><span class="p">,</span> <span class="n">R_A</span><span class="o">.</span><span class="n">T</span><span class="p">)</span>
+
+    <span class="k">return</span> <span class="n">y</span></div>
+</pre></div>
+
+           </div>
+           
+          </div>
+          <footer>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>
+        &#169; Copyright 2016, Richard Shaw.
+
+    </p>
+  </div>
+    
+    
+    
+    Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    
+    provided by <a href="https://readthedocs.org">Read the Docs</a>. 
+
+</footer>
+        </div>
+      </div>
+
+    </section>
+
+  </div>
+  
+
+  <script type="text/javascript">
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script>
+
+  
+  
+    
+   
+
+</body>
+</html>

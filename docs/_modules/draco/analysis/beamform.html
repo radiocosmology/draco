@@ -1,0 +1,937 @@
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" >
+<head>
+  <meta charset="utf-8" />
+  
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  
+  <title>draco.analysis.beamform &mdash; draco 0+untagged.1.g43914e3 documentation</title>
+  
+
+  
+  <link rel="stylesheet" href="../../../_static/css/theme.css" type="text/css" />
+  <link rel="stylesheet" href="../../../_static/pygments.css" type="text/css" />
+
+  
+  
+
+  
+  
+
+  
+
+  
+  <!--[if lt IE 9]>
+    <script src="../../../_static/js/html5shiv.min.js"></script>
+  <![endif]-->
+  
+    
+      <script type="text/javascript" id="documentation_options" data-url_root="../../../" src="../../../_static/documentation_options.js"></script>
+        <script src="../../../_static/jquery.js"></script>
+        <script src="../../../_static/underscore.js"></script>
+        <script src="../../../_static/doctools.js"></script>
+        <script async="async" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/2.7.7/latest.js?config=TeX-AMS-MML_HTMLorMML"></script>
+    
+    <script type="text/javascript" src="../../../_static/js/theme.js"></script>
+
+    
+    <link rel="index" title="Index" href="../../../genindex.html" />
+    <link rel="search" title="Search" href="../../../search.html" /> 
+</head>
+
+<body class="wy-body-for-nav">
+
+   
+  <div class="wy-grid-for-nav">
+    
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+          
+
+          
+            <a href="../../../index.html" class="icon icon-home"> draco
+          
+
+          
+          </a>
+
+          
+            
+            
+              <div class="version">
+                0+untagged.1.g43914e3
+              </div>
+            
+          
+
+          
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../../../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+
+          
+        </div>
+
+        
+        <div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="main navigation">
+          
+            
+            
+              
+            
+            
+              <ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../tutorial.html">Tutorial</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../reference.html">API Reference</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../dev.html">Development Guidelines</a></li>
+</ul>
+
+            
+          
+        </div>
+        
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap">
+
+      
+      <nav class="wy-nav-top" aria-label="top navigation">
+        
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../../../index.html">draco</a>
+        
+      </nav>
+
+
+      <div class="wy-nav-content">
+        
+        <div class="rst-content">
+        
+          
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<div role="navigation" aria-label="breadcrumbs navigation">
+
+  <ul class="wy-breadcrumbs">
+    
+      <li><a href="../../../index.html" class="icon icon-home"></a> &raquo;</li>
+        
+          <li><a href="../../index.html">Module code</a> &raquo;</li>
+        
+      <li>draco.analysis.beamform</li>
+    
+    
+      <li class="wy-breadcrumbs-aside">
+        
+      </li>
+    
+  </ul>
+
+  
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+            
+  <h1>Source code for draco.analysis.beamform</h1><div class="highlight"><pre>
+<span></span><span class="sd">&quot;&quot;&quot;Beam Forming&quot;&quot;&quot;</span>
+
+<span class="kn">import</span> <span class="nn">numpy</span> <span class="k">as</span> <span class="nn">np</span>
+<span class="kn">from</span> <span class="nn">skyfield.api</span> <span class="kn">import</span> <span class="n">Star</span><span class="p">,</span> <span class="n">Angle</span>
+
+<span class="kn">from</span> <span class="nn">caput</span> <span class="kn">import</span> <span class="n">config</span>
+<span class="kn">from</span> <span class="nn">caput</span> <span class="kn">import</span> <span class="n">time</span> <span class="k">as</span> <span class="n">ctime</span>
+
+<span class="kn">from</span> <span class="nn">cora.util</span> <span class="kn">import</span> <span class="n">units</span>
+
+<span class="kn">from</span> <span class="nn">..core</span> <span class="kn">import</span> <span class="n">task</span><span class="p">,</span> <span class="n">containers</span><span class="p">,</span> <span class="n">io</span>
+<span class="kn">from</span> <span class="nn">..util._fast_tools</span> <span class="kn">import</span> <span class="n">beamform</span>
+<span class="kn">from</span> <span class="nn">..util.tools</span> <span class="kn">import</span> <span class="n">baseline_vector</span><span class="p">,</span> <span class="n">polarization_map</span><span class="p">,</span> <span class="n">invert_no_zero</span>
+<span class="kn">from</span> <span class="nn">..util.tools</span> <span class="kn">import</span> <span class="n">calculate_redundancy</span>
+
+<span class="c1"># Constants</span>
+<span class="n">NU21</span> <span class="o">=</span> <span class="n">units</span><span class="o">.</span><span class="n">nu21</span>
+<span class="n">C</span> <span class="o">=</span> <span class="n">units</span><span class="o">.</span><span class="n">c</span>
+
+
+<div class="viewcode-block" id="BeamFormBase"><a class="viewcode-back" href="../../../_autosummary/draco.analysis.beamform.html#draco.analysis.beamform.BeamFormBase">[docs]</a><span class="k">class</span> <span class="nc">BeamFormBase</span><span class="p">(</span><span class="n">task</span><span class="o">.</span><span class="n">SingleTask</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;Base class for beam forming tasks.</span>
+
+<span class="sd">    Defines a few useful methods. Not to be used directly</span>
+<span class="sd">    but as parent class for BeamForm and BeamFormCat.</span>
+
+<span class="sd">    Attributes</span>
+<span class="sd">    ----------</span>
+<span class="sd">    collapse_ha : bool</span>
+<span class="sd">        Wether or not to sum over hour-angle/time to complete</span>
+<span class="sd">        the beamforming. Default is True, which sums over.</span>
+<span class="sd">    polarization : string</span>
+<span class="sd">        One of:</span>
+<span class="sd">        &#39;I&#39; : Stokes I only.</span>
+<span class="sd">        &#39;full&#39; : &#39;XX&#39;, &#39;XY&#39;, &#39;YX&#39; and &#39;YY&#39; in this order.</span>
+<span class="sd">        &#39;copol&#39; : &#39;XX&#39; and &#39;YY&#39; only.</span>
+<span class="sd">        &#39;stokes&#39; : &#39;I&#39;, &#39;Q&#39;, &#39;U&#39; and &#39;V&#39; in this order. Not implemented.</span>
+<span class="sd">    weight : string (&#39;natural&#39;, &#39;uniform&#39;, or &#39;inverse_variance&#39;)</span>
+<span class="sd">        How to weight the redundant baselines when adding:</span>
+<span class="sd">            &#39;natural&#39; - each baseline weighted by its redundancy (default)</span>
+<span class="sd">            &#39;uniform&#39; - each baseline given equal weight</span>
+<span class="sd">            &#39;inverse_variance&#39; - each baseline weighted by the weight attribute</span>
+<span class="sd">    timetrack : float</span>
+<span class="sd">        How long (in seconds) to track sources at each side of transit.</span>
+<span class="sd">        Total transit time will be ~ 2 * timetrack.</span>
+<span class="sd">    freqside : int</span>
+<span class="sd">        Number of frequencies to process at each side of the source.</span>
+<span class="sd">        Default (None) processes all frequencies.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+
+    <span class="n">collapse_ha</span> <span class="o">=</span> <span class="n">config</span><span class="o">.</span><span class="n">Property</span><span class="p">(</span><span class="n">proptype</span><span class="o">=</span><span class="nb">bool</span><span class="p">,</span> <span class="n">default</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+    <span class="n">polarization</span> <span class="o">=</span> <span class="n">config</span><span class="o">.</span><span class="n">enum</span><span class="p">([</span><span class="s2">&quot;I&quot;</span><span class="p">,</span> <span class="s2">&quot;full&quot;</span><span class="p">,</span> <span class="s2">&quot;copol&quot;</span><span class="p">,</span> <span class="s2">&quot;stokes&quot;</span><span class="p">],</span> <span class="n">default</span><span class="o">=</span><span class="s2">&quot;full&quot;</span><span class="p">)</span>
+    <span class="n">weight</span> <span class="o">=</span> <span class="n">config</span><span class="o">.</span><span class="n">enum</span><span class="p">([</span><span class="s2">&quot;natural&quot;</span><span class="p">,</span> <span class="s2">&quot;uniform&quot;</span><span class="p">,</span> <span class="s2">&quot;inverse_variance&quot;</span><span class="p">],</span> <span class="n">default</span><span class="o">=</span><span class="s2">&quot;natural&quot;</span><span class="p">)</span>
+    <span class="n">timetrack</span> <span class="o">=</span> <span class="n">config</span><span class="o">.</span><span class="n">Property</span><span class="p">(</span><span class="n">proptype</span><span class="o">=</span><span class="nb">float</span><span class="p">,</span> <span class="n">default</span><span class="o">=</span><span class="mf">900.0</span><span class="p">)</span>
+    <span class="n">freqside</span> <span class="o">=</span> <span class="n">config</span><span class="o">.</span><span class="n">Property</span><span class="p">(</span><span class="n">proptype</span><span class="o">=</span><span class="nb">int</span><span class="p">,</span> <span class="n">default</span><span class="o">=</span><span class="kc">None</span><span class="p">)</span>
+
+<div class="viewcode-block" id="BeamFormBase.setup"><a class="viewcode-back" href="../../../_autosummary/draco.analysis.beamform.html#draco.analysis.beamform.BeamFormBase.setup">[docs]</a>    <span class="k">def</span> <span class="nf">setup</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">manager</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Generic setup method.</span>
+
+<span class="sd">        To be complemented by specific</span>
+<span class="sd">        setup methods in daughter tasks.</span>
+
+<span class="sd">        Parameters</span>
+<span class="sd">        ----------</span>
+<span class="sd">        manager : either `ProductManager`, `BeamTransfer` or `TransitTelescope`</span>
+<span class="sd">            Contains a TransitTelescope object describing the telescope.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="c1"># Get the TransitTelescope object</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">telescope</span> <span class="o">=</span> <span class="n">io</span><span class="o">.</span><span class="n">get_telescope</span><span class="p">(</span><span class="n">manager</span><span class="p">)</span>
+        <span class="c1"># Polarizations.</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">polarization</span> <span class="o">==</span> <span class="s2">&quot;I&quot;</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">process_pol</span> <span class="o">=</span> <span class="p">[</span><span class="s2">&quot;XX&quot;</span><span class="p">,</span> <span class="s2">&quot;YY&quot;</span><span class="p">]</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">return_pol</span> <span class="o">=</span> <span class="p">[</span><span class="s2">&quot;I&quot;</span><span class="p">]</span>
+        <span class="k">elif</span> <span class="bp">self</span><span class="o">.</span><span class="n">polarization</span> <span class="o">==</span> <span class="s2">&quot;full&quot;</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">process_pol</span> <span class="o">=</span> <span class="p">[</span><span class="s2">&quot;XX&quot;</span><span class="p">,</span> <span class="s2">&quot;XY&quot;</span><span class="p">,</span> <span class="s2">&quot;YX&quot;</span><span class="p">,</span> <span class="s2">&quot;YY&quot;</span><span class="p">]</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">return_pol</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">process_pol</span>
+        <span class="k">elif</span> <span class="bp">self</span><span class="o">.</span><span class="n">polarization</span> <span class="o">==</span> <span class="s2">&quot;copol&quot;</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">process_pol</span> <span class="o">=</span> <span class="p">[</span><span class="s2">&quot;XX&quot;</span><span class="p">,</span> <span class="s2">&quot;YY&quot;</span><span class="p">]</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">return_pol</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">process_pol</span>
+        <span class="k">elif</span> <span class="bp">self</span><span class="o">.</span><span class="n">polarization</span> <span class="o">==</span> <span class="s2">&quot;stokes&quot;</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">process_pol</span> <span class="o">=</span> <span class="p">[</span><span class="s2">&quot;XX&quot;</span><span class="p">,</span> <span class="s2">&quot;XY&quot;</span><span class="p">,</span> <span class="s2">&quot;YX&quot;</span><span class="p">,</span> <span class="s2">&quot;YY&quot;</span><span class="p">]</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">return_pol</span> <span class="o">=</span> <span class="p">[</span><span class="s2">&quot;I&quot;</span><span class="p">,</span> <span class="s2">&quot;Q&quot;</span><span class="p">,</span> <span class="s2">&quot;U&quot;</span><span class="p">,</span> <span class="s2">&quot;V&quot;</span><span class="p">]</span>
+            <span class="n">msg</span> <span class="o">=</span> <span class="s2">&quot;Stokes parameters are not implemented&quot;</span>
+            <span class="k">raise</span> <span class="ne">RuntimeError</span><span class="p">(</span><span class="n">msg</span><span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="c1"># This should never happen. config.enum should bark first.</span>
+            <span class="n">msg</span> <span class="o">=</span> <span class="s2">&quot;Invalid polarization parameter: </span><span class="si">{0}</span><span class="s2">&quot;</span>
+            <span class="n">msg</span> <span class="o">=</span> <span class="n">msg</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">polarization</span><span class="p">)</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="n">msg</span><span class="p">)</span>
+        <span class="c1"># Number of polarizations to process</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">npol</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">process_pol</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">latitude</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">deg2rad</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">telescope</span><span class="o">.</span><span class="n">latitude</span><span class="p">)</span></div>
+
+<div class="viewcode-block" id="BeamFormBase.process"><a class="viewcode-back" href="../../../_autosummary/draco.analysis.beamform.html#draco.analysis.beamform.BeamFormBase.process">[docs]</a>    <span class="k">def</span> <span class="nf">process</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Generic process method.</span>
+
+<span class="sd">        Performs all the beamforming,</span>
+<span class="sd">        but not the data parsing. To be complemented by specific</span>
+<span class="sd">        process methods in daughter tasks.</span>
+
+<span class="sd">        Returns</span>
+<span class="sd">        -------</span>
+<span class="sd">        formed_beam : `containers.FormedBeam` or `containers.FormedBeamHA`</span>
+<span class="sd">            Formed beams at each source. Shape depends on parameter</span>
+<span class="sd">            `collapse_ha`.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="c1"># Contruct containers for formed beams</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">collapse_ha</span><span class="p">:</span>
+            <span class="c1"># Container to hold the formed beams</span>
+            <span class="n">formed_beam</span> <span class="o">=</span> <span class="n">containers</span><span class="o">.</span><span class="n">FormedBeam</span><span class="p">(</span>
+                <span class="n">freq</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">freq</span><span class="p">,</span>
+                <span class="n">object_id</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">source_cat</span><span class="o">.</span><span class="n">index_map</span><span class="p">[</span><span class="s2">&quot;object_id&quot;</span><span class="p">],</span>
+                <span class="n">pol</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">return_pol</span><span class="p">),</span>
+                <span class="n">distributed</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
+            <span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="c1"># Container to hold the formed beams</span>
+            <span class="n">formed_beam</span> <span class="o">=</span> <span class="n">containers</span><span class="o">.</span><span class="n">FormedBeamHA</span><span class="p">(</span>
+                <span class="n">freq</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">freq</span><span class="p">,</span>
+                <span class="n">ha</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">arange</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">nha</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">int</span><span class="p">),</span>
+                <span class="n">object_id</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">source_cat</span><span class="o">.</span><span class="n">index_map</span><span class="p">[</span><span class="s2">&quot;object_id&quot;</span><span class="p">],</span>
+                <span class="n">pol</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">return_pol</span><span class="p">),</span>
+                <span class="n">distributed</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
+            <span class="p">)</span>
+            <span class="c1"># Initialize container to zeros.</span>
+            <span class="n">formed_beam</span><span class="o">.</span><span class="n">ha</span><span class="p">[:]</span> <span class="o">=</span> <span class="mf">0.0</span>
+
+        <span class="c1"># Initialize container to zeros.</span>
+        <span class="n">formed_beam</span><span class="o">.</span><span class="n">beam</span><span class="p">[:]</span> <span class="o">=</span> <span class="mf">0.0</span>
+        <span class="n">formed_beam</span><span class="o">.</span><span class="n">weight</span><span class="p">[:]</span> <span class="o">=</span> <span class="mf">0.0</span>
+        <span class="c1"># Copy catalog information</span>
+        <span class="n">formed_beam</span><span class="p">[</span><span class="s2">&quot;position&quot;</span><span class="p">][:]</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">source_cat</span><span class="p">[</span><span class="s2">&quot;position&quot;</span><span class="p">][:]</span>
+        <span class="k">if</span> <span class="s2">&quot;redshift&quot;</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">source_cat</span><span class="p">:</span>
+            <span class="n">formed_beam</span><span class="p">[</span><span class="s2">&quot;redshift&quot;</span><span class="p">][:]</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">source_cat</span><span class="p">[</span><span class="s2">&quot;redshift&quot;</span><span class="p">][:]</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="c1"># TODO: If there is not redshift information,</span>
+            <span class="c1"># should I have a different formed_beam container?</span>
+            <span class="n">formed_beam</span><span class="p">[</span><span class="s2">&quot;redshift&quot;</span><span class="p">][</span><span class="s2">&quot;z&quot;</span><span class="p">][:]</span> <span class="o">=</span> <span class="mf">0.0</span>
+            <span class="n">formed_beam</span><span class="p">[</span><span class="s2">&quot;redshift&quot;</span><span class="p">][</span><span class="s2">&quot;z_error&quot;</span><span class="p">][:]</span> <span class="o">=</span> <span class="mf">0.0</span>
+        <span class="c1"># Ensure container is distributed in frequency</span>
+        <span class="n">formed_beam</span><span class="o">.</span><span class="n">redistribute</span><span class="p">(</span><span class="s2">&quot;freq&quot;</span><span class="p">)</span>
+
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">freqside</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="c1"># Indices of local frequency axis. Full axis if freqside is None.</span>
+            <span class="n">f_local_indices</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">arange</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">ls</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">int32</span><span class="p">)</span>
+            <span class="n">f_mask</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">zeros</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">ls</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="nb">bool</span><span class="p">)</span>
+
+        <span class="n">fbb</span> <span class="o">=</span> <span class="n">formed_beam</span><span class="o">.</span><span class="n">beam</span><span class="p">[:]</span>
+        <span class="n">fbw</span> <span class="o">=</span> <span class="n">formed_beam</span><span class="o">.</span><span class="n">weight</span><span class="p">[:]</span>
+
+        <span class="c1"># For each source, beamform and populate container.</span>
+        <span class="k">for</span> <span class="n">src</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">nsource</span><span class="p">):</span>
+
+            <span class="k">if</span> <span class="n">src</span> <span class="o">%</span> <span class="mi">1000</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">log</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Source </span><span class="si">{</span><span class="n">src</span><span class="si">}</span><span class="s2">/</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">nsource</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+
+            <span class="c1"># Declination of this source</span>
+            <span class="n">dec</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">radians</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">sdec</span><span class="p">[</span><span class="n">src</span><span class="p">])</span>
+
+            <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">freqside</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+                <span class="c1"># Get the frequency bin this source is closest to.</span>
+                <span class="n">freq_diff</span> <span class="o">=</span> <span class="nb">abs</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">freq</span><span class="p">[</span><span class="s2">&quot;centre&quot;</span><span class="p">]</span> <span class="o">-</span> <span class="bp">self</span><span class="o">.</span><span class="n">sfreq</span><span class="p">[</span><span class="n">src</span><span class="p">])</span>
+                <span class="n">sfreq_index</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">argmin</span><span class="p">(</span><span class="n">freq_diff</span><span class="p">)</span>
+                <span class="c1"># Start and stop indices to process in global frequency axis</span>
+                <span class="n">freq_idx0</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">amax</span><span class="p">([</span><span class="mi">0</span><span class="p">,</span> <span class="n">sfreq_index</span> <span class="o">-</span> <span class="bp">self</span><span class="o">.</span><span class="n">freqside</span><span class="p">])</span>
+                <span class="n">freq_idx1</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">amin</span><span class="p">([</span><span class="bp">self</span><span class="o">.</span><span class="n">nfreq</span><span class="p">,</span> <span class="n">sfreq_index</span> <span class="o">+</span> <span class="bp">self</span><span class="o">.</span><span class="n">freqside</span> <span class="o">+</span> <span class="mi">1</span><span class="p">])</span>
+                <span class="c1"># Mask in full frequency axis</span>
+                <span class="n">f_mask</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">ones</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">nfreq</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="nb">bool</span><span class="p">)</span>
+                <span class="n">f_mask</span><span class="p">[</span><span class="n">freq_idx0</span><span class="p">:</span><span class="n">freq_idx1</span><span class="p">]</span> <span class="o">=</span> <span class="kc">False</span>
+                <span class="c1"># Restrict frequency mask to local range</span>
+                <span class="n">f_mask</span> <span class="o">=</span> <span class="n">f_mask</span><span class="p">[</span><span class="bp">self</span><span class="o">.</span><span class="n">lo</span> <span class="p">:</span> <span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">lo</span> <span class="o">+</span> <span class="bp">self</span><span class="o">.</span><span class="n">ls</span><span class="p">)]</span>
+
+                <span class="c1"># TODO: In principle I should be able to skip</span>
+                <span class="c1"># sources that have no indices to be processed</span>
+                <span class="c1"># in this rank. I am getting a NaN error, however.</span>
+                <span class="c1"># I may need an mpiutil.barrier() call before the</span>
+                <span class="c1"># return statement.</span>
+                <span class="k">if</span> <span class="n">f_mask</span><span class="o">.</span><span class="n">all</span><span class="p">():</span>
+                    <span class="c1"># If there are no indices to be processed in</span>
+                    <span class="c1"># the local frequency range, skip source.</span>
+                    <span class="k">continue</span>
+
+                <span class="c1"># Frequency indices to process in local range</span>
+                <span class="n">f_local_indices</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">arange</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">ls</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">int32</span><span class="p">)[</span><span class="n">np</span><span class="o">.</span><span class="n">invert</span><span class="p">(</span><span class="n">f_mask</span><span class="p">)]</span>
+
+            <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">is_sstream</span><span class="p">:</span>
+                <span class="c1"># Get RA bin this source is closest to.</span>
+                <span class="c1"># Phasing will actually be done at src position.</span>
+                <span class="n">sra_index</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">searchsorted</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">ra</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">sra</span><span class="p">[</span><span class="n">src</span><span class="p">])</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="c1"># Cannot use searchsorted, because RA might not be</span>
+                <span class="c1"># monotonically increasing. Slower.</span>
+                <span class="c1"># Notice: in case there is more than one transit,</span>
+                <span class="c1"># this will pick a single transit quasi-randomly!</span>
+                <span class="n">transit_diff</span> <span class="o">=</span> <span class="nb">abs</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">ra</span> <span class="o">-</span> <span class="bp">self</span><span class="o">.</span><span class="n">sra</span><span class="p">[</span><span class="n">src</span><span class="p">])</span>
+                <span class="n">sra_index</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">argmin</span><span class="p">(</span><span class="n">transit_diff</span><span class="p">)</span>
+                <span class="c1"># For now, skip sources that do not transit in the data</span>
+                <span class="n">ra_cadence</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">ra</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span> <span class="o">-</span> <span class="bp">self</span><span class="o">.</span><span class="n">ra</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+                <span class="k">if</span> <span class="n">transit_diff</span><span class="p">[</span><span class="n">sra_index</span><span class="p">]</span> <span class="o">&gt;</span> <span class="mf">1.5</span> <span class="o">*</span> <span class="n">ra_cadence</span><span class="p">:</span>
+                    <span class="k">continue</span>
+
+            <span class="c1"># Compute hour angle array</span>
+            <span class="n">ha_array</span><span class="p">,</span> <span class="n">ra_index_range</span><span class="p">,</span> <span class="n">ha_mask</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_ha_array</span><span class="p">(</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">ra</span><span class="p">,</span> <span class="n">sra_index</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">sra</span><span class="p">[</span><span class="n">src</span><span class="p">],</span> <span class="bp">self</span><span class="o">.</span><span class="n">ha_side</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">is_sstream</span>
+            <span class="p">)</span>
+
+            <span class="c1"># Arrays to store beams and weights for this source</span>
+            <span class="c1"># for all polarizations prior to combining polarizations</span>
+            <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">collapse_ha</span><span class="p">:</span>
+                <span class="n">formed_beam_full</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">zeros</span><span class="p">((</span><span class="bp">self</span><span class="o">.</span><span class="n">npol</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">ls</span><span class="p">),</span> <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">float64</span><span class="p">)</span>
+                <span class="n">weight_full</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">zeros</span><span class="p">((</span><span class="bp">self</span><span class="o">.</span><span class="n">npol</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">ls</span><span class="p">),</span> <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">float64</span><span class="p">)</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="n">formed_beam_full</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">zeros</span><span class="p">(</span>
+                    <span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">npol</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">ls</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">nha</span><span class="p">),</span> <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">float64</span>
+                <span class="p">)</span>
+                <span class="n">weight_full</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">zeros</span><span class="p">((</span><span class="bp">self</span><span class="o">.</span><span class="n">npol</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">ls</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">nha</span><span class="p">),</span> <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">float64</span><span class="p">)</span>
+            <span class="c1"># For each polarization</span>
+            <span class="k">for</span> <span class="n">pol</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">npol</span><span class="p">):</span>
+
+                <span class="c1"># Compute primary beams to be used in the weighting</span>
+                <span class="n">primary_beam</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_beamfunc</span><span class="p">(</span>
+                    <span class="n">ha_array</span><span class="p">[</span><span class="n">np</span><span class="o">.</span><span class="n">newaxis</span><span class="p">,</span> <span class="p">:],</span>
+                    <span class="bp">self</span><span class="o">.</span><span class="n">process_pol</span><span class="p">[</span><span class="n">pol</span><span class="p">],</span>
+                    <span class="bp">self</span><span class="o">.</span><span class="n">freq_local</span><span class="p">[:,</span> <span class="n">np</span><span class="o">.</span><span class="n">newaxis</span><span class="p">],</span>
+                    <span class="n">dec</span><span class="p">,</span>
+                <span class="p">)</span>
+
+                <span class="c1"># Fringestop and sum over products</span>
+                <span class="c1"># &#39;beamform&#39; does not normalize sum.</span>
+                <span class="n">this_formed_beam</span> <span class="o">=</span> <span class="n">beamform</span><span class="p">(</span>
+                    <span class="bp">self</span><span class="o">.</span><span class="n">vis</span><span class="p">[</span><span class="n">pol</span><span class="p">],</span>
+                    <span class="bp">self</span><span class="o">.</span><span class="n">sumweight</span><span class="p">[</span><span class="n">pol</span><span class="p">],</span>
+                    <span class="n">dec</span><span class="p">,</span>
+                    <span class="bp">self</span><span class="o">.</span><span class="n">latitude</span><span class="p">,</span>
+                    <span class="n">np</span><span class="o">.</span><span class="n">cos</span><span class="p">(</span><span class="n">ha_array</span><span class="p">),</span>
+                    <span class="n">np</span><span class="o">.</span><span class="n">sin</span><span class="p">(</span><span class="n">ha_array</span><span class="p">),</span>
+                    <span class="bp">self</span><span class="o">.</span><span class="n">bvec</span><span class="p">[</span><span class="n">pol</span><span class="p">][</span><span class="mi">0</span><span class="p">],</span>
+                    <span class="bp">self</span><span class="o">.</span><span class="n">bvec</span><span class="p">[</span><span class="n">pol</span><span class="p">][</span><span class="mi">1</span><span class="p">],</span>
+                    <span class="n">f_local_indices</span><span class="p">,</span>
+                    <span class="n">ra_index_range</span><span class="p">,</span>
+                <span class="p">)</span>
+
+                <span class="n">sumweight_inrange</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">sumweight</span><span class="p">[</span><span class="n">pol</span><span class="p">][:,</span> <span class="n">ra_index_range</span><span class="p">,</span> <span class="p">:]</span>
+                <span class="n">visweight_inrange</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">visweight</span><span class="p">[</span><span class="n">pol</span><span class="p">][:,</span> <span class="n">ra_index_range</span><span class="p">,</span> <span class="p">:]</span>
+
+                <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">collapse_ha</span><span class="p">:</span>
+                    <span class="c1"># Sum over RA. Does not multiply by weights because</span>
+                    <span class="c1"># this_formed_beam was never normalized (this avoids</span>
+                    <span class="c1"># re-work and makes code more efficient).</span>
+                    <span class="n">this_sumweight</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">sum</span><span class="p">(</span>
+                        <span class="n">np</span><span class="o">.</span><span class="n">sum</span><span class="p">(</span><span class="n">sumweight_inrange</span><span class="p">,</span> <span class="n">axis</span><span class="o">=-</span><span class="mi">1</span><span class="p">)</span> <span class="o">*</span> <span class="n">primary_beam</span> <span class="o">**</span> <span class="mi">2</span><span class="p">,</span> <span class="n">axis</span><span class="o">=</span><span class="mi">1</span>
+                    <span class="p">)</span>
+
+                    <span class="n">formed_beam_full</span><span class="p">[</span><span class="n">pol</span><span class="p">]</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">sum</span><span class="p">(</span>
+                        <span class="n">this_formed_beam</span> <span class="o">*</span> <span class="n">primary_beam</span><span class="p">,</span> <span class="n">axis</span><span class="o">=</span><span class="mi">1</span>
+                    <span class="p">)</span> <span class="o">*</span> <span class="n">invert_no_zero</span><span class="p">(</span><span class="n">this_sumweight</span><span class="p">)</span>
+
+                    <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">weight</span> <span class="o">!=</span> <span class="s2">&quot;inverse_variance&quot;</span><span class="p">:</span>
+                        <span class="n">this_weight2</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">sum</span><span class="p">(</span>
+                            <span class="n">np</span><span class="o">.</span><span class="n">sum</span><span class="p">(</span>
+                                <span class="n">sumweight_inrange</span> <span class="o">**</span> <span class="mi">2</span>
+                                <span class="o">*</span> <span class="n">invert_no_zero</span><span class="p">(</span><span class="n">visweight_inrange</span><span class="p">),</span>
+                                <span class="n">axis</span><span class="o">=-</span><span class="mi">1</span><span class="p">,</span>
+                            <span class="p">)</span>
+                            <span class="o">*</span> <span class="n">primary_beam</span> <span class="o">**</span> <span class="mi">2</span><span class="p">,</span>
+                            <span class="n">axis</span><span class="o">=</span><span class="mi">1</span><span class="p">,</span>
+                        <span class="p">)</span>
+
+                        <span class="n">weight_full</span><span class="p">[</span><span class="n">pol</span><span class="p">]</span> <span class="o">=</span> <span class="n">this_sumweight</span> <span class="o">**</span> <span class="mi">2</span> <span class="o">*</span> <span class="n">invert_no_zero</span><span class="p">(</span>
+                            <span class="n">this_weight2</span>
+                        <span class="p">)</span>
+
+                    <span class="k">else</span><span class="p">:</span>
+                        <span class="n">weight_full</span><span class="p">[</span><span class="n">pol</span><span class="p">]</span> <span class="o">=</span> <span class="n">this_sumweight</span>
+
+                <span class="k">else</span><span class="p">:</span>
+                    <span class="c1"># Need to divide by weight here for proper</span>
+                    <span class="c1"># normalization because it is not done in</span>
+                    <span class="c1"># beamform()</span>
+                    <span class="n">this_sumweight</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">sum</span><span class="p">(</span><span class="n">sumweight_inrange</span><span class="p">,</span> <span class="n">axis</span><span class="o">=-</span><span class="mi">1</span><span class="p">)</span>
+                    <span class="c1"># Populate only where ha_mask is true. Zero otherwise.</span>
+                    <span class="n">formed_beam_full</span><span class="p">[</span><span class="n">pol</span><span class="p">][</span>
+                        <span class="p">:,</span> <span class="n">ha_mask</span>
+                    <span class="p">]</span> <span class="o">=</span> <span class="n">this_formed_beam</span> <span class="o">*</span> <span class="n">invert_no_zero</span><span class="p">(</span><span class="n">this_sumweight</span><span class="p">)</span>
+                    <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">weight</span> <span class="o">!=</span> <span class="s2">&quot;inverse_variance&quot;</span><span class="p">:</span>
+                        <span class="n">this_weight2</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">sum</span><span class="p">(</span>
+                            <span class="n">sumweight_inrange</span> <span class="o">**</span> <span class="mi">2</span> <span class="o">*</span> <span class="n">invert_no_zero</span><span class="p">(</span><span class="n">visweight_inrange</span><span class="p">),</span>
+                            <span class="n">axis</span><span class="o">=-</span><span class="mi">1</span><span class="p">,</span>
+                        <span class="p">)</span>
+                        <span class="c1"># Populate only where ha_mask is true. Zero otherwise.</span>
+                        <span class="n">weight_full</span><span class="p">[</span><span class="n">pol</span><span class="p">][</span>
+                            <span class="p">:,</span> <span class="n">ha_mask</span>
+                        <span class="p">]</span> <span class="o">=</span> <span class="n">this_sumweight</span> <span class="o">**</span> <span class="mi">2</span> <span class="o">*</span> <span class="n">invert_no_zero</span><span class="p">(</span><span class="n">this_weight2</span><span class="p">)</span>
+                    <span class="k">else</span><span class="p">:</span>
+                        <span class="n">weight_full</span><span class="p">[</span><span class="n">pol</span><span class="p">][:,</span> <span class="n">ha_mask</span><span class="p">]</span> <span class="o">=</span> <span class="n">this_sumweight</span>
+
+                <span class="c1"># Ensure weights are zero for non-processed frequencies</span>
+                <span class="n">weight_full</span><span class="p">[</span><span class="n">pol</span><span class="p">][</span><span class="n">f_mask</span><span class="p">]</span> <span class="o">=</span> <span class="mf">0.0</span>
+
+            <span class="c1"># Combine polarizations if needed.</span>
+            <span class="c1"># TODO: For now I am ignoring differences in the X and</span>
+            <span class="c1"># Y beams and just adding them as is.</span>
+            <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">polarization</span> <span class="o">==</span> <span class="s2">&quot;I&quot;</span><span class="p">:</span>
+                <span class="n">formed_beam_full</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">sum</span><span class="p">(</span>
+                    <span class="n">formed_beam_full</span> <span class="o">*</span> <span class="n">weight_full</span><span class="p">,</span> <span class="n">axis</span><span class="o">=</span><span class="mi">0</span>
+                <span class="p">)</span> <span class="o">*</span> <span class="n">invert_no_zero</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">sum</span><span class="p">(</span><span class="n">weight_full</span><span class="p">,</span> <span class="n">axis</span><span class="o">=</span><span class="mi">0</span><span class="p">))</span>
+                <span class="n">weight_full</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">sum</span><span class="p">(</span><span class="n">weight_full</span><span class="p">,</span> <span class="n">axis</span><span class="o">=</span><span class="mi">0</span><span class="p">)</span>
+                <span class="c1"># Add an axis for the polarization</span>
+                <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">collapse_ha</span><span class="p">:</span>
+                    <span class="n">formed_beam_full</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="n">formed_beam_full</span><span class="p">,</span> <span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">ls</span><span class="p">))</span>
+                    <span class="n">weight_full</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="n">weight_full</span><span class="p">,</span> <span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">ls</span><span class="p">))</span>
+                <span class="k">else</span><span class="p">:</span>
+                    <span class="n">formed_beam_full</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span>
+                        <span class="n">formed_beam_full</span><span class="p">,</span> <span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">ls</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">nha</span><span class="p">)</span>
+                    <span class="p">)</span>
+                    <span class="n">weight_full</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="n">weight_full</span><span class="p">,</span> <span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">ls</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">nha</span><span class="p">))</span>
+            <span class="k">elif</span> <span class="bp">self</span><span class="o">.</span><span class="n">polarization</span> <span class="o">==</span> <span class="s2">&quot;stokes&quot;</span><span class="p">:</span>
+                <span class="c1"># TODO: Not implemented</span>
+                <span class="k">pass</span>
+
+            <span class="c1"># Populate container.</span>
+            <span class="n">fbb</span><span class="p">[</span><span class="n">src</span><span class="p">]</span> <span class="o">=</span> <span class="n">formed_beam_full</span>
+            <span class="n">fbw</span><span class="p">[</span><span class="n">src</span><span class="p">]</span> <span class="o">=</span> <span class="n">weight_full</span>
+            <span class="k">if</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">collapse_ha</span><span class="p">:</span>
+                <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">is_sstream</span><span class="p">:</span>
+                    <span class="n">formed_beam</span><span class="o">.</span><span class="n">ha</span><span class="p">[</span><span class="n">src</span><span class="p">,</span> <span class="p">:]</span> <span class="o">=</span> <span class="n">ha_array</span>
+                <span class="k">else</span><span class="p">:</span>
+                    <span class="c1"># Populate only where ha_mask is true.</span>
+                    <span class="n">formed_beam</span><span class="o">.</span><span class="n">ha</span><span class="p">[</span><span class="n">src</span><span class="p">,</span> <span class="n">ha_mask</span><span class="p">]</span> <span class="o">=</span> <span class="n">ha_array</span>
+
+        <span class="k">return</span> <span class="n">formed_beam</span></div>
+
+    <span class="k">def</span> <span class="nf">_ha_side</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">data</span><span class="p">,</span> <span class="n">timetrack</span><span class="o">=</span><span class="mf">900.0</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Number of RA/time bins to track the source at each side of transit.</span>
+
+<span class="sd">        Parameters</span>
+<span class="sd">        ----------</span>
+<span class="sd">        data : `containers.SiderealStream` or `containers.TimeStream`</span>
+<span class="sd">            Data to read time from.</span>
+<span class="sd">        timetrack : float</span>
+<span class="sd">            Time in seconds to track at each side of transit.</span>
+<span class="sd">            Default is 15 minutes.</span>
+
+<span class="sd">        Returns</span>
+<span class="sd">        -------</span>
+<span class="sd">        ha_side : int</span>
+<span class="sd">            Number of RA bins to track the source at each side of transit.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="c1"># TODO: Instead of a fixed time for transit, I could have a minimum</span>
+        <span class="c1"># drop in the beam at a conventional distance from the NCP.</span>
+        <span class="k">if</span> <span class="s2">&quot;ra&quot;</span> <span class="ow">in</span> <span class="n">data</span><span class="o">.</span><span class="n">index_map</span><span class="p">:</span>
+            <span class="c1"># In seconds</span>
+            <span class="n">approx_time_perbin</span> <span class="o">=</span> <span class="mf">24.0</span> <span class="o">*</span> <span class="mf">3600.0</span> <span class="o">/</span> <span class="nb">float</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">data</span><span class="o">.</span><span class="n">index_map</span><span class="p">[</span><span class="s2">&quot;ra&quot;</span><span class="p">]))</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">approx_time_perbin</span> <span class="o">=</span> <span class="n">data</span><span class="o">.</span><span class="n">time</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span> <span class="o">-</span> <span class="n">data</span><span class="o">.</span><span class="n">time</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+
+        <span class="c1"># Track for `timetrack` seconds at each side of transit</span>
+        <span class="k">return</span> <span class="nb">int</span><span class="p">(</span><span class="n">timetrack</span> <span class="o">/</span> <span class="n">approx_time_perbin</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">_ha_array</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">ra</span><span class="p">,</span> <span class="n">source_ra_index</span><span class="p">,</span> <span class="n">source_ra</span><span class="p">,</span> <span class="n">ha_side</span><span class="p">,</span> <span class="n">is_sstream</span><span class="o">=</span><span class="kc">True</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Hour angle for each RA/time bin to be processed.</span>
+
+<span class="sd">        Also return the indices of these bins in the full RA/time axis.</span>
+
+<span class="sd">        Parameters</span>
+<span class="sd">        ----------</span>
+<span class="sd">        ra : array</span>
+<span class="sd">            RA axis in the data</span>
+<span class="sd">        source_ra_index : int</span>
+<span class="sd">            Index in data.index_map[&#39;ra&#39;] closest to source_ra</span>
+<span class="sd">        source_ra : float</span>
+<span class="sd">            RA of the quasar</span>
+<span class="sd">        ha_side : int</span>
+<span class="sd">            Number of RA/HA bins on each side of transit.</span>
+<span class="sd">        is_sstream : bool</span>
+<span class="sd">            True if data is sidereal stream. Flase if time stream</span>
+
+<span class="sd">        Returns</span>
+<span class="sd">        -------</span>
+<span class="sd">        ha_array : np.ndarray</span>
+<span class="sd">            Hour angle array in the range -180. to 180</span>
+<span class="sd">        ra_index_range : np.ndarray of int</span>
+<span class="sd">            Indices (in data.index_map[&#39;ra&#39;]) corresponding</span>
+<span class="sd">            to ha_array.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="c1"># RA range to track this quasar through the beam.</span>
+        <span class="n">ra_index_range</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">arange</span><span class="p">(</span>
+            <span class="n">source_ra_index</span> <span class="o">-</span> <span class="n">ha_side</span><span class="p">,</span> <span class="n">source_ra_index</span> <span class="o">+</span> <span class="n">ha_side</span> <span class="o">+</span> <span class="mi">1</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">int32</span>
+        <span class="p">)</span>
+        <span class="c1"># Number of RA bins in data.</span>
+        <span class="n">nra</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">ra</span><span class="p">)</span>
+
+        <span class="k">if</span> <span class="n">is_sstream</span><span class="p">:</span>
+            <span class="c1"># Wrap RA indices around edges.</span>
+            <span class="n">ra_index_range</span><span class="p">[</span><span class="n">ra_index_range</span> <span class="o">&lt;</span> <span class="mi">0</span><span class="p">]</span> <span class="o">+=</span> <span class="n">nra</span>
+            <span class="n">ra_index_range</span><span class="p">[</span><span class="n">ra_index_range</span> <span class="o">&gt;=</span> <span class="n">nra</span><span class="p">]</span> <span class="o">-=</span> <span class="n">nra</span>
+            <span class="c1"># Hour angle array (convert to radians)</span>
+            <span class="n">ha_array</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">deg2rad</span><span class="p">(</span><span class="n">ra</span><span class="p">[</span><span class="n">ra_index_range</span><span class="p">]</span> <span class="o">-</span> <span class="n">source_ra</span><span class="p">)</span>
+            <span class="c1"># For later convenience it is better if `ha_array` is</span>
+            <span class="c1"># in the range -pi to pi instead of 0 to 2pi.</span>
+            <span class="n">ha_array</span> <span class="o">=</span> <span class="p">(</span><span class="n">ha_array</span> <span class="o">+</span> <span class="n">np</span><span class="o">.</span><span class="n">pi</span><span class="p">)</span> <span class="o">%</span> <span class="p">(</span><span class="mf">2.0</span> <span class="o">*</span> <span class="n">np</span><span class="o">.</span><span class="n">pi</span><span class="p">)</span> <span class="o">-</span> <span class="n">np</span><span class="o">.</span><span class="n">pi</span>
+            <span class="c1"># In this case the ha_mask is trivial</span>
+            <span class="n">ha_mask</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">ones</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">ra_index_range</span><span class="p">),</span> <span class="n">dtype</span><span class="o">=</span><span class="nb">bool</span><span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="c1"># Mask-out indices out of range</span>
+            <span class="n">ha_mask</span> <span class="o">=</span> <span class="p">(</span><span class="n">ra_index_range</span> <span class="o">&gt;=</span> <span class="mi">0</span><span class="p">)</span> <span class="o">&amp;</span> <span class="p">(</span><span class="n">ra_index_range</span> <span class="o">&lt;</span> <span class="n">nra</span><span class="p">)</span>
+            <span class="c1"># Return smaller HA range, and mask.</span>
+            <span class="n">ra_index_range</span> <span class="o">=</span> <span class="n">ra_index_range</span><span class="p">[</span><span class="n">ha_mask</span><span class="p">]</span>
+            <span class="c1"># Hour angle array (convert to radians)</span>
+            <span class="n">ha_array</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">deg2rad</span><span class="p">(</span><span class="n">ra</span><span class="p">[</span><span class="n">ra_index_range</span><span class="p">]</span> <span class="o">-</span> <span class="n">source_ra</span><span class="p">)</span>
+            <span class="c1"># For later convenience it is better if `ha_array` is</span>
+            <span class="c1"># in the range -pi to pi instead of 0 to 2pi.</span>
+            <span class="n">ha_array</span> <span class="o">=</span> <span class="p">(</span><span class="n">ha_array</span> <span class="o">+</span> <span class="n">np</span><span class="o">.</span><span class="n">pi</span><span class="p">)</span> <span class="o">%</span> <span class="p">(</span><span class="mf">2.0</span> <span class="o">*</span> <span class="n">np</span><span class="o">.</span><span class="n">pi</span><span class="p">)</span> <span class="o">-</span> <span class="n">np</span><span class="o">.</span><span class="n">pi</span>
+
+        <span class="k">return</span> <span class="n">ha_array</span><span class="p">,</span> <span class="n">ra_index_range</span><span class="p">,</span> <span class="n">ha_mask</span>
+
+    <span class="c1"># TODO: This is very CHIME specific. Should probably be moved somewhere else.</span>
+    <span class="k">def</span> <span class="nf">_beamfunc</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">ha</span><span class="p">,</span> <span class="n">pol</span><span class="p">,</span> <span class="n">freq</span><span class="p">,</span> <span class="n">dec</span><span class="p">,</span> <span class="n">zenith</span><span class="o">=</span><span class="mf">0.70999994</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Simple and fast beam model to be used as beamforming weights.</span>
+
+<span class="sd">        Parameters</span>
+<span class="sd">        ----------</span>
+<span class="sd">        ha : array or float</span>
+<span class="sd">            Hour angle (in radians) to compute beam at.</span>
+<span class="sd">        freq : array or float</span>
+<span class="sd">            Frequency in MHz</span>
+<span class="sd">        dec : array or float</span>
+<span class="sd">            Declination in radians</span>
+<span class="sd">        pol : int or string</span>
+<span class="sd">            Polarization index. 0: X, 1: Y, &gt;=2: XY</span>
+<span class="sd">            or one of &#39;XX&#39;, &#39;XY&#39;, &#39;YX&#39;, &#39;YY&#39;</span>
+<span class="sd">        zenith : float</span>
+<span class="sd">            Polar angle of the telescope zenith in radians.</span>
+<span class="sd">            Equal to pi/2 - latitude</span>
+
+<span class="sd">        Returns</span>
+<span class="sd">        -------</span>
+<span class="sd">        beam : array or float</span>
+<span class="sd">            The beam at the designated hhour angles, frequencies</span>
+<span class="sd">            and declinations. This is the beam &#39;power&#39;, that is,</span>
+<span class="sd">            voltage squared. To get the beam voltage, take the</span>
+<span class="sd">            square root.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+
+        <span class="n">pollist</span> <span class="o">=</span> <span class="p">[</span><span class="s2">&quot;XX&quot;</span><span class="p">,</span> <span class="s2">&quot;YY&quot;</span><span class="p">,</span> <span class="s2">&quot;XY&quot;</span><span class="p">,</span> <span class="s2">&quot;YX&quot;</span><span class="p">]</span>
+        <span class="k">if</span> <span class="n">pol</span> <span class="ow">in</span> <span class="n">pollist</span><span class="p">:</span>
+            <span class="n">pol</span> <span class="o">=</span> <span class="n">pollist</span><span class="o">.</span><span class="n">index</span><span class="p">(</span><span class="n">pol</span><span class="p">)</span>
+
+        <span class="k">def</span> <span class="nf">_sig</span><span class="p">(</span><span class="n">pp</span><span class="p">,</span> <span class="n">freq</span><span class="p">,</span> <span class="n">dec</span><span class="p">):</span>
+            <span class="n">sig_amps</span> <span class="o">=</span> <span class="p">[</span><span class="mf">14.87857614</span><span class="p">,</span> <span class="mf">9.95746878</span><span class="p">]</span>
+            <span class="k">return</span> <span class="n">sig_amps</span><span class="p">[</span><span class="n">pp</span><span class="p">]</span> <span class="o">/</span> <span class="n">freq</span> <span class="o">/</span> <span class="n">np</span><span class="o">.</span><span class="n">cos</span><span class="p">(</span><span class="n">dec</span><span class="p">)</span>
+
+        <span class="k">def</span> <span class="nf">_amp</span><span class="p">(</span><span class="n">pp</span><span class="p">,</span> <span class="n">dec</span><span class="p">,</span> <span class="n">zenith</span><span class="p">):</span>
+            <span class="k">def</span> <span class="nf">_flat_top_gauss6</span><span class="p">(</span><span class="n">x</span><span class="p">,</span> <span class="n">A</span><span class="p">,</span> <span class="n">sig</span><span class="p">,</span> <span class="n">x0</span><span class="p">):</span>
+                <span class="sd">&quot;&quot;&quot;Flat-top gaussian. Power of 6.&quot;&quot;&quot;</span>
+                <span class="k">return</span> <span class="n">A</span> <span class="o">*</span> <span class="n">np</span><span class="o">.</span><span class="n">exp</span><span class="p">(</span><span class="o">-</span><span class="nb">abs</span><span class="p">((</span><span class="n">x</span> <span class="o">-</span> <span class="n">x0</span><span class="p">)</span> <span class="o">/</span> <span class="n">sig</span><span class="p">)</span> <span class="o">**</span> <span class="mi">6</span><span class="p">)</span>
+
+            <span class="k">def</span> <span class="nf">_flat_top_gauss3</span><span class="p">(</span><span class="n">x</span><span class="p">,</span> <span class="n">A</span><span class="p">,</span> <span class="n">sig</span><span class="p">,</span> <span class="n">x0</span><span class="p">):</span>
+                <span class="sd">&quot;&quot;&quot;Flat-top gaussian. Power of 3.&quot;&quot;&quot;</span>
+                <span class="k">return</span> <span class="n">A</span> <span class="o">*</span> <span class="n">np</span><span class="o">.</span><span class="n">exp</span><span class="p">(</span><span class="o">-</span><span class="nb">abs</span><span class="p">((</span><span class="n">x</span> <span class="o">-</span> <span class="n">x0</span><span class="p">)</span> <span class="o">/</span> <span class="n">sig</span><span class="p">)</span> <span class="o">**</span> <span class="mi">3</span><span class="p">)</span>
+
+            <span class="n">prm_ns_x</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">([</span><span class="mf">9.97981768e-01</span><span class="p">,</span> <span class="mf">1.29544939e00</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">])</span>
+            <span class="n">prm_ns_y</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">([</span><span class="mf">9.86421047e-01</span><span class="p">,</span> <span class="mf">8.10213326e-01</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">])</span>
+
+            <span class="k">if</span> <span class="n">pp</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
+                <span class="k">return</span> <span class="n">_flat_top_gauss6</span><span class="p">(</span><span class="n">dec</span> <span class="o">-</span> <span class="p">(</span><span class="mf">0.5</span> <span class="o">*</span> <span class="n">np</span><span class="o">.</span><span class="n">pi</span> <span class="o">-</span> <span class="n">zenith</span><span class="p">),</span> <span class="o">*</span><span class="n">prm_ns_x</span><span class="p">)</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="k">return</span> <span class="n">_flat_top_gauss3</span><span class="p">(</span><span class="n">dec</span> <span class="o">-</span> <span class="p">(</span><span class="mf">0.5</span> <span class="o">*</span> <span class="n">np</span><span class="o">.</span><span class="n">pi</span> <span class="o">-</span> <span class="n">zenith</span><span class="p">),</span> <span class="o">*</span><span class="n">prm_ns_y</span><span class="p">)</span>
+
+        <span class="n">ha0</span> <span class="o">=</span> <span class="mf">0.0</span>
+        <span class="k">if</span> <span class="n">pol</span> <span class="o">&lt;</span> <span class="mi">2</span><span class="p">:</span>
+            <span class="c1"># XX or YY</span>
+            <span class="k">return</span> <span class="n">_amp</span><span class="p">(</span><span class="n">pol</span><span class="p">,</span> <span class="n">dec</span><span class="p">,</span> <span class="n">zenith</span><span class="p">)</span> <span class="o">*</span> <span class="n">np</span><span class="o">.</span><span class="n">exp</span><span class="p">(</span>
+                <span class="o">-</span><span class="p">(((</span><span class="n">ha</span> <span class="o">-</span> <span class="n">ha0</span><span class="p">)</span> <span class="o">/</span> <span class="n">_sig</span><span class="p">(</span><span class="n">pol</span><span class="p">,</span> <span class="n">freq</span><span class="p">,</span> <span class="n">dec</span><span class="p">))</span> <span class="o">**</span> <span class="mi">2</span><span class="p">)</span>
+            <span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="c1"># XY or YX</span>
+            <span class="k">return</span> <span class="p">(</span>
+                <span class="n">_amp</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="n">dec</span><span class="p">,</span> <span class="n">zenith</span><span class="p">)</span>
+                <span class="o">*</span> <span class="n">np</span><span class="o">.</span><span class="n">exp</span><span class="p">(</span><span class="o">-</span><span class="p">(((</span><span class="n">ha</span> <span class="o">-</span> <span class="n">ha0</span><span class="p">)</span> <span class="o">/</span> <span class="n">_sig</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="n">freq</span><span class="p">,</span> <span class="n">dec</span><span class="p">))</span> <span class="o">**</span> <span class="mi">2</span><span class="p">))</span>
+                <span class="o">*</span> <span class="n">_amp</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="n">dec</span><span class="p">,</span> <span class="n">zenith</span><span class="p">)</span>
+                <span class="o">*</span> <span class="n">np</span><span class="o">.</span><span class="n">exp</span><span class="p">(</span><span class="o">-</span><span class="p">(((</span><span class="n">ha</span> <span class="o">-</span> <span class="n">ha0</span><span class="p">)</span> <span class="o">/</span> <span class="n">_sig</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="n">freq</span><span class="p">,</span> <span class="n">dec</span><span class="p">))</span> <span class="o">**</span> <span class="mi">2</span><span class="p">))</span>
+            <span class="p">)</span> <span class="o">**</span> <span class="mf">0.5</span>
+
+    <span class="k">def</span> <span class="nf">_process_data</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">data</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Store code for parsing and formating data prior to beamforming.&quot;&quot;&quot;</span>
+        <span class="c1"># Easy access to communicator</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">comm_</span> <span class="o">=</span> <span class="n">data</span><span class="o">.</span><span class="n">comm</span>
+
+        <span class="c1"># Extract data info</span>
+        <span class="k">if</span> <span class="s2">&quot;ra&quot;</span> <span class="ow">in</span> <span class="n">data</span><span class="o">.</span><span class="n">index_map</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">is_sstream</span> <span class="o">=</span> <span class="kc">True</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">ra</span> <span class="o">=</span> <span class="n">data</span><span class="o">.</span><span class="n">index_map</span><span class="p">[</span><span class="s2">&quot;ra&quot;</span><span class="p">]</span>
+
+            <span class="c1"># Calculate the epoch for the data so we can calculate the correct</span>
+            <span class="c1"># CIRS coordinates</span>
+            <span class="k">if</span> <span class="s2">&quot;lsd&quot;</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">data</span><span class="o">.</span><span class="n">attrs</span><span class="p">:</span>
+                <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+                    <span class="s2">&quot;SiderealStream must have an LSD attribute to calculate the epoch.&quot;</span>
+                <span class="p">)</span>
+
+            <span class="c1"># This will be a float for a single sidereal day, or a list of</span>
+            <span class="c1"># floats for a stack</span>
+            <span class="n">lsd</span> <span class="o">=</span> <span class="p">(</span>
+                <span class="n">data</span><span class="o">.</span><span class="n">attrs</span><span class="p">[</span><span class="s2">&quot;lsd&quot;</span><span class="p">][</span><span class="mi">0</span><span class="p">]</span>
+                <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">data</span><span class="o">.</span><span class="n">attrs</span><span class="p">[</span><span class="s2">&quot;lsd&quot;</span><span class="p">],</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">)</span>
+                <span class="k">else</span> <span class="n">data</span><span class="o">.</span><span class="n">attrs</span><span class="p">[</span><span class="s2">&quot;lsd&quot;</span><span class="p">]</span>
+            <span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">epoch</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">telescope</span><span class="o">.</span><span class="n">lsd_to_unix</span><span class="p">(</span><span class="n">lsd</span><span class="p">)</span>
+
+        <span class="k">else</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">is_sstream</span> <span class="o">=</span> <span class="kc">False</span>
+            <span class="c1"># Convert data timestamps into LSAs (degrees)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">ra</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">telescope</span><span class="o">.</span><span class="n">unix_to_lsa</span><span class="p">(</span><span class="n">data</span><span class="o">.</span><span class="n">time</span><span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">epoch</span> <span class="o">=</span> <span class="n">data</span><span class="o">.</span><span class="n">time</span><span class="o">.</span><span class="n">mean</span><span class="p">()</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">freq</span> <span class="o">=</span> <span class="n">data</span><span class="o">.</span><span class="n">index_map</span><span class="p">[</span><span class="s2">&quot;freq&quot;</span><span class="p">]</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">nfreq</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">freq</span><span class="p">)</span>
+        <span class="c1"># Ensure data is distributed in freq axis</span>
+        <span class="n">data</span><span class="o">.</span><span class="n">redistribute</span><span class="p">(</span><span class="mi">0</span><span class="p">)</span>
+
+        <span class="c1"># Number of RA bins to track each source at each side of transit</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">ha_side</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_ha_side</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">timetrack</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">nha</span> <span class="o">=</span> <span class="mi">2</span> <span class="o">*</span> <span class="bp">self</span><span class="o">.</span><span class="n">ha_side</span> <span class="o">+</span> <span class="mi">1</span>
+
+        <span class="c1"># polmap: indices of each vis product in</span>
+        <span class="c1"># polarization list: [&#39;XX&#39;, &#39;XY&#39;, &#39;YX&#39;, &#39;YY&#39;]</span>
+        <span class="n">polmap</span> <span class="o">=</span> <span class="n">polarization_map</span><span class="p">(</span><span class="n">data</span><span class="o">.</span><span class="n">index_map</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">telescope</span><span class="p">)</span>
+        <span class="c1"># Baseline vectors in meters</span>
+        <span class="n">bvec_m</span> <span class="o">=</span> <span class="n">baseline_vector</span><span class="p">(</span><span class="n">data</span><span class="o">.</span><span class="n">index_map</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">telescope</span><span class="p">)</span>
+
+        <span class="c1"># MPI distribution values</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">lo</span> <span class="o">=</span> <span class="n">data</span><span class="o">.</span><span class="n">vis</span><span class="o">.</span><span class="n">local_offset</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">ls</span> <span class="o">=</span> <span class="n">data</span><span class="o">.</span><span class="n">vis</span><span class="o">.</span><span class="n">local_shape</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">freq_local</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">freq</span><span class="p">[</span><span class="s2">&quot;centre&quot;</span><span class="p">][</span><span class="bp">self</span><span class="o">.</span><span class="n">lo</span> <span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">lo</span> <span class="o">+</span> <span class="bp">self</span><span class="o">.</span><span class="n">ls</span><span class="p">]</span>
+        <span class="c1"># These are to be used when gathering results in the end.</span>
+        <span class="c1"># Tuple (not list!) of number of frequencies in each rank</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">fsize</span> <span class="o">=</span> <span class="nb">tuple</span><span class="p">(</span><span class="n">data</span><span class="o">.</span><span class="n">comm</span><span class="o">.</span><span class="n">allgather</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">ls</span><span class="p">))</span>
+        <span class="c1"># Tuple (not list!) of displacements of each rank array in full array</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">foffset</span> <span class="o">=</span> <span class="nb">tuple</span><span class="p">(</span><span class="n">data</span><span class="o">.</span><span class="n">comm</span><span class="o">.</span><span class="n">allgather</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">lo</span><span class="p">))</span>
+
+        <span class="n">fullpol</span> <span class="o">=</span> <span class="p">[</span><span class="s2">&quot;XX&quot;</span><span class="p">,</span> <span class="s2">&quot;XY&quot;</span><span class="p">,</span> <span class="s2">&quot;YX&quot;</span><span class="p">,</span> <span class="s2">&quot;YY&quot;</span><span class="p">]</span>
+        <span class="c1"># Save subsets of the data for each polarization, changing</span>
+        <span class="c1"># the ordering to &#39;C&#39; (needed for the cython part).</span>
+        <span class="c1"># This doubles the memory usage.</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">vis</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">visweight</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">bvec</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">sumweight</span> <span class="o">=</span> <span class="p">[],</span> <span class="p">[],</span> <span class="p">[],</span> <span class="p">[]</span>
+        <span class="k">for</span> <span class="n">pol</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">process_pol</span><span class="p">:</span>
+            <span class="n">pol</span> <span class="o">=</span> <span class="n">fullpol</span><span class="o">.</span><span class="n">index</span><span class="p">(</span><span class="n">pol</span><span class="p">)</span>
+            <span class="n">polmask</span> <span class="o">=</span> <span class="n">polmap</span> <span class="o">==</span> <span class="n">pol</span>
+            <span class="c1"># Swap order of product(1) and RA(2) axes, to reduce striding</span>
+            <span class="c1"># through memory later on.</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">vis</span><span class="o">.</span><span class="n">append</span><span class="p">(</span>
+                <span class="n">np</span><span class="o">.</span><span class="n">copy</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">moveaxis</span><span class="p">(</span><span class="n">data</span><span class="o">.</span><span class="n">vis</span><span class="p">[:,</span> <span class="n">polmask</span><span class="p">,</span> <span class="p">:],</span> <span class="mi">1</span><span class="p">,</span> <span class="mi">2</span><span class="p">),</span> <span class="n">order</span><span class="o">=</span><span class="s2">&quot;C&quot;</span><span class="p">)</span>
+            <span class="p">)</span>
+            <span class="c1"># Restrict visweight to the local frequencies</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">visweight</span><span class="o">.</span><span class="n">append</span><span class="p">(</span>
+                <span class="n">np</span><span class="o">.</span><span class="n">copy</span><span class="p">(</span>
+                    <span class="n">np</span><span class="o">.</span><span class="n">moveaxis</span><span class="p">(</span>
+                        <span class="n">data</span><span class="o">.</span><span class="n">weight</span><span class="p">[</span><span class="bp">self</span><span class="o">.</span><span class="n">lo</span> <span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">lo</span> <span class="o">+</span> <span class="bp">self</span><span class="o">.</span><span class="n">ls</span><span class="p">][:,</span> <span class="n">polmask</span><span class="p">,</span> <span class="p">:],</span> <span class="mi">1</span><span class="p">,</span> <span class="mi">2</span>
+                    <span class="p">)</span><span class="o">.</span><span class="n">astype</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">float64</span><span class="p">),</span>
+                    <span class="n">order</span><span class="o">=</span><span class="s2">&quot;C&quot;</span><span class="p">,</span>
+                <span class="p">)</span>
+            <span class="p">)</span>
+            <span class="c1"># Multiply bvec_m by frequencies to get vector in wavelengths.</span>
+            <span class="c1"># Shape: (2, nfreq_local, nvis), for each pol.</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">bvec</span><span class="o">.</span><span class="n">append</span><span class="p">(</span>
+                <span class="n">np</span><span class="o">.</span><span class="n">copy</span><span class="p">(</span>
+                    <span class="n">bvec_m</span><span class="p">[:,</span> <span class="n">np</span><span class="o">.</span><span class="n">newaxis</span><span class="p">,</span> <span class="n">polmask</span><span class="p">]</span>
+                    <span class="o">*</span> <span class="bp">self</span><span class="o">.</span><span class="n">freq_local</span><span class="p">[</span><span class="n">np</span><span class="o">.</span><span class="n">newaxis</span><span class="p">,</span> <span class="p">:,</span> <span class="n">np</span><span class="o">.</span><span class="n">newaxis</span><span class="p">]</span>
+                    <span class="o">*</span> <span class="mf">1e6</span>
+                    <span class="o">/</span> <span class="n">C</span><span class="p">,</span>
+                    <span class="n">order</span><span class="o">=</span><span class="s2">&quot;C&quot;</span><span class="p">,</span>
+                <span class="p">)</span>
+            <span class="p">)</span>
+            <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">weight</span> <span class="o">==</span> <span class="s2">&quot;inverse_variance&quot;</span><span class="p">:</span>
+                <span class="c1"># Weights for sum are just the visibility weights</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">sumweight</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">visweight</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">])</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="c1"># Ensure zero visweights result in zero sumweights</span>
+                <span class="n">this_sumweight</span> <span class="o">=</span> <span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">visweight</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span> <span class="o">&gt;</span> <span class="mf">0.0</span><span class="p">)</span><span class="o">.</span><span class="n">astype</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">float64</span><span class="p">)</span>
+                <span class="n">ssi</span> <span class="o">=</span> <span class="n">data</span><span class="o">.</span><span class="n">input_flags</span><span class="p">[:]</span>
+                <span class="n">ssp</span> <span class="o">=</span> <span class="n">data</span><span class="o">.</span><span class="n">index_map</span><span class="p">[</span><span class="s2">&quot;prod&quot;</span><span class="p">][:]</span>
+                <span class="n">sss</span> <span class="o">=</span> <span class="n">data</span><span class="o">.</span><span class="n">reverse_map</span><span class="p">[</span><span class="s2">&quot;stack&quot;</span><span class="p">][</span><span class="s2">&quot;stack&quot;</span><span class="p">][:]</span>
+                <span class="n">nstack</span> <span class="o">=</span> <span class="n">data</span><span class="o">.</span><span class="n">vis</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span>
+                <span class="c1"># this redundancy takes into account input flags.</span>
+                <span class="c1"># It has shape (nstack, ntime)</span>
+                <span class="n">redundancy</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">moveaxis</span><span class="p">(</span>
+                    <span class="n">calculate_redundancy</span><span class="p">(</span><span class="n">ssi</span><span class="p">,</span> <span class="n">ssp</span><span class="p">,</span> <span class="n">sss</span><span class="p">,</span> <span class="n">nstack</span><span class="p">)[</span><span class="n">polmask</span><span class="p">]</span><span class="o">.</span><span class="n">astype</span><span class="p">(</span>
+                        <span class="n">np</span><span class="o">.</span><span class="n">float64</span>
+                    <span class="p">),</span>
+                    <span class="mi">0</span><span class="p">,</span>
+                    <span class="mi">1</span><span class="p">,</span>
+                <span class="p">)[</span><span class="n">np</span><span class="o">.</span><span class="n">newaxis</span><span class="p">,</span> <span class="p">:,</span> <span class="p">:]</span>
+                <span class="c1"># redundancy = (self.telescope.redundancy[polmask].</span>
+                <span class="c1">#        astype(np.float64)[np.newaxis, np.newaxis, :])</span>
+                <span class="n">this_sumweight</span> <span class="o">*=</span> <span class="n">redundancy</span>
+                <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">weight</span> <span class="o">==</span> <span class="s2">&quot;uniform&quot;</span><span class="p">:</span>
+                    <span class="n">this_sumweight</span> <span class="o">=</span> <span class="p">(</span><span class="n">this_sumweight</span> <span class="o">&gt;</span> <span class="mf">0.0</span><span class="p">)</span><span class="o">.</span><span class="n">astype</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">float64</span><span class="p">)</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">sumweight</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">copy</span><span class="p">(</span><span class="n">this_sumweight</span><span class="p">,</span> <span class="n">order</span><span class="o">=</span><span class="s2">&quot;C&quot;</span><span class="p">))</span>
+
+    <span class="k">def</span> <span class="nf">_process_catalog</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">catalog</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Process the catalog to get CIRS coordinates at the correct epoch.</span>
+
+<span class="sd">        Note that `self._process_data` must have been called before this.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+
+        <span class="k">if</span> <span class="s2">&quot;position&quot;</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">catalog</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;Input is missing a position table.&quot;</span><span class="p">)</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">sra</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">sdec</span> <span class="o">=</span> <span class="n">icrs_to_cirs</span><span class="p">(</span>
+            <span class="n">catalog</span><span class="p">[</span><span class="s2">&quot;position&quot;</span><span class="p">][</span><span class="s2">&quot;ra&quot;</span><span class="p">],</span> <span class="n">catalog</span><span class="p">[</span><span class="s2">&quot;position&quot;</span><span class="p">][</span><span class="s2">&quot;dec&quot;</span><span class="p">],</span> <span class="bp">self</span><span class="o">.</span><span class="n">epoch</span>
+        <span class="p">)</span>
+
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">freqside</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="k">if</span> <span class="s2">&quot;redshift&quot;</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">catalog</span><span class="p">:</span>
+                <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;Input is missing a required redshift table.&quot;</span><span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">sfreq</span> <span class="o">=</span> <span class="n">NU21</span> <span class="o">/</span> <span class="p">(</span><span class="n">catalog</span><span class="p">[</span><span class="s2">&quot;redshift&quot;</span><span class="p">][</span><span class="s2">&quot;z&quot;</span><span class="p">][:]</span> <span class="o">+</span> <span class="mf">1.0</span><span class="p">)</span>  <span class="c1"># MHz</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">source_cat</span> <span class="o">=</span> <span class="n">catalog</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">nsource</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">sra</span><span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="BeamForm"><a class="viewcode-back" href="../../../_autosummary/draco.analysis.beamform.html#draco.analysis.beamform.BeamForm">[docs]</a><span class="k">class</span> <span class="nc">BeamForm</span><span class="p">(</span><span class="n">BeamFormBase</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;BeamForm for a single source catalog and multiple visibility datasets.&quot;&quot;&quot;</span>
+
+<div class="viewcode-block" id="BeamForm.setup"><a class="viewcode-back" href="../../../_autosummary/draco.analysis.beamform.html#draco.analysis.beamform.BeamForm.setup">[docs]</a>    <span class="k">def</span> <span class="nf">setup</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">manager</span><span class="p">,</span> <span class="n">source_cat</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Parse the source catalog and performs the generic setup.</span>
+
+<span class="sd">        Parameters</span>
+<span class="sd">        ----------</span>
+<span class="sd">        manager : either `ProductManager`, `BeamTransfer` or `TransitTelescope`</span>
+<span class="sd">            Contains a TransitTelescope object describing the telescope.</span>
+
+<span class="sd">        source_cat : :class:`containers.SourceCatalog`</span>
+<span class="sd">            Catalog of points to beamform at.</span>
+
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="nb">super</span><span class="p">(</span><span class="n">BeamForm</span><span class="p">,</span> <span class="bp">self</span><span class="p">)</span><span class="o">.</span><span class="n">setup</span><span class="p">(</span><span class="n">manager</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">catalog</span> <span class="o">=</span> <span class="n">source_cat</span></div>
+
+<div class="viewcode-block" id="BeamForm.process"><a class="viewcode-back" href="../../../_autosummary/draco.analysis.beamform.html#draco.analysis.beamform.BeamForm.process">[docs]</a>    <span class="k">def</span> <span class="nf">process</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">data</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Parse the visibility data and beamforms all sources.</span>
+
+<span class="sd">        Parameters</span>
+<span class="sd">        ----------</span>
+<span class="sd">        data : `containers.SiderealStream` or `containers.TimeStream`</span>
+<span class="sd">            Data to beamform on.</span>
+
+<span class="sd">        Returns</span>
+<span class="sd">        -------</span>
+<span class="sd">        formed_beam : `containers.FormedBeam` or `containers.FormedBeamHA`</span>
+<span class="sd">            Formed beams at each source.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="c1"># Process and make available various data</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_process_data</span><span class="p">(</span><span class="n">data</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_process_catalog</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">catalog</span><span class="p">)</span>
+
+        <span class="c1"># Call generic process method.</span>
+        <span class="k">return</span> <span class="nb">super</span><span class="p">(</span><span class="n">BeamForm</span><span class="p">,</span> <span class="bp">self</span><span class="p">)</span><span class="o">.</span><span class="n">process</span><span class="p">()</span></div></div>
+
+
+<div class="viewcode-block" id="BeamFormCat"><a class="viewcode-back" href="../../../_autosummary/draco.analysis.beamform.html#draco.analysis.beamform.BeamFormCat">[docs]</a><span class="k">class</span> <span class="nc">BeamFormCat</span><span class="p">(</span><span class="n">BeamFormBase</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;BeamForm for multiple source catalogs and a single visibility dataset.&quot;&quot;&quot;</span>
+
+<div class="viewcode-block" id="BeamFormCat.setup"><a class="viewcode-back" href="../../../_autosummary/draco.analysis.beamform.html#draco.analysis.beamform.BeamFormCat.setup">[docs]</a>    <span class="k">def</span> <span class="nf">setup</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">manager</span><span class="p">,</span> <span class="n">data</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Parse the visibility data and performs the generic setup.</span>
+
+<span class="sd">        Parameters</span>
+<span class="sd">        ----------</span>
+<span class="sd">        manager : either `ProductManager`, `BeamTransfer` or `TransitTelescope`</span>
+<span class="sd">            Contains a TransitTelescope object describing the telescope.</span>
+
+<span class="sd">        data : `containers.SiderealStream` or `containers.TimeStream`</span>
+<span class="sd">            Data to beamform on.</span>
+
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="nb">super</span><span class="p">(</span><span class="n">BeamFormCat</span><span class="p">,</span> <span class="bp">self</span><span class="p">)</span><span class="o">.</span><span class="n">setup</span><span class="p">(</span><span class="n">manager</span><span class="p">)</span>
+
+        <span class="c1"># Process and make available various data</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_process_data</span><span class="p">(</span><span class="n">data</span><span class="p">)</span></div>
+
+<div class="viewcode-block" id="BeamFormCat.process"><a class="viewcode-back" href="../../../_autosummary/draco.analysis.beamform.html#draco.analysis.beamform.BeamFormCat.process">[docs]</a>    <span class="k">def</span> <span class="nf">process</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">source_cat</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Parse the source catalog and beamforms all sources.</span>
+
+<span class="sd">        Parameters</span>
+<span class="sd">        ----------</span>
+<span class="sd">        source_cat : :class:`containers.SourceCatalog`</span>
+<span class="sd">            Catalog of points to beamform at.</span>
+
+<span class="sd">        Returns</span>
+<span class="sd">        -------</span>
+<span class="sd">        formed_beam : `containers.FormedBeam` or `containers.FormedBeamHA`</span>
+<span class="sd">            Formed beams at each source.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_process_catalog</span><span class="p">(</span><span class="n">source_cat</span><span class="p">)</span>
+
+        <span class="c1"># Call generic process method.</span>
+        <span class="k">return</span> <span class="nb">super</span><span class="p">(</span><span class="n">BeamFormCat</span><span class="p">,</span> <span class="bp">self</span><span class="p">)</span><span class="o">.</span><span class="n">process</span><span class="p">()</span></div></div>
+
+
+<div class="viewcode-block" id="icrs_to_cirs"><a class="viewcode-back" href="../../../_autosummary/draco.analysis.beamform.html#draco.analysis.beamform.icrs_to_cirs">[docs]</a><span class="k">def</span> <span class="nf">icrs_to_cirs</span><span class="p">(</span><span class="n">ra</span><span class="p">,</span> <span class="n">dec</span><span class="p">,</span> <span class="n">epoch</span><span class="p">,</span> <span class="n">apparent</span><span class="o">=</span><span class="kc">True</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;Convert a set of positions from ICRS to CIRS at a given data.</span>
+
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    ra, dec : float or np.ndarray</span>
+<span class="sd">        Positions of source in ICRS coordinates including an optional</span>
+<span class="sd">        redshift position.</span>
+<span class="sd">    epoch : time_like</span>
+<span class="sd">        Time to convert the positions to. Can be any type convertible to a</span>
+<span class="sd">        time using `caput.time.ensure_unix`.</span>
+<span class="sd">    apparent : bool</span>
+<span class="sd">        Calculate the apparent position (includes abberation and deflection).</span>
+
+<span class="sd">    Returns</span>
+<span class="sd">    -------</span>
+<span class="sd">    ra_cirs, dec_cirs : float or np.ndarray</span>
+<span class="sd">        Arrays of the positions in *CIRS* coordiantes.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">positions</span> <span class="o">=</span> <span class="n">Star</span><span class="p">(</span><span class="n">ra</span><span class="o">=</span><span class="n">Angle</span><span class="p">(</span><span class="n">degrees</span><span class="o">=</span><span class="n">ra</span><span class="p">),</span> <span class="n">dec</span><span class="o">=</span><span class="n">Angle</span><span class="p">(</span><span class="n">degrees</span><span class="o">=</span><span class="n">dec</span><span class="p">))</span>
+
+    <span class="n">epoch</span> <span class="o">=</span> <span class="n">ctime</span><span class="o">.</span><span class="n">unix_to_skyfield_time</span><span class="p">(</span><span class="n">ctime</span><span class="o">.</span><span class="n">ensure_unix</span><span class="p">(</span><span class="n">epoch</span><span class="p">))</span>
+
+    <span class="n">earth</span> <span class="o">=</span> <span class="n">ctime</span><span class="o">.</span><span class="n">skyfield_wrapper</span><span class="o">.</span><span class="n">ephemeris</span><span class="p">[</span><span class="s2">&quot;earth&quot;</span><span class="p">]</span>
+    <span class="n">positions</span> <span class="o">=</span> <span class="n">earth</span><span class="o">.</span><span class="n">at</span><span class="p">(</span><span class="n">epoch</span><span class="p">)</span><span class="o">.</span><span class="n">observe</span><span class="p">(</span><span class="n">positions</span><span class="p">)</span>
+
+    <span class="k">if</span> <span class="n">apparent</span><span class="p">:</span>
+        <span class="n">positions</span> <span class="o">=</span> <span class="n">positions</span><span class="o">.</span><span class="n">apparent</span><span class="p">()</span>
+
+    <span class="n">ra_cirs</span><span class="p">,</span> <span class="n">dec_cirs</span><span class="p">,</span> <span class="n">_</span> <span class="o">=</span> <span class="n">positions</span><span class="o">.</span><span class="n">cirs_radec</span><span class="p">(</span><span class="n">epoch</span><span class="p">)</span>
+
+    <span class="k">return</span> <span class="n">ra_cirs</span><span class="o">.</span><span class="n">_degrees</span><span class="p">,</span> <span class="n">dec_cirs</span><span class="o">.</span><span class="n">_degrees</span></div>
+</pre></div>
+
+           </div>
+           
+          </div>
+          <footer>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>
+        &#169; Copyright 2016, Richard Shaw.
+
+    </p>
+  </div>
+    
+    
+    
+    Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    
+    provided by <a href="https://readthedocs.org">Read the Docs</a>. 
+
+</footer>
+        </div>
+      </div>
+
+    </section>
+
+  </div>
+  
+
+  <script type="text/javascript">
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script>
+
+  
+  
+    
+   
+
+</body>
+</html>

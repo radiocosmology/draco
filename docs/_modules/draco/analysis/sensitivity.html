@@ -1,0 +1,463 @@
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" >
+<head>
+  <meta charset="utf-8" />
+  
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  
+  <title>draco.analysis.sensitivity &mdash; draco 0+untagged.1.g43914e3 documentation</title>
+  
+
+  
+  <link rel="stylesheet" href="../../../_static/css/theme.css" type="text/css" />
+  <link rel="stylesheet" href="../../../_static/pygments.css" type="text/css" />
+
+  
+  
+
+  
+  
+
+  
+
+  
+  <!--[if lt IE 9]>
+    <script src="../../../_static/js/html5shiv.min.js"></script>
+  <![endif]-->
+  
+    
+      <script type="text/javascript" id="documentation_options" data-url_root="../../../" src="../../../_static/documentation_options.js"></script>
+        <script src="../../../_static/jquery.js"></script>
+        <script src="../../../_static/underscore.js"></script>
+        <script src="../../../_static/doctools.js"></script>
+        <script async="async" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/2.7.7/latest.js?config=TeX-AMS-MML_HTMLorMML"></script>
+    
+    <script type="text/javascript" src="../../../_static/js/theme.js"></script>
+
+    
+    <link rel="index" title="Index" href="../../../genindex.html" />
+    <link rel="search" title="Search" href="../../../search.html" /> 
+</head>
+
+<body class="wy-body-for-nav">
+
+   
+  <div class="wy-grid-for-nav">
+    
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+          
+
+          
+            <a href="../../../index.html" class="icon icon-home"> draco
+          
+
+          
+          </a>
+
+          
+            
+            
+              <div class="version">
+                0+untagged.1.g43914e3
+              </div>
+            
+          
+
+          
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../../../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+
+          
+        </div>
+
+        
+        <div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="main navigation">
+          
+            
+            
+              
+            
+            
+              <ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../tutorial.html">Tutorial</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../reference.html">API Reference</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../dev.html">Development Guidelines</a></li>
+</ul>
+
+            
+          
+        </div>
+        
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap">
+
+      
+      <nav class="wy-nav-top" aria-label="top navigation">
+        
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../../../index.html">draco</a>
+        
+      </nav>
+
+
+      <div class="wy-nav-content">
+        
+        <div class="rst-content">
+        
+          
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<div role="navigation" aria-label="breadcrumbs navigation">
+
+  <ul class="wy-breadcrumbs">
+    
+      <li><a href="../../../index.html" class="icon icon-home"></a> &raquo;</li>
+        
+          <li><a href="../../index.html">Module code</a> &raquo;</li>
+        
+      <li>draco.analysis.sensitivity</li>
+    
+    
+      <li class="wy-breadcrumbs-aside">
+        
+      </li>
+    
+  </ul>
+
+  
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+            
+  <h1>Source code for draco.analysis.sensitivity</h1><div class="highlight"><pre>
+<span></span><span class="sd">&quot;&quot;&quot;Sensitivity Analysis Tasks&quot;&quot;&quot;</span>
+
+<span class="kn">import</span> <span class="nn">numpy</span> <span class="k">as</span> <span class="nn">np</span>
+
+<span class="kn">from</span> <span class="nn">caput</span> <span class="kn">import</span> <span class="n">config</span>
+
+<span class="kn">from</span> <span class="nn">..core</span> <span class="kn">import</span> <span class="n">task</span><span class="p">,</span> <span class="n">io</span><span class="p">,</span> <span class="n">containers</span>
+<span class="kn">from</span> <span class="nn">..util</span> <span class="kn">import</span> <span class="n">tools</span>
+
+
+<div class="viewcode-block" id="ComputeSystemSensitivity"><a class="viewcode-back" href="../../../_autosummary/draco.analysis.sensitivity.html#draco.analysis.sensitivity.ComputeSystemSensitivity">[docs]</a><span class="k">class</span> <span class="nc">ComputeSystemSensitivity</span><span class="p">(</span><span class="n">task</span><span class="o">.</span><span class="n">SingleTask</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;Compute the sensitivity of beamformed visibilities.</span>
+
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    exclude_intracyl : bool</span>
+<span class="sd">        Exclude the intracylinder baselines in the sensitivity estimate.</span>
+<span class="sd">        Default is to use all baselines.  Note that a RuntimeError</span>
+<span class="sd">        will be raised if exclude_intracyl is True and the visibilities</span>
+<span class="sd">        have already been stacked over cylinder.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+
+    <span class="n">exclude_intracyl</span> <span class="o">=</span> <span class="n">config</span><span class="o">.</span><span class="n">Property</span><span class="p">(</span><span class="n">proptype</span><span class="o">=</span><span class="nb">bool</span><span class="p">,</span> <span class="n">default</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
+
+<div class="viewcode-block" id="ComputeSystemSensitivity.setup"><a class="viewcode-back" href="../../../_autosummary/draco.analysis.sensitivity.html#draco.analysis.sensitivity.ComputeSystemSensitivity.setup">[docs]</a>    <span class="k">def</span> <span class="nf">setup</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">telescope</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Save the telescope model.</span>
+
+<span class="sd">        Parameters</span>
+<span class="sd">        ----------</span>
+<span class="sd">        telescope : TransitTelescope</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">telescope</span> <span class="o">=</span> <span class="n">io</span><span class="o">.</span><span class="n">get_telescope</span><span class="p">(</span><span class="n">telescope</span><span class="p">)</span></div>
+
+<div class="viewcode-block" id="ComputeSystemSensitivity.process"><a class="viewcode-back" href="../../../_autosummary/draco.analysis.sensitivity.html#draco.analysis.sensitivity.ComputeSystemSensitivity.process">[docs]</a>    <span class="k">def</span> <span class="nf">process</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">data</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Estimate the sensitivity of the input data.</span>
+
+<span class="sd">        Parameters</span>
+<span class="sd">        ----------</span>
+<span class="sd">        data : TODContainer</span>
+<span class="sd">            Must have a weight property that contains an</span>
+<span class="sd">            estimate of the inverse variance of the noise</span>
+<span class="sd">            in each visibility.  The visibilities can be</span>
+<span class="sd">            stacked to any level of redundancy.</span>
+
+<span class="sd">        Returns</span>
+<span class="sd">        -------</span>
+<span class="sd">        metrics : SystemSensitivity</span>
+<span class="sd">            Contains the measured and radiometric estimates of</span>
+<span class="sd">            the noise in the beamformed visibilities.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="c1"># Ensure we are distributed over frequency. Get shape of visibilities.</span>
+        <span class="n">data</span><span class="o">.</span><span class="n">redistribute</span><span class="p">(</span><span class="s2">&quot;freq&quot;</span><span class="p">)</span>
+
+        <span class="n">nfreq</span><span class="p">,</span> <span class="n">nstack</span><span class="p">,</span> <span class="n">ntime</span> <span class="o">=</span> <span class="n">data</span><span class="o">.</span><span class="n">vis</span><span class="o">.</span><span class="n">local_shape</span>
+
+        <span class="c1"># Extract the input flags.  If container has a gain dataset,</span>
+        <span class="c1"># then also check for the default gain 1.0 + 0.0j as this indicates</span>
+        <span class="c1"># that an input was masked for a particular time and frequency.</span>
+        <span class="n">inpflg</span> <span class="o">=</span> <span class="n">data</span><span class="o">.</span><span class="n">input_flags</span><span class="p">[:]</span><span class="o">.</span><span class="n">view</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">)</span><span class="o">.</span><span class="n">astype</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">bool</span><span class="p">)</span>
+        <span class="n">niff</span> <span class="o">=</span> <span class="mi">1</span>
+
+        <span class="k">if</span> <span class="s2">&quot;gain&quot;</span> <span class="ow">in</span> <span class="n">data</span><span class="o">.</span><span class="n">datasets</span><span class="p">:</span>
+            <span class="c1"># Derive frequency dependent flags from gains</span>
+            <span class="n">gainflg</span> <span class="o">=</span> <span class="n">data</span><span class="o">.</span><span class="n">gain</span><span class="p">[:]</span><span class="o">.</span><span class="n">view</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">)</span> <span class="o">!=</span> <span class="p">(</span><span class="mf">1.0</span> <span class="o">+</span> <span class="mf">0.0</span><span class="n">j</span><span class="p">)</span>
+            <span class="n">inpflg</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">swapaxes</span><span class="p">(</span><span class="n">inpflg</span><span class="p">[</span><span class="n">np</span><span class="o">.</span><span class="n">newaxis</span><span class="p">,</span> <span class="p">:,</span> <span class="p">:]</span> <span class="o">&amp;</span> <span class="n">gainflg</span><span class="p">,</span> <span class="mi">0</span><span class="p">,</span> <span class="mi">1</span><span class="p">)</span>
+            <span class="c1"># Flatten frequency and time axis so we can use numpy&#39;s unique</span>
+            <span class="n">inpflg</span> <span class="o">=</span> <span class="n">inpflg</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="n">inpflg</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span> <span class="o">-</span><span class="mi">1</span><span class="p">)</span>
+            <span class="n">niff</span> <span class="o">=</span> <span class="n">nfreq</span>
+
+        <span class="c1"># Find unique sets of input flags</span>
+        <span class="n">uniq_inpflg</span><span class="p">,</span> <span class="n">index_cnt</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">unique</span><span class="p">(</span><span class="n">inpflg</span><span class="p">,</span> <span class="n">return_inverse</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">axis</span><span class="o">=</span><span class="mi">1</span><span class="p">)</span>
+
+        <span class="c1"># Calculate redundancy for each unique set of input flags</span>
+        <span class="n">cnt</span> <span class="o">=</span> <span class="n">tools</span><span class="o">.</span><span class="n">calculate_redundancy</span><span class="p">(</span>
+            <span class="n">uniq_inpflg</span><span class="o">.</span><span class="n">astype</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">float32</span><span class="p">),</span>
+            <span class="n">data</span><span class="o">.</span><span class="n">prod</span><span class="p">,</span>
+            <span class="n">data</span><span class="o">.</span><span class="n">reverse_map</span><span class="p">[</span><span class="s2">&quot;stack&quot;</span><span class="p">][</span><span class="s2">&quot;stack&quot;</span><span class="p">],</span>
+            <span class="n">data</span><span class="o">.</span><span class="n">stack</span><span class="o">.</span><span class="n">size</span><span class="p">,</span>
+        <span class="p">)</span>
+
+        <span class="c1"># Determine stack axis</span>
+        <span class="n">stack_new</span><span class="p">,</span> <span class="n">stack_flag</span> <span class="o">=</span> <span class="n">tools</span><span class="o">.</span><span class="n">redefine_stack_index_map</span><span class="p">(</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">telescope</span><span class="p">,</span> <span class="n">data</span><span class="o">.</span><span class="n">input</span><span class="p">,</span> <span class="n">data</span><span class="o">.</span><span class="n">prod</span><span class="p">,</span> <span class="n">data</span><span class="o">.</span><span class="n">stack</span><span class="p">,</span> <span class="n">data</span><span class="o">.</span><span class="n">reverse_map</span><span class="p">[</span><span class="s2">&quot;stack&quot;</span><span class="p">]</span>
+        <span class="p">)</span>
+
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">np</span><span class="o">.</span><span class="n">all</span><span class="p">(</span><span class="n">stack_flag</span><span class="p">):</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">log</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span>
+                <span class="s2">&quot;There are </span><span class="si">%d</span><span class="s2"> stacked baselines that are masked &quot;</span>
+                <span class="s2">&quot;in the telescope instance.&quot;</span> <span class="o">%</span> <span class="n">np</span><span class="o">.</span><span class="n">sum</span><span class="p">(</span><span class="o">~</span><span class="n">stack_flag</span><span class="p">)</span>
+            <span class="p">)</span>
+
+        <span class="n">ps</span> <span class="o">=</span> <span class="n">data</span><span class="o">.</span><span class="n">prod</span><span class="p">[</span><span class="n">stack_new</span><span class="p">[</span><span class="s2">&quot;prod&quot;</span><span class="p">]]</span>
+        <span class="n">conj</span> <span class="o">=</span> <span class="n">stack_new</span><span class="p">[</span><span class="s2">&quot;conjugate&quot;</span><span class="p">]</span>
+
+        <span class="n">prodstack</span> <span class="o">=</span> <span class="n">ps</span><span class="o">.</span><span class="n">copy</span><span class="p">()</span>
+        <span class="n">prodstack</span><span class="p">[</span><span class="s2">&quot;input_a&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">where</span><span class="p">(</span><span class="n">conj</span><span class="p">,</span> <span class="n">ps</span><span class="p">[</span><span class="s2">&quot;input_b&quot;</span><span class="p">],</span> <span class="n">ps</span><span class="p">[</span><span class="s2">&quot;input_a&quot;</span><span class="p">])</span>
+        <span class="n">prodstack</span><span class="p">[</span><span class="s2">&quot;input_b&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">where</span><span class="p">(</span><span class="n">conj</span><span class="p">,</span> <span class="n">ps</span><span class="p">[</span><span class="s2">&quot;input_a&quot;</span><span class="p">],</span> <span class="n">ps</span><span class="p">[</span><span class="s2">&quot;input_b&quot;</span><span class="p">])</span>
+
+        <span class="c1"># Figure out mapping between inputs in data file and inputs in telescope</span>
+        <span class="n">tel_index</span> <span class="o">=</span> <span class="n">tools</span><span class="o">.</span><span class="n">find_inputs</span><span class="p">(</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">telescope</span><span class="o">.</span><span class="n">input_index</span><span class="p">,</span> <span class="n">data</span><span class="o">.</span><span class="n">input</span><span class="p">,</span> <span class="n">require_match</span><span class="o">=</span><span class="kc">False</span>
+        <span class="p">)</span>
+
+        <span class="c1"># Use the mapping to extract polarisation and EW position of each input</span>
+        <span class="n">input_pol</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">(</span>
+            <span class="p">[</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">telescope</span><span class="o">.</span><span class="n">polarisation</span><span class="p">[</span><span class="n">ti</span><span class="p">]</span> <span class="k">if</span> <span class="n">ti</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="k">else</span> <span class="s2">&quot;N&quot;</span>
+                <span class="k">for</span> <span class="n">ti</span> <span class="ow">in</span> <span class="n">tel_index</span>
+            <span class="p">]</span>
+        <span class="p">)</span>
+
+        <span class="n">ew_position</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">(</span>
+            <span class="p">[</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">telescope</span><span class="o">.</span><span class="n">feedpositions</span><span class="p">[</span><span class="n">ti</span><span class="p">,</span> <span class="mi">0</span><span class="p">]</span> <span class="k">if</span> <span class="n">ti</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="k">else</span> <span class="mf">0.0</span>
+                <span class="k">for</span> <span class="n">ti</span> <span class="ow">in</span> <span class="n">tel_index</span>
+            <span class="p">]</span>
+        <span class="p">)</span>
+
+        <span class="c1"># Next we determine indices into the stack axis for each polarisation product</span>
+        <span class="c1"># The next three lines result in XY and YX being</span>
+        <span class="c1"># combined into a single polarisation product</span>
+        <span class="n">pa</span><span class="p">,</span> <span class="n">pb</span> <span class="o">=</span> <span class="n">input_pol</span><span class="p">[</span><span class="n">prodstack</span><span class="p">[</span><span class="s2">&quot;input_a&quot;</span><span class="p">]],</span> <span class="n">input_pol</span><span class="p">[</span><span class="n">prodstack</span><span class="p">[</span><span class="s2">&quot;input_b&quot;</span><span class="p">]]</span>
+        <span class="n">pol_a</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">where</span><span class="p">(</span><span class="n">pa</span> <span class="o">&lt;=</span> <span class="n">pb</span><span class="p">,</span> <span class="n">pa</span><span class="p">,</span> <span class="n">pb</span><span class="p">)</span>
+        <span class="n">pol_b</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">where</span><span class="p">(</span><span class="n">pa</span> <span class="o">&lt;=</span> <span class="n">pb</span><span class="p">,</span> <span class="n">pb</span><span class="p">,</span> <span class="n">pa</span><span class="p">)</span>
+
+        <span class="n">baseline_pol</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">core</span><span class="o">.</span><span class="n">defchararray</span><span class="o">.</span><span class="n">add</span><span class="p">(</span><span class="n">pol_a</span><span class="p">,</span> <span class="n">pol_b</span><span class="p">)</span>
+
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">exclude_intracyl</span><span class="p">:</span>
+            <span class="n">baseline_flag</span> <span class="o">=</span> <span class="p">(</span>
+                <span class="n">ew_position</span><span class="p">[</span><span class="n">prodstack</span><span class="p">[</span><span class="s2">&quot;input_a&quot;</span><span class="p">]]</span> <span class="o">!=</span> <span class="n">ew_position</span><span class="p">[</span><span class="n">prodstack</span><span class="p">[</span><span class="s2">&quot;input_b&quot;</span><span class="p">]]</span>
+            <span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">baseline_flag</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">ones</span><span class="p">(</span><span class="n">prodstack</span><span class="o">.</span><span class="n">size</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">bool</span><span class="p">)</span>
+
+        <span class="n">pol_uniq</span> <span class="o">=</span> <span class="p">[</span><span class="n">bp</span> <span class="k">for</span> <span class="n">bp</span> <span class="ow">in</span> <span class="n">np</span><span class="o">.</span><span class="n">unique</span><span class="p">(</span><span class="n">baseline_pol</span><span class="p">)</span> <span class="k">if</span> <span class="s2">&quot;N&quot;</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">bp</span><span class="p">]</span>
+        <span class="n">pol_index</span> <span class="o">=</span> <span class="p">[</span>
+            <span class="n">np</span><span class="o">.</span><span class="n">flatnonzero</span><span class="p">((</span><span class="n">baseline_pol</span> <span class="o">==</span> <span class="n">up</span><span class="p">)</span> <span class="o">&amp;</span> <span class="n">baseline_flag</span><span class="p">)</span> <span class="k">for</span> <span class="n">up</span> <span class="ow">in</span> <span class="n">pol_uniq</span>
+        <span class="p">]</span>
+        <span class="n">npol</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">pol_uniq</span><span class="p">)</span>
+
+        <span class="n">auto_flag</span> <span class="o">=</span> <span class="p">(</span><span class="n">prodstack</span><span class="p">[</span><span class="s2">&quot;input_a&quot;</span><span class="p">]</span> <span class="o">==</span> <span class="n">prodstack</span><span class="p">[</span><span class="s2">&quot;input_b&quot;</span><span class="p">])</span><span class="o">.</span><span class="n">astype</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">float32</span><span class="p">)</span>
+
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">exclude_intracyl</span> <span class="ow">and</span> <span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">sum</span><span class="p">(</span><span class="n">auto_flag</span><span class="p">)</span> <span class="o">==</span> <span class="n">npol</span><span class="p">):</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+                <span class="s2">&quot;You have requested the exclusion of &quot;</span>
+                <span class="s2">&quot;intracylinder baselines,  however it appears &quot;</span>
+                <span class="s2">&quot;that the visibilities have already been stacked &quot;</span>
+                <span class="s2">&quot;over cylinder, preventing calculation of the &quot;</span>
+                <span class="s2">&quot;radiometric estimate.&quot;</span>
+            <span class="p">)</span>
+
+        <span class="c1"># Dereference the weight dataset</span>
+        <span class="n">bweight</span> <span class="o">=</span> <span class="n">data</span><span class="o">.</span><span class="n">weight</span><span class="p">[:]</span><span class="o">.</span><span class="n">view</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">)</span>
+        <span class="n">bflag</span> <span class="o">=</span> <span class="n">bweight</span> <span class="o">&gt;</span> <span class="mf">0.0</span>
+
+        <span class="c1"># Initialize arrays</span>
+        <span class="n">var</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">zeros</span><span class="p">((</span><span class="n">nfreq</span><span class="p">,</span> <span class="n">npol</span><span class="p">,</span> <span class="n">ntime</span><span class="p">),</span> <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">float32</span><span class="p">)</span>
+        <span class="n">counter</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">zeros</span><span class="p">((</span><span class="n">nfreq</span><span class="p">,</span> <span class="n">npol</span><span class="p">,</span> <span class="n">ntime</span><span class="p">),</span> <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">float32</span><span class="p">)</span>
+
+        <span class="c1"># Average over selected baseline per polarization</span>
+        <span class="k">for</span> <span class="n">pp</span><span class="p">,</span> <span class="n">ipol</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">pol_index</span><span class="p">):</span>
+
+            <span class="n">pcnt</span> <span class="o">=</span> <span class="n">cnt</span><span class="p">[</span><span class="n">ipol</span><span class="p">,</span> <span class="p">:]</span>
+            <span class="n">pscale</span> <span class="o">=</span> <span class="mf">2.0</span> <span class="o">-</span> <span class="n">auto_flag</span><span class="p">[</span><span class="n">ipol</span><span class="p">,</span> <span class="n">np</span><span class="o">.</span><span class="n">newaxis</span><span class="p">]</span>
+
+            <span class="c1"># Loop over frequencies to reduce memory usage</span>
+            <span class="k">for</span> <span class="n">ff</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">nfreq</span><span class="p">):</span>
+
+                <span class="n">fslc</span> <span class="o">=</span> <span class="nb">slice</span><span class="p">((</span><span class="n">ff</span> <span class="o">%</span> <span class="n">niff</span><span class="p">)</span> <span class="o">*</span> <span class="n">ntime</span><span class="p">,</span> <span class="p">((</span><span class="n">ff</span> <span class="o">%</span> <span class="n">niff</span><span class="p">)</span> <span class="o">+</span> <span class="mi">1</span><span class="p">)</span> <span class="o">*</span> <span class="n">ntime</span><span class="p">)</span>
+                <span class="n">pfcnt</span> <span class="o">=</span> <span class="n">pcnt</span><span class="p">[:,</span> <span class="n">index_cnt</span><span class="p">[</span><span class="n">fslc</span><span class="p">]]</span>
+
+                <span class="n">pvar</span> <span class="o">=</span> <span class="n">tools</span><span class="o">.</span><span class="n">invert_no_zero</span><span class="p">(</span><span class="n">bweight</span><span class="p">[</span><span class="n">ff</span><span class="p">,</span> <span class="n">ipol</span><span class="p">,</span> <span class="p">:])</span>
+                <span class="n">pflag</span> <span class="o">=</span> <span class="n">bflag</span><span class="p">[</span><span class="n">ff</span><span class="p">,</span> <span class="n">ipol</span><span class="p">,</span> <span class="p">:]</span><span class="o">.</span><span class="n">astype</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">float32</span><span class="p">)</span>
+
+                <span class="n">var</span><span class="p">[</span><span class="n">ff</span><span class="p">,</span> <span class="n">pp</span><span class="p">,</span> <span class="p">:]</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">sum</span><span class="p">(</span><span class="n">pfcnt</span> <span class="o">**</span> <span class="mi">2</span> <span class="o">*</span> <span class="n">pscale</span> <span class="o">*</span> <span class="n">pflag</span> <span class="o">*</span> <span class="n">pvar</span><span class="p">,</span> <span class="n">axis</span><span class="o">=</span><span class="mi">0</span><span class="p">)</span>
+
+                <span class="n">counter</span><span class="p">[</span><span class="n">ff</span><span class="p">,</span> <span class="n">pp</span><span class="p">,</span> <span class="p">:]</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">sum</span><span class="p">(</span><span class="n">pfcnt</span> <span class="o">*</span> <span class="n">pscale</span> <span class="o">*</span> <span class="n">pflag</span><span class="p">,</span> <span class="n">axis</span><span class="o">=</span><span class="mi">0</span><span class="p">)</span>
+
+        <span class="c1"># Normalize</span>
+        <span class="n">var</span> <span class="o">*=</span> <span class="n">tools</span><span class="o">.</span><span class="n">invert_no_zero</span><span class="p">(</span><span class="n">counter</span> <span class="o">**</span> <span class="mi">2</span><span class="p">)</span>
+
+        <span class="c1"># Determine which of the stack indices correspond to autocorrelations</span>
+        <span class="n">auto_stack_id</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">flatnonzero</span><span class="p">(</span><span class="n">auto_flag</span><span class="p">)</span>
+        <span class="n">auto_input</span> <span class="o">=</span> <span class="n">prodstack</span><span class="p">[</span><span class="s2">&quot;input_a&quot;</span><span class="p">][</span><span class="n">auto_stack_id</span><span class="p">]</span>
+        <span class="n">auto_pol</span> <span class="o">=</span> <span class="n">input_pol</span><span class="p">[</span><span class="n">auto_input</span><span class="p">]</span>
+
+        <span class="n">auto_cnt</span> <span class="o">=</span> <span class="n">cnt</span><span class="p">[</span><span class="n">auto_stack_id</span><span class="p">,</span> <span class="p">:][:,</span> <span class="n">index_cnt</span><span class="p">]</span>
+        <span class="n">auto_cnt</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">swapaxes</span><span class="p">(</span><span class="n">auto_cnt</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">,</span> <span class="n">niff</span><span class="p">,</span> <span class="n">ntime</span><span class="p">),</span> <span class="mi">0</span><span class="p">,</span> <span class="mi">1</span><span class="p">)</span>
+        <span class="n">num_feed</span> <span class="o">=</span> <span class="n">auto_cnt</span> <span class="o">*</span> <span class="n">bflag</span><span class="p">[:,</span> <span class="n">auto_stack_id</span><span class="p">,</span> <span class="p">:]</span><span class="o">.</span><span class="n">astype</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">float32</span><span class="p">)</span>
+
+        <span class="n">auto</span> <span class="o">=</span> <span class="n">data</span><span class="o">.</span><span class="n">vis</span><span class="p">[:,</span> <span class="n">auto_stack_id</span><span class="p">,</span> <span class="p">:]</span><span class="o">.</span><span class="n">real</span>
+
+        <span class="c1"># Construct the radiometric estimate of the noise by taking the sum</span>
+        <span class="c1"># of the product of pairs of (possibly stacked) autocorrelations.</span>
+        <span class="n">radiometer</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">zeros</span><span class="p">((</span><span class="n">nfreq</span><span class="p">,</span> <span class="n">npol</span><span class="p">,</span> <span class="n">ntime</span><span class="p">),</span> <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">float32</span><span class="p">)</span>
+        <span class="n">radiometer_counter</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">zeros</span><span class="p">((</span><span class="n">nfreq</span><span class="p">,</span> <span class="n">npol</span><span class="p">,</span> <span class="n">ntime</span><span class="p">),</span> <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">float32</span><span class="p">)</span>
+
+        <span class="k">for</span> <span class="n">ii</span><span class="p">,</span> <span class="p">(</span><span class="n">ai</span><span class="p">,</span> <span class="n">pi</span><span class="p">)</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="nb">zip</span><span class="p">(</span><span class="n">auto_input</span><span class="p">,</span> <span class="n">auto_pol</span><span class="p">)):</span>
+
+            <span class="k">for</span> <span class="n">jj</span><span class="p">,</span> <span class="p">(</span><span class="n">aj</span><span class="p">,</span> <span class="n">pj</span><span class="p">)</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="nb">zip</span><span class="p">(</span><span class="n">auto_input</span><span class="p">,</span> <span class="n">auto_pol</span><span class="p">)):</span>
+
+                <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">exclude_intracyl</span> <span class="ow">and</span> <span class="p">(</span><span class="n">ew_position</span><span class="p">[</span><span class="n">ai</span><span class="p">]</span> <span class="o">==</span> <span class="n">ew_position</span><span class="p">[</span><span class="n">aj</span><span class="p">]):</span>
+                    <span class="c1"># Exclude intracylinder baselines</span>
+                    <span class="k">continue</span>
+
+                <span class="c1"># Combine XY and YX into single polarisation product</span>
+                <span class="n">pp</span> <span class="o">=</span> <span class="n">pol_uniq</span><span class="o">.</span><span class="n">index</span><span class="p">(</span><span class="n">pi</span> <span class="o">+</span> <span class="n">pj</span><span class="p">)</span> <span class="k">if</span> <span class="n">pi</span> <span class="o">&lt;=</span> <span class="n">pj</span> <span class="k">else</span> <span class="n">pol_uniq</span><span class="o">.</span><span class="n">index</span><span class="p">(</span><span class="n">pj</span> <span class="o">+</span> <span class="n">pi</span><span class="p">)</span>
+
+                <span class="c1"># Weight by the number of feeds that were averaged</span>
+                <span class="c1"># together to obtain each stacked autocorrelation</span>
+                <span class="n">nsq</span> <span class="o">=</span> <span class="n">num_feed</span><span class="p">[:,</span> <span class="n">ii</span><span class="p">,</span> <span class="p">:]</span> <span class="o">*</span> <span class="n">num_feed</span><span class="p">[:,</span> <span class="n">jj</span><span class="p">,</span> <span class="p">:]</span>
+
+                <span class="n">radiometer</span><span class="p">[:,</span> <span class="n">pp</span><span class="p">,</span> <span class="p">:]</span> <span class="o">+=</span> <span class="n">nsq</span> <span class="o">*</span> <span class="n">auto</span><span class="p">[:,</span> <span class="n">ii</span><span class="p">,</span> <span class="p">:]</span> <span class="o">*</span> <span class="n">auto</span><span class="p">[:,</span> <span class="n">jj</span><span class="p">,</span> <span class="p">:]</span>
+
+                <span class="n">radiometer_counter</span><span class="p">[:,</span> <span class="n">pp</span><span class="p">,</span> <span class="p">:]</span> <span class="o">+=</span> <span class="n">nsq</span>
+
+        <span class="c1"># Calculate number of independent samples from the</span>
+        <span class="c1"># integration time, frequency resolution, and fraction of packets lost</span>
+        <span class="n">tint</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">median</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">abs</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">diff</span><span class="p">(</span><span class="n">data</span><span class="o">.</span><span class="n">time</span><span class="p">)))</span>
+        <span class="n">dnu</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">median</span><span class="p">(</span><span class="n">data</span><span class="o">.</span><span class="n">index_map</span><span class="p">[</span><span class="s2">&quot;freq&quot;</span><span class="p">][</span><span class="s2">&quot;width&quot;</span><span class="p">])</span> <span class="o">*</span> <span class="mf">1e6</span>
+
+        <span class="k">if</span> <span class="p">(</span><span class="s2">&quot;flags&quot;</span> <span class="ow">in</span> <span class="n">data</span><span class="p">)</span> <span class="ow">and</span> <span class="p">(</span><span class="s2">&quot;frac_lost&quot;</span> <span class="ow">in</span> <span class="n">data</span><span class="p">[</span><span class="s2">&quot;flags&quot;</span><span class="p">]):</span>
+            <span class="n">frac_lost</span> <span class="o">=</span> <span class="n">data</span><span class="p">[</span><span class="s2">&quot;flags&quot;</span><span class="p">][</span><span class="s2">&quot;frac_lost&quot;</span><span class="p">][:]</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">frac_lost</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">zeros</span><span class="p">((</span><span class="mi">1</span><span class="p">,</span> <span class="mi">1</span><span class="p">),</span> <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">float32</span><span class="p">)</span>
+
+        <span class="n">nint</span> <span class="o">=</span> <span class="n">dnu</span> <span class="o">*</span> <span class="n">tint</span> <span class="o">*</span> <span class="p">(</span><span class="mf">1.0</span> <span class="o">-</span> <span class="n">frac_lost</span><span class="p">[:,</span> <span class="n">np</span><span class="o">.</span><span class="n">newaxis</span><span class="p">,</span> <span class="p">:])</span>
+
+        <span class="c1"># Normalize by the number of independent samples</span>
+        <span class="c1"># and the total number of baselines squared</span>
+        <span class="n">radiometer</span> <span class="o">*=</span> <span class="n">tools</span><span class="o">.</span><span class="n">invert_no_zero</span><span class="p">(</span><span class="n">nint</span> <span class="o">*</span> <span class="n">radiometer_counter</span> <span class="o">**</span> <span class="mi">2</span><span class="p">)</span>
+
+        <span class="c1"># Create output container</span>
+        <span class="n">metrics</span> <span class="o">=</span> <span class="n">containers</span><span class="o">.</span><span class="n">SystemSensitivity</span><span class="p">(</span>
+            <span class="n">pol</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">(</span><span class="n">pol_uniq</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="s2">&quot;&lt;U2&quot;</span><span class="p">),</span>
+            <span class="n">time</span><span class="o">=</span><span class="n">data</span><span class="o">.</span><span class="n">time</span><span class="p">[:],</span>
+            <span class="n">axes_from</span><span class="o">=</span><span class="n">data</span><span class="p">,</span>
+            <span class="n">attrs_from</span><span class="o">=</span><span class="n">data</span><span class="p">,</span>
+            <span class="n">comm</span><span class="o">=</span><span class="n">data</span><span class="o">.</span><span class="n">comm</span><span class="p">,</span>
+            <span class="n">distributed</span><span class="o">=</span><span class="n">data</span><span class="o">.</span><span class="n">distributed</span><span class="p">,</span>
+        <span class="p">)</span>
+
+        <span class="n">metrics</span><span class="o">.</span><span class="n">redistribute</span><span class="p">(</span><span class="s2">&quot;freq&quot;</span><span class="p">)</span>
+
+        <span class="c1"># In order to write generic code for generating the radiometric</span>
+        <span class="c1"># estimate of the sensitivity, we had to sum over the upper and lower triangle</span>
+        <span class="c1"># of the visibility matrix.  Below we multiply by sqrt(2) in order to</span>
+        <span class="c1"># obtain the sensitivity of the real component.</span>
+        <span class="n">metrics</span><span class="o">.</span><span class="n">radiometer</span><span class="p">[:]</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">sqrt</span><span class="p">(</span><span class="mf">2.0</span> <span class="o">*</span> <span class="n">radiometer</span><span class="p">)</span>
+        <span class="n">metrics</span><span class="o">.</span><span class="n">measured</span><span class="p">[:]</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">sqrt</span><span class="p">(</span><span class="mf">2.0</span> <span class="o">*</span> <span class="n">var</span><span class="p">)</span>
+
+        <span class="c1"># Save the total number of baselines that were averaged in the weight dataset</span>
+        <span class="n">metrics</span><span class="o">.</span><span class="n">weight</span><span class="p">[:]</span> <span class="o">=</span> <span class="n">counter</span>
+
+        <span class="c1"># Save the fraction of missing samples</span>
+        <span class="n">metrics</span><span class="o">.</span><span class="n">frac_lost</span><span class="p">[:]</span> <span class="o">=</span> <span class="n">frac_lost</span>
+
+        <span class="k">return</span> <span class="n">metrics</span></div></div>
+</pre></div>
+
+           </div>
+           
+          </div>
+          <footer>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>
+        &#169; Copyright 2016, Richard Shaw.
+
+    </p>
+  </div>
+    
+    
+    
+    Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    
+    provided by <a href="https://readthedocs.org">Read the Docs</a>. 
+
+</footer>
+        </div>
+      </div>
+
+    </section>
+
+  </div>
+  
+
+  <script type="text/javascript">
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script>
+
+  
+  
+    
+   
+
+</body>
+</html>
