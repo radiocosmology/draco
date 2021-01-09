@@ -1,15 +1,4 @@
-"""Take timestream data and regridding it into sidereal days which can be
-stacked.
-
-Tasks
-=====
-
-.. autosummary::
-    :toctree:
-
-    SiderealGrouper
-    SiderealRegridder
-    SiderealStacker
+"""Take timestream data and regridding it into sidereal days which can be stacked.
 
 Usage
 =====

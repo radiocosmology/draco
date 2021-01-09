@@ -1,18 +1,5 @@
 """Tasks for reading and writing data.
 
-Tasks
-=====
-
-.. autosummary::
-    :toctree:
-
-    LoadFiles
-    LoadMaps
-    LoadFilesFromParams
-    Save
-    Print
-    LoadBeamTransfer
-
 File Groups
 ===========
 
@@ -83,7 +70,7 @@ def _list_of_filelists(files: Union[List[str], List[List[str]]]) -> List[List[st
     Parameters
     ----------
     files
-        A path or glob pattern (e.g. /my/data/*.h5) or a list of those (or a list of lists of those).
+        A path or glob pattern (e.g. /my/data/\*.h5) or a list of those (or a list of lists of those).
 
     Raises
     ------
@@ -121,7 +108,7 @@ def _list_or_glob(files: Union[str, List[str]]) -> List[str]:
     Parameters
     ----------
     files
-        A path or glob pattern (e.g. /my/data/*.h5) or a list of those
+        A path or glob pattern (e.g. /my/data/\*.h5) or a list of those
 
     Returns
     -------

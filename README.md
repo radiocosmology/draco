@@ -41,3 +41,5 @@ or by downloading the package and running the `setup.py` script:
 $ cd draco
 $ python setup.py install
 ```
+
+The full documentation of `draco` is at https://radiocosmology.github.io/draco/.

@@ -1,16 +1,4 @@
-"""An improved base task implementing easy (and explicit) saving of outputs.
-
-Tasks
-=====
-
-.. autosummary::
-    :toctree:
-
-    SingleTask
-    ReturnLastInputOnFinish
-    ReturnFirstInputOnFinish
-    Delete
-"""
+"""An improved base task implementing easy (and explicit) saving of outputs."""
 
 import os
 import logging
@@ -262,17 +250,6 @@ class SingleTask(MPILoggedTask, pipeline.BasicContMixin):
         attached to output metadata.
     pipeline_config : dict
         Global pipeline configuration. This is attached to output metadata.
-
-    Methods
-    -------
-    next
-    setup
-    process
-    finish
-    read_input
-    cast_input
-    write_output
-
     """
 
     save = config.Property(default=False, proptype=bool)
@@ -294,8 +271,6 @@ class SingleTask(MPILoggedTask, pipeline.BasicContMixin):
     _no_input = False
 
     def __init__(self):
-        """Checks inputs and outputs and stuff."""
-
         super(SingleTask, self).__init__()
 
         # Inspect the `process` method to see how many arguments it takes.

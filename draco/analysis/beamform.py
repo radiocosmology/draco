@@ -1,3 +1,5 @@
+"""Beam Forming"""
+
 import numpy as np
 from skyfield.api import Star, Angle
 

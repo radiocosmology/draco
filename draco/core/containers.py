@@ -1,41 +1,4 @@
-"""Distributed containers for holding various types of analysis data.
-
-Containers
-==========
-
-.. autosummary::
-    :toctree:
-
-    TimeStream
-    SiderealStream
-    GainData
-    StaticGainData
-    Map
-    MModes
-    RingMap
-
-Container Base Classes
-----------------------
-
-.. autosummary::
-    :toctree:
-
-    ContainerBase
-    TODContainer
-    VisContainer
-
-Helper Routines
----------------
-
-These routines are designed to be replaced by other packages trying to insert
-their own custom container types.
-
-.. autosummary::
-    :toctree:
-
-    empty_like
-    empty_timestream
-"""
+"""Distributed containers for holding various types of analysis data."""
 
 import inspect
 
@@ -59,7 +22,7 @@ class ContainerBase(memh5.BasicCont):
 
     This class is designed to do much of the work of setting up pipeline
     containers. It should be derived from, and two variables set `_axes` and
-    `_dataset_spec`. See the `Notes`_ section for details.
+    `_dataset_spec`. See the :ref:`Notes <containerbase_notes>` section for details.
 
     Parameters
     ----------
@@ -77,6 +40,7 @@ class ContainerBase(memh5.BasicCont):
 
     Notes
     -----
+    .. _containerbase_notes:
 
     Inheritance from other `ContainerBase` subclasses should work as expected,
     with datasets defined in super classes appearing as expected, and being
@@ -440,7 +404,7 @@ class TableBase(ContainerBase):
     Similar to the `ContainerBase` class, the container is defined through a
     dictionary given as a `_table_spec` class attribute. The container may also
     hold generic datasets by specifying `_dataset_spec` as with `ContainerBase`.
-    See `Notes`_ for details.
+    See :ref:`Notes <tablebase_notes>` for details.
 
     Parameters
     ----------
@@ -455,6 +419,7 @@ class TableBase(ContainerBase):
 
     Notes
     -----
+    .. _tablebase_notes:
 
     A `_table_spec` consists of a dictionary mapping table names into a
     description of the table. That description is another dictionary containing

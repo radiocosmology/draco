@@ -1,5 +1,4 @@
-"""Delay space spectrum estimation and filtering.
-"""
+"""Delay space spectrum estimation and filtering."""
 
 import numpy as np
 import scipy.linalg as la

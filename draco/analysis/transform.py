@@ -1,17 +1,4 @@
-"""Miscellaneous transformations to do on data, from grouping frequencies and
-products to performing the m-mode transform.
-
-Tasks
-=====
-
-.. autosummary::
-    :toctree:
-
-    FrequencyRebin
-    SelectFreq
-    CollateProducts
-    MModeTransform
-"""
+"""Misc. transformations to do on data, from grouping frequencies and products to performing the m-mode transform."""
 
 import numpy as np
 from caput import mpiarray, config

@@ -1,15 +1,4 @@
-"""Tasks for generating random gain fluctuations in the data and stacking them.
-
-Tasks
-=====
-
-.. autosummary::
-    :toctree:
-
-    SiderealGains
-    RandomGains
-    GainStacker
-"""
+"""Tasks for generating random gain fluctuations in the data and stacking them."""
 
 
 import numpy as np
@@ -540,8 +529,8 @@ def constrained_gaussian_realisation(x, corrfunc, n, x2, y2, rcond=1e-12):
     """Generate a constrained Gaussian random field.
 
     Given a correlation function generate a Gaussian random field that is
-    consistent with an existing set of values :param:`y2` located at
-    co-ordinates :param:`x2`.
+    consistent with an existing set of values of parameter `y2` located at
+    co-ordinates in parameter `x2`.
 
     Parameters
     ----------

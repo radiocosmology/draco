@@ -1,5 +1,4 @@
-"""Tasks for foreground filtering data.
-"""
+"""Tasks for foreground filtering data."""
 
 
 import numpy as np
