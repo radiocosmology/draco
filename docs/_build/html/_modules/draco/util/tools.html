@@ -1,0 +1,724 @@
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" >
+<head>
+  <meta charset="utf-8">
+  
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  
+  <title>draco.util.tools &mdash; draco 20.10.0+41.gf92d39b.dirty documentation</title>
+  
+
+  
+  <link rel="stylesheet" href="../../../_static/css/theme.css" type="text/css" />
+  <link rel="stylesheet" href="../../../_static/pygments.css" type="text/css" />
+
+  
+  
+  
+  
+
+  
+  <!--[if lt IE 9]>
+    <script src="../../../_static/js/html5shiv.min.js"></script>
+  <![endif]-->
+  
+    
+      <script type="text/javascript" id="documentation_options" data-url_root="../../../" src="../../../_static/documentation_options.js"></script>
+        <script src="../../../_static/jquery.js"></script>
+        <script src="../../../_static/underscore.js"></script>
+        <script src="../../../_static/doctools.js"></script>
+    
+    <script type="text/javascript" src="../../../_static/js/theme.js"></script>
+
+    
+    <link rel="index" title="Index" href="../../../genindex.html" />
+    <link rel="search" title="Search" href="../../../search.html" /> 
+</head>
+
+<body class="wy-body-for-nav">
+
+   
+  <div class="wy-grid-for-nav">
+    
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+          
+
+          
+            <a href="../../../index.html" class="icon icon-home" alt="Documentation Home"> draco
+          
+
+          
+          </a>
+
+          
+            
+            
+              <div class="version">
+                20.10.0+41.gf92d39b.dirty
+              </div>
+            
+          
+
+          
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../../../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+
+          
+        </div>
+
+        
+        <div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="main navigation">
+          
+            
+            
+              
+            
+            
+              <ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../tutorial.html">Tutorial</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../reference.html">API Reference</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../dev.html">Development Guidelines</a></li>
+</ul>
+
+            
+          
+        </div>
+        
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap">
+
+      
+      <nav class="wy-nav-top" aria-label="top navigation">
+        
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../../../index.html">draco</a>
+        
+      </nav>
+
+
+      <div class="wy-nav-content">
+        
+        <div class="rst-content">
+        
+          
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<div role="navigation" aria-label="breadcrumbs navigation">
+
+  <ul class="wy-breadcrumbs">
+    
+      <li><a href="../../../index.html" class="icon icon-home"></a> &raquo;</li>
+        
+          <li><a href="../../index.html">Module code</a> &raquo;</li>
+        
+      <li>draco.util.tools</li>
+    
+    
+      <li class="wy-breadcrumbs-aside">
+        
+      </li>
+    
+  </ul>
+
+  
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+            
+  <h1>Source code for draco.util.tools</h1><div class="highlight"><pre>
+<span></span><span class="sd">&quot;&quot;&quot;Collection of miscellaneous routines.</span>
+
+<span class="sd">Miscellaneous tasks should be placed in :py:mod:`draco.core.misc`.</span>
+<span class="sd">&quot;&quot;&quot;</span>
+
+<span class="kn">import</span> <span class="nn">numpy</span> <span class="k">as</span> <span class="nn">np</span>
+
+<span class="kn">from</span> <span class="nn">._fast_tools</span> <span class="k">import</span> <span class="n">_calc_redundancy</span>
+
+
+<div class="viewcode-block" id="cmap"><a class="viewcode-back" href="../../../_autosummary/draco.util.tools.html#draco.util.tools.cmap">[docs]</a><span class="k">def</span> <span class="nf">cmap</span><span class="p">(</span><span class="n">i</span><span class="p">,</span> <span class="n">j</span><span class="p">,</span> <span class="n">n</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;Given a pair of feed indices, return the pair index.</span>
+
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    i, j : integer</span>
+<span class="sd">        Feed index.</span>
+<span class="sd">    n : integer</span>
+<span class="sd">        Total number of feeds.</span>
+
+<span class="sd">    Returns</span>
+<span class="sd">    -------</span>
+<span class="sd">    pi : integer</span>
+<span class="sd">        Pair index.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">if</span> <span class="n">i</span> <span class="o">&lt;=</span> <span class="n">j</span><span class="p">:</span>
+        <span class="k">return</span> <span class="p">(</span><span class="n">n</span> <span class="o">*</span> <span class="p">(</span><span class="n">n</span> <span class="o">+</span> <span class="mi">1</span><span class="p">)</span> <span class="o">//</span> <span class="mi">2</span><span class="p">)</span> <span class="o">-</span> <span class="p">((</span><span class="n">n</span> <span class="o">-</span> <span class="n">i</span><span class="p">)</span> <span class="o">*</span> <span class="p">(</span><span class="n">n</span> <span class="o">-</span> <span class="n">i</span> <span class="o">+</span> <span class="mi">1</span><span class="p">)</span> <span class="o">//</span> <span class="mi">2</span><span class="p">)</span> <span class="o">+</span> <span class="p">(</span><span class="n">j</span> <span class="o">-</span> <span class="n">i</span><span class="p">)</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="k">return</span> <span class="n">cmap</span><span class="p">(</span><span class="n">j</span><span class="p">,</span> <span class="n">i</span><span class="p">,</span> <span class="n">n</span><span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="icmap"><a class="viewcode-back" href="../../../_autosummary/draco.util.tools.html#draco.util.tools.icmap">[docs]</a><span class="k">def</span> <span class="nf">icmap</span><span class="p">(</span><span class="n">ix</span><span class="p">,</span> <span class="n">n</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;Inverse feed map.</span>
+
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    ix : integer</span>
+<span class="sd">        Pair index.</span>
+<span class="sd">    n : integer</span>
+<span class="sd">        Total number of feeds.</span>
+
+<span class="sd">    Returns</span>
+<span class="sd">    -------</span>
+<span class="sd">    fi, fj : integer</span>
+<span class="sd">        Feed indices.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">for</span> <span class="n">ii</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">n</span><span class="p">):</span>
+        <span class="k">if</span> <span class="n">cmap</span><span class="p">(</span><span class="n">ii</span><span class="p">,</span> <span class="n">n</span> <span class="o">-</span> <span class="mi">1</span><span class="p">,</span> <span class="n">n</span><span class="p">)</span> <span class="o">&gt;=</span> <span class="n">ix</span><span class="p">:</span>
+            <span class="k">break</span>
+
+    <span class="n">i</span> <span class="o">=</span> <span class="n">ii</span>
+    <span class="n">j</span> <span class="o">=</span> <span class="n">ix</span> <span class="o">-</span> <span class="n">cmap</span><span class="p">(</span><span class="n">i</span><span class="p">,</span> <span class="n">i</span><span class="p">,</span> <span class="n">n</span><span class="p">)</span> <span class="o">+</span> <span class="n">i</span>
+    <span class="k">return</span> <span class="n">i</span><span class="p">,</span> <span class="n">j</span></div>
+
+
+<div class="viewcode-block" id="find_key"><a class="viewcode-back" href="../../../_autosummary/draco.util.tools.html#draco.util.tools.find_key">[docs]</a><span class="k">def</span> <span class="nf">find_key</span><span class="p">(</span><span class="n">key_list</span><span class="p">,</span> <span class="n">key</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;Find the index of a key in a list of keys.</span>
+
+<span class="sd">    This is a wrapper for the list method `index`</span>
+<span class="sd">    that can search any interable (not just lists)</span>
+<span class="sd">    and will return None if the key is not found.</span>
+
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    key_list : iterable</span>
+<span class="sd">    key : object to be searched</span>
+
+<span class="sd">    Returns</span>
+<span class="sd">    -------</span>
+<span class="sd">    index : int or None</span>
+<span class="sd">        The index of `key` in `key_list`.</span>
+<span class="sd">        If `key_list` does not contain `key`,</span>
+<span class="sd">        then None is returned.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">try</span><span class="p">:</span>
+        <span class="k">return</span> <span class="p">[</span><span class="nb">tuple</span><span class="p">(</span><span class="n">x</span><span class="p">)</span> <span class="k">for</span> <span class="n">x</span> <span class="ow">in</span> <span class="n">key_list</span><span class="p">]</span><span class="o">.</span><span class="n">index</span><span class="p">(</span><span class="nb">tuple</span><span class="p">(</span><span class="n">key</span><span class="p">))</span>
+    <span class="k">except</span> <span class="ne">TypeError</span><span class="p">:</span>
+        <span class="k">return</span> <span class="nb">list</span><span class="p">(</span><span class="n">key_list</span><span class="p">)</span><span class="o">.</span><span class="n">index</span><span class="p">(</span><span class="n">key</span><span class="p">)</span>
+    <span class="k">except</span> <span class="ne">ValueError</span><span class="p">:</span>
+        <span class="k">return</span> <span class="kc">None</span></div>
+
+
+<div class="viewcode-block" id="find_keys"><a class="viewcode-back" href="../../../_autosummary/draco.util.tools.html#draco.util.tools.find_keys">[docs]</a><span class="k">def</span> <span class="nf">find_keys</span><span class="p">(</span><span class="n">key_list</span><span class="p">,</span> <span class="n">keys</span><span class="p">,</span> <span class="n">require_match</span><span class="o">=</span><span class="kc">False</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;Find the indices of keys into a list of keys.</span>
+
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    key_list : iterable</span>
+<span class="sd">    keys : iterable</span>
+<span class="sd">    require_match : bool</span>
+<span class="sd">        Require that `key_list` contain every element of `keys`,</span>
+<span class="sd">        and if not, raise ValueError.</span>
+
+<span class="sd">    Returns</span>
+<span class="sd">    -------</span>
+<span class="sd">    indices : list of int or None</span>
+<span class="sd">        List of the same length as `keys` containing</span>
+<span class="sd">        the indices of `keys` in `key_list`.  If `require_match`</span>
+<span class="sd">        is False, then this can also contain None for keys</span>
+<span class="sd">        that are not contained in `key_list`.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="c1"># Significantly faster than repeated calls to find_key</span>
+    <span class="k">try</span><span class="p">:</span>
+        <span class="n">dct</span> <span class="o">=</span> <span class="p">{</span><span class="nb">tuple</span><span class="p">(</span><span class="n">kk</span><span class="p">):</span> <span class="n">ii</span> <span class="k">for</span> <span class="n">ii</span><span class="p">,</span> <span class="n">kk</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">key_list</span><span class="p">)}</span>
+        <span class="n">index</span> <span class="o">=</span> <span class="p">[</span><span class="n">dct</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="nb">tuple</span><span class="p">(</span><span class="n">key</span><span class="p">))</span> <span class="k">for</span> <span class="n">key</span> <span class="ow">in</span> <span class="n">keys</span><span class="p">]</span>
+    <span class="k">except</span> <span class="ne">TypeError</span><span class="p">:</span>
+        <span class="n">dct</span> <span class="o">=</span> <span class="p">{</span><span class="n">kk</span><span class="p">:</span> <span class="n">ii</span> <span class="k">for</span> <span class="n">ii</span><span class="p">,</span> <span class="n">kk</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">key_list</span><span class="p">)}</span>
+        <span class="n">index</span> <span class="o">=</span> <span class="p">[</span><span class="n">dct</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">key</span><span class="p">)</span> <span class="k">for</span> <span class="n">key</span> <span class="ow">in</span> <span class="n">keys</span><span class="p">]</span>
+
+    <span class="k">if</span> <span class="n">require_match</span> <span class="ow">and</span> <span class="nb">any</span><span class="p">([</span><span class="n">ind</span> <span class="ow">is</span> <span class="kc">None</span> <span class="k">for</span> <span class="n">ind</span> <span class="ow">in</span> <span class="n">index</span><span class="p">]):</span>
+        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;Could not find all of the keys.&quot;</span><span class="p">)</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="k">return</span> <span class="n">index</span></div>
+
+
+<div class="viewcode-block" id="find_inputs"><a class="viewcode-back" href="../../../_autosummary/draco.util.tools.html#draco.util.tools.find_inputs">[docs]</a><span class="k">def</span> <span class="nf">find_inputs</span><span class="p">(</span><span class="n">input_index</span><span class="p">,</span> <span class="n">inputs</span><span class="p">,</span> <span class="n">require_match</span><span class="o">=</span><span class="kc">False</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;Find the indices of inputs into a list of inputs.</span>
+
+<span class="sd">    This behaves similarly to `find_keys` but will automatically choose the key to</span>
+<span class="sd">    match on.</span>
+
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    input_index : np.ndarray</span>
+<span class="sd">    inputs : np.ndarray</span>
+<span class="sd">    require_match : bool</span>
+<span class="sd">        Require that `input_index` contain every element of `inputs`,</span>
+<span class="sd">        and if not, raise ValueError.</span>
+
+<span class="sd">    Returns</span>
+<span class="sd">    -------</span>
+<span class="sd">    indices : list of int or None</span>
+<span class="sd">        List of the same length as `inputs` containing</span>
+<span class="sd">        the indices of `inputs` in `input_inswx`.  If `require_match`</span>
+<span class="sd">        is False, then this can also contain None for inputs</span>
+<span class="sd">        that are not contained in `input_index`.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="c1"># Significantly faster than repeated calls to find_key</span>
+
+    <span class="k">if</span> <span class="s2">&quot;correlator_input&quot;</span> <span class="ow">in</span> <span class="n">input_index</span><span class="o">.</span><span class="n">dtype</span><span class="o">.</span><span class="n">fields</span><span class="p">:</span>
+        <span class="n">field_to_match</span> <span class="o">=</span> <span class="s2">&quot;correlator_input&quot;</span>
+    <span class="k">elif</span> <span class="s2">&quot;chan_id&quot;</span> <span class="ow">in</span> <span class="n">input_index</span><span class="o">.</span><span class="n">dtype</span><span class="o">.</span><span class="n">fields</span><span class="p">:</span>
+        <span class="n">field_to_match</span> <span class="o">=</span> <span class="s2">&quot;chan_id&quot;</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+            <span class="s2">&quot;`input_index` must have either a `chan_id` or `correlator_input` field.&quot;</span>
+        <span class="p">)</span>
+
+    <span class="k">if</span> <span class="n">field_to_match</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">inputs</span><span class="o">.</span><span class="n">dtype</span><span class="o">.</span><span class="n">fields</span><span class="p">:</span>
+        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;`inputs` array does not have a `</span><span class="si">%s</span><span class="s2">` field.&quot;</span> <span class="o">%</span> <span class="n">field_to_match</span><span class="p">)</span>
+
+    <span class="k">return</span> <span class="n">find_keys</span><span class="p">(</span>
+        <span class="n">input_index</span><span class="p">[</span><span class="n">field_to_match</span><span class="p">],</span> <span class="n">inputs</span><span class="p">[</span><span class="n">field_to_match</span><span class="p">],</span> <span class="n">require_match</span><span class="o">=</span><span class="n">require_match</span>
+    <span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="apply_gain"><a class="viewcode-back" href="../../../_autosummary/draco.util.tools.html#draco.util.tools.apply_gain">[docs]</a><span class="k">def</span> <span class="nf">apply_gain</span><span class="p">(</span><span class="n">vis</span><span class="p">,</span> <span class="n">gain</span><span class="p">,</span> <span class="n">axis</span><span class="o">=</span><span class="mi">1</span><span class="p">,</span> <span class="n">out</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">prod_map</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;Apply per input gains to a set of visibilities packed in upper</span>
+<span class="sd">    triangular format.</span>
+
+<span class="sd">    This allows us to apply the gains while minimising the intermediate</span>
+<span class="sd">    products created.</span>
+
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    vis : np.ndarray[..., nprod, ...]</span>
+<span class="sd">        Array of visibility products.</span>
+<span class="sd">    gain : np.ndarray[..., ninput, ...]</span>
+<span class="sd">        Array of gains. One gain per input.</span>
+<span class="sd">    axis : integer, optional</span>
+<span class="sd">        The axis along which the inputs (or visibilities) are</span>
+<span class="sd">        contained.</span>
+<span class="sd">    out : np.ndarray</span>
+<span class="sd">        Array to place output in. If :obj:`None` create a new</span>
+<span class="sd">        array. This routine can safely use `out = vis`.</span>
+<span class="sd">    prod_map : ndarray of integer pairs</span>
+<span class="sd">        Gives the mapping from product axis to input pairs. If not supplied,</span>
+<span class="sd">        :func:`icmap` is used.</span>
+
+<span class="sd">    Returns</span>
+<span class="sd">    -------</span>
+<span class="sd">    out : np.ndarray</span>
+<span class="sd">        Visibility array with gains applied. Same shape as :obj:`vis`.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+
+    <span class="n">nprod</span> <span class="o">=</span> <span class="n">vis</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="n">axis</span><span class="p">]</span>
+    <span class="n">ninput</span> <span class="o">=</span> <span class="n">gain</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="n">axis</span><span class="p">]</span>
+
+    <span class="k">if</span> <span class="n">prod_map</span> <span class="ow">is</span> <span class="kc">None</span> <span class="ow">and</span> <span class="n">nprod</span> <span class="o">!=</span> <span class="p">(</span><span class="n">ninput</span> <span class="o">*</span> <span class="p">(</span><span class="n">ninput</span> <span class="o">+</span> <span class="mi">1</span><span class="p">)</span> <span class="o">//</span> <span class="mi">2</span><span class="p">):</span>
+        <span class="k">raise</span> <span class="ne">Exception</span><span class="p">(</span><span class="s2">&quot;Number of inputs does not match the number of products.&quot;</span><span class="p">)</span>
+
+    <span class="k">if</span> <span class="n">prod_map</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">prod_map</span><span class="p">)</span> <span class="o">!=</span> <span class="n">nprod</span><span class="p">:</span>
+            <span class="n">msg</span> <span class="o">=</span> <span class="s2">&quot;Length of *prod_map* does not match number of input&quot;</span> <span class="s2">&quot; products.&quot;</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="n">msg</span><span class="p">)</span>
+        <span class="c1"># Could check prod_map contents as well, but the loop should give a</span>
+        <span class="c1"># sensible error if this is wrong, and checking is expensive.</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="n">prod_map</span> <span class="o">=</span> <span class="p">[</span><span class="n">icmap</span><span class="p">(</span><span class="n">pp</span><span class="p">,</span> <span class="n">ninput</span><span class="p">)</span> <span class="k">for</span> <span class="n">pp</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">nprod</span><span class="p">)]</span>
+
+    <span class="k">if</span> <span class="n">out</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="n">out</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">empty_like</span><span class="p">(</span><span class="n">vis</span><span class="p">)</span>
+    <span class="k">elif</span> <span class="n">out</span><span class="o">.</span><span class="n">shape</span> <span class="o">!=</span> <span class="n">vis</span><span class="o">.</span><span class="n">shape</span><span class="p">:</span>
+        <span class="k">raise</span> <span class="ne">Exception</span><span class="p">(</span><span class="s2">&quot;Output array is wrong shape.&quot;</span><span class="p">)</span>
+
+    <span class="c1"># Define slices for use in gain &amp; vis selection &amp; combination</span>
+    <span class="n">gain_vis_slice</span> <span class="o">=</span> <span class="nb">tuple</span><span class="p">(</span><span class="nb">slice</span><span class="p">(</span><span class="kc">None</span><span class="p">)</span> <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">axis</span><span class="p">))</span>
+
+    <span class="c1"># Iterate over input pairs and set gains</span>
+    <span class="k">for</span> <span class="n">pp</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">nprod</span><span class="p">):</span>
+
+        <span class="c1"># Determine the inputs.</span>
+        <span class="n">ii</span><span class="p">,</span> <span class="n">ij</span> <span class="o">=</span> <span class="n">prod_map</span><span class="p">[</span><span class="n">pp</span><span class="p">]</span>
+
+        <span class="c1"># Fetch the gains</span>
+        <span class="n">gi</span> <span class="o">=</span> <span class="n">gain</span><span class="p">[</span><span class="n">gain_vis_slice</span> <span class="o">+</span> <span class="p">(</span><span class="n">ii</span><span class="p">,)]</span>
+        <span class="n">gj</span> <span class="o">=</span> <span class="n">gain</span><span class="p">[</span><span class="n">gain_vis_slice</span> <span class="o">+</span> <span class="p">(</span><span class="n">ij</span><span class="p">,)]</span><span class="o">.</span><span class="n">conj</span><span class="p">()</span>
+
+        <span class="c1"># Apply the gains and save into the output array.</span>
+        <span class="n">out</span><span class="p">[</span><span class="n">gain_vis_slice</span> <span class="o">+</span> <span class="p">(</span><span class="n">pp</span><span class="p">,)]</span> <span class="o">=</span> <span class="n">vis</span><span class="p">[</span><span class="n">gain_vis_slice</span> <span class="o">+</span> <span class="p">(</span><span class="n">pp</span><span class="p">,)]</span> <span class="o">*</span> <span class="n">gi</span> <span class="o">*</span> <span class="n">gj</span>
+
+    <span class="k">return</span> <span class="n">out</span></div>
+
+
+<div class="viewcode-block" id="invert_no_zero"><a class="viewcode-back" href="../../../_autosummary/draco.util.tools.html#draco.util.tools.invert_no_zero">[docs]</a><span class="k">def</span> <span class="nf">invert_no_zero</span><span class="p">(</span><span class="n">x</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;Return the reciprocal, but ignoring zeros.</span>
+
+<span class="sd">    Where `x != 0` return 1/x, or just return 0. Importantly this routine does</span>
+<span class="sd">    not produce a warning about zero division.</span>
+
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    x : np.ndarray</span>
+
+<span class="sd">    Returns</span>
+<span class="sd">    -------</span>
+<span class="sd">    r : np.ndarray</span>
+<span class="sd">        Return the reciprocal of x.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">with</span> <span class="n">np</span><span class="o">.</span><span class="n">errstate</span><span class="p">(</span><span class="n">divide</span><span class="o">=</span><span class="s2">&quot;ignore&quot;</span><span class="p">,</span> <span class="n">invalid</span><span class="o">=</span><span class="s2">&quot;ignore&quot;</span><span class="p">):</span>
+        <span class="k">return</span> <span class="n">np</span><span class="o">.</span><span class="n">where</span><span class="p">(</span><span class="n">x</span> <span class="o">==</span> <span class="mi">0</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">,</span> <span class="mf">1.0</span> <span class="o">/</span> <span class="n">x</span><span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="extract_diagonal"><a class="viewcode-back" href="../../../_autosummary/draco.util.tools.html#draco.util.tools.extract_diagonal">[docs]</a><span class="k">def</span> <span class="nf">extract_diagonal</span><span class="p">(</span><span class="n">utmat</span><span class="p">,</span> <span class="n">axis</span><span class="o">=</span><span class="mi">1</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;Extract the diagonal elements of an upper triangular array.</span>
+
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    utmat : np.ndarray[..., nprod, ...]</span>
+<span class="sd">        Upper triangular array.</span>
+<span class="sd">    axis : int, optional</span>
+<span class="sd">        Axis of array that is upper triangular.</span>
+
+<span class="sd">    Returns</span>
+<span class="sd">    -------</span>
+<span class="sd">    diag : np.ndarray[..., ninput, ...]</span>
+<span class="sd">        Diagonal of the array.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+
+    <span class="c1"># Estimate nside from the array shape</span>
+    <span class="n">nside</span> <span class="o">=</span> <span class="nb">int</span><span class="p">((</span><span class="mi">2</span> <span class="o">*</span> <span class="n">utmat</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="n">axis</span><span class="p">])</span> <span class="o">**</span> <span class="mf">0.5</span><span class="p">)</span>
+
+    <span class="c1"># Check that this nside is correct</span>
+    <span class="k">if</span> <span class="n">utmat</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="n">axis</span><span class="p">]</span> <span class="o">!=</span> <span class="p">(</span><span class="n">nside</span> <span class="o">*</span> <span class="p">(</span><span class="n">nside</span> <span class="o">+</span> <span class="mi">1</span><span class="p">)</span> <span class="o">//</span> <span class="mi">2</span><span class="p">):</span>
+        <span class="n">msg</span> <span class="o">=</span> <span class="p">(</span>
+            <span class="s2">&quot;Array length (</span><span class="si">%i</span><span class="s2">) of axis </span><span class="si">%i</span><span class="s2"> does not correspond upper triangle</span><span class="se">\</span>
+<span class="s2">                of square matrix&quot;</span>
+            <span class="o">%</span> <span class="p">(</span><span class="n">utmat</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="n">axis</span><span class="p">],</span> <span class="n">axis</span><span class="p">)</span>
+        <span class="p">)</span>
+        <span class="k">raise</span> <span class="ne">RuntimeError</span><span class="p">(</span><span class="n">msg</span><span class="p">)</span>
+
+    <span class="c1"># Find indices of the diagonal</span>
+    <span class="n">diag_ind</span> <span class="o">=</span> <span class="p">[</span><span class="n">cmap</span><span class="p">(</span><span class="n">ii</span><span class="p">,</span> <span class="n">ii</span><span class="p">,</span> <span class="n">nside</span><span class="p">)</span> <span class="k">for</span> <span class="n">ii</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">nside</span><span class="p">)]</span>
+
+    <span class="c1"># Construct slice objects representing the axes before and after the product axis</span>
+    <span class="n">slice0</span> <span class="o">=</span> <span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">s_</span><span class="p">[:],)</span> <span class="o">*</span> <span class="n">axis</span>
+    <span class="n">slice1</span> <span class="o">=</span> <span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">s_</span><span class="p">[:],)</span> <span class="o">*</span> <span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">utmat</span><span class="o">.</span><span class="n">shape</span><span class="p">)</span> <span class="o">-</span> <span class="n">axis</span> <span class="o">-</span> <span class="mi">1</span><span class="p">)</span>
+
+    <span class="c1"># Extract wanted elements with a giant slice</span>
+    <span class="n">sl</span> <span class="o">=</span> <span class="n">slice0</span> <span class="o">+</span> <span class="p">(</span><span class="n">diag_ind</span><span class="p">,)</span> <span class="o">+</span> <span class="n">slice1</span>
+    <span class="n">diag_array</span> <span class="o">=</span> <span class="n">utmat</span><span class="p">[</span><span class="n">sl</span><span class="p">]</span>
+
+    <span class="k">return</span> <span class="n">diag_array</span></div>
+
+
+<div class="viewcode-block" id="calculate_redundancy"><a class="viewcode-back" href="../../../_autosummary/draco.util.tools.html#draco.util.tools.calculate_redundancy">[docs]</a><span class="k">def</span> <span class="nf">calculate_redundancy</span><span class="p">(</span><span class="n">input_flags</span><span class="p">,</span> <span class="n">prod_map</span><span class="p">,</span> <span class="n">stack_index</span><span class="p">,</span> <span class="n">nstack</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;Calculates the number of redundant baselines that were stacked</span>
+<span class="sd">    to form each unique baseline, accounting for the fact that some fraction</span>
+<span class="sd">    of the inputs are flagged as bad at any given time.</span>
+
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    input_flags : np.ndarray [ninput, ntime]</span>
+<span class="sd">        Array indicating which inputs were good at each time.</span>
+<span class="sd">        Non-zero value indicates that an input was good.</span>
+
+<span class="sd">    prod_map: np.ndarray[nprod]</span>
+<span class="sd">        The products that were included in the stack.</span>
+<span class="sd">        Typically found in the `index_map[&#39;prod&#39;]` attribute of the</span>
+<span class="sd">        `containers.TimeStream` or `containers.SiderealStream` object.</span>
+
+<span class="sd">    stack_index: np.ndarray[nprod]</span>
+<span class="sd">        The index of the stack axis that each product went into.</span>
+<span class="sd">        Typically found in `reverse_map[&#39;stack&#39;][&#39;stack&#39;]` attribute</span>
+<span class="sd">        of the `containers.Timestream` or `containers.SiderealStream` object.</span>
+
+<span class="sd">    nstack: int</span>
+<span class="sd">        Total number of unique baselines.</span>
+
+<span class="sd">    Returns</span>
+<span class="sd">    -------</span>
+<span class="sd">    redundancy : np.ndarray[nstack, ntime]</span>
+<span class="sd">        Array indicating the total number of redundant baselines</span>
+<span class="sd">        with good inputs that were stacked into each unique baseline.</span>
+
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">ninput</span><span class="p">,</span> <span class="n">ntime</span> <span class="o">=</span> <span class="n">input_flags</span><span class="o">.</span><span class="n">shape</span>
+    <span class="n">redundancy</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">zeros</span><span class="p">((</span><span class="n">nstack</span><span class="p">,</span> <span class="n">ntime</span><span class="p">),</span> <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">float32</span><span class="p">)</span>
+
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">np</span><span class="o">.</span><span class="n">any</span><span class="p">(</span><span class="n">input_flags</span><span class="p">):</span>
+        <span class="n">input_flags</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">ones_like</span><span class="p">(</span><span class="n">input_flags</span><span class="p">)</span>
+
+    <span class="n">input_flags</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">ascontiguousarray</span><span class="p">(</span><span class="n">input_flags</span><span class="p">)</span>
+    <span class="n">pm</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">ascontiguousarray</span><span class="p">(</span><span class="n">prod_map</span><span class="o">.</span><span class="n">view</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">int16</span><span class="p">)</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">,</span> <span class="mi">2</span><span class="p">))</span>
+    <span class="n">stack_index</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">ascontiguousarray</span><span class="p">(</span><span class="n">stack_index</span><span class="p">)</span>
+
+    <span class="c1"># Call fast cython function to do calculation</span>
+    <span class="n">_calc_redundancy</span><span class="p">(</span><span class="n">input_flags</span><span class="p">,</span> <span class="n">pm</span><span class="p">,</span> <span class="n">stack_index</span><span class="o">.</span><span class="n">copy</span><span class="p">(),</span> <span class="n">nstack</span><span class="p">,</span> <span class="n">redundancy</span><span class="p">)</span>
+
+    <span class="k">return</span> <span class="n">redundancy</span></div>
+
+
+<div class="viewcode-block" id="redefine_stack_index_map"><a class="viewcode-back" href="../../../_autosummary/draco.util.tools.html#draco.util.tools.redefine_stack_index_map">[docs]</a><span class="k">def</span> <span class="nf">redefine_stack_index_map</span><span class="p">(</span><span class="n">telescope</span><span class="p">,</span> <span class="n">inputs</span><span class="p">,</span> <span class="n">prod</span><span class="p">,</span> <span class="n">stack</span><span class="p">,</span> <span class="n">reverse_stack</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;Ensure baselines between unmasked inputs are used to represent each stack.</span>
+
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    telescope : :class: `drift.core.telescope`</span>
+<span class="sd">        Telescope object containing feed information.</span>
+<span class="sd">    inputs : np.ndarray[ninput,] of dtype=(&#39;correlator_input&#39;, &#39;chan_id&#39;)</span>
+<span class="sd">        The &#39;correlator_input&#39; or &#39;chan_id&#39; of the inputs in the stack.</span>
+<span class="sd">    prod : np.ndarray[nprod,] of dtype=(&#39;input_a&#39;, &#39;input_b&#39;)</span>
+<span class="sd">        The correlation products as pairs of inputs.</span>
+<span class="sd">    stack : np.ndarray[nstack,] of dtype=(&#39;prod&#39;, &#39;conjugate&#39;)</span>
+<span class="sd">        The index into the `prod` axis of a characteristic baseline included in the stack.</span>
+<span class="sd">    reverse_stack :  np.ndarray[nprod,] of dtype=(&#39;stack&#39;, &#39;conjugate&#39;)</span>
+<span class="sd">        The index into the `stack` axis that each `prod` belongs.</span>
+
+<span class="sd">    Returns</span>
+<span class="sd">    -------</span>
+<span class="sd">    stack_new : np.ndarray[nstack,] of dtype=(&#39;prod&#39;, &#39;conjugate&#39;)</span>
+<span class="sd">        The updated `stack` index map, where each element is an index to a product</span>
+<span class="sd">        consisting of a pair of unmasked inputs.</span>
+<span class="sd">    stack_flag : np.ndarray[nstack,] of dtype=np.bool</span>
+<span class="sd">        Boolean flag that is True if this element of the stack index map is now valid,</span>
+<span class="sd">        and False if none of the baselines that were stacked contained unmasked inputs.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="c1"># Determine mapping between inputs in the index_map and</span>
+    <span class="c1"># inputs in the telescope instance</span>
+    <span class="n">tel_index</span> <span class="o">=</span> <span class="n">find_inputs</span><span class="p">(</span><span class="n">telescope</span><span class="o">.</span><span class="n">input_index</span><span class="p">,</span> <span class="n">inputs</span><span class="p">,</span> <span class="n">require_match</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
+
+    <span class="c1"># Create a copy of the stack axis</span>
+    <span class="n">stack_new</span> <span class="o">=</span> <span class="n">stack</span><span class="o">.</span><span class="n">copy</span><span class="p">()</span>
+    <span class="n">stack_flag</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">zeros</span><span class="p">(</span><span class="n">stack_new</span><span class="o">.</span><span class="n">size</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">bool</span><span class="p">)</span>
+
+    <span class="c1"># Loop over the stacked baselines</span>
+    <span class="k">for</span> <span class="n">sind</span><span class="p">,</span> <span class="p">(</span><span class="n">ii</span><span class="p">,</span> <span class="n">jj</span><span class="p">)</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">prod</span><span class="p">[</span><span class="n">stack</span><span class="p">[</span><span class="s2">&quot;prod&quot;</span><span class="p">]]):</span>
+
+        <span class="n">bi</span><span class="p">,</span> <span class="n">bj</span> <span class="o">=</span> <span class="n">tel_index</span><span class="p">[</span><span class="n">ii</span><span class="p">],</span> <span class="n">tel_index</span><span class="p">[</span><span class="n">jj</span><span class="p">]</span>
+
+        <span class="c1"># Check that the represenative pair of inputs are present</span>
+        <span class="c1"># in the telescope instance and not masked.</span>
+        <span class="k">if</span> <span class="p">(</span><span class="n">bi</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">)</span> <span class="ow">or</span> <span class="p">(</span><span class="n">bj</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">)</span> <span class="ow">or</span> <span class="ow">not</span> <span class="n">telescope</span><span class="o">.</span><span class="n">feedmask</span><span class="p">[</span><span class="n">bi</span><span class="p">,</span> <span class="n">bj</span><span class="p">]:</span>
+
+            <span class="c1"># Find alternative pairs of inputs using the reverse map</span>
+            <span class="n">this_stack</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">flatnonzero</span><span class="p">(</span><span class="n">reverse_stack</span><span class="p">[</span><span class="s2">&quot;stack&quot;</span><span class="p">]</span> <span class="o">==</span> <span class="n">sind</span><span class="p">)</span>
+
+            <span class="c1"># Loop over alternatives until we find an acceptable pair of inputs</span>
+            <span class="k">for</span> <span class="n">ts</span> <span class="ow">in</span> <span class="n">this_stack</span><span class="p">:</span>
+                <span class="n">tp</span> <span class="o">=</span> <span class="n">prod</span><span class="p">[</span><span class="n">ts</span><span class="p">]</span>
+                <span class="n">ti</span><span class="p">,</span> <span class="n">tj</span> <span class="o">=</span> <span class="n">tel_index</span><span class="p">[</span><span class="n">tp</span><span class="p">[</span><span class="mi">0</span><span class="p">]],</span> <span class="n">tel_index</span><span class="p">[</span><span class="n">tp</span><span class="p">[</span><span class="mi">1</span><span class="p">]]</span>
+                <span class="k">if</span> <span class="p">(</span><span class="n">ti</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">)</span> <span class="ow">and</span> <span class="p">(</span><span class="n">tj</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">)</span> <span class="ow">and</span> <span class="n">telescope</span><span class="o">.</span><span class="n">feedmask</span><span class="p">[</span><span class="n">ti</span><span class="p">,</span> <span class="n">tj</span><span class="p">]:</span>
+                    <span class="n">stack_new</span><span class="p">[</span><span class="n">sind</span><span class="p">][</span><span class="s2">&quot;prod&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">ts</span>
+                    <span class="n">stack_new</span><span class="p">[</span><span class="n">sind</span><span class="p">][</span><span class="s2">&quot;conjugate&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">reverse_stack</span><span class="p">[</span><span class="n">ts</span><span class="p">][</span><span class="s2">&quot;conjugate&quot;</span><span class="p">]</span>
+                    <span class="n">stack_flag</span><span class="p">[</span><span class="n">sind</span><span class="p">]</span> <span class="o">=</span> <span class="kc">True</span>
+                    <span class="k">break</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">stack_flag</span><span class="p">[</span><span class="n">sind</span><span class="p">]</span> <span class="o">=</span> <span class="kc">True</span>
+
+    <span class="k">return</span> <span class="n">stack_new</span><span class="p">,</span> <span class="n">stack_flag</span></div>
+
+
+<div class="viewcode-block" id="polarization_map"><a class="viewcode-back" href="../../../_autosummary/draco.util.tools.html#draco.util.tools.polarization_map">[docs]</a><span class="k">def</span> <span class="nf">polarization_map</span><span class="p">(</span><span class="n">index_map</span><span class="p">,</span> <span class="n">telescope</span><span class="p">,</span> <span class="n">exclude_autos</span><span class="o">=</span><span class="kc">True</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;Map the visibilities corresponding to entries in</span>
+<span class="sd">    pol = [&#39;XX&#39;, &#39;XY&#39;, &#39;YX&#39;, &#39;YY&#39;].</span>
+
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    index_map : h5py.group or dict</span>
+<span class="sd">        Index map to map into polarizations. Must contain a `stack`</span>
+<span class="sd">        entry and an `input` entry.</span>
+<span class="sd">    telescope : :class: `drift.core.telescope`</span>
+<span class="sd">        Telescope object containing feed information.</span>
+<span class="sd">    exclude_autos: bool</span>
+<span class="sd">        If True (default), auto-correlations are set to -1.</span>
+
+<span class="sd">    Returns</span>
+<span class="sd">    -------</span>
+<span class="sd">    polmap : array of int</span>
+<span class="sd">        Array of size `nstack`. Each entry is the index to the</span>
+<span class="sd">        corresponding polarization in pol = [&#39;XX&#39;, &#39;XY&#39;, &#39;YX&#39;, &#39;YY&#39;]</span>
+
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="c1"># Old versions of telescope object don&#39;t have the `stack_type`</span>
+    <span class="c1"># attribute. Assume those are of type `redundant`.</span>
+    <span class="k">try</span><span class="p">:</span>
+        <span class="n">teltype</span> <span class="o">=</span> <span class="n">telescope</span><span class="o">.</span><span class="n">stack_type</span>
+    <span class="k">except</span> <span class="ne">AttributeError</span><span class="p">:</span>
+        <span class="n">teltype</span> <span class="o">=</span> <span class="kc">None</span>
+        <span class="n">msg</span> <span class="o">=</span> <span class="p">(</span>
+            <span class="s2">&quot;Telescope object does not have a `stack_type` attribute.</span><span class="se">\n</span><span class="s2">&quot;</span>
+            <span class="o">+</span> <span class="s2">&quot;Assuming it is of type `redundant`&quot;</span>
+        <span class="p">)</span>
+
+    <span class="k">if</span> <span class="n">teltype</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="p">(</span><span class="n">teltype</span> <span class="o">==</span> <span class="s2">&quot;redundant&quot;</span><span class="p">):</span>
+            <span class="n">msg</span> <span class="o">=</span> <span class="s2">&quot;Telescope stack type needs to be &#39;redundant&#39;. Is </span><span class="si">{0}</span><span class="s2">&quot;</span>
+            <span class="k">raise</span> <span class="ne">RuntimeError</span><span class="p">(</span><span class="n">msg</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">telescope</span><span class="o">.</span><span class="n">stack_type</span><span class="p">))</span>
+
+    <span class="c1"># Older data&#39;s input map has a simpler dtype</span>
+    <span class="k">try</span><span class="p">:</span>
+        <span class="n">input_map</span> <span class="o">=</span> <span class="n">index_map</span><span class="p">[</span><span class="s2">&quot;input&quot;</span><span class="p">][</span><span class="s2">&quot;chan_id&quot;</span><span class="p">][:]</span>
+    <span class="k">except</span> <span class="ne">IndexError</span><span class="p">:</span>
+        <span class="n">input_map</span> <span class="o">=</span> <span class="n">index_map</span><span class="p">[</span><span class="s2">&quot;input&quot;</span><span class="p">][:]</span>
+
+    <span class="n">pol</span> <span class="o">=</span> <span class="p">[</span><span class="s2">&quot;XX&quot;</span><span class="p">,</span> <span class="s2">&quot;XY&quot;</span><span class="p">,</span> <span class="s2">&quot;YX&quot;</span><span class="p">,</span> <span class="s2">&quot;YY&quot;</span><span class="p">]</span>
+    <span class="n">nstack</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">index_map</span><span class="p">[</span><span class="s2">&quot;stack&quot;</span><span class="p">])</span>
+    <span class="c1"># polmap: indices of each vis product in</span>
+    <span class="c1"># polarization list: [&#39;XX&#39;, &#39;YY&#39;, &#39;XY&#39;, &#39;YX&#39;]</span>
+    <span class="n">polmap</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">zeros</span><span class="p">(</span><span class="n">nstack</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="nb">int</span><span class="p">)</span>
+    <span class="c1"># For each entry in stack</span>
+    <span class="k">for</span> <span class="n">vi</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">nstack</span><span class="p">):</span>
+        <span class="c1"># Product index</span>
+        <span class="n">pi</span> <span class="o">=</span> <span class="n">index_map</span><span class="p">[</span><span class="s2">&quot;stack&quot;</span><span class="p">][</span><span class="n">vi</span><span class="p">][</span><span class="mi">0</span><span class="p">]</span>
+        <span class="c1"># Inputs that go into this product</span>
+        <span class="n">ipt0</span> <span class="o">=</span> <span class="n">input_map</span><span class="p">[</span><span class="n">index_map</span><span class="p">[</span><span class="s2">&quot;prod&quot;</span><span class="p">][</span><span class="n">pi</span><span class="p">][</span><span class="mi">0</span><span class="p">]]</span>
+        <span class="n">ipt1</span> <span class="o">=</span> <span class="n">input_map</span><span class="p">[</span><span class="n">index_map</span><span class="p">[</span><span class="s2">&quot;prod&quot;</span><span class="p">][</span><span class="n">pi</span><span class="p">][</span><span class="mi">1</span><span class="p">]]</span>
+
+        <span class="c1"># Exclude autos if exclude_autos == True</span>
+        <span class="k">if</span> <span class="n">exclude_autos</span> <span class="ow">and</span> <span class="p">(</span><span class="n">ipt0</span> <span class="o">==</span> <span class="n">ipt1</span><span class="p">):</span>
+            <span class="n">polmap</span><span class="p">[</span><span class="n">vi</span><span class="p">]</span> <span class="o">=</span> <span class="o">-</span><span class="mi">1</span>
+            <span class="k">continue</span>
+
+        <span class="c1"># Find polarization of first input</span>
+        <span class="k">if</span> <span class="n">telescope</span><span class="o">.</span><span class="n">beamclass</span><span class="p">[</span><span class="n">ipt0</span><span class="p">]</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
+            <span class="n">polstring</span> <span class="o">=</span> <span class="s2">&quot;X&quot;</span>
+        <span class="k">elif</span> <span class="n">telescope</span><span class="o">.</span><span class="n">beamclass</span><span class="p">[</span><span class="n">ipt0</span><span class="p">]</span> <span class="o">==</span> <span class="mi">1</span><span class="p">:</span>
+            <span class="n">polstring</span> <span class="o">=</span> <span class="s2">&quot;Y&quot;</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="c1"># Not a CHIME feed or not On. Ignore.</span>
+            <span class="n">polmap</span><span class="p">[</span><span class="n">vi</span><span class="p">]</span> <span class="o">=</span> <span class="o">-</span><span class="mi">1</span>
+            <span class="k">continue</span>
+        <span class="c1"># Find polarization of second input and add it to polstring</span>
+        <span class="k">if</span> <span class="n">telescope</span><span class="o">.</span><span class="n">beamclass</span><span class="p">[</span><span class="n">ipt1</span><span class="p">]</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
+            <span class="n">polstring</span> <span class="o">+=</span> <span class="s2">&quot;X&quot;</span>
+        <span class="k">elif</span> <span class="n">telescope</span><span class="o">.</span><span class="n">beamclass</span><span class="p">[</span><span class="n">ipt1</span><span class="p">]</span> <span class="o">==</span> <span class="mi">1</span><span class="p">:</span>
+            <span class="n">polstring</span> <span class="o">+=</span> <span class="s2">&quot;Y&quot;</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="c1"># Not a CHIME feed or not On. Ignore.</span>
+            <span class="n">polmap</span><span class="p">[</span><span class="n">vi</span><span class="p">]</span> <span class="o">=</span> <span class="o">-</span><span class="mi">1</span>
+            <span class="k">continue</span>
+        <span class="c1"># If conjugate, flip polstring (&#39;XY -&gt; &#39;YX)</span>
+        <span class="k">if</span> <span class="n">telescope</span><span class="o">.</span><span class="n">feedconj</span><span class="p">[</span><span class="n">ipt0</span><span class="p">,</span> <span class="n">ipt1</span><span class="p">]:</span>
+            <span class="n">polstring</span> <span class="o">=</span> <span class="n">polstring</span><span class="p">[::</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span>
+        <span class="c1"># Populate polmap</span>
+        <span class="n">polmap</span><span class="p">[</span><span class="n">vi</span><span class="p">]</span> <span class="o">=</span> <span class="n">pol</span><span class="o">.</span><span class="n">index</span><span class="p">(</span><span class="n">polstring</span><span class="p">)</span>
+
+    <span class="k">return</span> <span class="n">polmap</span></div>
+
+
+<div class="viewcode-block" id="baseline_vector"><a class="viewcode-back" href="../../../_autosummary/draco.util.tools.html#draco.util.tools.baseline_vector">[docs]</a><span class="k">def</span> <span class="nf">baseline_vector</span><span class="p">(</span><span class="n">index_map</span><span class="p">,</span> <span class="n">telescope</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;Baseline vectors in meters.</span>
+
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    index_map : h5py.group or dict</span>
+<span class="sd">        Index map to map into polarizations. Must contain a `stack`</span>
+<span class="sd">        entry and an `input` entry.</span>
+<span class="sd">    telescope : :class: `drift.core.telescope`</span>
+<span class="sd">        Telescope object containing feed information.</span>
+
+<span class="sd">    Returns</span>
+<span class="sd">    -------</span>
+<span class="sd">    bvec_m : array</span>
+<span class="sd">        Array of shape (2, nstack). The 2D baseline vector</span>
+<span class="sd">        (in meters) for each visibility in index_map[&#39;stack&#39;]</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">nstack</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">index_map</span><span class="p">[</span><span class="s2">&quot;stack&quot;</span><span class="p">])</span>
+    <span class="c1"># Baseline vectors in meters.</span>
+    <span class="n">bvec_m</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">zeros</span><span class="p">((</span><span class="mi">2</span><span class="p">,</span> <span class="n">nstack</span><span class="p">),</span> <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">float64</span><span class="p">)</span>
+    <span class="c1"># Older data&#39;s input map has a simpler dtype</span>
+    <span class="k">try</span><span class="p">:</span>
+        <span class="n">input_map</span> <span class="o">=</span> <span class="n">index_map</span><span class="p">[</span><span class="s2">&quot;input&quot;</span><span class="p">][</span><span class="s2">&quot;chan_id&quot;</span><span class="p">][:]</span>
+    <span class="k">except</span> <span class="ne">IndexError</span><span class="p">:</span>
+        <span class="n">input_map</span> <span class="o">=</span> <span class="n">index_map</span><span class="p">[</span><span class="s2">&quot;input&quot;</span><span class="p">][:]</span>
+
+    <span class="c1"># Compute all baseline vectors.</span>
+    <span class="k">for</span> <span class="n">vi</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">nstack</span><span class="p">):</span>
+        <span class="c1"># Product index</span>
+        <span class="n">pi</span> <span class="o">=</span> <span class="n">index_map</span><span class="p">[</span><span class="s2">&quot;stack&quot;</span><span class="p">][</span><span class="n">vi</span><span class="p">][</span><span class="mi">0</span><span class="p">]</span>
+        <span class="c1"># Inputs that go into this product</span>
+        <span class="n">ipt0</span> <span class="o">=</span> <span class="n">input_map</span><span class="p">[</span><span class="n">index_map</span><span class="p">[</span><span class="s2">&quot;prod&quot;</span><span class="p">][</span><span class="n">pi</span><span class="p">][</span><span class="mi">0</span><span class="p">]]</span>
+        <span class="n">ipt1</span> <span class="o">=</span> <span class="n">input_map</span><span class="p">[</span><span class="n">index_map</span><span class="p">[</span><span class="s2">&quot;prod&quot;</span><span class="p">][</span><span class="n">pi</span><span class="p">][</span><span class="mi">1</span><span class="p">]]</span>
+
+        <span class="c1"># Beseline vector in meters</span>
+        <span class="n">unique_index</span> <span class="o">=</span> <span class="n">telescope</span><span class="o">.</span><span class="n">feedmap</span><span class="p">[</span><span class="n">ipt0</span><span class="p">,</span> <span class="n">ipt1</span><span class="p">]</span>
+        <span class="n">bvec_m</span><span class="p">[:,</span> <span class="n">vi</span><span class="p">]</span> <span class="o">=</span> <span class="n">telescope</span><span class="o">.</span><span class="n">baselines</span><span class="p">[</span><span class="n">unique_index</span><span class="p">]</span>
+        <span class="c1"># No need to conjugate. Already done in telescope.baselines.</span>
+        <span class="c1"># if telescope.feedconj[ipt0, ipt1]:</span>
+        <span class="c1">#    bvec_m[:, vi] *= -1.</span>
+
+    <span class="k">return</span> <span class="n">bvec_m</span></div>
+</pre></div>
+
+           </div>
+           
+          </div>
+          <footer>
+  
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>
+        
+        &copy; Copyright 2016, Richard Shaw
+
+    </p>
+  </div>
+    
+    
+    
+    Built with <a href="http://sphinx-doc.org/">Sphinx</a> using a
+    
+    <a href="https://github.com/rtfd/sphinx_rtd_theme">theme</a>
+    
+    provided by <a href="https://readthedocs.org">Read the Docs</a>. 
+
+</footer>
+
+        </div>
+      </div>
+
+    </section>
+
+  </div>
+  
+
+  <script type="text/javascript">
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script>
+
+  
+  
+    
+   
+
+</body>
+</html>

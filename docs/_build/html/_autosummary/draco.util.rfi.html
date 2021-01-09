@@ -1,0 +1,366 @@
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" >
+<head>
+  <meta charset="utf-8">
+  
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  
+  <title>draco.util.rfi &mdash; draco 20.10.0+41.gf92d39b.dirty documentation</title>
+  
+
+  
+  <link rel="stylesheet" href="../_static/css/theme.css" type="text/css" />
+  <link rel="stylesheet" href="../_static/pygments.css" type="text/css" />
+
+  
+  
+  
+  
+
+  
+  <!--[if lt IE 9]>
+    <script src="../_static/js/html5shiv.min.js"></script>
+  <![endif]-->
+  
+    
+      <script type="text/javascript" id="documentation_options" data-url_root="../" src="../_static/documentation_options.js"></script>
+        <script src="../_static/jquery.js"></script>
+        <script src="../_static/underscore.js"></script>
+        <script src="../_static/doctools.js"></script>
+    
+    <script type="text/javascript" src="../_static/js/theme.js"></script>
+
+    
+    <link rel="index" title="Index" href="../genindex.html" />
+    <link rel="search" title="Search" href="../search.html" />
+    <link rel="next" title="draco.util.tools" href="draco.util.tools.html" />
+    <link rel="prev" title="draco.util.regrid" href="draco.util.regrid.html" /> 
+</head>
+
+<body class="wy-body-for-nav">
+
+   
+  <div class="wy-grid-for-nav">
+    
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+          
+
+          
+            <a href="../index.html" class="icon icon-home" alt="Documentation Home"> draco
+          
+
+          
+          </a>
+
+          
+            
+            
+              <div class="version">
+                20.10.0+41.gf92d39b.dirty
+              </div>
+            
+          
+
+          
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+
+          
+        </div>
+
+        
+        <div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="main navigation">
+          
+            
+            
+              
+            
+            
+              <ul class="current">
+<li class="toctree-l1"><a class="reference internal" href="../tutorial.html">Tutorial</a></li>
+<li class="toctree-l1 current"><a class="reference internal" href="../reference.html">API Reference</a><ul class="current">
+<li class="toctree-l2 current"><a class="reference internal" href="../reference.html#submodules">Submodules</a><ul class="current">
+<li class="toctree-l3"><a class="reference internal" href="draco.analysis.html">draco.analysis</a></li>
+<li class="toctree-l3"><a class="reference internal" href="draco.core.html">draco.core</a></li>
+<li class="toctree-l3"><a class="reference internal" href="draco.synthesis.html">draco.synthesis</a></li>
+<li class="toctree-l3 current"><a class="reference internal" href="draco.util.html">draco.util</a><ul class="current">
+<li class="toctree-l4"><a class="reference internal" href="draco.util.exception.html">draco.util.exception</a></li>
+<li class="toctree-l4"><a class="reference internal" href="draco.util.regrid.html">draco.util.regrid</a></li>
+<li class="toctree-l4 current"><a class="current reference internal" href="#">draco.util.rfi</a></li>
+<li class="toctree-l4"><a class="reference internal" href="draco.util.tools.html">draco.util.tools</a></li>
+<li class="toctree-l4"><a class="reference internal" href="draco.util.truncate.html">draco.util.truncate</a></li>
+</ul>
+</li>
+</ul>
+</li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="../dev.html">Development Guidelines</a></li>
+</ul>
+
+            
+          
+        </div>
+        
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap">
+
+      
+      <nav class="wy-nav-top" aria-label="top navigation">
+        
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../index.html">draco</a>
+        
+      </nav>
+
+
+      <div class="wy-nav-content">
+        
+        <div class="rst-content">
+        
+          
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<div role="navigation" aria-label="breadcrumbs navigation">
+
+  <ul class="wy-breadcrumbs">
+    
+      <li><a href="../index.html" class="icon icon-home"></a> &raquo;</li>
+        
+          <li><a href="../reference.html">API Reference</a> &raquo;</li>
+        
+          <li><a href="draco.util.html">draco.util</a> &raquo;</li>
+        
+      <li>draco.util.rfi</li>
+    
+    
+      <li class="wy-breadcrumbs-aside">
+        
+            
+            <a href="../_sources/_autosummary/draco.util.rfi.rst.txt" rel="nofollow"> View page source</a>
+          
+        
+      </li>
+    
+  </ul>
+
+  
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+            
+  <div class="section" id="module-draco.util.rfi">
+<span id="draco-util-rfi"></span><h1>draco.util.rfi<a class="headerlink" href="#module-draco.util.rfi" title="Permalink to this headline">¶</a></h1>
+<p>Collection of routines for RFI excision.</p>
+<p class="rubric">Functions</p>
+<table class="longtable docutils align-default">
+<colgroup>
+<col style="width: 10%" />
+<col style="width: 90%" />
+</colgroup>
+<tbody>
+<tr class="row-odd"><td><p><a class="reference internal" href="#draco.util.rfi.sir" title="draco.util.rfi.sir"><code class="xref py py-obj docutils literal notranslate"><span class="pre">sir</span></code></a>(basemask[, eta, only_freq, only_time])</p></td>
+<td><p>Apply the SIR operator over the frequency and time axes for each product.</p></td>
+</tr>
+<tr class="row-even"><td><p><a class="reference internal" href="#draco.util.rfi.sir1d" title="draco.util.rfi.sir1d"><code class="xref py py-obj docutils literal notranslate"><span class="pre">sir1d</span></code></a>(basemask[, eta])</p></td>
+<td><p>Numpy implementation of the scale-invariant rank (SIR) operator.</p></td>
+</tr>
+<tr class="row-odd"><td><p><a class="reference internal" href="#draco.util.rfi.sumthreshold" title="draco.util.rfi.sumthreshold"><code class="xref py py-obj docutils literal notranslate"><span class="pre">sumthreshold</span></code></a>(data[, max_m, start_flag, …])</p></td>
+<td><p>SumThreshold outlier detection algorithm.</p></td>
+</tr>
+<tr class="row-even"><td><p><a class="reference internal" href="#draco.util.rfi.sumthreshold_py" title="draco.util.rfi.sumthreshold_py"><code class="xref py py-obj docutils literal notranslate"><span class="pre">sumthreshold_py</span></code></a>(data[, max_m, start_flag, …])</p></td>
+<td><p>SumThreshold outlier detection algorithm.</p></td>
+</tr>
+</tbody>
+</table>
+<dl class="py function">
+<dt id="draco.util.rfi.sir">
+<code class="sig-prename descclassname">draco.util.rfi.</code><code class="sig-name descname">sir</code><span class="sig-paren">(</span><em class="sig-param"><span class="n">basemask</span></em>, <em class="sig-param"><span class="n">eta</span><span class="o">=</span><span class="default_value">0.2</span></em>, <em class="sig-param"><span class="n">only_freq</span><span class="o">=</span><span class="default_value">False</span></em>, <em class="sig-param"><span class="n">only_time</span><span class="o">=</span><span class="default_value">False</span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/draco/util/rfi.html#sir"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#draco.util.rfi.sir" title="Permalink to this definition">¶</a></dt>
+<dd><p>Apply the SIR operator over the frequency and time axes for each product.</p>
+<p>This is a wrapper for <cite>sir1d</cite>.  It loops over times, applying <cite>sir1d</cite>
+across the frequency axis.  It then loops over frequencies, applying <cite>sir1d</cite>
+across the time axis.  It returns the logical OR of these two masks.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>basemask</strong> (<em>np.ndarray</em><em>[</em><em>nfreq</em><em>, </em><em>nprod</em><em>, </em><em>ntime</em><em>] </em><em>of boolean type</em>) – The previously generated threshold mask.
+1 (True) for masked points, 0 (False) otherwise.</p></li>
+<li><p><strong>eta</strong> (<em>float</em>) – Aggressiveness of the method: with eta=0, no additional samples are
+flagged and the function returns basemask. With eta=1, all samples
+will be flagged.</p></li>
+<li><p><strong>only_freq</strong> (<em>bool</em>) – Only apply the SIR operator across the frequency axis.</p></li>
+<li><p><strong>only_time</strong> (<em>bool</em>) – Only apply the SIR operator across the time axis.</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns</dt>
+<dd class="field-even"><p><strong>mask</strong> – The mask after the application of the SIR operator.</p>
+</dd>
+<dt class="field-odd">Return type</dt>
+<dd class="field-odd"><p>np.ndarray[nfreq, nprod, ntime] of boolean type</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py function">
+<dt id="draco.util.rfi.sir1d">
+<code class="sig-prename descclassname">draco.util.rfi.</code><code class="sig-name descname">sir1d</code><span class="sig-paren">(</span><em class="sig-param"><span class="n">basemask</span></em>, <em class="sig-param"><span class="n">eta</span><span class="o">=</span><span class="default_value">0.2</span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/draco/util/rfi.html#sir1d"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#draco.util.rfi.sir1d" title="Permalink to this definition">¶</a></dt>
+<dd><p>Numpy implementation of the scale-invariant rank (SIR) operator.</p>
+<p>For more information, see arXiv:1201.3364v2.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>basemask</strong> (<em>numpy 1D array of boolean type</em>) – Array with the threshold mask previously generated.
+1 (True) for flagged points, 0 (False) otherwise.</p></li>
+<li><p><strong>eta</strong> (<em>float</em>) – Aggressiveness of the method: with eta=0, no additional samples are
+flagged and the function returns basemask. With eta=1, all samples
+will be flagged. The authors in arXiv:1201.3364v2 seem to be convinced
+that 0.2 is a mostly universally optimal value, but no optimization
+has been done on CHIME data.</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns</dt>
+<dd class="field-even"><p><strong>mask</strong> – The mask after the application of the (SIR) operator. Same shape and
+type as basemask.</p>
+</dd>
+<dt class="field-odd">Return type</dt>
+<dd class="field-odd"><p>numpy 1D array of boolean type</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py function">
+<dt id="draco.util.rfi.sumthreshold">
+<code class="sig-prename descclassname">draco.util.rfi.</code><code class="sig-name descname">sumthreshold</code><span class="sig-paren">(</span><em class="sig-param"><span class="n">data</span></em>, <em class="sig-param"><span class="n">max_m</span><span class="o">=</span><span class="default_value">16</span></em>, <em class="sig-param"><span class="n">start_flag</span><span class="o">=</span><span class="default_value">None</span></em>, <em class="sig-param"><span class="n">threshold1</span><span class="o">=</span><span class="default_value">None</span></em>, <em class="sig-param"><span class="n">remove_median</span><span class="o">=</span><span class="default_value">True</span></em>, <em class="sig-param"><span class="n">correct_for_missing</span><span class="o">=</span><span class="default_value">True</span></em><span class="sig-paren">)</span><a class="headerlink" href="#draco.util.rfi.sumthreshold" title="Permalink to this definition">¶</a></dt>
+<dd><p>SumThreshold outlier detection algorithm.</p>
+<p>See <a class="reference external" href="http://www.astro.rug.nl/~offringa/SumThreshold.pdf">http://www.astro.rug.nl/~offringa/SumThreshold.pdf</a> for description of
+the algorithm.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>data</strong> (<em>np.ndarray</em><em>[</em><em>:</em><em>, </em><em>:</em><em>]</em>) – The data to flag.</p></li>
+<li><p><strong>max_m</strong> (<em>int</em><em>, </em><em>optional</em>) – Maximum size to expand to.</p></li>
+<li><p><strong>start_flag</strong> (<em>np.ndarray</em><em>[</em><em>:</em><em>, </em><em>:</em><em>]</em><em>, </em><em>optional</em>) – A boolean array of the initially flagged data.</p></li>
+<li><p><strong>threshold1</strong> (<em>float</em><em>, </em><em>optional</em>) – Initial threshold. By default use the 95 percentile.</p></li>
+<li><p><strong>remove_median</strong> (<em>bool</em><em>, </em><em>optional</em>) – Subtract the median of the full 2D dataset. Default is True.</p></li>
+<li><p><strong>correct_for_missing</strong> (<em>bool</em><em>, </em><em>optional</em>) – </p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns</dt>
+<dd class="field-even"><p><strong>mask</strong> – Boolean array, with <cite>True</cite> entries marking outlier data.</p>
+</dd>
+<dt class="field-odd">Return type</dt>
+<dd class="field-odd"><p>np.ndarray[:, :]</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py function">
+<dt id="draco.util.rfi.sumthreshold_py">
+<code class="sig-prename descclassname">draco.util.rfi.</code><code class="sig-name descname">sumthreshold_py</code><span class="sig-paren">(</span><em class="sig-param"><span class="n">data</span></em>, <em class="sig-param"><span class="n">max_m</span><span class="o">=</span><span class="default_value">16</span></em>, <em class="sig-param"><span class="n">start_flag</span><span class="o">=</span><span class="default_value">None</span></em>, <em class="sig-param"><span class="n">threshold1</span><span class="o">=</span><span class="default_value">None</span></em>, <em class="sig-param"><span class="n">remove_median</span><span class="o">=</span><span class="default_value">True</span></em>, <em class="sig-param"><span class="n">correct_for_missing</span><span class="o">=</span><span class="default_value">True</span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/draco/util/rfi.html#sumthreshold_py"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#draco.util.rfi.sumthreshold_py" title="Permalink to this definition">¶</a></dt>
+<dd><p>SumThreshold outlier detection algorithm.</p>
+<p>See <a class="reference external" href="http://www.astro.rug.nl/~offringa/SumThreshold.pdf">http://www.astro.rug.nl/~offringa/SumThreshold.pdf</a> for description of
+the algorithm.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>data</strong> (<em>np.ndarray</em><em>[</em><em>:</em><em>, </em><em>:</em><em>]</em>) – The data to flag.</p></li>
+<li><p><strong>max_m</strong> (<em>int</em><em>, </em><em>optional</em>) – Maximum size to expand to.</p></li>
+<li><p><strong>start_flag</strong> (<em>np.ndarray</em><em>[</em><em>:</em><em>, </em><em>:</em><em>]</em><em>, </em><em>optional</em>) – A boolean array of the initially flagged data.</p></li>
+<li><p><strong>threshold1</strong> (<em>float</em><em>, </em><em>optional</em>) – Initial threshold. By default use the 95 percentile.</p></li>
+<li><p><strong>remove_median</strong> (<em>bool</em><em>, </em><em>optional</em>) – Subtract the median of the full 2D dataset. Default is True.</p></li>
+<li><p><strong>correct_for_missing</strong> (<em>bool</em><em>, </em><em>optional</em>) – </p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns</dt>
+<dd class="field-even"><p><strong>mask</strong> – Boolean array, with <cite>True</cite> entries marking outlier data.</p>
+</dd>
+<dt class="field-odd">Return type</dt>
+<dd class="field-odd"><p>np.ndarray[:, :]</p>
+</dd>
+</dl>
+</dd></dl>
+
+</div>
+
+
+           </div>
+           
+          </div>
+          <footer>
+  
+    <div class="rst-footer-buttons" role="navigation" aria-label="footer navigation">
+      
+        <a href="draco.util.tools.html" class="btn btn-neutral float-right" title="draco.util.tools" accesskey="n" rel="next">Next <span class="fa fa-arrow-circle-right"></span></a>
+      
+      
+        <a href="draco.util.regrid.html" class="btn btn-neutral float-left" title="draco.util.regrid" accesskey="p" rel="prev"><span class="fa fa-arrow-circle-left"></span> Previous</a>
+      
+    </div>
+  
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>
+        
+        &copy; Copyright 2016, Richard Shaw
+
+    </p>
+  </div>
+    
+    
+    
+    Built with <a href="http://sphinx-doc.org/">Sphinx</a> using a
+    
+    <a href="https://github.com/rtfd/sphinx_rtd_theme">theme</a>
+    
+    provided by <a href="https://readthedocs.org">Read the Docs</a>. 
+
+</footer>
+
+        </div>
+      </div>
+
+    </section>
+
+  </div>
+  
+
+  <script type="text/javascript">
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script>
+
+  
+  
+    
+   
+
+</body>
+</html>
