@@ -16,7 +16,7 @@ jobs:
     - uses: actions/checkout@v2
 
     - name: Set up Python 3.8
-      uses: actions/setup-python@v1
+      uses: actions/setup-python@v2
       with:
         python-version: 3.8
 
@@ -28,6 +28,10 @@ jobs:
 
   run-tests:
 
+    strategy:
+      matrix:
+        python-version: [3.6, 3.8]
+
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v2
@@ -36,13 +40,14 @@ jobs:
       run: |
         sudo apt-get install -y libopenmpi-dev openmpi-bin
 
-    - name: Set up Python 3.8
-      uses: actions/setup-python@v1
+    - name: Set up Python ${{ matrix.python-version }}
+      uses: actions/setup-python@v2
       with:
-        python-version: 3.8
+        python-version: ${{ matrix.python-version }}
 
     - name: Install pip dependencies
       run: |
+        pip install wheel
         pip install future
         pip install numpy
         pip install cython
@@ -58,6 +63,11 @@ jobs:
       run: |
         mpirun -np 4 pytest -x -m mpi test/
 
+    - name: Run caput linter on example configs
+      run: |
+        caput-pipeline lint examples/*.yaml
+        caput-pipeline lint doc/pipeline_params.yaml
+
   build-docs:
 
     runs-on: ubuntu-latest
@@ -69,12 +79,13 @@ jobs:
         sudo apt-get install -y libopenmpi-dev openmpi-bin
 
     - name: Set up Python 3.8
-      uses: actions/setup-python@v1
+      uses: actions/setup-python@v2
       with:
         python-version: 3.8
 
     - name: Install pip dependencies
       run: |
+        pip install wheel
         pip install future
         pip install numpy
         pip install cython

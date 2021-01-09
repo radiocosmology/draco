@@ -1,59 +1,54 @@
 """Delay space spectrum estimation and filtering.
 """
-# === Start Python 2/3 compatibility
-from __future__ import absolute_import, division, print_function, unicode_literals
-from future.builtins import *  # noqa  pylint: disable=W0401, W0614
-from future.builtins.disabled import *  # noqa  pylint: disable=W0401, W0614
-
-# === End Python 2/3 compatibility
 
 import numpy as np
 import scipy.linalg as la
-import scipy.stats as st
-
-try:
-    # For backwards compatibility
-    from randomgen import RandomGenerator
-except ImportError:
-    from randomgen import Generator as RandomGenerator
-
 
 from caput import mpiarray, config
 from cora.util import units
 
 from ..core import containers, task, io
+from ..util import random
 
 
 class DelayFilter(task.SingleTask):
     """Remove delays less than a given threshold.
+
+    This is performed by projecting the data onto the null space that is orthogonal
+    to any mode at low delays.
 
     Attributes
     ----------
     delay_cut : float
         Delay value to filter at in seconds.
     za_cut : float
-        Sine of the maximum zenith angle included in
-        baseline-dependent delay filtering. Default is 1
-        which corresponds to the horizon (ie: filters
-        out all zenith angles). Setting to zero turns off
-        baseline dependent cut.
-    update_weight : bool
-        Not implemented.
+        Sine of the maximum zenith angle included in baseline-dependent delay
+        filtering. Default is 1 which corresponds to the horizon (ie: filters out all
+        zenith angles). Setting to zero turns off baseline dependent cut.
+    extra_cut : float
+        Increase the delay threshold beyond the baseline dependent term.
     weight_tol : float
-        Maximum weight kept in the masked data, as a fraction of
-        the largest weight in the original dataset.
+        Maximum weight kept in the masked data, as a fraction of the largest weight
+        in the original dataset.
     telescope_orientation : one of ('NS', 'EW', 'none')
-        Determines if the baseline-dependent delay cut is based on
-        the north-south component, the east-west component or the full
-        baseline length. For cylindrical telescopes oriented in the
-        NS direction (like CHIME) use 'NS'. The default is 'NS'.
+        Determines if the baseline-dependent delay cut is based on the north-south
+        component, the east-west component or the full baseline length. For
+        cylindrical telescopes oriented in the NS direction (like CHIME) use 'NS'.
+        The default is 'NS'.
+    window : bool
+        Apply the window function to the data when applying the filter.
+
+    Notes
+    -----
+    The delay cut applied is `max(za_cut * baseline / c + extra_cut, delay_cut)`.
     """
 
     delay_cut = config.Property(proptype=float, default=0.1)
     za_cut = config.Property(proptype=float, default=1.0)
-    update_weight = config.Property(proptype=bool, default=False)
+    extra_cut = config.Property(proptype=float, default=0.0)
     weight_tol = config.Property(proptype=float, default=1e-4)
     telescope_orientation = config.enum(["NS", "EW", "none"], default="NS")
+    window = config.Property(proptype=bool, default=False)
 
     def setup(self, telescope):
         """Set the telescope needed to obtain baselines.
@@ -79,12 +74,10 @@ class DelayFilter(task.SingleTask):
         """
         tel = self.telescope
 
-        if self.update_weight:
-            raise NotImplemented("Weight updating is not implemented.")
-
         ss.redistribute(["input", "prod", "stack"])
 
         freq = ss.freq[:]
+        bandwidth = np.ptp(freq)
 
         ssv = ss.vis[:].view(np.ndarray)
         ssw = ss.weight[:].view(np.ndarray)
@@ -105,21 +98,29 @@ class DelayFilter(task.SingleTask):
             else:
                 baseline = np.linalg.norm(baseline)  # Norm
             # In micro seconds
-            baseline_delay_cut = self.za_cut * baseline / units.c * 1e6
+            baseline_delay_cut = self.za_cut * baseline / units.c * 1e6 + self.extra_cut
             delay_cut = np.amax([baseline_delay_cut, self.delay_cut])
+
+            # Calculate the number of samples needed to construct the delay null space.
+            # `4 * tau_max * bandwidth` is the amount recommended in the DAYENU paper
+            # and seems to work well here
+            number_cut = int(4.0 * bandwidth * delay_cut + 0.5)
 
             weight_mask = np.median(ssw[:, lbi], axis=1)
             weight_mask = (weight_mask > (self.weight_tol * weight_mask.max())).astype(
                 np.float64
             )
-            NF = null_delay_filter(freq, delay_cut, weight_mask)
+            NF = null_delay_filter(
+                freq, delay_cut, weight_mask, num_delay=number_cut, window=self.window
+            )
 
             ssv[:, lbi] = np.dot(NF, ssv[:, lbi])
+            ssw[:, lbi] *= weight_mask[:, np.newaxis]
 
         return ss
 
 
-class DelaySpectrumEstimator(task.SingleTask):
+class DelaySpectrumEstimator(task.SingleTask, random.RandomTask):
     """Calculate the delay spectrum of a Sidereal/TimeStream for instrumental Stokes I.
 
     The spectrum is calculated by Gibbs sampling. However, at the moment only
@@ -208,6 +209,9 @@ class DelaySpectrumEstimator(task.SingleTask):
 
         initial_S = np.ones_like(delays) * 1e1
 
+        # Get the random Generator that we will use
+        rng = self.rng
+
         # Iterate over all baselines and use the Gibbs sampler to estimate the spectrum
         for lbi, bi in delay_spec.spectrum[:].enumerate(axis=0):
 
@@ -228,8 +232,25 @@ class DelaySpectrumEstimator(task.SingleTask):
             if (data == 0.0).all():
                 continue
 
+            # If there are no non-zero weighted entries skip
+            non_zero = weight > 0
+            if not non_zero.any():
+                continue
+
+            # Remove any frequency channel which is entirely zero, this is just to
+            # reduce the computational cost, it should make no difference to the result
+            data = data[:, non_zero]
+            weight = weight[non_zero]
+            non_zero_channel = channel_ind[non_zero]
+
             spec = delay_spectrum_gibbs(
-                data, ndelay, weight, initial_S, fsel=channel_ind, niter=self.nsamp
+                data,
+                ndelay,
+                weight,
+                initial_S,
+                fsel=non_zero_channel,
+                niter=self.nsamp,
+                rng=rng,
             )
 
             # Take an average over the last half of the delay spectrum samples
@@ -259,12 +280,14 @@ def stokes_I(sstream, tel):
     baselines : np.ndarray[nbase, 2]
     """
 
+    # Construct a complex number representing each baseline (used for determining
+    # unique baselines).
+    # NOTE: due to floating point precision, some baselines don't get matched as having
+    # the same lengths. To get around this, round all separations to 0.1 mm precision
+    bl_round = np.around(tel.baselines[:, 0] + 1.0j * tel.baselines[:, 1], 4)
+
     # ==== Unpack into Stokes I
-    ubase, uinv, ucount = np.unique(
-        tel.baselines[:, 0] + 1.0j * tel.baselines[:, 1],
-        return_inverse=True,
-        return_counts=True,
-    )
+    ubase, uinv, ucount = np.unique(bl_round, return_inverse=True, return_counts=True)
     ubase = ubase.view(np.float64).reshape(-1, 2)
     nbase = ubase.shape[0]
 
@@ -276,6 +299,9 @@ def stokes_I(sstream, tel):
     # TODO: this should be updated when driftscan gains a concept of polarisation
     ssv = sstream.vis[:]
     ssw = sstream.weight[:]
+
+    # Cache beamclass as it's regenerated every call
+    beamclass = tel.beamclass[:]
     for ii, ui in enumerate(uinv):
 
         # Skip if not all polarisations were included
@@ -283,7 +309,7 @@ def stokes_I(sstream, tel):
             continue
 
         fi, fj = tel.uniquepairs[ii]
-        bi, bj = tel.beamclass[fi], tel.beamclass[fj]
+        bi, bj = beamclass[fi], beamclass[fj]
 
         upi = tel.feedmap[fi, fj]
 
@@ -405,11 +431,9 @@ def fourier_matrix_c2r(N, fsel=None):
     return Fr
 
 
-# RNG used for delay estimation
-_delay_rng = RandomGenerator()
-
-
-def delay_spectrum_gibbs(data, N, Ni, initial_S, window=True, fsel=None, niter=20):
+def delay_spectrum_gibbs(
+    data, N, Ni, initial_S, window=True, fsel=None, niter=20, rng=None
+):
     """Estimate the delay spectrum by Gibbs sampling.
 
     This routine estimates the spectrum at the `N` delay samples conjugate to
@@ -433,6 +457,8 @@ def delay_spectrum_gibbs(data, N, Ni, initial_S, window=True, fsel=None, niter=2
         Indices of channels that we have data at. By default assume all channels.
     niter : int, optional
         Number of Gibbs samples to generate.
+    rng : np.random.Generator, optional
+        A generator to use to produce the random samples.
 
     Returns
     -------
@@ -441,9 +467,8 @@ def delay_spectrum_gibbs(data, N, Ni, initial_S, window=True, fsel=None, niter=2
     """
 
     # Get reference to RNG
-    # TODO: do something smarter here
-    # TODO: multithread RNG generation
-    rng = _delay_rng
+    if rng is None:
+        rng = random.default_rng()
 
     spec = []
 
@@ -488,13 +513,14 @@ def delay_spectrum_gibbs(data, N, Ni, initial_S, window=True, fsel=None, niter=2
     # Set the initial starting points
     S_samp = initial_S
 
-    def _draw_signal_sample(S):
+    def _draw_signal_sample_f(S):
         # Draw a random sample of the signal assuming a Gaussian model with a
         # given delay spectrum shape. Do this using the perturbed Wiener filter
         # approach
 
-        # TODO: we can probably change the order that the Wiener filter is
-        # evaluated for some computational saving as nfreq < ndelay
+        # This method is fastest if the number of frequencies is larger than the number
+        # of delays we are solving for. Typically this isn't true, so we probably want
+        # `_draw_signal_sample2`
 
         # Construct the Wiener covariance
         Si = 1.0 / S
@@ -510,6 +536,27 @@ def delay_spectrum_gibbs(data, N, Ni, initial_S, window=True, fsel=None, niter=2
 
         return la.solve(Ci, y, sym_pos=True)
 
+    def _draw_signal_sample_t(S):
+        # This method is fastest if the number of delays is larger than the number of
+        # frequencies. This is usually the regime we are in.
+
+        # Construct various dependent matrices
+        Sh = S ** 0.5
+        Rt = Sh[:, np.newaxis] * FTNih
+        R = Rt.T
+
+        # Draw random vectors that form the perturbations
+        w1 = rng.standard_normal((N, data.shape[1]))
+        w2 = rng.standard_normal(data.shape)
+
+        # Perform the solve step (rather than explicitly using the inverse)
+        y = data + w2 - np.dot(R, w1)
+        Ci = np.identity(len(Ni_r)) + np.dot(R, Rt)
+        x = la.solve(Ci, y, sym_pos=True)
+
+        s = Sh[:, np.newaxis] * (np.dot(Rt, x) + w1)
+        return s
+
     def _draw_ps_sample(d):
         # Draw a random power spectrum sample assuming from the signal assuming
         # the signal is Gaussian and we have a flat prior on the power spectrum.
@@ -523,6 +570,12 @@ def delay_spectrum_gibbs(data, N, Ni, initial_S, window=True, fsel=None, niter=2
         S_samp = S_hat * df / chi2
 
         return S_samp
+
+    # Select the method to use for the signal sample based on how many frequencies
+    # versus delays there are
+    _draw_signal_sample = (
+        _draw_signal_sample_f if len(fsel) > 0.25 * N else _draw_signal_sample_t
+    )
 
     # Perform the Gibbs sampling iteration for a given number of loops and
     # return the power spectrum output of them.
@@ -567,9 +620,12 @@ def null_delay_filter(freq, max_delay, mask, num_delay=200, tol=1e-8, window=Tru
     delay = np.linspace(-max_delay, max_delay, num_delay)
 
     # Construct the Fourier matrix
-    F = (mask * w)[:, np.newaxis] * np.exp(
+    F = mask[:, np.newaxis] * np.exp(
         2.0j * np.pi * delay[np.newaxis, :] * freq[:, np.newaxis]
     )
+
+    if window:
+        F *= w[:, np.newaxis]
 
     # Use an SVD to figure out the set of significant modes spanning the delays
     # we are wanting to get rid of.
@@ -579,8 +635,9 @@ def null_delay_filter(freq, max_delay, mask, num_delay=200, tol=1e-8, window=Tru
 
     # Construct a projection matrix for the filter
     proj = np.identity(len(freq)) - np.dot(p, p.T.conj())
+    proj *= mask[np.newaxis, :]
 
     if window:
-        proj = (mask * w)[np.newaxis, :] * proj
+        proj *= w[np.newaxis, :]
 
     return proj
