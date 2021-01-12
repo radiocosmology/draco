@@ -1,4 +1,30 @@
-"""Distributed containers for holding various types of analysis data."""
+"""
+Distributed containers for holding various types of analysis data.
+
+Containers
+==========
+- :py:class:`TimeStream`
+- :py:class:`SiderealStream`
+- :py:class:`GainData`
+- :py:class:`StaticGainData`
+- :py:class:`Map`
+- :py:class:`MModes`
+- :py:class:`RingMap`
+
+Container Base Classes
+----------------------
+- :py:class:`ContainerBase`
+- :py:class:`TODContainer`
+- :py:class:`VisContainer`
+
+Helper Routines
+---------------
+These routines are designed to be replaced by other packages trying to insert
+their own custom container types.
+
+- :py:meth:`empty_like`
+- :py:meth:`empty_timestream`
+"""
 
 import inspect
 
