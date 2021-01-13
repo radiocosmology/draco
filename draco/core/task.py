@@ -250,6 +250,11 @@ class SingleTask(MPILoggedTask, pipeline.BasicContMixin):
         attached to output metadata.
     pipeline_config : dict
         Global pipeline configuration. This is attached to output metadata.
+
+    Raises
+    ------
+    `caput.pipeline.PipelineRuntimeError`
+        If this is used as a baseclass to a task overriding `self.process` with variable length or optional arguments.
     """
 
     save = config.Property(default=False, proptype=bool)
@@ -282,7 +287,7 @@ class SingleTask(MPILoggedTask, pipeline.BasicContMixin):
                 "`process` method may not have variable length or optional"
                 " arguments."
             )
-            raise pipeline.PipelineConfigError(msg)
+            raise pipeline.PipelineRuntimeError(msg)
 
         if n_args == 0:
             self._no_input = True

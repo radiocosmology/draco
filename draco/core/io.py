@@ -739,9 +739,9 @@ class Truncate(task.SingleTask):
                 or self.fixed_precision is None
                 or self.variance_increase is None
             ):
-                raise pipeline.PipelineConfigError(
+                raise config.CaputConfigError(
                     "Container {} has no preset values. You must define all of 'dataset', "
-                    "'fixed_precision', and 'variance_increase' properties.".format(
+                    "'fixed_precision', and 'variance_increase' properties in the config.".format(
                         container
                     )
                 )
@@ -762,6 +762,14 @@ class Truncate(task.SingleTask):
         -------
         truncated_data : containers.ContainerBase
             Truncated data.
+
+        Raises
+        ------
+        `caput.pipeline.PipelineRuntimeError`
+            If input data has mismatching dataset and weight array shapes.
+        `config.CaputConfigError`
+             If the input data container has no preset values and `fixed_precision` or `variance_increase` are not set
+             in the config.
         """
         # get truncation parameters from config or container defaults
         self._get_params(type(data))
