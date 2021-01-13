@@ -2,10 +2,11 @@
 
 import os
 import logging
+from inspect import getfullargspec
 
 import numpy as np
 
-from caput import pipeline, config, memh5, misc
+from caput import pipeline, config, memh5
 
 
 class MPILogFilter(logging.Filter):
@@ -279,7 +280,7 @@ class SingleTask(MPILoggedTask, pipeline.BasicContMixin):
         super(SingleTask, self).__init__()
 
         # Inspect the `process` method to see how many arguments it takes.
-        pro_argspec = misc.getfullargspec(self.process)
+        pro_argspec = getfullargspec(self.process)
         n_args = len(pro_argspec.args) - 1
 
         if pro_argspec.varargs or pro_argspec.varkw or pro_argspec.defaults:
