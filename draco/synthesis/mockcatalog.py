@@ -89,7 +89,21 @@ from mpi4py import MPI
 # --------------
 
 
-class SelFuncEstimator(task.SingleTask):
+class SelFuncEstimator(SelFuncEstimatorFromParams):
+    """Estimate selection function from Catalog passed into the setup routine.
+    """
+
+    def setup(self, cat):
+        """Add the container to the internal namespace.
+
+        Parameters
+        ----------
+        cont : containers.SpectroscopicCatalog
+        """
+        self._base_qcat = cat
+
+    
+class SelFuncEstimatorFromParams(task.SingleTask):
     """Takes a source catalog as input and returns an estimate of the
     selection function based on a low rank SVD reconstruction.
 
@@ -111,8 +125,7 @@ class SelFuncEstimator(task.SingleTask):
 
     """
 
-    bcat_path = config.Property(proptype=str)
-    density_maps_path = config.Property(proptype=str, default="")
+    bcat_path = config.Property(proptype=str, default=None)
 
     # These seem to be optimal parameters and should not
     # usually need to be changed from the default values:
@@ -123,21 +136,10 @@ class SelFuncEstimator(task.SingleTask):
     z_stp = config.Property(proptype=float, default=2.5)
 
     def setup(self):
-        """
+        """Load container from file.
         """
         # Load base source catalog from file:
         self._base_qcat = containers.SpectroscopicCatalog.from_file(self.bcat_path)
-
-        if self.density_maps_path != "":
-            densitymaps = containers.Map.from_file(
-                self.density_maps_path, distributed=True
-            )
-            densityz = _freq_to_z(densitymaps.index_map["freq"])
-            # If density map is given overrride z_stt and z_stp
-            idx_stt = np.argmin(densityz["centre"])
-            idx_stp = np.argmax(densityz["centre"])
-            self.z_stt = densityz["centre"][idx_stt] - 0.5 * densityz["width"][idx_stt]
-            self.z_stp = densityz["centre"][idx_stp] + 0.5 * densityz["width"][idx_stp]
 
     def process(self):
         """Put the base catalog into maps. SVD the maps and recover
