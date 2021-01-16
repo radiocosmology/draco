@@ -1,49 +1,35 @@
-
 pipeline:
     tasks:
-        -   type:       ch_pipeline.io.LoadBeamTransfer
-            out:        [tel, bt]
+        -   type:       draco.core.io.LoadBeamTransfer
+            out:        tel_and_bt
             params:
                 product_directory:  "testbeams/bt/"
 
-        -   type:       ch_pipeline.simulate.SimulateSidereal
-            requires:   [tel, bt]
+        -   type:       draco.synthesis.stream.SimulateSidereal
+            requires:   tel_and_bt
             out:        sstream
             params:
-                maps:   [ "testfg.h5" ]
                 save:   Yes
                 output_root: teststream_
 
-        -   type:       ch_pipeline.mapmaker.SelectProductsRedundant
-            requires:   bt
+        -   type:       draco.analysis.transform.MModeTransform
             in:         sstream
-            out:        rsstream
-            params:
-                save:   Yes
-                output_root: teststream3_
-
-        -   type:       ch_pipeline.mapmaker.MModeTransform
-            in:         rsstream
             out:        mmodes
 
-        -   type:       ch_pipeline.mapmaker.MapMaker
-            requires:   bt
+        -   type:       draco.analysis.mapmaker.DirtyMapMaker
+            requires:   tel_and_bt
             in:         mmodes
             out:        dirtymap
             params:
-                maptype: dirty
                 nside:      128
-                baseline_mask:  "no_auto"
                 save:   Yes
                 output_root: map_dirty2_
 
-        -   type:       ch_pipeline.mapmaker.MapMaker
-            requires:   bt
+        -   type:       draco.analysis.mapmaker.WienerMapMaker
+            requires:   tel_and_bt
             in:         mmodes
             out:        wienermap
             params:
-                maptype:    wiener
                 nside:      128
-                baseline_mask:  "no_auto"
                 save:   Yes
                 output_root: map_wiener2_

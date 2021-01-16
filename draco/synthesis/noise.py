@@ -7,17 +7,6 @@ average) value and returns an observed time stream. The :class: `GaussianNoise`
 adds in the effects of a Gaussian distributed noise into visibility data.
 The :class: `GaussianNoiseDataset` replaces visibility data with Gaussian distributed noise,
 using the variance of the noise estimate in the existing data.
-
-Tasks
-=====
-
-.. autosummary::
-    :toctree:
-
-    ReceiverTemperature
-    GaussianNoiseDataset
-    GaussianNoise
-    SampleNoise
 """
 
 import numpy as np
@@ -75,7 +64,7 @@ class GaussianNoiseDataset(task.SingleTask, random.RandomTask):
 
         Returns
         -------
-        data_noise : same as :param:`data`
+        data_noise : same as parameter `data`
             The previous dataset with the visibility replaced with
             a Gaussian distributed noise realisation.
 
@@ -147,7 +136,7 @@ class GaussianNoise(task.SingleTask, random.RandomTask):
 
         Returns
         -------
-        data_noise : same as :param:`data`
+        data_noise : same as parameter `data`
             The sampled (i.e. noisy) visibility dataset.
         """
 
@@ -239,7 +228,7 @@ class SampleNoise(task.SingleTask):
 
         Returns
         -------
-        data_samp : same as :param:`data_exp`
+        data_samp : same as parameter `data_exp`
             The sampled (i.e. noisy) visibility dataset.
         """
 

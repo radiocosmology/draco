@@ -1,4 +1,4 @@
-from caput import pipeline, memh5
+from caput import config, pipeline, memh5
 
 import caput
 import numpy
@@ -33,7 +33,7 @@ def test_metadata_to_hdf5():
         configdump = m.history["config"]
         versiondump = m.history["versions"]
         assert versiondump == {"numpy": numpy.__version__, "caput": caput.__version__}
-        assert configdump == yaml.load(testconfig, Loader=yaml.SafeLoader)
+        assert configdump == yaml.load(testconfig, Loader=config.SafeLineLoader)
 
 
 def test_metadata_to_yaml():
@@ -72,4 +72,4 @@ def test_metadata_to_yaml():
     )
 
     # let pyyaml fix the indentation by loading and dumping again
-    assert configdump == yaml.dump(yaml.safe_load(testconfig))
+    assert configdump == yaml.dump(yaml.load(testconfig, Loader=config.SafeLineLoader))

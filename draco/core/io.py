@@ -1,18 +1,5 @@
 """Tasks for reading and writing data.
 
-Tasks
-=====
-
-.. autosummary::
-    :toctree:
-
-    LoadFiles
-    LoadMaps
-    LoadFilesFromParams
-    Save
-    Print
-    LoadBeamTransfer
-
 File Groups
 ===========
 
@@ -40,6 +27,7 @@ import os.path
 
 import h5py
 import numpy as np
+from typing import Union, Dict, List
 from yaml import dump as yamldump
 
 from caput import pipeline
@@ -48,6 +36,7 @@ from caput import config
 from cora.util import units
 
 from . import task
+from ..util.exception import ConfigError
 from ..util.truncate import bit_truncate_weights, bit_truncate_fixed
 from .containers import SiderealStream, TimeStream, TrackBeam
 
@@ -74,8 +63,24 @@ TRUNC_SPEC = {
 }
 
 
-def _list_of_filelists(files):
-    # Take in a list of lists/glob patterns of filenames
+def _list_of_filelists(files: Union[List[str], List[List[str]]]) -> List[List[str]]:
+    """
+    Take in a list of lists/glob patterns of filenames
+
+    Parameters
+    ----------
+    files
+        A path or glob pattern (e.g. /my/data/\*.h5) or a list of those (or a list of lists of those).
+
+    Raises
+    ------
+    ConfigError
+        If files has the wrong format or refers to a file that doesn't exist.
+
+    Returns
+    -------
+    The input file list list. Any glob patterns will be flattened to file path string lists.
+    """
     import glob
 
     f2 = []
@@ -83,32 +88,71 @@ def _list_of_filelists(files):
     for filelist in files:
 
         if isinstance(filelist, str):
+            if "*" not in filelist and not os.path.isfile(filelist):
+                raise ConfigError("File not found: %s" % filelist)
             filelist = glob.glob(filelist)
         elif isinstance(filelist, list):
-            pass
+            for i in range(len(filelist)):
+                filelist[i] = _list_or_glob(filelist[i])
         else:
-            raise Exception("Must be list or glob pattern.")
-        f2.append(filelist)
+            raise ConfigError("Must be list or glob pattern.")
+        f2 = f2 + filelist
 
     return f2
 
 
-def _list_or_glob(files):
-    # Take in a list of lists/glob patterns of filenames
+def _list_or_glob(files: Union[str, List[str]]) -> List[str]:
+    """
+    Take in a list of lists/glob patterns of filenames
+
+    Parameters
+    ----------
+    files
+        A path or glob pattern (e.g. /my/data/\*.h5) or a list of those
+
+    Returns
+    -------
+    The input file list. Any glob patterns will be flattened to file path string lists.
+
+    Raises
+    ------
+    ConfigError
+        If files has the wrong type or if it refers to a file that doesn't exist.
+    """
     import glob
 
     if isinstance(files, str):
+        if "*" not in files and not os.path.isfile(files):
+            raise ConfigError("File not found: %s" % files)
         files = sorted(glob.glob(files))
     elif isinstance(files, list):
-        pass
+        parsed_files = []
+        for f in files:
+            parsed_files = parsed_files + _list_or_glob(f)
+        files = parsed_files
     else:
-        raise ValueError("Argument must be list or glob pattern, got %s" % repr(files))
-
+        raise ConfigError("Argument must be list or glob pattern, got %s" % repr(files))
     return files
 
 
-def _list_of_filegroups(groups):
-    # Process a file group/groups
+def _list_of_filegroups(groups: Union[List[Dict] or Dict]) -> List[Dict]:
+    """
+    Process a file group/groups
+
+    Parameters
+    ----------
+    groups
+        Dicts should contain keys 'files': An iterable with file path or glob pattern strings, 'tag': the group tag str
+
+    Returns
+    -------
+    The input groups. Any glob patterns in the 'files' list will be flattened to file path strings.
+
+    Raises
+    ------
+    ConfigError
+        If groups has the wrong format.
+    """
     import glob
 
     # Convert to list if the group was not included in a list
@@ -119,7 +163,14 @@ def _list_of_filegroups(groups):
     # through glob
     for gi, group in enumerate(groups):
 
-        files = group["files"]
+        try:
+            files = group["files"]
+        except KeyError:
+            raise ConfigError("File group is missing key 'files'.")
+        except TypeError:
+            raise ConfigError(
+                "Expected type dict in file groups (got {}).".format(type(group))
+            )
 
         if "tag" not in group:
             group["tag"] = "group_%i" % gi
@@ -127,10 +178,12 @@ def _list_of_filegroups(groups):
         flist = []
 
         for fname in files:
+            if "*" not in fname and not os.path.isfile(fname):
+                raise ConfigError("File not found: %s" % fname)
             flist += glob.glob(fname)
 
         if not len(flist):
-            raise RuntimeError("No files in group exist (%s)." % files)
+            raise ConfigError("No files in group exist (%s)." % files)
 
         group["files"] = flist
 
@@ -275,7 +328,11 @@ class LoadFITSCatalog(task.SingleTask):
 
                 catalog_stack.append(pos)
 
+            # NOTE: this one is tricky, for some reason the concatenate in here
+            # produces a non C contiguous array, so we need to ensure that otherwise
+            # the broadcasting will get very confused
             catalog_array = np.concatenate(catalog_stack, axis=-1).astype(np.float64)
+            catalog_array = np.ascontiguousarray(catalog_array)
             num_objects = catalog_array.shape[-1]
         else:
             num_objects = None
@@ -285,6 +342,7 @@ class LoadFITSCatalog(task.SingleTask):
         # broadcast into it
         num_objects = self.comm.bcast(num_objects, root=0)
         self.log.debug(f"Constructing catalog with {num_objects} objects.")
+
         if self.comm.rank != 0:
             catalog_array = np.zeros((3, num_objects), dtype=np.float64)
         self.comm.Bcast(catalog_array, root=0)
