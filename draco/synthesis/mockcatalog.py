@@ -1,5 +1,5 @@
-"""Take a source catalog and a (possibly biased) matter simulated map 
-and generate mock catalogs correlated to the matter maps and following 
+"""Take a source catalog and a (possibly biased) matter simulated map
+and generate mock catalogs correlated to the matter maps and following
 a selection function derived from the original catalog.
 
 Pipeline tasks
@@ -36,27 +36,27 @@ mock catalogs. Below is an example of yaml file to generate mock catalogs:
 >>> spam_config = '''
 ... pipeline :
 ...     tasks:
-...         -   type:   draco.synthesis.mockcatalog.SelFuncEstimator
+...         -   type:   draco.synthesis.mockcatalog.SelFuncEstimatorFromParams
 ...             params: selfunc_params
 ...             out:    selfunc
-... 
+...
 ...         -   type:     draco.synthesis.mockcatalog.PdfGenerator
 ...             params:   pdf_params
 ...             requires: selfunc
 ...             out:      pdf_map
-... 
+...
 ...         -   type:     draco.synthesis.mockcatalog.MockCatGenerator
 ...             params:   mqcat_params
 ...             requires: pdf_map
 ...             out:      mockcat
-... 
+...
 ... selfunc_params:
 ...     bcat_path: '/bg01/homescinet/k/krs/jrs65/sdss_quasar_catalog.h5'
 ...     nside: 16
-... 
+...
 ... pdf_params:
-...     qsomaps_path: '/scratch/k/krs/fandino/xcorrSDSS/sim21cm/21cmmap.hdf5'
-... 
+...     source_maps_path: '/scratch/k/krs/fandino/xcorrSDSS/sim21cm/21cmmap.hdf5'
+...
 ... mqcat_params:
 ...     nsources: 200000
 ...     ncats: 5
@@ -89,28 +89,29 @@ from mpi4py import MPI
 # --------------
 
 
-class SelFuncEstimator(SelFuncEstimatorFromParams):
-    """Estimate selection function from Catalog passed into the setup routine.
-    """
+# class SelFuncEstimator(SelFuncEstimatorFromParams):
+#     """Estimate selection function from Catalog passed into the setup routine.
+#     """
+#
+#     def setup(self, cat):
+#         """Add the container to the internal namespace.
+#
+#         Parameters
+#         ----------
+#         cont : containers.SpectroscopicCatalog
+#         """
+#         self._base_qcat = cat
 
-    def setup(self, cat):
-        """Add the container to the internal namespace.
 
-        Parameters
-        ----------
-        cont : containers.SpectroscopicCatalog
-        """
-        self._base_qcat = cat
-
-    
 class SelFuncEstimatorFromParams(task.SingleTask):
     """Takes a source catalog as input and returns an estimate of the
     selection function based on a low rank SVD reconstruction.
 
     Attributes
     ----------
-    bcat_path : str
-        Full path to base source catalog.
+    bcat_path : str, optional
+        Full path to base source catalog. If unspecified, a trivial selection
+        function (all ones) is assumed. Default: None
     nside : int
         NSIDE for catalog maps generated for the SVD.
     n_z : int
@@ -138,8 +139,10 @@ class SelFuncEstimatorFromParams(task.SingleTask):
     def setup(self):
         """Load container from file.
         """
-        # Load base source catalog from file:
-        self._base_qcat = containers.SpectroscopicCatalog.from_file(self.bcat_path)
+        # Load base source catalog from file, if specified:
+        self._base_qcat = None
+        if self.bcat_path is not None:
+            self._base_qcat = containers.SpectroscopicCatalog.from_file(self.bcat_path)
 
     def process(self):
         """Put the base catalog into maps. SVD the maps and recover
@@ -158,51 +161,57 @@ class SelFuncEstimatorFromParams(task.SingleTask):
         # containers.Map format:
         freq_selfunc = _zlims_to_freq(z_selfunc, zlims_selfunc)
 
-        # Create maps from original catalog:
-        # No point in distributing this in a mpi clever way
-        # because I need to SVD it.
-        maps = np.zeros((self.n_z, n_pix))
-        # Indices of each source in z axis:
-        idxs = (
-            np.digitize(self.base_qcat["redshift"]["z"], zlims_selfunc) - 1
-        )  # -1 to get indices
-        # Map pixel of each source
-        pixls = _radec_to_pix(
-            self.base_qcat["position"]["ra"],
-            self.base_qcat["position"]["dec"],
-            self.nside,
-        )
-        for jj in range(self.n_z):
-            zpixls = pixls[idxs == jj]  # Map pixels of sources in z bin jj
-            for kk in range(n_pix):
-                # Number of sources in z bin jj and pixel kk
-                maps[jj, kk] = np.sum(zpixls == kk)
-
-        # SVD the source density maps:
-        svd = np.linalg.svd(maps, full_matrices=0)
-
         # Map container to store the selection function:
         self._selfunc = containers.Map(
             nside=self.nside, polarisation=False, freq=freq_selfunc
         )
-        # Start as zeroes:
-        self._selfunc["map"][:, :, :] = np.zeros(self._selfunc["map"].local_shape)
 
-        # Get axis parameters for distributed map:
-        lo = self._selfunc["map"][:, 0, :].local_offset[0]
-        ls = self._selfunc["map"][:, 0, :].local_shape[0]
-        # Recover the n_modes approximation to the original catalog maps:
-        for jj in range(self.n_modes):
-            uj = svd[0][:, jj]
-            sj = svd[1][jj]
-            vj = svd[2][jj, :]
-            # Re-constructed mode (distribute in freq/redshift):
-            recmode = mpiarray.MPIArray.wrap(
-                (uj[:, None] * sj * vj[None, :])[lo : lo + ls], axis=0
+        # If no input catalog was specified, assume trivial selection function
+        if self.base_qcat is None:
+            self._selfunc["map"][:, :, :] = np.ones(self._selfunc["map"].local_shape)
+
+        else:
+            # Start as zeroes:
+            self._selfunc["map"][:, :, :] = np.zeros(self._selfunc["map"].local_shape)
+
+            # Create maps from original catalog:
+            # No point in distributing this in a mpi clever way
+            # because I need to SVD it.
+            maps = np.zeros((self.n_z, n_pix))
+            # Indices of each source in z axis:
+            idxs = (
+                np.digitize(self.base_qcat["redshift"]["z"], zlims_selfunc) - 1
+            )  # -1 to get indices
+            # Map pixel of each source
+            pixls = _radec_to_pix(
+                self.base_qcat["position"]["ra"],
+                self.base_qcat["position"]["dec"],
+                self.nside,
             )
-            self._selfunc["map"][:, 0, :] = self._selfunc["map"][:, 0, :] + recmode
-        # Remove negative entries remaining from SVD recovery:
-        self._selfunc["map"][np.where(self._selfunc.map[:] < 0.0)] = 0.0
+            for jj in range(self.n_z):
+                zpixls = pixls[idxs == jj]  # Map pixels of sources in z bin jj
+                for kk in range(n_pix):
+                    # Number of sources in z bin jj and pixel kk
+                    maps[jj, kk] = np.sum(zpixls == kk)
+
+            # SVD the source density maps:
+            svd = np.linalg.svd(maps, full_matrices=0)
+
+            # Get axis parameters for distributed map:
+            lo = self._selfunc["map"][:, 0, :].local_offset[0]
+            ls = self._selfunc["map"][:, 0, :].local_shape[0]
+            # Recover the n_modes approximation to the original catalog maps:
+            for jj in range(self.n_modes):
+                uj = svd[0][:, jj]
+                sj = svd[1][jj]
+                vj = svd[2][jj, :]
+                # Re-constructed mode (distribute in freq/redshift):
+                recmode = mpiarray.MPIArray.wrap(
+                    (uj[:, None] * sj * vj[None, :])[lo : lo + ls], axis=0
+                )
+                self._selfunc["map"][:, 0, :] = self._selfunc["map"][:, 0, :] + recmode
+            # Remove negative entries remaining from SVD recovery:
+            self._selfunc["map"][np.where(self._selfunc.map[:] < 0.0)] = 0.0
 
         self.done = True
 
@@ -222,10 +231,24 @@ class SelFuncEstimatorFromParams(task.SingleTask):
         return self._selfunc
 
 
+class SelFuncEstimator(SelFuncEstimatorFromParams):
+    """Estimate selection function from Catalog passed into the setup routine.
+    """
+
+    def setup(self, cat):
+        """Add the container to the internal namespace.
+
+        Parameters
+        ----------
+        cont : containers.SpectroscopicCatalog
+        """
+        self._base_qcat = cat
+
+
 class PdfGenerator(task.SingleTask):
     """Take a source catalog selection function and simulated source
-    (biased density) maps and return a PDF map correlated with the 
-    density maps and the selection function. This PDF map can be used 
+    (biased density) maps and return a PDF map correlated with the
+    density maps and the selection function. This PDF map can be used
     by the task :class:`MockCatGenerator` to draw mock catalogs.
 
     Attributes
@@ -240,6 +263,7 @@ class PdfGenerator(task.SingleTask):
 
     source_maps_path = config.Property(proptype=str)
     random_catalog = config.Property(proptype=bool, default=False)
+    no_selfunc = config.Property(proptype=bool, default=False)
 
     def setup(self, selfunc):
         """
@@ -291,7 +315,6 @@ class PdfGenerator(task.SingleTask):
         resized_selfunc = self._resize_map(
             self.selfunc.map[:, 0, :], rho_m.global_shape, z, z_selfunc
         )
-
         # Generate wheights for correct distribution of sources in redshift:
         z_wheights = np.sum(resized_selfunc, axis=1)
         # Sum wheights in each comm rank. Need array of scalar here.
@@ -307,7 +330,12 @@ class PdfGenerator(task.SingleTask):
 
         # PDF following selection function and CORA maps:
         # (both rho_m and resized_selfunc are distributed in axis 0)
-        pdf = rho_m * resized_selfunc
+        if self.no_selfunc:
+            self.log.debug("Using trivial selection function to generate PDF!")
+            pdf = rho_m
+            z_wheights = 1/n_z * np.ones_like(z_wheights)
+        else:
+            pdf = rho_m * resized_selfunc
 
         # Enforce redshift distribution to follow selection function:
         pdf = mpiarray.MPIArray.wrap(
@@ -379,7 +407,7 @@ class PdfGenerator(task.SingleTask):
         """
         Setter for source_maps
         Also set the attributes:
-            self._npix : Number of pixels in source maps 
+            self._npix : Number of pixels in source maps
             self._nside : NSIDE of source maps
 
         """
@@ -397,7 +425,7 @@ class PdfGenerator(task.SingleTask):
 
 
 class MockCatGenerator(task.SingleTask):
-    """Take PDF maps generated by task :class:`PdfGenerator` 
+    """Take PDF maps generated by task :class:`PdfGenerator`
     and use it to draw mock catalogs.
 
     Attributes
@@ -405,7 +433,7 @@ class MockCatGenerator(task.SingleTask):
     nsources : int
         Number of sources to draw in each mock catalog
     ncats : int
-        Number of catalogs to generate 
+        Number of catalogs to generate
     """
 
     nsources = config.Property(proptype=int)
@@ -587,7 +615,7 @@ class MockCatGenerator(task.SingleTask):
         """
         Setter for pdf
         Also set the attributes:
-            self._npix : Number of pixels in PDF maps 
+            self._npix : Number of pixels in PDF maps
             self._nside : NSIDE of PDF maps
 
         """
