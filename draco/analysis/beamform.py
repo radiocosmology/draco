@@ -3,7 +3,7 @@
 import numpy as np
 from skyfield.api import Star, Angle
 
-from caput import config
+from caput import config, mpiutil
 from caput import time as ctime
 
 from cora.util import units
@@ -152,7 +152,7 @@ class BeamFormBase(task.SingleTask):
         for src in range(self.nsource):
 
             if src % 1000 == 0:
-                self.log.debug(f"Source {src}/{self.nsource}")
+                self.log.debug(f"Rank {mpiutil.rank}: Source {src}/{self.nsource}")
 
             # Declination of this source
             dec = np.radians(self.sdec[src])
