@@ -231,6 +231,43 @@ class SelFuncEstimatorFromParams(task.SingleTask):
         return self._selfunc
 
 
+def _cat_to_maps(cat, nside, n_z, z_stt, z_stp):
+
+    # Number of pixels to use in catalog maps for SVD
+    n_pix = hp.pixelfunc.nside2npix(nside)
+
+    # Redshift bins edges
+    zlims_selfunc = np.linspace(z_stt, z_stp, n_z + 1)
+    # Redshift bins centre
+    z_selfunc = (zlims_selfunc[:-1] + zlims_selfunc[1:]) * 0.5
+
+    # Have to transform the z axis to a freq axis to return selfunc in
+    # containers.Map format:
+    freq_selfunc = _zlims_to_freq(z_selfunc, zlims_selfunc)
+
+    # Create maps from original catalog:
+    # No point in distributing this in a mpi clever way
+    # because I need to SVD it.
+    maps = np.zeros((n_z, n_pix))
+    # Indices of each source in z axis:
+    idxs = (
+        np.digitize(cat["redshift"]["z"], zlims_selfunc) - 1
+    )  # -1 to get indices
+    # Map pixel of each source
+    pixls = _radec_to_pix(
+        cat["position"]["ra"],
+        cat["position"]["dec"],
+        nside,
+    )
+    for jj in range(n_z):
+        zpixls = pixls[idxs == jj]  # Map pixels of sources in z bin jj
+        for kk in range(n_pix):
+            # Number of sources in z bin jj and pixel kk
+            maps[jj, kk] = np.sum(zpixls == kk)
+
+    return maps
+
+
 class SelFuncEstimator(SelFuncEstimatorFromParams):
     """Estimate selection function from Catalog passed into the setup routine.
     """
