@@ -89,20 +89,6 @@ from mpi4py import MPI
 # --------------
 
 
-class SelFuncEstimator(SelFuncEstimatorFromParams):
-    """Estimate selection function from Catalog passed into the setup routine.
-    """
-
-    def setup(self, cat):
-        """Add the container to the internal namespace.
-
-        Parameters
-        ----------
-        cont : containers.SpectroscopicCatalog
-        """
-        self._base_qcat = cat
-
-    
 class SelFuncEstimatorFromParams(task.SingleTask):
     """Takes a source catalog as input and returns an estimate of the
     selection function based on a low rank SVD reconstruction.
@@ -222,6 +208,20 @@ class SelFuncEstimatorFromParams(task.SingleTask):
         return self._selfunc
 
 
+class SelFuncEstimator(SelFuncEstimatorFromParams):
+    """Estimate selection function from Catalog passed into the setup routine.
+    """
+
+    def setup(self, cat):
+        """Add the container to the internal namespace.
+
+        Parameters
+        ----------
+        cont : containers.SpectroscopicCatalog
+        """
+        self._base_qcat = cat
+
+    
 class PdfGenerator(task.SingleTask):
     """Take a source catalog selection function and simulated source
     (biased density) maps and return a PDF map correlated with the 
