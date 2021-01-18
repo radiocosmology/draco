@@ -75,12 +75,20 @@ class SourceStack(task.SingleTask):
 
         # Get f_mask and qs_indices
         freqdiff = freq[np.newaxis, :] - qso_freq[:, np.newaxis]
-        # Stack axis bin edges to digitize each quasar at.
-        stackbins = self.stack_axis["centre"] + 0.5 * self.stack_axis["width"]
-        stackbins = np.append(
-            stackbins,
-            self.stack_axis["centre"][-1] - 0.5 * self.stack_axis["width"][-1],
-        )
+        # Stack axis bin edges to digitize each quasar at, in either increasing
+        # or decreasing order depending on order of frequencies
+        if self.stack_axis["centre"][0] > self.stack_axis["centre"][-1]:
+            stackbins = self.stack_axis["centre"] + 0.5 * self.stack_axis["width"]
+            stackbins = np.append(
+                stackbins,
+                self.stack_axis["centre"][-1] - 0.5 * self.stack_axis["width"][-1],
+            )
+        else:
+            stackbins = self.stack_axis["centre"] - 0.5 * self.stack_axis["width"]
+            stackbins = np.append(
+                stackbins,
+                self.stack_axis["centre"][-1] + 0.5 * self.stack_axis["width"][-1],
+            )
         # Index of each frequency in stack axis, for each quasar
         qs_indices = np.digitize(freqdiff, stackbins) - 1
         # Indices to be processed in full frequency axis for each quasar
@@ -109,6 +117,8 @@ class SourceStack(task.SingleTask):
             f_indices = np.arange(nfreq, dtype=np.int32)[f_mask[lq]]
             f_slice = np.s_[f_indices[0] : f_indices[-1] + 1]
 
+            # TODO: check if this still works with collapse_ha=False
+            # (it didn't when Simon tried with a small telescope)
             quasar_stack += np.bincount(
                 qs_indices[lq][f_slice],
                 weights=(
