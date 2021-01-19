@@ -1603,17 +1603,17 @@ class FrequencyStack(ContainerBase):
     of sources of interest.
     """
 
-    _axes = ("freq",)
+    _axes = ("freq", "pol",)
 
     _dataset_spec = {
         "stack": {
-            "axes": ["freq"],
+            "axes": ["freq", "pol"],
             "dtype": np.float64,
             "initialise": True,
             "distributed": False,
         },
         "weight": {
-            "axes": ["freq"],
+            "axes": ["freq", "pol"],
             "dtype": np.float64,
             "initialise": True,
             "distributed": False,
@@ -1631,6 +1631,10 @@ class FrequencyStack(ContainerBase):
     @property
     def freq(self):
         return self.index_map["freq"]["centre"]
+
+    @property
+    def pol(self):
+        return self.index_map["pol"]
 
 
 class SourceCatalog(TableBase):
