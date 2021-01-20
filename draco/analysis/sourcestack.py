@@ -206,8 +206,8 @@ class SourceStack(task.SingleTask):
             ) * invert_no_zero(qstack.weight[:])
         else:
             # Container to hold the stack
-            qstack = containers.FrequencyStack(
-                freq=self.stack_axis, pol=pol, ha=formed_beam.ha
+            qstack = containers.FrequencyStackHA(
+                freq=self.stack_axis, pol=pol, ha=np.arange(n_ha)
             )
 
             # Sum across ranks
