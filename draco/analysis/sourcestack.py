@@ -132,7 +132,7 @@ class SourceStack(task.SingleTask):
 
             if lq % 1000 == 0:
                 self.log.debug(
-                    f"Rank {mpiutil.rank}: Beam {lq}/{formed_beam.beam.shape[0]}"
+                    f"Rank {mpiutil.rank}: Beam {lq}/{formed_beam.beam[:].shape[0]}"
                 )
 
             # Indices and slice for frequencies included in the stack.
