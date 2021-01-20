@@ -1637,6 +1637,33 @@ class FrequencyStack(ContainerBase):
         return self.index_map["pol"]
 
 
+class FrequencyStackHA(FrequencyStack):
+    """Container for a frequency stack, at separate HA values
+    """
+
+    _axes = ("freq", "pol", "ha")
+
+    _dataset_spec = {
+        "stack": {
+            "axes": ["freq", "pol", "ha"],
+            "dtype": np.float64,
+            "initialise": True,
+            "distributed": False,
+        },
+        "weight": {
+            "axes": ["freq", "pol", "ha"],
+            "dtype": np.float64,
+            "initialise": True,
+            "distributed": False,
+        },
+    }
+
+    @property
+    def ha(self):
+        return self.datasets["object_ha"]
+
+
+
 class SourceCatalog(TableBase):
     """A basic container for holding astronomical source catalogs.
 

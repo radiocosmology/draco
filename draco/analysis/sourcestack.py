@@ -3,7 +3,7 @@
 import numpy as np
 from mpi4py import MPI
 
-from caput import config, pipeline
+from caput import config, pipeline, mpiutil
 from cora.util import units
 
 from ..util.tools import invert_no_zero
@@ -49,6 +49,14 @@ class SourceStack(task.SingleTask):
 
         # Ensure formed_beam is distributed in sources
         formed_beam.redistribute("object_id")
+
+        # Determine whether beams have been collapsed in HA
+        collapse_ha = "ha" not in formed_beam.axes
+        if not collapse_ha:
+            n_ha = formed_beam.ha.shape[-1]
+            self.log.debug(
+                f"n_ha = {n_ha}"
+            )
 
         # local shape and offset
         loff = formed_beam.beam.local_offset[0]
@@ -107,8 +115,12 @@ class SourceStack(task.SingleTask):
         f_mask = f_mask[loff : loff + lshape]
 
         # Quasar stack array.
-        quasar_stack = np.zeros((self.nstack, npol), dtype=np.float)
-        quasar_weight = np.zeros((self.nstack, npol), dtype=np.float)
+        if collapse_ha:
+            quasar_stack = np.zeros((self.nstack, npol), dtype=np.float)
+            quasar_weight = np.zeros((self.nstack, npol), dtype=np.float)
+        else:
+            quasar_stack = np.zeros((self.nstack, npol, n_ha), dtype=np.float)
+            quasar_weight = np.zeros((self.nstack, npol, n_ha), dtype=np.float)
 
         qcount = 0  # Quasar counter
         # For each quasar in the range of this process
@@ -117,50 +129,94 @@ class SourceStack(task.SingleTask):
                 # Quasar not in the data redshift range
                 continue
             qcount += 1
+
+            if lq % 1000 == 0:
+                self.log.debug(
+                    f"Rank {mpiutil.rank}: Beam {lq}/{formed_beam.beam.shape[0]}"
+                )
+
             # Indices and slice for frequencies included in the stack.
             f_indices = np.arange(nfreq, dtype=np.int32)[f_mask[lq]]
             f_slice = np.s_[f_indices[0] : f_indices[-1] + 1]
 
-            # TODO: check if this still works with collapse_ha=False
-            # (it didn't when Simon tried with a small telescope)
             for pi, p in enumerate(pol):
-                quasar_stack[:, pi] += np.bincount(
-                    qs_indices[lq][f_slice],
-                    weights=(
-                        formed_beam.beam[gq, pi][f_slice]
-                        * formed_beam.weight[gq, pi][f_slice]
-                    ),
-                    minlength=self.nstack,
-                )
+                if collapse_ha:
+                    quasar_stack[:, pi] += np.bincount(
+                        qs_indices[lq][f_slice],
+                        weights=(
+                            formed_beam.beam[gq, pi][f_slice]
+                            * formed_beam.weight[gq, pi][f_slice]
+                        ),
+                        minlength=self.nstack,
+                    )
 
-                quasar_weight[:, pi] += np.bincount(
-                    qs_indices[lq][f_slice],
-                    weights=formed_beam.weight[gq, pi][f_slice],
-                    minlength=self.nstack,
-                )
+                    quasar_weight[:, pi] += np.bincount(
+                        qs_indices[lq][f_slice],
+                        weights=formed_beam.weight[gq, pi][f_slice],
+                        minlength=self.nstack,
+                    )
+                else:
+                    for hai in range(n_ha):
+                        quasar_stack[:, pi, hai] += np.bincount(
+                            qs_indices[lq][f_slice],
+                            weights=(
+                                formed_beam.beam[gq, pi, :, hai][f_slice]
+                                * formed_beam.weight[gq, pi, :, hai][f_slice]
+                            ),
+                            minlength=self.nstack,
+                        )
+
+                        quasar_weight[:, pi, hai] += np.bincount(
+                            qs_indices[lq][f_slice],
+                            weights=formed_beam.weight[gq, pi, :, hai][f_slice],
+                            minlength=self.nstack,
+                        )
 
         # Gather quasar stack for all ranks. Each contains the sum
         # over a different subset of quasars.
-        quasar_stack_full = np.zeros(
-            (comm.size * self.nstack, npol), dtype=quasar_stack.dtype
-        )
-        quasar_weight_full = np.zeros(
-            (comm.size * self.nstack, npol), dtype=quasar_weight.dtype
-        )
+        if collapse_ha:
+            quasar_stack_full = np.zeros(
+                (comm.size * self.nstack, npol), dtype=quasar_stack.dtype
+            )
+            quasar_weight_full = np.zeros(
+                (comm.size * self.nstack, npol), dtype=quasar_weight.dtype
+            )
+        else:
+            quasar_stack_full = np.zeros(
+                (comm.size * self.nstack, npol, n_ha), dtype=quasar_stack.dtype
+            )
+            quasar_weight_full = np.zeros(
+                (comm.size * self.nstack, npol, n_ha), dtype=quasar_weight.dtype
+            )
+
         # Gather all ranks
         comm.Allgather(quasar_stack, quasar_stack_full)
         comm.Allgather(quasar_weight, quasar_weight_full)
 
-        # Container to hold the stack
-        qstack = containers.FrequencyStack(freq=self.stack_axis, pol=pol)
+        if collapse_ha:
+            # Container to hold the stack
+            qstack = containers.FrequencyStack(freq=self.stack_axis, pol=pol)
 
-        # Sum across ranks
-        qstack.weight[:] = np.sum(
-            quasar_weight_full.reshape(comm.size, self.nstack, npol), axis=0
-        )
-        qstack.stack[:] = np.sum(
-            quasar_stack_full.reshape(comm.size, self.nstack, npol), axis=0
-        ) * invert_no_zero(qstack.weight[:])
+            # Sum across ranks
+            qstack.weight[:] = np.sum(
+                quasar_weight_full.reshape(comm.size, self.nstack, npol), axis=0
+            )
+            qstack.stack[:] = np.sum(
+                quasar_stack_full.reshape(comm.size, self.nstack, npol), axis=0
+            ) * invert_no_zero(qstack.weight[:])
+        else:
+            # Container to hold the stack
+            qstack = containers.FrequencyStack(
+                freq=self.stack_axis, pol=pol, ha=formed_beam.ha
+            )
+
+            # Sum across ranks
+            qstack.weight[:] = np.sum(
+                quasar_weight_full.reshape(comm.size, self.nstack, npol, n_ha), axis=0
+            )
+            qstack.stack[:] = np.sum(
+                quasar_stack_full.reshape(comm.size, self.nstack, npol, n_ha), axis=0
+            ) * invert_no_zero(qstack.weight[:])
 
         # Gather all ranks of qcount. Report number of quasars stacked
         full_qcount = comm.reduce(qcount, op=MPI.SUM, root=0)
