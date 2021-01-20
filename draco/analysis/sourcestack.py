@@ -153,8 +153,8 @@ class SourceStack(task.SingleTask):
 
         # Container to hold the stack
         qstack = containers.FrequencyStack(freq=self.stack_axis, pol=pol)
+
         # Sum across ranks
-        print(qstack.weight.shape, quasar_weight_full.shape)
         qstack.weight[:] = np.sum(
             quasar_weight_full.reshape(comm.size, self.nstack, npol), axis=0
         )
