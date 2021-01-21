@@ -46,6 +46,8 @@ class BeamFormBase(task.SingleTask):
     freqside : int
         Number of frequencies to process at each side of the source.
         Default (None) processes all frequencies.
+    no_pbeam_weighting : bool, optional
+        If True, do not use primary beam in beamforming weights. (Default: False)
     """
 
     collapse_ha = config.Property(proptype=bool, default=True)
@@ -53,6 +55,7 @@ class BeamFormBase(task.SingleTask):
     weight = config.enum(["natural", "uniform", "inverse_variance"], default="natural")
     timetrack = config.Property(proptype=float, default=900.0)
     freqside = config.Property(proptype=int, default=None)
+    no_pbeam_weighting = config.Property(proptype=bool, default=False)
 
     def setup(self, manager):
         """Generic setup method.
@@ -224,6 +227,8 @@ class BeamFormBase(task.SingleTask):
                     self.freq_local[:, np.newaxis],
                     dec,
                 )
+                if self.no_pbeam_weighting:
+                    primary_beam = np.ones_like(primary_beam)
 
                 # Fringestop and sum over products
                 # 'beamform' does not normalize sum.
