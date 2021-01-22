@@ -783,3 +783,42 @@ class Regridder(task.SingleTask):
             ni *= w_mask[..., np.newaxis]
 
         return interp_grid, sts, ni
+
+
+class ShiftRA(task.SingleTask):
+    """Add a shift to the RA axis.
+
+    This is useful for fixing a bug in earlier revisions of CHIME processing.
+
+    Parameters
+    ----------
+    delta : float
+        The shift to *add* to the RA axis.
+    """
+
+    delta = config.Property(proptype=float)
+
+    def process(
+        self, sscont: containers.SiderealContainer
+    ) -> containers.SiderealContainer:
+        """Add a shift to the input sidereal cont.
+
+        Parameters
+        ----------
+        sscont
+            The container to shift. The input is modified in place.
+
+        Returns
+        -------
+        sscont
+            The shifted container.
+        """
+
+        if not isinstance(sscont, containers.SiderealContainer):
+            raise TypeError(
+                f"Expected a SiderealContainer, got {type(sscont)} instead."
+            )
+
+        sscont.ra[:] += self.delta
+
+        return sscont
