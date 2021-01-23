@@ -8,6 +8,9 @@ from caput import time as ctime
 
 from cora.util import units
 
+from drift.telescope.cylbeam import beam_x, beam_y
+from drift.telescope.cylbeam import fast_beam_pol_precompute, fast_beam_pol_eval
+
 from ..core import task, containers, io
 from ..util._fast_tools import beamform
 from ..util.tools import baseline_vector, polarization_map, invert_no_zero
@@ -48,6 +51,9 @@ class BeamFormBase(task.SingleTask):
         Default (None) processes all frequencies.
     no_pbeam_weighting : bool, optional
         If True, do not use primary beam in beamforming weights. (Default: False)
+    drift_pbeam_weighting : bool, optional
+        If True, use driftscan primary beam instead of parameterized approximation
+        in beamforming weights. (Default: False)
     """
 
     collapse_ha = config.Property(proptype=bool, default=True)
@@ -56,6 +62,7 @@ class BeamFormBase(task.SingleTask):
     timetrack = config.Property(proptype=float, default=900.0)
     freqside = config.Property(proptype=int, default=None)
     no_pbeam_weighting = config.Property(proptype=bool, default=False)
+    drift_pbeam_weighting = config.Property(proptype=bool, default=False)
 
     def setup(self, manager):
         """Generic setup method.
@@ -151,6 +158,11 @@ class BeamFormBase(task.SingleTask):
         fbb = formed_beam.beam[:]
         fbw = formed_beam.weight[:]
 
+        # If using driftscan beam for weighting, precompute some things
+        # to speed up the evaluations
+        if self.drift_pbeam_weighting:
+            drift_pbeam_pre_products = self._driftbeam_precompute(self.freq_local_idx)
+
         # For each source, beamform and populate container.
         for src in range(self.nsource):
 
@@ -221,14 +233,34 @@ class BeamFormBase(task.SingleTask):
             for pol in range(self.npol):
 
                 # Compute primary beams to be used in the weighting
-                primary_beam = self._beamfunc(
-                    ha_array[np.newaxis, :],
-                    self.process_pol[pol],
-                    self.freq_local[:, np.newaxis],
-                    dec,
-                )
                 if self.no_pbeam_weighting:
-                    primary_beam = np.ones_like(primary_beam)
+                    primary_beam = np.ones(
+                        (self.freq_local.shape[0], ha_array.shape[0]),
+                        dtype=np.float64
+                    )
+                elif self.drift_pbeam_weighting:
+                    primary_beam = self._driftbeamfunc_fast(
+                        ha_array,
+                        self.process_pol[pol],
+                        self.freq_local_idx,
+                        dec,
+                        drift_pbeam_pre_products,
+                        use_horizon=False
+                    )
+                    # primary_beam = self._driftbeamfunc_slow(
+                    #     ha_array,
+                    #     self.process_pol[pol],
+                    #     self.freq_local_idx,
+                    #     dec,
+                    # )
+                    primary_beam[np.abs(primary_beam) < 1e-100] = 0
+                else:
+                    primary_beam = self._beamfunc(
+                        ha_array[np.newaxis, :],
+                        self.process_pol[pol],
+                        self.freq_local[:, np.newaxis],
+                        dec,
+                    )
 
                 # Fringestop and sum over products
                 # 'beamform' does not normalize sum.
@@ -487,6 +519,164 @@ class BeamFormBase(task.SingleTask):
                 * np.exp(-(((ha - ha0) / _sig(1, freq, dec)) ** 2))
             ) ** 0.5
 
+
+
+    def _driftbeam_precompute(self, freq_local_idx):
+
+        tel = self.telescope
+
+        dict = {}
+        for fii, fi in enumerate(freq_local_idx):
+            dict[fi] = fast_beam_pol_precompute(
+                tel.zenith,
+                tel.cylinder_width / tel.wavelengths[fi],
+                tel.fwhm_e,
+                tel.fwhm_h,
+            )
+
+        return dict
+
+
+    def _driftbeamfunc_fast(self, ha, pol, freq_index, dec, pre_products, use_horizon=False):
+        """Routine to fetch driftscan beam for use in beamforming weights.
+
+        This takes a dict produced by _driftbeam_precompute() that contains
+        a number of precomputed quantities that hugely speed up repeated
+        evaluations of the driftscan beam.
+
+        Parameters
+        ----------
+        ha : array or float
+            Hour angle (in radians) to compute beam at.
+        pol : int or string
+            Polarization index. 0: X, 1: Y
+            or one of 'XX', 'YY'
+        freq_index : array or int
+            Frequency indices in self.telescope.frequencies
+        dec : float
+            Declination in radians
+        pre_products : dict
+            Dictionary of precomputed products from _driftbeam_precompute().
+
+        Returns
+        -------
+        beam : array or float
+            The beam at the designated hour angles, frequencies
+            and declinations. This is the beam 'power', that is,
+            voltage squared. To get the beam voltage, take the
+            square root.
+        """
+
+        pollist = ["XX", "YY"]
+        if pol in pollist:
+            pol = pollist.index(pol)
+
+        tel = self.telescope
+
+        p_stokesI = 0.5 * np.array([[1.0, 0.0], [0.0, 1.0]])
+
+        # For feeding to driftscan beam routines, angpos should be
+        # a routine of [theta, phi], with theta = np.pi/2 - dec
+        # (since input dec is 0 at equator)
+        angpos = np.array([(0.5*np.pi - dec) * np.ones_like(ha), ha]).T
+
+        beam_pow = np.zeros((freq_index.shape[0], ha.shape[0]), dtype=np.float64)
+
+        for fii, fi in enumerate(freq_index):
+            beam_feed = fast_beam_pol_eval(
+                angpos, pre_products[fi], pol, use_horizon=use_horizon
+            )
+
+            beam_pow[fii] = (
+                np.sum(beam_feed * np.dot(beam_feed.conjugate(), p_stokesI), axis=1)
+                # * self._horizon
+            )
+
+        return beam_pow
+
+        ## TODO: outside of this routine, precompute beam solid angle,
+        ## so we can normalized by it (like in
+        ## drift.core.telescope.PolarizedTelescope._beam_map_single)
+
+
+    def _driftbeamfunc_slow(self, ha, pol, freq_index, dec):
+        """Routine to fetch driftscan beam for use in beamforming weights.
+
+        Assumes all feeds have identical primary beams. Only supports
+        XX or YY for now.
+
+        Parameters
+        ----------
+        ha : array or float
+            Hour angle (in radians) to compute beam at.
+        freq_index : array or int
+            Frequency indices in self.telescope.frequencies
+        dec : array or float
+            Declination in radians
+        pol : int or string
+            Polarization index. 0: X, 1: Y, >=2: XY
+            or one of 'XX', 'XY', 'YX', 'YY'
+        zenith : float
+            Polar angle of the telescope zenith in radians.
+            Equal to pi/2 - latitude
+
+        Returns
+        -------
+        beam : array or float
+            The beam at the designated hhour angles, frequencies
+            and declinations. This is the beam 'power', that is,
+            voltage squared. To get the beam voltage, take the
+            square root.
+        """
+
+        pollist = ["XX", "YY"]
+        if pol in pollist:
+            pol = pollist.index(pol)
+
+        tel = self.telescope
+
+        p_stokesI = 0.5 * np.array([[1.0, 0.0], [0.0, 1.0]])
+
+        # For feeding to driftscan beam routines, angpos should be
+        # a routine of [theta, phi], with theta = np.pi/2 - dec
+        # (since input dec is 0 at equator)
+        angpos = np.array([(0.5*np.pi - dec) * np.ones_like(ha), ha]).T
+
+        beam_pow = np.zeros((freq_index.shape[0], ha.shape[0]), dtype=np.float64)
+
+        for fii, fi in enumerate(freq_index):
+            if pol == 0:
+                # XX
+                beam_feed = beam_x(
+                    angpos,
+                    tel.zenith,
+                    tel.cylinder_width / tel.wavelengths[fi],
+                    tel.fwhm_e,
+                    tel.fwhm_h,
+                )
+            else:
+                # YY
+                beam_feed = beam_y(
+                    angpos,
+                    tel.zenith,
+                    tel.cylinder_width / tel.wavelengths[fi],
+                    tel.fwhm_e,
+                    tel.fwhm_h,
+                )
+
+            beam_pow[fii] = (
+                np.sum(beam_feed * np.dot(beam_feed.conjugate(), p_stokesI), axis=1)
+                # * self._horizon
+            )
+
+        return beam_pow
+
+        ## TODO: outside of this routine, precompute beam solid angle,
+        ## so we can normalized by it (like in
+        ## drift.core.telescope.PolarizedTelescope._beam_map_single)
+
+
+
     def _process_data(self, data):
         """Store code for parsing and formating data prior to beamforming."""
         # Easy access to communicator
@@ -538,6 +728,9 @@ class BeamFormBase(task.SingleTask):
         self.lo = data.vis.local_offset[0]
         self.ls = data.vis.local_shape[0]
         self.freq_local = self.freq["centre"][self.lo : self.lo + self.ls]
+        self.freq_local_idx = np.array(
+            [np.argmin(np.abs(nu - self.telescope.frequencies)) for nu in self.freq_local]
+        )
         # These are to be used when gathering results in the end.
         # Tuple (not list!) of number of frequencies in each rank
         self.fsize = tuple(data.comm.allgather(self.ls))
