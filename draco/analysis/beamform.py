@@ -161,7 +161,9 @@ class BeamFormBase(task.SingleTask):
         # If using driftscan beam for weighting, precompute some things
         # to speed up the evaluations
         if self.drift_pbeam_weighting:
-            drift_pbeam_pre_products = self._driftbeam_precompute(self.freq_local_idx)
+            drift_pbeam_pre_products = _driftbeam_precompute(
+                self.telescope, self.freq_local_idx
+            )
 
         # For each source, beamform and populate container.
         for src in range(self.nsource):
@@ -239,7 +241,8 @@ class BeamFormBase(task.SingleTask):
                         dtype=np.float64
                     )
                 elif self.drift_pbeam_weighting:
-                    primary_beam = self._driftbeamfunc_fast(
+                    primary_beam = _driftbeamfunc_fast(
+                        self.telescope,
                         ha_array,
                         self.process_pol[pol],
                         self.freq_local_idx,
@@ -248,6 +251,7 @@ class BeamFormBase(task.SingleTask):
                         use_horizon=False
                     )
                     # primary_beam = self._driftbeamfunc_slow(
+                    #     self.telescope,
                     #     ha_array,
                     #     self.process_pol[pol],
                     #     self.freq_local_idx,
@@ -255,7 +259,7 @@ class BeamFormBase(task.SingleTask):
                     # )
                     primary_beam[np.abs(primary_beam) < 1e-100] = 0
                 else:
-                    primary_beam = self._beamfunc(
+                    primary_beam = _beamfunc(
                         ha_array[np.newaxis, :],
                         self.process_pol[pol],
                         self.freq_local[:, np.newaxis],
@@ -450,231 +454,6 @@ class BeamFormBase(task.SingleTask):
             ha_array = (ha_array + np.pi) % (2.0 * np.pi) - np.pi
 
         return ha_array, ra_index_range, ha_mask
-
-    # TODO: This is very CHIME specific. Should probably be moved somewhere else.
-    def _beamfunc(self, ha, pol, freq, dec, zenith=0.70999994):
-        """Simple and fast beam model to be used as beamforming weights.
-
-        Parameters
-        ----------
-        ha : array or float
-            Hour angle (in radians) to compute beam at.
-        freq : array or float
-            Frequency in MHz
-        dec : array or float
-            Declination in radians
-        pol : int or string
-            Polarization index. 0: X, 1: Y, >=2: XY
-            or one of 'XX', 'XY', 'YX', 'YY'
-        zenith : float
-            Polar angle of the telescope zenith in radians.
-            Equal to pi/2 - latitude
-
-        Returns
-        -------
-        beam : array or float
-            The beam at the designated hhour angles, frequencies
-            and declinations. This is the beam 'power', that is,
-            voltage squared. To get the beam voltage, take the
-            square root.
-        """
-
-        pollist = ["XX", "YY", "XY", "YX"]
-        if pol in pollist:
-            pol = pollist.index(pol)
-
-        def _sig(pp, freq, dec):
-            sig_amps = [14.87857614, 9.95746878]
-            return sig_amps[pp] / freq / np.cos(dec)
-
-        def _amp(pp, dec, zenith):
-            def _flat_top_gauss6(x, A, sig, x0):
-                """Flat-top gaussian. Power of 6."""
-                return A * np.exp(-abs((x - x0) / sig) ** 6)
-
-            def _flat_top_gauss3(x, A, sig, x0):
-                """Flat-top gaussian. Power of 3."""
-                return A * np.exp(-abs((x - x0) / sig) ** 3)
-
-            prm_ns_x = np.array([9.97981768e-01, 1.29544939e00, 0.0])
-            prm_ns_y = np.array([9.86421047e-01, 8.10213326e-01, 0.0])
-
-            if pp == 0:
-                return _flat_top_gauss6(dec - (0.5 * np.pi - zenith), *prm_ns_x)
-            else:
-                return _flat_top_gauss3(dec - (0.5 * np.pi - zenith), *prm_ns_y)
-
-        ha0 = 0.0
-        if pol < 2:
-            # XX or YY
-            return _amp(pol, dec, zenith) * np.exp(
-                -(((ha - ha0) / _sig(pol, freq, dec)) ** 2)
-            )
-        else:
-            # XY or YX
-            return (
-                _amp(0, dec, zenith)
-                * np.exp(-(((ha - ha0) / _sig(0, freq, dec)) ** 2))
-                * _amp(1, dec, zenith)
-                * np.exp(-(((ha - ha0) / _sig(1, freq, dec)) ** 2))
-            ) ** 0.5
-
-
-
-    def _driftbeam_precompute(self, freq_local_idx):
-
-        tel = self.telescope
-
-        dict = {}
-        for fii, fi in enumerate(freq_local_idx):
-            dict[fi] = fast_beam_pol_precompute(
-                tel.zenith,
-                tel.cylinder_width / tel.wavelengths[fi],
-                tel.fwhm_e,
-                tel.fwhm_h,
-            )
-
-        return dict
-
-
-    def _driftbeamfunc_fast(self, ha, pol, freq_index, dec, pre_products, use_horizon=False):
-        """Routine to fetch driftscan beam for use in beamforming weights.
-
-        This takes a dict produced by _driftbeam_precompute() that contains
-        a number of precomputed quantities that hugely speed up repeated
-        evaluations of the driftscan beam.
-
-        Parameters
-        ----------
-        ha : array or float
-            Hour angle (in radians) to compute beam at.
-        pol : int or string
-            Polarization index. 0: X, 1: Y
-            or one of 'XX', 'YY'
-        freq_index : array or int
-            Frequency indices in self.telescope.frequencies
-        dec : float
-            Declination in radians
-        pre_products : dict
-            Dictionary of precomputed products from _driftbeam_precompute().
-
-        Returns
-        -------
-        beam : array or float
-            The beam at the designated hour angles, frequencies
-            and declinations. This is the beam 'power', that is,
-            voltage squared. To get the beam voltage, take the
-            square root.
-        """
-
-        pollist = ["XX", "YY"]
-        if pol in pollist:
-            pol = pollist.index(pol)
-
-        tel = self.telescope
-
-        p_stokesI = 0.5 * np.array([[1.0, 0.0], [0.0, 1.0]])
-
-        # For feeding to driftscan beam routines, angpos should be
-        # a routine of [theta, phi], with theta = np.pi/2 - dec
-        # (since input dec is 0 at equator)
-        angpos = np.array([(0.5*np.pi - dec) * np.ones_like(ha), ha]).T
-
-        beam_pow = np.zeros((freq_index.shape[0], ha.shape[0]), dtype=np.float64)
-
-        for fii, fi in enumerate(freq_index):
-            beam_feed = fast_beam_pol_eval(
-                angpos, pre_products[fi], pol, use_horizon=use_horizon
-            )
-
-            beam_pow[fii] = (
-                np.sum(beam_feed * np.dot(beam_feed.conjugate(), p_stokesI), axis=1)
-                # * self._horizon
-            )
-
-        return beam_pow
-
-        ## TODO: outside of this routine, precompute beam solid angle,
-        ## so we can normalized by it (like in
-        ## drift.core.telescope.PolarizedTelescope._beam_map_single)
-
-
-    def _driftbeamfunc_slow(self, ha, pol, freq_index, dec):
-        """Routine to fetch driftscan beam for use in beamforming weights.
-
-        Assumes all feeds have identical primary beams. Only supports
-        XX or YY for now.
-
-        Parameters
-        ----------
-        ha : array or float
-            Hour angle (in radians) to compute beam at.
-        freq_index : array or int
-            Frequency indices in self.telescope.frequencies
-        dec : array or float
-            Declination in radians
-        pol : int or string
-            Polarization index. 0: X, 1: Y, >=2: XY
-            or one of 'XX', 'XY', 'YX', 'YY'
-        zenith : float
-            Polar angle of the telescope zenith in radians.
-            Equal to pi/2 - latitude
-
-        Returns
-        -------
-        beam : array or float
-            The beam at the designated hhour angles, frequencies
-            and declinations. This is the beam 'power', that is,
-            voltage squared. To get the beam voltage, take the
-            square root.
-        """
-
-        pollist = ["XX", "YY"]
-        if pol in pollist:
-            pol = pollist.index(pol)
-
-        tel = self.telescope
-
-        p_stokesI = 0.5 * np.array([[1.0, 0.0], [0.0, 1.0]])
-
-        # For feeding to driftscan beam routines, angpos should be
-        # a routine of [theta, phi], with theta = np.pi/2 - dec
-        # (since input dec is 0 at equator)
-        angpos = np.array([(0.5*np.pi - dec) * np.ones_like(ha), ha]).T
-
-        beam_pow = np.zeros((freq_index.shape[0], ha.shape[0]), dtype=np.float64)
-
-        for fii, fi in enumerate(freq_index):
-            if pol == 0:
-                # XX
-                beam_feed = beam_x(
-                    angpos,
-                    tel.zenith,
-                    tel.cylinder_width / tel.wavelengths[fi],
-                    tel.fwhm_e,
-                    tel.fwhm_h,
-                )
-            else:
-                # YY
-                beam_feed = beam_y(
-                    angpos,
-                    tel.zenith,
-                    tel.cylinder_width / tel.wavelengths[fi],
-                    tel.fwhm_e,
-                    tel.fwhm_h,
-                )
-
-            beam_pow[fii] = (
-                np.sum(beam_feed * np.dot(beam_feed.conjugate(), p_stokesI), axis=1)
-                # * self._horizon
-            )
-
-        return beam_pow
-
-        ## TODO: outside of this routine, precompute beam solid angle,
-        ## so we can normalized by it (like in
-        ## drift.core.telescope.PolarizedTelescope._beam_map_single)
-
 
 
     def _process_data(self, data):
@@ -931,3 +710,228 @@ def icrs_to_cirs(ra, dec, epoch, apparent=True):
     ra_cirs, dec_cirs, _ = positions.cirs_radec(epoch)
 
     return ra_cirs._degrees, dec_cirs._degrees
+
+
+# TODO: This is very CHIME specific. Should probably be moved somewhere else.
+def _beamfunc(ha, pol, freq, dec, zenith=0.70999994):
+    """Simple and fast beam model to be used as beamforming weights.
+
+    Parameters
+    ----------
+    tel : telescope object
+        Telescope we're computing for
+    ha : array or float
+        Hour angle (in radians) to compute beam at.
+    freq : array or float
+        Frequency in MHz
+    dec : array or float
+        Declination in radians
+    pol : int or string
+        Polarization index. 0: X, 1: Y, >=2: XY
+        or one of 'XX', 'XY', 'YX', 'YY'
+    zenith : float
+        Polar angle of the telescope zenith in radians.
+        Equal to pi/2 - latitude
+
+    Returns
+    -------
+    beam : array or float
+        The beam at the designated hhour angles, frequencies
+        and declinations. This is the beam 'power', that is,
+        voltage squared. To get the beam voltage, take the
+        square root.
+    """
+
+    pollist = ["XX", "YY", "XY", "YX"]
+    if pol in pollist:
+        pol = pollist.index(pol)
+
+    def _sig(pp, freq, dec):
+        sig_amps = [14.87857614, 9.95746878]
+        return sig_amps[pp] / freq / np.cos(dec)
+
+    def _amp(pp, dec, zenith):
+        def _flat_top_gauss6(x, A, sig, x0):
+            """Flat-top gaussian. Power of 6."""
+            return A * np.exp(-abs((x - x0) / sig) ** 6)
+
+        def _flat_top_gauss3(x, A, sig, x0):
+            """Flat-top gaussian. Power of 3."""
+            return A * np.exp(-abs((x - x0) / sig) ** 3)
+
+        prm_ns_x = np.array([9.97981768e-01, 1.29544939e00, 0.0])
+        prm_ns_y = np.array([9.86421047e-01, 8.10213326e-01, 0.0])
+
+        if pp == 0:
+            return _flat_top_gauss6(dec - (0.5 * np.pi - zenith), *prm_ns_x)
+        else:
+            return _flat_top_gauss3(dec - (0.5 * np.pi - zenith), *prm_ns_y)
+
+    ha0 = 0.0
+    if pol < 2:
+        # XX or YY
+        return _amp(pol, dec, zenith) * np.exp(
+            -(((ha - ha0) / _sig(pol, freq, dec)) ** 2)
+        )
+    else:
+        # XY or YX
+        return (
+            _amp(0, dec, zenith)
+            * np.exp(-(((ha - ha0) / _sig(0, freq, dec)) ** 2))
+            * _amp(1, dec, zenith)
+            * np.exp(-(((ha - ha0) / _sig(1, freq, dec)) ** 2))
+        ) ** 0.5
+
+
+
+def _driftbeam_precompute(tel, freq_local_idx):
+
+    dict = {}
+    for fii, fi in enumerate(freq_local_idx):
+        dict[fi] = fast_beam_pol_precompute(
+            tel.zenith,
+            tel.cylinder_width / tel.wavelengths[fi],
+            tel.fwhm_e,
+            tel.fwhm_h,
+        )
+
+    return dict
+
+
+def _driftbeamfunc_fast(tel, ha, pol, freq_index, dec, pre_products, use_horizon=False):
+    """Routine to fetch driftscan beam for use in beamforming weights.
+
+    This takes a dict produced by _driftbeam_precompute() that contains
+    a number of precomputed quantities that hugely speed up repeated
+    evaluations of the driftscan beam.
+
+    Parameters
+    ----------
+    tel : telescope object
+        Telescope we're computing for
+    ha : array or float
+        Hour angle (in radians) to compute beam at.
+    pol : int or string
+        Polarization index. 0: X, 1: Y
+        or one of 'XX', 'YY'
+    freq_index : array or int
+        Frequency indices in self.telescope.frequencies
+    dec : float
+        Declination in radians
+    pre_products : dict
+        Dictionary of precomputed products from _driftbeam_precompute().
+
+    Returns
+    -------
+    beam : array or float
+        The beam at the designated hour angles, frequencies
+        and declinations. This is the beam 'power', that is,
+        voltage squared. To get the beam voltage, take the
+        square root.
+    """
+
+    pollist = ["XX", "YY"]
+    if pol in pollist:
+        pol = pollist.index(pol)
+
+    p_stokesI = 0.5 * np.array([[1.0, 0.0], [0.0, 1.0]])
+
+    # For feeding to driftscan beam routines, angpos should be
+    # a routine of [theta, phi], with theta = np.pi/2 - dec
+    # (since input dec is 0 at equator)
+    angpos = np.array([(0.5*np.pi - dec) * np.ones_like(ha), ha]).T
+
+    beam_pow = np.zeros((freq_index.shape[0], ha.shape[0]), dtype=np.float64)
+
+    for fii, fi in enumerate(freq_index):
+        beam_feed = fast_beam_pol_eval(
+            angpos, pre_products[fi], pol, use_horizon=use_horizon
+        )
+
+        beam_pow[fii] = (
+            np.sum(beam_feed * np.dot(beam_feed.conjugate(), p_stokesI), axis=1)
+            # * self._horizon
+        )
+
+    return beam_pow
+
+    ## TODO: outside of this routine, precompute beam solid angle,
+    ## so we can normalized by it (like in
+    ## drift.core.telescope.PolarizedTelescope._beam_map_single)
+
+
+def _driftbeamfunc_slow(tel, ha, pol, freq_index, dec):
+    """Routine to fetch driftscan beam for use in beamforming weights.
+
+    Assumes all feeds have identical primary beams. Only supports
+    XX or YY for now.
+
+    Parameters
+    ----------
+    tel : telescope object
+        Telescope we're computing for
+    ha : array or float
+        Hour angle (in radians) to compute beam at.
+    freq_index : array or int
+        Frequency indices in self.telescope.frequencies
+    dec : array or float
+        Declination in radians
+    pol : int or string
+        Polarization index. 0: X, 1: Y, >=2: XY
+        or one of 'XX', 'XY', 'YX', 'YY'
+    zenith : float
+        Polar angle of the telescope zenith in radians.
+        Equal to pi/2 - latitude
+
+    Returns
+    -------
+    beam : array or float
+        The beam at the designated hhour angles, frequencies
+        and declinations. This is the beam 'power', that is,
+        voltage squared. To get the beam voltage, take the
+        square root.
+    """
+
+    pollist = ["XX", "YY"]
+    if pol in pollist:
+        pol = pollist.index(pol)
+
+    p_stokesI = 0.5 * np.array([[1.0, 0.0], [0.0, 1.0]])
+
+    # For feeding to driftscan beam routines, angpos should be
+    # a routine of [theta, phi], with theta = np.pi/2 - dec
+    # (since input dec is 0 at equator)
+    angpos = np.array([(0.5*np.pi - dec) * np.ones_like(ha), ha]).T
+
+    beam_pow = np.zeros((freq_index.shape[0], ha.shape[0]), dtype=np.float64)
+
+    for fii, fi in enumerate(freq_index):
+        if pol == 0:
+            # XX
+            beam_feed = beam_x(
+                angpos,
+                tel.zenith,
+                tel.cylinder_width / tel.wavelengths[fi],
+                tel.fwhm_e,
+                tel.fwhm_h,
+            )
+        else:
+            # YY
+            beam_feed = beam_y(
+                angpos,
+                tel.zenith,
+                tel.cylinder_width / tel.wavelengths[fi],
+                tel.fwhm_e,
+                tel.fwhm_h,
+            )
+
+        beam_pow[fii] = (
+            np.sum(beam_feed * np.dot(beam_feed.conjugate(), p_stokesI), axis=1)
+            # * self._horizon
+        )
+
+    return beam_pow
+
+    ## TODO: outside of this routine, precompute beam solid angle,
+    ## so we can normalized by it (like in
+    ## drift.core.telescope.PolarizedTelescope._beam_map_single)
