@@ -544,6 +544,9 @@ class BeamFormBase(task.SingleTask):
 
         # polmap: indices of each vis product in
         # polarization list: ['XX', 'XY', 'YX', 'YY']
+        # Note that polarization_map is constructed to exclude
+        # autos later on, unless its exclude_autos=False
+        # option is used
         polmap = polarization_map(data.index_map, self.telescope)
         # Baseline vectors in meters
         bvec_m = baseline_vector(data.index_map, self.telescope)
