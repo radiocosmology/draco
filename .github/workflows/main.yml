@@ -20,8 +20,26 @@ jobs:
       with:
         python-version: 3.8
 
-    - name: Install black
-      run: pip install black
+    - name: Install apt dependencies
+      run: |
+        sudo apt-get install -y libopenmpi-dev openmpi-bin
+
+    - name: Install pip dependencies
+      run: |
+        pip install black flake8 pylint
+        pip install -r requirements.txt
+        python setup.py develop
+
+    - name: Run flake8
+      # ignore: line too long, variable names, whitespace before ':', line break before binary operator, comment style
+      run: flake8 --show-source --ignore=E501,E741,E203,W503,E266 draco
+
+    - name: Run pylint
+      run: >
+        pylint-ignore -d
+        line-too-long,invalid-name,import-outside-toplevel,logging-fstring-interpolation,unnecessary-pass,no-else-return
+        --extension-pkg-whitelist=mpi4py,caput.weighted_median,scipy,draco.util._fast_tools,draco.util.truncate,bitshuffle.h5
+        draco
 
     - name: Check code with black
       run: black --check .
