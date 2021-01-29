@@ -60,7 +60,7 @@ jobs:
 
     - name: Run parallel tests
       run: |
-        mpirun -np 4 pytest -x -m mpi test/
+        mpirun -np 4 --oversubscribe pytest -x -m mpi test/
 
     - name: Run caput linter on example configs
       run: |
