@@ -142,7 +142,7 @@ class ContainerBase(memh5.BasicCont):
         # memh5.MemDiskGroup would have been. If it is, we're probably trying to
         # create a bare container, so don't initialise any datasets. This
         # behaviour is needed to support tod.concatenate
-        if len(args) or "data_group" in kwargs:
+        if args or "data_group" in kwargs:
             return
 
         # Create axis entries
@@ -544,9 +544,10 @@ class TableBase(ContainerBase):
         self._dataset_spec = dspec
         self._axes = axes
 
-        super(TableBase, self).__init__(*args, **kwargs)
+        super().__init__(*args, **kwargs)
 
-    def _create_dtype(self, columns):
+    @staticmethod
+    def _create_dtype(columns):
         """Take a dictionary of columns and turn into the
         appropriate compound data type.
         """
@@ -564,8 +565,6 @@ class TableBase(ContainerBase):
         """Return a copy of the fully resolved table specifiction as a
         dictionary.
         """
-        import inspect
-
         tdict = {}
 
         for cls in inspect.getmro(self.__class__)[::-1]:
@@ -664,7 +663,7 @@ class VisContainer(ContainerBase):
             kwargs["stack"] = stack
 
         # Call initializer from `ContainerBase`
-        super(VisContainer, self).__init__(*args, **kwargs)
+        super().__init__(*args, **kwargs)
 
         reverse_map_stack = None
         # Create reverse map
@@ -1116,7 +1115,7 @@ class GridBeam(FreqContainer):
 
     def __init__(self, coords="celestial", *args, **kwargs):
 
-        super(GridBeam, self).__init__(*args, **kwargs)
+        super().__init__(*args, **kwargs)
         self.attrs["coords"] = coords
 
     @property
@@ -1189,7 +1188,7 @@ class HEALPixBeam(FreqContainer, HealpixContainer):
     def __init__(self, coords="unknown", ordering="unknown", *args, **kwargs):
         self.attrs["coords"] = coords
         self.attrs["ordering"] = ordering
-        super(HEALPixBeam, self).__init__(*args, **kwargs)
+        super().__init__(*args, **kwargs)
 
     @property
     def beam(self):
@@ -1278,7 +1277,7 @@ class TrackBeam(FreqContainer):
         elif (theta is None) != (phi is None):
             raise RuntimeError("Both theta and phi coordinates must be specified.")
 
-        super(TrackBeam, self).__init__(*args, **kwargs)
+        super().__init__(*args, **kwargs)
 
         self.attrs["coords"] = coords
         self.attrs["track_type"] = track_type
@@ -1872,7 +1871,7 @@ class Powerspectrum2D(ContainerBase):
                 [centre, width], names=["centre", "width"]
             ).view(np.ndarray)
 
-        super(Powerspectrum2D, self).__init__(*args, **kwargs)
+        super().__init__(*args, **kwargs)
 
     @property
     def powerspectrum(self):

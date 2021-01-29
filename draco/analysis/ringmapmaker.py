@@ -351,7 +351,7 @@ class BeamformEW(task.SingleTask):
         )
 
         # Loop over local frequencies and fill ring map
-        for lfi, fi in hstream.vis[:].enumerate(axis=1):
+        for lfi, _ in hstream.vis[:].enumerate(axis=1):
 
             # Rotate the polarisations
             v = np.tensordot(P, hvv[:, lfi], axes=(1, 0))

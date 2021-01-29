@@ -1,9 +1,9 @@
 """Utilities for drawing random numbers."""
 
 import contextlib
+import zlib
 
 import numpy as np
-import zlib
 
 from caput import config
 from ..core import task

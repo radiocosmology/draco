@@ -2,7 +2,6 @@
 
 import numpy as np
 from caput import mpiarray, config
-from caput import mpiutil
 
 from ..core import containers, task, io
 from ..util import tools
@@ -189,8 +188,7 @@ class CollateProducts(task.SingleTask):
 
             if not np.all(stack_flag):
                 self.log.warning(
-                    "There are %d stacked baselines that are masked "
-                    "in the telescope instance." % np.sum(~stack_flag)
+                    f"There are {np.sum(~stack_flag)} stacked baselines that are masked in the telescope instance."
                 )
 
             ss_prod = ss.prod[stack_new["prod"]]
@@ -360,12 +358,10 @@ class SelectFreq(task.SingleTask):
         # Construct the frequency channel selection
         if self.freq_physical:
             newindex = sorted(
-                set(
-                    [
-                        np.argmin(np.abs(freq_map["centre"] - freq))
-                        for freq in self.freq_physical
-                    ]
-                )
+                {
+                    np.argmin(np.abs(freq_map["centre"] - freq))
+                    for freq in self.freq_physical
+                }
             )
 
         elif self.channel_range and (len(self.channel_range) <= 3):

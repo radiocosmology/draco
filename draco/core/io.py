@@ -23,11 +23,11 @@ Several tasks accept groups of files as arguments. These are specified in the YA
         files: ['file1.h5', 'file2.h5']
 """
 
-import os.path
+import os
+from typing import Union, Dict, List
 
 import h5py
 import numpy as np
-from typing import Union, Dict, List
 from yaml import dump as yamldump
 
 from caput import pipeline
@@ -72,7 +72,7 @@ def _list_of_filelists(files: Union[List[str], List[List[str]]]) -> List[List[st
     Parameters
     ----------
     files
-        A path or glob pattern (e.g. /my/data/\*.h5) or a list of those (or a list of lists of those).
+        A path or glob pattern (e.g. /my/data/\\*.h5) or a list of those (or a list of lists of those).
 
     Raises
     ------
@@ -94,8 +94,8 @@ def _list_of_filelists(files: Union[List[str], List[List[str]]]) -> List[List[st
                 raise ConfigError("File not found: %s" % filelist)
             filelist = glob.glob(filelist)
         elif isinstance(filelist, list):
-            for i in range(len(filelist)):
-                filelist[i] = _list_or_glob(filelist[i])
+            for i, f in enumerate(filelist):
+                filelist[i] = _list_or_glob(f)
         else:
             raise ConfigError("Must be list or glob pattern.")
         f2 = f2 + filelist
@@ -110,7 +110,7 @@ def _list_or_glob(files: Union[str, List[str]]) -> List[str]:
     Parameters
     ----------
     files
-        A path or glob pattern (e.g. /my/data/\*.h5) or a list of those
+        A path or glob pattern (e.g. /my/data/\\*.h5) or a list of those
 
     Returns
     -------
@@ -167,12 +167,12 @@ def _list_of_filegroups(groups: Union[List[Dict] or Dict]) -> List[Dict]:
 
         try:
             files = group["files"]
-        except KeyError:
-            raise ConfigError("File group is missing key 'files'.")
-        except TypeError:
+        except KeyError as e:
+            raise ConfigError("File group is missing key 'files'.") from e
+        except TypeError as e:
             raise ConfigError(
-                "Expected type dict in file groups (got {}).".format(type(group))
-            )
+                f"Expected type dict in file groups (got {type(group)})."
+            ) from e
 
         if "tag" not in group:
             group["tag"] = "group_%i" % gi
@@ -181,11 +181,11 @@ def _list_of_filegroups(groups: Union[List[Dict] or Dict]) -> List[Dict]:
 
         for fname in files:
             if "*" not in fname and not os.path.isfile(fname):
-                raise ConfigError("File not found: %s" % fname)
+                raise ConfigError(f"File not found: {fname}")
             flist += glob.glob(fname)
 
-        if not len(flist):
-            raise ConfigError("No files in group exist (%s)." % files)
+        if not flist:
+            raise ConfigError(f"No files in group exist ({files}).")
 
         group["files"] = flist
 
@@ -490,7 +490,8 @@ class LoadFilesFromParams(task.SingleTask):
 
         return sel
 
-    def _parse_range(self, x):
+    @staticmethod
+    def _parse_range(x):
         # Parse and validate a range type selection
 
         if not isinstance(x, (list, tuple)) or len(x) > 3 or len(x) < 2:
@@ -504,7 +505,8 @@ class LoadFilesFromParams(task.SingleTask):
 
         return slice(*x)
 
-    def _parse_index(self, x):
+    @staticmethod
+    def _parse_index(x):
         # Parse and validate an index type selection
 
         if not isinstance(x, (list, tuple)) or len(x) == 0:
@@ -638,11 +640,6 @@ class LoadBeamTransfer(pipeline.TaskBase):
         feed_info : list, optional
             Optional list providing additional information about each feed.
         """
-
-        import os
-
-        from drift.core import beamtransfer
-
         if not os.path.exists(self.product_directory):
             raise RuntimeError("BeamTransfers do not exist.")
 
@@ -676,11 +673,6 @@ class LoadProductManager(pipeline.TaskBase):
         manager : ProductManager
             Object describing the telescope.
         """
-
-        import os
-
-        from drift.core import manager
-
         if not os.path.exists(self.product_directory):
             raise RuntimeError("Products do not exist.")
 
@@ -723,7 +715,7 @@ class Truncate(task.SingleTask):
     def _get_params(self, container):
         """Load truncation parameters from config or container defaults."""
         if container in TRUNC_SPEC:
-            self.log.info("Truncating from preset for container {}".format(container))
+            self.log.info(f"Truncating from preset for container {container}")
             for key in [
                 "dataset",
                 "weight_dataset",
@@ -734,7 +726,7 @@ class Truncate(task.SingleTask):
                 if attr is None:
                     setattr(self, key, TRUNC_SPEC[container][key])
                 else:
-                    self.log.info("Overriding container default for '{}'.".format(key))
+                    self.log.info(f"Overriding container default for '{key}'.")
         else:
             if (
                 self.dataset is None
@@ -849,7 +841,6 @@ class SaveModuleVersions(task.SingleTask):
     def process(self):
         """Do nothing."""
         self.done = True
-        return
 
 
 class SaveConfig(task.SingleTask):
@@ -878,7 +869,6 @@ class SaveConfig(task.SingleTask):
     def process(self):
         """Do nothing."""
         self.done = True
-        return
 
 
 # Python types for objects convertible to beamtransfers or telescope instances

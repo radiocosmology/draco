@@ -59,9 +59,7 @@ class SimulateSidereal(task.SingleTask):
         nfreq = tel.nfreq
         npol = tel.num_pol_sky
 
-        lfreq, sfreq, efreq = mpiutil.split_local(nfreq)
-
-        lm, sm, em = mpiutil.split_local(mmax + 1)
+        lfreq, _, _ = mpiutil.split_local(nfreq)
 
         # Set the minimum resolution required for the sky.
         ntime = 2 * mmax + 1
@@ -360,6 +358,11 @@ class MakeSiderealDayStream(task.SingleTask):
     start_time = config.utc_time()
     end_time = config.utc_time()
 
+    def __init__(self):
+        self._current_lsd = None
+        self.sstream = None
+        super().__init__()
+
     def setup(self, bt, sstream):
         """Set up an observer and the data to use for this simulation.
 
@@ -381,7 +384,6 @@ class MakeSiderealDayStream(task.SingleTask):
         )
 
         # Initialize the current lsd time
-        self._current_lsd = None
         self.sstream = sstream
 
     def process(self):
@@ -392,7 +394,17 @@ class MakeSiderealDayStream(task.SingleTask):
         ss : :class:`containers.SiderealStream`
             Simulated sidereal day stream.
         """
+        self._set_current_lsd()
 
+        ss = self.sstream.copy()
+        ss.attrs["tag"] = f"lsd_{self._current_lsd}"
+        ss.attrs["lsd"] = self._current_lsd
+
+        self._current_lsd += 1
+
+        return ss
+
+    def _set_current_lsd(self):
         # If current_lsd is None then this is the first time we've run
         if self._current_lsd is None:
             # Check if lsd is an integer, if not add an lsd
@@ -404,11 +416,3 @@ class MakeSiderealDayStream(task.SingleTask):
         # Check if we have reached the end of the requested time
         if self._current_lsd >= self.lsd_end:
             raise pipeline.PipelineStopIteration
-
-        ss = self.sstream.copy()
-        ss.attrs["tag"] = f"lsd_{self._current_lsd}"
-        ss.attrs["lsd"] = self._current_lsd
-
-        self._current_lsd += 1
-
-        return ss

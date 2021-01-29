@@ -26,7 +26,7 @@ def cmap(i, j, n):
     if i <= j:
         return (n * (n + 1) // 2) - ((n - i) * (n - i + 1) // 2) + (j - i)
     else:
-        return cmap(j, i, n)
+        return cmap(i=j, j=i, n=n)
 
 
 def icmap(ix, n):
@@ -107,10 +107,10 @@ def find_keys(key_list, keys, require_match=False):
         dct = {kk: ii for ii, kk in enumerate(key_list)}
         index = [dct.get(key) for key in keys]
 
-    if require_match and any([ind is None for ind in index]):
+    if require_match and any(ind is None for ind in index):
         raise ValueError("Could not find all of the keys.")
-    else:
-        return index
+
+    return index
 
 
 def find_inputs(input_index, inputs, require_match=False):
@@ -191,7 +191,7 @@ def apply_gain(vis, gain, axis=1, out=None, prod_map=None):
 
     if prod_map is not None:
         if len(prod_map) != nprod:
-            msg = "Length of *prod_map* does not match number of input" " products."
+            msg = "Length of *prod_map* does not match number of input products."
             raise ValueError(msg)
         # Could check prod_map contents as well, but the loop should give a
         # sensible error if this is wrong, and checking is expensive.
@@ -314,7 +314,7 @@ def calculate_redundancy(input_flags, prod_map, stack_index, nstack):
         with good inputs that were stacked into each unique baseline.
 
     """
-    ninput, ntime = input_flags.shape
+    _, ntime = input_flags.shape
     redundancy = np.zeros((nstack, ntime), dtype=np.float32)
 
     if not np.any(input_flags):
@@ -423,7 +423,7 @@ def polarization_map(index_map, telescope, exclude_autos=True):
         )
 
     if teltype is not None:
-        if not (teltype == "redundant"):
+        if teltype != "redundant":
             msg = "Telescope stack type needs to be 'redundant'. Is {0}"
             raise RuntimeError(msg.format(telescope.stack_type))
 

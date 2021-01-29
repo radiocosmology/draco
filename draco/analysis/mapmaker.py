@@ -150,7 +150,7 @@ class DirtyMapMaker(BaseMapMaker):
     The dirty map is produced by generating a set of :math:`a_{lm}` coefficients
     using
 
-    .. math:: \hat{\mathbf{a}} = \mathbf{B}^\dagger \mathbf{N}^{-1} \mathbf{v}
+    .. math:: \\hat{\\mathbf{a}} = \\mathbf{B}^\\dagger \\mathbf{N}^{-1} \\mathbf{v}
 
     and then performing the spherical harmonic transform to get the sky intensity.
     """
@@ -294,7 +294,7 @@ class WienerMapMaker(BaseMapMaker):
 
 
 def pinv_svd(M, acond=1e-4, rcond=1e-3):
-    # Generate the pseudo-inverse from an svd
+    """Generate the pseudo-inverse from an svd."""
     # Not really clear why I'm not just using la.pinv2 instead,
 
     import scipy.linalg as la

@@ -62,7 +62,7 @@ class QuadraticPSEstimation(task.SingleTask):
 
         q_list = []
 
-        for mi, m in klmodes.vis[:].enumerate(axis=0):
+        for _, m in klmodes.vis[:].enumerate(axis=0):
             ps_single = pse.q_estimator(m, klmodes.vis[m, : klmodes.nmode[m]])
             q_list.append(ps_single)
 

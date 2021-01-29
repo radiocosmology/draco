@@ -8,6 +8,7 @@ from cora.util import units
 
 from ..core import containers, task, io
 from ..util import random
+from ..util.tools import window_generalised
 
 
 class DelayFilter(task.SingleTask):
@@ -328,37 +329,6 @@ def stokes_I(sstream, tel):
     return vis_I, vis_weight, ubase
 
 
-def window_generalised(x, window="nuttall"):
-    """A generalised high-order window at arbitrary locations.
-
-    Parameters
-    ----------
-    x : np.ndarray[n]
-        Location to evaluate at. Must be in the range 0 to 1.
-    window : one of {'nuttall', 'blackman_nuttall', 'blackman_harris'}
-        Type of window function to return.
-
-    Returns
-    -------
-    w : np.ndarray[n]
-        Window function.
-    """
-
-    a_table = {
-        "nuttall": np.array([0.355768, -0.487396, 0.144232, -0.012604]),
-        "blackman_nuttall": np.array([0.3635819, -0.4891775, 0.1365995, -0.0106411]),
-        "blackman_harris": np.array([0.35875, -0.48829, 0.14128, -0.01168]),
-    }
-
-    a = a_table[window]
-
-    t = 2 * np.pi * np.arange(4)[:, np.newaxis] * x[np.newaxis, :]
-
-    w = (a[:, np.newaxis] * np.cos(t)).sum(axis=0)
-
-    return w
-
-
 def fourier_matrix_r2c(N, fsel=None):
     """Generate a Fourier matrix to represent a real to complex FFT.
 
@@ -578,7 +548,7 @@ def delay_spectrum_gibbs(
 
     # Perform the Gibbs sampling iteration for a given number of loops and
     # return the power spectrum output of them.
-    for ii in range(niter):
+    for _ in range(niter):
 
         d_samp = _draw_signal_sample(S_samp)
         S_samp = _draw_ps_sample(d_samp)
@@ -628,7 +598,7 @@ def null_delay_filter(freq, max_delay, mask, num_delay=200, tol=1e-8, window=Tru
 
     # Use an SVD to figure out the set of significant modes spanning the delays
     # we are wanting to get rid of.
-    u, sig, vh = la.svd(F)
+    u, sig, _ = la.svd(F)
     nmodes = np.sum(sig > tol * sig.max())
     p = u[:, :nmodes]
 

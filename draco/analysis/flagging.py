@@ -78,13 +78,12 @@ class DayMask(task.SingleTask):
 
         if self.remove_average:
             # Estimate the mean level from unmasked data
-            import scipy.stats
 
             nanvis = (
                 sstream.vis[:]
                 * np.where(mask_bool, 1.0, np.nan)[np.newaxis, np.newaxis, :]
             )
-            average = scipy.stats.nanmedian(nanvis, axis=-1)[:, :, np.newaxis]
+            average = np.nanmedian(nanvis, axis=-1)[:, :, np.newaxis]
             sstream.vis[:] -= average
 
         # Apply the mask to the data
@@ -197,7 +196,7 @@ class MaskBaselines(task.SingleTask):
         self.telescope = io.get_telescope(telescope)
 
         if self.zero_data and self.share == "vis":
-            self.log.warn(
+            self.log.warning(
                 "Setting `zero_data = True` and `share = vis` doesn't make much sense."
             )
 
@@ -344,7 +343,7 @@ class SmoothVisWeight(task.SingleTask):
         weight = data.weight[:]
         # Data will be distributed in frequency.
         # So a frequency loop will not be too large.
-        for lfi, gfi in weight.enumerate(axis=0):
+        for lfi, _ in weight.enumerate(axis=0):
 
             # MPIArray takes the local index, returns a local np.ndarray
             # Find values equal to zero to preserve them in final weights
@@ -409,8 +408,7 @@ class ThresholdVisWeight(task.SingleTask):
         keep_frac = keep_total / float(np.prod(weight.global_shape))
 
         self.log.info(
-            "%0.5f%% of data is below the weight threshold"
-            % (100.0 * (1.0 - keep_frac))
+            f"{100.0 * (1.0 - keep_frac):0.5f} % of data is below the weight threshold"
         )
 
         timestream.weight[:] = np.where(keep, weight, 0.0)
@@ -556,9 +554,9 @@ class RFISensitivityMask(task.SingleTask):
 
             # Determine initial threshold
             med = np.median(radiometer[:, li][~start_flag].view(np.ndarray))
-            mad = np.median(abs(radiometer[:, li][~start_flag].view(np.ndarray) - med))
+            _mad = np.median(abs(radiometer[:, li][~start_flag].view(np.ndarray) - med))
             threshold1 = (
-                mad
+                _mad
                 * MAD_TO_RMS
                 * self.start_threshold_sigma
                 * self.max_m ** RMS_SCALING_DIFF
@@ -604,7 +602,8 @@ class RFISensitivityMask(task.SingleTask):
 
         return rfimask
 
-    def _combine_st_mad_hook(self, times):
+    @staticmethod
+    def _combine_st_mad_hook(times):
         """Override this function to add a custom blending mask between the
         SumThreshold and MAD flagged data.
 
@@ -624,7 +623,8 @@ class RFISensitivityMask(task.SingleTask):
         """
         return np.ones_like(times, dtype=np.bool)
 
-    def _static_rfi_mask_hook(self, freq):
+    @staticmethod
+    def _static_rfi_mask_hook(freq):
         """Override this function to apply a static RFI mask to the data.
 
         Parameters
@@ -639,7 +639,8 @@ class RFISensitivityMask(task.SingleTask):
         """
         return np.ones_like(freq, dtype=np.bool)
 
-    def _apply_sir(self, mask, baseflag, eta=0.2):
+    @staticmethod
+    def _apply_sir(mask, baseflag, eta=0.2):
         """Expand the mask with SIR."""
 
         # Remove baseflag from mask and run SIR
@@ -762,8 +763,7 @@ class RFIMask(task.SingleTask):
         ssw[:] *= (~newmask)[:, np.newaxis, :]
 
         self.log.info(
-            "Flagging %0.2f%% of data due to RFI."
-            % (100.0 * np.sum(newmask) / float(newmask.size))
+            f"Flagging {100.0 * np.sum(newmask) / float(newmask.size):0.2f} % of data due to RFI."
         )
 
         # Remove the time average of the data. Should probably do this elsewhere to be honest
@@ -885,15 +885,15 @@ def mad(x, mask, base_size=(11, 3), mad_size=(21, 21), debug=False, sigma=True):
     xs = medfilt(x, mask, size=base_size)
     dev = np.abs(x - xs)
 
-    mad = medfilt(dev, mask, size=mad_size)
+    _mad = medfilt(dev, mask, size=mad_size)
 
     if sigma:
-        mad *= 1.4826  # apply the conversion from MAD->sigma
+        _mad *= 1.4826  # apply the conversion from MAD->sigma
 
     if debug:
-        return dev / mad, dev, mad
+        return dev / _mad, dev, _mad
 
-    return dev / mad
+    return dev / _mad
 
 
 def inverse_binom_cdf_prob(k, N, F):
@@ -1098,10 +1098,10 @@ class BlendStack(task.SingleTask):
             modified in place.
         """
 
-        if type(self.data_stack) != type(data):
+        if not isinstance(self.data_stack, data):
             raise TypeError(
                 f"type(data) (={type(data)}) must match"
-                f"type(data_stack) (={type(self.type)}"
+                f"type(data_stack) (={type(self.data_stack)}"
             )
 
         # Try and get both the stack and the incoming data to have the same

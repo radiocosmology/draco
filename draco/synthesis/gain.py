@@ -3,9 +3,10 @@
 
 import numpy as np
 
-from caput import config, mpiarray, pipeline
+from caput import config, mpiarray
 
-from ..core import containers, task, io
+from ..core import containers, task
+from .stream import MakeSiderealDayStream
 
 
 class BaseGains(task.SingleTask):
@@ -71,7 +72,8 @@ class BaseGains(task.SingleTask):
 
         return gain_data
 
-    def _corr_func(self, zeta, amp):
+    @staticmethod
+    def _corr_func(zeta, amp):
         """Generate the correlation function.
 
         Parameters
@@ -113,7 +115,7 @@ class BaseGains(task.SingleTask):
         raise NotImplementedError
 
 
-class SiderealGains(BaseGains):
+class SiderealGains(MakeSiderealDayStream, BaseGains):
     """Task for simulating sidereal gains.
 
     This base class is useful for generating gain errors in sidereal time.
@@ -128,33 +130,6 @@ class SiderealGains(BaseGains):
         of LSDs to generate data for.
     """
 
-    start_time = config.utc_time()
-    end_time = config.utc_time()
-
-    def setup(self, bt, sstream):
-        """Set up an observer and the data to use for this simulation.
-
-        Parameters
-        ----------
-        bt : beamtransfer.BeamTransfer or manager.ProductManager
-            Sets up an observer holding the geographic location of the telscope.
-        sstream : containers.SiderealStream
-            The sidereal data to use for this gain simulation.
-        """
-        self.observer = io.get_telescope(bt)
-        self.lsd_start = self.observer.unix_to_lsd(self.start_time)
-        self.lsd_end = self.observer.unix_to_lsd(self.end_time)
-
-        self.log.info(
-            "Sidereal period requested: LSD=%i to LSD=%i",
-            int(self.lsd_start),
-            int(self.lsd_end),
-        )
-
-        # Initialize the current lsd time
-        self._current_lsd = None
-        self.sstream = sstream
-
     def process(self):
         """Generate a gain timestream for the inputs and times in `data`.
 
@@ -163,17 +138,7 @@ class SiderealGains(BaseGains):
         gain : :class:`containers.SiderealGainData`
             Simulated gain errors in sidereal time.
         """
-        # If current_lsd is None then this is the first time we've run
-        if self._current_lsd is None:
-            # Check if lsd is an integer, if not add an lsd
-            if isinstance(self.lsd_start, int):
-                self._current_lsd = int(self.lsd_start)
-            else:
-                self._current_lsd = int(self.lsd_start + 1)
-
-        # Check if we have reached the end of the requested time
-        if self._current_lsd >= self.lsd_end:
-            raise pipeline.PipelineStopIteration
+        self._set_current_lsd()
 
         # Convert the current lsd day to unix time
         unix_start = self.observer.lsd_to_unix(self._current_lsd)
@@ -439,11 +404,8 @@ class GainStacker(task.SingleTask):
 def _ensure_list(x):
 
     if hasattr(x, "__iter__"):
-        y = [xx for xx in x]
-    else:
-        y = [x]
-
-    return y
+        return list(x)
+    return [x]
 
 
 def generate_fluctuations(x, corrfunc, n, prev_x, prev_fluc):

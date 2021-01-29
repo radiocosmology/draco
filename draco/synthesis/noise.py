@@ -186,7 +186,7 @@ class GaussianNoise(task.SingleTask, random.RandomTask):
 
         # Construct and set the correct weights in place
         if self.set_weights:
-            for lfi, fi in visdata.enumerate(0):
+            for _, fi in visdata.enumerate(0):
                 data.weight[fi] = 1.0 / std[:, np.newaxis] ** 2
 
         return data
@@ -232,7 +232,6 @@ class SampleNoise(task.SingleTask):
             The sampled (i.e. noisy) visibility dataset.
         """
 
-        from caput.time import STELLAR_S
         from ..util import _fast_tools
 
         data_exp.redistribute("freq")
@@ -260,7 +259,7 @@ class SampleNoise(task.SingleTask):
             nsamp = int(self.sample_frac * dt * df)
 
             # Iterate over time
-            for lti, ti in vis_data.enumerate(2):
+            for lti, _ in vis_data.enumerate(2):
 
                 # Unpack visibilites into full matrix
                 vis_utv = vis_data[lfi, :, lti].view(np.ndarray).copy()
