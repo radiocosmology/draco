@@ -8,7 +8,7 @@ all be moved out into their own module.
 
 import numpy as np
 
-from caput import config, mpiutil
+from caput import config
 
 from ..core import task, containers
 from ..util import tools
@@ -195,7 +195,7 @@ class AccumulateList(task.MPILoggedTask):
     """Accumulate the inputs into a list and return when the task *finishes*."""
 
     def __init__(self):
-        super(AccumulateList, self).__init__()
+        super().__init__()
         self._items = []
 
     def next(self, input_):

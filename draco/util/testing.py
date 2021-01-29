@@ -1,8 +1,7 @@
 """draco test utils"""
+from caput import pipeline, config, memh5
 
 from draco.core.task import SingleTask
-from caput import pipeline, config
-from caput import memh5
 
 
 class DummyTask(SingleTask):
@@ -31,7 +30,7 @@ class DummyTask(SingleTask):
         if self.total_len == 0:
             raise pipeline.PipelineStopIteration
 
-        self.log.debug("Producing test data '{}'...".format(self.tag))
+        self.log.debug(f"Producing test data '{self.tag}'...")
 
         cont = memh5.BasicCont()
 

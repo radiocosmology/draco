@@ -56,7 +56,7 @@ class SVDSpectrumEstimator(task.SingleTask):
             )
             mask_m = weight_m == 0.0
 
-            u, sig, vh = svd_em(vis_m, mask_m, niter=self.niter)
+            _, sig, _ = svd_em(vis_m, mask_m, niter=self.niter)
 
             spec.spectrum[m] = sig
 
@@ -107,7 +107,7 @@ class SVDFilter(task.SingleTask):
         # a single SVD pass.
 
         # Do a quick first pass calculation of all the singular values to get the max on this rank.
-        for mi, m in vis.enumerate(axis=0):
+        for mi, _ in vis.enumerate(axis=0):
 
             vis_m = (
                 vis[mi].view(np.ndarray).transpose((1, 0, 2)).reshape(vis.shape[2], -1)
@@ -197,7 +197,7 @@ def svd_em(A, mask, niter=5, rank=5, full_matrices=False):
     # Perform cycles of calculating the SVD with the current guess for the
     # missing values, then forming a new estimate of the missing values using a
     # low rank approximation.
-    for i in range(niter):
+    for _ in range(niter):
 
         u, sig, vh = la.svd(A, full_matrices=full_matrices, overwrite_a=False)
 

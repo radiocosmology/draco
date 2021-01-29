@@ -147,7 +147,7 @@ class SourceStack(task.SingleTask):
         # Gather all ranks of qcount. Report number of quasars stacked
         full_qcount = comm.reduce(qcount, op=MPI.SUM, root=0)
         if comm.rank == 0:
-            self.log.info("Number of quasars stacked: {0}".format(full_qcount))
+            self.log.info(f"Number of quasars stacked: {full_qcount}")
 
         return qstack
 

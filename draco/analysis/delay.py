@@ -578,7 +578,7 @@ def delay_spectrum_gibbs(
 
     # Perform the Gibbs sampling iteration for a given number of loops and
     # return the power spectrum output of them.
-    for ii in range(niter):
+    for _ in range(niter):
 
         d_samp = _draw_signal_sample(S_samp)
         S_samp = _draw_ps_sample(d_samp)
@@ -628,7 +628,7 @@ def null_delay_filter(freq, max_delay, mask, num_delay=200, tol=1e-8, window=Tru
 
     # Use an SVD to figure out the set of significant modes spanning the delays
     # we are wanting to get rid of.
-    u, sig, vh = la.svd(F)
+    u, sig, _ = la.svd(F)
     nmodes = np.sum(sig > tol * sig.max())
     p = u[:, :nmodes]
 

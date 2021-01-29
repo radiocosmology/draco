@@ -38,6 +38,8 @@ class MPILogFilter(logging.Filter):
 
         self.comm = MPI.COMM_WORLD
 
+        super().__init__(self.__class__.__name__)
+
     def filter(self, record):
 
         # Add MPI info if desired
@@ -126,6 +128,8 @@ class SetMPILogging(pipeline.TaskBase):
 
         ch.setFormatter(formatter)
 
+        super().__init__()
+
 
 class LoggedTask(pipeline.TaskBase):
     """A task with logger support."""
@@ -142,6 +146,8 @@ class LoggedTask(pipeline.TaskBase):
         # Set the log level for this task if specified
         if self.log_level is not None:
             self.log.setLevel(self.log_level)
+
+        super().__init__()
 
     @property
     def log(self):
@@ -162,6 +168,8 @@ class MPITask(pipeline.TaskBase):
 
         # Set default communicator
         self.comm = MPI.COMM_WORLD
+
+        super().__init__()
 
 
 class _AddRankLogAdapter(logging.LoggerAdapter):
@@ -277,7 +285,7 @@ class SingleTask(MPILoggedTask, pipeline.BasicContMixin):
     _no_input = False
 
     def __init__(self):
-        super(SingleTask, self).__init__()
+        super().__init__()
 
         # Inspect the `process` method to see how many arguments it takes.
         pro_argspec = getfullargspec(self.process)
@@ -298,7 +306,7 @@ class SingleTask(MPILoggedTask, pipeline.BasicContMixin):
     def next(self, *input):
         """Should not need to override. Implement `process` instead."""
 
-        self.log.info("Starting next for task %s" % self.__class__.__name__)
+        self.log.info(f"Starting next for task {self.__class__.__name__}")
 
         self.comm.Barrier()
 
@@ -320,7 +328,7 @@ class SingleTask(MPILoggedTask, pipeline.BasicContMixin):
 
         # Return immediately if output is None to skip writing phase.
         if output is None:
-            return
+            return None
 
         # Set a tag in output if needed
         if "tag" not in output.attrs and len(input) > 0 and "tag" in input[0].attrs:
@@ -335,7 +343,7 @@ class SingleTask(MPILoggedTask, pipeline.BasicContMixin):
         # Increment internal counter
         self._count = self._count + 1
 
-        self.log.info("Leaving next for task %s" % self.__class__.__name__)
+        self.log.info(f"Leaving next for task {self.__class__.__name__}")
 
         # Return the output for the next task
         return output
@@ -343,7 +351,7 @@ class SingleTask(MPILoggedTask, pipeline.BasicContMixin):
     def finish(self):
         """Should not need to override. Implement `process_finish` instead."""
 
-        self.log.info("Starting finish for task %s" % self.__class__.__name__)
+        self.log.info(f"Starting finish for task {self.__class__.__name__}")
 
         try:
             output = self.process_finish()
@@ -354,12 +362,12 @@ class SingleTask(MPILoggedTask, pipeline.BasicContMixin):
             # Write the output if needed
             self._save_output(output)
 
-            self.log.info("Leaving finish for task %s" % self.__class__.__name__)
+            self.log.info(f"Leaving finish for task {self.__class__.__name__}")
 
             return output
 
         except AttributeError:
-            self.log.info("No finish for task %s" % self.__class__.__name__)
+            self.log.info(f"No finish for task {self.__class__.__name__}")
             pass
 
     def _save_output(self, output):
@@ -539,11 +547,9 @@ class Delete(SingleTask):
         """
         import gc
 
-        self.log.info("Deleting %s" % type(x))
+        self.log.info(f"Deleting {type(x)}")
         del x
         gc.collect()
-
-        return None
 
 
 def group_tasks(*tasks):

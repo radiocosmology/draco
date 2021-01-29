@@ -330,7 +330,8 @@ class BeamFormBase(task.SingleTask):
 
         return formed_beam
 
-    def _ha_side(self, data, timetrack=900.0):
+    @staticmethod
+    def _ha_side(data, timetrack=900.0):
         """Number of RA/time bins to track the source at each side of transit.
 
         Parameters
@@ -357,7 +358,8 @@ class BeamFormBase(task.SingleTask):
         # Track for `timetrack` seconds at each side of transit
         return int(timetrack / approx_time_perbin)
 
-    def _ha_array(self, ra, source_ra_index, source_ra, ha_side, is_sstream=True):
+    @staticmethod
+    def _ha_array(ra, source_ra_index, source_ra, ha_side, is_sstream=True):
         """Hour angle for each RA/time bin to be processed.
 
         Also return the indices of these bins in the full RA/time axis.
@@ -415,7 +417,8 @@ class BeamFormBase(task.SingleTask):
         return ha_array, ra_index_range, ha_mask
 
     # TODO: This is very CHIME specific. Should probably be moved somewhere else.
-    def _beamfunc(self, ha, pol, freq, dec, zenith=0.70999994):
+    @staticmethod
+    def _beamfunc(ha, pol, freq, dec, zenith=0.70999994):
         """Simple and fast beam model to be used as beamforming weights.
 
         Parameters
@@ -635,7 +638,7 @@ class BeamForm(BeamFormBase):
             Catalog of points to beamform at.
 
         """
-        super(BeamForm, self).setup(manager)
+        super().setup(manager)
         self.catalog = source_cat
 
     def process(self, data):
@@ -656,7 +659,7 @@ class BeamForm(BeamFormBase):
         self._process_catalog(self.catalog)
 
         # Call generic process method.
-        return super(BeamForm, self).process()
+        return super().process()
 
 
 class BeamFormCat(BeamFormBase):
@@ -674,7 +677,7 @@ class BeamFormCat(BeamFormBase):
             Data to beamform on.
 
         """
-        super(BeamFormCat, self).setup(manager)
+        super().setup(manager)
 
         # Process and make available various data
         self._process_data(data)
@@ -695,7 +698,7 @@ class BeamFormCat(BeamFormBase):
         self._process_catalog(source_cat)
 
         # Call generic process method.
-        return super(BeamFormCat, self).process()
+        return super().process()
 
 
 def icrs_to_cirs(ra, dec, epoch, apparent=True):

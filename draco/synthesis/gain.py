@@ -71,7 +71,8 @@ class BaseGains(task.SingleTask):
 
         return gain_data
 
-    def _corr_func(self, zeta, amp):
+    @staticmethod
+    def _corr_func(zeta, amp):
         """Generate the correlation function.
 
         Parameters
@@ -439,11 +440,8 @@ class GainStacker(task.SingleTask):
 def _ensure_list(x):
 
     if hasattr(x, "__iter__"):
-        y = [xx for xx in x]
-    else:
-        y = [x]
-
-    return y
+        return list(x)
+    return [x]
 
 
 def generate_fluctuations(x, corrfunc, n, prev_x, prev_fluc):

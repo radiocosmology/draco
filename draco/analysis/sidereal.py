@@ -12,7 +12,7 @@ into  :class:`SiderealGrouper`, then feeding that into
 
 import numpy as np
 
-from caput import config, mpiutil, mpiarray, tod
+from caput import config, mpiarray, tod
 from cora.util import units
 
 from .transform import Regridder
@@ -42,7 +42,7 @@ class SiderealGrouper(task.SingleTask):
     min_day_length = config.Property(proptype=float, default=0.10)
 
     def __init__(self):
-        super(SiderealGrouper, self).__init__()
+        super().__init__()
 
         self._timestream_list = []
         self._current_lsd = None
@@ -571,8 +571,5 @@ class SiderealStacker(task.SingleTask):
 def _ensure_list(x):
 
     if hasattr(x, "__iter__"):
-        y = [xx for xx in x]
-    else:
-        y = [x]
-
-    return y
+        return list(x)
+    return [x]
