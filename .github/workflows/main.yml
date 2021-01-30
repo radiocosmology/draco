@@ -26,7 +26,7 @@ jobs:
 
     - name: Install pip dependencies
       run: |
-        pip install black flake8 pylint
+        pip install black flake8 pylint pylint-ignore
         pip install -r requirements.txt
         python setup.py develop
 
