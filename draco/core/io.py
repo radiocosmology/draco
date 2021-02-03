@@ -35,6 +35,8 @@ from caput import config
 
 from cora.util import units
 
+from drift.core import telescope, manager, beamtransfer
+
 from . import task
 from ..util.exception import ConfigError
 from ..util.truncate import bit_truncate_weights, bit_truncate_fixed
@@ -879,12 +881,15 @@ class SaveConfig(task.SingleTask):
         return
 
 
+# Python types for objects convertible to beamtransfers or telescope instances
+BeamTransferConvertible = Union[manager.ProductManager, beamtransfer.BeamTransfer]
+TelescopeConvertible = Union[BeamTransferConvertible, telescope.TransitTelescope]
+
+
 def get_telescope(obj):
     """Return a telescope object out of the input (either `ProductManager`,
     `BeamTransfer` or `TransitTelescope`).
     """
-    from drift.core import telescope
-
     try:
         return get_beamtransfer(obj).telescope
     except RuntimeError:
@@ -898,8 +903,6 @@ def get_beamtransfer(obj):
     """Return a BeamTransfer object out of the input (either `ProductManager`,
     `BeamTransfer`).
     """
-    from drift.core import manager, beamtransfer
-
     if isinstance(obj, beamtransfer.BeamTransfer):
         return obj
 

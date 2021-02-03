@@ -474,7 +474,6 @@ class MModeTransform(task.SingleTask):
         # Get the output container and figure out at which position is it's
         # frequency axis
         out_cont = contmap[sstream.__class__]
-        freq_axis = out_cont._dataset_spec["vis"]["axes"].index("freq")
 
         sstream.redistribute("freq")
 
@@ -485,62 +484,71 @@ class MModeTransform(task.SingleTask):
         if self.telescope is not None:
             mmax = self.telescope.mmax
         else:
-            mmax = None
-
-        # Construct the array of m-modes
-        marray = _make_marray(sstream.vis[:], mmax)
-        marray = mpiarray.MPIArray.wrap(marray[:], axis=freq_axis, comm=sstream.comm)
+            mmax = (sstream.vis.shape[-1] // 2) - 1
 
         # Create the container to store the modes in
-        mmax = marray.shape[0] - 1
         ma = out_cont(mmax=mmax, axes_from=sstream, comm=sstream.comm)
         ma.redistribute("freq")
 
-        # Assign the visibilities and weights into the container
-        ma.vis[:] = marray
-        ma.weight[:] = weight_sum[np.newaxis, np.newaxis, :, :]
+        # Generate the m-mode transform directly into the output container
+        _make_marray(sstream.vis[:], ma.vis[:])
 
-        ma.redistribute("m")
+        # Assign the weights into the container
+        ma.weight[:] = weight_sum[np.newaxis, np.newaxis, :, :]
 
         return ma
 
 
-def _make_marray(ts, mmax):
-    # Construct an array of m-modes from a sidereal time stream
-    mmodes = np.fft.fft(ts, axis=-1) / ts.shape[-1]
-    marray = _pack_marray(mmodes, mmax)
+def _make_marray(ts, mmodes=None, mmax=None, dtype=None):
+    """Make an m-mode array from a sidereal stream.
 
-    return marray
+    This will loop over the first axis of `ts` to avoid needing a lot of memory for
+    intermediate arrays.
 
+    It can also write the m-mode output directly into a passed `mmodes` array.
+    """
 
-def _pack_marray(mmodes, mmax=None):
-    # Pack an FFT into the correct format for the m-modes (i.e. [m, freq, +/-,
-    # baseline])
+    if dtype is None:
+        dtype = np.complex64
 
-    N = mmodes.shape[-1]  # Total number of modes
-    N_pos_mmodes = N // 2  # Total number of positive modes
+    if mmodes is None and mmax is None:
+        raise ValueError("One of `mmodes` or `mmax` must be set.")
+
+    if mmodes is not None and mmax is not None:
+        raise ValueError("If mmodes is set, mmax must be None.")
+
+    if mmodes is not None and mmodes.shape[2:] != ts.shape[:-1]:
+        raise ValueError(
+            "ts and mmodes have incompatible shapes: "
+            f"{mmodes.shape[2:]} != {ts.shape[:-1]}"
+        )
+
+    if mmodes is None:
+        mmodes = np.zeros((mmax + 1, 2) + ts.shape[:-1], dtype=dtype)
+
     if mmax is None:
-        mmax = mlim = N_pos_mmodes
-        mlim_neg = mlim - 1 + N % 2  # Index for negative modes
-    elif mmax >= N_pos_mmodes:  # Modes larger than N_pos_mmodes set to 0.
-        mlim = N_pos_mmodes
-        mlim_neg = mlim - 1 + N % 2
-    else:
-        mlim = mmax
-        mlim_neg = mlim
+        mmax = mmodes.shape[0] - 1
 
-    shape = mmodes.shape[:-1]
+    # Total number of modes
+    N = ts.shape[-1]
+    # Calculate the max m to use for both positive and negative m. This is a little
+    # tricky to get correct as we need to account for the number of negative
+    # frequencies produced by the FFT
+    mlim = min(N // 2, mmax)
+    mlim_neg = N // 2 - 1 + N % 2 if mmax >= N // 2 else mmax
 
-    marray = np.zeros((mmax + 1, 2) + shape, dtype=np.complex128)
+    for i in range(ts.shape[0]):
+        m_fft = np.fft.fft(ts[i], axis=-1) / ts.shape[-1]
 
-    # Non-negative modes
-    marray[: mlim + 1, 0] = np.rollaxis(mmodes[..., : mlim + 1], -1, 0)
-    # Negative modes
-    marray[1 : mlim_neg + 1, 1] = np.rollaxis(
-        mmodes[..., -1 : -(mlim_neg + 1) : -1].conj(), -1, 0
-    )
+        # Loop and copy over positive and negative m's
+        # NOTE: this is done as a loop to try and save memory
+        for mi in range(mlim + 1):
+            mmodes[mi, 0, i] = m_fft[..., mi]
 
-    return marray
+        for mi in range(1, mlim_neg + 1):
+            mmodes[mi, 1, i] = m_fft[..., -mi].conj()
+
+    return mmodes
 
 
 class MModeInverseTransform(task.SingleTask):
