@@ -218,7 +218,7 @@ class CollateProducts(task.SingleTask):
             attrs_from=ss,
             distributed=True,
             comm=ss.comm,
-            **output_kwargs
+            **output_kwargs,
         )
 
         # Add gain dataset.

@@ -526,7 +526,7 @@ class DeconvolveHybridM(task.SingleTask):
                 # Get the effective beamwidth for the polarisation combination
                 sig_a = beam_width[pa](freq, dec)
                 sig_b = beam_width[pb](freq, dec)
-                sig = sig_a * sig_b / (sig_a**2 + sig_b**2)**0.5
+                sig = sig_a * sig_b / (sig_a ** 2 + sig_b ** 2) ** 0.5
                 sig_arr = sig[np.newaxis, :, np.newaxis]
 
                 # Calculate the effective beam transfer function at each declination
