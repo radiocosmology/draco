@@ -698,6 +698,124 @@ class BeamFormCat(BeamFormBase):
         return super(BeamFormCat, self).process()
 
 
+class RingMapBeamForm(task.SingleTask):
+    """Beamform by extracting the pixel containing each source form a RingMap.
+
+    This is significantly faster than `Beamform` or `BeamformCat` with the caveat
+    that they can beamform exactly on a source whereas this task is at the mercy of
+    what was done to produce the `RingMap` (use `DeconvolveHybridM` for best
+    results).
+    """
+
+    def setup(self, telescope: io.TelescopeConvertible, ringmap: containers.RingMap):
+        """Set the telescope object.
+
+        Parameters
+        ----------
+        manager
+            The telescope object to use.
+        ringmap
+            The ringmap to extract the sources from.
+        """
+
+        self.telescope = io.get_telescope(telescope)
+        self.ringmap = ringmap
+
+    def process(self, catalog: containers.SourceCatalog) -> containers.FormedBeam:
+        """Extract sources from a ringmap.
+
+        Parameters
+        ----------
+        catalog
+            The catalog to extract sources from.
+
+        Returns
+        -------
+        sources
+            The source spectra.
+        """
+
+        ringmap = self.ringmap
+
+        if "position" not in catalog:
+            raise ValueError("Input is missing a position table.")
+
+        # Calculate the epoch for the data so we can calculate the correct
+        # CIRS coordinates
+        if "lsd" not in ringmap.attrs:
+            ringmap.attrs["lsd"] = 1950
+            self.log.error("Input must have an LSD attribute to calculate the epoch.")
+        # if "lsd" not in ringmap.attrs:
+        #     raise ValueError("Input must have an LSD attribute to calculate the epoch.")
+
+        # This will be a float for a single sidereal day, or a list of
+        # floats for a stack
+        lsd = (
+            ringmap.attrs["lsd"][0]
+            if isinstance(ringmap.attrs["lsd"], np.ndarray)
+            else ringmap.attrs["lsd"]
+        )
+        epoch = self.telescope.lsd_to_unix(lsd)
+
+        # Container to hold the formed beams
+        formed_beam = containers.FormedBeam(
+            object_id=catalog.index_map["object_id"],
+            axes_from=ringmap,
+            distributed=True,
+        )
+
+        # Initialize container to zeros.
+        formed_beam.beam[:] = 0.0
+        formed_beam.weight[:] = 0.0
+
+        # Copy catalog information
+        formed_beam["position"][:] = catalog["position"][:]
+        if "redshift" in catalog:
+            formed_beam["redshift"][:] = catalog["redshift"][:]
+
+        # Get the source positions at the current epoch
+        src_ra, src_dec = icrs_to_cirs(
+            catalog["position"]["ra"], catalog["position"]["dec"], epoch
+        )
+
+        # Get the grid size of the map in RA and sin(ZA)
+        dra = np.median(np.abs(np.diff(ringmap.index_map["ra"])))
+        dza = np.median(np.abs(np.diff(ringmap.index_map["el"])))
+
+        # Get the source indices in RA
+        # NOTE: that we need to take into account that sources might be less than 360
+        # deg, but still closer to ind=0
+        max_ra_ind = len(ringmap.ra) - 1
+        ra_ind = (np.rint(src_ra / dra) % max_ra_ind).astype(np.int)
+
+        # Get the indices for the ZA direction
+        za_ind = np.rint(
+            (np.sin(np.radians(src_dec - self.telescope.latitude)) + 1) / dza
+        ).astype(np.int)
+
+        # Ensure containers are distributed in frequency
+        formed_beam.redistribute("freq")
+        ringmap.redistribute("freq")
+
+        # Dereference the datasets
+        fbb = formed_beam.beam[:]
+        fbw = formed_beam.weight[:]
+        rmm = ringmap.map[:]
+        rmw = (
+            ringmap.weight[:]
+            if "weight" in ringmap.datasets
+            else invert_no_zero(ringmap.rms[:]) ** 2
+        )
+
+        # Loop over sources and extract the polarised pencil beams containing them from
+        # the ringmaps
+        for si, (ri, zi) in enumerate(zip(ra_ind, za_ind)):
+            fbb[si] = rmm[0, :, :, ri, zi]
+            fbw[si] = rmw[:, :, ri]
+
+        return formed_beam
+
+
 def icrs_to_cirs(ra, dec, epoch, apparent=True):
     """Convert a set of positions from ICRS to CIRS at a given data.
 
