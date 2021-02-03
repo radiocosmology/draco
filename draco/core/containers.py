@@ -821,6 +821,11 @@ class MContainer(ContainerBase):
 
         super().__init__(*args, **kwargs)
 
+    @property
+    def mmax(self):
+        """The maximum m stored."""
+        return int(self.index_map["m"][-1])
+
 
 class HealpixContainer(ContainerBase):
     """Base class container for holding Healpix map data.

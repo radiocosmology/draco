@@ -25,6 +25,7 @@ from ..core import task
 from ..core import io
 from ..util import tools
 from ..core import containers
+from . import transform
 
 
 class MakeVisGrid(task.SingleTask):
@@ -230,7 +231,7 @@ class BeamformNS(task.SingleTask):
                 vmax = nsmax / wv
 
             if self.weight == "inverse_variance":
-                gw = gsw[:, lfi].copy()
+                gw = gsw.local_array[:, lfi].copy()
             elif self.weight == "natural":
                 gw = gsr[:].astype(np.float32)
             else:
@@ -386,7 +387,180 @@ class BeamformEW(task.SingleTask):
 class RingMapMaker(task.group_tasks(MakeVisGrid, BeamformNS, BeamformEW)):
     """Make a ringmap from the data."""
 
-    pass
+
+class DeconvolveHybridM(task.SingleTask):
+    """Apply a Wiener deconvolution to calculate a ring map from hybrid visibility data.
+
+    Attributes
+    ----------
+    exclude_intracyl : bool
+        Exclude intracylinder baselines from the calculation.  Default is False.
+    weight_ew : string
+        How to weight the EW baselines? One of:
+            'natural' - weight by the redundancy of the EW baselines.
+            'uniform' - give each EW baseline uniform weight.
+    inv_SN : float
+        Inverse signal to noise ratio, assuming identity matrices for both. This is
+        equivalent to a Tikhonov regularisation.
+    """
+
+    exclude_intracyl = config.Property(proptype=bool, default=False)
+    weight_ew = config.enum(["natural", "uniform"], default="natural")
+    inv_SN = config.Property(proptype=float, default=1e-6)
+
+    telescope = None
+
+    def setup(self, telescope: io.TelescopeConvertible):
+        """Set the telescope object.
+
+        Parameters
+        ----------
+        manager
+            The telescope object to use.
+        """
+
+        self.telescope = io.get_telescope(telescope)
+
+    def process(self, hybrid_vis_m: containers.HybridVisMModes) -> containers.RingMap:
+        """Generate a deconvolved ringmap.
+
+        Parameters
+        ----------
+        hybrid_vis_m
+            The hybrid beamformed m-mode visibilities to use.
+
+        Returns
+        -------
+        ringmap
+            The deconvolved ring map.
+        """
+
+        # NOTE: Coefficients taken from Mateus's fits, but adjust to fix the definition
+        # of sigma, and be the widths for the "voltage" beam
+        def sig_chime_X(freq, dec):
+            """EW voltage beam widths (in sigma) for CHIME X pol."""
+            return 14.87857614 / freq / np.cos(dec)
+
+        def sig_chime_Y(freq, dec):
+            """EW voltage beam widths (in sigma) for CHIME Y pol."""
+            return 9.95746878 / freq / np.cos(dec)
+
+        beam_width = {"X": sig_chime_X, "Y": sig_chime_Y}
+
+        def A(phi, sigma):
+            """A Gaussian like function on the circle."""
+            return np.exp(-((2 * np.tan(phi / 2)) ** 2) / (2 * sigma ** 2))
+
+        def B(phi, u, sigma):
+            """Azimuthal beam transfer function."""
+            return np.exp(2.0j * np.pi * u * np.sin(phi)) * A(phi, sigma)
+
+        sza = hybrid_vis_m.index_map["el"]
+        # TODO: I think the sign is incorrect here
+        dec = np.arcsin(sza) + np.radians(self.telescope.latitude)
+
+        # Create empty ring map
+        d_ew = hybrid_vis_m.index_map["ew"]
+        n_ew = len(d_ew)
+
+        # Determine the weighting coefficient in the EW direction
+        if self.weight_ew == "uniform":
+            weight_ew = np.ones(n_ew)
+        else:  # self.weight_ew == "natural"
+            weight_ew = n_ew - np.arange(n_ew)
+
+        # Exclude the in cylinder baselines if requested (EW = 0)
+        if self.exclude_intracyl:
+            weight_ew[0] = 0.0
+
+        # Normalise the weights
+        weight_ew = weight_ew / weight_ew.sum()
+
+        # Number of RA samples in the final output
+        nra = 2 * hybrid_vis_m.mmax
+
+        # Create ring map, copying over axes/attrs and add the optional datasets
+        rm = containers.RingMap(
+            beam=1, ra=nra, axes_from=hybrid_vis_m, attrs_from=hybrid_vis_m
+        )
+        rm.weight[:] = 0.0
+
+        # This matrix takes the linear combinations of polarisations required to rotate
+        # from XY, YX basis into reXY and imXY
+        # P = np.array(
+        #     [[1, 0, 0, 0], [0, 0.5, 0.5, 0], [0, -0.5j, 0.5j, 0], [0, 0, 0, 1]]
+        # )
+
+        # Make sure ring map is distributed over frequency
+        hybrid_vis_m.redistribute("freq")
+        rm.redistribute("freq")
+
+        # Dereference datasets
+        hv = hybrid_vis_m.vis[:]
+        hw = hybrid_vis_m.weight[:]
+        rmm = rm.map[:]
+        rmw = rm.weight[:]
+
+        phi_arr = np.radians(rm.ra)[np.newaxis, np.newaxis, :]
+
+        pol_map = hybrid_vis_m.index_map["pol"]
+
+        # Loop over frequencies
+        for lfi, fi in hv.enumerate(3):
+
+            freq = hybrid_vis_m.freq[fi]
+            wv = scipy.constants.c * 1e-6 / freq
+
+            u = d_ew / wv
+            u_dec = u[:, np.newaxis] * np.cos(dec)[np.newaxis, :]
+            u_arr = u_dec[:, :, np.newaxis]
+
+            map_m = np.zeros(
+                (hybrid_vis_m.mmax + 1, len(pol_map), len(dec)), dtype=np.complex128
+            )
+
+            # TODO: the handling of the polarisations in here is probably very messed
+            # up.
+            for pi, (pa, pb) in enumerate(pol_map):
+
+                # Get the effective beamwidth for the polarisation combination
+                sig_a = beam_width[pa](freq, dec)
+                sig_b = beam_width[pb](freq, dec)
+                sig = sig_a * sig_b / (sig_a**2 + sig_b**2)**0.5
+                sig_arr = sig[np.newaxis, :, np.newaxis]
+
+                # Calculate the effective beam transfer function at each declination
+                # and normalise
+                B_arr = B(phi_arr, u_arr, sig_arr)
+                B_norm = B_arr
+                # B_norm = B_arr / np.sum(np.abs(B_arr), axis=-1)[:, :, np.newaxis]
+
+                # Get the transfer function in m-space
+                mB = transform._make_marray(B_norm.conj(), mmax=hybrid_vis_m.mmax)
+
+                C_inv = self.inv_SN + (mB.conj() * weight_ew[:, np.newaxis] * mB).sum(
+                    axis=(1, -2)
+                )
+
+                dirty_m = (hv[:, :, pi, lfi] * weight_ew[:, np.newaxis] * mB).sum(
+                    axis=(1, -2)
+                )
+
+                map_m[:, pi] = dirty_m / C_inv
+
+                # TODO: do a more intelligent setting of the weights. At the very least
+                # we should get the scale right
+                rmw[pi, lfi] = hw[:, :, pi, lfi].mean()
+
+            # Fourier transform back to the deconvolved RA, and insert into the ringmap
+            rmm[0, :, lfi] = np.fft.irfft(
+                map_m.transpose(1, 2, 0), axis=-1, n=nra
+            ).transpose(0, 2, 1)
+
+            # Rotate the polarisations
+            # v = np.tensordot(P, hvv[:, lfi], axes=(1, 0))
+
+        return rm
 
 
 def find_basis(baselines):
