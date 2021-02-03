@@ -1982,6 +1982,35 @@ class FrequencyStackByPol(FrequencyStack):
         return self.index_map["pol"]
 
 
+class Stack3D(FreqContainer):
+    """Container for a 3D frequency stack."""
+
+    _axes = ("pol", "delta_ra", "delta_dec")
+
+    _dataset_spec = {
+        "stack": {
+            "axes": ["pol", "delta_ra", "delta_dec", "freq"],
+            "dtype": np.float64,
+            "initialise": True,
+            "distributed": False,
+        },
+        "weight": {
+            "axes": ["pol", "delta_ra", "delta_dec", "freq"],
+            "dtype": np.float64,
+            "initialise": True,
+            "distributed": False,
+        },
+    }
+
+    @property
+    def stack(self):
+        return self.datasets["stack"]
+
+    @property
+    def weight(self):
+        return self.datasets["weight"]
+
+
 class SourceCatalog(TableBase):
     """A basic container for holding astronomical source catalogs.
 

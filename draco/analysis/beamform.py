@@ -816,6 +816,198 @@ class RingMapBeamForm(task.SingleTask):
         return formed_beam
 
 
+class RingMapStack2D(task.SingleTask):
+    """Stack RingMap's on sources directly.
+
+    Parameters
+    ----------
+    num_ra, num_dec : int
+        The number of RA and DEC pixels to stack either side of the source.
+    num_freq : int
+        Number of final frequency channels either side of the source redshift to
+        stack.
+    freq_width : float
+        Length of frequency interval either side of source to use in MHz.
+    weight : {"patch", "dec", "enum"}
+        How to weight the data. If `"input"` the data is weighted on a pixel by pixel
+        basis according to the input data. If `"patch"` then the inverse of the
+        variance of the extracted patch is used. If `"dec"` then the inverse variance
+        of each declination strip is used.
+    """
+
+    num_ra = config.Property(proptype=int, default=10)
+    num_dec = config.Property(proptype=int, default=10)
+    num_freq = config.Property(proptype=int, default=256)
+    freq_width = config.Property(proptype=float, default=100.0)
+    weight = config.enum(["patch", "dec", "input"], default="input")
+
+    def setup(self, telescope: io.TelescopeConvertible, ringmap: containers.RingMap):
+        """Set the telescope object.
+
+        Parameters
+        ----------
+        manager
+            The telescope object to use.
+        ringmap
+            The ringmap to extract the sources from.
+        """
+
+        self.telescope = io.get_telescope(telescope)
+        self.ringmap = ringmap
+
+    def process(self, catalog: containers.SourceCatalog) -> containers.FormedBeam:
+        """Extract sources from a ringmap.
+
+        Parameters
+        ----------
+        catalog
+            The catalog to extract sources from.
+
+        Returns
+        -------
+        sources
+            The source spectra.
+        """
+        from mpi4py import MPI
+
+        ringmap = self.ringmap
+
+        if "position" not in catalog:
+            raise ValueError("Input is missing a position table.")
+
+        # Calculate the epoch for the data so we can calculate the correct
+        # CIRS coordinates
+        if "lsd" not in ringmap.attrs:
+            ringmap.attrs["lsd"] = 1950
+            self.log.error("Input must have an LSD attribute to calculate the epoch.")
+
+        # This will be a float for a single sidereal day, or a list of
+        # floats for a stack
+        lsd = (
+            ringmap.attrs["lsd"][0]
+            if isinstance(ringmap.attrs["lsd"], np.ndarray)
+            else ringmap.attrs["lsd"]
+        )
+        epoch = self.telescope.lsd_to_unix(lsd)
+
+        # Get the source positions at the current epoch
+        src_ra, src_dec = icrs_to_cirs(
+            catalog["position"]["ra"], catalog["position"]["dec"], epoch
+        )
+        src_z = catalog["redshift"]["z"]
+
+        # Get the grid size of the map in RA and sin(ZA)
+        dra = np.median(np.abs(np.diff(ringmap.index_map["ra"])))
+        dza = np.median(np.abs(np.diff(ringmap.index_map["el"])))
+        df = np.median(np.abs(np.diff(ringmap.freq)))
+
+        # Get the source indices in RA
+        # NOTE: that we need to take into account that sources might be less than 360
+        # deg, but still closer to ind=0
+        max_ra_ind = len(ringmap.ra) - 1
+        ra_ind = (np.rint(src_ra / dra) % max_ra_ind).astype(np.int)
+
+        # Get the indices for the ZA direction
+        za_ind = np.rint(
+            (np.sin(np.radians(src_dec - self.telescope.latitude)) + 1) / dza
+        ).astype(np.int)
+
+        # Ensure containers are distributed in frequency
+        ringmap.redistribute("freq")
+
+        # Get the frequencies on this rank
+        fs = ringmap.map.local_offset[2]
+        fe = fs + ringmap.map.local_shape[2]
+        local_freq = ringmap.freq[fs:fe]
+
+        # Dereference the datasets
+        rmm = ringmap.map[:]
+        rmw = (
+            ringmap.weight[:]
+            if "weight" in ringmap.datasets
+            else invert_no_zero(ringmap.rms[:]) ** 2
+        )
+
+        # Calculate the frequencies bins to use
+        nbins = 2 * self.num_freq + 1
+        bin_edges = np.linspace(
+            -self.freq_width, self.freq_width, nbins + 1, endpoint=True
+        )
+
+        # Calculate the edges of the frequency distribution, sources outside this range
+        # will be dropped
+        global_fmin = ringmap.freq.min()
+        global_fmax = ringmap.freq.max()
+
+        # Create temporary array to accumulate into
+        wstack = np.zeros(
+            (nbins + 2, len(ringmap.pol), 2 * self.num_ra + 1, 2 * self.num_dec + 1)
+        )
+        weight = np.zeros(
+            (nbins + 2, len(ringmap.pol), 2 * self.num_ra + 1, 2 * self.num_dec + 1)
+        )
+
+        rmvar = rmm[0].var(axis=2)
+        w_global = invert_no_zero(np.where(rmvar < 3e-7, 0.0, rmvar))
+
+        # Loop over sources and extract the polarised pencil beams containing them from
+        # the ringmaps
+        for si, (ri, zi, z) in enumerate(zip(ra_ind, za_ind, src_z)):
+            source_freq = 1420.406 / (1 + z)
+
+            if source_freq > global_fmax or source_freq < global_fmin:
+                continue
+
+            # Get bin indices
+            bin_ind = np.digitize(local_freq - source_freq, bin_edges)
+
+            # Get the slices to extract the enclosing angular region
+            ri_slice = slice(ri - self.num_ra, ri + self.num_ra + 1)
+            zi_slice = slice(zi - self.num_dec, zi + self.num_dec + 1)
+
+            b = rmm[0, :, :, ri_slice, zi_slice]
+            w = rmw[:, :, ri_slice, np.newaxis]
+
+            if self.weight == "patch":
+                # Replace the weights with the variance of the patch
+                w = (w != 0) * invert_no_zero(b.var(axis=(2, 3)))[
+                    :, :, np.newaxis, np.newaxis
+                ]
+            elif self.weight == "dec":
+                # w = (w != 0) * invert_no_zero(b.var(axis=2))[:, :, np.newaxis, :]
+                w = (w != 0) * w_global[:, :, np.newaxis, zi_slice]
+
+            bw = b * w
+
+            # TODO: this is probably slow so should be moved into Cython
+            for lfi, bi in enumerate(bin_ind):
+                wstack[bi] += bw[:, lfi]
+                weight[bi] += w[:, lfi]
+
+        # Arrays to reduce the data into
+        wstack_all = np.zeros_like(wstack)
+        weight_all = np.zeros_like(weight)
+
+        self.comm.Allreduce(wstack, wstack_all, op=MPI.SUM)
+        self.comm.Allreduce(weight, weight_all, op=MPI.SUM)
+
+        stack_all = wstack_all * invert_no_zero(weight_all)
+
+        # Create the container to store the data in
+        bin_centres = 0.5 * (bin_edges[1:] + bin_edges[:-1])
+        stack = containers.Stack3D(
+            freq=bin_centres,
+            delta_ra=np.arange(-self.num_ra, self.num_ra + 1),
+            delta_dec=np.arange(-self.num_dec, self.num_dec + 1),
+            axes_from=ringmap,
+            attrs_from=ringmap,
+        )
+        stack.attrs["tag"] = catalog.attrs["tag"]
+        stack.stack[:] = stack_all[1:-1].transpose((1, 2, 3, 0))
+
+        return stack
+
+
 def icrs_to_cirs(ra, dec, epoch, apparent=True):
     """Convert a set of positions from ICRS to CIRS at a given data.
 
