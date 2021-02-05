@@ -65,9 +65,11 @@ class FrequencyRebin(task.SingleTask):
             ri = fi // self.channel_bin
 
             sb.vis[ri] += ss.vis[fi] * ss.weight[fi]
-            sb.gain[ri] += (
-                ss.gain[fi] / self.channel_bin
-            )  # Don't do weighted average for the moment
+
+            if "gain" in ss.datasets:
+                sb.gain[ri] += (
+                    ss.gain[fi] / self.channel_bin
+                )  # Don't do weighted average for the moment
 
             sb.weight[ri] += ss.weight[fi]
 
@@ -775,3 +777,93 @@ class Regridder(task.SingleTask):
             ni *= w_mask[..., np.newaxis]
 
         return interp_grid, sts, ni
+
+
+class TransformJyKelvin(task.SingleTask):
+    """Taks to convert from Jy to Kelvin with driftscan beams"""
+
+    convert_jy_to_K = True
+
+    def setup(self, manager):
+        """This setup uses the manager to set up a telescope object and
+        calculates the main beam solid angle for identical driftscan beams"""
+
+        tel = io.get_telescope(manager)
+        nfreq = tel.nfreq
+
+        # Create an MPI array to hold solid angles for all frequencies
+        self.omega_A = mpiarray.MPIArray(
+            (nfreq, tel.uniquepairs.shape[0]), axis=0, dtype=np.float, comm=self.comm
+        )
+
+        self.omega_A[:] = 0.0
+
+        # Split frequencies to processes.
+        lfreq, sfreq, efreq = mpiutil.split_local(nfreq)
+
+        om_s = None
+        om_e = None
+
+        tel._init_trans(256)
+        horizon = tel._horizon[:, np.newaxis]
+
+        for bi in range(tel.uniquepairs.shape[0]):
+            fi, fj = tel.uniquepairs[bi]
+
+            if (tel.feeds[fi].pol == "S" or tel.feeds[fj].pol == "S") and om_s is None:
+                om_s = np.zeros(lfreq, dtype=float)
+
+                for fl, fg in self.omega_A.enumerate(axis=0):
+                    beami = tel.beam(fi, fg)
+                    pxarea = 4 * np.pi / beami.shape[0]
+                    om_s[fl] = np.sum(np.abs(beami) ** 2 * horizon) * pxarea
+
+            if (tel.feeds[fi].pol == "E" or tel.feeds[fj].pol == "E") and om_e is None:
+                om_e = np.zeros(lfreq, dtype=float)
+
+                for fl, fg in self.omega_A.enumerate(axis=0):
+                    beamj = tel.beam(fj, fg)
+                    pxarea = 4 * np.pi / beamj.shape[0]
+                    om_e[fl] = np.sum(np.abs(beamj) ** 2 * horizon) * pxarea
+
+            # Check what polarisation
+            om_i = om_s if tel.feeds[fi].pol == "S" else om_e
+            om_j = om_e if tel.feeds[fj].pol == "E" else om_s
+
+            # Fill MPI array for every single baseline
+            self.omega_A[:, bi] = (om_i * om_j) ** 0.5
+
+    def process(self, sstream):
+
+        sstream.redistribute("freq")
+
+        nfreq = len(sstream.freq)
+
+        lfreq, sfreq, efreq = mpiutil.split_local(nfreq)
+
+        import scipy.constants as c
+
+        wavelength = c.c / (sstream.freq[sfreq:efreq] * 10 ** 6)
+
+        om_A = self.omega_A.view(np.ndarray)
+
+        jy_to_K = (
+            wavelength[:, np.newaxis, np.newaxis] ** 2
+            / (2 * c.k * om_A[:, :, np.newaxis])
+            * 10 ** (-26)
+        )
+
+        new_stream = containers.SiderealStream(axes_from=sstream, attrs_from=sstream)
+        new_stream.redistribute("freq")
+        new_stream.vis[:] = 0.0
+        new_stream.weight[:] = 0.0
+
+        if self.convert_jy_to_K:
+            new_stream.vis[:] = sstream.vis[:] * jy_to_K
+            new_stream.weight[:] = sstream.weight[:] / jy_to_K ** 2
+
+        else:
+            new_stream.vis[:] = sstream.vis[:] / jy_to_K
+            new_stream.weight[:] = sstream.weight[:] * jy_to_K ** 2
+
+        return new_stream
