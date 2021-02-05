@@ -109,7 +109,7 @@ class QuadraticPSEstimation(task.SingleTask):
         return ps
 
 
-class QuadraticPSEstimationXLarge(QuadraticPSEstimation):
+class QuadraticPSEstimationLarge(QuadraticPSEstimation):
     """Quadratic PS estimation for large arrays"""
 
     def process(self, klmodes):
@@ -149,10 +149,11 @@ class QuadraticPSEstimationXLarge(QuadraticPSEstimation):
         self.sky_array[:] = 0.0
 
         for mi, m in klmodes.vis[:].enumerate(axis=0):
-            sky_vec1, sky_vec2 = pse.project_vector_kl_to_sky(
-                m, klmodes.vis[m, : klmodes.nmode[m]]
+            sky_vec1 = pse.project_vector_kl_to_sky(
+                m,
+                klmodes.vis[m, :klmodes.nmode[m]]
             )
-            if (sky_vec1.shape[0], sky_vec2.shape[0]) != (0, 0):
+            if sky_vec1.shape[0] != 0:
                 self.sky_array[mi] = sky_vec1
 
         self.sky_array = self.sky_array.allgather()
@@ -166,7 +167,7 @@ class QuadraticPSEstimationXLarge(QuadraticPSEstimation):
         for m in range(tel.mmax + 1):
             if np.sum(self.sky_array[m]) != 0:
                 sky_m = self.sky_array[m].reshape((tel.nfreq, tel.lmax + 1, 1))
-                pse.q_estimator(m, sky_m, sky_m)
+                pse.q_estimator(m, sky_m)
 
         # Redistribute over m's and have bands not distributed
         pse.qa = pse.qa.redistribute(axis=0)
