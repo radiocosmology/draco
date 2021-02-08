@@ -435,7 +435,6 @@ class SingleTask(MPILoggedTask, pipeline.BasicContMixin):
                 try:
                     is_nan = np.isnan(arr)
                     is_inf = np.isinf(arr)
-                    arr = n[:]
                 except TypeError:
                     continue
 
