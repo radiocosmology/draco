@@ -132,12 +132,6 @@ def _calc_redundancy(
         raise RuntimeError("redundancy array shape %s incorrect, expected %s" %
                            (repr(rshape), repr((nstack, ntime))))
 
-    if stack_index.shape[0] != prod_map.shape[0]:
-        raise ValueError(
-            f"Number of prod_map rows ({prod_map.shape[0]}) must match stack_index "
-            f"length ({stack_index.shape[0]})."
-        )
-
     # Check that we don't index out of bounds from the prod_map
     if np.min(prod_map) < 0 or np.max(prod_map) >= ninput:
         raise RuntimeError("Input index in prod_map out of bounds.")
@@ -251,3 +245,86 @@ cpdef beamform(float complex [:, :, ::1] vis,
 
     return np.asarray(formed_beam)
 
+
+@cython.wraparound(False)
+@cython.boundscheck(False)
+cpdef beamform_profile(double[:, :, ::1] weight,
+               double lat, double dec_s,
+               double cosha_s, double sinha_s,
+               double[::1] dec,
+               double[::1] cosha, double[::1] sinha,
+               double[:, ::1] u, double[:, ::1] v,
+               int f_index, int ra_index):
+    """ Unnormalized synthesized beam profile around a given pointing.
+
+    Parameters
+    ----------
+    weight : double np.ndarray[freq, RA/time, product/stack]
+        The weights to be used for adding products in beamforming.
+        Notice this is not in the usual order.
+        This order reduces data striding.
+    lat : double
+        Latitude of observation.
+    dec_s : double
+        Source declination.
+    cosha_s : double
+        Cosine of source hour angle
+    sinha_s : double
+        Sine of source hour angle
+    dec : double np.ndarray[dec]
+        Array of dec values to compute beam profile at
+    cosha : double np.ndarray[ha]
+        Cosine of array of HA values to compute beam profile at
+    sinha : double np.ndarray[ha]
+        Sine of array of HA values to compute beam profile at
+    u : double np.ndarray[freq, product/stack]
+        X-direction (EW) baseline in wavelengths
+    v : double np.ndarray[freq, product/stack]
+        Y-direction (NS) baseline in wavelengths
+    f_index : int
+        Index in the frequencies to process
+    ra_index : int
+        Index in the RA axis of the weights
+    """
+
+    cdef double cosdec_s, sindec_s, coslat, sinlat
+    cdef double cosdec, sindec
+    cdef double fsphase
+    cdef int nfreq, nprod
+    cdef int ii, jj, kk
+    cdef int fi, ri
+    cdef double pi
+    nprod = weight.shape[2]
+    npts = len(dec)
+    # To store the beam profile at each sky location.
+    cdef double[::1] formed_beam = np.zeros((npts), dtype=np.float64)
+    cdef double phase, ut, vt, st, ct
+
+    pi = np.pi
+    coslat, sinlat = cos(lat), sin(lat)
+
+    cosdec_s, sindec_s = cos(dec_s), sin(dec_s)
+
+    fi = f_index
+    ri = ra_index
+
+    ut_s = 2.0 * pi * cosdec_s * sinha_s
+    vt_s = -2.0 * pi * (coslat * sindec_s - sinlat * cosdec_s * cosha_s)
+
+    for ii in prange(npts, nogil=True):
+
+        formed_beam[ii] = 0.0
+
+        cosdec = cos(dec[ii])
+        sindec = sin(dec[ii])
+
+        ut = 2.0 * pi * cosdec * sinha[ii]
+        vt = -2.0 * pi * (coslat * sindec - sinlat * cosdec * cosha[ii])
+
+        for kk in range(nprod):
+            phase = u[fi, kk] * (ut - ut_s) + v[fi, kk] * (vt - vt_s)
+            st = sin(phase)
+            ct = cos(phase)
+            formed_beam[ii] += weight[fi, ri, kk] * (ct + 1j * st).real
+
+    return np.asarray(formed_beam)
