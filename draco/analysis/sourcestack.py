@@ -31,6 +31,9 @@ class SourceStack(task.SingleTask):
     # Pick only frequencies around the quasar (50 on each side)
     freqside = config.Property(proptype=int, default=50)
 
+    # Only consider sources within frequency channel with this index
+    restricted_source_chan_idx = config.Property(proptype=int, default=None)
+
     def process(self, formed_beam):
         """Receives a formed beam object and stack across sources.
 
@@ -79,6 +82,7 @@ class SourceStack(task.SingleTask):
 
         # Get f_mask and qs_indices
         freqdiff = freq[np.newaxis, :] - qso_freq[:, np.newaxis]
+
         # Stack axis bin edges to digitize each quasar at, in either increasing
         # or decreasing order depending on order of frequencies
         if self.stack_axis["centre"][0] > self.stack_axis["centre"][-1]:
@@ -93,12 +97,19 @@ class SourceStack(task.SingleTask):
                 stackbins,
                 self.stack_axis["centre"][-1] + 0.5 * self.stack_axis["width"][-1],
             )
-        # Index of each frequency in stack axis, for each quasar
-        qs_indices = np.digitize(freqdiff, stackbins) - 1
-        # Indices to be processed in full frequency axis for each quasar
-        f_mask = (qs_indices >= 0) & (qs_indices < self.nstack)
-        # Only quasars in the frequency range of the data.
-        qso_mask = (np.sum(f_mask, axis=1) > 0).astype(bool)
+        # Index of each frequency in stack axis, for each source
+        source_indices = np.digitize(freqdiff, stackbins) - 1
+        # Indices to be processed in full frequency axis for each source
+        f_mask = (source_indices >= 0) & (source_indices < self.nstack)
+        # Only sources in the frequency range of the data.
+        source_mask = (np.sum(f_mask, axis=1) > 0).astype(bool)
+        # If desired, also restrict to sources within a specific channel.
+        # This works because the frequency axis is not distributed between
+        # ranks.
+        if self.single_source_bin_index is not None:
+            fs = formed_beam.index_map['freq'][self.single_source_bin_index]
+            restricted_chan_mask = np.abs(source_freq - fs['centre']) < (0.5 * fs['width'])
+            source_mask *= restricted_chan_mask
 
         # Reduce mask and indices to this process range
         # to reduce striding through this data
@@ -129,6 +140,7 @@ class SourceStack(task.SingleTask):
                 if not qso_mask[lq]:
                     # Quasar not in the data redshift range
                     continue
+
                 qcount += 1
                 # Indices and slice for frequencies included in the stack.
                 f_indices = np.arange(nfreq, dtype=np.int32)[f_mask[lq]]
@@ -151,6 +163,7 @@ class SourceStack(task.SingleTask):
 
             # Gather quasar stack for all ranks. Each contains the sum
             # over a different subset of quasars.
+
             quasar_stack_full = np.zeros(
                 comm.size * self.nstack, dtype=quasar_stack.dtype
             )
