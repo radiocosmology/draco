@@ -26,6 +26,9 @@ Tasks
 import numpy as np
 from numpy.lib.recfunctions import structured_to_unstructured
 import scipy.constants
+from scipy.interpolate import interp1d
+from scipy.signal.windows import chebwin, nuttall
+
 from mpi4py import MPI
 
 from caput import config
@@ -172,6 +175,8 @@ class BeamformNS(task.SingleTask):
             'uniform' - each baseline given equal weight
             'blackman' - use a Blackman window
             'nutall' - use a Blackman-Nutall window
+            'chebychev' - use a Dolph-Chebyshev window, with attenuation (in dB)
+                          specified by cheb_at
 
     scaled : bool
         Scale the window to match the lowest frequency. This should make the
@@ -179,16 +184,21 @@ class BeamformNS(task.SingleTask):
 
     include_auto: bool
         Include autocorrelations in the calculation.  Default is False.
+
+    cheb_at : float
+        Attentuation parameter for Dolph-Chebyshev window (default: 100)
     """
 
     npix = config.Property(proptype=int, default=512)
     span = config.Property(proptype=float, default=1.0)
     weight = config.enum(
-        ["uniform", "natural", "inverse_variance", "blackman", "nuttall"],
+        ["uniform", "natural", "inverse_variance", "blackman", "nuttall", "hann",
+         "hanning", "hamming", "blackman_nuttall", "blackman_harris", "chebyshev", "blackman_nuttall_scipy"],
         default="natural",
     )
     scaled = config.Property(proptype=bool, default=False)
     include_auto = config.Property(proptype=bool, default=False)
+    cheb_at = config.Property(proptype=int, default=100)
 
     def process(self, gstream):
         """Computes the ringmap.
@@ -259,7 +269,14 @@ class BeamformNS(task.SingleTask):
                 gw = gsr[:].astype(np.float32)
             else:
                 x = 0.5 * (vpos / vmax + 1)
-                ns_weight = tools.window_generalised(x, window=self.weight)
+                if self.weight == "chebyshev":
+                    cheb_interp = interp1d(np.arange(1000) / (1000-1), chebwin(1000, self.cheb_at), bounds_error=False, fill_value=0)
+                    ns_weight = cheb_interp(x)
+                elif self.weight == "blackman_nuttall_scipy":
+                    bn_interp = interp1d(np.arange(1000) / (1000-1), nuttall(1000), bounds_error=False, fill_value=0)
+                    ns_weight = bn_interp(x)
+                else:
+                    ns_weight = tools.window_generalised(x, window=self.weight)
                 gw = (gsw[:, lfi] > 0) * ns_weight[
                     np.newaxis, np.newaxis, :, np.newaxis
                 ]
