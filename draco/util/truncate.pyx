@@ -1,3 +1,5 @@
+"""draco truncation utils"""
+
 cimport cython
 from cython.parallel import prange
 

@@ -1,11 +1,4 @@
-"""A set of tasks for SVD filtering the m-modes.
-"""
-# === Start Python 2/3 compatibility
-from __future__ import absolute_import, division, print_function, unicode_literals
-from future.builtins import *  # noqa  pylint: disable=W0401, W0614
-from future.builtins.disabled import *  # noqa  pylint: disable=W0401, W0614
-
-# === End Python 2/3 compatibility
+"""A set of tasks for SVD filtering the m-modes."""
 
 import numpy as np
 import scipy.linalg as la
@@ -199,7 +192,7 @@ def svd_em(A, mask, niter=5, rank=5, full_matrices=False):
 
     # Do an initial fill of the missing entries
     A = A.copy()
-    A[mask] = np.median(A)
+    A[mask] = np.median(A[~mask])
 
     # Perform cycles of calculating the SVD with the current guess for the
     # missing values, then forming a new estimate of the missing values using a

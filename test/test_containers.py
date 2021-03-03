@@ -3,10 +3,14 @@ import pytest
 
 from draco.core import containers
 
+# Run these tests under MPI
+pytestmark = pytest.mark.mpi
+
 
 @pytest.fixture
 def ss_container():
 
+    # This is implicitly distributed, so works correctly under MPI
     ss = containers.SiderealStream(
         stack=5, input=3, ra=16, freq=np.linspace(800.0, 750.0, 5)
     )

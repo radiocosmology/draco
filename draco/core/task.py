@@ -1,26 +1,8 @@
-"""An improved base task implementing easy (and explicit) saving of outputs.
-
-Tasks
-=====
-
-.. autosummary::
-    :toctree:
-
-    SingleTask
-    ReturnLastInputOnFinish
-    ReturnFirstInputOnFinish
-    Delete
-"""
-# === Start Python 2/3 compatibility
-from __future__ import absolute_import, division, print_function, unicode_literals
-from future.builtins import *  # noqa  pylint: disable=W0401, W0614
-from future.builtins.disabled import *  # noqa  pylint: disable=W0401, W0614
-from past.builtins import basestring
-
-# === End Python 2/3 compatibility
+"""An improved base task implementing easy (and explicit) saving of outputs."""
 
 import os
 import logging
+from inspect import getfullargspec
 
 import numpy as np
 
@@ -100,7 +82,7 @@ def _log_level(x):
 
     if isinstance(x, int):
         return x
-    elif isinstance(x, basestring) and x in level_dict:
+    elif isinstance(x, str) and x in level_dict:
         return level_dict[x.upper()]
     else:
         raise ValueError("Logging level %s not understood" % repr(x))
@@ -146,8 +128,7 @@ class SetMPILogging(pipeline.TaskBase):
 
 
 class LoggedTask(pipeline.TaskBase):
-    """A task with logger support.
-    """
+    """A task with logger support."""
 
     log_level = config.Property(proptype=_log_level, default=None)
 
@@ -164,8 +145,7 @@ class LoggedTask(pipeline.TaskBase):
 
     @property
     def log(self):
-        """The logger object for this task.
-        """
+        """The logger object for this task."""
         return self._log
 
 
@@ -207,8 +187,7 @@ class _AddRankLogAdapter(logging.LoggerAdapter):
 
 
 class MPILoggedTask(MPITask, LoggedTask):
-    """A task base that has MPI aware logging.
-    """
+    """A task base that has MPI aware logging."""
 
     def __init__(self):
 
@@ -273,16 +252,10 @@ class SingleTask(MPILoggedTask, pipeline.BasicContMixin):
     pipeline_config : dict
         Global pipeline configuration. This is attached to output metadata.
 
-    Methods
-    -------
-    next
-    setup
-    process
-    finish
-    read_input
-    cast_input
-    write_output
-
+    Raises
+    ------
+    `caput.pipeline.PipelineRuntimeError`
+        If this is used as a baseclass to a task overriding `self.process` with variable length or optional arguments.
     """
 
     save = config.Property(default=False, proptype=bool)
@@ -304,22 +277,18 @@ class SingleTask(MPILoggedTask, pipeline.BasicContMixin):
     _no_input = False
 
     def __init__(self):
-        """Checks inputs and outputs and stuff."""
-
         super(SingleTask, self).__init__()
 
-        import inspect
-
         # Inspect the `process` method to see how many arguments it takes.
-        pro_argspec = inspect.getargspec(self.process)
+        pro_argspec = getfullargspec(self.process)
         n_args = len(pro_argspec.args) - 1
 
-        if pro_argspec.varargs or pro_argspec.keywords or pro_argspec.defaults:
+        if pro_argspec.varargs or pro_argspec.varkw or pro_argspec.defaults:
             msg = (
                 "`process` method may not have variable length or optional"
                 " arguments."
             )
-            raise pipeline.PipelineConfigError(msg)
+            raise pipeline.PipelineRuntimeError(msg)
 
         if n_args == 0:
             self._no_input = True
@@ -575,3 +544,35 @@ class Delete(SingleTask):
         gc.collect()
 
         return None
+
+
+def group_tasks(*tasks):
+    """Create a Task that groups a bunch of tasks together.
+
+    This method creates a class that inherits from all the subtasks, and
+    calls each `process` method in sequence, passing the output of one to the
+    input of the next.
+
+    This should be used like:
+
+    >>> class SuperTask(group_tasks(SubTask1, SubTask2)):
+    >>>     pass
+
+    At the moment if the ensemble has more than one setup method, the
+    SuperTask will need to implement an override that correctly calls each.
+    """
+
+    class TaskGroup(*tasks):
+
+        # TODO: figure out how to make the setup work at the moment it just picks the first in MRO
+        # def setup(self, x): pass
+
+        def process(self, x):
+
+            for t in tasks:
+                self.log.debug("Calling process for subtask %s", t.__name__)
+                x = t.process(self, x)
+
+            return x
+
+    return TaskGroup

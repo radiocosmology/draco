@@ -1,48 +1,30 @@
-"""Distributed containers for holding various types of analysis data.
+"""
+Distributed containers for holding various types of analysis data.
 
 Containers
 ==========
-
-.. autosummary::
-    :toctree:
-
-    TimeStream
-    SiderealStream
-    GainData
-    StaticGainData
-    Map
-    MModes
-    RingMap
+- :py:class:`TimeStream`
+- :py:class:`SiderealStream`
+- :py:class:`GainData`
+- :py:class:`StaticGainData`
+- :py:class:`Map`
+- :py:class:`MModes`
+- :py:class:`RingMap`
 
 Container Base Classes
 ----------------------
-
-.. autosummary::
-    :toctree:
-
-    ContainerBase
-    TODContainer
-    VisContainer
+- :py:class:`ContainerBase`
+- :py:class:`TODContainer`
+- :py:class:`VisContainer`
 
 Helper Routines
 ---------------
-
 These routines are designed to be replaced by other packages trying to insert
 their own custom container types.
 
-.. autosummary::
-    :toctree:
-
-    empty_like
-    empty_timestream
+- :py:meth:`empty_like`
+- :py:meth:`empty_timestream`
 """
-# === Start Python 2/3 compatibility
-from __future__ import absolute_import, division, print_function, unicode_literals
-from future.builtins import *  # noqa  pylint: disable=W0401, W0614
-from future.builtins.disabled import *  # noqa  pylint: disable=W0401, W0614
-from past.builtins import basestring
-
-# === End Python 2/3 compatibility
 
 import inspect
 
@@ -66,7 +48,7 @@ class ContainerBase(memh5.BasicCont):
 
     This class is designed to do much of the work of setting up pipeline
     containers. It should be derived from, and two variables set `_axes` and
-    `_dataset_spec`. See the `Notes`_ section for details.
+    `_dataset_spec`. See the :ref:`Notes <containerbase_notes>` section for details.
 
     Parameters
     ----------
@@ -84,10 +66,11 @@ class ContainerBase(memh5.BasicCont):
 
     Notes
     -----
+    .. _containerbase_notes:
 
     Inheritance from other `ContainerBase` subclasses should work as expected,
     with datasets defined in super classes appearing as expected, and being
-    overriden where they are redefined in the derived class.
+    overridden where they are redefined in the derived class.
 
     The variable `_axes` should be a tuple containing the names of axes that
     datasets in this container will use.
@@ -220,9 +203,7 @@ class ContainerBase(memh5.BasicCont):
             compression_opts = dspec.get("compression_opts", None)
 
         # Get distribution properties
-        dist = (
-            dspec["distributed"] if "distributed" in dspec else self._data._distributed
-        )
+        dist = self.distributed and dspec.get("distributed", True)
         shape = ()
 
         # Check that all the specified axes are defined, and fetch their lengths
@@ -312,30 +293,41 @@ class ContainerBase(memh5.BasicCont):
         # Ensure that the dataset_spec is the same order on all ranks
         return {k: ddict[k] for k in sorted(ddict)}
 
-    @property
-    def axes(self):
-        """Return the set of axes for this container..
-        """
+    @classmethod
+    def _class_axes(cls):
+        """Get the set of axes defined by the container and it's base classes."""
         axes = set()
 
         # Iterate over the reversed MRO and look for _table_spec attributes
         # which get added to a temporary dict. We go over the reversed MRO so
         # that the `tdict.update` overrides tables in base classes.
-        for cls in inspect.getmro(self.__class__)[::-1]:
+        for c in inspect.getmro(cls)[::-1]:
 
             try:
-                axes |= set(cls._axes)
+                axes |= set(c._axes)
             except AttributeError:
                 pass
-
-        # Add in any axes found on the instance
-        axes |= set(self.__dict__.get("_axes", []))
 
         # This must be the same order on all ranks, so we need to explicitly sort to get around the
         # hash randomization
         return tuple(sorted(axes))
 
-    def _make_selections(self, sel_args):
+    @property
+    def axes(self):
+        """The set of axes for this container including any defined on the instance."""
+        axes = set(self._class_axes())
+
+        # Add in any axes found on the instance (this is needed to support the table
+        # classes where
+        # the axes get added at run time)
+        axes |= set(self.__dict__.get("_axes", []))
+
+        # This must be the same order on all ranks, so we need to explicitly sort to
+        # get around the hash randomization
+        return tuple(sorted(axes))
+
+    @classmethod
+    def _make_selections(cls, sel_args):
         """
         Match down-selection arguments to axes of datasets.
 
@@ -355,12 +347,12 @@ class ContainerBase(memh5.BasicCont):
         """
         # Check if all those axes exist
         for axis in sel_args.keys():
-            if axis not in self._axes:
+            if axis not in cls._class_axes():
                 raise RuntimeError("No '{}' axis found to select from.".format(axis))
 
         # Build selections dict
         selections = {}
-        for name, dataset in self._dataset_spec.items():
+        for name, dataset in cls._dataset_spec.items():
             ds_axes = dataset["axes"]
             sel = []
             ds_relevant = False
@@ -401,7 +393,13 @@ class ContainerBase(memh5.BasicCont):
         copy : subclass of ContainerBase
             The copied container.
         """
-        new_cont = self.__class__(attrs_from=self, axes_from=self, skip_datasets=True)
+        new_cont = self.__class__(
+            attrs_from=self,
+            axes_from=self,
+            skip_datasets=True,
+            distributed=self.distributed,
+            comm=self.comm,
+        )
 
         # Loop over datasets that exist in the source and either add a view of
         # the source dataset, or perform a full copy
@@ -433,7 +431,7 @@ class TableBase(ContainerBase):
     Similar to the `ContainerBase` class, the container is defined through a
     dictionary given as a `_table_spec` class attribute. The container may also
     hold generic datasets by specifying `_dataset_spec` as with `ContainerBase`.
-    See `Notes`_ for details.
+    See :ref:`Notes <tablebase_notes>` for details.
 
     Parameters
     ----------
@@ -448,6 +446,7 @@ class TableBase(ContainerBase):
 
     Notes
     -----
+    .. _tablebase_notes:
 
     A `_table_spec` consists of a dictionary mapping table names into a
     description of the table. That description is another dictionary containing
@@ -494,7 +493,8 @@ class TableBase(ContainerBase):
         dspec = self.__class__.__dict__.get("_dataset_spec", {})
         axes = self.__class__.__dict__.get("_axes", ())
 
-        # Iterate over all table_spec entries and construct dataset specifications for them.
+        # Iterate over all table_spec entries and construct dataset specifications for
+        # them.
         for name, spec in self.table_spec.items():
 
             # Get the specifieid axis or if not present create a unique one for
@@ -528,7 +528,7 @@ class TableBase(ContainerBase):
 
         dt = []
         for ci, (name, dtype) in enumerate(columns):
-            if not isinstance(name, basestring):
+            if not isinstance(name, str):
                 raise ValueError("Column %i is invalid" % ci)
             dt.append((name, dtype))
 
@@ -565,6 +565,11 @@ class TODContainer(ContainerBase, tod.TOData):
 
     @property
     def time(self):
+        """The actual times associated with each entry of the time axis.
+
+        By convention this property should return the floating point UTC UNIX time in
+        seconds for the *centre* of each time sample.
+        """
         try:
             return self.index_map["time"][:]["ctime"]
         # Need to check for both types as different numpy versions return
@@ -596,7 +601,7 @@ class VisContainer(ContainerBase):
         Should contain entries for all other axes.
     """
 
-    _axes = ("freq", "input", "prod", "stack")
+    _axes = ("input", "prod", "stack")
 
     def __init__(self, *args, **kwargs):
         # Resolve product map
@@ -665,11 +670,6 @@ class VisContainer(ContainerBase):
         return self.datasets["vis_weight"]
 
     @property
-    def freq(self):
-        """The frequency axis."""
-        return self.index_map["freq"]["centre"]
-
-    @property
     def input(self):
         """The correlated inputs."""
         return self.index_map["input"]
@@ -710,7 +710,95 @@ class VisContainer(ContainerBase):
         return len(self.stack) != len(self.prod)
 
 
-class Map(ContainerBase):
+class FreqContainer(ContainerBase):
+    """A pipeline container for data with a frequency axis.
+
+    This works like a normal :class:`ContainerBase` container, but already has a freq
+    axis defined, and specific properties for dealing with frequencies.
+    """
+
+    _axes = ("freq",)
+
+    @property
+    def freq(self):
+        """The physical frequency associated with each entry of the time axis.
+
+        By convention this property should return the frequency in MHz at the centre
+        of each of frequency channel.
+        """
+        try:
+            return self.index_map["freq"][:]["centre"]
+        # Need to check for both types as different numpy versions return
+        # different exceptions.
+        except (IndexError, ValueError):
+            return self.index_map["freq"][:]
+
+
+class SiderealContainer(ContainerBase):
+    """A pipeline container for data with an RA axis.
+
+    This works like a normal :class:`ContainerBase` container, but already has an RA
+    axis defined, and specific properties for dealing with this axis.
+
+    Note that Right Ascension is a fairly ambiguous term. What is typically meant
+    here is the Local Stellar Angle, which is the transiting RA in CIRS coordinates.
+    This is similar to J2000/ICRS with the minimal amount of coordinate rotation to
+    account for the polar axis precession.
+
+    Parameters
+    ----------
+    ra : array or int, optional
+        Either the explicit locations of samples of the RA axis, or if passed an
+        integer interpret this as a number of samples dividing the full sidereal day
+        and create an axis accordingly.
+    """
+
+    _axes = ("ra",)
+
+    def __init__(self, ra=None, *args, **kwargs):
+
+        # Allow the passing of a number of samples for the RA axis
+        if ra is not None:
+            if isinstance(ra, int):
+                ra = np.linspace(0.0, 360.0, ra, endpoint=False)
+            kwargs["ra"] = ra
+
+        super().__init__(*args, **kwargs)
+
+    @property
+    def ra(self):
+        """The RA in degrees associated with each sample of the RA axis."""
+        return self.index_map["ra"][:]
+
+
+class MContainer(ContainerBase):
+    """Container for holding m-mode type data.
+
+    Note this container will have an `msign` axis even though not all m-mode based
+    data needs one. As always this is not an issue, datasets that don't need it are
+    not required to list it in their `axes` list.
+
+    Parameters
+    ----------
+    mmax : integer, optional
+        Largest m to be held.
+    """
+
+    _axes = ("m", "msign")
+
+    def __init__(self, mmax=None, *args, **kwargs):
+
+        # Set up axes from passed arguments
+        if mmax is not None:
+            kwargs["m"] = mmax + 1
+
+        # Ensure the sign axis is set correctly
+        kwargs["msign"] = np.array(["+", "-"])
+
+        super().__init__(*args, **kwargs)
+
+
+class Map(FreqContainer):
     """Container for holding multifrequency sky maps.
 
     The maps are packed in format `[freq, pol, pixel]` where the polarisations
@@ -725,7 +813,7 @@ class Map(ContainerBase):
         stored.
     """
 
-    _axes = ("freq", "pol", "pixel")
+    _axes = ("pol", "pixel")
 
     _dataset_spec = {
         "map": {
@@ -750,15 +838,11 @@ class Map(ContainerBase):
         super(Map, self).__init__(*args, **kwargs)
 
     @property
-    def freq(self):
-        return self.index_map["freq"]["centre"]
-
-    @property
     def map(self):
         return self.datasets["map"]
 
 
-class SiderealStream(VisContainer):
+class SiderealStream(FreqContainer, VisContainer, SiderealContainer):
     """A container for holding a visibility dataset in sidereal time.
 
     Parameters
@@ -766,8 +850,6 @@ class SiderealStream(VisContainer):
     ra : int
         The number of points to divide the RA axis up into.
     """
-
-    _axes = ("ra",)
 
     _dataset_spec = {
         "vis": {
@@ -805,16 +887,6 @@ class SiderealStream(VisContainer):
         },
     }
 
-    def __init__(self, ra=None, *args, **kwargs):
-
-        # Set up axes passed ra langth
-        if ra is not None:
-            if isinstance(ra, int):
-                ra = np.linspace(0.0, 360.0, ra, endpoint=False)
-            kwargs["ra"] = ra
-
-        super(SiderealStream, self).__init__(*args, **kwargs)
-
     @property
     def gain(self):
         return self.datasets["gain"]
@@ -823,12 +895,8 @@ class SiderealStream(VisContainer):
     def input_flags(self):
         return self.datasets["input_flags"]
 
-    @property
-    def ra(self):
-        return self.index_map["ra"]
 
-
-class SystemSensitivity(TODContainer):
+class SystemSensitivity(FreqContainer, TODContainer):
     """A container for holding the total system sensitivity.
 
     This should be averaged/collapsed in the stack/prod axis
@@ -838,7 +906,7 @@ class SystemSensitivity(TODContainer):
     noise from the autocorrelations.
     """
 
-    _axes = ("freq", "pol")
+    _axes = ("pol",)
 
     _dataset_spec = {
         "measured": {
@@ -884,22 +952,16 @@ class SystemSensitivity(TODContainer):
         return self.datasets["frac_lost"]
 
     @property
-    def freq(self):
-        return self.index_map["freq"]["centre"]
-
-    @property
     def pol(self):
         return self.index_map["pol"]
 
 
-class RFIMask(TODContainer):
+class RFIMask(FreqContainer, TODContainer):
     """A container for holding RFI mask.
 
     The mask is `True` for contaminated samples that should be excluded, and
     `False` for clean samples.
     """
-
-    _axes = ("freq",)
 
     _dataset_spec = {
         "mask": {
@@ -915,12 +977,8 @@ class RFIMask(TODContainer):
     def mask(self):
         return self.datasets["mask"]
 
-    @property
-    def freq(self):
-        return self.index_map["freq"]["centre"]
 
-
-class TimeStream(VisContainer, TODContainer):
+class TimeStream(FreqContainer, VisContainer, TODContainer):
     """A container for holding a visibility dataset in time.
 
     This should look similar enough to the CHIME
@@ -964,10 +1022,6 @@ class TimeStream(VisContainer, TODContainer):
         },
     }
 
-    def __init__(self, *args, **kwargs):
-
-        super(TimeStream, self).__init__(*args, **kwargs)
-
     @property
     def gain(self):
         return self.datasets["gain"]
@@ -977,12 +1031,12 @@ class TimeStream(VisContainer, TODContainer):
         return self.datasets["input_flags"]
 
 
-class GridBeam(ContainerBase):
-    """ Generic container for representing the 2-d beam in spherical
-        coordinates on a rectangular grid.
+class GridBeam(FreqContainer):
+    """Generic container for representing the 2-d beam in spherical
+    coordinates on a rectangular grid.
     """
 
-    _axes = ("freq", "pol", "input", "theta", "phi")
+    _axes = ("pol", "input", "theta", "phi")
 
     _dataset_spec = {
         "beam": {
@@ -1030,10 +1084,6 @@ class GridBeam(ContainerBase):
         return self.attrs["coords"]
 
     @property
-    def freq(self):
-        return self.index_map["freq"]
-
-    @property
     def pol(self):
         return self.index_map["pol"]
 
@@ -1050,13 +1100,13 @@ class GridBeam(ContainerBase):
         return self.index_map["phi"]
 
 
-class TrackBeam(ContainerBase):
-    """ Container for a sequence of beam samples at arbitrary locations
-        on the sphere. The axis of the beam samples is 'pix', defined by
-        the numpy.dtype [('theta', np.float32), ('phi', np.float32)].
+class TrackBeam(FreqContainer):
+    """Container for a sequence of beam samples at arbitrary locations
+    on the sphere. The axis of the beam samples is 'pix', defined by
+    the numpy.dtype [('theta', np.float32), ('phi', np.float32)].
     """
 
-    _axes = ("freq", "pol", "input", "pix")
+    _axes = ("pol", "input", "pix")
 
     _dataset_spec = {
         "beam": {
@@ -1133,10 +1183,6 @@ class TrackBeam(ContainerBase):
         return self.attrs["track_type"]
 
     @property
-    def freq(self):
-        return self.index_map["freq"]
-
-    @property
     def pol(self):
         return self.index_map["pol"]
 
@@ -1149,13 +1195,8 @@ class TrackBeam(ContainerBase):
         return self.index_map["pix"]
 
 
-class MModes(VisContainer):
+class MModes(FreqContainer, VisContainer, MContainer):
     """Parallel container for holding m-mode data.
-
-    Parameters
-    ----------
-    mmax : integer, optional
-        Largest m to be held.
 
     Attributes
     ----------
@@ -1164,8 +1205,6 @@ class MModes(VisContainer):
     weight : mpidataset.MPIArray
         Array of weights for each point.
     """
-
-    _axes = ("m", "msign")
 
     _dataset_spec = {
         "vis": {
@@ -1184,19 +1223,8 @@ class MModes(VisContainer):
         },
     }
 
-    def __init__(self, mmax=None, *args, **kwargs):
 
-        # Set up axes from passed arguments
-        if mmax is not None:
-            kwargs["m"] = mmax + 1
-
-        # Ensure the sign axis is set correctly
-        kwargs["msign"] = np.array(["+", "-"])
-
-        super(MModes, self).__init__(*args, **kwargs)
-
-
-class SVDModes(ContainerBase):
+class SVDModes(MContainer):
     """Parallel container for holding SVD m-mode data.
 
     Parameters
@@ -1211,8 +1239,6 @@ class SVDModes(ContainerBase):
     weight : mpidataset.MPIArray
         Array of weights for each point.
     """
-
-    _axes = ("m", "mode")
 
     _dataset_spec = {
         "vis": {
@@ -1250,14 +1276,6 @@ class SVDModes(ContainerBase):
     def weight(self):
         return self.datasets["vis_weight"]
 
-    def __init__(self, mmax=None, *args, **kwargs):
-
-        # Set up axes from passed arguments
-        if mmax is not None:
-            kwargs["m"] = mmax + 1
-
-        super(SVDModes, self).__init__(*args, **kwargs)
-
 
 class KLModes(SVDModes):
     """Parallel container for holding KL filtered m-mode data.
@@ -1278,11 +1296,273 @@ class KLModes(SVDModes):
     pass
 
 
-class GainData(TODContainer):
-    """Parallel container for holding gain data.
+class VisGridStream(FreqContainer, SiderealContainer):
+    """Visibilities gridded into a 2D array.
+
+    Only makes sense for an array which is a cartesian grid.
     """
 
-    _axes = ("freq", "input")
+    _axes = ("pol", "ew", "ns")
+
+    _dataset_spec = {
+        "vis": {
+            "axes": ["pol", "freq", "ew", "ns", "ra"],
+            "dtype": np.complex64,
+            "initialise": True,
+            "distributed": True,
+            "distributed_axis": "freq",
+        },
+        "vis_weight": {
+            "axes": ["pol", "freq", "ew", "ns", "ra"],
+            "dtype": np.float32,
+            "initialise": True,
+            "distributed": True,
+            "distributed_axis": "freq",
+        },
+        "redundancy": {
+            "axes": ["pol", "ew", "ns", "ra"],
+            "dtype": np.int32,
+            "initialise": True,
+            "distributed": False,
+        },
+    }
+
+    @property
+    def vis(self):
+        return self.datasets["vis"]
+
+    @property
+    def weight(self):
+        return self.datasets["vis_weight"]
+
+    @property
+    def redundancy(self):
+        return self.datasets["redundancy"]
+
+
+class HybridVisStream(FreqContainer, SiderealContainer):
+    """Visibilities beamformed only in the NS direction.
+
+    This container has visibilities beam formed only in the NS direction to give a
+    grid in elevation.
+    """
+
+    _axes = ("pol", "ew", "el")
+
+    _dataset_spec = {
+        "vis": {
+            "axes": ["pol", "freq", "ew", "el", "ra"],
+            "dtype": np.complex64,
+            "initialise": True,
+            "distributed": True,
+            "distributed_axis": "freq",
+        },
+        "dirty_beam": {
+            "axes": ["pol", "freq", "ew", "el", "ra"],
+            "dtype": np.float32,
+            "initialise": True,
+            "distributed": True,
+            "distributed_axis": "freq",
+        },
+        "vis_weight": {
+            "axes": ["pol", "freq", "ew", "ra"],
+            "dtype": np.float32,
+            "initialise": True,
+            "distributed": True,
+            "distributed_axis": "freq",
+        },
+    }
+
+    @property
+    def vis(self):
+        return self.datasets["vis"]
+
+    @property
+    def weight(self):
+        return self.datasets["vis_weight"]
+
+    @property
+    def dirty_beam(self):
+        """This isn't useful at this stage, but it's needed to propagate onward."""
+        return self.datasets["dirty_beam"]
+
+
+class HybridVisMModes(FreqContainer, MContainer):
+    """Visibilities beamformed in the NS direction and m-mode transformed in RA.
+
+    This container has visibilities beam formed only in the NS direction to give a
+    grid in elevation.
+    """
+
+    _axes = ("pol", "ew", "el")
+
+    _dataset_spec = {
+        "vis": {
+            "axes": ["m", "msign", "pol", "freq", "ew", "el"],
+            "dtype": np.complex64,
+            "initialise": True,
+            "distributed": True,
+            "distributed_axis": "freq",
+        },
+        "vis_weight": {
+            "axes": ["m", "msign", "pol", "freq", "ew"],
+            "dtype": np.float32,
+            "initialise": True,
+            "distributed": True,
+            "distributed_axis": "freq",
+        },
+    }
+
+    @property
+    def vis(self):
+        return self.datasets["vis"]
+
+    @property
+    def weight(self):
+        return self.datasets["vis_weight"]
+
+
+class RingMap(FreqContainer, SiderealContainer):
+    """Container for holding multifrequency ring maps.
+
+    The maps are packed in format `[freq, pol, ra, EW beam, el]` where
+    the polarisations are Stokes I, Q, U and V.
+
+    Parameters
+    ----------
+    nside : int
+        The nside of the Healpix maps.
+    polarisation : bool, optional
+        If `True` all Stokes parameters are stored, if `False` only Stokes I is
+        stored.
+    """
+
+    _axes = ("pol", "beam", "el")
+
+    _dataset_spec = {
+        "map": {
+            "axes": ["beam", "pol", "freq", "ra", "el"],
+            "dtype": np.float64,
+            "initialise": True,
+            "distributed": True,
+            "distributed_axis": "freq",
+        },
+        "weight": {
+            "axes": ["pol", "freq", "ra"],
+            "dtype": np.float64,
+            "initialise": True,
+            "distributed": True,
+            "distributed_axis": "freq",
+        },
+        "dirty_beam": {
+            "axes": ["beam", "pol", "freq", "ra", "el"],
+            "dtype": np.float64,
+            "initialise": False,
+            "distributed": True,
+            "distributed_axis": "freq",
+        },
+        "rms": {
+            "axes": ["pol", "freq", "ra"],
+            "dtype": np.float64,
+            "initialise": False,
+            "distributed": True,
+            "distributed_axis": "freq",
+        },
+    }
+
+    @property
+    def pol(self):
+        return self.index_map["pol"]
+
+    @property
+    def el(self):
+        return self.index_map["el"]
+
+    @property
+    def map(self):
+        return self.datasets["map"]
+
+    @property
+    def rms(self):
+        return self.datasets["rms"]
+
+    @property
+    def weight(self):
+        return self.datasets["weight"]
+
+    @property
+    def dirty_beam(self):
+        return self.datasets["dirty_beam"]
+
+
+class CommonModeGainData(FreqContainer, TODContainer):
+    """Parallel container for holding gain data common to all inputs."""
+
+    _dataset_spec = {
+        "gain": {
+            "axes": ["freq", "time"],
+            "dtype": np.complex128,
+            "initialise": True,
+            "distributed": True,
+            "distributed_axis": "freq",
+        },
+        "weight": {
+            "axes": ["freq", "time"],
+            "dtype": np.float64,
+            "initialise": False,
+            "distributed": True,
+            "distributed_axis": "freq",
+        },
+    }
+
+    @property
+    def gain(self):
+        return self.datasets["gain"]
+
+    @property
+    def weight(self):
+        try:
+            return self.datasets["weight"]
+        except KeyError:
+            return None
+
+
+class CommonModeSiderealGainData(FreqContainer, SiderealContainer):
+    """Parallel container for holding sidereal gain data common to all inputs."""
+
+    _dataset_spec = {
+        "gain": {
+            "axes": ["freq", "ra"],
+            "dtype": np.complex128,
+            "initialise": True,
+            "distributed": True,
+            "distributed_axis": "freq",
+        },
+        "weight": {
+            "axes": ["freq", "ra"],
+            "dtype": np.float64,
+            "initialise": False,
+            "distributed": True,
+            "distributed_axis": "freq",
+        },
+    }
+
+    @property
+    def gain(self):
+        return self.datasets["gain"]
+
+    @property
+    def weight(self):
+        try:
+            return self.datasets["weight"]
+        except KeyError:
+            return None
+
+
+class GainData(FreqContainer, TODContainer):
+    """Parallel container for holding gain data."""
+
+    _axes = ("input",)
 
     _dataset_spec = {
         "gain": {
@@ -1313,19 +1593,14 @@ class GainData(TODContainer):
             return None
 
     @property
-    def freq(self):
-        return self.index_map["freq"]["centre"]
-
-    @property
     def input(self):
         return self.index_map["input"]
 
 
-class SiderealGainData(ContainerBase):
-    """Parallel container for holding sidereal gain data.
-    """
+class SiderealGainData(FreqContainer, SiderealContainer):
+    """Parallel container for holding sidereal gain data."""
 
-    _axes = ("freq", "input", "ra")
+    _axes = ("input",)
 
     _dataset_spec = {
         "gain": {
@@ -1356,23 +1631,14 @@ class SiderealGainData(ContainerBase):
             return None
 
     @property
-    def freq(self):
-        return self.index_map["freq"]
-
-    @property
     def input(self):
         return self.index_map["input"]
 
-    @property
-    def ra(self):
-        return self.index_map["ra"]
 
+class StaticGainData(FreqContainer):
+    """Parallel container for holding static gain data (i.e. non time varying)."""
 
-class StaticGainData(ContainerBase):
-    """Parallel container for holding static gain data (i.e. non time varying).
-    """
-
-    _axes = ("freq", "input")
+    _axes = ("input",)
 
     _dataset_spec = {
         "gain": {
@@ -1400,17 +1666,12 @@ class StaticGainData(ContainerBase):
         return self.datasets["weight"]
 
     @property
-    def freq(self):
-        return self.index_map["freq"]["centre"]
-
-    @property
     def input(self):
         return self.index_map["input"]
 
 
 class DelaySpectrum(ContainerBase):
-    """Container for a delay spectrum.
-    """
+    """Container for a delay spectrum."""
 
     _axes = ("baseline", "delay")
 
@@ -1502,8 +1763,7 @@ class Powerspectrum2D(ContainerBase):
 
 
 class SVDSpectrum(ContainerBase):
-    """Container for an m-mode SVD spectrum.
-    """
+    """Container for an m-mode SVD spectrum."""
 
     _axes = ("m", "singularvalue")
 
@@ -1522,15 +1782,13 @@ class SVDSpectrum(ContainerBase):
         return self.datasets["spectrum"]
 
 
-class FrequencyStack(ContainerBase):
+class FrequencyStack(FreqContainer):
     """Container for a frequency stack.
 
     In general used to hold the product of `draco.analysis.SourceStack`
     The stacked signal of frequency slices of the data in the direction
     of sources of interest.
     """
-
-    _axes = ("freq",)
 
     _dataset_spec = {
         "stack": {
@@ -1555,10 +1813,6 @@ class FrequencyStack(ContainerBase):
     def weight(self):
         return self.datasets["weight"]
 
-    @property
-    def freq(self):
-        return self.index_map["freq"]["centre"]
-
 
 class SourceCatalog(TableBase):
     """A basic container for holding astronomical source catalogs.
@@ -1577,8 +1831,7 @@ class SourceCatalog(TableBase):
 
 
 class SpectroscopicCatalog(SourceCatalog):
-    """A container for spectroscopic catalogs.
-    """
+    """A container for spectroscopic catalogs."""
 
     _table_spec = {
         "redshift": {
@@ -1588,11 +1841,10 @@ class SpectroscopicCatalog(SourceCatalog):
     }
 
 
-class FormedBeam(ContainerBase):
-    """Container for formed beams.
-    """
+class FormedBeam(FreqContainer):
+    """Container for formed beams."""
 
-    _axes = ("object_id", "pol", "freq")
+    _axes = ("object_id", "pol")
 
     _dataset_spec = {
         "beam": {
@@ -1632,11 +1884,8 @@ class FormedBeam(ContainerBase):
         return self.datasets["weight"]
 
     @property
-    def freq(self):
-        return self.index_map["freq"]["centre"]
-
-    @property
     def frequency(self):
+        # TODO: is this necessary
         return self.index_map["freq"]
 
     @property
@@ -1650,10 +1899,10 @@ class FormedBeam(ContainerBase):
 
 class FormedBeamHA(FormedBeam):
     """Container for formed beams.
-       These have not been collapsed in the hour angle (HA) axis
+    These have not been collapsed in the hour angle (HA) axis
     """
 
-    _axes = ("object_id", "pol", "freq", "ha")
+    _axes = ("ha",)
 
     _dataset_spec = {
         "beam": {

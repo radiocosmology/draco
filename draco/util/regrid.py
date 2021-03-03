@@ -1,26 +1,8 @@
-"""Routines for regridding irregular data using a Lanczos/Wiener filtering
-approach.
+"""Routines for regridding irregular data using a Lanczos/Wiener filtering approach.
 
 This is described in some detail in `doclib:173
-<http://bao.phas.ubc.ca/doc/cgi-bin/general/documents/display?Id=173>`_.
-
-Tasks
-=====
-
-.. autosummary::
-    :toctree:
-
-    band_wiener
-    lanczos_kernel
-    lanczos_forward_matrix
-    lanczos_inverse_matrix
+<http://bao.chimenet.ca/doc/cgi-bin/general/documents/display?Id=173>`_.
 """
-# === Start Python 2/3 compatibility
-from __future__ import absolute_import, division, print_function, unicode_literals
-from future.builtins import *  # noqa  pylint: disable=W0401, W0614
-from future.builtins.disabled import *  # noqa  pylint: disable=W0401, W0614
-
-# === End Python 2/3 compatibility
 
 import numpy as np
 import scipy.linalg as la

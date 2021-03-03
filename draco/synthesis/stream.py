@@ -4,23 +4,7 @@ A typical pattern would be to turn a map into a
 :class:`containers.SiderealStream` with the :class:`SimulateSidereal` task, then
 expand any redundant products with :class:`ExpandProducts` and finally generate
 a set of time stream files with :class:`MakeTimeStream`.
-
-Tasks
-=====
-
-.. autosummary::
-    :toctree:
-
-    SimulateSidereal
-    ExpandProducts
-    MakeTimeStream
 """
-# === Start Python 2/3 compatibility
-from __future__ import absolute_import, division, print_function, unicode_literals
-from future.builtins import *  # noqa  pylint: disable=W0401, W0614
-from future.builtins.disabled import *  # noqa  pylint: disable=W0401, W0614
-
-# === End Python 2/3 compatibility
 
 import numpy as np
 
@@ -31,8 +15,7 @@ from ..core import containers, task, io
 
 
 class SimulateSidereal(task.SingleTask):
-    """Create a simulated sidereal dataset from an input map.
-    """
+    """Create a simulated sidereal dataset from an input map."""
 
     done = False
 
@@ -178,8 +161,7 @@ class SimulateSidereal(task.SingleTask):
 
 
 class ExpandProducts(task.SingleTask):
-    """Un-wrap collated products to full triangle.
-    """
+    """Un-wrap collated products to full triangle."""
 
     def setup(self, telescope):
         """Get a reference to the telescope class.
@@ -360,3 +342,73 @@ class MakeTimeStream(task.SingleTask):
         self._cur_time += nsamp * int_time
 
         return time
+
+
+class MakeSiderealDayStream(task.SingleTask):
+    """Task for simulating a set of sidereal days from a given stream.
+
+    This creates a copy of the base stream for every LSD within the provided time
+    range.
+
+    Attributes
+    ----------
+    start_time, end_time : float or datetime
+        Start and end times of the sidereal streams to simulate. Needs to be either a
+        `float` (UNIX time) or a `datetime` objects in UTC.
+    """
+
+    start_time = config.utc_time()
+    end_time = config.utc_time()
+
+    def setup(self, bt, sstream):
+        """Set up an observer and the data to use for this simulation.
+
+        Parameters
+        ----------
+        bt : beamtransfer.BeamTransfer or manager.ProductManager
+            Sets up an observer holding the geographic location of the telscope.
+        sstream : containers.SiderealStream
+            The base sidereal data to use for this simulation.
+        """
+        self.observer = io.get_telescope(bt)
+        self.lsd_start = self.observer.unix_to_lsd(self.start_time)
+        self.lsd_end = self.observer.unix_to_lsd(self.end_time)
+
+        self.log.info(
+            "Sidereal period requested: LSD=%i to LSD=%i",
+            int(self.lsd_start),
+            int(self.lsd_end),
+        )
+
+        # Initialize the current lsd time
+        self._current_lsd = None
+        self.sstream = sstream
+
+    def process(self):
+        """Generate a sidereal stream for the specific sidereal day.
+
+        Returns
+        -------
+        ss : :class:`containers.SiderealStream`
+            Simulated sidereal day stream.
+        """
+
+        # If current_lsd is None then this is the first time we've run
+        if self._current_lsd is None:
+            # Check if lsd is an integer, if not add an lsd
+            if isinstance(self.lsd_start, int):
+                self._current_lsd = int(self.lsd_start)
+            else:
+                self._current_lsd = int(self.lsd_start + 1)
+
+        # Check if we have reached the end of the requested time
+        if self._current_lsd >= self.lsd_end:
+            raise pipeline.PipelineStopIteration
+
+        ss = self.sstream.copy()
+        ss.attrs["tag"] = f"lsd_{self._current_lsd}"
+        ss.attrs["lsd"] = self._current_lsd
+
+        self._current_lsd += 1
+
+        return ss

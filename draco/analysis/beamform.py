@@ -1,9 +1,4 @@
-# === Start Python 2/3 compatibility
-from __future__ import absolute_import, division, print_function, unicode_literals
-from future.builtins import *  # noqa  pylint: disable=W0401, W0614
-from future.builtins.disabled import *  # noqa  pylint: disable=W0401, W0614
-
-# === End Python 2/3 compatibility
+"""Beam Forming"""
 
 import numpy as np
 from skyfield.api import Star, Angle
@@ -24,7 +19,7 @@ C = units.c
 
 
 class BeamFormBase(task.SingleTask):
-    """ Base class for beam forming tasks.
+    """Base class for beam forming tasks.
 
     Defines a few useful methods. Not to be used directly
     but as parent class for BeamForm and BeamFormCat.
@@ -60,7 +55,7 @@ class BeamFormBase(task.SingleTask):
     freqside = config.Property(proptype=int, default=None)
 
     def setup(self, manager):
-        """ Generic setup method.
+        """Generic setup method.
 
         To be complemented by specific
         setup methods in daughter tasks.
@@ -97,7 +92,7 @@ class BeamFormBase(task.SingleTask):
         self.latitude = np.deg2rad(self.telescope.latitude)
 
     def process(self):
-        """ Generic process method.
+        """Generic process method.
 
         Performs all the beamforming,
         but not the data parsing. To be complemented by specific
@@ -150,8 +145,14 @@ class BeamFormBase(task.SingleTask):
             f_local_indices = np.arange(self.ls, dtype=np.int32)
             f_mask = np.zeros(self.ls, dtype=bool)
 
+        fbb = formed_beam.beam[:]
+        fbw = formed_beam.weight[:]
+
         # For each source, beamform and populate container.
         for src in range(self.nsource):
+
+            if src % 1000 == 0:
+                self.log.debug(f"Source {src}/{self.nsource}")
 
             # Declination of this source
             dec = np.radians(self.sdec[src])
@@ -174,10 +175,10 @@ class BeamFormBase(task.SingleTask):
                 # in this rank. I am getting a NaN error, however.
                 # I may need an mpiutil.barrier() call before the
                 # return statement.
-                # if f_mask.all():
-                #    # If there are no indices to be processed in
-                #    #the local frequency range, skip source.
-                #    continue
+                if f_mask.all():
+                    # If there are no indices to be processed in
+                    # the local frequency range, skip source.
+                    continue
 
                 # Frequency indices to process in local range
                 f_local_indices = np.arange(self.ls, dtype=np.int32)[np.invert(f_mask)]
@@ -190,7 +191,7 @@ class BeamFormBase(task.SingleTask):
                 # Cannot use searchsorted, because RA might not be
                 # monotonically increasing. Slower.
                 # Notice: in case there is more than one transit,
-                # this will pick a single transit quasy-randomly!
+                # this will pick a single transit quasi-randomly!
                 transit_diff = abs(self.ra - self.sra[src])
                 sra_index = np.argmin(transit_diff)
                 # For now, skip sources that do not transit in the data
@@ -247,7 +248,7 @@ class BeamFormBase(task.SingleTask):
                     # this_formed_beam was never normalized (this avoids
                     # re-work and makes code more efficient).
                     this_sumweight = np.sum(
-                        np.sum(sumweight_inrange, axis=-1) * primary_beam, axis=1
+                        np.sum(sumweight_inrange, axis=-1) * primary_beam ** 2, axis=1
                     )
 
                     formed_beam_full[pol] = np.sum(
@@ -264,15 +265,14 @@ class BeamFormBase(task.SingleTask):
                             * primary_beam ** 2,
                             axis=1,
                         )
-                    else:
-                        this_weight2 = np.sum(
-                            np.sum(sumweight_inrange, axis=-1) * primary_beam ** 2,
-                            axis=1,
+
+                        weight_full[pol] = this_sumweight ** 2 * invert_no_zero(
+                            this_weight2
                         )
 
-                    weight_full[pol] = this_sumweight ** 2 * invert_no_zero(
-                        this_weight2
-                    )
+                    else:
+                        weight_full[pol] = this_sumweight
+
                 else:
                     # Need to divide by weight here for proper
                     # normalization because it is not done in
@@ -319,8 +319,8 @@ class BeamFormBase(task.SingleTask):
                 pass
 
             # Populate container.
-            formed_beam.beam[src] = formed_beam_full
-            formed_beam.weight[src] = weight_full
+            fbb[src] = formed_beam_full
+            fbw[src] = weight_full
             if not self.collapse_ha:
                 if self.is_sstream:
                     formed_beam.ha[src, :] = ha_array
@@ -331,7 +331,7 @@ class BeamFormBase(task.SingleTask):
         return formed_beam
 
     def _ha_side(self, data, timetrack=900.0):
-        """ Number of RA/time bins to track the source at each side of transit.
+        """Number of RA/time bins to track the source at each side of transit.
 
         Parameters
         ----------
@@ -358,7 +358,7 @@ class BeamFormBase(task.SingleTask):
         return int(timetrack / approx_time_perbin)
 
     def _ha_array(self, ra, source_ra_index, source_ra, ha_side, is_sstream=True):
-        """ Hour angle for each RA/time bin to be processed.
+        """Hour angle for each RA/time bin to be processed.
 
         Also return the indices of these bins in the full RA/time axis.
 
@@ -416,7 +416,7 @@ class BeamFormBase(task.SingleTask):
 
     # TODO: This is very CHIME specific. Should probably be moved somewhere else.
     def _beamfunc(self, ha, pol, freq, dec, zenith=0.70999994):
-        """ Simple and fast beam model to be used as beamforming weights.
+        """Simple and fast beam model to be used as beamforming weights.
 
         Parameters
         ----------
@@ -447,15 +447,10 @@ class BeamFormBase(task.SingleTask):
             pol = pollist.index(pol)
 
         def _sig(pp, freq, dec):
-            """
-            """
             sig_amps = [14.87857614, 9.95746878]
             return sig_amps[pp] / freq / np.cos(dec)
 
         def _amp(pp, dec, zenith):
-            """
-            """
-
             def _flat_top_gauss6(x, A, sig, x0):
                 """Flat-top gaussian. Power of 6."""
                 return A * np.exp(-abs((x - x0) / sig) ** 6)
@@ -488,8 +483,7 @@ class BeamFormBase(task.SingleTask):
             ) ** 0.5
 
     def _process_data(self, data):
-        """ Store code for parsing and formating data prior to beamforming.
-        """
+        """Store code for parsing and formating data prior to beamforming."""
         # Easy access to communicator
         self.comm_ = data.comm
 
@@ -627,12 +621,10 @@ class BeamFormBase(task.SingleTask):
 
 
 class BeamForm(BeamFormBase):
-    """ BeamForm for a single source catalog and multiple visibility datasets.
-
-    """
+    """BeamForm for a single source catalog and multiple visibility datasets."""
 
     def setup(self, manager, source_cat):
-        """ Parse the source catalog and performs the generic setup.
+        """Parse the source catalog and performs the generic setup.
 
         Parameters
         ----------
@@ -647,7 +639,7 @@ class BeamForm(BeamFormBase):
         self.catalog = source_cat
 
     def process(self, data):
-        """ Parse the visibility data and beamforms all sources.
+        """Parse the visibility data and beamforms all sources.
 
         Parameters
         ----------
@@ -668,12 +660,10 @@ class BeamForm(BeamFormBase):
 
 
 class BeamFormCat(BeamFormBase):
-    """ BeamForm for multiple source catalogs and a single visibility dataset.
-
-    """
+    """BeamForm for multiple source catalogs and a single visibility dataset."""
 
     def setup(self, manager, data):
-        """ Parse the visibility data and performs the generic setup.
+        """Parse the visibility data and performs the generic setup.
 
         Parameters
         ----------
@@ -690,7 +680,7 @@ class BeamFormCat(BeamFormBase):
         self._process_data(data)
 
     def process(self, source_cat):
-        """ Parse the source catalog and beamforms all sources.
+        """Parse the source catalog and beamforms all sources.
 
         Parameters
         ----------

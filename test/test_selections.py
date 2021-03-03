@@ -1,4 +1,4 @@
-from draco.core.containers import SiderealGainData
+from draco.core.containers import GainData
 
 from caput import mpiarray, mpiutil
 
@@ -7,6 +7,8 @@ import glob
 import numpy as np
 import os
 
+# Run these tests under MPI
+pytestmark = pytest.mark.mpi
 
 comm = mpiutil.world
 rank, size = mpiutil.rank, mpiutil.size
@@ -21,16 +23,17 @@ dset2 = dset2.reshape((len_axis, len_axis))
 
 freqs = np.arange(len_axis)
 inputs = np.arange(len_axis)
-ra = np.arange(len_axis)
+times = np.arange(len_axis)
 
 fsel = slice(5)
 isel = slice(1, 4)
+tsel = slice(1, 4)
 
 
 @pytest.fixture
 def container_on_disk():
     fname = "tmp_test_memh5_select.h5"
-    container = SiderealGainData(freq=freqs, input=inputs, ra=ra)
+    container = GainData(freq=freqs, input=inputs, time=times)
     container.create_dataset("gain", data=dset1.view())
     container.create_dataset("weight", data=dset2.view())
     container.save(fname)
@@ -60,14 +63,14 @@ d_array2 = mpiarray.MPIArray.wrap(local_data2, axis=0)
 @pytest.fixture
 def container_on_disk_distributed():
     fname = "tmp_test_memh5_select_distributed.h5"
-    container = SiderealGainData(freq=freqs, input=inputs, ra=ra)
+    container = GainData(freq=freqs, input=inputs, time=times)
     container.create_dataset("gain", data=d_array1)
     container.create_dataset("weight", data=d_array2)
     container.save(fname)
 
     # load file and apply selection
-    md = SiderealGainData.from_file(
-        fname, freq_sel=fsel, input_sel=isel, distributed=True
+    md = GainData.from_file(
+        fname, freq_sel=fsel, input_sel=isel, time_sel=tsel, distributed=True
     )
     # save it again
     md.save(fname)
@@ -87,37 +90,44 @@ def container_on_disk_distributed():
 def test_H5FileSelect(container_on_disk):
     """Tests that makes hdf5 objects and tests selecting on their axes."""
 
-    m = SiderealGainData.from_file(container_on_disk, freq_sel=fsel, input_sel=isel)
-    assert np.all(m["gain"][:] == dset1[(fsel, isel, slice(None))])
-    assert np.all(m["weight"][:] == dset2[(fsel, slice(None))])
+    m = GainData.from_file(
+        container_on_disk, freq_sel=fsel, input_sel=isel, time_sel=tsel
+    )
+    assert np.all(m["gain"][:] == dset1[(fsel, isel, tsel)])
+    assert np.all(m["weight"][:] == dset2[(fsel, tsel)])
     assert np.all(m.index_map["freq"] == freqs[fsel])
     assert np.all(m.index_map["input"] == inputs[isel])
+    assert np.all(m.index_map["time"] == times[tsel])
 
 
 def test_H5FileSelect_distributed(container_on_disk):
     """Load H5 into parallel container while down-selecting axes."""
 
-    m = SiderealGainData.from_file(
-        container_on_disk, freq_sel=fsel, input_sel=isel, distributed=True
+    m = GainData.from_file(
+        container_on_disk,
+        freq_sel=fsel,
+        input_sel=isel,
+        time_sel=tsel,
+        distributed=True,
     )
-    assert np.all(m["gain"][:] == dset1[(fsel, isel, slice(None))])
-    assert np.all(m["weight"][:] == dset2[(fsel, slice(None))])
+    assert np.all(m["gain"][:] == dset1[(fsel, isel, tsel)])
+    assert np.all(m["weight"][:] == dset2[(fsel, tsel)])
     assert np.all(m.index_map["freq"] == freqs[fsel])
     assert np.all(m.index_map["input"] == inputs[isel])
+    assert np.all(m.index_map["time"] == times[tsel])
 
 
 def test_H5FileSelect_distributed_on_disk(container_on_disk_distributed):
     """Load distributed H5 into parallel container while down-selecting axes."""
 
     if rank == 0:
-        md = SiderealGainData.from_file(
-            container_on_disk_distributed, distributed=False
-        )
+        md = GainData.from_file(container_on_disk_distributed, distributed=False)
 
-        assert np.all(md["gain"][:] == dset1[(fsel, isel, slice(None))])
-        assert np.all(md["weight"][:] == dset2[(fsel, slice(None))])
+        assert np.all(md["gain"][:] == dset1[(fsel, isel, tsel)])
+        assert np.all(md["weight"][:] == dset2[(fsel, tsel)])
         assert np.all(md.index_map["freq"] == freqs[fsel])
         assert np.all(md.index_map["input"] == inputs[isel])
+        assert np.all(md.index_map["time"] == times[tsel])
 
 
 def test_test_H5FileSelect_distributed_on_disk_simple():
@@ -142,14 +152,14 @@ def test_test_H5FileSelect_distributed_on_disk_simple():
     d_array2 = mpiarray.MPIArray.wrap(local_data2, axis=0)
 
     fname = "tmp_test_memh5_select_distributed_simple.h5"
-    container = SiderealGainData(freq=freqs, input=inputs, ra=ra)
+    container = GainData(freq=freqs, input=inputs, time=times)
     container.create_dataset("gain", data=d_array1)
     container.create_dataset("weight", data=d_array2)
     container.save(fname)
 
     # load file and apply selection
     fsel = slice(5)
-    md = SiderealGainData.from_file(fname, freq_sel=fsel, distributed=True)
+    md = GainData.from_file(fname, freq_sel=fsel, distributed=True)
 
     # test
     if rank == 0:

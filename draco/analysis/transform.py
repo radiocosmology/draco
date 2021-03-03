@@ -1,23 +1,4 @@
-"""Miscellaneous transformations to do on data, from grouping frequencies and
-products to performing the m-mode transform.
-
-Tasks
-=====
-
-.. autosummary::
-    :toctree:
-
-    FrequencyRebin
-    SelectFreq
-    CollateProducts
-    MModeTransform
-"""
-# === Start Python 2/3 compatibility
-from __future__ import absolute_import, division, print_function, unicode_literals
-from future.builtins import *  # noqa  pylint: disable=W0401, W0614
-from future.builtins.disabled import *  # noqa  pylint: disable=W0401, W0614
-
-# === End Python 2/3 compatibility
+"""Misc. transformations to do on data, from grouping frequencies and products to performing the m-mode transform."""
 
 import numpy as np
 from caput import mpiarray, config
@@ -477,13 +458,23 @@ class MModeTransform(task.SingleTask):
 
         Parameters
         ----------
-        sstream : containers.SiderealStream
+        sstream : containers.SiderealStream or containers.HybridVisStream
             The input sidereal stream.
 
         Returns
         -------
         mmodes : containers.MModes
         """
+
+        contmap = {
+            containers.SiderealStream: containers.MModes,
+            containers.HybridVisStream: containers.HybridVisMModes,
+        }
+
+        # Get the output container and figure out at which position is it's
+        # frequency axis
+        out_cont = contmap[sstream.__class__]
+        freq_axis = out_cont._dataset_spec["vis"]["axes"].index("freq")
 
         sstream.redistribute("freq")
 
@@ -498,11 +489,11 @@ class MModeTransform(task.SingleTask):
 
         # Construct the array of m-modes
         marray = _make_marray(sstream.vis[:], mmax)
-        marray = mpiarray.MPIArray.wrap(marray[:], axis=2, comm=sstream.comm)
+        marray = mpiarray.MPIArray.wrap(marray[:], axis=freq_axis, comm=sstream.comm)
 
         # Create the container to store the modes in
         mmax = marray.shape[0] - 1
-        ma = containers.MModes(mmax=mmax, axes_from=sstream, comm=sstream.comm)
+        ma = out_cont(mmax=mmax, axes_from=sstream, comm=sstream.comm)
         ma.redistribute("freq")
 
         # Assign the visibilities and weights into the container
@@ -669,6 +660,9 @@ class Regridder(task.SingleTask):
         Width of the Lanczos interpolation kernel.
     snr_cov: float
         Ratio of signal covariance to noise covariance (used for Wiener filter).
+    mask_zero_weight: bool
+        Mask the output noise weights at frequencies where the weights were
+        zero for all time samples.
     """
 
     samples = config.Property(proptype=int, default=1024)
@@ -676,6 +670,7 @@ class Regridder(task.SingleTask):
     end = config.Property(proptype=float)
     lanczos_width = config.Property(proptype=int, default=5)
     snr_cov = config.Property(proptype=float, default=1e-8)
+    mask_zero_weight = config.Property(proptype=bool, default=False)
 
     def setup(self, observer):
         """Set the local observers position.
@@ -773,5 +768,10 @@ class Regridder(task.SingleTask):
         # Reshape to the correct shape
         sts = sts.reshape(vis_data.shape[:-1] + (self.samples,))
         ni = ni.reshape(vis_data.shape[:-1] + (self.samples,))
+
+        if self.mask_zero_weight:
+            # set weights to zero where there is no data
+            w_mask = weight.sum(axis=-1) != 0.0
+            ni *= w_mask[..., np.newaxis]
 
         return interp_grid, sts, ni
