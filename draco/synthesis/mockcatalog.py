@@ -78,7 +78,7 @@ import numpy as np
 import healpy as hp
 
 from cora.signal import corr21cm
-from cora.util import units
+from cora.util import units, cosmology
 from caput import config
 from caput import mpiarray, mpiutil
 from ..core import task, containers
@@ -301,6 +301,7 @@ class PdfGenerator(task.SingleTask):
     source_maps_path = config.Property(proptype=str)
     random_catalog = config.Property(proptype=bool, default=False)
     no_selfunc = config.Property(proptype=bool, default=False)
+    use_voxel_volumes = config.Property(proptype=bool, default=False)
 
     def setup(self, selfunc):
         """
@@ -370,7 +371,48 @@ class PdfGenerator(task.SingleTask):
         if self.no_selfunc:
             self.log.debug("Using trivial selection function to generate PDF!")
             pdf = rho_m
-            z_wheights = 1/n_z * np.ones_like(z_wheights)
+            if not self.use_voxel_volumes:
+                # Set each frequency channel to have equal total probability
+                z_wheights = 1/n_z * np.ones_like(z_wheights)
+            else:
+                # Set total probability for each frequency channel based
+                # on voxel volume for that channel.
+                # Healpix maps have equal-angular-area pixels, so the voxel
+                # area is proportional to \chi^2 * (\chi_max - \chi_min),
+                # where we use \chi_centre for the first \chi (which incorporates
+                # the z-dependence of transverse area), and the second factor
+                # is the voxel size along the z direction.
+
+                cosmo = cosmology.Cosmology()
+                z_wheights_global = np.zeros(
+                    len(self.source_maps.index_map["freq"]),
+                    dtype=np.float64
+                )
+
+                # First, we compute the normalization for each channel
+                # globally
+                for fi, freq in enumerate(self.source_maps.index_map["freq"]):
+                    z_min = units.nu21 / (freq[0] + 0.5 * freq[1]) - 1
+                    z_max = units.nu21 / (freq[0] - 0.5 * freq[1]) - 1
+                    z_mean = units.nu21 / freq[0] - 1
+
+                    z_wheights_global[fi] = (
+                        cosmo.comoving_distance(z_mean)**2
+                        * (
+                            cosmo.comoving_distance(z_max)
+                            - cosmo.comoving_distance(z_min)
+                        )
+                    )
+
+                z_wheights_global /= z_wheights_global.sum()
+
+                # Select local section of weights
+                z_wheights = z_wheights_global[
+                    z_wheights.local_offset[0] :
+                    z_wheights.local_offset[0] + z_wheights.local_shape[0]
+                ]
+                print('Rank %d: z_wheights are' % mpiutil.rank, z_wheights)
+
         else:
             pdf = rho_m * resized_selfunc
 
