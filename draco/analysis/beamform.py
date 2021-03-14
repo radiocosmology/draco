@@ -4,7 +4,9 @@ import numpy as np
 import scipy.interpolate
 from skyfield.api import Star, Angle
 
-from caput import config
+import healpy as hp
+
+from caput import config, mpiutil
 from caput import time as ctime
 
 from cora.util import units
@@ -13,6 +15,7 @@ from ..core import task, containers, io
 from ..util._fast_tools import beamform
 from ..util.tools import baseline_vector, polarization_map, invert_no_zero
 from ..util.tools import calculate_redundancy
+from ..synthesis.mockcatalog import _radec_to_pix
 
 # Constants
 NU21 = units.nu21
@@ -1237,3 +1240,197 @@ def icrs_to_cirs(ra, dec, epoch, apparent=True):
     ra_cirs, dec_cirs, _ = positions.cirs_radec(epoch)
 
     return ra_cirs._degrees, dec_cirs._degrees
+
+
+class BeamFormHealpixMap(task.SingleTask):
+    """Task for `beamforming` to locations on simulated maps.
+
+    Based on BeamFormBase, but the formed beams are simply the
+    map pixel values for the pixels containing each source.
+
+    Attributes
+    ----------
+    polarization : string
+        One of:
+        'I' : Stokes I only (default).
+        'stokes' : 'I', 'Q', 'U' and 'V' in this order. Not implemented.
+    freqside : int
+        Number of frequencies to process at each side of the source.
+        Default (None) processes all frequencies.
+    """
+
+    polarization = config.enum(["I", "stokes"], default="I")
+    freqside = config.Property(proptype=int, default=None)
+
+    def setup(self, manager):
+        """Setup method.
+
+        Parameters
+        ----------
+        manager : either `ProductManager`, `BeamTransfer` or `TransitTelescope`
+            Contains a TransitTelescope object describing the telescope.
+        """
+        # Get the TransitTelescope object
+        self.telescope = io.get_telescope(manager)
+        # Polarizations.
+        if self.polarization == "I":
+            self.process_pol = ["I"]
+            self.return_pol = ["I"]
+        elif self.polarization == "stokes":
+            self.process_pol = ["I", "Q", "U", "V"]
+            self.return_pol = ["I", "Q", "U", "V"]
+            msg = "Stokes parameters are not implemented"
+            raise RuntimeError(msg)
+        else:
+            # This should never happen. config.enum should bark first.
+            msg = "Invalid polarization parameter: {0}"
+            msg = msg.format(self.polarization)
+            raise ValueError(msg)
+        # Number of polarizations to process
+        self.npol = len(self.process_pol)
+
+    def process(self, source_cat, map_):
+        """Process source catalog and pull pixel values from map.
+
+        Returns
+        -------
+        formed_beam : `containers.FormedBeam`
+            Formed beams at each source.
+        """
+
+        # Arbitrarily set epoch (doesn't affect results)
+        self.epoch = self.telescope.lsd_to_unix(1000)
+
+        # Process input catalog
+        self._process_catalog(source_cat)
+
+        # From input map, get frequencies and healpix nside
+        self.freq = map_.index_map["freq"]
+        self.nfreq = len(self.freq)
+        self.nside = hp.npix2nside(len(map_.index_map["pixel"]))
+
+        # Container to hold the formed beams
+        formed_beam = containers.FormedBeam(
+            freq=self.freq,
+            object_id=source_cat.index_map["object_id"],
+            pol=np.array(self.return_pol),
+            distributed=True,
+        )
+
+        # Initialize container to zeros.
+        formed_beam.beam[:] = 0.0
+        formed_beam.weight[:] = 0.0
+        # Copy catalog information
+        formed_beam["position"][:] = source_cat["position"][:]
+        if "redshift" in source_cat:
+            formed_beam["redshift"][:] = source_cat["redshift"][:]
+        else:
+            # TODO: If there is not redshift information,
+            # should I have a different formed_beam container?
+            formed_beam["redshift"]["z"][:] = 0.0
+            formed_beam["redshift"]["z_error"][:] = 0.0
+        # Ensure container is distributed in frequency
+        formed_beam.redistribute("freq")
+
+        # Ensure map is also distributed in frequency
+        map_.redistribute("freq")
+
+        # MPI distribution values
+        self.lo = map_["map"].local_offset[0]
+        self.ls = map_["map"].local_shape[0]
+        self.freq_local = self.freq["centre"][self.lo : self.lo + self.ls]
+        self.freq_local_idx = np.array(
+            [np.argmin(np.abs(nu - self.telescope.frequencies)) for nu in self.freq_local]
+        )
+        # These are to be used when gathering results in the end.
+        # Tuple (not list!) of number of frequencies in each rank
+        self.fsize = tuple(map_.comm.allgather(self.ls))
+        # Tuple (not list!) of displacements of each rank array in full array
+        self.foffset = tuple(map_.comm.allgather(self.lo))
+
+        if self.freqside is None:
+            # Indices of local frequency axis. Full axis if freqside is None.
+            f_local_indices = np.arange(self.ls, dtype=np.int32)
+            f_mask = np.zeros(self.ls, dtype=bool)
+
+        fbb = formed_beam.beam[:]
+        fbw = formed_beam.weight[:]
+
+        # For each source, beamform and populate container.
+        for src in range(self.nsource):
+
+            if src % 10000 == 0:
+                self.log.debug(f"Rank {mpiutil.rank}: Source {src}/{self.nsource}")
+
+            if self.freqside is not None:
+                # Get the frequency bin this source is closest to.
+                freq_diff = abs(self.freq["centre"] - self.sfreq[src])
+                sfreq_index = np.argmin(freq_diff)
+                # Start and stop indices to process in global frequency axis
+                freq_idx0 = np.amax([0, sfreq_index - self.freqside])
+                freq_idx1 = np.amin([self.nfreq, sfreq_index + self.freqside + 1])
+                # Mask in full frequency axis
+                f_mask = np.ones(self.nfreq, dtype=bool)
+                f_mask[freq_idx0:freq_idx1] = False
+                # Restrict frequency mask to local range
+                f_mask = f_mask[self.lo : (self.lo + self.ls)]
+
+                # TODO: In principle I should be able to skip
+                # sources that have no indices to be processed
+                # in this rank. I am getting a NaN error, however.
+                # I may need an mpiutil.barrier() call before the
+                # return statement.
+                if f_mask.all():
+                    # If there are no indices to be processed in
+                    # the local frequency range, skip source.
+                    continue
+
+                # Frequency indices to process in local range
+                f_local_indices = np.arange(self.ls, dtype=np.int32)[np.invert(f_mask)]
+
+            # Arrays to store beams and weights for this source
+            # for all polarizations prior to combining polarizations
+            formed_beam_full = np.zeros((self.npol, self.ls), dtype=np.float64)
+            weight_full = np.zeros((self.npol, self.ls), dtype=np.float64)
+
+            # For each polarization
+            for pol in range(self.npol):
+
+                # Get index of pixel containing source, and then get pixel
+                # values at relevant frequencies
+                pix_idx = _radec_to_pix(self.sra[src], self.sdec[src], self.nside)
+                formed_beam_full[pol, f_local_indices] = (
+                    map_["map"][f_local_indices, pol, pix_idx]
+                )
+                # Set beam weights to unity
+                weight_full[pol, f_local_indices] = 1
+
+                # Ensure weights are zero for non-processed frequencies
+                weight_full[pol][f_mask] = 0.0
+
+            # Populate container.
+            fbb[src] = formed_beam_full
+            fbw[src] = weight_full
+
+        return formed_beam
+
+
+    def _process_catalog(self, catalog):
+        """Process the catalog to get CIRS coordinates at the correct epoch.
+        """
+
+        if "position" not in catalog:
+            raise ValueError("Input is missing a position table.")
+
+        self.sra, self.sdec = icrs_to_cirs(
+            catalog["position"]["ra"], catalog["position"]["dec"], self.epoch
+        )
+
+        if self.freqside is not None:
+            if "redshift" not in catalog:
+                raise ValueError("Input is missing a required redshift table.")
+            self.sfreq = NU21 / (catalog["redshift"]["z"][:] + 1.0)  # MHz
+
+        self.source_cat = catalog
+        self.nsource = len(self.sra)
+
