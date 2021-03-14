@@ -1335,9 +1335,12 @@ class BeamFormHealpixMap(task.SingleTask):
         # Ensure map is also distributed in frequency
         map_.redistribute("freq")
 
+        # Get local section of map
+        map_local = map_.map[:]
+
         # MPI distribution values
-        self.lo = map_["map"].local_offset[0]
-        self.ls = map_["map"].local_shape[0]
+        self.lo = map_.map.local_offset[0]
+        self.ls = map_.map.local_shape[0]
         self.freq_local = self.freq["centre"][self.lo : self.lo + self.ls]
         self.freq_local_idx = np.array(
             [np.argmin(np.abs(nu - self.telescope.frequencies)) for nu in self.freq_local]
@@ -1400,7 +1403,7 @@ class BeamFormHealpixMap(task.SingleTask):
                 # values at relevant frequencies
                 pix_idx = _radec_to_pix(self.sra[src], self.sdec[src], self.nside)
                 formed_beam_full[pol, f_local_indices] = (
-                    map_["map"][f_local_indices, pol, pix_idx]
+                    map_local[f_local_indices, pol, pix_idx]
                 )
                 # Set beam weights to unity
                 weight_full[pol, f_local_indices] = 1
