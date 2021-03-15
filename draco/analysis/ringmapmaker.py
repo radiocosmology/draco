@@ -308,6 +308,12 @@ class BeamformEW(task.SingleTask):
         # Redistribute over frequency
         hstream.redistribute("freq")
 
+        # TODO: figure out how to get around this
+        if len(hstream.index_map["pol"]) != 4:
+            raise ValueError(
+                "We need all 4 polarisation combinations for this to work."
+            )
+
         # Create empty ring map
         n_ew = len(hstream.index_map["ew"])
         nbeam = 1 if self.single_beam else 2 * n_ew - 1
@@ -329,8 +335,13 @@ class BeamformEW(task.SingleTask):
         # Normalise the weights
         weight_ew = weight_ew / weight_ew.sum()
 
+        # TODO: derive these from the actual polarisations found in the input
+        pol = np.array(["XX", "reXY", "imXY", "YY"], dtype="U4")
+
         # Create ring map, copying over axes/attrs and add the optional datasets
-        rm = containers.RingMap(beam=nbeam, axes_from=hstream, attrs_from=hstream)
+        rm = containers.RingMap(
+            beam=nbeam, pol=pol, axes_from=hstream, attrs_from=hstream
+        )
         rm.add_dataset("rms")
         rm.add_dataset("dirty_beam")
 
