@@ -18,6 +18,7 @@ Tasks
 """
 import numpy as np
 import scipy.constants
+from mpi4py import MPI
 
 from caput import config
 
@@ -212,8 +213,19 @@ class BeamformNS(task.SingleTask):
         hvb = hv.dirty_beam[:]
 
         nspos = gstream.index_map["ns"][:]
-        nsmax = np.abs(nspos).max()
         freq = gstream.index_map["freq"]["centre"]
+
+        # Get the largest baseline present across all nodes while accounting for masking
+        baselines_present = (
+            np.moveaxis(gsw.view(np.ndarray), -2, 0).reshape(len(nspos), -1) > 0
+        ).any(axis=1)
+        nsmax_local = (
+            np.abs(nspos[baselines_present]).max()
+            if baselines_present.sum() > 0
+            else 0.0
+        )
+        nsmax = self.comm.allreduce(nsmax_local, op=MPI.MAX)
+        self.log.info(f"Maximum NS baseline is {nsmax:.2f}m")
 
         # Loop over local frequencies and fill ring map
         for lfi, fi in gstream.vis[:].enumerate(1):
