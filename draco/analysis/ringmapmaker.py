@@ -549,13 +549,10 @@ class DeconvolveHybridM(task.SingleTask):
                 # Get the transfer function in m-space
                 mB = transform._make_marray(B_norm.conj(), mmax=hybrid_vis_m.mmax)
 
-                C_inv = self.inv_SN + (mB.conj() * weight_ew[:, np.newaxis] * mB).sum(
-                    axis=(1, -2)
-                )
+                Ni = weight_ew[:, np.newaxis] * (hw[:, :, pi, lfi, :, np.newaxis] > 0)
 
-                dirty_m = (hv[:, :, pi, lfi] * weight_ew[:, np.newaxis] * mB).sum(
-                    axis=(1, -2)
-                )
+                C_inv = self.inv_SN + (mB.conj() * Ni * mB).sum(axis=(1, -2))
+                dirty_m = (hv[:, :, pi, lfi] * Ni * mB).sum(axis=(1, -2))
 
                 map_m[:, pi] = dirty_m / C_inv
 
