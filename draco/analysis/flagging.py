@@ -110,12 +110,16 @@ class MaskData(task.SingleTask):
         Include positive m-modes (default=True).
     negative_m : bool
         Include negative m-modes (default=True).
+    mask_low_m : int, optional
+        If set, mask out m's lower than this threshold.
     """
 
     auto_correlations = config.Property(proptype=bool, default=False)
     m_zero = config.Property(proptype=bool, default=False)
     positive_m = config.Property(proptype=bool, default=True)
     negative_m = config.Property(proptype=bool, default=True)
+
+    mask_low_m = config.Property(proptype=int, default=None)
 
     def process(self, mmodes):
         """Mask out unwanted datain the m-modes.
@@ -147,6 +151,9 @@ class MaskData(task.SingleTask):
 
         if not self.negative_m:
             mw[1:, 1] = 0.0
+
+        if self.mask_low_m:
+            mw[: self.mask_low_m] = 0.0
 
         return mmodes
 
