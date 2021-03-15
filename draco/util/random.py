@@ -33,9 +33,7 @@ def default_rng():
     return _rng
 
 
-def complex_normal(
-    size=None, loc=0.0, scale=1.0, dtype=np.complex128, rng=None, out=None
-):
+def complex_normal(size=None, loc=0.0, scale=1.0, dtype=None, rng=None, out=None):
     """
     Get a set of complex normal variables.
 
@@ -78,10 +76,10 @@ def complex_normal(
     if dtype is None and out is None:
         dtype = np.complex128
     elif dtype is None and out is not None:
-        dtype = out.dtype
-    elif out is not None and dtype is not None and out.dtype != dtype:
+        dtype = out.dtype.type
+    elif out is not None and dtype is not None and out.dtype.type != dtype:
         raise ValueError(
-            f"Dtype of output array ({out.dtype}) != dtype argument ({dtype}"
+            f"Dtype of output array ({out.dtype.type}) != dtype argument ({dtype}"
         )
 
     if rng is None:
@@ -103,7 +101,7 @@ def complex_normal(
     # Fill the complex array by creating a real type view of it
     rtype = _type_map[dtype]
     rsize = size[:-1] + (size[-1] * 2,)
-    rng.standard_normal(rsize, out=out.view(rtype))
+    rng.standard_normal(rsize, dtype=rtype, out=out.view(rtype))
 
     # Use inplace ops for scaling and adding to avoid intermediate arrays
     rscale = scale / 2 ** 0.5
@@ -116,7 +114,7 @@ def complex_normal(
     return out
 
 
-def standard_complex_normal(shape, dtype=np.complex128, rng=None):
+def standard_complex_normal(shape, dtype=None, rng=None):
     """
     Get a set of standard complex normal variables.
 
