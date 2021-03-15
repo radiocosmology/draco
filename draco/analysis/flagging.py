@@ -175,6 +175,9 @@ class MaskBaselines(task.SingleTask):
         Mask out baselines shorter then a given distance in the East-West
         direction. Useful for masking out intra-cylinder baselines for
         North-South oriented cylindrical telescopes.
+    mask_short_ns : float, optional
+        Mask out baselines shorter then a given distance in the North-South
+        direction.
     missing_threshold : float, optional
         Mask any baseline that is missing more than this fraction of samples. This is
         measured relative to other baselines.
@@ -191,6 +194,7 @@ class MaskBaselines(task.SingleTask):
     mask_long_ns = config.Property(proptype=float, default=None)
     mask_short = config.Property(proptype=float, default=None)
     mask_short_ew = config.Property(proptype=float, default=None)
+    mask_short_ns = config.Property(proptype=float, default=None)
 
     missing_threshold = config.Property(proptype=float, default=None)
 
@@ -237,8 +241,12 @@ class MaskBaselines(task.SingleTask):
             mask *= short_mask[np.newaxis, :, np.newaxis]
 
         if self.mask_short_ew is not None:
-            short_ew_mask = baselines[:, 0] > self.mask_short_ew
+            short_ew_mask = np.abs(baselines[:, 0]) > self.mask_short_ew
             mask *= short_ew_mask[np.newaxis, :, np.newaxis]
+
+        if self.mask_short_ns is not None:
+            short_ns_mask = np.abs(baselines[:, 1]) > self.mask_short_ns
+            mask *= short_ns_mask[np.newaxis, :, np.newaxis]
 
         if self.missing_threshold is not None:
             # Get the total number of samples for each baseline accumulated onto each
