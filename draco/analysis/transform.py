@@ -822,3 +822,66 @@ class ShiftRA(task.SingleTask):
         sscont.ra[:] += self.delta
 
         return sscont
+
+
+class SelectPol(task.SingleTask):
+    """Extract a subset of polarisations, including Stokes parameters.
+
+    This currently only extracts Stokes I.
+
+    Attributes
+    ----------
+    pol : list
+        Polarisations to extract. Only Stokes I extraction is supported (i.e. `pol =
+        ["I"]`).
+    """
+
+    pol = config.Property(proptype=list)
+
+    def process(self, polcont):
+        """Extract the specified polarisation from the input.
+
+        This will combine polarisation pairs to get instrumental Stokes polarisations if
+        requested.
+
+        Parameters
+        ----------
+        polcont : ContainerBase
+            A container with a polarisation axis.
+
+        Returns
+        -------
+        selectedpolcont : same as polcont
+            A new container with the selected polarisation.
+        """
+
+        polcont.redistribute("freq")
+
+        if "pol" not in polcont.axes:
+            raise ValueError(
+                f"Container of type {type(polcont)} does not have a pol axis."
+            )
+
+        if len(self.pol) != 1 or self.pol[0] != "I":
+            raise NotImplementedError("Only selecting stokes I is currently working.")
+
+        outcont = containers.empty_like(polcont, pol=np.array(self.pol))
+        outcont.redistribute("freq")
+
+        # Get the locations of the XX and YY components
+        XX_ind = list(polcont.index_map["pol"]).index("XX")
+        YY_ind = list(polcont.index_map["pol"]).index("YY")
+
+        for name, dset in polcont.datasets.items():
+
+            if "pol" not in dset.attrs["axis"]:
+                outcont.datasets[name][:] = dset[:]
+            else:
+                pol_axis_pos = list(dset.attrs["axis"]).index("pol")
+
+                sl = tuple([slice(None)] * pol_axis_pos)
+                outcont.datasets[name][sl + (0,)] = dset[sl + (XX_ind,)]
+                outcont.datasets[name][sl + (0,)] += dset[sl + (YY_ind,)]
+                outcont.datasets[name][:] *= 0.5
+
+        return outcont
