@@ -54,7 +54,6 @@ their own custom container types.
 import inspect
 
 import numpy as np
-
 from caput import memh5, tod
 
 # Try to import bitshuffle to set the default compression options
