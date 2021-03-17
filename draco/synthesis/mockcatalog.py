@@ -711,6 +711,102 @@ class MockCatGenerator(task.SingleTask):
             print(msg)
 
 
+
+class MapPixLocGenerator(task.SingleTask):
+    """Generate a list of sky positions corresponding to the pixel
+    centers of an input Healpix map.
+
+    Attributes
+    ----------
+    freq_idx : int
+        Index of frequency channel to assign to all "sources".
+    """
+
+    freq_idx = config.Property(proptype=int)
+
+    def setup(self, in_map):
+        """
+        """
+        self.map = in_map
+
+        # For easy access to communicator:
+        self.comm_ = self.map.comm
+        self.rank = self.comm_.Get_rank()
+
+        # # Easy access to local shapes and offsets
+        # self.lo = self.map[:, 0, :].local_offset[0]
+        # self.ls = self.map[:, 0, :].local_shape[0]
+        # self.lo_list = self.comm_.allgather(self.lo)
+        # self.ls_list = self.comm_.allgather(self.ls)
+
+        # Global shape of frequency axis
+        n_z = self.map.map[:, 0, :].global_shape[0]
+
+        if not isinstance(self.map, containers.Map):
+            raise RuntimeError("Input map is not actually a map!")
+        else:
+            self.npix = len(self.map.index_map["pixel"])
+            self.nside = hp.pixelfunc.npix2nside(self.npix)
+
+        self.z_arr = _freq_to_z(self.map.index_map["freq"])
+        self.z = self.z_arr[self.freq_idx]["centre"]
+
+
+    def process(self):
+        """
+        """
+
+        local_pix_numbers = mpiutil.partition_list_mpi(np.arange(self.npix))
+        npix_rank = len(local_pix_numbers)
+
+        pix_dec, pix_ra = _pix_to_radec(local_pix_numbers, self.nside)
+
+        # Arrays to hold the whole source set information
+        ra_full = np.empty(self.npix, dtype=pix_ra.dtype)
+        dec_full = np.empty(self.npix, dtype=pix_dec.dtype)
+
+        # The counts and displacement arguments of Allgatherv are tuples!
+        # Tuple (not list!) of number of pixels in each rank
+        npix_tuple = tuple(self.comm_.allgather(npix_rank))
+        # Tuple (not list!) of displacements of each rank array in full array
+        dspls = tuple(np.insert(arr=np.cumsum(npix_tuple)[:-1], obj=0, values=0.0))
+        # Gather theta
+        recvbuf = [ra_full, npix_tuple, dspls, MPI.DOUBLE]
+        sendbuf = [pix_ra, len(pix_ra)]
+        self.comm_.Allgatherv(sendbuf, recvbuf)
+        # Gather phi
+        recvbuf = [dec_full, npix_tuple, dspls, MPI.DOUBLE]
+        sendbuf = [pix_dec, len(pix_dec)]
+        self.comm_.Allgatherv(sendbuf, recvbuf)
+
+        # Create catalog container
+        mock_catalog = containers.SpectroscopicCatalog(
+            object_id=np.arange(self.npix, dtype=np.uint64)
+        )
+        mock_catalog["position"][:] = np.empty(
+            self.npix, dtype=[("ra", pix_ra.dtype), ("dec", pix_dec.dtype)]
+        )
+        mock_catalog["redshift"][:] = np.empty(
+            self.npix, dtype=[("z", pix_ra.dtype), ("z_error", pix_ra.dtype)]
+        )
+        # Assign data to catalog container
+        mock_catalog["position"]["ra"][:] = ra_full
+        mock_catalog["position"]["dec"][:] = dec_full
+        mock_catalog["redshift"]["z"][:] = (
+            self.z * np.ones(self.npix, dtype=pix_ra.dtype)
+        )
+        # There is a provision for z-error. Zero here.
+        mock_catalog["redshift"]["z_error"][:] = 0.0
+
+        self.done = True
+        return mock_catalog
+
+    def process_finish(self):
+        """
+        """
+        return None
+
+
 # Internal functions
 # ------------------
 
