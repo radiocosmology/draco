@@ -428,3 +428,152 @@ class MakeSiderealDayStream(task.SingleTask):
         self._current_lsd += 1
 
         return ss
+
+
+class SimulateSingleHarmonicSidereal(task.SingleTask):
+    """Create a simulated sidereal dataset from a single
+    nonzero spherical harmonic coefficient."""
+
+    done = False
+
+    ell = config.Property(proptype=int)
+    m = config.Property(proptype=int)
+
+    def setup(self, bt):
+        """Set up the simulation.
+
+        Parameters
+        ----------
+        bt : ProductManager or BeamTransfer
+            Beam Transfer maanger.
+        """
+        self.beamtransfer = io.get_beamtransfer(bt)
+        self.telescope = io.get_telescope(bt)
+
+    def process(self, map_):
+        """Simulate a SiderealStream.
+
+        Parameters
+        ----------
+        map : :class:`containers.Map`
+            Sky map, which we only use to pull out frequency information.
+
+        Returns
+        -------
+        ss : SiderealStream
+            Stacked sidereal day.
+        feeds : list of CorrInput
+            Description of the feeds simulated.
+        """
+
+        if self.done:
+            raise pipeline.PipelineStopIteration
+
+        # Read in telescope system
+        bt = self.beamtransfer
+        tel = self.telescope
+
+        lmax = tel.lmax
+        mmax = tel.mmax
+        nfreq = tel.nfreq
+        npol = tel.num_pol_sky
+
+        lfreq, sfreq, efreq = mpiutil.split_local(nfreq)
+
+        lm, sm, em = mpiutil.split_local(mmax + 1)
+
+        # Set the minimum resolution required for the sky.
+        ntime = 2 * mmax + 1
+
+        freqmap = map_.index_map["freq"][:]
+
+        # Calculate the alm's for the local sections.
+        # Only set pol=0 a_lm to 1
+        row_alm = np.zeros((lfreq, npol, lmax + 1, lmax + 1), dtype=np.complex128)
+        row_alm[:, 0, self.ell, self.m] = 1
+        row_alm = row_alm.reshape((lfreq, npol * (lmax + 1), lmax + 1))
+        # row_alm = hputil.sphtrans_sky(row_map, lmax=lmax).reshape(
+        #     (lfreq, npol * (lmax + 1), lmax + 1)
+        # )
+
+        # Trim off excess m's and wrap into MPIArray
+        row_alm = row_alm[..., : (mmax + 1)]
+        row_alm = mpiarray.MPIArray.wrap(row_alm, axis=0)
+
+        # Perform the transposition to distribute different m's across processes. Neat
+        # tip, putting a shorter value for the number of columns, trims the array at
+        # the same time
+        col_alm = row_alm.redistribute(axis=2)
+
+        # Transpose and reshape to shift m index first.
+        col_alm = col_alm.transpose((2, 0, 1)).reshape((None, nfreq, npol, lmax + 1))
+
+        # Create storage for visibility data
+        vis_data = mpiarray.MPIArray(
+            (mmax + 1, nfreq, bt.ntel), axis=0, dtype=np.complex128
+        )
+        vis_data[:] = 0.0
+
+        # Iterate over m's local to this process and generate the corresponding
+        # visibilities
+        for mp, mi in vis_data.enumerate(axis=0):
+            vis_data[mp] = bt.project_vector_sky_to_telescope(
+                mi, col_alm[mp].view(np.ndarray)
+            )
+
+        # Rearrange axes such that frequency is last (as we want to divide
+        # frequencies across processors)
+        row_vis = vis_data.transpose((0, 2, 1))
+
+        # Parallel transpose to get all m's back onto the same processor
+        col_vis_tmp = row_vis.redistribute(axis=2)
+        col_vis_tmp = col_vis_tmp.reshape((mmax + 1, 2, tel.npairs, None))
+
+        # Transpose the local section to make the m's the last axis and unwrap the
+        # positive and negative m at the same time.
+        col_vis = mpiarray.MPIArray(
+            (tel.npairs, nfreq, ntime), axis=1, dtype=np.complex128
+        )
+        col_vis[:] = 0.0
+        col_vis[..., 0] = col_vis_tmp[0, 0]
+        for mi in range(1, mmax + 1):
+            col_vis[..., mi] = col_vis_tmp[mi, 0]
+            col_vis[..., -mi] = col_vis_tmp[
+                mi, 1
+            ].conj()  # Conjugate only (not (-1)**m - see paper)
+
+        del col_vis_tmp
+
+        # Fourier transform m-modes back to get final timestream.
+        vis_stream = np.fft.ifft(col_vis, axis=-1) * ntime
+        vis_stream = vis_stream.reshape((tel.npairs, lfreq, ntime))
+        vis_stream = vis_stream.transpose((1, 0, 2)).copy()
+
+        # Try and fetch out the feed index and info from the telescope object.
+        try:
+            feed_index = tel.input_index
+        except AttributeError:
+            feed_index = tel.nfeed
+
+        # Construct a product map
+        prod_map = np.zeros(
+            tel.uniquepairs.shape[0], dtype=[("input_a", int), ("input_b", int)]
+        )
+        prod_map["input_a"] = tel.uniquepairs[:, 0]
+        prod_map["input_b"] = tel.uniquepairs[:, 1]
+
+        # Construct container and set visibility data
+        sstream = containers.SiderealStream(
+            freq=freqmap,
+            ra=ntime,
+            input=feed_index,
+            prod=prod_map,
+            distributed=True,
+            comm=map_.comm,
+        )
+        sstream.vis[:] = mpiarray.MPIArray.wrap(vis_stream, axis=0)
+        sstream.weight[:] = 1.0
+
+        self.done = True
+
+        return sstream
