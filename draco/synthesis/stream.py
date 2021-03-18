@@ -437,7 +437,7 @@ class SimulateSingleHarmonicSidereal(task.SingleTask):
     done = False
 
     ell = config.Property(proptype=int)
-    m = config.Property(proptype=int)
+    m = config.Property(proptype=int, default=None)
 
     def setup(self, bt):
         """Set up the simulation.
@@ -489,8 +489,13 @@ class SimulateSingleHarmonicSidereal(task.SingleTask):
 
         # Calculate the alm's for the local sections.
         # Only set pol=0 a_lm to 1
+        # If input m is not specified, set a_lm=1 for all m's
         row_alm = np.zeros((lfreq, npol, lmax + 1, lmax + 1), dtype=np.complex128)
-        row_alm[:, 0, self.ell, self.m] = 1
+        if self.m is not None:
+            row_alm[:, 0, self.ell, self.m] = 1
+        else:
+            row_alm[:, 0, self.ell, :] = 1
+            self.log.debug("No input m found! Setting a_lm=1 for all m")
         row_alm = row_alm.reshape((lfreq, npol * (lmax + 1), lmax + 1))
         # row_alm = hputil.sphtrans_sky(row_map, lmax=lmax).reshape(
         #     (lfreq, npol * (lmax + 1), lmax + 1)
