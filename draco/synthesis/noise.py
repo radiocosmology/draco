@@ -284,3 +284,64 @@ class SampleNoise(task.SingleTask):
                 )
 
         return data_exp
+
+
+class SetRedundancyWeights(task.SingleTask, random.RandomTask):
+    """Like GaussianNoise, but only sets visibility weights according to
+    baseline redundancy.
+    """
+
+    def setup(self, manager=None):
+        """Set the telescope instance if a manager object is given.
+
+        This is used to simulate noise for visibilities that are stacked
+        over redundant baselines.
+
+        Parameters
+        ----------
+        manager : manager.ProductManager, optional
+            The telescope/manager used to set the `redundancy`. If not set,
+            `redundancy` is derived from the data.
+        """
+        if manager is not None:
+            self.telescope = io.get_telescope(manager)
+        else:
+            self.telescope = None
+
+    def process(self, data):
+        """Set visibility weights.
+
+        Parameters
+        ----------
+        data : :class:`containers.SiderealStream` or :class:`containers.TimeStream`
+            The expected (i.e. noiseless) visibility dataset. Note the modification
+            is done in place.
+
+        Returns
+        -------
+        data_noise : same as parameter `data`
+            The visibility dataset with new weights.
+        """
+
+        data.redistribute("freq")
+
+        visdata = data.vis[:]
+
+        # TODO: this assumes uniform channels
+        df = data.index_map["freq"]["width"][0] * 1e6
+        nfreq = data.vis.local_shape[0]
+        nprod = len(data.prodstack)
+        ninput = len(data.index_map["input"])
+
+        # Consider if this data is stacked over redundant baselines or not.
+        if (self.telescope is not None) and (nprod == self.telescope.nbase):
+            redundancy = self.telescope.redundancy
+        elif nprod == ninput * (ninput + 1) / 2:
+            redundancy = np.ones(nprod)
+        else:
+            raise ValueError("Unexpected number of products")
+
+        for lfi, fi in visdata.enumerate(0):
+            data.weight[fi] = redundancy[:, np.newaxis]
+
+        return data
