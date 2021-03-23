@@ -1,0 +1,178 @@
+"""
+======================================================
+Beam model related tasks (:mod:`~draco.analysis.beam`)
+======================================================
+
+.. currentmodule:: draco.analysis.beam
+
+Tools that enable generation and deconvolution of beam models.
+
+Tasks
+=====
+
+.. autosummary::
+    :toctree: generated/
+
+    CreateBeamStream
+"""
+
+import numpy as np
+import scipy.constants
+
+from caput import config, interferometry
+
+from ..core import task
+from ..core import io
+from ..core import containers
+from ..util import tools
+
+
+class CreateBeamStream(task.SingleTask):
+    """Convert a CommonModeGridBeam to a HybridVisStream that can be used for ringmap maker deconvolution."""
+
+    telescope = None
+
+    def setup(self, telescope: io.TelescopeConvertible):
+        """Set the telescope object.
+
+        Parameters
+        ----------
+        telescope
+            The telescope object to use.
+        """
+        self.telescope = io.get_telescope(telescope)
+
+        self.log.info(
+            "Using telescope at latitude %0.4f deg with rotation angle %0.4f deg."
+            % (self.telescope.latitude, self.telescope.rotation_angle)
+        )
+
+    def process(self, data, beam):
+        """Convert the beam model into a format that can be applied to the data.
+
+        Parameters
+        ----------
+        data : containers.HybridVisStream
+            Data to be de-convolved.
+        beam : containers.CommonModeGridBeam
+            Model for the beam.
+
+        Returns
+        -------
+        out : containers.HybridVisStream
+            Effective beam transfer function.
+        """
+        beam.redistribute("freq")
+
+        # Determine local frequencies
+        nfreq = beam.beam.local_shape[1]
+        fstart = beam.beam.local_offset[1]
+        fstop = fstart + nfreq
+
+        freq = beam.freq[fstart:fstop]
+
+        # Make sure the beam is in celestial coordinates
+        if beam.coords != "celestial":
+            raise RuntimeError(
+                "Beam must be converted to celestial coordinates prior to generating a HybridVisStream."
+            )
+
+        # Check that el matches
+        dec = beam.theta
+
+        el_beam = np.sin(np.radians(dec - self.telescope.latitude))
+        el_data = data.index_map["el"]
+
+        if not np.allclose(el_beam, el_data):
+            raise RuntimeError("The el axis for the beam and data do not match.")
+
+        # Map the RAs
+        ha = beam.phi
+        ra_beam = (ha + 360.0) % 360.0
+        ra_data = data.index_map["ra"]
+
+        map_ra = np.searchsorted(ra_data, ra_beam)
+
+        if not np.allclose(ra_data[map_ra], ra_beam):
+            self.log.info(
+                "RA axis of beam and data differ at most by %0.6f"
+                % np.max(ra_data[map_ra] - ra_beam)
+            )
+
+        slc_ra_in, slc_ra_out = index_to_slices(map_ra)
+
+        # Determine other axes
+        x = data.index_map["ew"][:]
+
+        arr_ha = np.radians(ha[np.newaxis, np.newaxis, np.newaxis, :])
+        arr_dec = np.radians(dec[np.newaxis, np.newaxis, :, np.newaxis])
+
+        # Determine baseline distances
+        lmbda = scipy.constants.c * 1e-6 / freq
+        u = x[np.newaxis, :] / lmbda[:, np.newaxis]
+        u = u[:, :, np.newaxis, np.newaxis]
+
+        v = np.sin(np.radians(self.telescope.rotation_angle)) * u
+
+        # Calculate the phase
+        phi = interferometry.fringestop_phase(
+            arr_ha, np.radians(self.telescope.latitude), arr_dec, u, v
+        ).conj()
+
+        # Reshape the beam datasets to match the output container
+        bweight = beam.weight[:]
+        bweight = np.sum(bweight, axis=-2) * tools.invert_no_zero(
+            np.sum(bweight > 0, axis=-2, dtype=np.float32)
+        )
+
+        bweight = bweight[:, :, np.newaxis]
+        bvis = beam.beam[:][:, :, np.newaxis]
+
+        # Create output container
+        out = containers.HybridVisStream(
+            axes_from=data,
+            attrs_from=data,
+            distributed=data.distributed,
+            comm=data.comm,
+        )
+        out.redistribute("freq")
+
+        for dset in out.datasets.values():
+            dset[:] = 0.0
+
+        oweight = out.weight[:]
+        ovis = out.vis[:]
+
+        # Loop over contiguous regions of the hour angle axis
+        # and fill in the appropriate RAs in the output hybrid vis container
+        for sin, sout in zip(slc_ra_in, slc_ra_out):
+
+            oweight[..., sout] = bweight[..., sin]
+            ovis[..., sout] = bvis[..., sin] * phi[np.newaxis, ..., sin]
+
+        return out
+
+
+def index_to_slices(index):
+
+    nsample = len(index)
+
+    boundaries_in = [[0]]
+    boundaries_out = [[index[0]]]
+
+    for ii in range(1, nsample):
+
+        if (index[ii] - index[ii - 1]) != 1:
+            boundaries_in[-1].append(ii)
+            boundaries_out[-1].append(index[ii - 1] + 1)
+
+            boundaries_in.append([ii])
+            boundaries_out.append([index[ii]])
+
+    boundaries_in[-1].append(nsample)
+    boundaries_out[-1].append(index[-1] + 1)
+
+    boundaries_in = [slice(aa, bb) for aa, bb in boundaries_in]
+    boundaries_out = [slice(aa, bb) for aa, bb in boundaries_out]
+
+    return boundaries_in, boundaries_out

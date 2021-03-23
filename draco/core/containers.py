@@ -1590,7 +1590,7 @@ class RingMap(FreqContainer, SiderealContainer):
             "distributed_axis": "freq",
         },
         "weight": {
-            "axes": ["pol", "freq", "ra"],
+            "axes": ["pol", "freq", "ra", "el"],
             "dtype": np.float64,
             "initialise": True,
             "distributed": True,
