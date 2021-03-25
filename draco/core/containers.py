@@ -3,19 +3,45 @@ Distributed containers for holding various types of analysis data.
 
 Containers
 ==========
-- :py:class:`TimeStream`
-- :py:class:`SiderealStream`
-- :py:class:`GainData`
-- :py:class:`StaticGainData`
 - :py:class:`Map`
+- :py:class:`SiderealStream`
+- :py:class:`SystemSensitivity`
+- :py:class:`RFIMask`
+- :py:class:`TimeStream`
+- :py:class:`CommonModeGridBeam`
+- :py:class:`GridBeam`
+- :py:class:`CommonModeTrackBeam`
+- :py:class:`TrackBeam`
 - :py:class:`MModes`
+- :py:class:`SVDModes`
+- :py:class:`KLModes`
+- :py:class:`VisGridStream`
+- :py:class:`HybridVisStream`
+- :py:class:`HybridVisMModes`
 - :py:class:`RingMap`
+- :py:class:`CommonModeGainData`
+- :py:class:`CommonModeSiderealGainData`
+- :py:class:`GainData`
+- :py:class:`SiderealGainData`
+- :py:class:`StaticGainData`
+- :py:class:`DelaySpectrum`
+- :py:class:`Powerspectrum2D`
+- :py:class:`SVDSpectrum`
+- :py:class:`FrequencyStack`
+- :py:class:`SourceCatalog`
+- :py:class:`SpectroscopicCatalog`
+- :py:class:`FormedBeam`
+- :py:class:`FormedBeamHA`
 
 Container Base Classes
 ----------------------
 - :py:class:`ContainerBase`
+- :py:class:`TableBase`
 - :py:class:`TODContainer`
 - :py:class:`VisContainer`
+- :py:class:`FreqContainer`
+- :py:class:`SiderealContainer`
+- :py:class:`MContainer`
 
 Helper Routines
 ---------------
