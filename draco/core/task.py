@@ -432,27 +432,28 @@ class SingleTask(MPILoggedTask, pipeline.BasicContMixin):
             if isinstance(n, memh5.MemDataset):
 
                 # Try to test for NaN's and infs. This will fail for compound datatypes...
-                arr = n[:]
+                # casting to ndarray, bc MPI ranks may fall out of sync, if a nan or inf are found
+                arr = n[:].view(np.ndarray)
                 try:
-                    is_nan = np.isnan(arr)
-                    is_inf = np.isinf(arr)
+                    total_nan = np.isnan(arr).sum()
+                    total_inf = np.isinf(arr).sum()
                 except TypeError:
                     continue
 
-                if is_nan.any():
+                if total_nan > 0:
                     self.log.info(
                         "NaN's found in dataset %s [%i of %i elements]",
                         n.name,
-                        is_nan.sum(),
+                        total_nan,
                         arr.size,
                     )
                     found = True
 
-                if is_inf.any():
+                if total_inf > 0:
                     self.log.info(
                         "Inf's found in dataset %s [%i of %i elements]",
                         n.name,
-                        is_inf.sum(),
+                        total_inf,
                         arr.size,
                     )
                     found = True
