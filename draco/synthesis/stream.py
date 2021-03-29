@@ -7,8 +7,11 @@ a set of time stream files with :class:`MakeTimeStream`.
 """
 
 import numpy as np
+from scipy.interpolate import interp1d
+import scipy.fftpack as fftpack
 
-from cora.util import hputil
+from cora.util import hputil, units
+from cora.util.cosmology import Cosmology
 from caput import mpiutil, pipeline, config, mpiarray
 
 from ..core import containers, task, io
@@ -438,6 +441,8 @@ class SimulateSingleHarmonicSidereal(task.SingleTask):
 
     ell = config.Property(proptype=int)
     m = config.Property(proptype=int, default=None)
+    kpar = config.Property(proptype=float, default=None)
+    kpar_as_kf_mult = config.Property(proptype=bool, default=True)
 
     def setup(self, bt):
         """Set up the simulation.
@@ -487,15 +492,27 @@ class SimulateSingleHarmonicSidereal(task.SingleTask):
 
         freqmap = map_.index_map["freq"][:]
 
+        if self.kpar is None:
+            # If not input kpar specified, use all ones as input values
+            vals = np.ones(lfreq)
+        else:
+            # If input kpar specified, set map values along frequency
+            # axis based on a single Fourier mode with that kpar
+            vals = channel_values_from_kpar(freqmap, self.kpar, self.kpar_as_kf_mult)
+            vals = vals[sfreq: efreq]
+
         # Calculate the alm's for the local sections.
         # Only set pol=0 a_lm to 1
         # If input m is not specified, set a_lm=1 for all m's
         row_alm = np.zeros((lfreq, npol, lmax + 1, lmax + 1), dtype=np.complex128)
+
         if self.m is not None:
-            row_alm[:, 0, self.ell, self.m] = 1
+            row_alm[:, 0, self.ell, self.m] = vals
         else:
-            row_alm[:, 0, self.ell, :] = 1
+            row_alm[:, 0, self.ell, :] = vals[:, np.newaxis]
             self.log.debug("No input m found! Setting a_lm=1 for all m")
+
+
         row_alm = row_alm.reshape((lfreq, npol * (lmax + 1), lmax + 1))
         # row_alm = hputil.sphtrans_sky(row_map, lmax=lmax).reshape(
         #     (lfreq, npol * (lmax + 1), lmax + 1)
@@ -582,3 +599,58 @@ class SimulateSingleHarmonicSidereal(task.SingleTask):
         self.done = True
 
         return sstream
+
+
+def channel_values_from_kpar(freqmap, kpar_in, kpar_as_kf_mult=True):
+    """For an input k_parallel value, sample the corresponding
+    Fourier mode at the channel frequency centers, relative to
+    the lowest channel.
+
+    kpar_as_kf_mult=True means that the kpar_in is specified as a
+    multiple of the fundamental k corresponding to the width
+    of the entire band.
+    """
+
+    # Set up cora cosmology calculator
+    cosmo = Cosmology()
+
+    # Get frequency channel centers and corresponding comoving distances
+    freqs = np.array([x[0] for x in freqmap])
+    abs_chi = cosmo.comoving_distance(units.nu21 / freqs - 1.0)
+    n_chi = len(abs_chi)
+
+    # Define distances relative to lowest distance
+    if abs_chi[0] < abs_chi[1]:
+        rel_chi = abs_chi - abs_chi[0]
+    else:
+        rel_chi = (abs_chi - abs_chi[-1])[::-1]
+
+    # Get max comoving distance (i.e. distance spanned by band),
+    # and lowest pairwise distance difference between two channel centers
+    chi_max = rel_chi.max()
+    chi_min = np.diff(rel_chi).min()
+
+    # Define k_fundamental as 2pi/chi_max
+    kf = 2*np.pi / chi_max
+
+    # Set parameters for FFT along radial distance
+    kparmax = 20.0
+    nkpar = 32768
+    kpar = np.linspace(0, kparmax, nkpar)
+    mode_k = np.zeros_like(kpar)
+
+    # Set input mode values to be unity at specified kpar
+    # and zero elsewhere
+    if kpar_as_kf_mult:
+        mode_k[np.searchsorted(kpar, kpar_in * kf)] = 1
+    else:
+        mode_k[np.searchsorted(kpar, kpar_in)] = 1
+
+    # Do DCT, normalizing results so that iDCT gives unity at input kpar
+    mode_ft = fftpack.dct(mode_k, type=1) / (2 * nkpar)
+    mode_ft_x = np.arange(nkpar) * np.pi / kparmax
+
+    # Define interpolating function over results, and return results
+    # sampled at channel centers
+    mode_ft_interp = interp1d(mode_ft_x, mode_ft, kind='cubic')
+    return mode_ft_interp(rel_chi)
