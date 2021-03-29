@@ -8,9 +8,7 @@ Containers
 - :py:class:`SystemSensitivity`
 - :py:class:`RFIMask`
 - :py:class:`TimeStream`
-- :py:class:`CommonModeGridBeam`
 - :py:class:`GridBeam`
-- :py:class:`CommonModeTrackBeam`
 - :py:class:`TrackBeam`
 - :py:class:`MModes`
 - :py:class:`SVDModes`
@@ -1057,35 +1055,35 @@ class TimeStream(FreqContainer, VisContainer, TODContainer):
         return self.datasets["input_flags"]
 
 
-class CommonModeGridBeam(FreqContainer):
+class GridBeam(FreqContainer):
     """Generic container for representing a 2D beam on a rectangular grid."""
 
-    _axes = ("pol", "theta", "phi")
+    _axes = ("pol", "input", "theta", "phi")
 
     _dataset_spec = {
         "beam": {
-            "axes": ["pol", "freq", "theta", "phi"],
+            "axes": ["freq", "pol", "input", "theta", "phi"],
             "dtype": np.complex64,
             "initialise": True,
             "distributed": True,
             "distributed_axis": "freq",
         },
         "weight": {
-            "axes": ["pol", "freq", "theta", "phi"],
+            "axes": ["freq", "pol", "input", "theta", "phi"],
             "dtype": np.float32,
             "initialise": True,
             "distributed": True,
             "distributed_axis": "freq",
         },
         "quality": {
-            "axes": ["pol", "freq", "theta", "phi"],
+            "axes": ["freq", "pol", "input", "theta", "phi"],
             "dtype": np.uint8,
             "initialise": False,
             "distributed": True,
             "distributed_axis": "freq",
         },
         "gain": {
-            "axes": ["pol", "freq", "theta"],
+            "axes": ["freq", "input"],
             "dtype": np.complex64,
             "initialise": False,
             "distributed": True,
@@ -1095,7 +1093,7 @@ class CommonModeGridBeam(FreqContainer):
 
     def __init__(self, coords="celestial", *args, **kwargs):
 
-        super(CommonModeGridBeam, self).__init__(*args, **kwargs)
+        super(GridBeam, self).__init__(*args, **kwargs)
         self.attrs["coords"] = coords
 
     @property
@@ -1123,6 +1121,10 @@ class CommonModeGridBeam(FreqContainer):
         return self.index_map["pol"]
 
     @property
+    def input(self):
+        return self.index_map["input"]
+
+    @property
     def theta(self):
         return self.index_map["theta"]
 
@@ -1131,63 +1133,35 @@ class CommonModeGridBeam(FreqContainer):
         return self.index_map["phi"]
 
 
-class GridBeam(CommonModeGridBeam):
-    """Generic container for representing an input-dependent 2D beam on a rectangular grid."""
-
-    _axes = ("input",)
-
-    _dataset_spec = {
-        "beam": {
-            "axes": ["freq", "pol", "input", "theta", "phi"],
-            "dtype": np.complex64,
-            "initialise": True,
-            "distributed": True,
-            "distributed_axis": "freq",
-        },
-        "weight": {
-            "axes": ["freq", "pol", "input", "theta", "phi"],
-            "dtype": np.float32,
-            "initialise": True,
-            "distributed": True,
-            "distributed_axis": "freq",
-        },
-        "gain": {
-            "axes": ["freq", "input"],
-            "dtype": np.complex64,
-            "initialise": False,
-            "distributed": True,
-            "distributed_axis": "freq",
-        },
-    }
-
-    @property
-    def input(self):
-        return self.index_map["input"]
-
-
-class CommonModeTrackBeam(FreqContainer):
+class TrackBeam(FreqContainer):
     """Container for a sequence of beam samples at arbitrary locations on the sphere.
 
     The axis of the beam samples is 'pix', defined by the numpy.dtype
     [('theta', np.float32), ('phi', np.float32)].
     """
 
-    _axes = ("pol", "pix")
+    _axes = ("pol", "input", "pix")
 
     _dataset_spec = {
         "beam": {
-            "axes": ["pol", "freq", "pix"],
+            "axes": ["freq", "pol", "input", "pix"],
             "dtype": np.complex64,
             "initialise": True,
             "distributed": True,
             "distributed_axis": "freq",
+            "compression": COMPRESSION,
+            "compression_opts": COMPRESSION_OPTS,
+            "chunks": (128, 2, 128, 128),
         },
         "weight": {
-            "axes": ["pol", "freq", "pix"],
+            "axes": ["freq", "pol", "input", "pix"],
             "dtype": np.float32,
             "initialise": True,
             "distributed": True,
             "distributed_axis": "freq",
+            "compression": COMPRESSION,
+            "compression_opts": COMPRESSION_OPTS,
+            "chunks": (128, 2, 128, 128),
         },
     }
 
@@ -1247,41 +1221,12 @@ class CommonModeTrackBeam(FreqContainer):
         return self.index_map["pol"]
 
     @property
-    def pix(self):
-        return self.index_map["pix"]
-
-
-class TrackBeam(CommonModeTrackBeam):
-    """Container for a sequence of input-dependent beam samples at arbitrary locations on the sphere."""
-
-    _axes = ("input",)
-
-    _dataset_spec = {
-        "beam": {
-            "axes": ["freq", "pol", "input", "pix"],
-            "dtype": np.complex64,
-            "initialise": True,
-            "distributed": True,
-            "distributed_axis": "freq",
-            "compression": COMPRESSION,
-            "compression_opts": COMPRESSION_OPTS,
-            "chunks": (128, 2, 128, 128),
-        },
-        "weight": {
-            "axes": ["freq", "pol", "input", "pix"],
-            "dtype": np.float32,
-            "initialise": True,
-            "distributed": True,
-            "distributed_axis": "freq",
-            "compression": COMPRESSION,
-            "compression_opts": COMPRESSION_OPTS,
-            "chunks": (128, 2, 128, 128),
-        },
-    }
-
-    @property
     def input(self):
         return self.index_map["input"]
+
+    @property
+    def pix(self):
+        return self.index_map["pix"]
 
 
 class MModes(FreqContainer, VisContainer, MContainer):
