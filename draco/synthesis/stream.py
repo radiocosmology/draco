@@ -601,15 +601,7 @@ class SimulateSingleHarmonicSidereal(task.SingleTask):
         return sstream
 
 
-def channel_values_from_kpar(freqmap, kpar_in, kpar_as_kf_mult=True):
-    """For an input k_parallel value, sample the corresponding
-    Fourier mode at the channel frequency centers, relative to
-    the lowest channel.
-
-    kpar_as_kf_mult=True means that the kpar_in is specified as a
-    multiple of the fundamental k corresponding to the width
-    of the entire band.
-    """
+def relative_freq_channel_distances(freqmap):
 
     # Set up cora cosmology calculator
     cosmo = Cosmology()
@@ -624,6 +616,23 @@ def channel_values_from_kpar(freqmap, kpar_in, kpar_as_kf_mult=True):
         rel_chi = abs_chi - abs_chi[0]
     else:
         rel_chi = (abs_chi - abs_chi[-1])[::-1]
+
+    return rel_chi
+
+
+def channel_values_from_kpar(freqmap, kpar_in, kpar_as_kf_mult=True):
+    """For an input k_parallel value, sample the corresponding
+    Fourier mode at the channel frequency centers, relative to
+    the lowest channel.
+
+    kpar_as_kf_mult=True means that the kpar_in is specified as a
+    multiple of the fundamental k corresponding to the width
+    of the entire band.
+    """
+
+    # Get comoving distances corresponding to frequency channel
+    # centers, relative to lowest comoving distance from z=0
+    rel_chi = relative_freq_channel_distances(freqmap)
 
     # Get max comoving distance (i.e. distance spanned by band),
     # and lowest pairwise distance difference between two channel centers
