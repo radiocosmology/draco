@@ -601,13 +601,12 @@ class SimulateSingleHarmonicSidereal(task.SingleTask):
         return sstream
 
 
-def relative_freq_channel_distances(freqmap):
+def relative_freq_channel_distances(freqs):
 
     # Set up cora cosmology calculator
     cosmo = Cosmology()
 
     # Get frequency channel centers and corresponding comoving distances
-    freqs = np.array([x[0] for x in freqmap])
     abs_chi = cosmo.comoving_distance(units.nu21 / freqs - 1.0)
     n_chi = len(abs_chi)
 
@@ -632,7 +631,8 @@ def channel_values_from_kpar(freqmap, kpar_in, kpar_as_kf_mult=True):
 
     # Get comoving distances corresponding to frequency channel
     # centers, relative to lowest comoving distance from z=0
-    rel_chi = relative_freq_channel_distances(freqmap)
+    freqs = np.array([x[0] for x in freqmap])
+    rel_chi = relative_freq_channel_distances(freqs)
 
     # Get max comoving distance (i.e. distance spanned by band),
     # and lowest pairwise distance difference between two channel centers
