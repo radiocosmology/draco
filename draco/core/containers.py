@@ -798,7 +798,27 @@ class MContainer(ContainerBase):
         super().__init__(*args, **kwargs)
 
 
-class Map(FreqContainer):
+class HealpixContainer(ContainerBase):
+    """Base class container for holding Healpix map data.
+
+    Parameters
+    ----------
+    nside : int
+        The nside of the Healpix maps.
+    """
+
+    _axes = ("pixel",)
+
+    def __init__(self, nside=None, *args, **kwargs):
+
+        # Set up axes from passed arguments
+        if nside is not None:
+            kwargs["pixel"] = 12 * nside ** 2
+
+        super().__init__(*args, **kwargs)
+
+
+class Map(FreqContainer, HealpixContainer):
     """Container for holding multifrequency sky maps.
 
     The maps are packed in format `[freq, pol, pixel]` where the polarisations
@@ -813,7 +833,7 @@ class Map(FreqContainer):
         stored.
     """
 
-    _axes = ("pol", "pixel")
+    _axes = ("pol",)
 
     _dataset_spec = {
         "map": {
@@ -825,17 +845,14 @@ class Map(FreqContainer):
         }
     }
 
-    def __init__(self, nside=None, polarisation=True, *args, **kwargs):
+    def __init__(self, polarisation=True, *args, **kwargs):
 
         # Set up axes from passed arguments
-        if nside is not None:
-            kwargs["pixel"] = 12 * nside ** 2
-
         kwargs["pol"] = (
             np.array(["I", "Q", "U", "V"]) if polarisation else np.array(["I"])
         )
 
-        super(Map, self).__init__(*args, **kwargs)
+        super().__init__(*args, **kwargs)
 
     @property
     def map(self):
