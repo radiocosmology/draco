@@ -309,7 +309,7 @@ class SingleTask(MPILoggedTask, pipeline.BasicContMixin):
         except AttributeError:
             self.done = True
 
-        # Process input and fetch ouput
+        # Process input and fetch output
         if self._no_input:
             if len(input) > 0:
                 # This should never happen.  Just here to catch bugs.
