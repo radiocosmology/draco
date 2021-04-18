@@ -28,7 +28,7 @@ from ..util import tools
 
 
 class CreateBeamStream(task.SingleTask):
-    """Convert a CommonModeGridBeam to a HybridVisStream that can be used for ringmap maker deconvolution."""
+    """Convert a GridBeam to a HybridVisStream that can be used for ringmap maker deconvolution."""
 
     telescope = None
 
@@ -65,8 +65,8 @@ class CreateBeamStream(task.SingleTask):
         beam.redistribute("freq")
 
         # Determine local frequencies
-        nfreq = beam.beam.local_shape[1]
-        fstart = beam.beam.local_offset[1]
+        nfreq = beam.beam.local_shape[0]
+        fstart = beam.beam.local_offset[0]
         fstop = fstart + nfreq
 
         freq = beam.freq[fstart:fstop]
@@ -94,12 +94,13 @@ class CreateBeamStream(task.SingleTask):
         map_ra = np.searchsorted(ra_data, ra_beam)
 
         if not np.allclose(ra_data[map_ra], ra_beam):
+            # This checks fails for rev_00 due to the shifted RA axis.
+            # Once we move on to processing later revisisions we can
+            # raise an error here.
             self.log.info(
                 "RA axis of beam and data differ at most by %0.6f"
                 % np.max(ra_data[map_ra] - ra_beam)
             )
-
-        slc_ra_in, slc_ra_out = index_to_slices(map_ra)
 
         # Determine other axes
         x = data.index_map["ew"][:]
@@ -119,14 +120,17 @@ class CreateBeamStream(task.SingleTask):
             arr_ha, np.radians(self.telescope.latitude), arr_dec, u, v
         ).conj()
 
-        # Reshape the beam datasets to match the output container
+        # Reshape the beam datasets to match the output container.
+        # The output weight dataset does not have an el axis, use the
+        # average non-zero value of the weight along the el direction.
         bweight = beam.weight[:]
         bweight = np.sum(bweight, axis=-2) * tools.invert_no_zero(
             np.sum(bweight > 0, axis=-2, dtype=np.float32)
         )
 
-        bweight = bweight[:, :, np.newaxis]
-        bvis = beam.beam[:][:, :, np.newaxis]
+        # Transpose the first two dimensions from (freq, pol) to (pol, freq)
+        bweight = bweight.swapaxes(0, 1)
+        bvis = beam.beam[:].swapaxes(0, 1)
 
         # Create output container
         out = containers.HybridVisStream(
@@ -140,39 +144,7 @@ class CreateBeamStream(task.SingleTask):
         for dset in out.datasets.values():
             dset[:] = 0.0
 
-        oweight = out.weight[:]
-        ovis = out.vis[:]
-
-        # Loop over contiguous regions of the hour angle axis
-        # and fill in the appropriate RAs in the output hybrid vis container
-        for sin, sout in zip(slc_ra_in, slc_ra_out):
-
-            oweight[..., sout] = bweight[..., sin]
-            ovis[..., sout] = bvis[..., sin] * phi[np.newaxis, ..., sin]
+        out.weight[:][..., map_ra] = bweight
+        out.vis[:][..., map_ra] = bvis * phi[np.newaxis, ...]
 
         return out
-
-
-def index_to_slices(index):
-
-    nsample = len(index)
-
-    boundaries_in = [[0]]
-    boundaries_out = [[index[0]]]
-
-    for ii in range(1, nsample):
-
-        if (index[ii] - index[ii - 1]) != 1:
-            boundaries_in[-1].append(ii)
-            boundaries_out[-1].append(index[ii - 1] + 1)
-
-            boundaries_in.append([ii])
-            boundaries_out.append([index[ii]])
-
-    boundaries_in[-1].append(nsample)
-    boundaries_out[-1].append(index[-1] + 1)
-
-    boundaries_in = [slice(aa, bb) for aa, bb in boundaries_in]
-    boundaries_out = [slice(aa, bb) for aa, bb in boundaries_out]
-
-    return boundaries_in, boundaries_out

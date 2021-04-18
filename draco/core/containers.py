@@ -1502,7 +1502,7 @@ class HybridVisStream(FreqContainer, SiderealContainer):
         "dirty_beam": {
             "axes": ["pol", "freq", "ew", "el", "ra"],
             "dtype": np.float32,
-            "initialise": True,
+            "initialise": False,
             "distributed": True,
             "distributed_axis": "freq",
         },
