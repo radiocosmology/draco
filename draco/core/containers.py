@@ -3,19 +3,43 @@ Distributed containers for holding various types of analysis data.
 
 Containers
 ==========
-- :py:class:`TimeStream`
-- :py:class:`SiderealStream`
-- :py:class:`GainData`
-- :py:class:`StaticGainData`
 - :py:class:`Map`
+- :py:class:`SiderealStream`
+- :py:class:`SystemSensitivity`
+- :py:class:`RFIMask`
+- :py:class:`TimeStream`
+- :py:class:`GridBeam`
+- :py:class:`TrackBeam`
 - :py:class:`MModes`
+- :py:class:`SVDModes`
+- :py:class:`KLModes`
+- :py:class:`VisGridStream`
+- :py:class:`HybridVisStream`
+- :py:class:`HybridVisMModes`
 - :py:class:`RingMap`
+- :py:class:`CommonModeGainData`
+- :py:class:`CommonModeSiderealGainData`
+- :py:class:`GainData`
+- :py:class:`SiderealGainData`
+- :py:class:`StaticGainData`
+- :py:class:`DelaySpectrum`
+- :py:class:`Powerspectrum2D`
+- :py:class:`SVDSpectrum`
+- :py:class:`FrequencyStack`
+- :py:class:`SourceCatalog`
+- :py:class:`SpectroscopicCatalog`
+- :py:class:`FormedBeam`
+- :py:class:`FormedBeamHA`
 
 Container Base Classes
 ----------------------
 - :py:class:`ContainerBase`
+- :py:class:`TableBase`
 - :py:class:`TODContainer`
 - :py:class:`VisContainer`
+- :py:class:`FreqContainer`
+- :py:class:`SiderealContainer`
+- :py:class:`MContainer`
 
 Helper Routines
 ---------------
@@ -1049,9 +1073,7 @@ class TimeStream(FreqContainer, VisContainer, TODContainer):
 
 
 class GridBeam(FreqContainer):
-    """Generic container for representing the 2-d beam in spherical
-    coordinates on a rectangular grid.
-    """
+    """Generic container for representing a 2D beam on a rectangular grid."""
 
     _axes = ("pol", "input", "theta", "phi")
 
@@ -1070,6 +1092,13 @@ class GridBeam(FreqContainer):
             "distributed": True,
             "distributed_axis": "freq",
         },
+        "quality": {
+            "axes": ["freq", "pol", "input", "theta", "phi"],
+            "dtype": np.uint8,
+            "initialise": False,
+            "distributed": True,
+            "distributed_axis": "freq",
+        },
         "gain": {
             "axes": ["freq", "input"],
             "dtype": np.complex64,
@@ -1081,8 +1110,8 @@ class GridBeam(FreqContainer):
 
     def __init__(self, coords="celestial", *args, **kwargs):
 
-        self.attrs["coords"] = coords
         super(GridBeam, self).__init__(*args, **kwargs)
+        self.attrs["coords"] = coords
 
     @property
     def beam(self):
@@ -1091,6 +1120,10 @@ class GridBeam(FreqContainer):
     @property
     def weight(self):
         return self.datasets["weight"]
+
+    @property
+    def quality(self):
+        return self.datasets["quality"]
 
     @property
     def gain(self):
@@ -1118,9 +1151,10 @@ class GridBeam(FreqContainer):
 
 
 class TrackBeam(FreqContainer):
-    """Container for a sequence of beam samples at arbitrary locations
-    on the sphere. The axis of the beam samples is 'pix', defined by
-    the numpy.dtype [('theta', np.float32), ('phi', np.float32)].
+    """Container for a sequence of beam samples at arbitrary locations on the sphere.
+
+    The axis of the beam samples is 'pix', defined by the numpy.dtype
+    [('theta', np.float32), ('phi', np.float32)].
     """
 
     _axes = ("pol", "input", "pix")
