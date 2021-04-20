@@ -484,7 +484,7 @@ class MModeTransform(task.SingleTask):
         if self.telescope is not None:
             mmax = self.telescope.mmax
         else:
-            mmax = (sstream.vis.shape[-1] // 2) - 1
+            mmax = sstream.vis.shape[-1] // 2
 
         # Create the container to store the modes in
         ma = out_cont(mmax=mmax, axes_from=sstream, comm=sstream.comm)
