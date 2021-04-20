@@ -26,6 +26,7 @@ Containers
 - :py:class:`Powerspectrum2D`
 - :py:class:`SVDSpectrum`
 - :py:class:`FrequencyStack`
+- :py:class:`FrequencyStackByPol`
 - :py:class:`SourceCatalog`
 - :py:class:`SpectroscopicCatalog`
 - :py:class:`FormedBeam`
@@ -1868,6 +1869,31 @@ class FrequencyStack(FreqContainer):
     @property
     def weight(self):
         return self.datasets["weight"]
+
+
+class FrequencyStackByPol(FrequencyStack):
+    """Container for a frequency stack split by polarisation."""
+
+    _axes = ("pol",)
+
+    _dataset_spec = {
+        "stack": {
+            "axes": ["pol", "freq"],
+            "dtype": np.float64,
+            "initialise": True,
+            "distributed": False,
+        },
+        "weight": {
+            "axes": ["pol", "freq"],
+            "dtype": np.float64,
+            "initialise": True,
+            "distributed": False,
+        },
+    }
+
+    @property
+    def pol(self):
+        return self.index_map["pol"]
 
 
 class SourceCatalog(TableBase):
