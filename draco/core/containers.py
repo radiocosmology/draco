@@ -1157,8 +1157,14 @@ class GridBeam(FreqContainer):
 
 
 class HEALPixBeam(FreqContainer, HealpixContainer):
-    """Generic container for representing the 2-d beam in spherical
-    coordinates on a HEALPix grid.
+    """Container for representing the spherical 2-d beam in a HEALPix grid.
+
+    Parameters
+    ----------
+    ordering : {"nested", "ring"}
+        The HEALPix ordering scheme used for the beam map.
+    coords : {"celestial", "galactic", "telescope"}
+        The coordinate system that the beam map is defined on.
     """
 
     _axes = ("pol", "input")
@@ -1181,14 +1187,6 @@ class HEALPixBeam(FreqContainer, HealpixContainer):
     }
 
     def __init__(self, coords="unknown", ordering="unknown", *args, **kwargs):
-        """Parameters
-        ----------
-        ordering : one of "nested" or "ring"
-            The HEALPix ordering scheme used for the beam map.
-        coords : one of "celestial", "galactic", "telescope"
-            The coordinate system that the beam map is defined on.
-        """
-
         self.attrs["coords"] = coords
         self.attrs["ordering"] = ordering
         super(HEALPixBeam, self).__init__(*args, **kwargs)
