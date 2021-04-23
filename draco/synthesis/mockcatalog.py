@@ -350,7 +350,7 @@ class PdfGenerator(task.SingleTask):
 
         # Resizing the selection function to match the voxel size of the
         # CORA maps by hand. Result is distributed in axis 0.
-        resized_selfunc = self._resize_map(
+        resized_selfunc = _resize_map(
             self.selfunc.map[:, 0, :], rho_m.global_shape, z, z_selfunc
         )
         # Generate wheights for correct distribution of sources in redshift:
@@ -440,43 +440,6 @@ class PdfGenerator(task.SingleTask):
         """
         return None
 
-    def _resize_map(self, map, new_shape, z_new, z_old):
-        """Re-size map (np.array) to new shape, taking into account
-        mpi distribution.
-        """
-        from ..util import regrid
-
-        # redistribute in axis 1 to re-size axis 0:
-        map = mpiarray.MPIArray.wrap(map, axis=0)
-        map = map.redistribute(axis=1)
-
-        # Form interpolation matrix:
-        interp_m = regrid.lanczos_forward_matrix(z_old["centre"], z_new["centre"])
-        # Correct for redshift bin widths:
-        interp_m = (
-            interp_m / z_old["width"][np.newaxis, :] * z_new["width"][:, np.newaxis]
-        )
-        # Resize axis 0:
-        map = np.dot(interp_m, map)
-        map = mpiarray.MPIArray.wrap(np.array(map), axis=1)
-        # redistribute in axis 0 to re-size axis 1:
-        map = map.redistribute(axis=0)
-
-        # Resize axis 1:
-        # new_shape is a global shape, so can only use it in axis 1 here
-        resized_map = np.zeros((map.local_shape[0], new_shape[1]))
-        n_side = hp.pixelfunc.npix2nside(new_shape[1])  # NSIDE of new shape
-        for ii in range(map.local_shape[0]):
-            resized_map[ii] = hp.pixelfunc.ud_grade(map[ii, :], nside_out=n_side)
-
-        # Remove negative values. (The Lanczos kernel can make things
-        # slightly negative at the edges)
-        resized_map = np.where(
-            resized_map >= 0.0, resized_map, np.zeros_like(resized_map)
-        )
-
-        return mpiarray.MPIArray.wrap(resized_map, axis=0)
-
     @property
     def source_maps(self):
         return self._source_maps
@@ -501,6 +464,47 @@ class PdfGenerator(task.SingleTask):
                 + "Value for _source_maps not set."
             )
             print(msg)
+
+
+
+
+def _resize_map(map, new_shape, z_new, z_old):
+    """Re-size map (np.array) to new shape, taking into account
+    mpi distribution.
+    """
+    from ..util import regrid
+
+    # redistribute in axis 1 to re-size axis 0:
+    map = mpiarray.MPIArray.wrap(map, axis=0)
+    map = map.redistribute(axis=1)
+
+    # Form interpolation matrix:
+    interp_m = regrid.lanczos_forward_matrix(z_old["centre"], z_new["centre"])
+    # Correct for redshift bin widths:
+    interp_m = (
+        interp_m / z_old["width"][np.newaxis, :] * z_new["width"][:, np.newaxis]
+    )
+    # Resize axis 0:
+    map = np.dot(interp_m, map)
+    map = mpiarray.MPIArray.wrap(np.array(map), axis=1)
+    # redistribute in axis 0 to re-size axis 1:
+    map = map.redistribute(axis=0)
+
+    # Resize axis 1:
+    # new_shape is a global shape, so can only use it in axis 1 here
+    resized_map = np.zeros((map.local_shape[0], new_shape[1]))
+    n_side = hp.pixelfunc.npix2nside(new_shape[1])  # NSIDE of new shape
+    for ii in range(map.local_shape[0]):
+        resized_map[ii] = hp.pixelfunc.ud_grade(map[ii, :], nside_out=n_side)
+
+    # Remove negative values. (The Lanczos kernel can make things
+    # slightly negative at the edges)
+    resized_map = np.where(
+        resized_map >= 0.0, resized_map, np.zeros_like(resized_map)
+    )
+
+    return mpiarray.MPIArray.wrap(resized_map, axis=0)
+
 
 
 class MockCatGenerator(task.SingleTask):
