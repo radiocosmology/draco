@@ -1,9 +1,17 @@
-# === Start Python 2/3 compatibility
-from __future__ import absolute_import, division, print_function, unicode_literals
-from future.builtins import *  # noqa  pylint: disable=W0401, W0614
-from future.builtins.disabled import *  # noqa  pylint: disable=W0401, W0614
+"""
+draco
 
-# === End Python 2/3 compatibility
+Submodules
+==========
+
+.. autosummary::
+    :toctree: _autosummary
+
+    analysis
+    core
+    synthesis
+    util
+"""
 
 from ._version import get_versions
 

@@ -1,5 +1,4 @@
-"""A few miscellaneous Cython routines to speed up critical operations.
-"""
+"""A few miscellaneous Cython routines to speed up critical operations."""
 
 from cython.parallel import prange, parallel
 cimport cython

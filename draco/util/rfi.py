@@ -1,15 +1,4 @@
-"""Collection of routines for RFI excision.
-
-Functions
-=========
-
-.. autosummary::
-    :toctree:
-
-    sumthreshold
-    sir
-    sir1d
-"""
+"""Collection of routines for RFI excision."""
 import numpy as np
 from scipy.ndimage import convolve1d
 
