@@ -576,7 +576,7 @@ class ResizeSelFuncMap(task.SingleTask):
             attrs_from=self.source_maps
         )
         new_selfunc.map[:, 0, :] = resized_selfunc[:]
-        
+
         self.done = True
         return new_selfunc
 
@@ -625,10 +625,19 @@ class MockCatGenerator(task.SingleTask):
         Number of sources to draw in each mock catalog
     ncats : int
         Number of catalogs to generate
+    sigma_z : float, optional
+        Standard deviation of Gaussian redshift errors (default: None)
+    sigma_z_over_1plusz : float, optional
+        Standard deviation of Gaussian redshift errors will be set to
+        this parameter times (1+z). Only one of this and `sigma_z` can
+        be specified. Default: None
     """
 
     nsources = config.Property(proptype=int)
     ncats = config.Property(proptype=int)
+
+    sigma_z = config.Property(proptype=float, default=None)
+    sigma_z_over_1plusz = config.Property(proptype=float, default=None)
 
     def setup(self, pdf_map):
         """
@@ -638,6 +647,12 @@ class MockCatGenerator(task.SingleTask):
         # For easy access to communicator:
         self.comm_ = self.pdf.comm
         self.rank = self.comm_.Get_rank()
+
+        # Check that only one z error spec has been specified
+        if (self.sigma_z is not None) and (self.sigma_z_over_1plusz is not None):
+            raise config.CaputConfigError(
+                "Only one of sigma_z and sigma_z_over_1plusz can be specified!"
+            )
 
         # Easy access to local shapes and offsets
         self.lo = self.pdf.map[:, 0, :].local_offset[0]
@@ -707,9 +722,13 @@ class MockCatGenerator(task.SingleTask):
         # Shape: [self.ls=local # of z-bins][# of sources in each z-bin]
         idxs = [np.digitize(rnbs[ii], self.cdf[ii]) for ii in range(len(rnbs))]
 
-        # Generate random nmbrs to randomize position of sources in each voxel:
+        # Generate random numbers to randomize position of sources in each voxel:
         # Random numbers for z-placement range: (-0.5,0.5)
         rz = [np.random.uniform(size=num) - 0.5 for num in source_numbers]
+        # Generate random numbers for z errors, as standard normals
+        # to be multiplied by appropriate standard deviation later
+        if (self.sigma_z is not None) or (self.sigma_z_over_1plusz is not None):
+            rzerr = [np.random.normal(size=num) for num in source_numbers]
         # Random numbers for theta-placement range: (-0.5,0.5)
         rtheta = [np.random.uniform(size=num) - 0.5 for num in source_numbers]
         # Random numbers for phi-placement range: (-0.5,0.5)
@@ -728,6 +747,7 @@ class MockCatGenerator(task.SingleTask):
         # Local arrays to hold the informations on
         # sources in the local frequency range
         mock_zs = np.empty(nsource_rank, dtype=np.float64)
+        mock_zerrs = np.empty(nsource_rank, dtype=np.float64)
         mock_ra = np.empty(nsource_rank, dtype=np.float64)
         mock_dec = np.empty(nsource_rank, dtype=np.float64)
         source_count = 0
@@ -741,6 +761,19 @@ class MockCatGenerator(task.SingleTask):
                     z["width"][global_z_index] * rz[ii][jj]
                     + z["centre"][global_z_index]
                 )
+                # If desired, add Gaussian z errors:
+                if self.sigma_z is not None:
+                    z_value += rzerr[ii][jj] * self.sigma_z
+                    mock_zerrs[source_count] = rzerr[ii][jj] * self.sigma_z
+                elif self.sigma_z_over_1plusz is not None:
+                    z_value += (
+                        rzerr[ii][jj] * self.sigma_z_over_1plusz * (1+z_value)
+                    )
+                    mock_zerrs[source_count] = (
+                        rzerr[ii][jj] * self.sigma_z_over_1plusz * (1+z_value)
+                    )
+                else:
+                    mock_zerrs[source_count] = 0
                 # Populate local arrays
                 mock_zs[source_count] = z_value
                 mock_ra[source_count] = RAbase + ang_size * rtheta[ii][jj]
@@ -749,6 +782,7 @@ class MockCatGenerator(task.SingleTask):
 
         # Arrays to hold the whole source set information
         mock_zs_full = np.empty(self.nsources, dtype=mock_zs.dtype)
+        mock_zerrs_full = np.empty(self.nsources, dtype=mock_zs.dtype)
         mock_ra_full = np.empty(self.nsources, dtype=mock_ra.dtype)
         mock_dec_full = np.empty(self.nsources, dtype=mock_dec.dtype)
 
@@ -760,6 +794,10 @@ class MockCatGenerator(task.SingleTask):
         # Gather redshifts
         recvbuf = [mock_zs_full, nsource_tuple, dspls, MPI.DOUBLE]
         sendbuf = [mock_zs, len(mock_zs)]
+        self.comm_.Allgatherv(sendbuf, recvbuf)
+        # Gather redshift errors
+        recvbuf = [mock_zerrs_full, nsource_tuple, dspls, MPI.DOUBLE]
+        sendbuf = [mock_zerrs, len(mock_zs)]
         self.comm_.Allgatherv(sendbuf, recvbuf)
         # Gather theta
         recvbuf = [mock_ra_full, nsource_tuple, dspls, MPI.DOUBLE]
@@ -784,8 +822,8 @@ class MockCatGenerator(task.SingleTask):
         mock_catalog["position"]["ra"][:] = mock_ra_full
         mock_catalog["position"]["dec"][:] = mock_dec_full
         mock_catalog["redshift"]["z"][:] = mock_zs_full
-        # There is a provision for z-error. Zero here.
-        mock_catalog["redshift"]["z_error"][:] = 0.0
+        # There is a provision for z-error
+        mock_catalog["redshift"]["z_error"][:] = mock_zerrs_full
 
         if self._count == self.ncats - 1:
             self.done = True
