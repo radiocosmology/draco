@@ -631,6 +631,10 @@ class MockCatGenerator(task.SingleTask):
         Standard deviation of Gaussian redshift errors will be set to
         this parameter times (1+z). Only one of this and `sigma_z` can
         be specified. Default: None
+    z_at_channel_centers : bool, optional
+        Place each object at a redshift corresponding to the center of
+        its frequency channel (True), or randomly distribute each object's
+        redshift within its channel (False): Default: False
     """
 
     nsources = config.Property(proptype=int)
@@ -638,6 +642,8 @@ class MockCatGenerator(task.SingleTask):
 
     sigma_z = config.Property(proptype=float, default=None)
     sigma_z_over_1plusz = config.Property(proptype=float, default=None)
+
+    z_at_channel_centers = config.Property(proptype=bool, default=False)
 
     def setup(self, pdf_map):
         """
@@ -724,7 +730,8 @@ class MockCatGenerator(task.SingleTask):
 
         # Generate random numbers to randomize position of sources in each voxel:
         # Random numbers for z-placement range: (-0.5,0.5)
-        rz = [np.random.uniform(size=num) - 0.5 for num in source_numbers]
+        if not self.z_at_channel_centers:
+            rz = [np.random.uniform(size=num) - 0.5 for num in source_numbers]
         # Generate random numbers for z errors, as standard normals
         # to be multiplied by appropriate standard deviation later
         if (self.sigma_z is not None) or (self.sigma_z_over_1plusz is not None):
@@ -757,10 +764,9 @@ class MockCatGenerator(task.SingleTask):
                 # global redshift index:
                 global_z_index = ii + self.lo
                 # Randomly distributed in z bin range:
-                z_value = (
-                    z["width"][global_z_index] * rz[ii][jj]
-                    + z["centre"][global_z_index]
-                )
+                z_value = z["centre"][global_z_index]
+                if not self.z_at_channel_centers:
+                    z_value += z["width"][global_z_index] * rz[ii][jj]
                 # If desired, add Gaussian z errors:
                 if self.sigma_z is not None:
                     z_value += rzerr[ii][jj] * self.sigma_z
