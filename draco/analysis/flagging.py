@@ -243,6 +243,105 @@ class MaskBaselines(task.SingleTask):
         return ssc
 
 
+class MaskBeamformedOutliers(task.SingleTask):
+    """Mask beamformed visibilities that deviate from our expectation for noise.
+
+    This is operating under the assumption that, after proper foreground filtering,
+    the beamformed visibiliites should be consistent with noise.
+
+    Attributes
+    ----------
+    nsigma : float
+        Beamformed visibilities whose magnitude is greater than nsigma times
+        the expected standard deviation of the noise, given by sqrt(1 / weight),
+        will be masked.
+    dataset : str
+        The name of the dataset to check for outliers, e.g.,
+        'beam' for FormedBeam containers or 'map' for RingMap containers.
+    """
+
+    nsigma = config.Property(proptype=float, default=3.0)
+    dataset = config.Property(proptype=str, default="beam")
+
+    def setup(self):
+        """Define several attributes that will be used by the process method."""
+
+        self.external_data = None
+        self.tag = "rad_threshold_%02d" % self.nsigma
+
+    def process(self, data):
+        """Mask outlier beamformed visibilities.
+
+        Parameters
+        ----------
+        data : FormedBeam, FormedBeamHA, or RingMap
+            Beamformed visibilities.
+
+        Returns
+        -------
+        data : FormedBeam, FormedBeamHA, or RingMap
+            The input container with the weight dataset set to zero
+            for samples that were flagged as outliers.
+        """
+
+        # Redistribute data over frequency
+        data.redistribute("freq")
+
+        if self.external_data is not None:
+            base_data = self.external_data
+        else:
+            base_data = data
+
+        # Make sure the weight dataset has the same
+        # number of dimensions as the visibility dataset.
+        axes1 = base_data[self.dataset].attrs["axis"]
+        axes2 = base_data.weight.attrs["axis"]
+
+        bcast_slice = tuple(slice(None) if ax in axes2 else np.newaxis for ax in axes1)
+        axes_collapse = tuple(ii for ii, ax in enumerate(axes1) if ax not in axes2)
+
+        # Calculate the expected standard deviation based on weights dataset
+        inv_sigma = np.sqrt(base_data.weight[:][bcast_slice].view(np.ndarray))
+
+        # Standardize the beamformed visibilities
+        ratio = np.abs(base_data[self.dataset][:].view(np.ndarray) * inv_sigma)
+
+        # Mask outliers
+        flag = (ratio > 0.0) & (ratio <= self.nsigma)
+
+        if axes_collapse:
+            flag = np.all(flag, axis=axes_collapse)
+
+        # Apply flag to weight dataset
+        data.weight[:] *= flag
+
+        # Update the tag and return
+        data.attrs["tag"] = "_".join([data.attrs["tag"], self.tag])
+
+        return data
+
+
+class MaskExternalBeamformedOutliers(MaskBeamformedOutliers):
+    """Mask beamformed visibilities based on an external dataset.
+
+    Can be used to apply the same mask that was used on the data
+    to a noise realization.
+    """
+
+    def setup(self, external_data):
+        """Define the external dataset that will be used to generate the mask.
+
+        Parameters
+        ----------
+        external_data : `containers.FormedBeam` or `containers.FormedBeamHA`
+            Formed beam at each source.
+        """
+
+        super().setup()
+        external_data.redistribute("freq")
+        self.external_data = external_data
+
+
 class RadiometerWeight(task.SingleTask):
     """Update vis_weight according to the radiometer equation:
 
