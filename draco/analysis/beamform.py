@@ -885,8 +885,6 @@ class BeamFormExternalBase(BeamFormBase):
             at the sources declination for the requested polarisation.
         """
 
-        self.log.info("Evaluating grid beam.")
-
         pp = self._beam_pol.index(pol)
 
         primay_beam = np.array(
