@@ -1025,6 +1025,28 @@ class RFIMask(FreqContainer, TODContainer):
         return self.datasets["mask"]
 
 
+class SiderealRFIMask(FreqContainer, SiderealContainer):
+    """A container for holding RFI mask.
+
+    The mask is `True` for contaminated samples that should be excluded, and
+    `False` for clean samples.
+    """
+
+    _dataset_spec = {
+        "mask": {
+            "axes": ["freq", "ra"],
+            "dtype": bool,
+            "initialise": True,
+            "distributed": False,
+            "distributed_axis": "freq",
+        }
+    }
+
+    @property
+    def mask(self):
+        return self.datasets["mask"]
+
+
 class TimeStream(FreqContainer, VisContainer, TODContainer):
     """A container for holding a visibility dataset in time.
 

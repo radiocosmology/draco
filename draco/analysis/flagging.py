@@ -799,7 +799,7 @@ class ApplyRFIMask(task.SingleTask):
         """
 
         # Validate the sizes
-        if (tstream.time != rfimask.time).all():
+        if (tstream.ra != rfimask.ra).all():
             raise ValueError("timestream and mask data have different time axes.")
 
         if (tstream.freq != rfimask.freq).all():
