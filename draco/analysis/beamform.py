@@ -1,32 +1,5 @@
-"""
-===================================================
-Beamforming tasks (:mod:`~draco.analysis.beamform`)
-===================================================
+"""Beamform visibilities to the location of known sources."""
 
-.. currentmodule:: draco.analysis.beamform
-
-Tools for beamforming visibilities to the location of known sources.
-
-Tasks
-=====
-
-.. autosummary::
-    :toctree: generated/
-
-    BeamForm
-    BeamFormCat
-    BeamFormExternal
-    BeamFormExternalCat
-
-Task Base Classes
------------------
-.. autosummary::
-    :toctree: generated/
-
-    BeamFormBase
-    BeamFormExternalBase
-
-"""
 import numpy as np
 import scipy.interpolate
 from skyfield.api import Star, Angle
