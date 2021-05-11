@@ -221,7 +221,7 @@ class SelFuncEstimator(SelFuncEstimatorFromParams):
         """
         self._base_qcat = cat
 
-    
+
 class PdfGenerator(task.SingleTask):
     """Take a source catalog selection function and simulated source
     (biased density) maps and return a PDF map correlated with the 
@@ -239,7 +239,6 @@ class PdfGenerator(task.SingleTask):
     """
 
     source_maps_path = config.Property(proptype=str)
-    random_catalog = config.Property(proptype=bool, default=False)
 
     def setup(self, selfunc):
         """
@@ -248,10 +247,6 @@ class PdfGenerator(task.SingleTask):
 
         # Load source maps from file:
         source_maps = containers.Map.from_file(self.source_maps_path, distributed=True)
-        if self.random_catalog:
-            # To make a random (not correlated) catalog
-            source_maps.map[:] = np.zeros_like(source_maps.map)
-
         self.source_maps = source_maps  # Setter sets other parameters too
 
         # For easy access to communicator:
@@ -271,9 +266,19 @@ class PdfGenerator(task.SingleTask):
         # Re-distribute maps in pixels:
         self.source_maps.redistribute(dist_axis=2)
 
-        # TODO: Change h1maps for something more generic, like density_maps
+        # Add mean of 1.
+        rho_m = self.source_maps.map[:, 0, :] + 1.0
+        # Crop negative values, if any.
+        negmask = rho_m < 0.0
+        if np.any(negmask):
+            msg = ("Negative density values found! They will be croped to zero.\n"
+                 + "Fraction of pixels croped: {0:0.3e}, shape: {1}".format(
+                   np.sum(negmask<0.)/np.prod(negmask.shape), negmask.shape))
+            self.log.warn(msg)
+            rho_m = np.where(negmask, 0., rho_m)
 
-        rho_m = mpiarray.MPIArray.wrap(self.source_maps.map[:, 0, :] + 1.0, axis=1)
+        # Wrap in mpi array.
+        rho_m = mpiarray.MPIArray.wrap(rho_m, axis=1)
 
         # Re-distribute in frequencies before normalizing
         # (which requires summing over pixels)
@@ -394,6 +399,23 @@ class PdfGenerator(task.SingleTask):
                 + "Value for _source_maps not set."
             )
             print(msg)
+
+
+class PdfGeneratorRandom(PdfGenerator):
+    
+    def setup(self, selfunc, vis):
+        """
+        """
+        self.selfunc = selfunc
+
+        source_maps = containers.Map(nside=512, pol=np.array(['I']), axes_from=vis, comm=vis.comm)
+        source_maps.map[:] = np.zeros_like(source_maps.map)
+
+        self.source_maps = source_maps  # Setter sets other parameters too
+
+        # For easy access to communicator:
+        self.comm_ = self.source_maps.comm
+        self.rank = self.comm_.Get_rank()  # Unused for now
 
 
 class MockCatGenerator(task.SingleTask):
