@@ -1,22 +1,4 @@
-"""Map making from driftscan data using the m-mode formalism.
-
-Tasks
-=====
-
-.. autosummary::
-    :toctree:
-
-    DirtyMapMaker
-    MaximumLikelihoodMapMaker
-    WienerMapMaker
-    RingMapMaker
-"""
-# === Start Python 2/3 compatibility
-from __future__ import absolute_import, division, print_function, unicode_literals
-from future.builtins import *  # noqa  pylint: disable=W0401, W0614
-from future.builtins.disabled import *  # noqa  pylint: disable=W0401, W0614
-
-# === End Python 2/3 compatibility
+"""Map making from driftscan data using the m-mode formalism."""
 
 import numpy as np
 from caput import mpiarray, config
@@ -192,7 +174,7 @@ class DirtyMapMaker(BaseMapMaker):
 
 
 class MaximumLikelihoodMapMaker(BaseMapMaker):
-    """Generate a Maximum Likelihood map using the Moore-Penrose pseudo-inverse.
+    r"""Generate a Maximum Likelihood map using the Moore-Penrose pseudo-inverse.
 
     Notes
     -----
@@ -200,7 +182,7 @@ class MaximumLikelihoodMapMaker(BaseMapMaker):
     The dirty map is produced by generating a set of :math:`a_{lm}` coefficients
     using
 
-    .. math:: \hat{\mathbf{a}} = \left( \mathbf{N}^{-1/2 }\mathbf{B} \right)^+ \mathbf{N}^{-1/2} \mathbf{v}
+    .. math:: \hat{\mathbf{a}} = \left( \mathbf{N}^{-1/2 }\mathbf{B} \right) ^+ \mathbf{N}^{-1/2} \mathbf{v}
 
     where the superscript :math:`+` denotes the pseudo-inverse.
     """

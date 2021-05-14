@@ -1,17 +1,13 @@
-# === Start Python 2/3 compatibility
-from __future__ import absolute_import, division, print_function, unicode_literals
-from future.builtins import *  # noqa  pylint: disable=W0401, W0614
-from future.builtins.disabled import *  # noqa  pylint: disable=W0401, W0614
-
-# === End Python 2/3 compatibility
+"""Source Stack Analysis Tasks"""
 
 import numpy as np
 from mpi4py import MPI
 
-from caput import config
+from caput import config, pipeline
 from cora.util import units
 
 from ..util.tools import invert_no_zero
+from ..util.random import RandomTask
 from ..core import task, containers
 
 # Constants
@@ -62,6 +58,10 @@ class SourceStack(task.SingleTask):
         freq = formed_beam.freq
         nfreq = len(freq)
 
+        # Polarisation axis
+        pol = formed_beam.pol
+        npol = len(pol)
+
         # Frequency of quasars
         qso_freq = NU21 / (formed_beam["redshift"]["z"] + 1.0)  # MHz.
         # Size of quasar stack array
@@ -98,59 +98,151 @@ class SourceStack(task.SingleTask):
         qs_indices = qs_indices[loff : loff + lshape]
         f_mask = f_mask[loff : loff + lshape]
 
-        # Quasar stack array.
-        quasar_stack = np.zeros(self.nstack, dtype=np.float)
-        quasar_weight = np.zeros(self.nstack, dtype=np.float)
-
-        qcount = 0  # Quasar counter
-        # For each quasar in the range of this process
-        for lq, gq in formed_beam.beam[:].enumerate(axis=0):
-            if not qso_mask[lq]:
-                # Quasar not in the data redshift range
-                continue
-            qcount += 1
-            # Indices and slice for frequencies included in the stack.
-            f_indices = np.arange(nfreq, dtype=np.int32)[f_mask[lq]]
-            f_slice = np.s_[f_indices[0] : f_indices[-1] + 1]
-
-            quasar_stack += np.bincount(
-                qs_indices[lq][f_slice],
-                weights=(
-                    formed_beam.beam[gq, 0][f_slice]
-                    * formed_beam.weight[gq, 0][f_slice]
-                ),
-                minlength=self.nstack,
-            )
-
-            quasar_weight += np.bincount(
-                qs_indices[lq][f_slice],
-                weights=formed_beam.weight[gq, 0][f_slice],
-                minlength=self.nstack,
-            )
-
-        # Gather quasar stack for all ranks. Each contains the sum
-        # over a different subset of quasars.
-        quasar_stack_full = np.zeros(comm.size * self.nstack, dtype=quasar_stack.dtype)
-        quasar_weight_full = np.zeros(
-            comm.size * self.nstack, dtype=quasar_weight.dtype
-        )
-        # Gather all ranks
-        comm.Allgather(quasar_stack, quasar_stack_full)
-        comm.Allgather(quasar_weight, quasar_weight_full)
-
         # Container to hold the stack
-        qstack = containers.FrequencyStack(freq=self.stack_axis)
-        # Sum across ranks
-        qstack.weight[:] = np.sum(
-            quasar_weight_full.reshape(comm.size, self.nstack), axis=0
-        )
-        qstack.stack[:] = np.sum(
-            quasar_stack_full.reshape(comm.size, self.nstack), axis=0
-        ) * invert_no_zero(qstack.weight[:])
+        if npol > 1:
+            qstack = containers.FrequencyStackByPol(
+                freq=self.stack_axis, pol=pol, attrs_from=formed_beam
+            )
+        else:
+            qstack = containers.FrequencyStack(
+                freq=self.stack_axis, attrs_from=formed_beam
+            )
 
-        # Gather all ranks of qcount. Report number of quasars stacked
-        full_qcount = comm.reduce(qcount, op=MPI.SUM, root=0)
-        if comm.rank == 0:
-            self.log.info("Number of quasars stacked: {0}".format(full_qcount))
+        # Loop over polarisations
+        for pp, pstr in enumerate(pol):
+
+            # Quasar stack array.
+            quasar_stack = np.zeros(self.nstack, dtype=np.float)
+            quasar_weight = np.zeros(self.nstack, dtype=np.float)
+
+            qcount = 0  # Quasar counter
+            # For each quasar in the range of this process
+            for lq, gq in formed_beam.beam[:].enumerate(axis=0):
+                if not qso_mask[lq]:
+                    # Quasar not in the data redshift range
+                    continue
+                qcount += 1
+                # Indices and slice for frequencies included in the stack.
+                f_indices = np.arange(nfreq, dtype=np.int32)[f_mask[lq]]
+                f_slice = np.s_[f_indices[0] : f_indices[-1] + 1]
+
+                quasar_stack += np.bincount(
+                    qs_indices[lq][f_slice],
+                    weights=(
+                        formed_beam.beam[gq, pp][f_slice]
+                        * formed_beam.weight[gq, pp][f_slice]
+                    ),
+                    minlength=self.nstack,
+                )
+
+                quasar_weight += np.bincount(
+                    qs_indices[lq][f_slice],
+                    weights=formed_beam.weight[gq, pp][f_slice],
+                    minlength=self.nstack,
+                )
+
+            # Gather quasar stack for all ranks. Each contains the sum
+            # over a different subset of quasars.
+            quasar_stack_full = np.zeros(
+                comm.size * self.nstack, dtype=quasar_stack.dtype
+            )
+            quasar_weight_full = np.zeros(
+                comm.size * self.nstack, dtype=quasar_weight.dtype
+            )
+            # Gather all ranks
+            comm.Allgather(quasar_stack, quasar_stack_full)
+            comm.Allgather(quasar_weight, quasar_weight_full)
+
+            # Determine the index for the output container
+            oslc = (pp, slice(None)) if npol > 1 else slice(None)
+
+            # Sum across ranks
+            qstack.weight[oslc] = np.sum(
+                quasar_weight_full.reshape(comm.size, self.nstack), axis=0
+            )
+            qstack.stack[oslc] = np.sum(
+                quasar_stack_full.reshape(comm.size, self.nstack), axis=0
+            ) * invert_no_zero(qstack.weight[oslc])
+
+            # Gather all ranks of qcount. Report number of quasars stacked
+            full_qcount = comm.reduce(qcount, op=MPI.SUM, root=0)
+            if comm.rank == 0:
+                self.log.info(
+                    f"Number of quasars stacked for pol {pstr}: {full_qcount}"
+                )
 
         return qstack
+
+
+class RandomSubset(task.SingleTask, RandomTask):
+    """Take a large mock catalog and draw `number` catalogs of a given `size`.
+
+    Attributes
+    ----------
+    number : int
+        Number of catalogs to construct.
+    size : int
+        Number of objects in each catalog.
+    """
+
+    number = config.Property(proptype=int)
+    size = config.Property(proptype=int)
+
+    def __init__(self):
+        super().__init__()
+        self.catalog_ind = 0
+
+    def setup(self, catalog):
+        """Set the full mock catalog.
+
+        Parameters
+        ----------
+        catalog : containers.SourceCatalog
+            The mock catalog to draw from.
+        """
+        self.catalog = catalog
+        self.base_tag = f'{catalog.attrs.get("tag", "mock")}_{{}}'
+
+    def process(self):
+        """Draw a new random catalog.
+
+        Returns
+        -------
+        new_catalog : containers.SourceCatalog subclass
+            A catalog of the same type as the input catalog, with a random set of
+            objects.
+        """
+
+        if self.catalog_ind >= self.number:
+            raise pipeline.PipelineStopIteration
+
+        objects = self.catalog.index_map["object_id"]
+        num_cat = len(objects)
+
+        # NOTE: We need to be very careful here, the RNG is initialised at first access
+        # and this is a collective operation. So we need to ensure all ranks do it even
+        # though only rank=0 is going to use the RNG in this task
+        rng = self.rng
+
+        # Generate a random selection of objects on rank=0 and broadcast to all other
+        # ranks
+        if self.comm.rank == 0:
+            ind = rng.choice(num_cat, self.size, replace=False)
+        else:
+            ind = np.zeros(self.size, dtype=np.int64)
+        self.comm.Bcast(ind, root=0)
+
+        new_catalog = self.catalog.__class__(
+            object_id=objects[ind], attrs_from=self.catalog
+        )
+        new_catalog.attrs["tag"] = self.base_tag.format(self.catalog_ind)
+
+        # Loop over all datasets and if they have an object_id axis, select the
+        # relevant objects along that axis
+        for name, dset in new_catalog.datasets.items():
+            if dset.attrs["axis"][0] == "object_id":
+                dset[:] = self.catalog.datasets[name][ind]
+
+        self.catalog_ind += 1
+
+        return new_catalog

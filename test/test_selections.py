@@ -7,6 +7,8 @@ import glob
 import numpy as np
 import os
 
+# Run these tests under MPI
+pytestmark = pytest.mark.mpi
 
 comm = mpiutil.world
 rank, size = mpiutil.rank, mpiutil.size
