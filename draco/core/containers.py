@@ -1187,9 +1187,9 @@ class HEALPixBeam(FreqContainer, HealpixContainer):
     }
 
     def __init__(self, coords="unknown", ordering="unknown", *args, **kwargs):
+        super(HEALPixBeam, self).__init__(*args, **kwargs)
         self.attrs["coords"] = coords
         self.attrs["ordering"] = ordering
-        super(HEALPixBeam, self).__init__(*args, **kwargs)
 
     @property
     def beam(self):
