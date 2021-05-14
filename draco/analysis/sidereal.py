@@ -494,21 +494,26 @@ class SiderealStacker(task.SingleTask):
     Also computes the variance over sideral days using an
     algorithm that updates the sum of square differences from
     the current mean, which is less prone to numerical issues.
+    See West, D.H.D. (1979). https://doi.org/10.1145/359146.359153.
 
     Attributes
     ----------
+    tag : str (default: "stack")
+        The tag to give the stack.
     weight: str (default: "inverse_variance")
         The weighting to use in the stack.
         Either `uniform` or `inverse_variance`.
-    tag : str
-        The tag to give the stack.
+    with_sample_variance : bool (default: False)
+        Add a dataset containing the sample variance
+        of the visibilities over sidereal days to the
+        sidereal stack.
     """
 
     stack = None
 
-    weight = config.enum(["uniform", "inverse_variance"], default="inverse_variance")
-
     tag = config.Property(proptype=str, default="stack")
+    weight = config.enum(["uniform", "inverse_variance"], default="inverse_variance")
+    with_sample_variance = config.Property(proptype=bool, default=False)
 
     def process(self, sdata):
         """Stack up sidereal days.
@@ -538,11 +543,13 @@ class SiderealStacker(task.SingleTask):
             self.stack = containers.empty_like(sdata)
 
             # Add stack-specific datasets
-            if "sample_variance" not in self.stack.datasets:
-                self.stack.add_dataset("sample_variance")
-
             if "nsample" not in self.stack.datasets:
                 self.stack.add_dataset("nsample")
+
+            if self.with_sample_variance and (
+                "sample_variance" not in self.stack.datasets
+            ):
+                self.stack.add_dataset("sample_variance")
 
             self.stack.redistribute("freq")
 
@@ -554,7 +561,8 @@ class SiderealStacker(task.SingleTask):
 
             # Keep track of the sum of squared weights
             # to perform Bessel's correction at the end.
-            self.sum_coeff_sq = np.zeros_like(self.stack.weight[:].view(np.ndarray))
+            if self.with_sample_variance:
+                self.sum_coeff_sq = np.zeros_like(self.stack.weight[:].view(np.ndarray))
 
         # Accumulate
         self.log.info("Adding to stack LSD(s): %s" % input_lsd)
@@ -587,9 +595,8 @@ class SiderealStacker(task.SingleTask):
             # division in the more general expression above.
             self.stack.weight[:] += sdata.weight[:]
 
-        # Accumulate the total number of samples and the sum of squared coefficients.
+        # Accumulate the total number of samples.
         self.stack.nsample[:] += count
-        self.sum_coeff_sq += coeff ** 2
 
         # Below we will need to normalize by the current sum of coefficients.
         # Can be found in the stack.nsample dataset for uniform case or
@@ -605,13 +612,19 @@ class SiderealStacker(task.SingleTask):
         # Update the mean.
         self.stack.vis[:] += delta_before * tools.invert_no_zero(sum_coeff)
 
-        # Calculate the difference between the new data and the updated mean.
-        delta_after = sdata.vis[:] - self.stack.vis[:]
+        # The calculations below are only required if the sample variance was requested
+        if self.with_sample_variance:
 
-        # Update the sample variance.
-        self.stack.sample_variance[0] += delta_before.real * delta_after.real
-        self.stack.sample_variance[1] += delta_before.real * delta_after.imag
-        self.stack.sample_variance[2] += delta_before.imag * delta_after.imag
+            # Accumulate the sum of squared coefficients.
+            self.sum_coeff_sq += coeff ** 2
+
+            # Calculate the difference between the new data and the updated mean.
+            delta_after = sdata.vis[:] - self.stack.vis[:]
+
+            # Update the sample variance.
+            self.stack.sample_variance[0] += delta_before.real * delta_after.real
+            self.stack.sample_variance[1] += delta_before.real * delta_after.imag
+            self.stack.sample_variance[2] += delta_before.imag * delta_after.imag
 
     def process_finish(self):
         """Normalize the stack and return the result.
@@ -624,29 +637,30 @@ class SiderealStacker(task.SingleTask):
         self.stack.attrs["tag"] = self.tag
         self.stack.attrs["lsd"] = np.array(self.lsd_list)
 
-        nsample = self.stack.nsample[:]
+        # For uniform weighting, normalize the accumulated variances by the total
+        # number of samples squared and then invert to finalize stack.weight.
+        if self.weight == "uniform":
+            norm = self.stack.nsample[:].astype(np.float32)
+            self.stack.weight[:] = (
+                tools.invert_no_zero(self.stack.weight[:]) * norm ** 2
+            )
 
         # We need to normalize the sample variance by the sum of coefficients.
         # Can be found in the stack.nsample dataset for uniform case
         # or the stack.weight dataset for inverse variance case.
-        if self.weight == "uniform":
-            norm = nsample.astype(np.float32)
-            # Normalize the accumulated variances by the total number of samples
-            # and then invert to finalize stack.weight.
-            self.stack.weight[:] = (
-                tools.invert_no_zero(self.stack.weight[:]) * norm ** 2
-            )
-        else:
-            norm = self.stack.weight[:]
+        if self.with_sample_variance:
 
-        # Perform Bessel's correction.  In the case of
-        # uniform  weighting, norm will be equal to nsample - 1.
-        norm = norm - self.sum_coeff_sq * tools.invert_no_zero(norm)
+            if self.weight != "uniform":
+                norm = self.stack.weight[:]
 
-        # Normalize the sample variance.
-        self.stack.sample_variance[:] *= np.where(
-            nsample > 1, tools.invert_no_zero(norm), 0.0
-        )[np.newaxis, :]
+            # Perform Bessel's correction.  In the case of
+            # uniform  weighting, norm will be equal to nsample - 1.
+            norm = norm - self.sum_coeff_sq * tools.invert_no_zero(norm)
+
+            # Normalize the sample variance.
+            self.stack.sample_variance[:] *= np.where(
+                self.stack.nsample[:] > 1, tools.invert_no_zero(norm), 0.0
+            )[np.newaxis, :]
 
         return self.stack
 
