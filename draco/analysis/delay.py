@@ -509,9 +509,6 @@ class DelaySpectrumEstimatorBase(task.SingleTask, random.RandomTask):
         -------
         dspec : DelaySpectrum
         """
-
-        tel = self.telescope
-
         ss.redistribute("freq")
 
         if (
