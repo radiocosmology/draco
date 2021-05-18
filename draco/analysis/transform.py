@@ -1,8 +1,9 @@
-"""Misc. transformations to do on data, from grouping frequencies and products to performing the m-mode transform."""
+"""Miscellaneous transformations to do on data.
 
+This includes grouping frequencies and products to performing the m-mode transform.
+"""
 import numpy as np
 from caput import mpiarray, config
-from caput import mpiutil
 
 from ..core import containers, task, io
 from ..util import tools

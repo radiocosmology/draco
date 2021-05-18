@@ -66,13 +66,13 @@ TRUNC_SPEC = {
 
 
 def _list_of_filelists(files: Union[List[str], List[List[str]]]) -> List[List[str]]:
-    """
-    Take in a list of lists/glob patterns of filenames
+    """Take in a list of lists/glob patterns of filenames
 
     Parameters
     ----------
     files
-        A path or glob pattern (e.g. /my/data/\*.h5) or a list of those (or a list of lists of those).
+        A path or glob pattern (e.g. /my/data/*.h5) or a list of those (or a list of
+        lists of those).
 
     Raises
     ------
@@ -81,7 +81,8 @@ def _list_of_filelists(files: Union[List[str], List[List[str]]]) -> List[List[st
 
     Returns
     -------
-    The input file list list. Any glob patterns will be flattened to file path string lists.
+    The input file list list. Any glob patterns will be flattened to file path string
+    lists.
     """
     import glob
 
@@ -104,13 +105,12 @@ def _list_of_filelists(files: Union[List[str], List[List[str]]]) -> List[List[st
 
 
 def _list_or_glob(files: Union[str, List[str]]) -> List[str]:
-    """
-    Take in a list of lists/glob patterns of filenames
+    """Take in a list of lists/glob patterns of filenames
 
     Parameters
     ----------
     files
-        A path or glob pattern (e.g. /my/data/\*.h5) or a list of those
+        A path or glob pattern (e.g. /my/data/*.h5) or a list of those
 
     Returns
     -------
@@ -144,11 +144,13 @@ def _list_of_filegroups(groups: Union[List[Dict] or Dict]) -> List[Dict]:
     Parameters
     ----------
     groups
-        Dicts should contain keys 'files': An iterable with file path or glob pattern strings, 'tag': the group tag str
+        Dicts should contain keys 'files': An iterable with file path or glob pattern
+        strings, 'tag': the group tag str
 
     Returns
     -------
-    The input groups. Any glob patterns in the 'files' list will be flattened to file path strings.
+    The input groups. Any glob patterns in the 'files' list will be flattened to file
+    path strings.
 
     Raises
     ------

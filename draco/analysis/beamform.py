@@ -899,7 +899,6 @@ class RingMapStack2D(task.SingleTask):
         # Get the grid size of the map in RA and sin(ZA)
         dra = np.median(np.abs(np.diff(ringmap.index_map["ra"])))
         dza = np.median(np.abs(np.diff(ringmap.index_map["el"])))
-        df = np.median(np.abs(np.diff(ringmap.freq)))
 
         # Get the source indices in RA
         # NOTE: that we need to take into account that sources might be less than 360

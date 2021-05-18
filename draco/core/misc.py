@@ -8,7 +8,7 @@ all be moved out into their own module.
 
 import numpy as np
 
-from caput import config, mpiutil
+from caput import config
 
 from ..core import task, containers
 from ..util import tools
