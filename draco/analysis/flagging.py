@@ -822,14 +822,14 @@ class ApplyRFIMask(task.SingleTask):
 
     Attributes
     ----------
-    share : {"all", "none", "vis"}
+    share : {"all", "none", "vis", "map"}
         Which datasets should we share with the input. If "none" we create a
-        full copy of the data, if "vis" we create a copy only of the modified
+        full copy of the data, if "vis" or "map" we create a copy only of the modified
         weight dataset and the unmodified vis dataset is shared, if "all" we
         modify in place and return the input container.
     """
 
-    share = config.enum(["none", "vis", "all"], default="all")
+    share = config.enum(["none", "vis", "map", "all"], default="all")
 
     def process(self, tstream, rfimask):
         """Flag out RFI by zeroing the weights.
@@ -896,6 +896,8 @@ class ApplyRFIMask(task.SingleTask):
             tsc = tstream
         elif self.share == "vis":
             tsc = tstream.copy(shared=("vis",))
+        elif self.share == "map":
+            tsc = tstream.copy(shared=("map",))
         else:  # self.share == "none"
             tsc = tstream.copy()
 
