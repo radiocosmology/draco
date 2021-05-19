@@ -142,7 +142,7 @@ class BaseMapMaker(task.SingleTask):
 
 
 class DirtyMapMaker(BaseMapMaker):
-    """Generate a dirty map.
+    r"""Generate a dirty map.
 
     Notes
     -----
