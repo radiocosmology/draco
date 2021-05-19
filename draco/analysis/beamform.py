@@ -478,8 +478,6 @@ class BeamFormBase(task.SingleTask):
         if self.no_beam_model:
             return np.ones((nfreq, ha.size), dtype=np.float64)
 
-        p_stokesI = np.array([[1.0, 0.0], [0.0, 1.0]])
-
         angpos = np.array([(0.5 * np.pi - dec) * np.ones_like(ha), ha]).T
 
         primary_beam = np.zeros((nfreq, ha.size), dtype=np.float64)
@@ -493,7 +491,7 @@ class BeamFormBase(task.SingleTask):
             else:
                 bjj = bii
 
-            primary_beam[ff] = np.sum(bii * np.dot(bjj.conjugate(), p_stokesI), axis=1)
+            primary_beam[ff] = np.sum(bii * bjj.conjugate(), axis=1)
 
         return primary_beam
 
@@ -763,9 +761,7 @@ class BeamFormExternalBase(BeamFormBase):
     def _initialize_beam_with_data(self):
         """Ensure that the beam and visibilities have the same frequency axis."""
 
-        freq = self.freq_local
-
-        if (freq.size != self._beam_freq.size) or np.any(freq != self._beam_freq):
+        if not np.array_equal(self.freq_local, self._beam_freq):
             raise RuntimeError("Beam and visibility frequency axes do not match.")
 
     def _initialize_grid_beam(self, gbeam):
