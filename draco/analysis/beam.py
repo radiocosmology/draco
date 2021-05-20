@@ -98,7 +98,7 @@ class CreateBeamStream(task.SingleTask):
             # Once we move on to processing later revisisions we can
             # raise an error here.
             self.log.info(
-                "RA axis of beam and data differ at most by %0.6f"
+                "RA axis of beam and data differ at most by %0.6f deg"
                 % np.max(ra_data[map_ra] - ra_beam)
             )
 
@@ -113,7 +113,16 @@ class CreateBeamStream(task.SingleTask):
         u = x[np.newaxis, :] / lmbda[:, np.newaxis]
         u = u[:, :, np.newaxis, np.newaxis]
 
-        v = np.sin(np.radians(self.telescope.rotation_angle)) * u
+        # Rotate the baseline distances by the telescope's rotation angle.
+        # This assumes that the baseline distances used to beamform in the
+        # NS direction were NOT rotated, and hence the phase due to that rotation
+        # should be corrected by the beam.  Note that we can only partially
+        # correct for the rotation in this way, since we have already collapsed
+        # over NS baselines. However, this partial correction should be pretty good
+        # for small rotation angles and for sources near meridian.
+        rot = np.radians(self.telescope.rotation_angle)
+        v = np.sin(rot) * u
+        u = np.cos(rot) * u
 
         # Calculate the phase
         phi = interferometry.fringestop_phase(

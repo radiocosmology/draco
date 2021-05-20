@@ -19,8 +19,8 @@ Tasks
     RingMapMaker
     TikhonovRingMapMakerAnalytical
     TikhonovRingMapMakerExternal
-    WeinerRingMapMakerAnalytical
-    WeinerRingMapMakerExternal
+    WienerRingMapMakerAnalytical
+    WienerRingMapMakerExternal
     RADependentWeights
 """
 import numpy as np
@@ -476,6 +476,11 @@ class DeconvolveHybridMBase(task.SingleTask):
         rm.weight[:] = 0.0
         rm.redistribute("freq")
 
+        # Add attributes describing the EW weighting scheme
+        rm.attrs["exclude_intracyl"] = self.exclude_intracyl
+        if hasattr(self, "weight_ew"):
+            rm.attrs["weight_ew"] = self.weight_ew
+
         # Dereference datasets
         hv = hybrid_vis_m.vis[:].view(np.ndarray)
         hw = hybrid_vis_m.weight[:].view(np.ndarray)
@@ -551,13 +556,66 @@ class DeconvolveHybridMBase(task.SingleTask):
         return rm
 
     def _get_beam_mmodes(self, freq, hybrid_vis_m):
-        raise NotImplementedError
+        """Return the m-mode transform of the beam model at a particular frequency.
+
+        Any subclass must define this method in order to be a functional
+        deconvolving ringmap maker.
+
+        Parameters
+        ----------
+        freq : float
+            The frequency in MHz.
+        hybrid_vis_m : containers.HybridVisMModes
+            The m-mode transform of the hybrid visiblities.
+
+        Returns
+        -------
+        hybrid_beam_m : np.ndarray[nm, nmsign, npol, new, nel]
+            The m-mode transform of the beam model at the requested frequency.
+        """
+        raise NotImplementedError(
+            f"{self.__class__} must define a _get_beam_mmodes method."
+        )
 
     def _get_weight(self, inv_var):
-        raise NotImplementedError
+        """Return the weight to be used when averaging over EW baselines.
+
+        Any subclass must define this method in order to be a functional
+        deconvolving ringmap maker.
+
+        Parameters
+        ----------
+        inv_var : np.ndarray[nm, nmsign, npol, new, nel]
+            The inverse variance of the noise in the m-mode transform
+            of the hybrid visibility.
+
+        Returns
+        -------
+        weight :  np.ndarray[nm, nmsign, npol, new, nel] (or can broadcast against)
+            The weight given to each EW baseline.
+        """
+        raise NotImplementedError(f"{self.__class__} must define a _get_weight method.")
 
     def _get_regularisation(self, freq):
-        raise NotImplementedError
+        """Return the regularisation parameter at a particular frequency.
+
+        Any subclass must define this method in order to be a functional
+        deconvolving ringmap maker.
+
+        Parameters
+        ----------
+        freq : float
+            The frequency in MHz.
+
+        Returns
+        -------
+        epsilon : float
+            The regularisation parameter that appears in the denominator of
+            the deconvolution equation.
+        """
+        raise NotImplementedError(
+            f"{self.__class__} must define a _get_regularisation method."
+        )
 
 
 class DeconvolveAnalyticalBeam(DeconvolveHybridMBase):
@@ -732,8 +790,8 @@ class TikhonovRingMapMaker(DeconvolveHybridMBase):
         return self.inv_SN
 
 
-class WeinerRingMapMaker(DeconvolveHybridMBase):
-    """Base class for map making using a Weiner regularisation scheme (non-functional).
+class WienerRingMapMaker(DeconvolveHybridMBase):
+    """Base class for map making using a Wiener regularisation scheme (non-functional).
 
     Compared to TikhonovRingMapMaker, this task has a frequency dependent
     regularisation parameter given by the ratio of the noise spectrum to
@@ -753,6 +811,7 @@ class WeinerRingMapMaker(DeconvolveHybridMBase):
     prior_amp = config.Property(proptype=float, default=0.04)
     prior_alpha_nu = config.Property(proptype=float, default=-2.6)
 
+    weight_ew = "inverse_variance"
     NOMINAL_FREQ = 600.0
 
     def _get_regularisation(self, freq):
@@ -778,24 +837,19 @@ class TikhonovRingMapMakerExternal(DeconvolveExternalBeam, TikhonovRingMapMaker)
     """Make a ringmap using Tikhonov deconvolution of an external beam model."""
 
 
-class WeinerRingMapMakerAnalytical(DeconvolveAnalyticalBeam, WeinerRingMapMaker):
-    """Make a ringmap using Weiner deconvolution of an analytical beam model."""
+class WienerRingMapMakerAnalytical(DeconvolveAnalyticalBeam, WienerRingMapMaker):
+    """Make a ringmap using Wiener deconvolution of an analytical beam model."""
 
 
-class WeinerRingMapMakerExternal(DeconvolveExternalBeam, WeinerRingMapMaker):
-    """Make a ringmap using Weiner deconvolution of an external beam model."""
+class WienerRingMapMakerExternal(DeconvolveExternalBeam, WienerRingMapMaker):
+    """Make a ringmap using Wiener deconvolution of an external beam model."""
 
 
 class RADependentWeights(task.SingleTask):
-    """Re-establish an RA dependence in the `weight` dataset that was lost in round-trip m-mode transform.
+    """Re-establish an RA dependence to the `weight` dataset of a deconvolved ringmap.
 
-    Attributes
-    ----------
-    exclude_intracyl : bool
-        Exclude intracylinder baselines from the calculation.
+    This RA dependence was lost in the round-trip m-mode transform.
     """
-
-    exclude_intracyl = config.Property(proptype=bool, default=False)
 
     def process(
         self, hybrid_vis: containers.HybridVisStream, ringmap: containers.RingMap
@@ -817,24 +871,52 @@ class RADependentWeights(task.SingleTask):
             by an RA dependent factor determined from hybrid_vis.
         """
 
-        # Get the weight for each EW baseline
-        weight_ew = hybrid_vis.weight[:].view(np.ndarray)
+        # Determine how the EW baselines were averaged in the ringmap maker
+        exclude_intracyl = ringmap.attrs.get("exclude_intracyl", None)
+        weight_scheme = ringmap.attrs.get("weight_ew", None)
 
-        # Calculate the average weight over the RA axis
-        var_ew = tools.invert_no_zero(weight_ew)
-        avg_var_ew = np.mean(var_ew, axis=-1, keepdims=True)
-        avg_weight_ew = tools.invert_no_zero(avg_var_ew)
+        if (exclude_intracyl is None) or (weight_scheme is None):
+            msg = (
+                "The ring map maker must save `weight_ew` and `exclude_intracyl` "
+                "config parameters to the container attributes in order to "
+                "reconstruct the RA dependence of the noise."
+            )
+            raise RuntimeError(msg)
 
-        # If requested, set intracylinder baseline weighting to zero
-        if self.exclude_intracyl:
-            avg_weight_ew[..., 0, :] = 0.0
+        # Extract the variance of the hybrid visibilities from the weight dataset
+        var = tools.invert_no_zero(hybrid_vis.weight[:].view(np.ndarray))
 
-        # Compute the RA dependence of the noise in the weighted sum over EW baselines
-        avg_weight = np.sum(avg_weight_ew, axis=-2)
+        # Calculate the time averaged variance
+        var_time_avg = np.mean(var, axis=-1, keepdims=True)
 
-        ra_dependence = avg_weight * tools.invert_no_zero(
-            np.sum(avg_weight_ew ** 2 * var_ew, axis=-2)
-        )
+        # Determine the weights that where used to average over the EW baselines
+        if weight_scheme == "inverse_variance":
+
+            weight_ew = tools.invert_no_zero(var_time_avg)
+
+        else:
+
+            n_ew = var.shape[-2]
+
+            if weight_scheme == "uniform":
+                weight_ew = np.ones(n_ew)
+            else:  # weight_scheme == "natural"
+                weight_ew = n_ew - np.arange(n_ew)
+
+            expand = [None] * var.ndim
+            expand[-2] = slice(None)
+            weight_ew = weight_ew[tuple(expand)]
+
+        if exclude_intracyl:
+            weight_ew[..., 0, :] = 0.0
+
+        # Use the baseline averaged variance divided by the baseline averaged,
+        # time averaged variance as an approximatation for the RA dependence of
+        # the noise variance in the deconvolved ringmap.  Note that this is
+        # inverted in the equation below since we want to scale the weights.
+        ra_dependence = np.sum(
+            weight_ew ** 2 * var_time_avg, axis=-2
+        ) * tools.invert_no_zero(np.sum(weight_ew ** 2 * var, axis=-2))
 
         # Scale the ringmap weights by the RA dependence
         ringmap.weight[:] *= ra_dependence[..., np.newaxis]
