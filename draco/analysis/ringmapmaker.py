@@ -458,6 +458,7 @@ class DeconvolveHybridMBase(task.SingleTask):
         local_freq = hybrid_vis_m.freq[fstart:fstop]
 
         # Number of RA samples in the final output
+        m = hybrid_vis_m.index_map["m"]
         mmax = hybrid_vis_m.mmax
         nra = 2 * (mmax + 1)
 
@@ -507,7 +508,7 @@ class DeconvolveHybridMBase(task.SingleTask):
             bvf = self._get_beam_mmodes(freq, hybrid_vis_m)
 
             # Get the regularisation term, exact prescription is defined by the subclass
-            epsilon = self._get_regularisation(freq)
+            epsilon = self._get_regularisation(freq, m)
 
             # Calculate the normalization
             sum_weight = (weight * np.abs(bvf) ** 2).sum(axis=(1, -2))
@@ -587,7 +588,7 @@ class DeconvolveHybridMBase(task.SingleTask):
         ----------
         inv_var : np.ndarray[nm, nmsign, npol, new, nel]
             The inverse variance of the noise in the m-mode transform
-            of the hybrid visibility.
+            of the hybrid visibilities.
 
         Returns
         -------
@@ -596,8 +597,8 @@ class DeconvolveHybridMBase(task.SingleTask):
         """
         raise NotImplementedError(f"{self.__class__} must define a _get_weight method.")
 
-    def _get_regularisation(self, freq):
-        """Return the regularisation parameter at a particular frequency.
+    def _get_regularisation(self, freq, m):
+        """Return the parameter used to regularize the deconvolution operation.
 
         Any subclass must define this method in order to be a functional
         deconvolving ringmap maker.
@@ -606,10 +607,12 @@ class DeconvolveHybridMBase(task.SingleTask):
         ----------
         freq : float
             The frequency in MHz.
+        m : np.ndarray[nm,]
+            The m-modes.
 
         Returns
         -------
-        epsilon : float
+        epsilon : np.ndarray[nm, npol, nel] (or can broadcast against)
             The regularisation parameter that appears in the denominator of
             the deconvolution equation.
         """
@@ -785,7 +788,7 @@ class TikhonovRingMapMaker(DeconvolveHybridMBase):
 
         return weight_ew
 
-    def _get_regularisation(self, freq):
+    def _get_regularisation(self, *args):
 
         return self.inv_SN
 
@@ -793,32 +796,61 @@ class TikhonovRingMapMaker(DeconvolveHybridMBase):
 class WienerRingMapMaker(DeconvolveHybridMBase):
     """Base class for map making using a Wiener regularisation scheme (non-functional).
 
-    Compared to TikhonovRingMapMaker, this task has a frequency dependent
-    regularisation parameter given by the ratio of the noise spectrum to
-    the expected signal spectrum. The noise spectrum is obtained from the
-    `weight` dataset and the signal spectrum is obtained from a power-law
-    model whose parameters are specified by the user.
+    Compared to TikhonovRingMapMaker, this task has a frequency and m-mode
+    dependent regularisation parameter given by the ratio of the noise spectrum
+    to the expected signal spectrum. The noise spectrum is obtained from the
+    `weight` dataset and the signal spectrum is obtained from a power-law model
+    for the extragalactic point source and diffuse galactic synchrotron emission
+    whose parameters can be changed by the user.
+
+    .. math::
+        |V_{gal}| = a_{gal} \left(\frac{\nu}{\nu_{0}\right)^{\alpha_{gal}} m^{\beta_{gal}}
+        |V_{psrc}| = a_{psrc} \left(\frac{\nu}{\nu_{0}\right)^{\alpha_{psrc}}
+        S = |V_{gal}|^2 + |V_{psrc}|^2
 
     Attributes
     ----------
-    prior_amp : float
-        Amplitude of the power spectrum.
-    prior_alpha_nu : float
-        Power-law exponent describing the frequency dependence of
-        the power spectrum.
+    gal_amp : float
+        Prior for the amplitude of the m-mode transform of the
+        diffuse galactic synchrotron emission.
+    gal_alpha : float
+        Prior for the power-law exponent describing the frequency dependence
+        of the m-mode transform of the diffuse galactic synchrotron emission.
+    gal_beta : float
+        Prior for the power-law exponent describing the m dependence of
+        of the m-mode transform of the diffuse galactic synchrotron emission.
+    psrc_amp : float
+        Prior for the amplitude of the m-mode transform of the
+        extra-galactic point source emission.
+    psrc_alpha : float
+        Prior for the power-law exponent describing the frequency dependence
+        of the m-mode transform of the extra-galactic point source emission.
     """
 
-    prior_amp = config.Property(proptype=float, default=0.04)
-    prior_alpha_nu = config.Property(proptype=float, default=-2.6)
+    gal_amp = config.Property(proptype=float, default=1.41)
+    gal_alpha = config.Property(proptype=float, default=-1.75)
+    gal_beta = config.Property(proptype=float, default=-0.75)
 
+    psrc_amp = config.Property(proptype=float, default=0.045)
+    psrc_alpha = config.Property(proptype=float, default=-1.0)
+
+    pivot_freq = 600.0
     weight_ew = "inverse_variance"
-    NOMINAL_FREQ = 600.0
 
-    def _get_regularisation(self, freq):
+    def _get_regularisation(self, freq, m, *args):
 
-        spectrum = self.prior_amp * (freq / self.NOMINAL_FREQ) ** self.prior_alpha_nu
+        gal = (
+            self.gal_amp
+            * (freq / self.pivot_freq) ** self.gal_alpha
+            * np.where(m > 0.0, m, 1.0) ** self.gal_beta
+        )
+        psrc = self.psrc_amp * (freq / self.pivot_freq) ** self.psrc_alpha
 
-        return tools.invert_no_zero(spectrum)
+        spectrum = gal ** 2 + psrc ** 2
+
+        # Expand the array so that it can be broadcast against an
+        # array of shape (nm, npol, nel)
+        return tools.invert_no_zero(spectrum[:, np.newaxis, np.newaxis])
 
     def _get_weight(self, inv_var):
 
