@@ -17,8 +17,6 @@ from ..core import containers, task, io
 class SimulateSidereal(task.SingleTask):
     """Create a simulated sidereal dataset from an input map."""
 
-    done = False
-
     def setup(self, bt):
         """Setup the simulation.
 
@@ -46,9 +44,6 @@ class SimulateSidereal(task.SingleTask):
         feeds : list of CorrInput
             Description of the feeds simulated.
         """
-
-        if self.done:
-            raise pipeline.PipelineStopIteration
 
         # Read in telescope system
         bt = self.beamtransfer
@@ -154,8 +149,6 @@ class SimulateSidereal(task.SingleTask):
         )
         sstream.vis[:] = mpiarray.MPIArray.wrap(vis_stream, axis=0)
         sstream.weight[:] = 1.0
-
-        self.done = True
 
         return sstream
 
