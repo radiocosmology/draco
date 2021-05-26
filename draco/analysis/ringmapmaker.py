@@ -126,6 +126,7 @@ class MakeVisGrid(task.SingleTask):
             sstream.vis.shape[1],
         )
 
+
         # De-reference distributed arrays outside loop to save repeated MPI calls
         ssv = sstream.vis[:]
         ssw = sstream.weight[:]
@@ -168,6 +169,12 @@ class BeamformNS(task.SingleTask):
         Span of map in the declination dimension. Value of 1.0 generates a map
         that spans from horizon-to-horizon.  Default is 1.0.
 
+    el_from_healpix_nside : int, optional
+        If specified, set elevation axis according to latitudes of pixels in a
+        healpix map with the specified Nside (overriding npix and span).
+        Default: None
+        TODO: modify to work for non-equatorial telescopes
+
     weight : string
         How to weight the non-redundant baselines:
             'inverse_variance' - each baseline weighted by the weight attribute
@@ -191,9 +198,22 @@ class BeamformNS(task.SingleTask):
 
     npix = config.Property(proptype=int, default=512)
     span = config.Property(proptype=float, default=1.0)
+    el_from_healpix_nside = config.Property(proptype=int, default=None)
     weight = config.enum(
-        ["uniform", "natural", "inverse_variance", "blackman", "nuttall", "hann",
-         "hanning", "hamming", "blackman_nuttall", "blackman_harris", "chebyshev", "blackman_nuttall_scipy"],
+        [
+            "uniform",
+            "natural",
+            "inverse_variance",
+            "blackman",
+            "nuttall",
+            "hann",
+            "hanning",
+            "hamming",
+            "blackman_nuttall",
+            "blackman_harris",
+            "chebyshev",
+            "blackman_nuttall_scipy",
+        ],
         default="natural",
     )
     scaled = config.Property(proptype=bool, default=False)
@@ -221,7 +241,25 @@ class BeamformNS(task.SingleTask):
         gsr = gstream.redundancy[:]
 
         # Construct phase array
-        el = self.span * np.linspace(-1.0, 1.0, self.npix)
+        if self.el_from_healpix_nside is not None:
+            self.log.warning(
+                "NOTE: el_from_healpix_nside currently only supported for equatorial telescopes!"
+            )
+
+            import healpy as hp
+
+            # For given Nside, obtain latitudes of every pixel in a healpix map
+            _, lat = hp.pix2ang(
+                self.el_from_healpix_nside,
+                np.arange(hp.nside2npix(self.el_from_healpix_nside)),
+                lonlat=True,
+            )
+            # Find unique latitudes from this list, and convert to elevations
+            # TODO: is there a more elegant way to find the unique latitudes for a given Nside?
+            el = np.sin(np.deg2rad(np.unique(lat)))
+
+        else:
+            el = self.span * np.linspace(-1.0, 1.0, self.npix)
 
         # Create empty ring map
         hv = containers.HybridVisStream(el=el, axes_from=gstream, attrs_from=gstream)
@@ -270,10 +308,20 @@ class BeamformNS(task.SingleTask):
             else:
                 x = 0.5 * (vpos / vmax + 1)
                 if self.weight == "chebyshev":
-                    cheb_interp = interp1d(np.arange(1000) / (1000-1), chebwin(1000, self.cheb_at), bounds_error=False, fill_value=0)
+                    cheb_interp = interp1d(
+                        np.arange(1000) / (1000 - 1),
+                        chebwin(1000, self.cheb_at),
+                        bounds_error=False,
+                        fill_value=0,
+                    )
                     ns_weight = cheb_interp(x)
                 elif self.weight == "blackman_nuttall_scipy":
-                    bn_interp = interp1d(np.arange(1000) / (1000-1), nuttall(1000), bounds_error=False, fill_value=0)
+                    bn_interp = interp1d(
+                        np.arange(1000) / (1000 - 1),
+                        nuttall(1000),
+                        bounds_error=False,
+                        fill_value=0,
+                    )
                     ns_weight = bn_interp(x)
                 else:
                     ns_weight = tools.window_generalised(x, window=self.weight)
