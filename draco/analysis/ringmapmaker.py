@@ -58,10 +58,12 @@ class MakeVisGrid(task.SingleTask):
         rm : containers.RingMap
         """
 
-        if np.all(
-            sstream.prodstack.view(np.uint16).reshape(-1, 2)
-            != self.telescope.uniquepairs
-        ):
+        # Convert prodstack into a type that can be easily compared against
+        # `uniquepairs`
+        prodstack = sstream.prodstack
+        prodstack = prodstack.view(prodstack["input_a"].dtype).reshape(-1, 2)
+
+        if not np.array_equal(prodstack, self.telescope.uniquepairs):
             raise ValueError(
                 "Products in sstream do not match those in the beam transfers."
             )
