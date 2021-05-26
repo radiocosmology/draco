@@ -529,7 +529,7 @@ class LoadFilesFromParams(BaseLoadFiles):
 
         if "tag" not in cont.attrs:
             # Get the first part of the actual filename and use it as the tag
-            tag = os.path.splitext(os.path.basename(filename))[0]
+            tag = os.path.splitext(os.path.basename(file_))[0]
 
             cont.attrs["tag"] = tag
 
