@@ -1016,7 +1016,9 @@ class Map(FreqContainer, HealpixContainer):
         return self.datasets["map"]
 
 
-class SiderealStream(FreqContainer, VisContainer, SiderealContainer, SampleVarianceContainer):
+class SiderealStream(
+    FreqContainer, VisContainer, SiderealContainer, SampleVarianceContainer
+):
     """A container for holding a visibility dataset in sidereal time.
 
     Parameters
