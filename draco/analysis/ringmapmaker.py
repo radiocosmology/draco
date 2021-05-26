@@ -460,7 +460,9 @@ class DeconvolveHybridMBase(task.SingleTask):
         # Number of RA samples in the final output
         m = hybrid_vis_m.index_map["m"]
         mmax = hybrid_vis_m.mmax
-        nra = 2 * (mmax + 1)
+
+        is_odd = np.any(hybrid_vis_m.vis[mmax, 1] != 0.0)
+        nra = 2 * mmax + int(is_odd)
 
         # Create ring map, copying over axes/attrs
         rm = containers.RingMap(
@@ -507,7 +509,7 @@ class DeconvolveHybridMBase(task.SingleTask):
             # Get the beam m-modes using method defined by subclass
             bvf = self._get_beam_mmodes(freq, hybrid_vis_m)
 
-            # Get the regularisation term, exact prescription is defined by the subclass
+            # Get the regularisation term, exact prescription is defined by subclass
             epsilon = self._get_regularisation(freq, m)
 
             # Calculate the normalization
@@ -660,7 +662,10 @@ class DeconvolveAnalyticalBeam(DeconvolveHybridMBase):
             return np.exp(2.0j * np.pi * u * np.sin(phi)) * A(phi, sigma)
 
         # Deteremine the RA axis from the maximum m-mode in the hybrid visibilities
-        nra = 2 * (hybrid_vis_m.mmax + 1)
+        mmax = hybrid_vis_m.mmax
+        is_odd = np.any(hybrid_vis_m.vis[mmax, 1] != 0.0)
+        nra = 2 * mmax + int(is_odd)
+
         ra = np.linspace(0.0, 360.0, nra, endpoint=False)
         phi_arr = np.radians(ra)[np.newaxis, np.newaxis, np.newaxis, :]
 
@@ -691,7 +696,7 @@ class DeconvolveAnalyticalBeam(DeconvolveHybridMBase):
         # Calculate the effective beam transfer function
         B_arr = B(phi_arr, u_arr, sig_arr)
 
-        mB = transform._make_marray(B_arr.conj(), mmax=hybrid_vis_m.mmax)
+        mB = transform._make_marray(B_arr.conj(), mmax=mmax)
 
         return mB
 
