@@ -173,7 +173,6 @@ class BeamformNS(task.SingleTask):
         If specified, set elevation axis according to latitudes of pixels in a
         healpix map with the specified Nside (overriding npix and span).
         Default: None
-        TODO: modify to work for non-equatorial telescopes
 
     weight : string
         How to weight the non-redundant baselines:
@@ -220,6 +219,15 @@ class BeamformNS(task.SingleTask):
     include_auto = config.Property(proptype=bool, default=False)
     cheb_at = config.Property(proptype=int, default=100)
 
+    def setup(self, tel):
+        """Set the Telescope instance to use.
+
+        Parameters
+        ----------
+        tel : TransitTelescope
+        """
+        self.telescope = io.get_telescope(tel)
+
     def process(self, gstream):
         """Computes the ringmap.
 
@@ -242,10 +250,6 @@ class BeamformNS(task.SingleTask):
 
         # Construct phase array
         if self.el_from_healpix_nside is not None:
-            self.log.warning(
-                "NOTE: el_from_healpix_nside currently only supported for equatorial telescopes!"
-            )
-
             import healpy as hp
 
             # For given Nside, obtain latitudes of every pixel in a healpix map
@@ -254,9 +258,13 @@ class BeamformNS(task.SingleTask):
                 np.arange(hp.nside2npix(self.el_from_healpix_nside)),
                 lonlat=True,
             )
-            # Find unique latitudes from this list, and convert to elevations
+            # Find unique latitudes from this list, shift to local telescope coordinates,
+            # and chop coordinates beyond the horizon
             # TODO: is there a more elegant way to find the unique latitudes for a given Nside?
-            el = np.sin(np.deg2rad(np.unique(lat)))
+            lat = np.unique(lat) - self.telescope.latitude
+            lat = lat[np.abs(lat) <= 90]
+            # Convert latitudes to elevations
+            el = np.sin(np.deg2rad(lat))
 
         else:
             el = self.span * np.linspace(-1.0, 1.0, self.npix)
