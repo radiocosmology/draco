@@ -11,8 +11,9 @@ into  :class:`SiderealGrouper`, then feeding that into
 
 
 import numpy as np
+import scipy.linalg as la
 
-from caput import config, mpiutil, mpiarray, tod
+from caput import config, mpiarray, tod
 from cora.util import units
 
 from .transform import Regridder
@@ -661,6 +662,162 @@ class SiderealStacker(task.SingleTask):
             self.stack.sample_variance[:] *= np.where(
                 self.stack.nsample[:] > 1, tools.invert_no_zero(norm), 0.0
             )[np.newaxis, :]
+
+        return self.stack
+
+
+class SiderealStackerMatch(task.SingleTask):
+    """Take in a set of sidereal days, and stack them up.
+
+    This treats the time average of each input sidereal stream as an extra source of
+    noise and uses a Wiener filter approach to consistent stack the individual streams
+    together while accounting for their distinct coverage in RA. In practice this is
+    used for co-adding stacks with different sidereal coverage while marginalising out
+    the effects of the different cross talk contributions that each input stream may
+    have.
+
+    There is no uniquely correct solution for the sidereal average (or m=0 mode) of the
+    output stream. This task fixes this unknown mode by setting the *median* of each 24
+    hour period to zero. Note this is not the same as setting the m=0 mode to be zero.
+
+    Parameters
+    ----------
+    tag : str
+        The tag to give the stack.
+    """
+
+    stack = None
+    lsd_list = None
+
+    tag = config.Property(proptype=str, default="stack")
+
+    count = 0
+
+    def process(self, sdata):
+        """Stack up sidereal days.
+
+        Parameters
+        ----------
+        sdata : containers.SiderealStream
+            Individual sidereal day to stack up.
+        """
+
+        sdata.redistribute("freq")
+
+        if self.stack is None:
+
+            self.log.info("Starting new stack.")
+
+            self.stack = containers.empty_like(sdata)
+            self.stack.redistribute("freq")
+            self.stack.vis[:] = 0.0
+            self.stack.weight[:] = 0.0
+
+            self.count = 0
+            self.Ni_s = np.zeros(
+                (sdata.weight.local_shape[0], sdata.weight.local_shape[2])
+            )
+            self.Vm = []
+            self.lsd_list = []
+
+        label = sdata.attrs.get("tag", f"stream_{self.count}")
+        self.log.info(f"Adding {label} to stack.")
+
+        # Get an estimate of the noise inverse for each time and freq in the file.
+        # Average over baselines as we don't have the memory
+        Ni_d = sdata.weight[:].mean(axis=1)
+
+        # Calculate the trace of the inverse noise covariance for each frequency
+        tr_Ni = Ni_d.sum(axis=1)
+
+        # Calculate the projection vector v
+        v = Ni_d * tools.invert_no_zero(tr_Ni[:, np.newaxis]) ** 0.5
+
+        d = sdata.vis[:]
+
+        # Calculate and store the dirty map in the stack container
+        self.stack.vis[:] += (
+            d * Ni_d[:, np.newaxis, :]
+            # - v[:, np.newaxis, :] * np.dot(sdata.vis[:], v.T)[..., np.newaxis]
+            - v[:, np.newaxis, :]
+            * np.matmul(v[:, np.newaxis, np.newaxis, :], d[..., np.newaxis])[..., 0]
+        )
+
+        # Propagate the transformation into the weights, but for the moment we need to
+        # store the variance. We don't propagate the change coming from matching the
+        # means, as it is small, and the effects are primarily on the off-diagonal
+        # covariance entries that we don't store anyway
+        self.stack.weight[:] += (
+            tools.invert_no_zero(sdata.weight[:]) * Ni_d[:, np.newaxis, :] ** 2
+        )
+
+        # Accumulate the total inverse noise
+        self.Ni_s += Ni_d
+
+        # We need to keep the projection vector until the end
+        self.Vm.append(v)
+
+        # Get the LSD label out of the data (resort to using a CSD if it's
+        # present). If there's no label just use a place holder and stack
+        # anyway.
+        if "lsd" in sdata.attrs:
+            input_lsd = sdata.attrs["lsd"]
+        elif "csd" in sdata.attrs:
+            input_lsd = sdata.attrs["csd"]
+        else:
+            input_lsd = -1
+        self.lsd_list += _ensure_list(input_lsd)
+
+        self.count += 1
+
+    def process_finish(self):
+        """Construct and emit sidereal stack.
+
+        Returns
+        -------
+        stack : containers.SiderealStream
+            Stack of sidereal days.
+        """
+
+        self.stack.attrs["tag"] = self.tag
+
+        Va = np.array(self.Vm).transpose(1, 2, 0)
+
+        # Dereference for efficiency to avoid MPI calls in the loop
+        sv = self.stack.vis[:]
+        sw = self.stack.weight[:]
+
+        # Loop over all frequencies to do the deconvolution. The loop is done because
+        # of the difficulty mapping the operations we would want to do into what numpy
+        # allows
+        for lfi in range(self.stack.vis[:].local_shape[0]):
+
+            Ni_s = self.Ni_s[lfi]
+            N_s = tools.invert_no_zero(Ni_s)
+            V = Va[lfi] * N_s[:, np.newaxis]
+
+            # Note, need to use a pseudo-inverse in here as there is a singular mode
+            A = la.pinv(
+                np.identity(self.count) - np.dot(V.T, Ni_s[:, np.newaxis] * V),
+                rcond=1e-8,
+            )
+
+            # Perform the deconvolution step
+            sv[lfi] = sv[lfi] * N_s + np.dot(V, np.dot(A, np.dot(sv[lfi], V).T)).T
+
+            # Normalise the weights
+            sw[lfi] = tools.invert_no_zero(sw[lfi]) * Ni_s ** 2
+
+        # Remove the full day median to set a well defined normalisation, otherwise the
+        # mean is undefined
+        stack_median = (
+            np.median(sv.view(np.ndarray).real, axis=2)
+            + np.median(sv.view(np.ndarray).imag, axis=2) * 1.0j
+        )
+        sv[:] -= stack_median[:, :, np.newaxis]
+
+        # Set the full LSD list
+        self.stack.attrs["lsd"] = np.array(self.lsd_list)
 
         return self.stack
 

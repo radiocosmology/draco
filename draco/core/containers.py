@@ -55,7 +55,6 @@ their own custom container types.
 import inspect
 
 import numpy as np
-
 from caput import memh5, tod
 
 from ..util import tools
@@ -1177,6 +1176,28 @@ class RFIMask(FreqContainer, TODContainer):
         return self.datasets["mask"]
 
 
+class SiderealRFIMask(FreqContainer, SiderealContainer):
+    """A container for holding RFI mask.
+
+    The mask is `True` for contaminated samples that should be excluded, and
+    `False` for clean samples.
+    """
+
+    _dataset_spec = {
+        "mask": {
+            "axes": ["freq", "ra"],
+            "dtype": bool,
+            "initialise": True,
+            "distributed": False,
+            "distributed_axis": "freq",
+        }
+    }
+
+    @property
+    def mask(self):
+        return self.datasets["mask"]
+
+
 class TimeStream(FreqContainer, VisContainer, TODContainer):
     """A container for holding a visibility dataset in time.
 
@@ -1339,9 +1360,9 @@ class HEALPixBeam(FreqContainer, HealpixContainer):
     }
 
     def __init__(self, coords="unknown", ordering="unknown", *args, **kwargs):
+        super(HEALPixBeam, self).__init__(*args, **kwargs)
         self.attrs["coords"] = coords
         self.attrs["ordering"] = ordering
-        super(HEALPixBeam, self).__init__(*args, **kwargs)
 
     @property
     def beam(self):
@@ -2134,6 +2155,35 @@ class FrequencyStackByPol(FrequencyStack):
     @property
     def pol(self):
         return self.index_map["pol"]
+
+
+class Stack3D(FreqContainer):
+    """Container for a 3D frequency stack."""
+
+    _axes = ("pol", "delta_ra", "delta_dec")
+
+    _dataset_spec = {
+        "stack": {
+            "axes": ["pol", "delta_ra", "delta_dec", "freq"],
+            "dtype": np.float64,
+            "initialise": True,
+            "distributed": False,
+        },
+        "weight": {
+            "axes": ["pol", "delta_ra", "delta_dec", "freq"],
+            "dtype": np.float64,
+            "initialise": True,
+            "distributed": False,
+        },
+    }
+
+    @property
+    def stack(self):
+        return self.datasets["stack"]
+
+    @property
+    def weight(self):
+        return self.datasets["weight"]
 
 
 class SourceCatalog(TableBase):

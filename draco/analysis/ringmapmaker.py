@@ -18,6 +18,7 @@ Tasks
 """
 import numpy as np
 import scipy.constants
+from mpi4py import MPI
 
 from caput import config
 
@@ -212,8 +213,19 @@ class BeamformNS(task.SingleTask):
         hvb = hv.dirty_beam[:]
 
         nspos = gstream.index_map["ns"][:]
-        nsmax = np.abs(nspos).max()
         freq = gstream.index_map["freq"]["centre"]
+
+        # Get the largest baseline present across all nodes while accounting for masking
+        baselines_present = (
+            np.moveaxis(gsw.view(np.ndarray), -2, 0).reshape(len(nspos), -1) > 0
+        ).any(axis=1)
+        nsmax_local = (
+            np.abs(nspos[baselines_present]).max()
+            if baselines_present.sum() > 0
+            else 0.0
+        )
+        nsmax = self.comm.allreduce(nsmax_local, op=MPI.MAX)
+        self.log.info(f"Maximum NS baseline is {nsmax:.2f}m")
 
         # Loop over local frequencies and fill ring map
         for lfi, fi in gstream.vis[:].enumerate(1):
@@ -308,6 +320,12 @@ class BeamformEW(task.SingleTask):
         # Redistribute over frequency
         hstream.redistribute("freq")
 
+        # TODO: figure out how to get around this
+        if len(hstream.index_map["pol"]) != 4:
+            raise ValueError(
+                "We need all 4 polarisation combinations for this to work."
+            )
+
         # Create empty ring map
         n_ew = len(hstream.index_map["ew"])
         nbeam = 1 if self.single_beam else 2 * n_ew - 1
@@ -329,8 +347,13 @@ class BeamformEW(task.SingleTask):
         # Normalise the weights
         weight_ew = weight_ew / weight_ew.sum()
 
+        # TODO: derive these from the actual polarisations found in the input
+        pol = np.array(["XX", "reXY", "imXY", "YY"], dtype="U4")
+
         # Create ring map, copying over axes/attrs and add the optional datasets
-        rm = containers.RingMap(beam=nbeam, axes_from=hstream, attrs_from=hstream)
+        rm = containers.RingMap(
+            beam=nbeam, pol=pol, axes_from=hstream, attrs_from=hstream
+        )
         rm.add_dataset("rms")
         rm.add_dataset("dirty_beam")
 
@@ -538,13 +561,10 @@ class DeconvolveHybridM(task.SingleTask):
                 # Get the transfer function in m-space
                 mB = transform._make_marray(B_norm.conj(), mmax=hybrid_vis_m.mmax)
 
-                C_inv = self.inv_SN + (mB.conj() * weight_ew[:, np.newaxis] * mB).sum(
-                    axis=(1, -2)
-                )
+                Ni = weight_ew[:, np.newaxis] * (hw[:, :, pi, lfi, :, np.newaxis] > 0)
 
-                dirty_m = (hv[:, :, pi, lfi] * weight_ew[:, np.newaxis] * mB).sum(
-                    axis=(1, -2)
-                )
+                C_inv = self.inv_SN + (mB.conj() * Ni * mB).sum(axis=(1, -2))
+                dirty_m = (hv[:, :, pi, lfi] * Ni * mB).sum(axis=(1, -2))
 
                 map_m[:, pi] = dirty_m / C_inv
 
