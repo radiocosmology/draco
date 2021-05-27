@@ -3,7 +3,8 @@
 This includes grouping frequencies and products to performing the m-mode transform.
 """
 import numpy as np
-from caput import mpiarray, config
+from numpy.lib.recfunctions import structured_to_unstructured
+from caput import mpiarray, config, mpiutil
 
 from ..core import containers, task, io
 from ..util import tools
@@ -904,90 +905,117 @@ class TransformJanskyToKelvin(task.SingleTask):
     convert_Jy_to_K : bool
         If True, apply a Jansky to Kelvin conversion factor. If False apply a Kelvin to
         Jansky conversion.
+    share : {"none", "all"}
+        Which datasets should the output share with the input. Default is "all".
     """
 
     convert_Jy_to_K = config.Property(proptype=bool, default=True)
+    share = config.enum(["none", "all"], default="all")
 
-    def setup(self, manager):
-        """This setup uses the manager to set up a telescope object and
-        calculates the main beam solid angle for identical driftscan beams"""
+    def setup(self, telescope: io.TelescopeConvertible):
+        """Set the telescope object.
 
-        tel = io.get_telescope(manager)
-        nfreq = tel.nfreq
+        Parameters
+        ----------
+        telescope
+            An object we can get a telescope object from. This telescope must be able to
+            calculate the beams at all incoming frequencies.
+        """
+        self.telescope = io.get_telescope(telescope)
+        self.telescope._init_trans(256)
 
-        # Create an MPI array to hold solid angles for all frequencies
-        self.omega_A = mpiarray.MPIArray(
-            (nfreq, tel.uniquepairs.shape[0]), axis=0, dtype=np.float, comm=self.comm
-        )
+        self._omega_cache = {}
 
-        self.omega_A[:] = 0.0
+    def _beam_area(self, feed, freq):
+        # Calculate the primary beam solid angle
 
-        # Split frequencies to processes.
-        lfreq, sfreq, efreq = mpiutil.split_local(nfreq)
+        beam = self.telescope.beam(feed, freq)
+        horizon = self.telescope._horizon[:, np.newaxis]
 
-        om_s = None
-        om_e = None
+        pxarea = 4 * np.pi / beam.shape[0]
+        omega = np.sum(np.abs(beam) ** 2 * horizon) * pxarea
 
-        tel._init_trans(256)
-        horizon = tel._horizon[:, np.newaxis]
+        return omega
 
-        for bi in range(tel.uniquepairs.shape[0]):
-            fi, fj = tel.uniquepairs[bi]
+    def process(self, sstream: containers.SiderealStream) -> containers.SiderealStream:
+        """Apply the brightness temperature to flux conversion to the data.
 
-            if (tel.feeds[fi].pol == "S" or tel.feeds[fj].pol == "S") and om_s is None:
-                om_s = np.zeros(lfreq, dtype=float)
+        Parameters
+        ----------
+        sstream
+            The visibilities to apply the conversion to. They are converted to/from
+            brightness temperature units depending on the setting of `convert_Jy_to_K`.
 
-                for fl, fg in self.omega_A.enumerate(axis=0):
-                    beami = tel.beam(fi, fg)
-                    pxarea = 4 * np.pi / beami.shape[0]
-                    om_s[fl] = np.sum(np.abs(beami) ** 2 * horizon) * pxarea
-
-            if (tel.feeds[fi].pol == "E" or tel.feeds[fj].pol == "E") and om_e is None:
-                om_e = np.zeros(lfreq, dtype=float)
-
-                for fl, fg in self.omega_A.enumerate(axis=0):
-                    beamj = tel.beam(fj, fg)
-                    pxarea = 4 * np.pi / beamj.shape[0]
-                    om_e[fl] = np.sum(np.abs(beamj) ** 2 * horizon) * pxarea
-
-            # Check what polarisation
-            om_i = om_s if tel.feeds[fi].pol == "S" else om_e
-            om_j = om_e if tel.feeds[fj].pol == "E" else om_s
-
-            # Fill MPI array for every single baseline
-            self.omega_A[:, bi] = (om_i * om_j) ** 0.5
-
-    def process(self, sstream):
-
-        sstream.redistribute("freq")
-
-        nfreq = len(sstream.freq)
-
-        lfreq, sfreq, efreq = mpiutil.split_local(nfreq)
+        Returns
+        -------
+        new_sstream
+            Visibilities with the conversion applied. This may be the same as the input
+            container if `share == "all"`.
+        """
 
         import scipy.constants as c
 
-        wavelength = c.c / (sstream.freq[sfreq:efreq] * 10 ** 6)
+        sstream.redistribute("freq")
 
-        om_A = self.omega_A.view(np.ndarray)
+        # Get the local frequencies in the sidereal stream
+        sfreq = sstream.vis.local_offset[0]
+        efreq = sfreq + sstream.vis.local_shape[0]
+        local_freq = sstream.freq[sfreq:efreq]
 
-        jy_to_K = (
+        # Get the indices of the incoming frequencies as far as the telescope class is
+        # concerned
+        local_freq_inds = []
+        for freq in local_freq:
+            local_freq_inds.append(np.argmin(np.abs(self.telescope.frequencies - freq)))
+
+        # Get the feedpairs we have data for and their beamclass (usually this maps to
+        # polarisation)
+        feedpairs = structured_to_unstructured(sstream.prodstack)
+        beamclass_pairs = self.telescope.beamclass[feedpairs]
+
+        # Calculate all the unique beams that we need to calculate areas for
+        unique_beamclass, bc_index = np.unique(beamclass_pairs, return_index=True)
+
+        # Calculate any missing beam areas and to the cache
+        for beamclass, bc_ind in zip(unique_beamclass, bc_index):
+            feed_ind = feedpairs.ravel()[bc_ind]
+
+            for freq, freq_ind in zip(local_freq, local_freq_inds):
+                key = (beamclass, freq)
+
+                if key not in self._omega_cache:
+                    self._omega_cache[key] = self._beam_area(feed_ind, freq_ind)
+
+        # Loop over all frequencies and visibilities and get the effective primary
+        # beam area for each
+        om_ij = np.zeros((len(local_freq), sstream.vis.shape[1]))
+        for fi, freq in enumerate(local_freq):
+            for bi, (bci, bcj) in enumerate(beamclass_pairs):
+                om_i = self._omega_cache[(bci, freq)]
+                om_j = self._omega_cache[(bcj, freq)]
+                om_ij[fi, bi] = (om_i * om_j) ** 0.5
+
+        # Calculate the Jy to K conversion
+        wavelength = c.c / (local_freq * 10 ** 6)
+        Jy_to_K = (
             wavelength[:, np.newaxis, np.newaxis] ** 2
-            / (2 * c.k * om_A[:, :, np.newaxis])
+            / (2 * c.k * om_ij[:, :, np.newaxis])
             * 10 ** (-26)
         )
 
-        new_stream = containers.SiderealStream(axes_from=sstream, attrs_from=sstream)
-        new_stream.redistribute("freq")
-        new_stream.vis[:] = 0.0
-        new_stream.weight[:] = 0.0
+        # Get the container we will apply the conversion to (either the input, or a
+        # copy)
+        if self.share == "all":
+            new_stream = sstream
+        else:  # self.share == "none"
+            new_stream = sstream.copy()
 
-        if self.convert_jy_to_K:
-            new_stream.vis[:] = sstream.vis[:] * jy_to_K
-            new_stream.weight[:] = sstream.weight[:] / jy_to_K ** 2
-
+        # Apply the conversion to the data and the weights
+        if self.convert_Jy_to_K:
+            new_stream.vis[:] *= Jy_to_K
+            new_stream.weight[:] /= Jy_to_K ** 2
         else:
-            new_stream.vis[:] = sstream.vis[:] / jy_to_K
-            new_stream.weight[:] = sstream.weight[:] * jy_to_K ** 2
+            new_stream.vis[:] /= Jy_to_K
+            new_stream.weight[:] *= Jy_to_K ** 2
 
         return new_stream
