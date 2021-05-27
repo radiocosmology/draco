@@ -429,10 +429,61 @@ class DeconvolveHybridMBase(task.SingleTask):
     save_dirty_beam : bool
         Create a `dirty_beam` dataset in the output container that contains
         the synthesized beam in the EW direction at each declination.
+    window_type : {"none"|"uniform"|"hann"|"hanning"|"hamming"|"blackman"|
+                   "nuttall"|"blackman_nuttall"|"blackman_harris"}
+        Apply this type of window to the deconvolved m-mode transform to shape
+        the synthesized beam in the EW direction.  Note that if this parameter
+        is not provided or is set to "none", then a window will not be applied.
+    window_size : float
+        Determines the width of the window.  If window_size = 1.0,
+        then the window will span all m's where we expect to have
+        sensitivity based on the EW baseline distances.  Values smaller
+        or larger than 1.0 will shrink or extend the window by the
+        corresponding fractional amount.  Only relevant if the window_type
+        parameter is provided.
+    window_scaled : bool
+        Use the same window for all frequencies in an attempt to produce
+        a frequency independent synthesized beam in the EW direction.
+        Only relevant if the window_type parameter is provided.
     """
 
     exclude_intracyl = config.Property(proptype=bool, default=False)
     save_dirty_beam = config.Property(proptype=bool, default=False)
+
+    window_type = config.enum(
+        [
+            "none",
+            "uniform",
+            "hann",
+            "hanning",
+            "hamming",
+            "blackman",
+            "nuttall",
+            "blackman_nuttall",
+            "blackman_harris",
+        ],
+        default="none",
+    )
+    window_size = config.Property(proptype=float, default=1.0)
+    window_scaled = config.Property(proptype=bool, default=False)
+
+    def setup(self, manager: io.TelescopeConvertible = None):
+        """Set the telescope instance if a manager object is given.
+
+        The telescope instance is only needed if window_type is not "none".
+
+        Parameters
+        ----------
+        manager : manager.ProductManager, optional
+            The telescope/manager used to extract the latitude and
+            convert sin(za) to declination.
+        """
+        if manager is not None:
+            self.telescope = io.get_telescope(manager)
+        elif self.window_type != "none":
+            raise RuntimeError("Must provide manager object if applying window.")
+        else:
+            self.telescope = None
 
     def process(self, hybrid_vis_m: containers.HybridVisMModes) -> containers.RingMap:
         """Generate a deconvolved ringmap.
@@ -484,6 +535,15 @@ class DeconvolveHybridMBase(task.SingleTask):
         if hasattr(self, "weight_ew"):
             rm.attrs["weight_ew"] = self.weight_ew
 
+        # Determine the window that will be applied to the m-mode transform
+        if self.window_type != "none":
+            window = self._get_window(hybrid_vis_m)
+
+            # Expand window so it can broadcast against an array with a pol axis
+            window = window[:, :, np.newaxis, :]
+        else:
+            window = np.ones(nfreq, dtype=np.float32)
+
         # Dereference datasets
         hv = hybrid_vis_m.vis[:].view(np.ndarray)
         hw = hybrid_vis_m.weight[:].view(np.ndarray)
@@ -499,6 +559,8 @@ class DeconvolveHybridMBase(task.SingleTask):
             find = (slice(None),) * 3 + (lfi,)
 
             hvf = hv[find]
+
+            winf = window[lfi]
 
             # Make copy here because we will modify weights if exclude_intracyl is set
             inv_var = hw[find][..., np.newaxis].copy()
@@ -518,12 +580,14 @@ class DeconvolveHybridMBase(task.SingleTask):
             C_inv = epsilon + sum_weight
 
             # Solve for the sky m-modes
-            map_m = (bvf.conj() * weight * hvf).sum(
-                axis=(1, -2)
-            ) * tools.invert_no_zero(C_inv)
+            map_m = (
+                winf
+                * (bvf.conj() * weight * hvf).sum(axis=(1, -2))
+                * tools.invert_no_zero(C_inv)
+            )
 
             # Calculate the dirty beam m-modes
-            dirty_beam_m = sum_weight * tools.invert_no_zero(C_inv)
+            dirty_beam_m = winf * sum_weight * tools.invert_no_zero(C_inv)
 
             # Calculate the point source normalization (dirty beam at transit)
             norm = tools.invert_no_zero(dirty_beam_m.mean(axis=0))[:, np.newaxis, :]
@@ -547,9 +611,8 @@ class DeconvolveHybridMBase(task.SingleTask):
 
             # Calculate the expected map noise by propagating the uncertainty on the m's
             var = tools.invert_no_zero(inv_var)
-            var = ((weight * np.abs(bvf)) ** 2 * var).sum(
-                axis=(1, -2)
-            ) * tools.invert_no_zero(C_inv ** 2)
+            var = ((weight * np.abs(bvf)) ** 2 * var).sum(axis=(1, -2))
+            var *= (winf * tools.invert_no_zero(C_inv)) ** 2
             sum_var_map_m = 0.5 * np.sum(var, axis=0)[:, np.newaxis, :]
 
             rmw[:, lfi] = (mmax + 1) ** 2 * tools.invert_no_zero(
@@ -557,6 +620,100 @@ class DeconvolveHybridMBase(task.SingleTask):
             )
 
         return rm
+
+    def _get_window(self, hybrid_vis_m):
+        """Return the window to be applied to the m-mode transform.
+
+        Parameters
+        ----------
+        hybrid_vis_m : containers.HybridVisMModes
+            The m-mode transform of the hybrid visiblities.
+            Must be distributed over the frequency axis.
+
+        Returns
+        -------
+        window : np.ndarray[nfreq, nm, nel]
+            The window to be applied to the deconvolved m-mode transform.
+            This will influence the shape of the synthesized beam in
+            the EW direction.
+        """
+
+        msg = "independent" if self.window_scaled else "dependent"
+        self.log.info(
+            f"Applying a frequency {msg} {self.window_type} window "
+            f"with a relative width of {self.window_size}."
+        )
+
+        # Extract the axes that we will need from the input container
+        freq = hybrid_vis_m.freq
+        m = hybrid_vis_m.index_map["m"]
+        ew = hybrid_vis_m.index_map["ew"]
+        el = hybrid_vis_m.index_map["el"]
+
+        # If the window is frequency dependent, then we will only
+        # need the frequencies local to this node.
+        nlocal = hybrid_vis_m.vis.local_shape[3]
+
+        if not self.window_scaled:
+            fstart = hybrid_vis_m.vis.local_offset[3]
+            freq = freq[fstart : fstart + nlocal]
+
+        # Determine the minimum and maximum m for each frequency and declination
+        dec = np.arcsin(el[np.newaxis, :]) + np.radians(self.telescope.latitude)
+        lmbda = scipy.constants.c / (freq[:, np.newaxis] * 1e6)
+
+        isort = np.argsort(np.abs(ew))
+        ews = np.abs(ew)[isort]
+
+        max_ew = ews[-1] + 0.5 * (ews[-1] - ews[-2])
+
+        if self.exclude_intracyl:
+            # If we are excluding intra-cylinder baselines, then the window should
+            # smoothly transition to zero as m decreases towards the minimum m
+            # measured by the shortest inter-cylinder baseline.
+            min_ew = 0.5 * ews[ews > 0.0][0]
+        else:
+            min_ew = -max_ew
+
+        center = 0.5 * (min_ew + max_ew)
+        width = self.window_size * (max_ew - min_ew)
+
+        ew_to_m = 2.0 * np.pi * np.abs(np.cos(dec)) / lmbda
+        min_m = ew_to_m * (center - 0.5 * width)
+        max_m = ew_to_m * (center + 0.5 * width)
+
+        # If frequency indepenent, then we need to determine a single
+        # minimum and maximum m that is valid for all frequencies.
+        if self.window_scaled:
+            min_m = np.max(min_m, axis=0, keepdims=True)
+            max_m = np.min(max_m, axis=0, keepdims=True)
+
+        # Loop over frequencies and elevations and calculate the window
+        nfreq, nel = min_m.shape
+        window = np.zeros((nfreq, m.size, nel), dtype=np.float32)
+
+        for ff in range(nfreq):
+            for ee in range(nel):
+
+                mmin = min_m[ff, ee]
+                mmax = max_m[ff, ee]
+
+                in_range = np.flatnonzero((m >= mmin) & (m <= mmax))
+
+                if in_range.size > 0:
+
+                    x = (m[in_range] - mmin) / (mmax - mmin)
+
+                    window[ff, in_range, ee] = tools.window_generalised(
+                        x, window=self.window_type
+                    )
+
+        # If frequency independent, then repeat the same window
+        # for every local frequency.
+        if self.window_scaled:
+            window = np.repeat(window, nlocal, axis=0)
+
+        return window
 
     def _get_beam_mmodes(self, freq, hybrid_vis_m):
         """Return the m-mode transform of the beam model at a particular frequency.
