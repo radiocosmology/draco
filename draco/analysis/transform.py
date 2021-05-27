@@ -480,7 +480,10 @@ class MModeTransform(task.SingleTask):
 
         # Sum the noise variance over time samples, this will become the noise
         # variance for the m-modes
-        weight_sum = sstream.weight[:].sum(axis=-1)
+        nra = sstream.weight.shape[-1]
+        weight_sum = nra ** 2 * tools.invert_no_zero(
+            tools.invert_no_zero(sstream.weight[:]).sum(axis=-1)
+        )
 
         if self.telescope is not None:
             mmax = self.telescope.mmax
