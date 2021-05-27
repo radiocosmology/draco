@@ -893,7 +893,7 @@ class SelectPol(task.SingleTask):
         return outcont
 
 
-class TransformJyKelvin(task.SingleTask):
+class TransformJanskyToKelvin(task.SingleTask):
     """Task to convert from Jy to Kelvin and vice-versa.
 
     This integrates over the primary beams in the telescope class to derive the
