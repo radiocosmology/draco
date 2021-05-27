@@ -4,6 +4,7 @@ Miscellaneous tasks should be placed in :py:mod:`draco.core.misc`.
 """
 
 import numpy as np
+from numpy.lib.recfunctions import structured_to_unstructured
 
 from ._fast_tools import _calc_redundancy
 
@@ -320,12 +321,12 @@ def calculate_redundancy(input_flags, prod_map, stack_index, nstack):
     if not np.any(input_flags):
         input_flags = np.ones_like(input_flags)
 
-    input_flags = np.ascontiguousarray(input_flags)
-    pm = np.ascontiguousarray(prod_map.view(np.int16).reshape(-1, 2))
-    stack_index = np.ascontiguousarray(stack_index)
+    input_flags = np.ascontiguousarray(input_flags.astype(np.float32, copy=False))
+    pm = structured_to_unstructured(prod_map, dtype=np.int16)
+    stack_index = np.ascontiguousarray(stack_index.astype(np.int32, copy=False))
 
     # Call fast cython function to do calculation
-    _calc_redundancy(input_flags, pm, stack_index.copy(), nstack, redundancy)
+    _calc_redundancy(input_flags, pm, stack_index, nstack, redundancy)
 
     return redundancy
 
