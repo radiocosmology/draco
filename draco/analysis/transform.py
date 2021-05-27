@@ -894,9 +894,19 @@ class SelectPol(task.SingleTask):
 
 
 class TransformJyKelvin(task.SingleTask):
-    """Task to convert from Jy to Kelvin with driftscan beams"""
+    """Task to convert from Jy to Kelvin and vice-versa.
 
-    convert_jy_to_K = True
+    This integrates over the primary beams in the telescope class to derive the
+    brightness temperature to flux conversion.
+
+    Attributes
+    ----------
+    convert_Jy_to_K : bool
+        If True, apply a Jansky to Kelvin conversion factor. If False apply a Kelvin to
+        Jansky conversion.
+    """
+
+    convert_Jy_to_K = config.Property(proptype=bool, default=True)
 
     def setup(self, manager):
         """This setup uses the manager to set up a telescope object and
