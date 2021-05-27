@@ -17,6 +17,7 @@ Tasks
     BeamformNS
 """
 import numpy as np
+from numpy.lib.recfunctions import structured_to_unstructured
 import scipy.constants
 from mpi4py import MPI
 
@@ -60,10 +61,10 @@ class MakeVisGrid(task.SingleTask):
 
         # Convert prodstack into a type that can be easily compared against
         # `uniquepairs`
-        prodstack = sstream.prodstack
-        prodstack = prodstack.view(prodstack["input_a"].dtype).reshape(-1, 2)
+        ps_sstream = structured_to_unstructured(sstream.prodstack, dtype=np.int16)
+        ps_tel = structured_to_unstructured(self.telescope.prodstack, dtype=np.int16)
 
-        if not np.array_equal(prodstack, self.telescope.uniquepairs):
+        if not np.array_equal(ps_sstream, ps_tel):
             raise ValueError(
                 "Products in sstream do not match those in the beam transfers."
             )
