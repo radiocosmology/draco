@@ -1680,7 +1680,7 @@ class HybridVisStream(FreqContainer, SiderealContainer):
         "dirty_beam": {
             "axes": ["pol", "freq", "ew", "el", "ra"],
             "dtype": np.float32,
-            "initialise": True,
+            "initialise": False,
             "distributed": True,
             "distributed_axis": "freq",
         },
@@ -1768,7 +1768,7 @@ class RingMap(FreqContainer, SiderealContainer):
             "distributed_axis": "freq",
         },
         "weight": {
-            "axes": ["pol", "freq", "ra"],
+            "axes": ["pol", "freq", "ra", "el"],
             "dtype": np.float64,
             "initialise": True,
             "distributed": True,

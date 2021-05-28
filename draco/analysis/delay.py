@@ -3,6 +3,7 @@
 import typing
 
 import numpy as np
+from numpy.lib.recfunctions import structured_to_unstructured
 import scipy.linalg as la
 
 from caput import mpiarray, config
@@ -87,7 +88,7 @@ class DelayFilter(task.SingleTask):
         ssv = ss.vis[:].view(np.ndarray)
         ssw = ss.weight[:].view(np.ndarray)
 
-        ia, ib = ss.prodstack.view(np.int16).reshape(-1, 2).T
+        ia, ib = structured_to_unstructured(ss.prodstack, dtype=np.int16).T
         baselines = tel.feedpositions[ia] - tel.feedpositions[ib]
 
         for lbi, bi in ss.vis[:].enumerate(axis=1):
@@ -662,7 +663,7 @@ def stokes_I(sstream, tel):
 
     # ==== Unpack into Stokes I
     ubase, uinv, ucount = np.unique(bl_round, return_inverse=True, return_counts=True)
-    ubase = ubase.view(np.float64).reshape(-1, 2)
+    ubase = ubase.astype(np.complex128, copy=False).view(np.float64).reshape(-1, 2)
     nbase = ubase.shape[0]
 
     vis_shape = (nbase, sstream.vis.local_shape[0], sstream.vis.local_shape[2])

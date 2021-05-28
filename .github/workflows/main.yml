@@ -15,10 +15,10 @@ jobs:
     steps:
     - uses: actions/checkout@v2
 
-    - name: Set up Python 3.8
+    - name: Set up Python 3.9
       uses: actions/setup-python@v2
       with:
-        python-version: 3.8
+        python-version: 3.9
 
     - name: Install black
       run: pip install black
@@ -30,7 +30,7 @@ jobs:
 
     strategy:
       matrix:
-        python-version: [3.6, 3.8]
+        python-version: [3.7, 3.9]
 
     runs-on: ubuntu-latest
     steps:
@@ -77,10 +77,10 @@ jobs:
       run: |
         sudo apt-get install -y libopenmpi-dev openmpi-bin
 
-    - name: Set up Python 3.8
+    - name: Set up Python 3.9
       uses: actions/setup-python@v2
       with:
-        python-version: 3.8
+        python-version: 3.9
 
     - name: Install pip dependencies
       run: |
