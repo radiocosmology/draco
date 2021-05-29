@@ -905,12 +905,22 @@ class TransformJanskyToKelvin(task.SingleTask):
     convert_Jy_to_K : bool
         If True, apply a Jansky to Kelvin conversion factor. If False apply a Kelvin to
         Jansky conversion.
+    reference_declination : float, optional
+        The declination to set the flux reference for. A source transiting at this
+        declination will produce a visibility signal equal to its flux. If `None`
+        (default) use the zenith.
     share : {"none", "all"}
         Which datasets should the output share with the input. Default is "all".
+    nside : int
+        The NSIDE to use for the primary beam area calculation. This may need to be
+        increased for beams with intricate small scale structure. Default is 256.
     """
 
     convert_Jy_to_K = config.Property(proptype=bool, default=True)
+    reference_declination = config.Property(proptype=float, default=None)
     share = config.enum(["none", "all"], default="all")
+
+    nside = config.Property(proptype=int, default=256)
 
     def setup(self, telescope: io.TelescopeConvertible):
         """Set the telescope object.
@@ -922,18 +932,37 @@ class TransformJanskyToKelvin(task.SingleTask):
             calculate the beams at all incoming frequencies.
         """
         self.telescope = io.get_telescope(telescope)
-        self.telescope._init_trans(256)
+        self.telescope._init_trans(self.nside)
+
+        # If not explicitly set, use the zenith as the reference declination
+        if self.reference_declination is None:
+            self.reference_declination = self.telescope.latitude
 
         self._omega_cache = {}
 
     def _beam_area(self, feed, freq):
-        # Calculate the primary beam solid angle
+        """Calculate the primary beam solid angle."""
 
         beam = self.telescope.beam(feed, freq)
         horizon = self.telescope._horizon[:, np.newaxis]
 
         pxarea = 4 * np.pi / beam.shape[0]
         omega = np.sum(np.abs(beam) ** 2 * horizon) * pxarea
+
+        # Calculate the beam value at the reference point by temporarily swapping out
+        # the telescopes internal `_angpos` attribute for one that just contains the
+        # reference position
+        # This is a massive hack, that hopefully we can swap out with a better API for
+        # the telescope beams.
+        ap_ref = np.array([[np.pi / 2 - np.radians(self.reference_declination), 0.0]])
+        ap_orig = self.telescope._angpos
+        self.telescope._angpos = ap_ref
+        beam_ref = self.telescope.beam(feed, freq)
+        self.telescope._angpos = ap_orig
+
+        # Normalise omega by the squared magnitude of the beam at the reference position
+        beam_ref = np.sum(np.abs(beam_ref) ** 2)
+        omega /= beam_ref
 
         return omega
 
