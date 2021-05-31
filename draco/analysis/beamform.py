@@ -43,10 +43,10 @@ class BeamFormBase(task.SingleTask):
             - 'natural' : each baseline weighted by its redundancy (default)
             - 'uniform' : each baseline given equal weight
             - 'inverse_variance' : each baseline weighted by the weight attribute
-    no_beam_model : string
+    no_beam_model : bool
         Do not include a primary beam factor in the beamforming
         weights, i.e., use uniform weighting as a function of hour angle
-        and declination.
+        and declination. Default: False
     timetrack : float
         How long (in seconds) to track sources at each side of transit.
         Default is 900 seconds.  Total transit time will be 2 * timetrack.
