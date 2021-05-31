@@ -2,11 +2,25 @@
 
 This includes grouping frequencies and products to performing the m-mode transform.
 """
+<<<<<<< HEAD
 from typing import Optional
 
 import numpy as np
 from numpy.lib.recfunctions import structured_to_unstructured
+=======
+import datetime
+
+import numpy as np
+
+from astropy.coordinates import SkyCoord
+from astropy import units as u
+from astropy.time import Time
+import pandas as pd
+import healpy as hp
+
+>>>>>>> 03e8106... feat(transform): add task to convert ringmap to healpix map
 from caput import mpiarray, config
+from ch_util import ephemeris
 
 from ..core import containers, task, io
 from ..util import tools
@@ -920,6 +934,7 @@ class SelectPol(task.SingleTask):
         return outcont
 
 
+
 class TransformJanskyToKelvin(task.SingleTask):
     """Task to convert from Jy to Kelvin and vice-versa.
 
@@ -1071,3 +1086,185 @@ class TransformJanskyToKelvin(task.SingleTask):
             new_stream.weight[:] *= Jy_to_K ** 2
 
         return new_stream
+
+
+class RingMapToHealpixMap(task.SingleTask):
+    """Convert an input ringmap to a healpix map.
+
+    Attributes
+    ----------
+    nside : int
+        Nside parameter for output healpix map.
+        Recommended value is <=128 to avoid too many blank healpix
+        pixels for default CHIME ringmap resolution. Default: 128
+    fill_value : float
+        Value to fill empty healpix pixels with. Default: NaN
+    median_subtract: bool
+        Whether to subtract the median across RA from the ringmap before
+        converting to healpix. Default: False
+    """
+
+    nside = config.Property(proptype=int, default=128)
+    fill_value = config.Property(proptype=float, default=np.nan)
+    median_subtract = config.Property(proptype=bool, default=False)
+
+    def setup(self, bt):
+        """Load the telescope.
+
+        Parameters
+        ----------
+        bt : ProductManager or BeamTransfer
+            Beam Transfer manager.
+        """
+        self.beamtransfer = io.get_beamtransfer(bt)
+        self.telescope = io.get_telescope(bt)
+
+    def process(self, ringmap: containers.RingMap) -> containers.Map:
+        """Convert an input ringmap to a healpix map.
+
+        Parameters
+        ----------
+        ringmap: RingMap
+            The ringmap to convert to healpix.
+
+        Returns
+        -------
+        map_: Map
+            The output healpix map.
+        """
+
+        # Calculate the epoch for the data so we can calculate the correct
+        # CIRS coordinates
+        if "lsd" not in ringmap.attrs:
+            ringmap.attrs["lsd"] = 1950
+            self.log.error("Input must have an LSD attribute to calculate the epoch.")
+
+        # Convert elevation coordinates in ringnmap to dec
+        dec = np.degrees(np.arcsin(ringmap.el)) + self.telescope.latitude
+
+        # Cut elevation/dec values at north celestial pole
+        # el_imax = -1e20
+        el_imax = np.argmin(np.abs(dec - 90.0))
+        sin_za_cut = ringmap.el[:el_imax]
+        dec_cut = dec[:el_imax]
+
+        # Map angular sky coordinates in ringmap to healpix pixel coordinates
+        hp_pix_coords = self._make_healpix_pixel_coords(ringmap.ra, dec_cut, ringmap.attrs["lsd"], self.nside)
+
+        # Warn that we'll only consider beam 0
+        # TODO: add support for >1 beam
+        if len(ringmap.index_map["beam"]):
+            self.log.warning("Multiple beams present in ringmap, but only beam 0 will be converted to healpix")
+
+        # Make container to store healpix maps
+        map_ = containers.Map(
+            pixel=hp.nside2npix(self.nside),
+            axes_from=ringmap,
+            attrs_from=ringmap,
+            distributed=True,
+            comm=ringmap.comm,
+        )
+
+        # Get local sectiona of ringmap and healpix map, and local offset and shape of each frequency section
+        ringmap_local = ringmap.map[:]
+        map_local = map_.map[:]
+        lo = ringmap.map.local_offset[0]
+        ls = ringmap.map.local_shape[0]
+
+        # Loop over frequency
+        for fi_local, fi in enumerate(ringmap.freq[lo : lo + ls]):
+            self.log.debug(
+                "Converting maps for frequency %d", fi
+            )
+
+            for pi in range(len(ringmap.pol)):
+                # Fetch map at this frequency and polarization,
+                # and transpose to be packed as [el, ra]
+                in_map = ringmap_local[0, pi, fi_local].T
+
+                # Cut sin(za) range to be < 90 deg
+                in_map = in_map[:el_imax]
+
+                # If requested, subtract median at each dec from map
+                if self.median_subtract:
+                    in_map = self._subtract_median(in_map)
+
+                # Put ringmap pixel values into dataframe, and copy map values into
+                # corresponding healpix pixels, averaging ringmap pixels if more than
+                # one pixel center falls into a given healpix pixel. Healpix pixels
+                # with no corresponding ringmap pixel get fill_value.
+                # Note that requesting an nside value too low will result in many blakc
+                # pixels - for default CHIME ringmap resolution, nside<= 128 is recommended.
+                df = pd.DataFrame({"indices": hp_pix_coords, "data": in_map.flatten()})
+                datalist = df.groupby("indices").mean()
+                desired_indices = pd.Series(np.arange(hp.nside2npix(self.nside)))
+                is_in_index = desired_indices.isin(datalist.index)
+                desired_indices[:] = self.fill_value
+                desired_indices[is_in_index] = datalist.data
+                map_local[fi_local, pi] = np.array(desired_indices)
+
+        return map_
+
+    def _make_healpix_pixel_coords(self, ra, dec, csd, nside):
+        """Convert ringmap pixel coordinates to healpix pixel coordinates.
+
+        Parameters
+        ----------
+        ra : np.array
+            1d array of RA values in ringmap
+        dec : np.array
+            1d array of dec values in ringmap
+        csd : int
+            CHIME sidereal day of ringmap
+        nside : int
+            Healpix nside for output map
+        Returns
+        -------
+        hp_pix_coords : np.array
+            Healpix pixel coordinates
+        """
+
+        # Make 2d arrays of RA and dec at each map pixel
+        nra, ndec = ra.shape[0], dec.shape[0]
+        rara = np.ones((ndec, nra)) * ra[np.newaxis, :]
+        decdec = np.ones((ndec, nra)) * dec[:, np.newaxis]
+
+        # Make array of sky coordinates at each map pixel, then delete temporary
+        # RA, dec arrays
+        skycoord = SkyCoord(
+            rara.flatten() * u.deg,
+            decdec.flatten() * u.deg,
+            frame="cirs",
+            obstime=Time(datetime.datetime.fromtimestamp(ephemeris.csd_to_unix(csd))),
+        )
+        del rara
+        del decdec
+
+        # Convert angular sky coordinates to healpix pixel coordinates for specified
+        # nside
+        hp_pix_coords = hp.ang2pix(
+            nside=nside,
+            theta=skycoord.icrs.ra.value,
+            phi=skycoord.icrs.dec.value,
+            lonlat=True,
+        )
+
+        return hp_pix_coords
+
+
+    def _subtract_median(self, in_map, axis=1):
+        """Subtract median from ringmap along specified axis.
+
+        Parameters
+        ----------
+        in_map : np.array, packed as [el, ra]
+            The input ringmap
+
+        Returns
+        -------
+        out_map : np.array, packed as [el, ra]
+            Median-subtracted ringmap
+        """
+
+        map_ramedian = np.median(in_map, axis=axis, keepdims=True)
+        return in_map - map_ramedian
