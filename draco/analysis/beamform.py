@@ -1012,7 +1012,7 @@ class RingMapBeamForm(task.SingleTask):
         # the ringmaps
         for si, (ri, zi) in enumerate(zip(ra_ind, za_ind)):
             fbb[si] = rmm[0, :, :, ri, zi]
-            fbw[si] = rmw[:, :, ri]
+            fbw[si] = rmw[:, :, ri, zi]
 
         return formed_beam
 
