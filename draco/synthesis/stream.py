@@ -576,22 +576,33 @@ class SimulateSingleHarmonicSidereal(task.SingleTask):
             feed_index = tel.input_index
         except AttributeError:
             feed_index = tel.nfeed
+        
+        kwargs = {}
 
-        # Construct a product map
-        prod_map = np.zeros(
-            tel.uniquepairs.shape[0], dtype=[("input_a", int), ("input_b", int)]
-        )
-        prod_map["input_a"] = tel.uniquepairs[:, 0]
-        prod_map["input_b"] = tel.uniquepairs[:, 1]
+        if tel.npairs != (tel.nfeed + 1) * tel.nfeed // 2:
+            # If we should treat this as stacked, then pull the information straight
+            # from the telescope class
+            kwargs["prod"] = tel.index_map_prod
+            kwargs["stack"] = tel.index_map_stack
+            kwargs["reverse_map_stack"] = tel.reverse_map_stack
+        else:
+            # Construct a product map as if this was a down selection
+            prod_map = np.zeros(
+                tel.uniquepairs.shape[0], dtype=[("input_a", int), ("input_b", int)]
+            )
+            prod_map["input_a"] = tel.uniquepairs[:, 0]
+            prod_map["input_b"] = tel.uniquepairs[:, 1]
 
+            kwargs["prod"] = prod_map
+        
         # Construct container and set visibility data
         sstream = containers.SiderealStream(
             freq=freqmap,
             ra=ntime,
             input=feed_index,
-            prod=prod_map,
             distributed=True,
             comm=map_.comm,
+            **kwargs,
         )
         sstream.vis[:] = mpiarray.MPIArray.wrap(vis_stream, axis=0)
         sstream.weight[:] = 1.0
