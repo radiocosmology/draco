@@ -480,7 +480,7 @@ class BeamformEW(task.SingleTask):
 
             # Save to container (shifting to the final axis ordering)
             rmm[:, :, lfi] = beamformed_data.transpose(1, 0, 3, 2)
-            rmb[:, :, lfi] = dirty_beam.transpose(1, 0, 3, 2)
+            rmb[:, :, lfi] = dirty_beam.transpose(1, 0, 3, 2).real
 
         # Estimate weights/rms noise in the ring map by propagating estimates of the
         # variance in the visibilities
