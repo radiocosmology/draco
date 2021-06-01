@@ -490,6 +490,12 @@ class SimulateSingleHarmonicSidereal(task.SingleTask):
         # Set the minimum resolution required for the sky.
         ntime = 2 * mmax + 1
 
+        # Set the maximum m we actually need to compute for
+        if self.m is not None:
+            mmax_compute = self.m
+        else:
+            mmax_compute = self.ell
+        
         freqmap = map_.index_map["freq"][:]
 
         if self.kpar is None:
@@ -518,8 +524,10 @@ class SimulateSingleHarmonicSidereal(task.SingleTask):
         #     (lfreq, npol * (lmax + 1), lmax + 1)
         # )
 
-        # Trim off excess m's and wrap into MPIArray
-        row_alm = row_alm[..., : (mmax + 1)]
+        # Trim off excess m's and wrap into MPIArray.
+        # Until the final iFFT from m to sidereal time, we only need the m's we'll
+        # actually compute for.
+        row_alm = row_alm[..., : (mmax_compute + 1)]
         row_alm = mpiarray.MPIArray.wrap(row_alm, axis=0)
 
         # Perform the transposition to distribute different m's across processes. Neat
@@ -532,13 +540,14 @@ class SimulateSingleHarmonicSidereal(task.SingleTask):
 
         # Create storage for visibility data
         vis_data = mpiarray.MPIArray(
-            (mmax + 1, nfreq, bt.ntel), axis=0, dtype=np.complex128
+            (mmax_compute + 1, nfreq, bt.ntel), axis=0, dtype=np.complex128
         )
         vis_data[:] = 0.0
 
         # Iterate over m's local to this process and generate the corresponding
         # visibilities
         for mp, mi in vis_data.enumerate(axis=0):
+            self.log.debug('Computing for m = %d' % mi)
             vis_data[mp] = bt.project_vector_sky_to_telescope(
                 mi, col_alm[mp].view(np.ndarray)
             )
@@ -549,16 +558,18 @@ class SimulateSingleHarmonicSidereal(task.SingleTask):
 
         # Parallel transpose to get all m's back onto the same processor
         col_vis_tmp = row_vis.redistribute(axis=2)
-        col_vis_tmp = col_vis_tmp.reshape((mmax + 1, 2, tel.npairs, None))
+        col_vis_tmp = col_vis_tmp.reshape((mmax_compute + 1, 2, tel.npairs, None))
 
         # Transpose the local section to make the m's the last axis and unwrap the
-        # positive and negative m at the same time.
+        # positive and negative m at the same time. ntime is set according to the
+        # telescope's mmax, but we only fill up to mmax_compute+1, because the
+        # other entries are zero
         col_vis = mpiarray.MPIArray(
             (tel.npairs, nfreq, ntime), axis=1, dtype=np.complex128
         )
         col_vis[:] = 0.0
         col_vis[..., 0] = col_vis_tmp[0, 0]
-        for mi in range(1, mmax + 1):
+        for mi in range(1, mmax_compute + 1):
             col_vis[..., mi] = col_vis_tmp[mi, 0]
             col_vis[..., -mi] = col_vis_tmp[
                 mi, 1
