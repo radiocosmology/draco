@@ -509,7 +509,7 @@ class SimulateSingleHarmonicSidereal(task.SingleTask):
         if self.m is not None:
             row_alm[:, 0, self.ell, self.m] = vals
         else:
-            row_alm[:, 0, self.ell, :] = vals[:, np.newaxis]
+            row_alm[:, 0, self.ell, : self.ell + 1] = vals[:, np.newaxis]
             self.log.debug("No input m found! Setting a_lm=1 for all m")
 
 
