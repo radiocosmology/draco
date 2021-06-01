@@ -1,3 +1,49 @@
+# [20.10.0](https://github.com/radiocosmology/draco/compare/v20.5.0...v20.10.0) (2020-10-21)
+
+
+### Bug Fixes
+
+* **analysis.flagging.MaskData:** Fix m mask. ([525305c](https://github.com/radiocosmology/draco/commit/525305c3c11f94e5ab06a1307d22966476b95e88))
+* **containers:** could not make selections along inherited axes ([9d678eb](https://github.com/radiocosmology/draco/commit/9d678ebce486f3e4e3b5c00a3dff8513493c9045))
+* **containers:** fix copy for non-distributed data ([22b0719](https://github.com/radiocosmology/draco/commit/22b0719d2ee3cdfc42a17fddad78fda00e0e28e0))
+* **delay:** issue identifying equivalent baselines because of rounding ([a3f54e6](https://github.com/radiocosmology/draco/commit/a3f54e60c0670d03c4571b3c18aab6762745b1ef))
+* **DelayFilter:** apply mask and weights consistently in filter ([e503943](https://github.com/radiocosmology/draco/commit/e503943e1a7c858f8433244ddd4b08b8f9ebebe4))
+* **DelayFilter:** select appropriate number of points and update weights ([20f7903](https://github.com/radiocosmology/draco/commit/20f7903714b15db210b4d93cf91b9a5354c5e88a))
+* **noise:** RandomGenerator rename and other GaussianNoiseDataset bugs ([#106](https://github.com/radiocosmology/draco/issues/106)) ([ba7648d](https://github.com/radiocosmology/draco/commit/ba7648db23e312a77171103706b527232a757454))
+* **svdfilter:** fix initial fill of missing matrix entries in svd_em ([75f8cd8](https://github.com/radiocosmology/draco/commit/75f8cd8e723677e93a637961b6812f6150d20dbc))
+* **task:** fix deprecation warning for `inspect.getargspec` ([ae2f1b6](https://github.com/radiocosmology/draco/commit/ae2f1b6569e6562e0a0a1c80dcfd0174c5524844))
+* **tv_channels_flag:** account for frequencies partially in a channel ([854964a](https://github.com/radiocosmology/draco/commit/854964a568c07beb575906110ee240799e0bfcb5))
+
+
+### Code Refactoring
+
+* remove Python 2 support ([58c275c](https://github.com/radiocosmology/draco/commit/58c275c09302510f61dbb2a606a99942206aab80))
+
+
+### Features
+
+* **analysis.transform:** Add option to mask weights that were zero to regridder. ([d6f2c76](https://github.com/radiocosmology/draco/commit/d6f2c76ee1db429d4330a199b792bd23379d95f2))
+* **BlendStack:** mix in a little stacked data to overcome RFI gaps ([3167d43](https://github.com/radiocosmology/draco/commit/3167d4367bb83063af212f207f1f0bbb7441fe79))
+* **io:** select ranges of axes when loading containers ([201841e](https://github.com/radiocosmology/draco/commit/201841ec0a2be5c176b9e70716fe09cc7655060b))
+* **LoadFITSCatalog:** task to load SDSS catalogs from FITS files ([ffc570f](https://github.com/radiocosmology/draco/commit/ffc570f088add6dd9ca5c87d7d0a107994cc63f8))
+* **random:** new random number routines and tasks ([8c8a533](https://github.com/radiocosmology/draco/commit/8c8a533eeae0cf0e72a494bcfbc1924d7f1ddfce))
+* **RandomSubset:** a task to select a random subset of a catalog ([abdb5fd](https://github.com/radiocosmology/draco/commit/abdb5fde2fcce1237196956993d3eb3606d6df5c))
+* **sidereal:** create nearest, linear, and cubic regridders ([81badda](https://github.com/radiocosmology/draco/commit/81baddab33a8709a96c53cbe409d8517e4de3956))
+
+
+### Performance Improvements
+
+* **BeamForm:** 2x speed up to beamforming code ([8945ee4](https://github.com/radiocosmology/draco/commit/8945ee46820bf8e86d76d63b1af915b7f58f120d))
+* **DelaySpectrumEstimator:** speedup for small numbers of frequencies ([88ffda1](https://github.com/radiocosmology/draco/commit/88ffda1db5415c16fc95f57173d557839588c2ff))
+* **stokes_I:** stop recalculating the beamclass every iteration ([ea70033](https://github.com/radiocosmology/draco/commit/ea70033bbabcdd2de151155b2debc5ff0de355f6))
+
+
+### BREAKING CHANGES
+
+* Python 2.7 is no longer supported
+
+
+
 # [20.5.0](https://github.com/radiocosmology/draco/compare/v20.2.0...v20.5.0) (2020-05-06)
 
 

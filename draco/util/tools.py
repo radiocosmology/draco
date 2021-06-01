@@ -1,15 +1,10 @@
 """Collection of miscellaneous routines.
 
-Miscellaneous tasks should be placed in :module:`draco.core.misc`.
+Miscellaneous tasks should be placed in :py:mod:`draco.core.misc`.
 """
-# === Start Python 2/3 compatibility
-from __future__ import absolute_import, division, print_function, unicode_literals
-from future.builtins import *  # noqa  pylint: disable=W0401, W0614
-from future.builtins.disabled import *  # noqa  pylint: disable=W0401, W0614
-
-# === End Python 2/3 compatibility
 
 import numpy as np
+from numpy.lib.recfunctions import structured_to_unstructured
 
 from ._fast_tools import _calc_redundancy
 
@@ -326,12 +321,12 @@ def calculate_redundancy(input_flags, prod_map, stack_index, nstack):
     if not np.any(input_flags):
         input_flags = np.ones_like(input_flags)
 
-    input_flags = np.ascontiguousarray(input_flags)
-    pm = np.ascontiguousarray(prod_map.view(np.int16).reshape(-1, 2))
-    stack_index = np.ascontiguousarray(stack_index)
+    input_flags = np.ascontiguousarray(input_flags.astype(np.float32, copy=False))
+    pm = structured_to_unstructured(prod_map, dtype=np.int16)
+    stack_index = np.ascontiguousarray(stack_index.astype(np.int32, copy=False))
 
     # Call fast cython function to do calculation
-    _calc_redundancy(input_flags, pm, stack_index.copy(), nstack, redundancy)
+    _calc_redundancy(input_flags, pm, stack_index, nstack, redundancy)
 
     return redundancy
 
@@ -526,3 +521,40 @@ def baseline_vector(index_map, telescope):
         #    bvec_m[:, vi] *= -1.
 
     return bvec_m
+
+
+def window_generalised(x, window="nuttall"):
+    """A generalised high-order window at arbitrary locations.
+
+    Parameters
+    ----------
+    x : np.ndarray[n]
+        Location to evaluate at. Values outside the range 0 to 1 are zero.
+    window : one of {'nuttall', 'blackman_nuttall', 'blackman_harris'}
+        Type of window function to return.
+
+    Returns
+    -------
+    w : np.ndarray[n]
+        Window function.
+    """
+
+    a_table = {
+        "uniform": np.array([1, 0, 0, 0]),
+        "hann": np.array([0.5, -0.5, 0, 0]),
+        "hanning": np.array([0.5, -0.5, 0, 0]),
+        "hamming": np.array([0.53836, -0.46164, 0, 0]),
+        "blackman": np.array([0.42, -0.5, 0.08, 0]),
+        "nuttall": np.array([0.355768, -0.487396, 0.144232, -0.012604]),
+        "blackman_nuttall": np.array([0.3635819, -0.4891775, 0.1365995, -0.0106411]),
+        "blackman_harris": np.array([0.35875, -0.48829, 0.14128, -0.01168]),
+    }
+
+    a = a_table[window]
+
+    t = 2 * np.pi * np.arange(4)[:, np.newaxis] * x[np.newaxis, :]
+
+    w = (a[:, np.newaxis] * np.cos(t)).sum(axis=0)
+    w = np.where((x >= 0) & (x <= 1), w, 0)
+
+    return w

@@ -15,10 +15,10 @@ jobs:
     steps:
     - uses: actions/checkout@v2
 
-    - name: Set up Python 3.8
-      uses: actions/setup-python@v1
+    - name: Set up Python 3.9
+      uses: actions/setup-python@v2
       with:
-        python-version: 3.8
+        python-version: 3.9
 
     - name: Install black
       run: pip install black
@@ -28,6 +28,10 @@ jobs:
 
   run-tests:
 
+    strategy:
+      matrix:
+        python-version: [3.7, 3.9]
+
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v2
@@ -36,17 +40,17 @@ jobs:
       run: |
         sudo apt-get install -y libopenmpi-dev openmpi-bin
 
-    - name: Set up Python 3.8
-      uses: actions/setup-python@v1
+    - name: Set up Python ${{ matrix.python-version }}
+      uses: actions/setup-python@v2
       with:
-        python-version: 3.8
+        python-version: ${{ matrix.python-version }}
 
     - name: Install pip dependencies
       run: |
-        pip install future
+        pip install wheel
         pip install numpy
         pip install cython
-        pip install -r requirements.txt
+        pip install --use-deprecated=legacy-resolver -r requirements.txt
         pip install mpi4py
         pip install pytest
         python setup.py develop
@@ -56,7 +60,12 @@ jobs:
 
     - name: Run parallel tests
       run: |
-        mpirun -np 4 pytest -x -m mpi test/
+        mpirun -np 4 --oversubscribe pytest -x -m mpi test/
+
+    - name: Run caput linter on example configs
+      run: |
+        caput-pipeline lint examples/*.yaml
+        caput-pipeline lint doc/pipeline_params.yaml
 
   build-docs:
 
@@ -68,19 +77,19 @@ jobs:
       run: |
         sudo apt-get install -y libopenmpi-dev openmpi-bin
 
-    - name: Set up Python 3.8
-      uses: actions/setup-python@v1
+    - name: Set up Python 3.9
+      uses: actions/setup-python@v2
       with:
-        python-version: 3.8
+        python-version: 3.9
 
     - name: Install pip dependencies
       run: |
-        pip install future
+        pip install wheel
         pip install numpy
         pip install cython
-        pip install -r requirements.txt
+        pip install --use-deprecated=legacy-resolver -r requirements.txt
         pip install -r doc/requirements.txt
         python setup.py develop
 
     - name: Build sphinx docs
-      run: sphinx-build -b html doc/ doc/_build/html
+      run: sphinx-build -W -b html doc/ doc/_build/html

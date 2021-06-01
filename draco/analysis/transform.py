@@ -1,27 +1,9 @@
-"""Miscellaneous transformations to do on data, from grouping frequencies and
-products to performing the m-mode transform.
+"""Miscellaneous transformations to do on data.
 
-Tasks
-=====
-
-.. autosummary::
-    :toctree:
-
-    FrequencyRebin
-    SelectFreq
-    CollateProducts
-    MModeTransform
+This includes grouping frequencies and products to performing the m-mode transform.
 """
-# === Start Python 2/3 compatibility
-from __future__ import absolute_import, division, print_function, unicode_literals
-from future.builtins import *  # noqa  pylint: disable=W0401, W0614
-from future.builtins.disabled import *  # noqa  pylint: disable=W0401, W0614
-
-# === End Python 2/3 compatibility
-
 import numpy as np
 from caput import mpiarray, config
-from caput import mpiutil
 
 from ..core import containers, task, io
 from ..util import tools
@@ -237,7 +219,7 @@ class CollateProducts(task.SingleTask):
             attrs_from=ss,
             distributed=True,
             comm=ss.comm,
-            **output_kwargs
+            **output_kwargs,
         )
 
         # Add gain dataset.
@@ -477,7 +459,7 @@ class MModeTransform(task.SingleTask):
 
         Parameters
         ----------
-        sstream : containers.SiderealStream
+        sstream : containers.SiderealStream or containers.HybridVisStream
             The input sidereal stream.
 
         Returns
@@ -485,71 +467,92 @@ class MModeTransform(task.SingleTask):
         mmodes : containers.MModes
         """
 
+        contmap = {
+            containers.SiderealStream: containers.MModes,
+            containers.HybridVisStream: containers.HybridVisMModes,
+        }
+
+        # Get the output container and figure out at which position is it's
+        # frequency axis
+        out_cont = contmap[sstream.__class__]
+
         sstream.redistribute("freq")
 
         # Sum the noise variance over time samples, this will become the noise
         # variance for the m-modes
-        weight_sum = sstream.weight[:].sum(axis=-1)
+        nra = sstream.weight.shape[-1]
+        weight_sum = nra ** 2 * tools.invert_no_zero(
+            tools.invert_no_zero(sstream.weight[:]).sum(axis=-1)
+        )
 
         if self.telescope is not None:
             mmax = self.telescope.mmax
         else:
-            mmax = None
-
-        # Construct the array of m-modes
-        marray = _make_marray(sstream.vis[:], mmax)
-        marray = mpiarray.MPIArray.wrap(marray[:], axis=2, comm=sstream.comm)
+            mmax = sstream.vis.shape[-1] // 2
 
         # Create the container to store the modes in
-        mmax = marray.shape[0] - 1
-        ma = containers.MModes(mmax=mmax, axes_from=sstream, comm=sstream.comm)
+        ma = out_cont(mmax=mmax, axes_from=sstream, comm=sstream.comm)
         ma.redistribute("freq")
 
-        # Assign the visibilities and weights into the container
-        ma.vis[:] = marray
-        ma.weight[:] = weight_sum[np.newaxis, np.newaxis, :, :]
+        # Generate the m-mode transform directly into the output container
+        _make_marray(sstream.vis[:], ma.vis[:])
 
-        ma.redistribute("m")
+        # Assign the weights into the container
+        ma.weight[:] = weight_sum[np.newaxis, np.newaxis, :, :]
 
         return ma
 
 
-def _make_marray(ts, mmax):
-    # Construct an array of m-modes from a sidereal time stream
-    mmodes = np.fft.fft(ts, axis=-1) / ts.shape[-1]
-    marray = _pack_marray(mmodes, mmax)
+def _make_marray(ts, mmodes=None, mmax=None, dtype=None):
+    """Make an m-mode array from a sidereal stream.
 
-    return marray
+    This will loop over the first axis of `ts` to avoid needing a lot of memory for
+    intermediate arrays.
 
+    It can also write the m-mode output directly into a passed `mmodes` array.
+    """
 
-def _pack_marray(mmodes, mmax=None):
-    # Pack an FFT into the correct format for the m-modes (i.e. [m, freq, +/-,
-    # baseline])
+    if dtype is None:
+        dtype = np.complex64
 
-    N = mmodes.shape[-1]  # Total number of modes
-    N_pos_mmodes = N // 2  # Total number of positive modes
+    if mmodes is None and mmax is None:
+        raise ValueError("One of `mmodes` or `mmax` must be set.")
+
+    if mmodes is not None and mmax is not None:
+        raise ValueError("If mmodes is set, mmax must be None.")
+
+    if mmodes is not None and mmodes.shape[2:] != ts.shape[:-1]:
+        raise ValueError(
+            "ts and mmodes have incompatible shapes: "
+            f"{mmodes.shape[2:]} != {ts.shape[:-1]}"
+        )
+
+    if mmodes is None:
+        mmodes = np.zeros((mmax + 1, 2) + ts.shape[:-1], dtype=dtype)
+
     if mmax is None:
-        mmax = mlim = N_pos_mmodes
-        mlim_neg = mlim - 1 + N % 2  # Index for negative modes
-    elif mmax >= N_pos_mmodes:  # Modes larger than N_pos_mmodes set to 0.
-        mlim = N_pos_mmodes
-        mlim_neg = mlim - 1 + N % 2
-    else:
-        mlim = mmax
-        mlim_neg = mlim
+        mmax = mmodes.shape[0] - 1
 
-    shape = mmodes.shape[:-1]
+    # Total number of modes
+    N = ts.shape[-1]
+    # Calculate the max m to use for both positive and negative m. This is a little
+    # tricky to get correct as we need to account for the number of negative
+    # frequencies produced by the FFT
+    mlim = min(N // 2, mmax)
+    mlim_neg = N // 2 - 1 + N % 2 if mmax >= N // 2 else mmax
 
-    marray = np.zeros((mmax + 1, 2) + shape, dtype=np.complex128)
+    for i in range(ts.shape[0]):
+        m_fft = np.fft.fft(ts[i], axis=-1) / ts.shape[-1]
 
-    # Non-negative modes
-    marray[: mlim + 1, 0] = np.rollaxis(mmodes[..., : mlim + 1], -1, 0)
-    # Negative modes
-    marray[1 : mlim_neg + 1, 1] = np.rollaxis(
-        mmodes[..., -1 : -(mlim_neg + 1) : -1].conj(), -1, 0
-    )
+        # Loop and copy over positive and negative m's
+        # NOTE: this is done as a loop to try and save memory
+        for mi in range(mlim + 1):
+            mmodes[mi, 0, i] = m_fft[..., mi]
 
-    return marray
+        for mi in range(1, mlim_neg + 1):
+            mmodes[mi, 1, i] = m_fft[..., -mi].conj()
+
+    return mmodes
 
 
 class MModeInverseTransform(task.SingleTask):
@@ -784,3 +787,105 @@ class Regridder(task.SingleTask):
             ni *= w_mask[..., np.newaxis]
 
         return interp_grid, sts, ni
+
+
+class ShiftRA(task.SingleTask):
+    """Add a shift to the RA axis.
+
+    This is useful for fixing a bug in earlier revisions of CHIME processing.
+
+    Parameters
+    ----------
+    delta : float
+        The shift to *add* to the RA axis.
+    """
+
+    delta = config.Property(proptype=float)
+
+    def process(
+        self, sscont: containers.SiderealContainer
+    ) -> containers.SiderealContainer:
+        """Add a shift to the input sidereal cont.
+
+        Parameters
+        ----------
+        sscont
+            The container to shift. The input is modified in place.
+
+        Returns
+        -------
+        sscont
+            The shifted container.
+        """
+
+        if not isinstance(sscont, containers.SiderealContainer):
+            raise TypeError(
+                f"Expected a SiderealContainer, got {type(sscont)} instead."
+            )
+
+        sscont.ra[:] += self.delta
+
+        return sscont
+
+
+class SelectPol(task.SingleTask):
+    """Extract a subset of polarisations, including Stokes parameters.
+
+    This currently only extracts Stokes I.
+
+    Attributes
+    ----------
+    pol : list
+        Polarisations to extract. Only Stokes I extraction is supported (i.e. `pol =
+        ["I"]`).
+    """
+
+    pol = config.Property(proptype=list)
+
+    def process(self, polcont):
+        """Extract the specified polarisation from the input.
+
+        This will combine polarisation pairs to get instrumental Stokes polarisations if
+        requested.
+
+        Parameters
+        ----------
+        polcont : ContainerBase
+            A container with a polarisation axis.
+
+        Returns
+        -------
+        selectedpolcont : same as polcont
+            A new container with the selected polarisation.
+        """
+
+        polcont.redistribute("freq")
+
+        if "pol" not in polcont.axes:
+            raise ValueError(
+                f"Container of type {type(polcont)} does not have a pol axis."
+            )
+
+        if len(self.pol) != 1 or self.pol[0] != "I":
+            raise NotImplementedError("Only selecting stokes I is currently working.")
+
+        outcont = containers.empty_like(polcont, pol=np.array(self.pol))
+        outcont.redistribute("freq")
+
+        # Get the locations of the XX and YY components
+        XX_ind = list(polcont.index_map["pol"]).index("XX")
+        YY_ind = list(polcont.index_map["pol"]).index("YY")
+
+        for name, dset in polcont.datasets.items():
+
+            if "pol" not in dset.attrs["axis"]:
+                outcont.datasets[name][:] = dset[:]
+            else:
+                pol_axis_pos = list(dset.attrs["axis"]).index("pol")
+
+                sl = tuple([slice(None)] * pol_axis_pos)
+                outcont.datasets[name][sl + (0,)] = dset[sl + (XX_ind,)]
+                outcont.datasets[name][sl + (0,)] += dset[sl + (YY_ind,)]
+                outcont.datasets[name][:] *= 0.5
+
+        return outcont

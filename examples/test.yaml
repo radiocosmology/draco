@@ -1,51 +1,35 @@
-
+---
+cluster:
+    ppn: 8
+    nodes: 4
+    directory: /tmp/test_out/
+    time: 120
 
 pipeline :
     tasks:
-        -   type:   ch_pipeline.sidereal.LoadTimeStreamSidereal
+        -   type: draco.core.io.LoadFilesFromParams
+            out: input_files
+            params:
+                files: testdata/*.h5
+
+        -   type: draco.core.io.LoadProductManager
+            out: manager
+
+        -   type:   draco.analysis.sidereal.SiderealGrouper
             out:    siderealday
-            params: input_params
+            in:     input_files
+            requires: manager
 
-        -   type:   ch_pipeline.rfi.RFIFilter
-            in:     siderealday
-            out:    maskedday
-            params: no_params
+        -   type:       draco.analysis.sidereal.SiderealRegridder
+            in:         siderealday
+            out:        sday
+            requires: manager
+            params:
+                save: true
+                output_name: sidereal_grid.h5
 
-        -   type:   ch_pipeline.io.SaveOutput
-            in:     maskedday
-            out:    maskedday2
-            params: save_params
-
-        -   type:   ch_pipeline.sidereal.SiderealRegridder
-            in:     maskedday2
-            out:    sday
-            params: no_params
-
-        -   type:   ch_pipeline.io.SaveOutput
+        -   type:   draco.analysis.sidereal.SiderealStacker
             in:     sday
-            out:    sday2
-            params: save_params2
-
-        -   type:   ch_pipeline.sidereal.SiderealStacker
-            in:     sday2
-            out:    sstack
-            params: no_params
-
-        -   type:   ch_pipeline.io.SaveOutput
-            in:     sstack
-            params: save_params3
-
-no_params: {}
-
-input_params:
-    filepat:    "testdata/*.h5"
-
-save_params:
-    root:   rfi_filtered
-
-save_params2:
-    root:   sidereal_grid
-
-
-save_params3:
-    root:   sidereal_stack
+            params:
+                save: true
+                output_name: sidereal_stack.h5
