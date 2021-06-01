@@ -21,6 +21,7 @@ import healpy as hp
 >>>>>>> 03e8106... feat(transform): add task to convert ringmap to healpix map
 from caput import mpiarray, config
 from ch_util import ephemeris
+from cora.util import hputil
 
 from ..core import containers, task, io
 from ..util import tools
@@ -1113,7 +1114,7 @@ class RingMapToHealpixMap(task.SingleTask):
     nan_check = False
     nan_skip = False
     nan_dump = False
-    
+
     def setup(self, bt):
         """Load the telescope.
 
@@ -1177,11 +1178,11 @@ class RingMapToHealpixMap(task.SingleTask):
         map_local = map_.map[:]
         lo = ringmap.map.local_offset[2]
         ls = ringmap.map.local_shape[2]
-        
+
         # Loop over frequency
         for fi_local, fi in enumerate(ringmap.freq[lo : lo + ls]):
             self.log.debug(
-                "Converting maps for frequency %d", fi
+                "Converting maps for freq = %g MHz" % fi
             )
 
             for pi in range(len(ringmap.pol)):
@@ -1275,3 +1276,81 @@ class RingMapToHealpixMap(task.SingleTask):
 
         map_ramedian = np.median(in_map, axis=axis, keepdims=True)
         return in_map - map_ramedian
+
+
+class MSumTable(containers.FreqContainer):
+    """A container for holding the output of MapEllMSum.
+    """
+
+    _axes = ("pol",)
+
+    _dataset_spec = {
+        "msum": {
+            "axes": ["freq", "pol"],
+            "dtype": np.float64,
+            "initialise": True,
+            "distributed": True,
+            "distributed_axis": "freq",
+        }
+    }
+
+    def __init__(self, ell, *args, **kwargs):
+
+        super(MSumTable, self).__init__(*args, **kwargs)
+        self.attrs["ell"] = ell
+
+    @property
+    def msum(self):
+        return self.datasets["msum"]
+
+
+class MapEllMSum(task.SingleTask):
+    """Sum a map's spherical harmonic coefficients over m for specific ell.
+
+    Attributes
+    ----------
+    ell : int
+        Spherical harmonic ell of interest.
+    """
+
+    ell = config.Property(proptype=int)
+
+    def process(self, map_: containers.Map) -> MSumTable:
+        """Take SHT of map and sum a_{ell m} over m for specific ell.
+
+        Parameters
+        ----------
+        map_: Map
+            The input healpix map.
+
+        Returns
+        -------
+        msum: MSumTable
+            The output sums of spherical harmonic coefficients.
+        """
+
+        nside = hp.npix2nside(len(map_.index_map["pixel"]))
+        if self.ell > 3 * nside - 1:
+            raise ValueError("Ell cannot be larger than 3*nside-1!")
+
+        # Create MSumTable container
+        msum = MSumTable(
+            ell = self.ell,
+            axes_from=map_,
+            attrs_from=map_,
+            distributed=True,
+            comm=map_.comm,
+        )
+
+        # Get local sections of input map and output table
+        map_local = map_.map[:]
+        msum_local = msum.msum[:]
+
+        # Compute spherical harmonic coefficients for local map section,
+        # packed as [freq, pol, ell, m]
+        alm_local = hputil.sphtrans_sky(np.nan_to_num(map_local))
+
+        # Put m sums into container
+        msum_local[:] = alm_local[:, :, self.ell].sum(axis=-1).real
+
+        return msum
