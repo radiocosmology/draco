@@ -547,7 +547,7 @@ class SimulateSingleHarmonicSidereal(task.SingleTask):
         # Iterate over m's local to this process and generate the corresponding
         # visibilities
         for mp, mi in vis_data.enumerate(axis=0):
-            self.log.debug('Computing for m = %d' % mi)
+            self.log.debug('Computing for m = %d (%d/%d locally)' % (mi, mp, vis_data.shape[0]))
             vis_data[mp] = bt.project_vector_sky_to_telescope(
                 mi, col_alm[mp].view(np.ndarray)
             )
