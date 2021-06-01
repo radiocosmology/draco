@@ -1108,6 +1108,12 @@ class RingMapToHealpixMap(task.SingleTask):
     fill_value = config.Property(proptype=float, default=np.nan)
     median_subtract = config.Property(proptype=bool, default=False)
 
+    # Skip NaN checks, because it is likely (and expected) that output
+    # map will contain some NaNs
+    nan_check = False
+    nan_skip = False
+    nan_dump = False
+    
     def setup(self, bt):
         """Load the telescope.
 
@@ -1165,12 +1171,12 @@ class RingMapToHealpixMap(task.SingleTask):
             comm=ringmap.comm,
         )
 
-        # Get local sectiona of ringmap and healpix map, and local offset and shape of each frequency section
+        # Get local sections of ringmap and healpix map, and local offset and shape of each frequency section
         ringmap_local = ringmap.map[:]
         map_local = map_.map[:]
-        lo = ringmap.map.local_offset[0]
-        ls = ringmap.map.local_shape[0]
-
+        lo = ringmap.map.local_offset[2]
+        ls = ringmap.map.local_shape[2]
+        
         # Loop over frequency
         for fi_local, fi in enumerate(ringmap.freq[lo : lo + ls]):
             self.log.debug(
