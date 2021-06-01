@@ -1363,18 +1363,29 @@ class MultiplyMaps(task.SingleTask):
 
     If the map resolutions differ, the second map is up/downgraded
     to match the first. There is also the option to filter the |m>0|
-    components out of the second map.
+    components out of the second map, and to normalize the second map
+    by its mean.
 
     Attributes
     ----------
+    map2_pol0_only : bool
+        Multiply all polarizations of the first map by the unpolarized
+        part of the second map. Useful if the second map is a selection
+        function, for example. Default: False.
     filter_map2_m0 : bool
         Filter |m|>0 components out of the second map. Default: False.
+    mean_normalize_map2 : bool
+        Divide map2 by its mean at each frequency prior to m-filtering.
+        Default: False.
     nan_to_num : bool
         If either input map contains NaNs, convert to numbers with numpy.
         Default: True.
+
     """
 
+    map2_pol0_only = config.Property(proptype=bool, default=False)
     filter_map2_m0 = config.Property(proptype=bool, default=False)
+    mean_normalize_map2 = config.Property(proptype=bool, default=False)
     nan_to_num = config.Property(proptype=bool, default=True)
 
     def process(self, map1: containers.Map, map2: containers.Map) -> containers.Map:
@@ -1426,6 +1437,20 @@ class MultiplyMaps(task.SingleTask):
             for pi in range(map2_local.shape[1]):
                 map2_local_new[:, pi] = hp.ud_grade(map2_local[:, pi], nside1)
             map2_local = map2_local_new
+
+        # If only using unpolarized part, replace polarized parts of map2 with that,
+        # such that elementwise multiplication with map1 will produce desired result.
+        if self.map2_pol0_only:
+            self.log.debug("Copying unpolqrized part of map2 into polarized parts")
+            for pi in range(1, map2_local.shape[1]):
+                map2_local[:, pi] = map2_local[:, 0]
+
+        # If desired, normalize map2 by mean at each frequency
+        if self.mean_normalize_map2:
+            self.log.debug("Dividing map2 by mean at each frequency")
+            map2_local_mean = map2_local.mean(axis=2)
+            print(map2_local.mean(axis=2))
+            map2_local /= map2_local.mean(axis=2)[:, :, np.newaxis]
 
         # If desired, filter m>0 components out of map2
         if self.filter_map2_m0:
