@@ -1023,12 +1023,13 @@ class Map(FreqContainer, HealpixContainer):
         }
     }
 
-    def __init__(self, polarisation=True, *args, **kwargs):
+    def __init__(self, polarisation=True, pol=None, *args, **kwargs):
 
         # Set up axes from passed arguments
-        kwargs["pol"] = (
-            np.array(["I", "Q", "U", "V"]) if polarisation else np.array(["I"])
-        )
+        if pol is None:
+            kwargs["pol"] = (
+                np.array(["I", "Q", "U", "V"]) if polarisation else np.array(["I"])
+            )
 
         super().__init__(*args, **kwargs)
 
