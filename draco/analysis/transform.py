@@ -1165,6 +1165,7 @@ class RingMapToHealpixMap(task.SingleTask):
         # Make container to store healpix maps
         map_ = containers.Map(
             pixel=hp.nside2npix(self.nside),
+            pol=ringmap.pol,
             axes_from=ringmap,
             attrs_from=ringmap,
             distributed=True,
