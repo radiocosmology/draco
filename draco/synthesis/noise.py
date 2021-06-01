@@ -327,9 +327,6 @@ class SetRedundancyWeights(task.SingleTask, random.RandomTask):
 
         visdata = data.vis[:]
 
-        # TODO: this assumes uniform channels
-        df = data.index_map["freq"]["width"][0] * 1e6
-        nfreq = data.vis.local_shape[0]
         nprod = len(data.prodstack)
         ninput = len(data.index_map["input"])
 
