@@ -1356,3 +1356,85 @@ class MapEllMSum(task.SingleTask):
         msum_local[:] = alm_local[:, :, self.ell].sum(axis=-1).real
 
         return msum
+
+
+class MultiplyMaps(task.SingleTask):
+    """Multiply two healpix maps.
+
+    If the map resolutions differ, the second map is up/downgraded
+    to match the first. There is also the option to filter the |m>0|
+    components out of the second map.
+
+    Attributes
+    ----------
+    filter_map2_m0 : bool
+        Filter |m|>0 components out of the second map. Default: False.
+    nan_to_num : bool
+        If either input map contains NaNs, convert to numbers with numpy.
+        Default: True.
+    """
+
+    filter_map2_m0 = config.Property(proptype=bool, default=False)
+    nan_to_num = config.Property(proptype=bool, default=True)
+
+    def process(self, map1: containers.Map, map2: containers.Map) -> containers.Map:
+        """Multiply maps, processing map 2 if necessary.
+
+        Parameters
+        ----------
+        map1, map2: Map
+            Input healpix maps.
+
+        Returns
+        -------
+        map_out: Map
+            Output healpix map.
+        """
+
+        # Get npix and nside of maps
+        npix1 = len(map1.index_map["pixel"])
+        npix2 = len(map2.index_map["pixel"])
+        nside1 = hp.npix2nside(npix1)
+        nside2 = hp.npix2nside(npix2)
+
+        # Create container for output map
+        out_map = containers.Map(
+            pixel=npix1,
+            axes_from=map1,
+            attrs_from=map1,
+            distributed=True,
+            comm=map1.comm,
+        )
+
+        # Get local sections of maps
+        map1_local = map1.map[:]
+        map2_local = map2.map[:]
+        out_map_local = out_map.map[:]
+
+        # Convert NaNs to numbers, if desired
+        if self.nan_to_num:
+            map1_local = np.nan_to_num(map1_local)
+            map2_local = np.nan_to_num(map2_local)
+
+        # If map resolutions differ, up/downgrade map2 to match map 1.
+        # Note: it would probably be better to do this by forward and
+        # backward SHTs, rather than at the pixel level with hp.ud_grade(),
+        # but ud_grade() seems good enough in practice.
+        if nside2 != nside1:
+            self.log.debug("Changing map2 resolution from Nside=%d to %d" % (nside2, nside1))
+            map2_local_new = np.zeros_like(map1_local)
+            for pi in range(map2_local.shape[1]):
+                map2_local_new[:, pi] = hp.ud_grade(map2_local[:, pi], nside1)
+            map2_local = map2_local_new
+
+        # If desired, filter m>0 components out of map2
+        if self.filter_map2_m0:
+            self.log.debug("Filtering map2 to pure m=0")
+            alm2 = hputil.sphtrans_sky(map2_local)
+            alm2[:, :, :, 1:] = 0
+            map2_local = hputil.sphtrans_inv_sky(alm2, nside1)
+
+        # Multiply maps together
+        out_map_local[:] = map1_local * map2_local
+
+        return out_map
