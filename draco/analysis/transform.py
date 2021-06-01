@@ -1160,8 +1160,10 @@ class RingMapToHealpixMap(task.SingleTask):
 
         # Warn that we'll only consider beam 0
         # TODO: add support for >1 beam
-        if len(ringmap.index_map["beam"]):
-            self.log.warning("Multiple beams present in ringmap, but only beam 0 will be converted to healpix")
+        if len(ringmap.index_map["beam"]) > 1:
+            self.log.warning(
+                "%d beams present in ringmap, but only beam 0 will be converted to healpix" % len(ringmap.index_map["beam"])
+            )
 
         # Make container to store healpix maps
         map_ = containers.Map(
