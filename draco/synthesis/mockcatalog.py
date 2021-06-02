@@ -88,6 +88,127 @@ from mpi4py import MPI
 # Pipeline tasks
 # --------------
 
+class SelFuncEstimator(task.SingleTask):
+    """Takes a source catalog as input and returns an estimate of the
+    selection function based on a low rank SVD reconstruction.
+
+    The defaults for nside, n_z, and n_modes have been empirically determined
+    to produce reasonable results for the selection function when z_min = 0.8,
+    z_max = 2.5.
+
+    Redshifts are binned into n_z equispaced bins with min and max
+    bin edges set by z_min and z_max.
+
+    Attributes
+    ----------
+    nside : int
+        Healpix Nside for catalog maps generated for the SVD.
+        Default: 16.
+    n_z : int
+        Number of redshift bins for catalog maps generated for the SVD.
+        Default: 32.
+    z_min : float
+        Lower edge of minimum redshift bin for catalog maps generated for the SVD.
+        Default: 0.8.
+    z_max : float
+        Upper edge of maximum redshift for catalog maps generated for the SVD.
+        Default: 2.5.
+    n_modes : int
+        Number of SVD modes used in recovering the selection function from
+        the catalog maps.
+        Default: 7.
+    """
+
+    bcat_path = config.Property(proptype=str, default=None)
+
+    # These seem to be optimal parameters for eBOSS quasars, and
+    # usually should not need to be changed from the default values:
+    nside = config.Property(proptype=int, default=16)
+    n_z = config.Property(proptype=int, default=32)
+    z_min = config.Property(proptype=float, default=0.8)
+    z_max = config.Property(proptype=float, default=2.5)
+    n_modes = config.Property(proptype=int, default=7)
+
+    def process(self, cat):
+        """Estimate selection function from SVD of catalog map.
+
+        After binning the positions in the catalog into redshift bins
+        and healpix pixels, we SVD the n_z x n_pixel map and reconstruct
+        the catalog with a small number of modes. Doing this at low angular
+        resolution smoothes out the distribution of sources and provides
+        and estimate of the selection function.
+
+        Parameters
+        ----------
+        data : :class:`containers.SpectroscopicCatalog`
+            Input catalog.
+
+        Returns
+        -------
+        selfunc : :class:`containers.Map`
+            The visibility dataset with new weights.
+
+        """
+
+        # Compute redshift bin edges and centers
+        zlims_selfunc = np.linspace(self.z_min, self.z_max, self.n_z + 1)
+        z_selfunc = (zlims_selfunc[:-1] + zlims_selfunc[1:]) * 0.5
+
+        # Transform redshift bin edges to frequency bin edges
+        freq_selfunc = _zlims_to_freq(z_selfunc, zlims_selfunc)
+
+        # Create Map container to store the selection function
+        selfunc = containers.Map(
+            nside=self.nside, polarisation=False, freq=freq_selfunc
+        )
+
+        # Initialize selection function to zero
+        selfunc["map"][:] = 0 #np.zeros(selfunc["map"].local_shape)
+
+        # Create maps from original catalog (on each MPI rank separately)
+        maps = _cat_to_maps(cat, self.nside, zlims_selfunc)
+
+        # SVD the n_z x n_pixel map of source counts
+        svd = np.linalg.svd(maps, full_matrices=0)
+
+        # Get axis parameters for distributed map:
+        lo = selfunc["map"][:, 0, :].local_offset[0]
+        ls = selfunc["map"][:, 0, :].local_shape[0]
+
+        # Accumulate the modes we wish to keep in the Map container
+        for mode_i in range(self.n_modes):
+            uj = svd[0][:, mode_i]
+            sj = svd[1][mode_i]
+            vj = svd[2][mode_i, :]
+
+            # Wrap reconstructed selfunc mode into MPIArray, so that
+            # we can add to distributed map dataset
+            recmode = mpiarray.MPIArray.wrap(
+                (uj[:, None] * sj * vj[None, :])[lo : lo + ls], axis=0
+            )
+            selfunc["map"][:, 0, :] += recmode
+
+        # Remove negative entries remaining from SVD recovery:
+        selfunc["map"][np.where(selfunc.map[:] < 0.0)] = 0.0
+
+        # self.done = True
+
+        return selfunc
+
+    # def process_finish(self):
+    #     """
+    #     """
+    #     return None
+
+    # @property
+    # def base_qcat(self):
+    #     return self._base_qcat
+    #
+    # @property
+    # def selfunc(self):
+    #     return self._selfunc
+
+
 
 # class SelFuncEstimator(SelFuncEstimatorFromParams):
 #     """Estimate selection function from Catalog passed into the setup routine.
@@ -101,185 +222,6 @@ from mpi4py import MPI
 #         cont : containers.SpectroscopicCatalog
 #         """
 #         self._base_qcat = cat
-
-
-class SelFuncEstimatorFromParams(task.SingleTask):
-    """Takes a source catalog as input and returns an estimate of the
-    selection function based on a low rank SVD reconstruction.
-
-    Attributes
-    ----------
-    bcat_path : str, optional
-        Full path to base source catalog. If unspecified, a trivial selection
-        function (all ones) is assumed. Default: None
-    nside : int
-        NSIDE for catalog maps generated for the SVD.
-    n_z : int
-        Number of redshift bins for catalog maps generated for the SVD.
-    n_modes : int
-        Number of modes used in recovering the selection function from
-        base catalogue maps SVD.
-    z_stt : float
-        Starting redshift for catalog maps generated for the SVD.
-    z_stp : float
-        Stopping redshift for catalog maps generated for the SVD.
-
-    """
-
-    bcat_path = config.Property(proptype=str, default=None)
-
-    # These seem to be optimal parameters and should not
-    # usually need to be changed from the default values:
-    nside = config.Property(proptype=int, default=16)
-    n_z = config.Property(proptype=int, default=32)
-    n_modes = config.Property(proptype=int, default=7)
-    z_stt = config.Property(proptype=float, default=0.8)
-    z_stp = config.Property(proptype=float, default=2.5)
-
-    def setup(self):
-        """Load container from file.
-        """
-        # Load base source catalog from file, if specified:
-        self._base_qcat = None
-        if self.bcat_path is not None:
-            self._base_qcat = containers.SpectroscopicCatalog.from_file(self.bcat_path)
-
-    def process(self):
-        """Put the base catalog into maps. SVD the maps and recover
-        with a small number of modes. This smoothes out the distribution
-        sources and provides an estimate of the selection function used.
-        """
-        # Number of pixels to use in catalog maps for SVD
-        n_pix = hp.pixelfunc.nside2npix(self.nside)
-
-        # Redshift bins edges
-        zlims_selfunc = np.linspace(self.z_stt, self.z_stp, self.n_z + 1)
-        # Redshift bins centre
-        z_selfunc = (zlims_selfunc[:-1] + zlims_selfunc[1:]) * 0.5
-
-        # Have to transform the z axis to a freq axis to return selfunc in
-        # containers.Map format:
-        freq_selfunc = _zlims_to_freq(z_selfunc, zlims_selfunc)
-
-        # Map container to store the selection function:
-        self._selfunc = containers.Map(
-            nside=self.nside, polarisation=False, freq=freq_selfunc
-        )
-
-        # If no input catalog was specified, assume trivial selection function
-        if self.base_qcat is None:
-            self._selfunc["map"][:, :, :] = np.ones(self._selfunc["map"].local_shape)
-
-        else:
-            # Start as zeroes:
-            self._selfunc["map"][:, :, :] = np.zeros(self._selfunc["map"].local_shape)
-
-            # Create maps from original catalog:
-            # No point in distributing this in a mpi clever way
-            # because I need to SVD it.
-            maps = np.zeros((self.n_z, n_pix))
-            # Indices of each source in z axis:
-            idxs = (
-                np.digitize(self.base_qcat["redshift"]["z"], zlims_selfunc) - 1
-            )  # -1 to get indices
-            # Map pixel of each source
-            pixls = _radec_to_pix(
-                self.base_qcat["position"]["ra"],
-                self.base_qcat["position"]["dec"],
-                self.nside,
-            )
-            for jj in range(self.n_z):
-                zpixls = pixls[idxs == jj]  # Map pixels of sources in z bin jj
-                for kk in range(n_pix):
-                    # Number of sources in z bin jj and pixel kk
-                    maps[jj, kk] = np.sum(zpixls == kk)
-
-            # SVD the source density maps:
-            svd = np.linalg.svd(maps, full_matrices=0)
-
-            # Get axis parameters for distributed map:
-            lo = self._selfunc["map"][:, 0, :].local_offset[0]
-            ls = self._selfunc["map"][:, 0, :].local_shape[0]
-            # Recover the n_modes approximation to the original catalog maps:
-            for jj in range(self.n_modes):
-                uj = svd[0][:, jj]
-                sj = svd[1][jj]
-                vj = svd[2][jj, :]
-                # Re-constructed mode (distribute in freq/redshift):
-                recmode = mpiarray.MPIArray.wrap(
-                    (uj[:, None] * sj * vj[None, :])[lo : lo + ls], axis=0
-                )
-                self._selfunc["map"][:, 0, :] = self._selfunc["map"][:, 0, :] + recmode
-            # Remove negative entries remaining from SVD recovery:
-            self._selfunc["map"][np.where(self._selfunc.map[:] < 0.0)] = 0.0
-
-        self.done = True
-
-        return self.selfunc
-
-    def process_finish(self):
-        """
-        """
-        return None
-
-    @property
-    def base_qcat(self):
-        return self._base_qcat
-
-    @property
-    def selfunc(self):
-        return self._selfunc
-
-
-def _cat_to_maps(cat, nside, n_z, z_stt, z_stp):
-
-    # Number of pixels to use in catalog maps for SVD
-    n_pix = hp.pixelfunc.nside2npix(nside)
-
-    # Redshift bins edges
-    zlims_selfunc = np.linspace(z_stt, z_stp, n_z + 1)
-    # Redshift bins centre
-    z_selfunc = (zlims_selfunc[:-1] + zlims_selfunc[1:]) * 0.5
-
-    # Have to transform the z axis to a freq axis to return selfunc in
-    # containers.Map format:
-    freq_selfunc = _zlims_to_freq(z_selfunc, zlims_selfunc)
-
-    # Create maps from original catalog:
-    # No point in distributing this in a mpi clever way
-    # because I need to SVD it.
-    maps = np.zeros((n_z, n_pix))
-    # Indices of each source in z axis:
-    idxs = (
-        np.digitize(cat["redshift"]["z"], zlims_selfunc) - 1
-    )  # -1 to get indices
-    # Map pixel of each source
-    pixls = _radec_to_pix(
-        cat["position"]["ra"],
-        cat["position"]["dec"],
-        nside,
-    )
-    for jj in range(n_z):
-        zpixls = pixls[idxs == jj]  # Map pixels of sources in z bin jj
-        for kk in range(n_pix):
-            # Number of sources in z bin jj and pixel kk
-            maps[jj, kk] = np.sum(zpixls == kk)
-
-    return maps
-
-
-class SelFuncEstimator(SelFuncEstimatorFromParams):
-    """Estimate selection function from Catalog passed into the setup routine.
-    """
-
-    def setup(self, cat):
-        """Add the container to the internal namespace.
-
-        Parameters
-        ----------
-        cont : containers.SpectroscopicCatalog
-        """
-        self._base_qcat = cat
 
 
 class PdfGenerator(task.SingleTask):
@@ -1002,3 +944,48 @@ def _pix_to_radec(index, nside):
 
 def _radec_to_pix(ra, dec, nside):
     return hp.pixelfunc.ang2pix(nside, np.radians(-dec + 90.0), np.radians(ra))
+
+def _cat_to_maps(cat, nside, zlims_selfunc):
+    """Grid a catalog of sky and z positions onto healpix maps.
+
+    Parameters
+    ----------
+    cat : containers.SpectroscopicCatalog
+        Input catalog.
+    nside : int
+        Healpix Nside parameter for output maps.
+    zlims_selfunc : np.ndarray
+        Edges of target redshift bins.
+
+    Returns
+    -------
+    maps : np.ndarray
+        Output healpix maps, packed as [n_z, n_pix].
+    """
+
+    # Number of pixels to use in catalog maps for SVD
+    n_pix = hp.nside2npix(nside)
+
+    # Number of redshift bins
+    n_z = len(zlims_selfunc) - 1
+
+    # Create maps from original catalog (on each MPI rank separately)
+    maps = np.zeros((n_z, n_pix))
+    # Compute indices of each source along z axis
+    idxs = (
+        np.digitize(cat["redshift"]["z"], zlims_selfunc) - 1
+    )  # -1 to get indices
+    # Map pixel of each source
+    pixels = _radec_to_pix(
+        cat["position"]["ra"], cat["position"]["dec"], nside
+    )
+
+    for zi in range(n_z):
+        # Get map pixels containing sources in redshift bin zi
+        zpixels = pixels[idxs == zi]
+        # For each pixel in map, set pixel value to number of sources
+        # within that pixel
+        for pi in range(n_pix):
+            maps[zi, pi] = np.sum(zpixels == pi)
+
+    return maps
