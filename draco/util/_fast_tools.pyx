@@ -6,7 +6,7 @@ cimport cython
 import numpy as np
 cimport numpy as np
 
-from libc.stdint cimport int16_t, uint32_t
+from libc.stdint cimport int16_t, int32_t
 from libc.math cimport sin
 from libc.math cimport cos
 
@@ -93,8 +93,13 @@ def _unpack_product_array_fast(cython.numeric[::1] utv, cython.numeric[:, ::1] m
 
 @cython.boundscheck(False)
 @cython.wraparound(False)
-def _calc_redundancy(float[:, ::1] input_flags, int16_t[:, ::1] prod_map, uint32_t[::1] stack_index,
-                     int nstack, float[:, ::1] redundancy):
+def _calc_redundancy(
+    float[:, ::1] input_flags,
+    int16_t[:, ::1] prod_map,
+    int32_t[::1] stack_index,
+    int nstack,
+    float[:, ::1] redundancy
+):
     """Quickly calculate redundancy.
 
     Parameters
@@ -110,23 +115,29 @@ def _calc_redundancy(float[:, ::1] input_flags, int16_t[:, ::1] prod_map, uint32
     redundancy : np.ndarray[nstack, ntime]
         Array in which to fill out the redundancy of each stack.
     """
-    
+
     cdef int istack
     cdef int ia, ib
     cdef int ii, jj
-    
+
     cdef int ninput = input_flags.shape[0]
     cdef int ntime = input_flags.shape[1]
 
     cdef int nt
-    
+
     # Check the array shapes
     # Need to construct rshape as redundancy.shape, has extra entries as it's of a memoryview
     rshape = (redundancy.shape[0], redundancy.shape[1])
     if rshape != (nstack, ntime):
         raise RuntimeError("redundancy array shape %s incorrect, expected %s" %
                            (repr(rshape), repr((nstack, ntime))))
-        
+
+    if stack_index.shape[0] != prod_map.shape[0]:
+        raise ValueError(
+            f"Number of prod_map rows ({prod_map.shape[0]}) must match stack_index "
+            f"length ({stack_index.shape[0]})."
+        )
+
     # Check that we don't index out of bounds from the prod_map
     if np.min(prod_map) < 0 or np.max(prod_map) >= ninput:
         raise RuntimeError("Input index in prod_map out of bounds.")
@@ -166,17 +177,17 @@ cpdef beamform(float complex [:, :, ::1] vis,
                double[:, ::1] u, double[:, ::1] v,
                int[::1] f_index, int[::1] ra_index):
     """ Fringestop visibility data and sum over products.
-    
+
     CAUTION! For efficiency reasons this routine does not
     normalize the sum over products. This is to avoid dividing
     here and multiplyig again for further stacking in the time
     axis later on.
 
     If no stacking in the time axis is made further in your code
-    you should do 
+    you should do
 
                     formed_beam / np.sum(weight, axis=-1)
-    
+
     to get a proper normalization.
 
     Parameters
@@ -211,7 +222,7 @@ cpdef beamform(float complex [:, :, ::1] vis,
     cdef int fi, ri
     cdef double pi
     nfreq, nra, nprod = len(f_index), len(ra_index), vis.shape[2]
-    # To store the formed beams. Will only be populated at f_index 
+    # To store the formed beams. Will only be populated at f_index
     # frequency entries. Zero otherwise.
     cdef double[:, ::1] formed_beam = np.zeros((vis.shape[0], nra), dtype=np.float64)
     cdef double phase, ut, vt, st, ct

@@ -1,8 +1,9 @@
-"""Misc. transformations to do on data, from grouping frequencies and products to performing the m-mode transform."""
+"""Miscellaneous transformations to do on data.
 
+This includes grouping frequencies and products to performing the m-mode transform.
+"""
 import numpy as np
 from caput import mpiarray, config
-from caput import mpiutil
 
 from ..core import containers, task, io
 from ..util import tools
@@ -479,7 +480,10 @@ class MModeTransform(task.SingleTask):
 
         # Sum the noise variance over time samples, this will become the noise
         # variance for the m-modes
-        weight_sum = sstream.weight[:].sum(axis=-1)
+        nra = sstream.weight.shape[-1]
+        weight_sum = nra ** 2 * tools.invert_no_zero(
+            tools.invert_no_zero(sstream.weight[:]).sum(axis=-1)
+        )
 
         if self.telescope is not None:
             mmax = self.telescope.mmax
@@ -783,3 +787,105 @@ class Regridder(task.SingleTask):
             ni *= w_mask[..., np.newaxis]
 
         return interp_grid, sts, ni
+
+
+class ShiftRA(task.SingleTask):
+    """Add a shift to the RA axis.
+
+    This is useful for fixing a bug in earlier revisions of CHIME processing.
+
+    Parameters
+    ----------
+    delta : float
+        The shift to *add* to the RA axis.
+    """
+
+    delta = config.Property(proptype=float)
+
+    def process(
+        self, sscont: containers.SiderealContainer
+    ) -> containers.SiderealContainer:
+        """Add a shift to the input sidereal cont.
+
+        Parameters
+        ----------
+        sscont
+            The container to shift. The input is modified in place.
+
+        Returns
+        -------
+        sscont
+            The shifted container.
+        """
+
+        if not isinstance(sscont, containers.SiderealContainer):
+            raise TypeError(
+                f"Expected a SiderealContainer, got {type(sscont)} instead."
+            )
+
+        sscont.ra[:] += self.delta
+
+        return sscont
+
+
+class SelectPol(task.SingleTask):
+    """Extract a subset of polarisations, including Stokes parameters.
+
+    This currently only extracts Stokes I.
+
+    Attributes
+    ----------
+    pol : list
+        Polarisations to extract. Only Stokes I extraction is supported (i.e. `pol =
+        ["I"]`).
+    """
+
+    pol = config.Property(proptype=list)
+
+    def process(self, polcont):
+        """Extract the specified polarisation from the input.
+
+        This will combine polarisation pairs to get instrumental Stokes polarisations if
+        requested.
+
+        Parameters
+        ----------
+        polcont : ContainerBase
+            A container with a polarisation axis.
+
+        Returns
+        -------
+        selectedpolcont : same as polcont
+            A new container with the selected polarisation.
+        """
+
+        polcont.redistribute("freq")
+
+        if "pol" not in polcont.axes:
+            raise ValueError(
+                f"Container of type {type(polcont)} does not have a pol axis."
+            )
+
+        if len(self.pol) != 1 or self.pol[0] != "I":
+            raise NotImplementedError("Only selecting stokes I is currently working.")
+
+        outcont = containers.empty_like(polcont, pol=np.array(self.pol))
+        outcont.redistribute("freq")
+
+        # Get the locations of the XX and YY components
+        XX_ind = list(polcont.index_map["pol"]).index("XX")
+        YY_ind = list(polcont.index_map["pol"]).index("YY")
+
+        for name, dset in polcont.datasets.items():
+
+            if "pol" not in dset.attrs["axis"]:
+                outcont.datasets[name][:] = dset[:]
+            else:
+                pol_axis_pos = list(dset.attrs["axis"]).index("pol")
+
+                sl = tuple([slice(None)] * pol_axis_pos)
+                outcont.datasets[name][sl + (0,)] = dset[sl + (XX_ind,)]
+                outcont.datasets[name][sl + (0,)] += dset[sl + (YY_ind,)]
+                outcont.datasets[name][:] *= 0.5
+
+        return outcont
