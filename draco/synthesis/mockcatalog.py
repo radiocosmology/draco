@@ -224,6 +224,82 @@ class SelFuncEstimator(task.SingleTask):
 #         self._base_qcat = cat
 
 
+
+class ResizeSelFuncMap(task.SingleTask):
+    """Take a selection function map and simulated source
+    (biased density) map and return a selection function map with the
+    same resolution and frequency sampling as the source map.
+    """
+
+    def process(self, selfunc, source_map):
+        """Resize selection function map.
+
+        Parameters
+        ----------
+        selfunc : :class:`containers.Map`
+            Input selection function.
+        source_map : :class:`containers.Map`
+            Map whose frequency and angular redshift resolution the
+            output selection function map will be matched to. This will
+            typically be the same map passed to the `PdfGenerator` task.
+
+        Returns
+        -------
+        new_selfunc : class:`containers.Map`
+            Resized selection function.
+        """
+        from ..util import regrid
+
+        # Convert frequency axes to redshifts
+        z_selfunc = _freq_to_z(selfunc.index_map["freq"])
+        z_source = _freq_to_z(source_map.index_map["freq"])
+        n_z_source = len(z_source)
+
+        # Make container for resized selection function map
+        new_selfunc = containers.Map(
+            polarisation=False,
+            axes_from=source_map,
+            attrs_from=source_map
+        )
+
+        # Form matrix to interpolate frequency/z axis
+        interp_m = regrid.lanczos_forward_matrix(
+            z_selfunc["centre"], z_source["centre"]
+        )
+        # Correct for redshift bin widths:
+        interp_m *= (
+            z_source["width"][:, np.newaxis] / z_selfunc["width"][np.newaxis, :]
+        )
+
+        # Redistribute selfunc along pixel axis, so we can resize
+        # the frequency axis
+        selfunc.redistribute("pixel")
+
+        # Interpolate input selection function onto new redshift bins,
+        # and wrap in MPIArray distributed along pixel axis
+        selfunc_map_newz = mpiarray.MPIArray.wrap(
+            np.dot(interp_m, selfunc.map[:, 0, :]), axis=1
+        )
+
+        # Redistribute along frequency axis
+        selfunc_map_newz = selfunc_map_newz.redistribute(axis=0)
+
+        # Determine desired output healpix Nside parameter
+        nside = hp.npix2nside(len(new_selfunc.index_map["pixel"]))
+
+        # Get local section of container for output selection function
+        new_selfunc_map_local = new_selfunc.map[:]
+
+        # For each frequency in local section, up/downgrade healpix maps
+        # of selection function to desired resolution, and set negative
+        # pixel values (which the Lanczos interpolation can create) to zero
+        for fi in range(selfunc_map_newz.local_shape[0]):
+            new_selfunc_map_local[:][fi, 0] = hp.ud_grade(selfunc_map_newz[fi], nside)
+            new_selfunc_map_local[:][fi, 0][new_selfunc_map_local[:][fi, 0][:] < 0] = 0
+
+        return new_selfunc
+
+
 class PdfGenerator(task.SingleTask):
     """Take a source catalog selection function and simulated source
     (biased density) maps and return a PDF map correlated with the
@@ -407,153 +483,46 @@ class PdfGenerator(task.SingleTask):
             )
             print(msg)
 
-
-
-
-def _resize_map(map, new_shape, z_new, z_old):
-    """Re-size map (np.array) to new shape, taking into account
-    mpi distribution.
-    """
-    from ..util import regrid
-
-    # redistribute in axis 1 to re-size axis 0:
-    map = mpiarray.MPIArray.wrap(map, axis=0)
-    map = map.redistribute(axis=1)
-
-    # Form interpolation matrix:
-    interp_m = regrid.lanczos_forward_matrix(z_old["centre"], z_new["centre"])
-    # Correct for redshift bin widths:
-    interp_m = (
-        interp_m / z_old["width"][np.newaxis, :] * z_new["width"][:, np.newaxis]
-    )
-    # Resize axis 0:
-    map = np.dot(interp_m, map)
-    map = mpiarray.MPIArray.wrap(np.array(map), axis=1)
-    # redistribute in axis 0 to re-size axis 1:
-    map = map.redistribute(axis=0)
-
-    # Resize axis 1:
-    # new_shape is a global shape, so can only use it in axis 1 here
-    resized_map = np.zeros((map.local_shape[0], new_shape[1]))
-    n_side = hp.pixelfunc.npix2nside(new_shape[1])  # NSIDE of new shape
-    for ii in range(map.local_shape[0]):
-        resized_map[ii] = hp.pixelfunc.ud_grade(map[ii, :], nside_out=n_side)
-
-    # Remove negative values. (The Lanczos kernel can make things
-    # slightly negative at the edges)
-    resized_map = np.where(
-        resized_map >= 0.0, resized_map, np.zeros_like(resized_map)
-    )
-
-    return mpiarray.MPIArray.wrap(resized_map, axis=0)
-
-
-
-
-
-class ResizeSelFuncMap(task.SingleTask):
-    """Take a source catalog selection function and simulated source
-    (biased density) map and return a selection function map with the
-    same resolution and frequency sampling as the source map.
-
-    Attributes
-    ----------
-    source_maps_path : str
-        Full path to simulated source map (biased matter density fluctuations).
-    """
-
-    source_maps_path = config.Property(proptype=str)
-
-    def setup(self, selfunc):
-        """
-        """
-        self.selfunc = selfunc
-
-        # Load source maps from file:
-        source_maps = containers.Map.from_file(self.source_maps_path, distributed=True)
-        self.source_maps = source_maps  # Setter sets other parameters too
-
-        # For easy access to communicator:
-        self.comm_ = self.source_maps.comm
-        self.rank = self.comm_.Get_rank()  # Unused for now
-
-    def process(self):
-        """
-        """
-        # From frequency to redshift:
-        z = _freq_to_z(self.source_maps.index_map["freq"])
-        n_z = len(z)
-
-        # Freq to redshift of selection function:
-        z_selfunc = _freq_to_z(self.selfunc.index_map["freq"])
-
-        # Re-distribute maps in pixels:
-        self.source_maps.redistribute(dist_axis=2)
-
-        # TODO: Change h1maps for something more generic, like density_maps
-
-        rho_m = mpiarray.MPIArray.wrap(self.source_maps.map[:, 0, :] + 1.0, axis=1)
-
-        # Re-distribute in frequencies before normalizing
-        # (which requires summing over pixels)
-        # Note: mpiarray.MPIArray.redistribute returns the redistributed array
-        # That's different from the behaviour of the containers.
-        rho_m = rho_m.redistribute(axis=0)
-
-        # Normalize density to have unit mean in each z-bin:
-        rho_m = mpiarray.MPIArray.wrap(
-            rho_m / np.mean(rho_m, axis=1)[:, np.newaxis], axis=0
-        )
-
-        # Resizing the selection function to match the voxel size of the
-        # CORA maps by hand. Result is distributed in axis 0.
-        resized_selfunc = _resize_map(
-            self.selfunc.map[:, 0, :], rho_m.global_shape, z, z_selfunc
-        )
-
-        # Make container for resized selection function map
-        new_selfunc = containers.Map(
-            polarisation=False,
-            axes_from=self.source_maps,
-            attrs_from=self.source_maps
-        )
-        new_selfunc.map[:, 0, :] = resized_selfunc[:]
-
-        self.done = True
-        return new_selfunc
-
-
-    def process_finish(self):
-        """
-        """
-        return None
-
-    @property
-    def source_maps(self):
-        return self._source_maps
-
-    @source_maps.setter
-    def source_maps(self, source_maps):
-        """
-        Setter for source_maps
-        Also set the attributes:
-            self._npix : Number of pixels in source maps
-            self._nside : NSIDE of source maps
-
-        """
-        if isinstance(source_maps, containers.Map):
-            self._source_maps = source_maps
-            self._npix = len(self._source_maps.index_map["pixel"])
-            self._nside = hp.pixelfunc.npix2nside(self._npix)
-        else:
-            msg = (
-                "source_maps is not an instance of "
-                + "draco.core.containers.Map\n"
-                + "Value for _source_maps not set."
-            )
-            print(msg)
-
-
+#
+#
+#
+# def _resize_map(map, new_shape, z_new, z_old):
+#     """Re-size map (np.array) to new shape, taking into account
+#     mpi distribution.
+#     """
+#     from ..util import regrid
+#
+#     # redistribute in axis 1 to re-size axis 0:
+#     map = mpiarray.MPIArray.wrap(map, axis=0)
+#     map = map.redistribute(axis=1)
+#
+#     # Form interpolation matrix:
+#     interp_m = regrid.lanczos_forward_matrix(z_old["centre"], z_new["centre"])
+#     # Correct for redshift bin widths:
+#     interp_m = (
+#         interp_m / z_old["width"][np.newaxis, :] * z_new["width"][:, np.newaxis]
+#     )
+#     # Resize axis 0:
+#     map = np.dot(interp_m, map)
+#     map = mpiarray.MPIArray.wrap(np.array(map), axis=1)
+#     # redistribute in axis 0 to re-size axis 1:
+#     map = map.redistribute(axis=0)
+#
+#     # Resize axis 1:
+#     # new_shape is a global shape, so can only use it in axis 1 here
+#     resized_map = np.zeros((map.local_shape[0], new_shape[1]))
+#     n_side = hp.pixelfunc.npix2nside(new_shape[1])  # NSIDE of new shape
+#     for ii in range(map.local_shape[0]):
+#         resized_map[ii] = hp.pixelfunc.ud_grade(map[ii, :], nside_out=n_side)
+#
+#     # Remove negative values. (The Lanczos kernel can make things
+#     # slightly negative at the edges)
+#     resized_map = np.where(
+#         resized_map >= 0.0, resized_map, np.zeros_like(resized_map)
+#     )
+#
+#     return mpiarray.MPIArray.wrap(resized_map, axis=0)
+#
 
 
 
