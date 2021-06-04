@@ -800,8 +800,14 @@ class MockCatGenerator(task.SingleTask):
 
 
 class MapPixLocGenerator(task.SingleTask):
-    """Generate a list of sky positions corresponding to the pixel
-    centers of an input Healpix map.
+    """Generate a 'catalog' of Healpix pixel centers.
+
+    This is useful if you want to stack on each Healpix pixel for
+    a given Healpix resolution (determined by an input map).
+    This task outputs a SpectroscopicCatalog
+    that can then be fed to the usual beamforming task.
+
+    All "sources" are assigned to the same frequency channel, for simplicity.
 
     Attributes
     ----------
@@ -812,48 +818,48 @@ class MapPixLocGenerator(task.SingleTask):
     freq_idx = config.Property(proptype=int)
 
     def setup(self, in_map):
+        """Pre-load information from input map.
         """
-        """
-        self.map = in_map
+        self.map_ = in_map
 
-        # For easy access to communicator:
-        self.comm_ = self.map.comm
+        # Get MPI communicator and rank
+        self.comm_ = self.map_.comm
         self.rank = self.comm_.Get_rank()
 
-        # # Easy access to local shapes and offsets
-        # self.lo = self.map[:, 0, :].local_offset[0]
-        # self.ls = self.map[:, 0, :].local_shape[0]
-        # self.lo_list = self.comm_.allgather(self.lo)
-        # self.ls_list = self.comm_.allgather(self.ls)
-
         # Global shape of frequency axis
-        n_z = self.map.map[:, 0, :].global_shape[0]
+        n_z = self.map_.map[:, 0, :].global_shape[0]
 
-        if not isinstance(self.map, containers.Map):
-            raise RuntimeError("Input map is not actually a map!")
-        else:
-            self.npix = len(self.map.index_map["pixel"])
-            self.nside = hp.pixelfunc.npix2nside(self.npix)
+        # Get desired N_pix and Nside
+        self.npix = len(self.map_.index_map["pixel"])
+        self.nside = hp.npix2nside(self.npix)
 
-        self.z_arr = _freq_to_z(self.map.index_map["freq"])
+        # Get redshift to assign to all "sources"
+        self.z_arr = _freq_to_z(self.map_.index_map["freq"])
         self.z = self.z_arr[self.freq_idx]["centre"]
 
 
     def process(self):
+        """Make a catalog of pixel positions.
+
+        Returns
+        ----------
+        mock_catalog : :class:`containers.SpectroscopicCatalog`
+            Output catalog.
         """
-        """
 
-        local_pix_numbers = mpiutil.partition_list_mpi(np.arange(self.npix))
-        npix_rank = len(local_pix_numbers)
+        # Get local section of Healpix pixel indices
+        local_pix_indices = mpiutil.partition_list_mpi(np.arange(self.npix))
+        npix_rank = len(local_pix_indices)
 
-        pix_dec, pix_ra = _pix_to_radec(local_pix_numbers, self.nside)
+        # Convert pixel indices to (dec,RA)
+        pix_dec, pix_ra = _pix_to_radec(local_pix_indices, self.nside)
 
-        # Arrays to hold the whole source set information
+        # Make arrays to hold the whole source set information
         ra_full = np.empty(self.npix, dtype=pix_ra.dtype)
         dec_full = np.empty(self.npix, dtype=pix_dec.dtype)
 
-        # The counts and displacement arguments of Allgatherv are tuples!
         # Tuple (not list!) of number of pixels in each rank
+        # The counts and displacement arguments of Allgatherv are tuples!
         npix_tuple = tuple(self.comm_.allgather(npix_rank))
         # Tuple (not list!) of displacements of each rank array in full array
         dspls = tuple(np.insert(arr=np.cumsum(npix_tuple)[:-1], obj=0, values=0.0))
@@ -870,6 +876,8 @@ class MapPixLocGenerator(task.SingleTask):
         mock_catalog = containers.SpectroscopicCatalog(
             object_id=np.arange(self.npix, dtype=np.uint64)
         )
+
+        # Create position and redshift datasets
         mock_catalog["position"][:] = np.empty(
             self.npix, dtype=[("ra", pix_ra.dtype), ("dec", pix_dec.dtype)]
         )
@@ -882,14 +890,13 @@ class MapPixLocGenerator(task.SingleTask):
         mock_catalog["redshift"]["z"][:] = (
             self.z * np.ones(self.npix, dtype=pix_ra.dtype)
         )
-        # There is a provision for z-error. Zero here.
         mock_catalog["redshift"]["z_error"][:] = 0.0
 
         self.done = True
         return mock_catalog
 
     def process_finish(self):
-        """
+        """Do nothing when catalog has been created.
         """
         return None
 
