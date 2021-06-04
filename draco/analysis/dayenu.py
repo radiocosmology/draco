@@ -6,6 +6,7 @@ See https://arxiv.org/abs/2004.11397 for a description.
 import time
 
 import numpy as np
+import scipy.interpolate
 
 from caput import config, memh5
 from cora.util import units
@@ -157,13 +158,12 @@ class DayenuDelayFilterMap(task.SingleTask):
     epsilon : float
         The stop-band rejection of the filter.
     filename : str
-        The name of an hdf5 file containing the "delay_cutoff"
-        in micro-seconds as a function of "el" = sin(za).  If a
-        filename is provided, then its "delay_cutoff" dataset
-        will be  interpolated to determine the cutoff of the filter
-        based on the el coordinate of the map.  If a filename is not
-        provided, then a single cutoff given by the tauw property
-        will be used for all el.
+        The name of an hdf5 file containing a DelayCutoff container.
+        If a filename is provided, then it will be loaded during setup
+        and the `cutoff` dataset will be interpolated to determine
+        the cutoff of the filter based on the el coordinate of the map.
+        If a filename is not provided, then a single cutoff given by the
+        tauw property will be used for all el.
     tauw : float
         Delay cutoff in micro-seconds.
     single_mask : bool
@@ -184,23 +184,28 @@ class DayenuDelayFilterMap(task.SingleTask):
         """Create the function used to determine the delay cutoff."""
 
         if self.filename is not None:
-            self.log.info("Using delay cut from file: %s" % self.filename)
 
-            fcut = memh5.MemGroup.from_hdf5(self.filename)
+            fcut = containers.DelayCutoff.from_file(self.filename, distributed=False)
             kind = fcut.attrs.get("kind", "linear")
 
-            self._get_cut = scipy.interpolate.interp1d(
-                fcut.index_map["el"][:],
-                fcut["delay_cutoff"][:],
-                kind=kind,
-                bounds_error=False,
-                fill_value=self.tauw,
+            self.log.info(
+                f"Using {kind} interpolation of the delay cut in the file: "
+                f"{self.filename}"
             )
 
-        else:
-            self.log.info("Using constant delay cut of %0.3f micro-sec." % self.tauw)
+            self._cut_interpolator = {}
+            for pp, pol in enumerate(fcut.pol):
 
-            self._get_cut = lambda el: np.full(el.size, self.tauw, dtype=np.float64)
+                self._cut_interpolator[pol] = scipy.interpolate.interp1d(
+                    fcut.el,
+                    fcut.cutoff[pp],
+                    kind=kind,
+                    bounds_error=False,
+                    fill_value=self.tauw,
+                )
+
+        else:
+            self._cut_interpolator = None
 
     def process(self, ringmap):
         """Filter out delays from a RingMap.
@@ -231,21 +236,20 @@ class DayenuDelayFilterMap(task.SingleTask):
         sel = ringmap.map.local_offset[ax_dist]
         eel = sel + nel
 
-        el = ringmap.index_map[self._ax_dist][sel:eel]
-
-        # Determine the baseline dependent cutoff
-        cutoff = self._get_cut(el)
+        els = ringmap.index_map[self._ax_dist][sel:eel]
 
         # Dereference the required datasets
         rm = ringmap.map[:].view(np.ndarray)
         weight = ringmap.weight[:].view(np.ndarray)
 
-        # Loop over index
+        # Loop over beam and polarisation
         for ind in np.ndindex(*lshp):
 
             wind = ind[1:]
 
-            for ee, ecut in enumerate(cutoff):
+            kwargs = {ax: ringmap.index_map[ax][ii] for ax, ii in zip(axes, ind)}
+
+            for ee, el in enumerate(els):
 
                 t0 = time.time()
 
@@ -261,6 +265,9 @@ class DayenuDelayFilterMap(task.SingleTask):
 
                 if not np.any(flag):
                     continue
+
+                # Determine the delay cutoff
+                ecut = self._get_cut(el, **kwargs)
 
                 self.log.info(
                     "Filtering el %d of %d. [%0.3f micro-sec]" % (ee, nel, ecut)
@@ -295,6 +302,20 @@ class DayenuDelayFilterMap(task.SingleTask):
                 self.log.info("Took %0.2f seconds." % (time.time() - t0,))
 
         return ringmap
+
+    def _get_cut(self, el, pol=None, **kwargs):
+        """Return the delay cutoff in micro-seconds."""
+
+        if self._cut_interpolator is None:
+            return self.tauw
+
+        elif pol in self._cut_interpolator:
+            return self._cut_interpolator[pol](el)
+
+        else:
+            # The file does not contain this polarisation (likely XY or YX).
+            # Use the maximum value over the polarisations that we do have.
+            return np.max([func(el) for func in self._cut_interpolator.values()])
 
 
 class DayenuMFilter(task.SingleTask):
