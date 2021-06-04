@@ -1,6 +1,6 @@
-"""Take a source catalog and a (possibly biased) matter simulated map
-and generate mock catalogs correlated to the matter maps and following
-a selection function derived from the original catalog.
+"""Tasks for making mock catalogs.
+
+See Usage section for usage.
 
 Pipeline tasks
 ==============
@@ -9,8 +9,13 @@ Pipeline tasks
     :toctree:
 
     SelFuncEstimator
-    PdfGenerator
+    ResizeSelFuncMap
+    PdfGeneratorBase
+    PdfGeneratorUncorrelated
+    PdfGeneratorNoSelfunc
+    PdfGeneratorWithSelfunc
     MockCatGenerator
+    MapPixLocGenerator
 
 Internal functions
 ==================
@@ -27,46 +32,68 @@ Internal functions
 Usage
 =====
 
-Generally you would want to use these tasks together. Providing a catalog
-path to :class:`SelFuncEstimator`, then feeding the resulting selection
-function to :class:`PdfGenerator` and finally passing the resulting
-probability distribution function to :class:`MockCatGenerator` to generate
-mock catalogs. Below is an example of yaml file to generate mock catalogs:
+Generally you would want to use these tasks together. A catalog is fed to
+:class:`SelFuncEstimator`, which generates a selection function map from a
+low-rank SVD approximation to the positions in the catalog.
+:class:`ResizeSelFuncMap` resizes this to match the resolution of a simulated
+map of galaxy overdensity delta_g. The resized selection function and delta_g
+map are then fed to PdfGeneratorWithSelfunc, which makes a PDF map from which
+simulated sources are drawn in :class:`MockCatGenerator`. The PDF can also
+be generated without a selection function, or assuming a uniform distribution
+of sources.
 
->>> spam_config = '''
+:class:`MapPixLocGenerator` is a specialized task that creates a catalog whose
+"sources" are located at Healpix pixel centers for a given angular resolution.
+
+Below is an example workflow:
+
+>>> mock_config = '''
 ... pipeline :
 ...     tasks:
-...         -   type:   draco.synthesis.mockcatalog.SelFuncEstimatorFromParams
-...             params: selfunc_params
-...             out:    selfunc
+...         - type: draco.core.io.LoadFilesFromParams
+...           out: cat_for_selfunc
+...           params:
+...               files:
+...                   - "/path/to/data/catalog.h5"
 ...
-...         -   type:     draco.synthesis.mockcatalog.PdfGenerator
-...             params:   pdf_params
-...             requires: selfunc
-...             out:      pdf_map
+...         - type:   draco.synthesis.mockcatalog.SelFuncEstimator
+...           in: cat_for_selfunc
+...           out: selfunc
+...           params:
+...               save: False
 ...
-...         -   type:     draco.synthesis.mockcatalog.MockCatGenerator
-...             params:   mqcat_params
-...             requires: pdf_map
-...             out:      mockcat
+...         - type: draco.core.io.LoadMaps
+...           out: source_map
+...           params:
+...               maps:
+...                   files:
+...                       - "/path/to/delta_g/map.h5"
 ...
-... selfunc_params:
-...     bcat_path: '/bg01/homescinet/k/krs/jrs65/sdss_quasar_catalog.h5'
-...     nside: 16
+...          - type: draco.synthesis.mockcatalog.ResizeSelFuncMap
+...            in: [selfunc, source_map]
+...            out: resized_selfunc
+...            params:
+...                smooth_selfunc: True
+...                save: True
+...                output_name: /path/to/saved/resized_selfunc.h5
 ...
-... pdf_params:
-...     source_maps_path: '/scratch/k/krs/fandino/xcorrSDSS/sim21cm/21cmmap.hdf5'
+...          - type: draco.synthesis.mockcatalog.PdfGeneratorWithSelfunc
+...            in: [source_map, resized_selfunc]
+...            out: pdf_map
+...            params:
+...                save: False
 ...
-... mqcat_params:
-...     nsources: 200000
-...     ncats: 5
-...     save: True
-...     output_root: '/scratch/k/krs/fandino/test_mqcat/mqcat'
-
-'''
-
-
+...          - type: draco.synthesis.mockcatalog.MockCatGenerator
+...            requires: pdf_map
+...            out: mock_cat
+...            params:
+...                nsources: 100000
+...                ncats: 1
+...                save: True
+...                output_root: mock_
+...
 """
+
 # === Start Python 2/3 compatibility
 from __future__ import absolute_import, division, print_function, unicode_literals
 from future.builtins import *  # noqa  pylint: disable=W0401, W0614
