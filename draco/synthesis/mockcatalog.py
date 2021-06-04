@@ -546,9 +546,13 @@ class MockCatGenerator(task.SingleTask):
         this parameter times (1+z). Only one of this and `sigma_z` can
         be specified. Default: None
     z_at_channel_centers : bool, optional
-        Place each object at a redshift corresponding to the center of
-        its frequency channel (True), or randomly distribute each object's
+        Place each source at a redshift corresponding to the center of
+        its frequency channel (True), or randomly distribute each source's
         redshift within its channel (False). Default: False.
+    srcs_at_pixel_centers : bool, optional
+        Place each source precisely at Healpix pixel center (True), or
+        randomly distribute each source within pixel (False).
+        Default: False.
     """
 
     nsources = config.Property(proptype=int)
@@ -558,6 +562,7 @@ class MockCatGenerator(task.SingleTask):
     sigma_z_over_1plusz = config.Property(proptype=float, default=None)
 
     z_at_channel_centers = config.Property(proptype=bool, default=False)
+    srcs_at_pixel_centers = config.Property(proptype=bool, default=False)
 
     def setup(self, pdf_map):
         """Pre-load information from PDF.
@@ -674,10 +679,13 @@ class MockCatGenerator(task.SingleTask):
         if (self.sigma_z is not None) or (self.sigma_z_over_1plusz is not None):
             rzerr = [np.random.normal(size=num) for num in source_numbers]
 
-        # Random numbers for theta-placement range: [-0.5,0.5]
-        rtheta = [np.random.uniform(size=num) - 0.5 for num in source_numbers]
-        # Random numbers for phi-placement range: [-0.5,0.5]
-        rphi = [np.random.uniform(size=num) - 0.5 for num in source_numbers]
+        # If desired, generate random numbers to randomize position of sources
+        # in each healpix pixel. These are uniform random numbers in [-0.5, 0.5],
+        # which will determine the source's relative displacement from the bin's
+        # central RA and dec.
+        if not self.srcs_at_pixel_centers:
+            rtheta = [np.random.uniform(size=num) - 0.5 for num in source_numbers]
+            rphi = [np.random.uniform(size=num) - 0.5 for num in source_numbers]
 
         # Compute the square root of the angular pixel area,
         # as a gross approximation of the pixel size.
@@ -723,10 +731,13 @@ class MockCatGenerator(task.SingleTask):
                     mock_zerrs[source_count] = 0
 
                 # Populate local arrays of source redshift, RA, dec,
-                # adding random angular offsets from pixel centers
+                # adding random angular offsets from pixel centers if desired
                 mock_zs[source_count] = z_value
-                mock_ra[source_count] = RAbase + ang_size * rtheta[zi][si]
-                mock_dec[source_count] = decbase + ang_size * rphi[zi][si]
+                mock_ra[source_count] = RAbase
+                mock_dec[source_count] = decbase
+                if not self.srcs_at_pixel_centers:
+                    mock_ra[source_count] += ang_size * rtheta[zi][si]
+                    mock_dec[source_count] += ang_size * rphi[zi][si]
 
                 source_count += 1
 
