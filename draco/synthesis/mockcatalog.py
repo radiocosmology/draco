@@ -78,7 +78,7 @@ import numpy as np
 import healpy as hp
 
 from cora.signal import corr21cm
-from cora.util import units, cosmology
+from cora.util import units
 from caput import config
 from caput import mpiarray, mpiutil
 from ..core import task, containers
@@ -191,37 +191,7 @@ class SelFuncEstimator(task.SingleTask):
         # Remove negative entries remaining from SVD recovery:
         selfunc["map"][np.where(selfunc.map[:] < 0.0)] = 0.0
 
-        # self.done = True
-
         return selfunc
-
-    # def process_finish(self):
-    #     """
-    #     """
-    #     return None
-
-    # @property
-    # def base_qcat(self):
-    #     return self._base_qcat
-    #
-    # @property
-    # def selfunc(self):
-    #     return self._selfunc
-
-
-
-# class SelFuncEstimator(SelFuncEstimatorFromParams):
-#     """Estimate selection function from Catalog passed into the setup routine.
-#     """
-#
-#     def setup(self, cat):
-#         """Add the container to the internal namespace.
-#
-#         Parameters
-#         ----------
-#         cont : containers.SpectroscopicCatalog
-#         """
-#         self._base_qcat = cat
 
 
 
@@ -300,230 +270,243 @@ class ResizeSelFuncMap(task.SingleTask):
         return new_selfunc
 
 
-class PdfGenerator(task.SingleTask):
-    """Take a source catalog selection function and simulated source
-    (biased density) maps and return a PDF map correlated with the
-    density maps and the selection function. This PDF map can be used
+class PdfGeneratorBase(task.SingleTask):
+    """Base class for PDF generator (non-functional).
+
+    Take a source catalog selection function and simulated source
+    (biased density) map and return a PDF map constructed from the
+    product of the two, appropriately normalized. This PDF map can be used
     by the task :class:`MockCatGenerator` to draw mock catalogs.
+
+    Derived classes must implement process().
+    """
+
+    def make_pdf_map(self, source_map, z_weights, selfunc=None):
+        """Make PDF map from source map, redshift weights, and selection function.
+
+        Parameters
+        ----------
+        source_map : :class:`containers.Map`
+            Overdensity map to base PDF on.
+        z_weights : `MPIArray`
+            Relative weight of each redshift/frequency bin in PDF.
+        selfunc : :class:`containers.Map`, optional
+            Selection function for objects drawn from PDF. If not specified,
+            a uniform selection function is assumed.
+
+        Returns
+        -------
+        pdf_map : :class:`containers.Map`
+            Output PDF map.
+        """
+
+        # Assuming source map is overdensity, add 1 to form rho/rho_mean
+        rho = mpiarray.MPIArray.wrap(source_map.map[:, 0, :] + 1.0, axis=0)
+
+        # Normalize density to have unit mean in each z-bin:
+        rho = mpiarray.MPIArray.wrap(
+            rho / np.mean(rho, axis=1)[:, np.newaxis], axis=0
+        )
+
+        if selfunc is not None:
+            # Get local section of selection function
+            selfunc_local = selfunc.map[:, 0, :]
+
+            # Multiply selection function into density
+            pdf = mpiarray.MPIArray.wrap(rho * selfunc_local, axis=0)
+
+        else:
+            pdf = mpiarray.MPIArray.wrap(rho, axis=0)
+
+        # Normalize by redshift weights
+        pdf = mpiarray.MPIArray.wrap(
+            pdf / np.sum(pdf, axis=1)[:, np.newaxis] * z_weights[:, np.newaxis], axis=0
+        )
+
+        # Make container for PDF
+        nside = hp.npix2nside(len(source_map.index_map["pixel"]))
+        pdf_map = containers.Map(
+            nside=nside, polarisation=False, freq=source_map.index_map["freq"]
+        )
+
+        # Put computed PDF into local section of container
+        pdf_map_local = pdf_map.map[:]
+        pdf_map_local[:, 0, :] = pdf
+
+        return pdf_map
+
+
+    def process(self):
+        raise NotImplementedError(
+            f"{self.__class__} must define a process method."
+        )
+
+
+class PdfGeneratorUncorrelated(PdfGeneratorBase):
+    """Generate uniform PDF for making uncorrelated mocks.
+    """
+
+    def process(self, source_map):
+        """Make PDF map with uniform z weights and delta_g=0.
+
+        Parameters
+        ----------
+        source_map : :class:`containers.Map`
+            Overdensity map that determines z and angular resolution
+            of output PDF map.
+
+        Returns
+        -------
+        pdf_map : :class:`containers.Map`
+            Output PDF map.
+        """
+
+        # Get local section of source map, and set to zero
+        source_map_local = source_map.map[:, 0, :]
+        source_map_local[:] = 0
+
+        # Get local and global shape of frequency axis
+        ls = source_map.map.local_shape[0]
+        gs = source_map.map.global_shape[0]
+
+        # Set each frequency channel to have equal total probability
+        z_weights = mpiarray.MPIArray.wrap(
+            1 / gs * np.ones(ls), axis=0
+        )
+
+        # Create PDF map
+        pdf_map = self.make_pdf_map(source_map, z_weights)
+
+        return pdf_map
+
+
+class PdfGeneratorWithSelfunc(PdfGeneratorBase):
+    """Generate PDF that incorporates a selection function.
+    """
+
+    def process(self, source_map, selfunc):
+        """Make PDF map that incorporates the selection function.
+
+        Parameters
+        ----------
+        source_map : :class:`containers.Map`
+            Overdensity map that determines z and angular resolution
+            of output PDF map.
+        selfunc : :class:`containers.Map`
+            Selection function map. Must have same z and angular resolution
+            as source_map. Typically taken from `ResizeSelFuncMap`.
+
+        Returns
+        -------
+        pdf_map : :class:`containers.Map`
+            Output PDF map.
+        """
+
+        # Get MPI comm
+        comm_ = source_map.comm
+
+        # Get local section of selection function
+        selfunc_local = selfunc.map[:, 0, :]
+
+        # Generate weights for distribution of sources in redshift:
+        # first, sum over selfunc pixel values at each z (z_weights),
+        # then sum these over all z per rank (z_weights_local_sum)
+        # and combine into sum across all ranks (z_weights_sum).
+        # TODO: there must be a cleaner way to get z_weights_sum
+        # that uses built-in MPIArray functionality...
+        z_weights = np.sum(selfunc_local, axis=1)
+        z_weights_local_sum = mpiarray.MPIArray.wrap(
+            np.array([np.sum(z_weights, axis=0)]), axis=0
+        )
+        z_weights_sum = np.zeros_like(z_weights_local_sum)
+        comm_.Allreduce(z_weights_local_sum, z_weights_sum)
+
+        # Normalize z_weights by grand total
+        z_weights = mpiarray.MPIArray.wrap(z_weights / z_weights_sum, axis=0)
+
+        # Create PDF map
+        pdf_map = self.make_pdf_map(source_map, z_weights, selfunc)
+
+        return pdf_map
+
+
+class PdfGeneratorNoSelfunc(PdfGeneratorBase):
+    """Generate PDF that assumes a trivial selection function.
 
     Attributes
     ----------
-    source_maps_path : str
-        Full path to simulated source maps (biased matter density fluctuations).
-    random_catalog : bool
-        Is True generate random catalogs, not correlated with the maps.
-        Default is False.
-
+    use_voxel_volumes : bool
+        If true, set redshift weights based on relative comoving volumes
+        of voxels corresponding to each frequency channel. Default: False.
     """
 
-    source_maps_path = config.Property(proptype=str)
-    random_catalog = config.Property(proptype=bool, default=False)
-    no_selfunc = config.Property(proptype=bool, default=False)
     use_voxel_volumes = config.Property(proptype=bool, default=False)
 
-    def setup(self, selfunc):
+    def process(self, source_map):
+        """Make PDF map that assumes a trivial selection function.
+
+        Parameters
+        ----------
+        source_map : :class:`containers.Map`
+            Overdensity map that determines z and angular resolution
+            of output PDF map.
+
+        Returns
+        -------
+        pdf_map : :class:`containers.Map`
+            Output PDF map.
         """
-        """
-        self.selfunc = selfunc
 
-        # Load source maps from file:
-        source_maps = containers.Map.from_file(self.source_maps_path, distributed=True)
-        if self.random_catalog:
-            # To make a random (not correlated) catalog
-            source_maps.map[:] = np.zeros_like(source_maps.map)
+        # Get local offset and shape of frequency axis, and global shape
+        lo = source_map.map.local_offset[0]
+        ls = source_map.map.local_shape[0]
+        gs = source_map.map.global_shape[0]
 
-        self.source_maps = source_maps  # Setter sets other parameters too
+        if not self.use_voxel_volumes:
+            # Set each frequency channel to have equal total probability
+            z_weights = mpiarray.MPIArray.wrap(
+                1 / gs * np.ones(ls), axis=0
+            )
 
-        # For easy access to communicator:
-        self.comm_ = self.source_maps.comm
-        self.rank = self.comm_.Get_rank()  # Unused for now
+        else:
+            # Set total probability for each frequency channel based
+            # on voxel volume for that channel.
+            # Healpix maps have equal-angular-area pixels, so the voxel
+            # area is proportional to \chi^2 * (\chi_max - \chi_min),
+            # where we use \chi_centre for the first \chi (which incorporates
+            # the z-dependence of transverse area), and the second factor
+            # is the voxel size along the z direction.
+            from cora.util import cosmology
 
-    def process(self):
-        """
-        """
-        # From frequency to redshift:
-        z = _freq_to_z(self.source_maps.index_map["freq"])
-        n_z = len(z)
+            cosmo = cosmology.Cosmology()
+            z_weights_global = np.zeros(gs, dtype=np.float64)
 
-        # Freq to redshift of selection function:
-        z_selfunc = _freq_to_z(self.selfunc.index_map["freq"])
+            # First, we compute the normalization for each channel
+            # globally
+            for fi, freq in enumerate(source_map.index_map["freq"]):
+                z_min = units.nu21 / (freq[0] + 0.5 * freq[1]) - 1
+                z_max = units.nu21 / (freq[0] - 0.5 * freq[1]) - 1
+                z_mean = units.nu21 / freq[0] - 1
 
-        # Re-distribute maps in pixels:
-        self.source_maps.redistribute(dist_axis=2)
-
-        # TODO: Change h1maps for something more generic, like density_maps
-
-        rho_m = mpiarray.MPIArray.wrap(self.source_maps.map[:, 0, :] + 1.0, axis=1)
-
-        # Re-distribute in frequencies before normalizing
-        # (which requires summing over pixels)
-        # Note: mpiarray.MPIArray.redistribute returns the redistributed array
-        # That's different from the behaviour of the containers.
-        rho_m = rho_m.redistribute(axis=0)
-
-        # Normalize density to have unit mean in each z-bin:
-        rho_m = mpiarray.MPIArray.wrap(
-            rho_m / np.mean(rho_m, axis=1)[:, np.newaxis], axis=0
-        )
-
-        # Resizing the selection function to match the voxel size of the
-        # CORA maps by hand. Result is distributed in axis 0.
-        resized_selfunc = _resize_map(
-            self.selfunc.map[:, 0, :], rho_m.global_shape, z, z_selfunc
-        )
-        # Generate wheights for correct distribution of sources in redshift:
-        z_wheights = np.sum(resized_selfunc, axis=1)
-        # Sum wheights in each comm rank. Need array of scalar here.
-        z_total_temp = mpiarray.MPIArray.wrap(
-            np.array([np.sum(z_wheights, axis=0)]), axis=0
-        )
-        z_total = np.zeros_like(z_total_temp)
-
-        # Sum accross ranks. All ranks get the same result:
-        self.comm_.Allreduce(z_total_temp, z_total)
-        # Normalize z_wheights:
-        z_wheights = mpiarray.MPIArray.wrap(z_wheights / z_total, axis=0)
-
-        # PDF following selection function and CORA maps:
-        # (both rho_m and resized_selfunc are distributed in axis 0)
-        if self.no_selfunc:
-            self.log.debug("Using trivial selection function to generate PDF!")
-            pdf = rho_m
-            if not self.use_voxel_volumes:
-                # Set each frequency channel to have equal total probability
-                z_wheights = 1/n_z * np.ones_like(z_wheights)
-            else:
-                # Set total probability for each frequency channel based
-                # on voxel volume for that channel.
-                # Healpix maps have equal-angular-area pixels, so the voxel
-                # area is proportional to \chi^2 * (\chi_max - \chi_min),
-                # where we use \chi_centre for the first \chi (which incorporates
-                # the z-dependence of transverse area), and the second factor
-                # is the voxel size along the z direction.
-
-                cosmo = cosmology.Cosmology()
-                z_wheights_global = np.zeros(
-                    len(self.source_maps.index_map["freq"]),
-                    dtype=np.float64
+                z_weights_global[fi] = (
+                    cosmo.comoving_distance(z_mean)**2
+                    * (
+                        cosmo.comoving_distance(z_max)
+                        - cosmo.comoving_distance(z_min)
+                    )
                 )
 
-                # First, we compute the normalization for each channel
-                # globally
-                for fi, freq in enumerate(self.source_maps.index_map["freq"]):
-                    z_min = units.nu21 / (freq[0] + 0.5 * freq[1]) - 1
-                    z_max = units.nu21 / (freq[0] - 0.5 * freq[1]) - 1
-                    z_mean = units.nu21 / freq[0] - 1
+            z_weights_global /= z_weights_global.sum()
 
-                    z_wheights_global[fi] = (
-                        cosmo.comoving_distance(z_mean)**2
-                        * (
-                            cosmo.comoving_distance(z_max)
-                            - cosmo.comoving_distance(z_min)
-                        )
-                    )
-
-                z_wheights_global /= z_wheights_global.sum()
-
-                # Select local section of weights
-                z_wheights = z_wheights_global[
-                    z_wheights.local_offset[0] :
-                    z_wheights.local_offset[0] + z_wheights.local_shape[0]
-                ]
-                print('Rank %d: z_wheights are' % mpiutil.rank, z_wheights)
-
-        else:
-            pdf = rho_m * resized_selfunc
-
-        # Enforce redshift distribution to follow selection function:
-        pdf = mpiarray.MPIArray.wrap(
-            pdf / np.sum(pdf, axis=1)[:, np.newaxis] * z_wheights[:, np.newaxis], axis=0
-        )
-
-        # Put PDF in a map container:
-        pdf_map = containers.Map(
-            nside=self._nside, polarisation=False, freq=self.source_maps.index_map["freq"]
-        )
-
-        # I am not sure I need this test every time:
-        if pdf_map["map"].local_offset[0] == pdf.local_offset[0]:
-            pdf_map["map"][:, 0, :] = pdf
-        else:
-            raise RuntimeError("Local offsets don't match.")
-
-        self.done = True
-        return pdf_map
-
-    def process_finish(self):
-        """
-        """
-        return None
-
-    @property
-    def source_maps(self):
-        return self._source_maps
-
-    @source_maps.setter
-    def source_maps(self, source_maps):
-        """
-        Setter for source_maps
-        Also set the attributes:
-            self._npix : Number of pixels in source maps
-            self._nside : NSIDE of source maps
-
-        """
-        if isinstance(source_maps, containers.Map):
-            self._source_maps = source_maps
-            self._npix = len(self._source_maps.index_map["pixel"])
-            self._nside = hp.pixelfunc.npix2nside(self._npix)
-        else:
-            msg = (
-                "source_maps is not an instance of "
-                + "draco.core.containers.Map\n"
-                + "Value for _source_maps not set."
+            # Select local section of weights
+            z_weights = mpiarray.MPIArray.wrap(
+                z_weights_global[lo : lo + ls], axis=0
             )
-            print(msg)
 
-#
-#
-#
-# def _resize_map(map, new_shape, z_new, z_old):
-#     """Re-size map (np.array) to new shape, taking into account
-#     mpi distribution.
-#     """
-#     from ..util import regrid
-#
-#     # redistribute in axis 1 to re-size axis 0:
-#     map = mpiarray.MPIArray.wrap(map, axis=0)
-#     map = map.redistribute(axis=1)
-#
-#     # Form interpolation matrix:
-#     interp_m = regrid.lanczos_forward_matrix(z_old["centre"], z_new["centre"])
-#     # Correct for redshift bin widths:
-#     interp_m = (
-#         interp_m / z_old["width"][np.newaxis, :] * z_new["width"][:, np.newaxis]
-#     )
-#     # Resize axis 0:
-#     map = np.dot(interp_m, map)
-#     map = mpiarray.MPIArray.wrap(np.array(map), axis=1)
-#     # redistribute in axis 0 to re-size axis 1:
-#     map = map.redistribute(axis=0)
-#
-#     # Resize axis 1:
-#     # new_shape is a global shape, so can only use it in axis 1 here
-#     resized_map = np.zeros((map.local_shape[0], new_shape[1]))
-#     n_side = hp.pixelfunc.npix2nside(new_shape[1])  # NSIDE of new shape
-#     for ii in range(map.local_shape[0]):
-#         resized_map[ii] = hp.pixelfunc.ud_grade(map[ii, :], nside_out=n_side)
-#
-#     # Remove negative values. (The Lanczos kernel can make things
-#     # slightly negative at the edges)
-#     resized_map = np.where(
-#         resized_map >= 0.0, resized_map, np.zeros_like(resized_map)
-#     )
-#
-#     return mpiarray.MPIArray.wrap(resized_map, axis=0)
-#
+        # Create PDF map
+        pdf_map = self.make_pdf_map(source_map, z_weights)
 
+        return pdf_map
 
 
 class MockCatGenerator(task.SingleTask):
