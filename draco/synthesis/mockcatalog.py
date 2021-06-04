@@ -536,9 +536,9 @@ class MockCatGenerator(task.SingleTask):
     Attributes
     ----------
     nsources : int
-        Number of sources to draw in each mock catalog
+        Number of sources to draw in each mock catalog.
     ncats : int
-        Number of catalogs to generate
+        Number of catalogs to generate.
     sigma_z : float, optional
         Standard deviation of Gaussian redshift errors (default: None)
     sigma_z_over_1plusz : float, optional
@@ -548,7 +548,7 @@ class MockCatGenerator(task.SingleTask):
     z_at_channel_centers : bool, optional
         Place each object at a redshift corresponding to the center of
         its frequency channel (True), or randomly distribute each object's
-        redshift within its channel (False): Default: False
+        redshift within its channel (False). Default: False.
     """
 
     nsources = config.Property(proptype=int)
@@ -560,45 +560,55 @@ class MockCatGenerator(task.SingleTask):
     z_at_channel_centers = config.Property(proptype=bool, default=False)
 
     def setup(self, pdf_map):
-        """
-        """
-        self.pdf = pdf_map
+        """Pre-load information from PDF.
 
-        # For easy access to communicator:
+        Parameters
+        ----------
+        pdf_map : :class:`containers.Map`
+            PDF from which to draw positions of sources.
+        """
+
+        # Get PDF map container and corresponding healpix Nside
+        self.pdf = pdf_map
+        self.nside = hp.npix2nside(len(self.pdf.index_map["pixel"]))
+
+        # Get MPI communicator and rank
         self.comm_ = self.pdf.comm
         self.rank = self.comm_.Get_rank()
 
-        # Check that only one z error spec has been specified
+        # Check that only one z error parameter has been specified
         if (self.sigma_z is not None) and (self.sigma_z_over_1plusz is not None):
             raise config.CaputConfigError(
                 "Only one of sigma_z and sigma_z_over_1plusz can be specified!"
             )
 
-        # Easy access to local shapes and offsets
+        # Get local shapes and offsets of frequency axis
         self.lo = self.pdf.map[:, 0, :].local_offset[0]
         self.ls = self.pdf.map[:, 0, :].local_shape[0]
         self.lo_list = self.comm_.allgather(self.lo)
         self.ls_list = self.comm_.allgather(self.ls)
 
-        # Global shape:
+        # Global shape of frequency axis
         n_z = self.pdf.map[:, 0, :].global_shape[0]
 
-        # Wheight of each redshift bin in the pdf
-        z_wheights = np.sum(self.pdf.map[:, 0, :], axis=1)
+        # Weight of each redshift bin in the PDF, as sum over all
+        # PDF map pixels at that redshift
+        z_weights = np.sum(self.pdf.map[:, 0, :], axis=1)
 
+        # Initialize array to hold global z_weights
         if self.rank == 0:
-            # Only rank zero is relevant. All the others are None.
-            self.global_z_wheights = np.zeros(n_z)
+            # Only rank zero is relevant
+            self.global_z_weights = np.zeros(n_z)
         else:
-            # All processes must have a value for self.global_z_wheights:
-            self.global_z_wheights = None
+            # All processes must have a value for self.global_z_weights
+            self.global_z_weights = None
 
-        # Gather z_wheights on rank 0 (necessary to draw a redshift
+        # Gather z_weights on rank 0 (necessary to draw a redshift
         # distribution of sources):
         self.comm_.Gatherv(
-            z_wheights,
+            z_weights,
             [
-                self.global_z_wheights,
+                self.global_z_weights,
                 tuple(self.ls_list),
                 tuple(self.lo_list),
                 MPI.DOUBLE,
@@ -606,108 +616,128 @@ class MockCatGenerator(task.SingleTask):
             root=0,
         )
 
-        # CDF to draw sources from:
+        # CDF to draw sources from, as cumulative sum over pixel values
+        # at each redshift
         self.cdf = np.cumsum(self.pdf.map[:, 0, :], axis=1)
-        # Normalize:
+        # Normalize CDF by final entry
         self.cdf = self.cdf / self.cdf[:, -1][:, np.newaxis]
 
+
     def process(self):
-        """
+        """Make a mock catalog based on input PDF.
+
+        Returns
+        ----------
+        mock_catalog : :class:`containers.SpectroscopicCatalog`
+            Simulated catalog.
         """
 
         if self.rank == 0:
-            # Only rank zero is relevant. All the others are None.
+            # Only rank zero is relevant.
             # The number of sources in each redshift bin follows a multinomial
             # distribution (reshape from (1,nz) to (nz) to make a 1D array):
             global_source_numbers = np.random.multinomial(
-                self.nsources, self.global_z_wheights
+                self.nsources, self.global_z_weights
             )
         else:
             # All processes must have a value for source_numbers:
             global_source_numbers = None
 
-        source_numbers = np.zeros(self.ls, dtype=np.int)
+        # Send number of sources per redshift to local sections on each rank.
         # Need to pass tuples. For some reason lists don't work.
         # source_numbers has shape (self.ls)
+        source_numbers = np.zeros(self.ls, dtype=np.int)
         self.comm_.Scatterv(
             [global_source_numbers, tuple(self.ls_list), tuple(self.lo_list), MPI.DOUBLE],
             source_numbers,
         )
 
-        # Generate random numbers to assign voxels.
-        # Shape: [self.ls=local # of z-bins][# of sources in each z-bin]
+        # For each z bin in local section, draw a uniform random number in [0,1]
+        # for each source. This will determine which angular pixel the source
+        # is assigned to.
+        # Shape of rnbs: [self.ls=local # of z-bins][# of sources in each z-bin]
         rnbs = [np.random.uniform(size=num) for num in source_numbers]
 
-        # Indices of each random source in pdf maps pixels.
+        # For each source, determine index of pixel the source falls into.
         # Shape: [self.ls=local # of z-bins][# of sources in each z-bin]
         idxs = [np.digitize(rnbs[ii], self.cdf[ii]) for ii in range(len(rnbs))]
 
-        # Generate random numbers to randomize position of sources in each voxel:
-        # Random numbers for z-placement range: (-0.5,0.5)
+        # If desired, generate random numbers to randomize position of sources
+        # in each z bin. These are uniform random numbers in [-0.5, 0.5], which
+        # will determine the source's relative displacement from the bin's
+        # mean redshift.
         if not self.z_at_channel_centers:
             rz = [np.random.uniform(size=num) - 0.5 for num in source_numbers]
-        # Generate random numbers for z errors, as standard normals
+
+        # If desired, generate random numbers for z errors, as standard normals
         # to be multiplied by appropriate standard deviation later
         if (self.sigma_z is not None) or (self.sigma_z_over_1plusz is not None):
             rzerr = [np.random.normal(size=num) for num in source_numbers]
-        # Random numbers for theta-placement range: (-0.5,0.5)
+
+        # Random numbers for theta-placement range: [-0.5,0.5]
         rtheta = [np.random.uniform(size=num) - 0.5 for num in source_numbers]
-        # Random numbers for phi-placement range: (-0.5,0.5)
+        # Random numbers for phi-placement range: [-0.5,0.5]
         rphi = [np.random.uniform(size=num) - 0.5 for num in source_numbers]
 
-        # :meth::nside2resol() returns the square root of the pixel area,
-        # which is a gross approximation of the pixel size, given the
-        # different pixel shapes. I convert to degrees.
-        ang_size = hp.pixelfunc.nside2resol(self._nside) * 180.0 / np.pi
+        # Compute the square root of the angular pixel area,
+        # as a gross approximation of the pixel size.
+        ang_size = np.rad2deg(hp.nside2resol(self.nside))
 
-        # Global values for redshift bins:
-        z = _freq_to_z(self.pdf.index_map["freq"][:])
+        # Redshifts corresponding to frequencies at bin centers
+        z_global = _freq_to_z(self.pdf.index_map["freq"][:])
 
         # Number of sources in each rank
         nsource_rank = np.sum([len(idxs[ii]) for ii in range(len(idxs))])
-        # Local arrays to hold the informations on
-        # sources in the local frequency range
+
+        # Arrays to hold information on sources in local frequency section
         mock_zs = np.empty(nsource_rank, dtype=np.float64)
         mock_zerrs = np.empty(nsource_rank, dtype=np.float64)
         mock_ra = np.empty(nsource_rank, dtype=np.float64)
         mock_dec = np.empty(nsource_rank, dtype=np.float64)
+
+        # Loop over sources on this rank
         source_count = 0
-        for ii in range(len(idxs)):  # For each local redshift bin
-            for jj in range(len(idxs[ii])):  # For each source in in z-bin ii
-                decbase, RAbase = _pix_to_radec(idxs[ii][jj], self._nside)
-                # global redshift index:
-                global_z_index = ii + self.lo
-                # Randomly distributed in z bin range:
-                z_value = z["centre"][global_z_index]
+        for zi in range(len(idxs)):  # For each local redshift bin
+            for si in range(len(idxs[zi])):  # For each source in z-bin zi
+
+                # Get dec, RA of center of pixel containing source
+                decbase, RAbase = _pix_to_radec(idxs[zi][si], self.nside)
+                # Get global index of z bin containing source, and central z
+                global_z_index = zi + self.lo
+                z_value = z_global["centre"][global_z_index]
+
+                # If desired, add random offset within z bin
                 if not self.z_at_channel_centers:
-                    z_value += z["width"][global_z_index] * rz[ii][jj]
-                # If desired, add Gaussian z errors:
+                    z_value += z_global["width"][global_z_index] * rz[zi][si]
+
+                # If desired, add Gaussian z error
                 if self.sigma_z is not None:
-                    z_value += rzerr[ii][jj] * self.sigma_z
-                    mock_zerrs[source_count] = rzerr[ii][jj] * self.sigma_z
+                    err = rzerr[zi][si] * self.sigma_z
+                    z_value += err
+                    mock_zerrs[source_count] = err
                 elif self.sigma_z_over_1plusz is not None:
-                    z_value += (
-                        rzerr[ii][jj] * self.sigma_z_over_1plusz * (1+z_value)
-                    )
-                    mock_zerrs[source_count] = (
-                        rzerr[ii][jj] * self.sigma_z_over_1plusz * (1+z_value)
-                    )
+                    err = rzerr[zi][si] * self.sigma_z_over_1plusz * (1+z_value)
+                    z_value += err
+                    mock_zerrs[source_count] = err
                 else:
                     mock_zerrs[source_count] = 0
-                # Populate local arrays
+
+                # Populate local arrays of source redshift, RA, dec,
+                # adding random angular offsets from pixel centers
                 mock_zs[source_count] = z_value
-                mock_ra[source_count] = RAbase + ang_size * rtheta[ii][jj]
-                mock_dec[source_count] = decbase + ang_size * rphi[ii][jj]
+                mock_ra[source_count] = RAbase + ang_size * rtheta[zi][si]
+                mock_dec[source_count] = decbase + ang_size * rphi[zi][si]
+
                 source_count += 1
 
-        # Arrays to hold the whole source set information
+        # Define arrays to hold full source catalog
         mock_zs_full = np.empty(self.nsources, dtype=mock_zs.dtype)
         mock_zerrs_full = np.empty(self.nsources, dtype=mock_zs.dtype)
         mock_ra_full = np.empty(self.nsources, dtype=mock_ra.dtype)
         mock_dec_full = np.empty(self.nsources, dtype=mock_dec.dtype)
 
-        # The counts and displacement arguments of Allgatherv are tuples!
         # Tuple (not list!) of number of sources in each rank
+        # Note: the counts and displacement arguments of Allgatherv are tuples!
         nsource_tuple = tuple(self.comm_.allgather(nsource_rank))
         # Tuple (not list!) of displacements of each rank array in full array
         dspls = tuple(np.insert(arr=np.cumsum(nsource_tuple)[:-1], obj=0, values=0.0))
@@ -732,6 +762,8 @@ class MockCatGenerator(task.SingleTask):
         mock_catalog = containers.SpectroscopicCatalog(
             object_id=np.arange(self.nsources, dtype=np.uint64)
         )
+
+        # Create position and redshift datasets
         mock_catalog["position"][:] = np.empty(
             self.nsources, dtype=[("ra", mock_ra.dtype), ("dec", mock_dec.dtype)]
         )
@@ -742,44 +774,18 @@ class MockCatGenerator(task.SingleTask):
         mock_catalog["position"]["ra"][:] = mock_ra_full
         mock_catalog["position"]["dec"][:] = mock_dec_full
         mock_catalog["redshift"]["z"][:] = mock_zs_full
-        # There is a provision for z-error
         mock_catalog["redshift"]["z_error"][:] = mock_zerrs_full
 
+        # If we've created the requested number of mocks, prepare to exit
         if self._count == self.ncats - 1:
             self.done = True
 
         return mock_catalog
 
     def process_finish(self):
-        """
+        """Do nothing when last mock has been created.
         """
         return None
-
-    @property
-    def pdf(self):
-        return self._pdf
-
-    @pdf.setter
-    def pdf(self, pdf):
-        """
-        Setter for pdf
-        Also set the attributes:
-            self._npix : Number of pixels in PDF maps
-            self._nside : NSIDE of PDF maps
-
-        """
-        if isinstance(pdf, containers.Map):
-            self._pdf = pdf
-            self._npix = len(self._pdf.index_map["pixel"])
-            self._nside = hp.pixelfunc.npix2nside(self._npix)
-        else:
-            msg = (
-                "pdf is not an instance of "
-                + "draco.core.containers.Map\n"
-                + "Value for _pdf not set."
-            )
-            print(msg)
-
 
 
 class MapPixLocGenerator(task.SingleTask):
@@ -880,8 +886,21 @@ class MapPixLocGenerator(task.SingleTask):
 # Internal functions
 # ------------------
 
-
 def _zlims_to_freq(z, zlims):
+    """Convert redshift bins to frequency.
+
+    Parameters
+    ----------
+    z : np.array
+        Redshift bin centers.
+    zlims : np.array
+        Redshift bin edges.
+
+    Returns
+    -------
+    freqs : np.ndarray
+        Array of tuples of frequency bin centers and widths.
+    """
     freqcentre = units.nu21 / (z + 1)
     freqlims = units.nu21 / (zlims + 1)
     freqwidth = abs(freqlims[:-1] - freqlims[1:])
@@ -892,6 +911,18 @@ def _zlims_to_freq(z, zlims):
 
 
 def _freq_to_z(freq):
+    """Convert frequency bins to redshift.
+
+    Parameters
+    ----------
+    freq : np.array
+        Array of tuples of frequency bin centers and widths.
+
+    Returns
+    -------
+    freq : np.ndarray
+        Array of tuples of z bin centers and widths
+    """
     fc = freq["centre"]
     fw = freq["width"]
     z = units.nu21 / fc - 1.0
@@ -910,12 +941,40 @@ def _freq_to_z(freq):
 
 
 def _pix_to_radec(index, nside):
-    theta, phi = hp.pixelfunc.pix2ang(nside, index)
+    """Convert healpix pixel indices to (dec, RA).
+
+    Parameters
+    ----------
+    index : np.array
+        Array of healpix pixel indices.
+    nside : int
+        Healpix nside corresponding to pixel indices.
+
+    Returns
+    -------
+    dec, RA : np.ndarray
+        Output dec and ra coordinates, in degrees.
+    """
+    theta, phi = hp.pix2ang(nside, index)
     return -np.degrees(theta - np.pi / 2.0), np.degrees(phi)
 
 
 def _radec_to_pix(ra, dec, nside):
-    return hp.pixelfunc.ang2pix(nside, np.radians(-dec + 90.0), np.radians(ra))
+    """Convert (RA, dec) to nearest healpix pixels.
+
+    Parameters
+    ----------
+    ra, dec : np.array
+        Input RA and dec coordinates, in degrees.
+    nside : int
+        Healpix nside corresponding to input coordinates.
+
+    Returns
+    -------
+    index : np.array
+        Array of healpix pixel indices.
+    """
+    return hp.ang2pix(nside, np.radians(-dec + 90.0), np.radians(ra))
 
 def _cat_to_maps(cat, nside, zlims_selfunc):
     """Grid a catalog of sky and z positions onto healpix maps.
