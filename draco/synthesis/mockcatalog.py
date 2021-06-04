@@ -199,7 +199,16 @@ class ResizeSelFuncMap(task.SingleTask):
     """Take a selection function map and simulated source
     (biased density) map and return a selection function map with the
     same resolution and frequency sampling as the source map.
+
+    Attributes
+    ----------
+    smooth_selfunc : bool
+        Smooth the resized selection funcion on the scale of the original
+        pixel area. This helps to erase the imprint of the original pixelization
+        on the resized map, particularly at the edges of the selection function.
     """
+
+    smooth_selfunc = config.Property(proptype=bool, default=False)
 
     def process(self, selfunc, source_map):
         """Resize selection function map.
@@ -266,6 +275,17 @@ class ResizeSelFuncMap(task.SingleTask):
         for fi in range(selfunc_map_newz.local_shape[0]):
             new_selfunc_map_local[:][fi, 0] = hp.ud_grade(selfunc_map_newz[fi], nside)
             new_selfunc_map_local[:][fi, 0][new_selfunc_map_local[:][fi, 0][:] < 0] = 0
+
+            # If desired, convolve the resized selection function with a
+            # Gaussian with FWHM equal to the sqrt of the original pixel area.
+            # This smoothes out the edges of the map, which will otherwise retain
+            # the shape of the original pixelization.
+            if self.smooth_selfunc:
+                old_nside = hp.npix2nside(len(selfunc.index_map["pixel"]))
+                smoothing_fwhm = hp.nside2resol(old_nside)
+                new_selfunc_map_local[:][fi, 0] = hp.smoothing(
+                    new_selfunc_map_local[:][fi, 0], fwhm=smoothing_fwhm, verbose=False
+                )
 
         return new_selfunc
 
