@@ -291,7 +291,7 @@ class ResizeSelFuncMap(task.SingleTask):
         selfunc_map_newz = selfunc_map_newz.redistribute(axis=0)
 
         # Determine desired output healpix Nside parameter
-        nside = hp.npix2nside(len(new_selfunc.index_map["pixel"]))
+        nside = new_selfunc.nside
 
         # Get local section of container for output selection function
         new_selfunc_map_local = new_selfunc.map[:]
@@ -308,7 +308,7 @@ class ResizeSelFuncMap(task.SingleTask):
             # This smoothes out the edges of the map, which will otherwise retain
             # the shape of the original pixelization.
             if self.smooth_selfunc:
-                old_nside = hp.npix2nside(len(selfunc.index_map["pixel"]))
+                old_nside = selfunc.nside
                 smoothing_fwhm = hp.nside2resol(old_nside)
                 new_selfunc_map_local[:][fi, 0] = hp.smoothing(
                     new_selfunc_map_local[:][fi, 0], fwhm=smoothing_fwhm, verbose=False
@@ -371,9 +371,8 @@ class PdfGeneratorBase(task.SingleTask):
         )
 
         # Make container for PDF
-        nside = hp.npix2nside(len(source_map.index_map["pixel"]))
         pdf_map = containers.Map(
-            nside=nside, polarisation=False, freq=source_map.index_map["freq"]
+            nside=source_map.nside, polarisation=False, freq=source_map.index_map["freq"]
         )
 
         # Put computed PDF into local section of container
@@ -602,7 +601,7 @@ class MockCatGenerator(task.SingleTask):
 
         # Get PDF map container and corresponding healpix Nside
         self.pdf = pdf_map
-        self.nside = hp.npix2nside(len(self.pdf.index_map["pixel"]))
+        self.nside = self.pdf.nside
 
         # Get MPI communicator and rank
         self.comm_ = self.pdf.comm
@@ -858,7 +857,7 @@ class MapPixLocGenerator(task.SingleTask):
 
         # Get desired N_pix and Nside
         self.npix = len(self.map_.index_map["pixel"])
-        self.nside = hp.npix2nside(self.npix)
+        self.nside = self.map_.nside
 
         # Get redshift to assign to all "sources"
         self.z_arr = _freq_to_z(self.map_.index_map["freq"])
