@@ -115,6 +115,7 @@ from mpi4py import MPI
 # Pipeline tasks
 # --------------
 
+
 class SelFuncEstimator(task.SingleTask):
     """Takes a source catalog as input and returns an estimate of the
     selection function based on a low rank SVD reconstruction.
@@ -190,7 +191,7 @@ class SelFuncEstimator(task.SingleTask):
         )
 
         # Initialize selection function to zero
-        selfunc["map"][:] = 0 #np.zeros(selfunc["map"].local_shape)
+        selfunc["map"][:] = 0  # np.zeros(selfunc["map"].local_shape)
 
         # Create maps from original catalog (on each MPI rank separately)
         maps = _cat_to_maps(cat, self.nside, zlims_selfunc)
@@ -219,7 +220,6 @@ class SelFuncEstimator(task.SingleTask):
         selfunc["map"][np.where(selfunc.map[:] < 0.0)] = 0.0
 
         return selfunc
-
 
 
 class ResizeSelFuncMap(task.SingleTask):
@@ -263,9 +263,7 @@ class ResizeSelFuncMap(task.SingleTask):
 
         # Make container for resized selection function map
         new_selfunc = containers.Map(
-            polarisation=False,
-            axes_from=source_map,
-            attrs_from=source_map
+            polarisation=False, axes_from=source_map, attrs_from=source_map
         )
 
         # Form matrix to interpolate frequency/z axis
@@ -273,9 +271,7 @@ class ResizeSelFuncMap(task.SingleTask):
             z_selfunc["centre"], z_source["centre"]
         )
         # Correct for redshift bin widths:
-        interp_m *= (
-            z_source["width"][:, np.newaxis] / z_selfunc["width"][np.newaxis, :]
-        )
+        interp_m *= z_source["width"][:, np.newaxis] / z_selfunc["width"][np.newaxis, :]
 
         # Redistribute selfunc along pixel axis, so we can resize
         # the frequency axis
@@ -351,9 +347,7 @@ class PdfGeneratorBase(task.SingleTask):
         rho = mpiarray.MPIArray.wrap(source_map.map[:, 0, :] + 1.0, axis=0)
 
         # Normalize density to have unit mean in each z-bin:
-        rho = mpiarray.MPIArray.wrap(
-            rho / np.mean(rho, axis=1)[:, np.newaxis], axis=0
-        )
+        rho = mpiarray.MPIArray.wrap(rho / np.mean(rho, axis=1)[:, np.newaxis], axis=0)
 
         if selfunc is not None:
             # Get local section of selection function
@@ -372,7 +366,9 @@ class PdfGeneratorBase(task.SingleTask):
 
         # Make container for PDF
         pdf_map = containers.Map(
-            nside=source_map.nside, polarisation=False, freq=source_map.index_map["freq"]
+            nside=source_map.nside,
+            polarisation=False,
+            freq=source_map.index_map["freq"],
         )
 
         # Put computed PDF into local section of container
@@ -381,16 +377,12 @@ class PdfGeneratorBase(task.SingleTask):
 
         return pdf_map
 
-
     def process(self):
-        raise NotImplementedError(
-            f"{self.__class__} must define a process method."
-        )
+        raise NotImplementedError(f"{self.__class__} must define a process method.")
 
 
 class PdfGeneratorUncorrelated(PdfGeneratorBase):
-    """Generate uniform PDF for making uncorrelated mocks.
-    """
+    """Generate uniform PDF for making uncorrelated mocks."""
 
     def process(self, source_map):
         """Make PDF map with uniform z weights and delta_g=0.
@@ -416,9 +408,7 @@ class PdfGeneratorUncorrelated(PdfGeneratorBase):
         gs = source_map.map.global_shape[0]
 
         # Set each frequency channel to have equal total probability
-        z_weights = mpiarray.MPIArray.wrap(
-            1 / gs * np.ones(ls), axis=0
-        )
+        z_weights = mpiarray.MPIArray.wrap(1 / gs * np.ones(ls), axis=0)
 
         # Create PDF map
         pdf_map = self.make_pdf_map(source_map, z_weights)
@@ -427,8 +417,7 @@ class PdfGeneratorUncorrelated(PdfGeneratorBase):
 
 
 class PdfGeneratorWithSelfunc(PdfGeneratorBase):
-    """Generate PDF that incorporates a selection function.
-    """
+    """Generate PDF that incorporates a selection function."""
 
     def process(self, source_map, selfunc):
         """Make PDF map that incorporates the selection function.
@@ -510,9 +499,7 @@ class PdfGeneratorNoSelfunc(PdfGeneratorBase):
 
         if not self.use_voxel_volumes:
             # Set each frequency channel to have equal total probability
-            z_weights = mpiarray.MPIArray.wrap(
-                1 / gs * np.ones(ls), axis=0
-            )
+            z_weights = mpiarray.MPIArray.wrap(1 / gs * np.ones(ls), axis=0)
 
         else:
             # Set total probability for each frequency channel based
@@ -534,20 +521,14 @@ class PdfGeneratorNoSelfunc(PdfGeneratorBase):
                 z_max = units.nu21 / (freq[0] - 0.5 * freq[1]) - 1
                 z_mean = units.nu21 / freq[0] - 1
 
-                z_weights_global[fi] = (
-                    cosmo.comoving_distance(z_mean)**2
-                    * (
-                        cosmo.comoving_distance(z_max)
-                        - cosmo.comoving_distance(z_min)
-                    )
+                z_weights_global[fi] = cosmo.comoving_distance(z_mean) ** 2 * (
+                    cosmo.comoving_distance(z_max) - cosmo.comoving_distance(z_min)
                 )
 
             z_weights_global /= z_weights_global.sum()
 
             # Select local section of weights
-            z_weights = mpiarray.MPIArray.wrap(
-                z_weights_global[lo : lo + ls], axis=0
-            )
+            z_weights = mpiarray.MPIArray.wrap(z_weights_global[lo : lo + ls], axis=0)
 
         # Create PDF map
         pdf_map = self.make_pdf_map(source_map, z_weights)
@@ -653,7 +634,6 @@ class MockCatGenerator(task.SingleTask):
         # Normalize CDF by final entry
         self.cdf = self.cdf / self.cdf[:, -1][:, np.newaxis]
 
-
     def process(self):
         """Make a mock catalog based on input PDF.
 
@@ -679,7 +659,12 @@ class MockCatGenerator(task.SingleTask):
         # source_numbers has shape (self.ls)
         source_numbers = np.zeros(self.ls, dtype=np.int)
         self.comm_.Scatterv(
-            [global_source_numbers, tuple(self.ls_list), tuple(self.lo_list), MPI.DOUBLE],
+            [
+                global_source_numbers,
+                tuple(self.ls_list),
+                tuple(self.lo_list),
+                MPI.DOUBLE,
+            ],
             source_numbers,
         )
 
@@ -750,7 +735,7 @@ class MockCatGenerator(task.SingleTask):
                     z_value += err
                     mock_zerrs[source_count] = err
                 elif self.sigma_z_over_1plusz is not None:
-                    err = rzerr[zi][si] * self.sigma_z_over_1plusz * (1+z_value)
+                    err = rzerr[zi][si] * self.sigma_z_over_1plusz * (1 + z_value)
                     z_value += err
                     mock_zerrs[source_count] = err
                 else:
@@ -820,8 +805,7 @@ class MockCatGenerator(task.SingleTask):
         return mock_catalog
 
     def process_finish(self):
-        """Do nothing when last mock has been created.
-        """
+        """Do nothing when last mock has been created."""
         return None
 
 
@@ -844,8 +828,7 @@ class MapPixLocGenerator(task.SingleTask):
     freq_idx = config.Property(proptype=int)
 
     def setup(self, in_map):
-        """Pre-load information from input map.
-        """
+        """Pre-load information from input map."""
         self.map_ = in_map
 
         # Get MPI communicator and rank
@@ -862,7 +845,6 @@ class MapPixLocGenerator(task.SingleTask):
         # Get redshift to assign to all "sources"
         self.z_arr = _freq_to_z(self.map_.index_map["freq"])
         self.z = self.z_arr[self.freq_idx]["centre"]
-
 
     def process(self):
         """Make a catalog of pixel positions.
@@ -913,8 +895,8 @@ class MapPixLocGenerator(task.SingleTask):
         # Assign data to catalog container
         mock_catalog["position"]["ra"][:] = ra_full
         mock_catalog["position"]["dec"][:] = dec_full
-        mock_catalog["redshift"]["z"][:] = (
-            self.z * np.ones(self.npix, dtype=pix_ra.dtype)
+        mock_catalog["redshift"]["z"][:] = self.z * np.ones(
+            self.npix, dtype=pix_ra.dtype
         )
         mock_catalog["redshift"]["z_error"][:] = 0.0
 
@@ -922,13 +904,13 @@ class MapPixLocGenerator(task.SingleTask):
         return mock_catalog
 
     def process_finish(self):
-        """Do nothing when catalog has been created.
-        """
+        """Do nothing when catalog has been created."""
         return None
 
 
 # Internal functions
 # ------------------
+
 
 def _zlims_to_freq(z, zlims):
     """Convert redshift bins to frequency.
@@ -1020,6 +1002,7 @@ def _radec_to_pix(ra, dec, nside):
     """
     return hp.ang2pix(nside, np.radians(-dec + 90.0), np.radians(ra))
 
+
 def _cat_to_maps(cat, nside, zlims_selfunc):
     """Grid a catalog of sky and z positions onto healpix maps.
 
@@ -1047,13 +1030,9 @@ def _cat_to_maps(cat, nside, zlims_selfunc):
     # Create maps from original catalog (on each MPI rank separately)
     maps = np.zeros((n_z, n_pix))
     # Compute indices of each source along z axis
-    idxs = (
-        np.digitize(cat["redshift"]["z"], zlims_selfunc) - 1
-    )  # -1 to get indices
+    idxs = np.digitize(cat["redshift"]["z"], zlims_selfunc) - 1  # -1 to get indices
     # Map pixel of each source
-    pixels = _radec_to_pix(
-        cat["position"]["ra"], cat["position"]["dec"], nside
-    )
+    pixels = _radec_to_pix(cat["position"]["ra"], cat["position"]["dec"], nside)
 
     for zi in range(n_z):
         # Get map pixels containing sources in redshift bin zi
