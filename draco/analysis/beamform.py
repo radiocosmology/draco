@@ -365,7 +365,13 @@ class BeamFormBase(task.SingleTask):
 
             # Populate container.
             fbb[src] = formed_beam_full
-            fbw[src] = weight_full
+
+            # Scale the weights by a factor of 2 to account for the fact that we
+            # have taken the real-component of the fringestopped visibility, which
+            # has a variance that is 1/2 the variance of the complex visibility
+            # that was encoded in our original weight dataset.
+            fbw[src] = 2.0 * weight_full
+
             if not self.collapse_ha:
                 if self.is_sstream:
                     formed_beam.ha[src, :] = ha_array

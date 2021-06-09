@@ -5,6 +5,7 @@ data; and pre-map making flagging on m-modes.
 """
 
 import numpy as np
+import scipy.signal
 from scipy.ndimage import median_filter
 
 from caput import config, weighted_median, mpiarray
@@ -276,6 +277,152 @@ class MaskBaselines(task.SingleTask):
             ssc.vis[:] *= mask
 
         return ssc
+
+
+class FindBeamformedOutliers(task.SingleTask):
+    """Identify beamformed visibilities that deviate from our expectation for noise.
+
+    Attributes
+    ----------
+    nsigma : float
+        Beamformed visibilities whose magnitude is greater than nsigma times
+        the expected standard deviation of the noise, given by sqrt(1 / weight),
+        will be masked.
+    window : list of int
+        If provided, the outlier mask will be extended to cover neighboring pixels.
+        This list provides the number of pixels in each dimension that a single
+        outlier will mask.  Only supported for RingMap containers, where the list
+        should be length 2 with [nra, nel], and FormedBeamHA containers, where the list
+        should be length 1 with [nha,].
+    """
+
+    nsigma = config.Property(proptype=float, default=3.0)
+    window = config.Property(proptype=list, default=None)
+
+    def process(self, data):
+        """Create a mask that indicates outlier beamformed visibilities.
+
+        Parameters
+        ----------
+        data : FormedBeam, FormedBeamHA, or RingMap
+            Beamformed visibilities.
+
+        Returns
+        -------
+        out : FormedBeamMask, FormedBeamHAMask, or RingMapMask
+            Container with a boolean mask where True indicates
+            outlier beamformed visibilities.
+        """
+
+        class_dict = {
+            containers.FormedBeam: ("beam", containers.FormedBeamMask),
+            containers.FormedBeamHA: ("beam", containers.FormedBeamHAMask),
+            containers.RingMap: ("map", containers.RingMapMask),
+        }
+
+        dataset, out_cont = class_dict[data.__class__]
+
+        # Redistribute data over frequency
+        data.redistribute("freq")
+
+        # Make sure the weight dataset has the same
+        # number of dimensions as the visibility dataset.
+        axes1 = data[dataset].attrs["axis"]
+        axes2 = data.weight.attrs["axis"]
+
+        bcast_slice = tuple(slice(None) if ax in axes2 else np.newaxis for ax in axes1)
+        axes_collapse = tuple(ii for ii, ax in enumerate(axes1) if ax not in axes2)
+
+        # Calculate the expected standard deviation based on weights dataset
+        inv_sigma = np.sqrt(data.weight[:][bcast_slice].view(np.ndarray))
+
+        # Standardize the beamformed visibilities
+        ratio = np.abs(data[dataset][:].view(np.ndarray) * inv_sigma)
+
+        # Mask outliers
+        mask = ratio > self.nsigma
+
+        if axes_collapse:
+            mask = np.any(mask, axis=axes_collapse)
+
+        # Apply a smoothing operation
+        if self.window is not None:
+            ndim_smooth = len(self.window)
+            ndim_iter = mask.ndim - ndim_smooth
+            shp = mask.shape[0:ndim_iter]
+
+            msg = ", ".join(
+                [
+                    f"{axes2[ndim_iter + ww]} [{win}]"
+                    for ww, win in enumerate(self.window)
+                ]
+            )
+            self.log.info(f"Extending mask along: axis [num extended] = {msg}")
+
+            kernel = np.ones(tuple(self.window), dtype=np.float32)
+            th = 0.5 / kernel.size
+
+            # Loop over the dimensions that are not being convolved
+            # to prevent memory errors due to intermediate products
+            # created by scipy's convolve.
+            mask_extended = np.zeros_like(mask)
+            for ind in np.ndindex(*shp):
+                mask_extended[ind] = (
+                    scipy.signal.convolve(
+                        mask[ind].astype(np.float32),
+                        kernel,
+                        mode="same",
+                        method="auto",
+                    )
+                    > th
+                )
+
+            mask = mask_extended
+
+        # Save the mask to a separate container
+        out = out_cont(
+            axes_from=data,
+            attrs_from=data,
+            distributed=data.distributed,
+            comm=data.comm,
+        )
+        out.redistribute("freq")
+        out.mask[:] = mask
+
+        return out
+
+
+class MaskBeamformedOutliers(task.SingleTask):
+    """Mask beamformed visibilities that deviate from our expectation for noise.
+
+    This is operating under the assumption that, after proper foreground filtering,
+    the beamformed visibilities should be consistent with noise.
+    """
+
+    def process(self, data, mask):
+        """Mask outlier beamformed visibilities.
+
+        Parameters
+        ----------
+        data : FormedBeam, FormedBeamHA, or RingMap
+            Beamformed visibilities.
+
+        mask : FormedBeamMask, FormedBeamHAMask, or RingMapMask
+            Container with a boolean mask where True indicates
+            a beamformed visibility that should be ignored.
+
+        Returns
+        -------
+        data : FormedBeam or RingMap
+            The input container with the weight dataset set to zero
+            for samples that were identified as outliers.
+        """
+
+        flag = ~mask.mask[:].view(np.ndarray)
+
+        data.weight[:] *= flag.astype(np.float32)
+
+        return data
 
 
 class RadiometerWeight(task.SingleTask):
