@@ -17,18 +17,6 @@ Pipeline tasks
     MockCatGenerator
     MapPixLocGenerator
 
-Internal functions
-==================
-
-.. autosummary::
-    :toctree:
-
-    _zlims_to_freq
-    _freq_to_z
-    _z_to_freq
-    _pix_to_radec
-    _radec_to_pix
-
 Usage
 =====
 
