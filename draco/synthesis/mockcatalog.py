@@ -75,8 +75,8 @@ Below is an example workflow:
 ...            requires: pdf_map
 ...            out: mock_cat
 ...            params:
-...                nsources: 100000
-...                ncats: 1
+...                nsource: 100000
+...                ncat: 1
 ...                save: True
 ...                output_root: mock_
 ...
@@ -523,9 +523,9 @@ class MockCatalogGenerator(task.SingleTask):
 
     Attributes
     ----------
-    nsources : int
+    nsource : int
         Number of sources to draw in each mock catalog.
-    ncats : int
+    ncat : int
         Number of catalogs to generate.
     sigma_z : float, optional
         Standard deviation of Gaussian redshift errors (default: None)
@@ -543,8 +543,8 @@ class MockCatalogGenerator(task.SingleTask):
         Default: False.
     """
 
-    nsources = config.Property(proptype=int)
-    ncats = config.Property(proptype=int)
+    nsource = config.Property(proptype=int)
+    ncat = config.Property(proptype=int)
 
     sigma_z = config.Property(proptype=float, default=None)
     sigma_z_over_1plusz = config.Property(proptype=float, default=None)
@@ -629,7 +629,7 @@ class MockCatalogGenerator(task.SingleTask):
             # The number of sources in each redshift bin follows a multinomial
             # distribution (reshape from (1,nz) to (nz) to make a 1D array):
             global_source_numbers = np.random.multinomial(
-                self.nsources, self.global_z_weights
+                self.nsource, self.global_z_weights
             )
         else:
             # All processes must have a value for source_numbers:
@@ -734,10 +734,10 @@ class MockCatalogGenerator(task.SingleTask):
                 source_count += 1
 
         # Define arrays to hold full source catalog
-        mock_zs_full = np.empty(self.nsources, dtype=mock_zs.dtype)
-        mock_zerrs_full = np.empty(self.nsources, dtype=mock_zs.dtype)
-        mock_ra_full = np.empty(self.nsources, dtype=mock_ra.dtype)
-        mock_dec_full = np.empty(self.nsources, dtype=mock_dec.dtype)
+        mock_zs_full = np.empty(self.nsource, dtype=mock_zs.dtype)
+        mock_zerrs_full = np.empty(self.nsource, dtype=mock_zs.dtype)
+        mock_ra_full = np.empty(self.nsource, dtype=mock_ra.dtype)
+        mock_dec_full = np.empty(self.nsource, dtype=mock_dec.dtype)
 
         # Tuple (not list!) of number of sources in each rank
         # Note: the counts and displacement arguments of Allgatherv are tuples!
@@ -763,15 +763,15 @@ class MockCatalogGenerator(task.SingleTask):
 
         # Create catalog container
         mock_catalog = containers.SpectroscopicCatalog(
-            object_id=np.arange(self.nsources, dtype=np.uint64)
+            object_id=np.arange(self.nsource, dtype=np.uint64)
         )
 
         # Create position and redshift datasets
         mock_catalog["position"][:] = np.empty(
-            self.nsources, dtype=[("ra", mock_ra.dtype), ("dec", mock_dec.dtype)]
+            self.nsource, dtype=[("ra", mock_ra.dtype), ("dec", mock_dec.dtype)]
         )
         mock_catalog["redshift"][:] = np.empty(
-            self.nsources, dtype=[("z", mock_zs.dtype), ("z_error", mock_zs.dtype)]
+            self.nsource, dtype=[("z", mock_zs.dtype), ("z_error", mock_zs.dtype)]
         )
         # Assign data to catalog container
         mock_catalog["position"]["ra"][:] = mock_ra_full
@@ -780,7 +780,7 @@ class MockCatalogGenerator(task.SingleTask):
         mock_catalog["redshift"]["z_error"][:] = mock_zerrs_full
 
         # If we've created the requested number of mocks, prepare to exit
-        if self._count == self.ncats - 1:
+        if self._count == self.ncat - 1:
             self.done = True
 
         return mock_catalog
