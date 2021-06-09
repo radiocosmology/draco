@@ -527,12 +527,6 @@ class MockCatalogGenerator(task.SingleTask):
         Number of sources to draw in each mock catalog.
     ncat : int
         Number of catalogs to generate.
-    sigma_z : float, optional
-        Standard deviation of Gaussian redshift errors (default: None)
-    sigma_z_over_1plusz : float, optional
-        Standard deviation of Gaussian redshift errors will be set to
-        this parameter times (1+z). Only one of this and `sigma_z` can
-        be specified. Default: None
     z_at_channel_centers : bool, optional
         Place each source at a redshift corresponding to the center of
         its frequency channel (True), or randomly distribute each source's
@@ -545,9 +539,6 @@ class MockCatalogGenerator(task.SingleTask):
 
     nsource = config.Property(proptype=int)
     ncat = config.Property(proptype=int)
-
-    sigma_z = config.Property(proptype=float, default=None)
-    sigma_z_over_1plusz = config.Property(proptype=float, default=None)
 
     z_at_channel_centers = config.Property(proptype=bool, default=False)
     srcs_at_pixel_centers = config.Property(proptype=bool, default=False)
@@ -568,12 +559,6 @@ class MockCatalogGenerator(task.SingleTask):
         # Get MPI communicator and rank
         self.comm_ = self.pdf.comm
         self.rank = self.comm_.Get_rank()
-
-        # Check that only one z error parameter has been specified
-        if (self.sigma_z is not None) and (self.sigma_z_over_1plusz is not None):
-            raise config.CaputConfigError(
-                "Only one of sigma_z and sigma_z_over_1plusz can be specified!"
-            )
 
         # Get local shapes and offsets of frequency axis
         self.lo = self.pdf.map[:, 0, :].local_offset[0]
@@ -666,11 +651,6 @@ class MockCatalogGenerator(task.SingleTask):
         if not self.z_at_channel_centers:
             rz = [np.random.uniform(size=num) - 0.5 for num in source_numbers]
 
-        # If desired, generate random numbers for z errors, as standard normals
-        # to be multiplied by appropriate standard deviation later
-        if (self.sigma_z is not None) or (self.sigma_z_over_1plusz is not None):
-            rzerr = [np.random.normal(size=num) for num in source_numbers]
-
         # If desired, generate random numbers to randomize position of sources
         # in each healpix pixel. These are uniform random numbers in [-0.5, 0.5],
         # which will determine the source's relative displacement from the bin's
@@ -691,7 +671,6 @@ class MockCatalogGenerator(task.SingleTask):
 
         # Arrays to hold information on sources in local frequency section
         mock_zs = np.empty(nsource_rank, dtype=np.float64)
-        mock_zerrs = np.empty(nsource_rank, dtype=np.float64)
         mock_ra = np.empty(nsource_rank, dtype=np.float64)
         mock_dec = np.empty(nsource_rank, dtype=np.float64)
 
@@ -710,18 +689,6 @@ class MockCatalogGenerator(task.SingleTask):
                 if not self.z_at_channel_centers:
                     z_value += z_global["width"][global_z_index] * rz[zi][si]
 
-                # If desired, add Gaussian z error
-                if self.sigma_z is not None:
-                    err = rzerr[zi][si] * self.sigma_z
-                    z_value += err
-                    mock_zerrs[source_count] = err
-                elif self.sigma_z_over_1plusz is not None:
-                    err = rzerr[zi][si] * self.sigma_z_over_1plusz * (1 + z_value)
-                    z_value += err
-                    mock_zerrs[source_count] = err
-                else:
-                    mock_zerrs[source_count] = 0
-
                 # Populate local arrays of source redshift, RA, dec,
                 # adding random angular offsets from pixel centers if desired
                 mock_zs[source_count] = z_value
@@ -735,7 +702,6 @@ class MockCatalogGenerator(task.SingleTask):
 
         # Define arrays to hold full source catalog
         mock_zs_full = np.empty(self.nsource, dtype=mock_zs.dtype)
-        mock_zerrs_full = np.empty(self.nsource, dtype=mock_zs.dtype)
         mock_ra_full = np.empty(self.nsource, dtype=mock_ra.dtype)
         mock_dec_full = np.empty(self.nsource, dtype=mock_dec.dtype)
 
@@ -747,10 +713,6 @@ class MockCatalogGenerator(task.SingleTask):
         # Gather redshifts
         recvbuf = [mock_zs_full, nsource_tuple, dspls, MPI.DOUBLE]
         sendbuf = [mock_zs, len(mock_zs)]
-        self.comm_.Allgatherv(sendbuf, recvbuf)
-        # Gather redshift errors
-        recvbuf = [mock_zerrs_full, nsource_tuple, dspls, MPI.DOUBLE]
-        sendbuf = [mock_zerrs, len(mock_zs)]
         self.comm_.Allgatherv(sendbuf, recvbuf)
         # Gather theta
         recvbuf = [mock_ra_full, nsource_tuple, dspls, MPI.DOUBLE]
@@ -777,13 +739,79 @@ class MockCatalogGenerator(task.SingleTask):
         mock_catalog["position"]["ra"][:] = mock_ra_full
         mock_catalog["position"]["dec"][:] = mock_dec_full
         mock_catalog["redshift"]["z"][:] = mock_zs_full
-        mock_catalog["redshift"]["z_error"][:] = mock_zerrs_full
+        mock_catalog["redshift"]["z_error"][:] = 0
 
         # If we've created the requested number of mocks, prepare to exit
         if self._count == self.ncat - 1:
             self.done = True
 
         return mock_catalog
+
+
+class AddZErrorsToCatalog(task.SingleTask):
+    """Add random redshift errors to redshifts in a catalog.
+
+    Currently, only Gaussian errors are implemented, determined either
+    by sigma_z or sigma_z / (1+z).
+
+    TODO: allow for user-specified PDF.
+
+    Attributes
+    ----------
+    sigma : float
+        Standard deviation corresponding to choice in `sigma_type`.
+    sigma_type : string
+        Interpretation of `sigma`:
+            'sigma_z' - Standard deviation of Gaussian for z errors.
+            'sigma_z_over_1plusz' - Standard deviation divided by (1+z).
+    seed : int, optional
+        Random seed for redshift errors. Default: 0.
+    """
+
+    sigma = config.Property(proptype=float)
+    sigma_type = config.enum(["sigma_z", "sigma_z_over_1plusz"])
+    seed = config.Property(proptype=int, default=0)
+
+    def setup(self):
+        """Initialize the random number generator.
+        """
+        from numpy.random import default_rng
+
+        self.rng = default_rng(seed=self.seed)
+
+
+    def process(self, cat):
+        """Generate random redshift errors and add to redshifts in catalog.
+
+        Parameters
+        ----------
+        cat : :class:`containers.SpectroscopicCatalog`
+            Input catalog.
+
+        Returns
+        ----------
+        cat_out : :class:`containers.SpectroscopicCatalog`
+            Catalog with redshift errors added.
+        """
+
+        # Get redshifts from catalog
+        cat_z = cat["redshift"]["z"][:]
+        cat_z_err = cat["redshift"]["z_error"][:]
+
+        # Generate standard normal z errors
+        z_err = self.rng.normal(size=cat_z.shape[0])
+        # Multiply by appropriate sigma
+        z_err *= (
+            self.sigma * np.ones_like(cat_z) if self.sigma_type == "sigma_z" else
+            self.sigma * (1 + cat_z)
+        )
+
+        # Add errors to catalog redshifts
+        cat_z += z_err
+        # Add errors in quadrature with existing stored errors
+        cat_z_err = (z_err**2 + cat_z_err**2)**0.5
+
+        return cat
 
 
 class MapPixelLocationGenerator(task.SingleTask):
