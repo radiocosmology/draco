@@ -4,7 +4,7 @@ This includes grouping frequencies and products to performing the m-mode transfo
 """
 import numpy as np
 from numpy.lib.recfunctions import structured_to_unstructured
-from caput import mpiarray, config, mpiutil
+from caput import mpiarray, config
 
 from ..core import containers, task, io
 from ..util import tools
@@ -962,7 +962,7 @@ class TransformJanskyToKelvin(task.SingleTask):
 
         # Normalise omega by the squared magnitude of the beam at the reference position
         beam_ref = np.sum(np.abs(beam_ref) ** 2)
-        omega /= beam_ref
+        omega *= tools.invert_no_zero(beam_ref)
 
         return omega
 
@@ -1025,12 +1025,9 @@ class TransformJanskyToKelvin(task.SingleTask):
                 om_ij[fi, bi] = (om_i * om_j) ** 0.5
 
         # Calculate the Jy to K conversion
-        wavelength = c.c / (local_freq * 10 ** 6)
-        Jy_to_K = (
-            wavelength[:, np.newaxis, np.newaxis] ** 2
-            / (2 * c.k * om_ij[:, :, np.newaxis])
-            * 10 ** (-26)
-        )
+        wavelength = (c.c / (local_freq * 10 ** 6))[:, np.newaxis, np.newaxis]
+        K_to_Jy = 2 * 1e26 * c.k * om_ij[:, :, np.newaxis] / wavelength ** 2
+        Jy_to_K = tools.invert_no_zero(K_to_Jy)
 
         # Get the container we will apply the conversion to (either the input, or a
         # copy)
@@ -1042,9 +1039,9 @@ class TransformJanskyToKelvin(task.SingleTask):
         # Apply the conversion to the data and the weights
         if self.convert_Jy_to_K:
             new_stream.vis[:] *= Jy_to_K
-            new_stream.weight[:] /= Jy_to_K ** 2
+            new_stream.weight[:] *= K_to_Jy ** 2
         else:
-            new_stream.vis[:] /= Jy_to_K
+            new_stream.vis[:] *= K_to_Jy
             new_stream.weight[:] *= Jy_to_K ** 2
 
         return new_stream
