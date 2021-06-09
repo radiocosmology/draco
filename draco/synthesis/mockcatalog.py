@@ -425,9 +425,6 @@ class PdfGeneratorWithSelectionFunction(PdfGeneratorBase):
             Output PDF map.
         """
 
-        # Get MPI comm
-        comm_ = source_map.comm
-
         # Get local section of selection function
         selfunc_local = selfunc.map[:, 0, :]
 
@@ -556,15 +553,14 @@ class MockCatalogGenerator(task.SingleTask):
         self.pdf = pdf_map
         self.nside = self.pdf.nside
 
-        # Get MPI communicator and rank
-        self.comm_ = self.pdf.comm
-        self.rank = self.comm_.Get_rank()
+        # Get MPI rank
+        self.rank = self.comm.Get_rank()
 
         # Get local shapes and offsets of frequency axis
         self.lo = self.pdf.map[:, 0, :].local_offset[0]
         self.ls = self.pdf.map[:, 0, :].local_shape[0]
-        self.lo_list = self.comm_.allgather(self.lo)
-        self.ls_list = self.comm_.allgather(self.ls)
+        self.lo_list = self.comm.allgather(self.lo)
+        self.ls_list = self.comm.allgather(self.ls)
 
         # Global shape of frequency axis
         n_z = self.pdf.map[:, 0, :].global_shape[0]
@@ -583,7 +579,7 @@ class MockCatalogGenerator(task.SingleTask):
 
         # Gather z_weights on rank 0 (necessary to draw a redshift
         # distribution of sources):
-        self.comm_.Gatherv(
+        self.comm.Gatherv(
             z_weights,
             [
                 self.global_z_weights,
@@ -624,7 +620,7 @@ class MockCatalogGenerator(task.SingleTask):
         # Need to pass tuples. For some reason lists don't work.
         # source_numbers has shape (self.ls)
         source_numbers = np.zeros(self.ls, dtype=np.int)
-        self.comm_.Scatterv(
+        self.comm.Scatterv(
             [
                 global_source_numbers,
                 tuple(self.ls_list),
@@ -707,21 +703,21 @@ class MockCatalogGenerator(task.SingleTask):
 
         # Tuple (not list!) of number of sources in each rank
         # Note: the counts and displacement arguments of Allgatherv are tuples!
-        nsource_tuple = tuple(self.comm_.allgather(nsource_rank))
+        nsource_tuple = tuple(self.comm.allgather(nsource_rank))
         # Tuple (not list!) of displacements of each rank array in full array
         dspls = tuple(np.insert(arr=np.cumsum(nsource_tuple)[:-1], obj=0, values=0.0))
         # Gather redshifts
         recvbuf = [mock_zs_full, nsource_tuple, dspls, MPI.DOUBLE]
         sendbuf = [mock_zs, len(mock_zs)]
-        self.comm_.Allgatherv(sendbuf, recvbuf)
+        self.comm.Allgatherv(sendbuf, recvbuf)
         # Gather theta
         recvbuf = [mock_ra_full, nsource_tuple, dspls, MPI.DOUBLE]
         sendbuf = [mock_ra, len(mock_ra)]
-        self.comm_.Allgatherv(sendbuf, recvbuf)
+        self.comm.Allgatherv(sendbuf, recvbuf)
         # Gather phi
         recvbuf = [mock_dec_full, nsource_tuple, dspls, MPI.DOUBLE]
         sendbuf = [mock_dec, len(mock_dec)]
-        self.comm_.Allgatherv(sendbuf, recvbuf)
+        self.comm.Allgatherv(sendbuf, recvbuf)
 
         # Create catalog container
         mock_catalog = containers.SpectroscopicCatalog(
@@ -836,9 +832,8 @@ class MapPixelLocationGenerator(task.SingleTask):
         """Pre-load information from input map."""
         self.map_ = in_map
 
-        # Get MPI communicator and rank
-        self.comm_ = self.map_.comm
-        self.rank = self.comm_.Get_rank()
+        # Get MPI rank
+        self.rank = self.comm.Get_rank()
 
         # Global shape of frequency axis
         n_z = self.map_.map[:, 0, :].global_shape[0]
@@ -873,17 +868,17 @@ class MapPixelLocationGenerator(task.SingleTask):
 
         # Tuple (not list!) of number of pixels in each rank
         # The counts and displacement arguments of Allgatherv are tuples!
-        npix_tuple = tuple(self.comm_.allgather(npix_rank))
+        npix_tuple = tuple(self.comm.allgather(npix_rank))
         # Tuple (not list!) of displacements of each rank array in full array
         dspls = tuple(np.insert(arr=np.cumsum(npix_tuple)[:-1], obj=0, values=0.0))
         # Gather theta
         recvbuf = [ra_full, npix_tuple, dspls, MPI.DOUBLE]
         sendbuf = [pix_ra, len(pix_ra)]
-        self.comm_.Allgatherv(sendbuf, recvbuf)
+        self.comm.Allgatherv(sendbuf, recvbuf)
         # Gather phi
         recvbuf = [dec_full, npix_tuple, dspls, MPI.DOUBLE]
         sendbuf = [pix_dec, len(pix_dec)]
-        self.comm_.Allgatherv(sendbuf, recvbuf)
+        self.comm.Allgatherv(sendbuf, recvbuf)
 
         # Create catalog container
         mock_catalog = containers.SpectroscopicCatalog(
