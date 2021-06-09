@@ -630,31 +630,6 @@ class MockCatalogGenerator(task.SingleTask):
             source_numbers,
         )
 
-        # For each z bin in local section, draw a uniform random number in [0,1]
-        # for each source. This will determine which angular pixel the source
-        # is assigned to.
-        # Shape of rnbs: [self.ls=local # of z-bins][# of sources in each z-bin]
-        rnbs = [np.random.uniform(size=num) for num in source_numbers]
-
-        # For each source, determine index of pixel the source falls into.
-        # Shape: [self.ls=local # of z-bins][# of sources in each z-bin]
-        idxs = [np.digitize(rnbs[ii], self.cdf[ii]) for ii in range(len(rnbs))]
-
-        # If desired, generate random numbers to randomize position of sources
-        # in each z bin. These are uniform random numbers in [-0.5, 0.5], which
-        # will determine the source's relative displacement from the bin's
-        # mean redshift.
-        if not self.z_at_channel_centers:
-            rz = [np.random.uniform(size=num) - 0.5 for num in source_numbers]
-
-        # If desired, generate random numbers to randomize position of sources
-        # in each healpix pixel. These are uniform random numbers in [-0.5, 0.5],
-        # which will determine the source's relative displacement from the bin's
-        # central RA and dec.
-        if not self.srcs_at_pixel_centers:
-            rtheta = [np.random.uniform(size=num) - 0.5 for num in source_numbers]
-            rphi = [np.random.uniform(size=num) - 0.5 for num in source_numbers]
-
         # Compute the square root of the angular pixel area,
         # as a gross approximation of the pixel size.
         ang_size = np.rad2deg(hp.nside2resol(self.nside))
@@ -662,39 +637,62 @@ class MockCatalogGenerator(task.SingleTask):
         # Redshifts corresponding to frequencies at bin centers
         z_global = _freq_to_z(self.pdf.index_map["freq"][:])
 
-        # Number of sources in each rank
-        nsource_rank = np.sum([len(idxs[ii]) for ii in range(len(idxs))])
-
-        # Arrays to hold information on sources in local frequency section
+        # Get total number of sources on this rank, and make arrays to hold
+        # information for all sources
+        nsource_rank = source_numbers.sum()
         mock_zs = np.empty(nsource_rank, dtype=np.float64)
         mock_ra = np.empty(nsource_rank, dtype=np.float64)
         mock_dec = np.empty(nsource_rank, dtype=np.float64)
 
-        # Loop over sources on this rank
-        source_count = 0
-        for zi in range(len(idxs)):  # For each local redshift bin
-            for si in range(len(idxs[zi])):  # For each source in z-bin zi
+        # Loop over local redshift bins
+        source_offset = 0
+        for zi, nsource_bin in enumerate(source_numbers):
+            # Draw a uniform random number in [0,1] for each source.
+            # This will determine which angular pixel the source is assigned to.
+            rnbs = np.random.uniform(size=nsource_bin)
 
-                # Get dec, RA of center of pixel containing source
-                decbase, RAbase = _pix_to_radec(idxs[zi][si], self.nside)
-                # Get global index of z bin containing source, and central z
-                global_z_index = zi + self.lo
-                z_value = z_global["centre"][global_z_index]
+            # For each source, determine index of pixel the source falls into
+            pix_idxs = np.digitize(rnbs, self.cdf[zi])
 
-                # If desired, add random offset within z bin
-                if not self.z_at_channel_centers:
-                    z_value += z_global["width"][global_z_index] * rz[zi][si]
+            # If desired, generate random numbers to randomize position of sources
+            # within z bin. These are uniform random numbers in [-0.5, 0.5], which
+            # will determine the source's relative displacement from the bin's
+            # mean redshift.
+            if not self.z_at_channel_centers:
+                rz = np.random.uniform(size=nsource_bin) - 0.5
 
-                # Populate local arrays of source redshift, RA, dec,
-                # adding random angular offsets from pixel centers if desired
-                mock_zs[source_count] = z_value
-                mock_ra[source_count] = RAbase
-                mock_dec[source_count] = decbase
-                if not self.srcs_at_pixel_centers:
-                    mock_ra[source_count] += ang_size * rtheta[zi][si]
-                    mock_dec[source_count] += ang_size * rphi[zi][si]
+            # If desired, generate random numbers to randomize position of sources
+            # in each healpix pixel. These are uniform random numbers in [-0.5, 0.5],
+            # which will determine the source's relative displacement from the pixel's
+            # central RA and dec.
+            if not self.srcs_at_pixel_centers:
+                rtheta = np.random.uniform(size=nsource_bin) - 0.5
+                rphi = np.random.uniform(size=nsource_bin) - 0.5
 
-                source_count += 1
+            # Get global index of z bin, and make array of z values of sources,
+            # set to central z of bin
+            global_z_index = zi + self.lo
+            z_value = z_global["centre"][global_z_index] * np.ones(nsource_bin)
+
+            # Get dec, RA of center of pixel containing each source
+            decbase, RAbase = _pix_to_radec(pix_idxs, self.nside)
+            # If desired, add random angular offsets from pixel centers
+            if not self.srcs_at_pixel_centers:
+                decbase += ang_size * rtheta
+                RAbase += ang_size * rphi
+
+            # If desired, add random offset within z bin to z of each source
+            if not self.z_at_channel_centers:
+                z_value += z_global["width"][global_z_index] * rz
+
+            # Populate local arrays of source redshift, RA, dec
+            mock_zs[source_offset : source_offset + nsource_bin] = z_value
+            mock_ra[source_offset : source_offset + nsource_bin] = RAbase
+            mock_dec[source_offset : source_offset + nsource_bin] = decbase
+
+            # Increment source_offset to start of next block of sources
+            # in mock_... arrays
+            source_offset += nsource_bin
 
         # Define arrays to hold full source catalog
         mock_zs_full = np.empty(self.nsource, dtype=mock_zs.dtype)
@@ -711,12 +709,12 @@ class MockCatalogGenerator(task.SingleTask):
         sendbuf = [mock_zs, len(mock_zs)]
         self.comm.Allgatherv(sendbuf, recvbuf)
         # Gather theta
-        recvbuf = [mock_ra_full, nsource_tuple, dspls, MPI.DOUBLE]
-        sendbuf = [mock_ra, len(mock_ra)]
-        self.comm.Allgatherv(sendbuf, recvbuf)
-        # Gather phi
         recvbuf = [mock_dec_full, nsource_tuple, dspls, MPI.DOUBLE]
         sendbuf = [mock_dec, len(mock_dec)]
+        self.comm.Allgatherv(sendbuf, recvbuf)
+        # Gather phi
+        recvbuf = [mock_ra_full, nsource_tuple, dspls, MPI.DOUBLE]
+        sendbuf = [mock_ra, len(mock_ra)]
         self.comm.Allgatherv(sendbuf, recvbuf)
 
         # Create catalog container
