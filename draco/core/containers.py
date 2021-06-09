@@ -1011,15 +1011,13 @@ class Map(FreqContainer, HealpixContainer):
 
         super().__init__(*args, **kwargs)
 
-        self.attrs["nside"] = int(np.sqrt(len(self.index_map["pixel"]) / 12))
-
     @property
     def map(self):
         return self.datasets["map"]
 
     @property
     def nside(self):
-        return self.attrs["nside"]
+        return int((len(self.index_map["pixel"]) //  12) ** 0.5)
 
 
 class SiderealStream(

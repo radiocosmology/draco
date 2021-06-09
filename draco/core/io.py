@@ -258,12 +258,6 @@ class LoadMaps(task.MPILoggedTask):
         # Assign a tag to the stack of maps
         map_stack.attrs["tag"] = group["tag"]
 
-        # Add Nside attribute if none exists
-        if "nside" not in map_stack.attrs.keys():
-            from healpy import npix2nside
-
-            map_stack.attrs["nside"] = npix2nside(len(map_stack.index_map["pixel"]))
-
         return map_stack
 
 
