@@ -1017,7 +1017,7 @@ class Map(FreqContainer, HealpixContainer):
 
     @property
     def nside(self):
-        return int((len(self.index_map["pixel"]) //  12) ** 0.5)
+        return int((len(self.index_map["pixel"]) // 12) ** 0.5)
 
 
 class SiderealStream(

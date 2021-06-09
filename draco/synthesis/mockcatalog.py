@@ -775,10 +775,8 @@ class AddZErrorsToCatalog(task.SingleTask):
     seed = config.Property(proptype=int, default=0)
 
     def setup(self):
-        """Initialize the random number generator.
-        """
+        """Initialize the random number generator."""
         self.rng = default_rng(seed=self.seed)
-
 
     def process(self, cat):
         """Generate random redshift errors and add to redshifts in catalog.
@@ -802,14 +800,15 @@ class AddZErrorsToCatalog(task.SingleTask):
         z_err = self.rng.normal(size=cat_z.shape[0])
         # Multiply by appropriate sigma
         z_err *= (
-            self.sigma * np.ones_like(cat_z) if self.sigma_type == "sigma_z" else
-            self.sigma * (1 + cat_z)
+            self.sigma * np.ones_like(cat_z)
+            if self.sigma_type == "sigma_z"
+            else self.sigma * (1 + cat_z)
         )
 
         # Add errors to catalog redshifts
         cat_z += z_err
         # Add errors in quadrature with existing stored errors
-        cat_z_err = (z_err**2 + cat_z_err**2)**0.5
+        cat_z_err = (z_err ** 2 + cat_z_err ** 2) ** 0.5
 
         return cat
 
