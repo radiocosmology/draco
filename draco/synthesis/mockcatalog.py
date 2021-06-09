@@ -792,10 +792,6 @@ class MockCatalogGenerator(task.SingleTask):
 
         return mock_catalog
 
-    def process_finish(self):
-        """Do nothing when last mock has been created."""
-        return None
-
 
 class MapPixelLocationGenerator(task.SingleTask):
     """Generate a 'catalog' of Healpix pixel centers.
@@ -890,10 +886,6 @@ class MapPixelLocationGenerator(task.SingleTask):
 
         self.done = True
         return mock_catalog
-
-    def process_finish(self):
-        """Do nothing when catalog has been created."""
-        return None
 
 
 # Internal functions
