@@ -433,16 +433,9 @@ class PdfGeneratorWithSelectionFunction(PdfGeneratorBase):
 
         # Generate weights for distribution of sources in redshift:
         # first, sum over selfunc pixel values at each z (z_weights),
-        # then sum these over all z per rank (z_weights_local_sum)
-        # and combine into sum across all ranks (z_weights_sum).
-        # TODO: there must be a cleaner way to get z_weights_sum
-        # that uses built-in MPIArray functionality...
-        z_weights = np.sum(selfunc_local, axis=1)
-        z_weights_local_sum = mpiarray.MPIArray.wrap(
-            np.array([np.sum(z_weights, axis=0)]), axis=0
-        )
-        z_weights_sum = np.zeros_like(z_weights_local_sum)
-        comm_.Allreduce(z_weights_local_sum, z_weights_sum)
+        # then sum these over all z (z_weights_sum).
+        z_weights = selfunc_local.sum(axis=1)
+        z_weights_sum = self.comm.allreduce(z_weights.sum())
 
         # Normalize z_weights by grand total
         z_weights = mpiarray.MPIArray.wrap(z_weights / z_weights_sum, axis=0)
