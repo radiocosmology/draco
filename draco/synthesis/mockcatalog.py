@@ -90,6 +90,7 @@ from future.builtins.disabled import *  # noqa  pylint: disable=W0401, W0614
 # === End Python 2/3 compatibility
 
 import numpy as np
+from numpy.random import default_rng
 import healpy as hp
 
 from cora.signal import corr21cm
@@ -532,6 +533,8 @@ class MockCatalogGenerator(task.SingleTask):
         Place each source precisely at Healpix pixel center (True), or
         randomly distribute each source within pixel (False).
         Default: False.
+    seed : int, optional
+        Seed for random number generator. Default: 0.
     """
 
     nsource = config.Property(proptype=int)
@@ -539,6 +542,8 @@ class MockCatalogGenerator(task.SingleTask):
 
     z_at_channel_centers = config.Property(proptype=bool, default=False)
     srcs_at_pixel_centers = config.Property(proptype=bool, default=False)
+
+    seed = config.Property(proptype=int, default=0)
 
     def setup(self, pdf_map):
         """Pre-load information from PDF.
@@ -548,6 +553,9 @@ class MockCatalogGenerator(task.SingleTask):
         pdf_map : :class:`containers.Map`
             PDF from which to draw positions of sources.
         """
+
+        # Initialize random number generator
+        self.rng = default_rng(seed=self.seed)
 
         # Get PDF map container and corresponding healpix Nside
         self.pdf = pdf_map
@@ -609,7 +617,7 @@ class MockCatalogGenerator(task.SingleTask):
             # Only rank zero is relevant.
             # The number of sources in each redshift bin follows a multinomial
             # distribution (reshape from (1,nz) to (nz) to make a 1D array):
-            global_source_numbers = np.random.multinomial(
+            global_source_numbers = self.rng.multinomial(
                 self.nsource, self.global_z_weights
             )
         else:
@@ -649,7 +657,7 @@ class MockCatalogGenerator(task.SingleTask):
         for zi, nsource_bin in enumerate(source_numbers):
             # Draw a uniform random number in [0,1] for each source.
             # This will determine which angular pixel the source is assigned to.
-            rnbs = np.random.uniform(size=nsource_bin)
+            rnbs = self.rng.uniform(size=nsource_bin)
 
             # For each source, determine index of pixel the source falls into
             pix_idxs = np.digitize(rnbs, self.cdf[zi])
@@ -659,15 +667,15 @@ class MockCatalogGenerator(task.SingleTask):
             # will determine the source's relative displacement from the bin's
             # mean redshift.
             if not self.z_at_channel_centers:
-                rz = np.random.uniform(size=nsource_bin) - 0.5
+                rz = self.rng.uniform(size=nsource_bin) - 0.5
 
             # If desired, generate random numbers to randomize position of sources
             # in each healpix pixel. These are uniform random numbers in [-0.5, 0.5],
             # which will determine the source's relative displacement from the pixel's
             # central RA and dec.
             if not self.srcs_at_pixel_centers:
-                rtheta = np.random.uniform(size=nsource_bin) - 0.5
-                rphi = np.random.uniform(size=nsource_bin) - 0.5
+                rtheta = self.rng.uniform(size=nsource_bin) - 0.5
+                rphi = self.rng.uniform(size=nsource_bin) - 0.5
 
             # Get global index of z bin, and make array of z values of sources,
             # set to central z of bin
@@ -769,8 +777,6 @@ class AddZErrorsToCatalog(task.SingleTask):
     def setup(self):
         """Initialize the random number generator.
         """
-        from numpy.random import default_rng
-
         self.rng = default_rng(seed=self.seed)
 
 
