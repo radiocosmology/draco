@@ -8,29 +8,29 @@ Pipeline tasks
 .. autosummary::
     :toctree:
 
-    SelFuncEstimator
-    ResizeSelFuncMap
+    SelectionFunctionEstimator
+    ResizeSelectionFunctionMap
     PdfGeneratorBase
     PdfGeneratorUncorrelated
-    PdfGeneratorNoSelfunc
-    PdfGeneratorWithSelfunc
-    MockCatGenerator
-    MapPixLocGenerator
+    PdfGeneratorNoSelectionFunction
+    PdfGeneratorWithSelectionFunction
+    MockCatalogGenerator
+    MapPixelLocationGenerator
 
 Usage
 =====
 
 Generally you would want to use these tasks together. A catalog is fed to
-:class:`SelFuncEstimator`, which generates a selection function map from a
+:class:`SelectionFunctionEstimator`, which generates a selection function map from a
 low-rank SVD approximation to the positions in the catalog.
-:class:`ResizeSelFuncMap` resizes this to match the resolution of a simulated
+:class:`ResizeSelectionFunctionMap` resizes this to match the resolution of a simulated
 map of galaxy overdensity delta_g. The resized selection function and delta_g
-map are then fed to PdfGeneratorWithSelfunc, which makes a PDF map from which
-simulated sources are drawn in :class:`MockCatGenerator`. The PDF can also
+map are then fed to :class:`PdfGeneratorWithSelectionFunction`, which makes a PDF map
+from which simulated sources are drawn in :class:`MockCatalogGenerator`. The PDF can also
 be generated without a selection function, or assuming a uniform distribution
 of sources.
 
-:class:`MapPixLocGenerator` is a specialized task that creates a catalog whose
+:class:`MapPixelLocationGenerator` is a specialized task that creates a catalog whose
 "sources" are located at Healpix pixel centers for a given angular resolution.
 
 Below is an example workflow:
@@ -44,7 +44,7 @@ Below is an example workflow:
 ...               files:
 ...                   - "/path/to/data/catalog.h5"
 ...
-...         - type:   draco.synthesis.mockcatalog.SelFuncEstimator
+...         - type:   draco.synthesis.mockcatalog.SelectionFunctionEstimator
 ...           in: cat_for_selfunc
 ...           out: selfunc
 ...           params:
@@ -57,21 +57,21 @@ Below is an example workflow:
 ...                   files:
 ...                       - "/path/to/delta_g/map.h5"
 ...
-...          - type: draco.synthesis.mockcatalog.ResizeSelFuncMap
+...          - type: draco.synthesis.mockcatalog.ResizeSelectionFunctionMap
 ...            in: [selfunc, source_map]
 ...            out: resized_selfunc
 ...            params:
-...                smooth_selfunc: True
+...                smooth: True
 ...                save: True
 ...                output_name: /path/to/saved/resized_selfunc.h5
 ...
-...          - type: draco.synthesis.mockcatalog.PdfGeneratorWithSelfunc
+...          - type: draco.synthesis.mockcatalog.PdfGeneratorWithSelectionFunction
 ...            in: [source_map, resized_selfunc]
 ...            out: pdf_map
 ...            params:
 ...                save: False
 ...
-...          - type: draco.synthesis.mockcatalog.MockCatGenerator
+...          - type: draco.synthesis.mockcatalog.MockCatalogGenerator
 ...            requires: pdf_map
 ...            out: mock_cat
 ...            params:
@@ -104,7 +104,7 @@ from mpi4py import MPI
 # --------------
 
 
-class SelFuncEstimator(task.SingleTask):
+class SelectionFunctionEstimator(task.SingleTask):
     """Takes a source catalog as input and returns an estimate of the
     selection function based on a low rank SVD reconstruction.
 
@@ -210,20 +210,20 @@ class SelFuncEstimator(task.SingleTask):
         return selfunc
 
 
-class ResizeSelFuncMap(task.SingleTask):
+class ResizeSelectionFunctionMap(task.SingleTask):
     """Take a selection function map and simulated source
     (biased density) map and return a selection function map with the
     same resolution and frequency sampling as the source map.
 
     Attributes
     ----------
-    smooth_selfunc : bool
-        Smooth the resized selection funcion on the scale of the original
+    smooth : bool
+        Smooth the resized selection function on the scale of the original
         pixel area. This helps to erase the imprint of the original pixelization
         on the resized map, particularly at the edges of the selection function.
     """
 
-    smooth_selfunc = config.Property(proptype=bool, default=False)
+    smooth = config.Property(proptype=bool, default=False)
 
     def process(self, selfunc, source_map):
         """Resize selection function map.
@@ -291,7 +291,7 @@ class ResizeSelFuncMap(task.SingleTask):
             # Gaussian with FWHM equal to the sqrt of the original pixel area.
             # This smoothes out the edges of the map, which will otherwise retain
             # the shape of the original pixelization.
-            if self.smooth_selfunc:
+            if self.smooth:
                 old_nside = selfunc.nside
                 smoothing_fwhm = hp.nside2resol(old_nside)
                 new_selfunc_map_local[:][fi, 0] = hp.smoothing(
@@ -307,7 +307,7 @@ class PdfGeneratorBase(task.SingleTask):
     Take a source catalog selection function and simulated source
     (biased density) map and return a PDF map constructed from the
     product of the two, appropriately normalized. This PDF map can be used
-    by the task :class:`MockCatGenerator` to draw mock catalogs.
+    by the task :class:`MockCatalogGenerator` to draw mock catalogs.
 
     Derived classes must implement process().
     """
@@ -404,7 +404,7 @@ class PdfGeneratorUncorrelated(PdfGeneratorBase):
         return pdf_map
 
 
-class PdfGeneratorWithSelfunc(PdfGeneratorBase):
+class PdfGeneratorWithSelectionFunction(PdfGeneratorBase):
     """Generate PDF that incorporates a selection function."""
 
     def process(self, source_map, selfunc):
@@ -417,7 +417,7 @@ class PdfGeneratorWithSelfunc(PdfGeneratorBase):
             of output PDF map.
         selfunc : :class:`containers.Map`
             Selection function map. Must have same z and angular resolution
-            as source_map. Typically taken from `ResizeSelFuncMap`.
+            as source_map. Typically taken from `ResizeSelectionFunctionMap`.
 
         Returns
         -------
@@ -453,7 +453,7 @@ class PdfGeneratorWithSelfunc(PdfGeneratorBase):
         return pdf_map
 
 
-class PdfGeneratorNoSelfunc(PdfGeneratorBase):
+class PdfGeneratorNoSelectionFunction(PdfGeneratorBase):
     """Generate PDF that assumes a trivial selection function.
 
     Attributes
@@ -524,7 +524,7 @@ class PdfGeneratorNoSelfunc(PdfGeneratorBase):
         return pdf_map
 
 
-class MockCatGenerator(task.SingleTask):
+class MockCatalogGenerator(task.SingleTask):
     """Take PDF maps generated by task :class:`PdfGenerator`
     and use it to draw mock catalogs.
 
@@ -797,7 +797,7 @@ class MockCatGenerator(task.SingleTask):
         return None
 
 
-class MapPixLocGenerator(task.SingleTask):
+class MapPixelLocationGenerator(task.SingleTask):
     """Generate a 'catalog' of Healpix pixel centers.
 
     This is useful if you want to stack on each Healpix pixel for
