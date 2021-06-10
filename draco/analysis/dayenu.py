@@ -11,7 +11,7 @@ import scipy.interpolate
 from caput import config, memh5
 from cora.util import units
 
-from ..core import task, io
+from ..core import task, io, containers
 from ..util import tools
 
 
