@@ -23,16 +23,19 @@ class SourceStack(task.SingleTask):
     Attributes
     ----------
     freqside : int
-        Number of frequency bins to keep on each side of quasar
-        when stacking.
+        Number of frequency bins to keep on each side of source bin
+        when stacking. Default: 50.
+    single_source_bin_index : int, optional
+        Only stack on sources in frequency bin with this index.
+        Useful for isolating stacking signal from a narrow frequency range.
+        Default: None.
     """
 
-    # Number of frequencies to keep on each side of quasar RA
-    # Pick only frequencies around the quasar (50 on each side)
+    # Number of frequencies to keep on each side of source RA
     freqside = config.Property(proptype=int, default=50)
 
     # Only consider sources within frequency channel with this index
-    restricted_source_chan_idx = config.Property(proptype=int, default=None)
+    single_source_bin_index = config.Property(proptype=int, default=None)
 
     def process(self, formed_beam):
         """Receives a formed beam object and stack across sources.
@@ -44,7 +47,7 @@ class SourceStack(task.SingleTask):
 
         Returns
         -------
-        qstack : `containers.FrequencyStack` object
+        stack : `containers.FrequencyStack` object
             The stack of sources.
         """
         # Get communicator
@@ -53,7 +56,7 @@ class SourceStack(task.SingleTask):
         # Ensure formed_beam is distributed in sources
         formed_beam.redistribute("object_id")
 
-        # local shape and offset
+        # Local shape and offset
         loff = formed_beam.beam.local_offset[0]
         lshape = formed_beam.beam.local_shape[0]
 
@@ -65,12 +68,12 @@ class SourceStack(task.SingleTask):
         pol = formed_beam.pol
         npol = len(pol)
 
-        # Frequency of quasars
-        qso_freq = NU21 / (formed_beam["redshift"]["z"] + 1.0)  # MHz.
-        # Size of quasar stack array
+        # Frequency of sources
+        source_freq = NU21 / (formed_beam["redshift"]["z"] + 1.0)  # MHz.
+        # Size of source stack array
         self.nstack = 2 * self.freqside + 1
 
-        # Construct frequency offset axis (for qstack container)
+        # Construct frequency offset axis (for stack container)
         self.stack_axis = np.copy(
             formed_beam.frequency[
                 int(nfreq / 2) - self.freqside : int(nfreq / 2) + self.freqside + 1
@@ -80,10 +83,10 @@ class SourceStack(task.SingleTask):
             self.stack_axis["centre"] - self.stack_axis["centre"][self.freqside]
         )
 
-        # Get f_mask and qs_indices
-        freqdiff = freq[np.newaxis, :] - qso_freq[:, np.newaxis]
+        # Get f_mask and source_indices
+        freqdiff = freq[np.newaxis, :] - source_freq[:, np.newaxis]
 
-        # Stack axis bin edges to digitize each quasar at, in either increasing
+        # Stack axis bin edges to digitize each source at, in either increasing
         # or decreasing order depending on order of frequencies
         if self.stack_axis["centre"][0] > self.stack_axis["centre"][-1]:
             stackbins = self.stack_axis["centre"] + 0.5 * self.stack_axis["width"]
@@ -107,47 +110,49 @@ class SourceStack(task.SingleTask):
         # This works because the frequency axis is not distributed between
         # ranks.
         if self.single_source_bin_index is not None:
-            fs = formed_beam.index_map['freq'][self.single_source_bin_index]
-            restricted_chan_mask = np.abs(source_freq - fs['centre']) < (0.5 * fs['width'])
+            fs = formed_beam.index_map["freq"][self.single_source_bin_index]
+            restricted_chan_mask = np.abs(source_freq - fs["centre"]) < (
+                0.5 * fs["width"]
+            )
             source_mask *= restricted_chan_mask
 
         # Reduce mask and indices to this process range
         # to reduce striding through this data
-        qso_mask = qso_mask[loff : loff + lshape]
-        qs_indices = qs_indices[loff : loff + lshape]
+        source_mask = source_mask[loff : loff + lshape]
+        source_indices = source_indices[loff : loff + lshape]
         f_mask = f_mask[loff : loff + lshape]
 
         # Container to hold the stack
         if npol > 1:
-            qstack = containers.FrequencyStackByPol(
+            stack = containers.FrequencyStackByPol(
                 freq=self.stack_axis, pol=pol, attrs_from=formed_beam
             )
         else:
-            qstack = containers.FrequencyStack(
+            stack = containers.FrequencyStack(
                 freq=self.stack_axis, attrs_from=formed_beam
             )
 
         # Loop over polarisations
         for pp, pstr in enumerate(pol):
 
-            # Quasar stack array.
-            quasar_stack = np.zeros(self.nstack, dtype=np.float)
-            quasar_weight = np.zeros(self.nstack, dtype=np.float)
+            # Source stack array.
+            source_stack = np.zeros(self.nstack, dtype=np.float)
+            source_weight = np.zeros(self.nstack, dtype=np.float)
 
-            qcount = 0  # Quasar counter
-            # For each quasar in the range of this process
+            count = 0  # Source counter
+            # For each source in the range of this process
             for lq, gq in formed_beam.beam[:].enumerate(axis=0):
-                if not qso_mask[lq]:
-                    # Quasar not in the data redshift range
+                if not source_mask[lq]:
+                    # Source not in the data redshift range
                     continue
 
-                qcount += 1
+                count += 1
                 # Indices and slice for frequencies included in the stack.
                 f_indices = np.arange(nfreq, dtype=np.int32)[f_mask[lq]]
                 f_slice = np.s_[f_indices[0] : f_indices[-1] + 1]
 
-                quasar_stack += np.bincount(
-                    qs_indices[lq][f_slice],
+                source_stack += np.bincount(
+                    source_indices[lq][f_slice],
                     weights=(
                         formed_beam.beam[gq, pp][f_slice]
                         * formed_beam.weight[gq, pp][f_slice]
@@ -155,44 +160,42 @@ class SourceStack(task.SingleTask):
                     minlength=self.nstack,
                 )
 
-                quasar_weight += np.bincount(
-                    qs_indices[lq][f_slice],
+                source_weight += np.bincount(
+                    source_indices[lq][f_slice],
                     weights=formed_beam.weight[gq, pp][f_slice],
                     minlength=self.nstack,
                 )
 
-            # Gather quasar stack for all ranks. Each contains the sum
-            # over a different subset of quasars.
+            # Gather source stack for all ranks. Each contains the sum
+            # over a different subset of sources.
 
-            quasar_stack_full = np.zeros(
-                comm.size * self.nstack, dtype=quasar_stack.dtype
+            source_stack_full = np.zeros(
+                comm.size * self.nstack, dtype=source_stack.dtype
             )
-            quasar_weight_full = np.zeros(
-                comm.size * self.nstack, dtype=quasar_weight.dtype
+            source_weight_full = np.zeros(
+                comm.size * self.nstack, dtype=source_weight.dtype
             )
             # Gather all ranks
-            comm.Allgather(quasar_stack, quasar_stack_full)
-            comm.Allgather(quasar_weight, quasar_weight_full)
+            comm.Allgather(source_stack, source_stack_full)
+            comm.Allgather(source_weight, source_weight_full)
 
             # Determine the index for the output container
             oslc = (pp, slice(None)) if npol > 1 else slice(None)
 
             # Sum across ranks
-            qstack.weight[oslc] = np.sum(
-                quasar_weight_full.reshape(comm.size, self.nstack), axis=0
+            stack.weight[oslc] = np.sum(
+                source_weight_full.reshape(comm.size, self.nstack), axis=0
             )
-            qstack.stack[oslc] = np.sum(
-                quasar_stack_full.reshape(comm.size, self.nstack), axis=0
-            ) * invert_no_zero(qstack.weight[oslc])
+            stack.stack[oslc] = np.sum(
+                source_stack_full.reshape(comm.size, self.nstack), axis=0
+            ) * invert_no_zero(stack.weight[oslc])
 
-            # Gather all ranks of qcount. Report number of quasars stacked
-            full_qcount = comm.reduce(qcount, op=MPI.SUM, root=0)
+            # Gather all ranks of count. Report number of sources stacked
+            full_count = comm.reduce(count, op=MPI.SUM, root=0)
             if comm.rank == 0:
-                self.log.info(
-                    f"Number of quasars stacked for pol {pstr}: {full_qcount}"
-                )
+                self.log.info(f"Number of sources stacked for pol {pstr}: {full_count}")
 
-        return qstack
+        return stack
 
 
 class RandomSubset(task.SingleTask, RandomTask):
