@@ -1018,6 +1018,10 @@ class Map(FreqContainer, HealpixContainer):
     def map(self):
         return self.datasets["map"]
 
+    @property
+    def nside(self):
+        return int((len(self.index_map["pixel"]) // 12) ** 0.5)
+
 
 class SiderealStream(
     FreqContainer, VisContainer, SiderealContainer, SampleVarianceContainer
