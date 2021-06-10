@@ -17,6 +17,7 @@ Containers
 - :py:class:`HybridVisStream`
 - :py:class:`HybridVisMModes`
 - :py:class:`RingMap`
+- :py:class:`RingMapMask`
 - :py:class:`CommonModeGainData`
 - :py:class:`CommonModeSiderealGainData`
 - :py:class:`GainData`
@@ -31,6 +32,8 @@ Containers
 - :py:class:`SpectroscopicCatalog`
 - :py:class:`FormedBeam`
 - :py:class:`FormedBeamHA`
+- :py:class:`FormedBeamMask`
+- :py:class:`FormedBeamHAMask`
 
 Container Base Classes
 ----------------------
@@ -1819,6 +1822,26 @@ class RingMap(FreqContainer, SiderealContainer):
         return self.datasets["dirty_beam"]
 
 
+class RingMapMask(FreqContainer, SiderealContainer):
+    """Mask bad ringmap pixels."""
+
+    _axes = ("pol", "el")
+
+    _dataset_spec = {
+        "mask": {
+            "axes": ["pol", "freq", "ra", "el"],
+            "dtype": np.bool,
+            "initialise": True,
+            "distributed": True,
+            "distributed_axis": "freq",
+        }
+    }
+
+    @property
+    def mask(self):
+        return self.datasets["mask"]
+
+
 class CommonModeGainData(FreqContainer, TODContainer):
     """Parallel container for holding gain data common to all inputs."""
 
@@ -2308,6 +2331,42 @@ class FormedBeamHA(FormedBeam):
     @property
     def ha(self):
         return self.datasets["object_ha"]
+
+
+class FormedBeamMask(FreqContainer):
+    """Mask bad formed beams."""
+
+    _axes = ("object_id", "pol")
+
+    _dataset_spec = {
+        "mask": {
+            "axes": ["object_id", "pol", "freq"],
+            "dtype": np.bool,
+            "initialise": True,
+            "distributed": True,
+            "distributed_axis": "freq",
+        }
+    }
+
+    @property
+    def mask(self):
+        return self.datasets["mask"]
+
+
+class FormedBeamHAMask(FormedBeamMask):
+    """Mask bad formed beams as a function of hour angle."""
+
+    _axes = ("ha",)
+
+    _dataset_spec = {
+        "mask": {
+            "axes": ["object_id", "pol", "freq", "ha"],
+            "dtype": np.bool,
+            "initialise": True,
+            "distributed": True,
+            "distributed_axis": "freq",
+        }
+    }
 
 
 def empty_like(obj, **kwargs):
