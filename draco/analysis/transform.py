@@ -617,6 +617,20 @@ class MModeInverseTransform(task.SingleTask):
         return sstream
 
 
+class SiderealMModeResample(task.group_tasks(MModeTransform, MModeInverseTransform)):
+    """Resample a sidereal stream by FFT.
+
+    This performs a forward and inverse m-mode transform to resample a sidereal stream.
+
+    Attributes
+    ----------
+    nra
+        The number of RA bins for the output stream.
+    """
+
+    nra = config.Property(proptype=int, default=None)
+
+
 def _make_ssarray(mmodes, n=None):
     # Construct an array of sidereal time streams from m-modes
     marray = _unpack_marray(mmodes, n=n)
