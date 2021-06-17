@@ -582,7 +582,9 @@ class DeconvolveHybridMBase(task.SingleTask):
         # Dereference datasets
         hv = hybrid_vis_m.vis[:].view(np.ndarray)
         hw = hybrid_vis_m.weight[:].view(np.ndarray)
-        bv = hybrid_beam_m.vis[:].view(np.ndarray)
+
+        # Dereference the beams, and trim to the set of m's present in the input data
+        bv = hybrid_beam_m.vis[:].view(np.ndarray)[: (mmax + 1)]
 
         rmm = rm.map[:]
         rmw = rm.weight[:]
