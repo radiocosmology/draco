@@ -567,13 +567,14 @@ class MModeInverseTransform(task.SingleTask):
 
     Attributes
     ----------
-    n_time : int
-        Number of time bins in the output. Note that if
-        the number of samples does not Nyquist sample the
-        maximum m, information may be lost.
+    nra : int
+        Number of RA bins in the output. Note that if the number of samples does not
+        Nyquist sample the maximum m, information may be lost. If not set, then try to
+        get from an `original_nra` attribute on the incoming MModes, otherwise determine
+        an appropriate number of RA bins from the mmax.
     """
 
-    n_time = config.Property(proptype=int, default=None)
+    nra = config.Property(proptype=int, default=None)
 
     def process(self, mmodes):
         """Perform the m-mode inverse transform.
@@ -597,13 +598,13 @@ class MModeInverseTransform(task.SingleTask):
         mmodes.redistribute("freq")
 
         # Re-construct array of S-streams
-        ssarray = _make_ssarray(mmodes.vis[:], n=self.n_time)
-        ntime = ssarray.shape[-1]
+        ssarray = _make_ssarray(mmodes.vis[:], n=self.nra)
+        nra = ssarray.shape[-1]  # Get the actual nra used
         ssarray = mpiarray.MPIArray.wrap(ssarray[:], axis=0, comm=mmodes.comm)
 
         # Construct container and set visibility data
         sstream = containers.SiderealStream(
-            ra=ntime, axes_from=mmodes, distributed=True, comm=mmodes.comm
+            ra=nra, axes_from=mmodes, distributed=True, comm=mmodes.comm
         )
         sstream.redistribute("freq")
 
@@ -611,7 +612,7 @@ class MModeInverseTransform(task.SingleTask):
         sstream.vis[:] = ssarray
         # There is no way to recover time information for the weights.
         # Just assign the time average to each baseline and frequency.
-        sstream.weight[:] = mmodes.weight[0, 0, :, :][:, :, np.newaxis] / ntime
+        sstream.weight[:] = mmodes.weight[0, 0, :, :][:, :, np.newaxis] / nra
 
         return sstream
 
