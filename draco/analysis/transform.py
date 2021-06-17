@@ -498,6 +498,8 @@ class MModeTransform(task.SingleTask):
         ma.redistribute("freq")
 
         # Generate the m-mode transform directly into the output container
+        # NOTE: Need to zero fill as not every element gets set within _make_marray
+        ma.vis[:] = 0.0
         _make_marray(sstream.vis[:], ma.vis[:])
 
         # Assign the weights into the container
