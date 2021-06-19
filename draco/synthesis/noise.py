@@ -161,10 +161,12 @@ class GaussianNoise(task.SingleTask, random.RandomTask):
         # Consider if this data is stacked over redundant baselines or not.
         if (self.telescope is not None) and (nprod == self.telescope.nbase):
             redundancy = self.telescope.redundancy
-        elif nprod == ninput * (ninput + 1) / 2:
-            redundancy = np.ones(nprod)
+        #elif nprod == ninput * (ninput + 1) / 2:
         else:
-            raise ValueError("Unexpected number of products")
+            self.log.info("In else statement for noise")
+            redundancy = np.ones(nprod)
+        #else:
+        #    raise ValueError("Unexpected number of products")
 
         # Calculate the number of samples, this is a 1D array for the prod axis.
         nsamp = int(self.ndays * dt * df) * redundancy

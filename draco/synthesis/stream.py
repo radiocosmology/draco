@@ -190,10 +190,13 @@ class ExpandProducts(task.SingleTask):
         sstream.redistribute("freq")
 
         ninput = len(sstream.input)
-        prod = np.array(
-            [(fi, fj) for fi in range(ninput) for fj in range(fi, ninput)],
-            dtype=[("input_a", int), ("input_b", int)],
-        )
+
+        unique_input = np.unique(self.telescope.uniquepairs)
+
+        prod = np.array([(fi, fj) for i, fi in enumerate(unique_input) for fj in unique_input[i:]],
+                        dtype=[("input_a", int), ("input_b", int)],)
+
+
         nprod = len(prod)
 
         new_stream = containers.SiderealStream(prod=prod, stack=None, axes_from=sstream)
