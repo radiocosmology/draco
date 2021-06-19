@@ -1,6 +1,9 @@
 """Delay space spectrum estimation and filtering."""
 
+import typing
+
 import numpy as np
+from numpy.lib.recfunctions import structured_to_unstructured
 import scipy.linalg as la
 
 from caput import mpiarray, config
@@ -15,6 +18,10 @@ class DelayFilter(task.SingleTask):
 
     This is performed by projecting the data onto the null space that is orthogonal
     to any mode at low delays.
+
+    Note that for this task to work best the zero entries in the weights dataset
+    should factorize in frequency-time for each baseline. A mostly optimal masking
+    can be generated using the `draco.analysis.flagging.MaskFreq` task.
 
     Attributes
     ----------
@@ -81,21 +88,20 @@ class DelayFilter(task.SingleTask):
         ssv = ss.vis[:].view(np.ndarray)
         ssw = ss.weight[:].view(np.ndarray)
 
-        ubase, uinv = np.unique(
-            tel.baselines[:, 0] + 1.0j * tel.baselines[:, 1], return_inverse=True
-        )
-        ubase = ubase.view(np.float64).reshape(-1, 2)
+        ia, ib = structured_to_unstructured(ss.prodstack, dtype=np.int16).T
+        baselines = tel.feedpositions[ia] - tel.feedpositions[ib]
 
         for lbi, bi in ss.vis[:].enumerate(axis=1):
 
             # Select the baseline length to use
-            baseline = ubase[uinv[bi]]
+            baseline = baselines[bi]
             if self.telescope_orientation == "NS":
                 baseline = abs(baseline[1])  # Y baseline
             elif self.telescope_orientation == "EW":
                 baseline = abs(baseline[0])  # X baseline
             else:
                 baseline = np.linalg.norm(baseline)  # Norm
+
             # In micro seconds
             baseline_delay_cut = self.za_cut * baseline / units.c * 1e6 + self.extra_cut
             delay_cut = np.amax([baseline_delay_cut, self.delay_cut])
@@ -105,16 +111,219 @@ class DelayFilter(task.SingleTask):
             # and seems to work well here
             number_cut = int(4.0 * bandwidth * delay_cut + 0.5)
 
-            weight_mask = np.median(ssw[:, lbi], axis=1)
-            weight_mask = (weight_mask > (self.weight_tol * weight_mask.max())).astype(
-                np.float64
-            )
-            NF = null_delay_filter(
-                freq, delay_cut, weight_mask, num_delay=number_cut, window=self.window
-            )
+            # Flag frequencies and times with zero weight. This works much better if the incoming weight can be factorized
+            f_samp = (ssw[:, lbi] > 0.0).sum(axis=1)
+            f_mask = (f_samp == f_samp.max()).astype(np.float64)
+
+            t_samp = (ssw[:, lbi] > 0.0).sum(axis=0)
+            t_mask = (t_samp == t_samp.max()).astype(np.float64)
+
+            try:
+                NF = null_delay_filter(
+                    freq,
+                    delay_cut,
+                    f_mask,
+                    num_delay=number_cut,
+                    window=self.window,
+                )
+            except la.LinAlgError as e:
+                raise RuntimeError(
+                    f"Failed to converge while processing baseline {bi}"
+                ) from e
 
             ssv[:, lbi] = np.dot(NF, ssv[:, lbi])
-            ssw[:, lbi] *= weight_mask[:, np.newaxis]
+            ssw[:, lbi] *= f_mask[:, np.newaxis] * t_mask[np.newaxis, :]
+
+        return ss
+
+
+# A specific subclass of a FreqContainer
+FreqContainerType = typing.TypeVar("FreqContainerType", bound=containers.FreqContainer)
+
+
+class DelayFilterBase(task.SingleTask):
+    """Remove delays less than a given threshold.
+
+    This is performed by projecting the data onto the null space that is orthogonal
+    to any mode at low delays.
+
+    Note that for this task to work best the zero entries in the weights dataset
+    should factorize in frequency-time for each baseline. A mostly optimal masking
+    can be generated using the `draco.analysis.flagging.MaskFreq` task.
+
+    Attributes
+    ----------
+    delay_cut : float
+        Delay value to filter at in seconds.
+    window : bool
+        Apply the window function to the data when applying the filter.
+    axis : str
+        The main axis to iterate over. The delay cut can be varied for each element
+        of this axis. If not set, a suitable default is picked for the container
+        type.
+    dataset : str
+        Apply the delay filter to this dataset.  If not set, a suitable default
+        is picked for the container type.
+
+    Notes
+    -----
+    The delay cut applied is `max(za_cut * baseline / c + extra_cut, delay_cut)`.
+    """
+
+    delay_cut = config.Property(proptype=float, default=0.1)
+    window = config.Property(proptype=bool, default=False)
+    axis = config.Property(proptype=str, default=None)
+    dataset = config.Property(proptype=str, default=None)
+
+    def setup(self, telescope: io.TelescopeConvertible):
+        """Set the telescope needed to obtain baselines.
+
+        Parameters
+        ----------
+        telescope
+        """
+        self.telescope = io.get_telescope(telescope)
+
+    def _delay_cut(self, ss: FreqContainerType, axis: str, ind: int) -> float:
+        """Return the delay cut to use for this entry in microseconds.
+
+        Parameters
+        ----------
+        ss
+            The container we are processing.
+        axis
+            The axis we are looping over.
+        ind : int
+            The (global) index along that axis.
+
+        Returns
+        -------
+        float
+            The delay cut in microseconds.
+        """
+        return self.delay_cut
+
+    def process(self, ss: FreqContainerType) -> FreqContainerType:
+        """Filter out delays from a SiderealStream or TimeStream.
+
+        Parameters
+        ----------
+        ss
+            Data to filter.
+
+        Returns
+        -------
+        ss_filt
+            Filtered dataset.
+        """
+
+        if not isinstance(ss, containers.FreqContainer):
+            raise TypeError(
+                f"Can only process FreqContainer instances. Got {type(ss)}."
+            )
+
+        _default_axis = {
+            containers.SiderealStream: "stack",
+            containers.HybridVisMModes: "m",
+            containers.RingMap: "el",
+            containers.GridBeam: "theta",
+        }
+
+        _default_dataset = {
+            containers.SiderealStream: "vis",
+            containers.HybridVisMModes: "vis",
+            containers.RingMap: "map",
+            containers.GridBeam: "beam",
+        }
+
+        axis = self.axis
+
+        if self.axis is None:
+            for cls, ax in _default_axis.items():
+                if isinstance(ss, cls):
+                    axis = ax
+                    break
+            else:
+                raise ValueError(f"No default axis know for {type(ss)} container.")
+
+        dset = self.dataset
+
+        if self.dataset is None:
+            for cls, dataset in _default_dataset.items():
+                if isinstance(ss, cls):
+                    dset = dataset
+                    break
+            else:
+                raise ValueError(f"No default dataset know for {type(ss)} container.")
+
+        ss.redistribute(axis)
+
+        freq = ss.freq[:]
+        bandwidth = np.ptp(freq)
+
+        # Get views of the relevant datasets, but make sure that the weights have the
+        # same number of axes as the visibilities (inserting length-1 axes as needed)
+        ssv = ss.datasets[dset][:].view(np.ndarray)
+        ssw = match_axes(ss.datasets[dset], ss.weight).view(np.ndarray)
+
+        dist_axis_pos = list(ss.datasets[dset].attrs["axis"]).index(axis)
+        freq_axis_pos = list(ss.datasets[dset].attrs["axis"]).index("freq")
+
+        # Once we have selected elements of dist_axis the location of freq_axis_pos may
+        # be one lower
+        sel_freq_axis_pos = (
+            freq_axis_pos if freq_axis_pos < dist_axis_pos else freq_axis_pos - 1
+        )
+
+        for lbi, bi in ss.datasets[dset][:].enumerate(axis=dist_axis_pos):
+
+            # Extract the part of the array that we are processing, and
+            # transpose/reshape to make a 2D array with frequency as axis=0
+            vis_local = _take_view(ssv, lbi, dist_axis_pos)
+            vis_2D = _move_front(vis_local, sel_freq_axis_pos, vis_local.shape)
+
+            weight_local = _take_view(ssw, lbi, dist_axis_pos)
+            weight_2D = _move_front(weight_local, sel_freq_axis_pos, weight_local.shape)
+
+            # In micro seconds
+            delay_cut = self._delay_cut(ss, axis, bi)
+
+            # Calculate the number of samples needed to construct the delay null space.
+            # `4 * tau_max * bandwidth` is the amount recommended in the DAYENU paper
+            # and seems to work well here
+            number_cut = int(4.0 * bandwidth * delay_cut + 0.5)
+
+            # Flag frequencies and times (or all other axes) with zero weight. This
+            # works much better if the incoming weight can be factorized
+            f_samp = (weight_2D > 0.0).sum(axis=1)
+            f_mask = (f_samp == f_samp.max()).astype(np.float64)
+
+            t_samp = (weight_2D > 0.0).sum(axis=0)
+            t_mask = (t_samp == t_samp.max()).astype(np.float64)
+
+            # This has occasionally failed to converge, catch this and output enough
+            # info to debug after the fact
+            try:
+                NF = null_delay_filter(
+                    freq,
+                    delay_cut,
+                    f_mask,
+                    num_delay=number_cut,
+                    window=self.window,
+                )
+            except la.LinAlgError as e:
+                raise RuntimeError(
+                    f"Failed to converge while processing baseline {bi}"
+                ) from e
+
+            vis_local[:] = _inv_move_front(
+                np.dot(NF, vis_2D), sel_freq_axis_pos, vis_local.shape
+            )
+            weight_local[:] *= _inv_move_front(
+                f_mask[:, np.newaxis] * t_mask[np.newaxis, :],
+                sel_freq_axis_pos,
+                weight_local.shape,
+            )
 
         return ss
 
@@ -260,6 +469,209 @@ class DelaySpectrumEstimator(task.SingleTask, random.RandomTask):
         return delay_spec
 
 
+class DelaySpectrumEstimatorBase(task.SingleTask, random.RandomTask):
+    """Calculate the delay spectrum of any container with a frequency axis.
+
+    The spectrum is calculated by Gibbs sampling. The spectrum returned is the median
+    of the final half of the samples calculated.
+
+    The delay spectrum output is indexed by a `baseline` axis. This axis is the
+    composite axis of all the axis in the container except the frequency axis or the
+    `average_axis`. These constituent axes are included in the index map, and their
+    order is given by the `baseline_axes` attribute.
+
+    Attributes
+    ----------
+    nsamp : int, optional
+        The number of Gibbs samples to draw.
+    freq_zero : float, optional
+        The physical frequency (in MHz) of the *zero* channel. That is the DC
+        channel coming out of the F-engine. If not specified, use the first
+        frequency channel of the stream.
+    freq_spacing : float, optional
+        The spacing between the underlying channels (in MHz). This is conjugate
+        to the length of a frame of time samples that is transformed. If not
+        set, then use the smallest gap found between channels in the dataset.
+    nfreq : int, optional
+        The number of frequency channels in the full set produced by the
+        F-engine. If not set, assume the last included frequency is the last of
+        the full set (or is the penultimate if `skip_nyquist` is set).
+    skip_nyquist : bool, optional
+        Whether the Nyquist frequency is included in the data. This is `True` by
+        default to align with the output of CASPER PFBs.
+    dataset : str
+        Calculate the delay spectrum of this dataset (e.g., "vis", "map", "beam").
+    average_axis : str
+        Name of the axis to take the average over.
+    """
+
+    nsamp = config.Property(proptype=int, default=20)
+    freq_zero = config.Property(proptype=float, default=None)
+    freq_spacing = config.Property(proptype=float, default=None)
+    nfreq = config.Property(proptype=int, default=None)
+    skip_nyquist = config.Property(proptype=bool, default=True)
+
+    dataset = config.Property(proptype=str, default="vis")
+    average_axis = config.Property(proptype=str)
+
+    def setup(self, telescope: io.TelescopeConvertible):
+        """Set the telescope needed to generate Stokes I.
+
+        Parameters
+        ----------
+        telescope : TransitTelescope
+        """
+        self.telescope = io.get_telescope(telescope)
+
+    def process(self, ss: FreqContainerType) -> containers.DelaySpectrum:
+        """Estimate the delay spectrum.
+
+        Parameters
+        ----------
+        ss
+            Data to transform. Must have a frequency axis and one other axis to
+            average over.
+
+        Returns
+        -------
+        dspec : DelaySpectrum
+        """
+        ss.redistribute("freq")
+
+        if self.dataset not in ss.datasets:
+            raise ValueError(
+                f"Specified dataset to delay transform ({self.dataset}) not in "
+                f"container of type {type(ss)}."
+            )
+
+        if (
+            self.average_axis not in ss.axes
+            or self.average_axis not in ss.datasets[self.dataset].attrs["axis"]
+        ):
+            raise ValueError(
+                f"Specified axis to average over ({self.average_axis}) not in "
+                f"container of type {type(ss)}."
+            )
+
+        # ==== Figure out the frequency structure and delay values ====
+        if self.freq_zero is None:
+            self.freq_zero = ss.freq[0]
+
+        if self.freq_spacing is None:
+            self.freq_spacing = np.abs(np.diff(ss.freq[:])).min()
+
+        channel_ind = (np.abs(ss.freq[:] - self.freq_zero) / self.freq_spacing).astype(
+            np.int
+        )
+
+        if self.nfreq is None:
+            self.nfreq = channel_ind[-1] + 1
+
+            if self.skip_nyquist:
+                self.nfreq += 1
+
+        # Assume each transformed frame was an even number of samples long
+        ndelay = 2 * (self.nfreq - 1)
+        delays = np.fft.fftshift(np.fft.fftfreq(ndelay, d=self.freq_spacing))  # in us
+
+        # Find the relevant axis positions
+        data_axes = ss.datasets[self.dataset].attrs["axis"]
+        freq_axis_pos = list(data_axes).index("freq")
+        average_axis_pos = list(data_axes).index(self.average_axis)
+
+        # Create a view of the dataset with the relevant axes at the back,
+        # and all other axes compressed
+        data_view = np.moveaxis(
+            ss.datasets[self.dataset][:].view(np.ndarray),
+            [average_axis_pos, freq_axis_pos],
+            [-2, -1],
+        )
+        data_view = data_view.reshape(-1, data_view.shape[-2], data_view.shape[-1])
+        data_view = mpiarray.MPIArray.wrap(data_view, axis=2, comm=ss.comm)
+        nbase = int(np.prod(data_view.shape[:-2]))
+        data_view = data_view.redistribute(axis=0)
+
+        # ... do the same for the weights, but we also need to make the weights full
+        # size
+        weight_full = np.zeros(
+            ss.datasets[self.dataset][:].shape, dtype=ss.weight.dtype
+        )
+        weight_full[:] = match_axes(ss.datasets[self.dataset], ss.weight)
+        weight_view = np.moveaxis(
+            weight_full, [average_axis_pos, freq_axis_pos], [-2, -1]
+        )
+        weight_view = weight_view.reshape(
+            -1, weight_view.shape[-2], weight_view.shape[-1]
+        )
+        weight_view = mpiarray.MPIArray.wrap(weight_view, axis=2, comm=ss.comm)
+        weight_view = weight_view.redistribute(axis=0)
+
+        # Use the "baselines" axis to generically represent all the other axes
+
+        # Initialise the spectrum container
+        delay_spec = containers.DelaySpectrum(baseline=nbase, delay=delays)
+        delay_spec.redistribute("baseline")
+        delay_spec.spectrum[:] = 0.0
+        bl_axes = [da for da in data_axes if da not in [self.average_axis, "freq"]]
+
+        # Copy the index maps for all the flattened axes into the output container, and
+        # write out their order into an attribute so we can reconstruct this easily
+        # when loading in the spectrum
+        for ax in bl_axes:
+            delay_spec.create_index_map(ax, ss.index_map[ax])
+        delay_spec.attrs["baseline_axes"] = bl_axes
+
+        initial_S = np.ones_like(delays) * 1e1
+
+        # Iterate over all baselines and use the Gibbs sampler to estimate the spectrum
+        for lbi, bi in delay_spec.spectrum[:].enumerate(axis=0):
+
+            self.log.debug(f"Delay transforming baseline {bi}/{nbase}")
+
+            # Get the local selections
+            data = data_view[lbi].view(np.ndarray)
+            weight = weight_view[lbi].view(np.ndarray)
+
+            # Mask out data with completely zero'd weights and generate time
+            # averaged weights
+            weight_cut = (
+                1e-4 * weight.mean()
+            )  # Use approx threshold to ignore small weights
+            data = data * (weight > weight_cut)
+            weight = np.mean(weight, axis=0)
+
+            if (data == 0.0).all():
+                continue
+
+            # If there are no non-zero weighted entries skip
+            non_zero = weight > 0
+            if not non_zero.any():
+                continue
+
+            # Remove any frequency channel which is entirely zero, this is just to
+            # reduce the computational cost, it should make no difference to the result
+            data = data[:, non_zero]
+            weight = weight[non_zero]
+            non_zero_channel = channel_ind[non_zero]
+
+            spec = delay_spectrum_gibbs(
+                data,
+                ndelay,
+                weight,
+                initial_S,
+                fsel=non_zero_channel,
+                niter=self.nsamp,
+                rng=self.rng,
+            )
+
+            # Take an average over the last half of the delay spectrum samples
+            # (presuming that removes the burn-in)
+            spec_av = np.median(spec[-(self.nsamp // 2) :], axis=0)
+            delay_spec.spectrum[bi] = np.fft.fftshift(spec_av)
+
+        return delay_spec
+
+
 def stokes_I(sstream, tel):
     """Extract instrumental Stokes I from a time/sidereal stream.
 
@@ -287,7 +699,7 @@ def stokes_I(sstream, tel):
 
     # ==== Unpack into Stokes I
     ubase, uinv, ucount = np.unique(bl_round, return_inverse=True, return_counts=True)
-    ubase = ubase.view(np.float64).reshape(-1, 2)
+    ubase = ubase.astype(np.complex128, copy=False).view(np.float64).reshape(-1, 2)
     nbase = ubase.shape[0]
 
     vis_shape = (nbase, sstream.vis.local_shape[0], sstream.vis.local_shape[2])
@@ -628,7 +1040,11 @@ def null_delay_filter(freq, max_delay, mask, num_delay=200, tol=1e-8, window=Tru
 
     # Use an SVD to figure out the set of significant modes spanning the delays
     # we are wanting to get rid of.
-    u, sig, vh = la.svd(F)
+    # NOTE: we've experienced some convergence failures in here which ultimately seem
+    # to be the fault of MKL (see https://github.com/scipy/scipy/issues/10032 and links
+    # therein). This seems to be limited to the `gesdd` LAPACK routine, so we can get
+    # around it by switching to `gesvd`.
+    u, sig, vh = la.svd(F, lapack_driver="gesvd")
     nmodes = np.sum(sig > tol * sig.max())
     p = u[:, :nmodes]
 
@@ -640,3 +1056,55 @@ def null_delay_filter(freq, max_delay, mask, num_delay=200, tol=1e-8, window=Tru
         proj *= w[np.newaxis, :]
 
     return proj
+
+
+def match_axes(dset1, dset2):
+    """Make sure that dset2 has the same set of axes as dset1.
+
+    Sometimes the weights are missing axes (usually where the entries would all be
+    the same), we need to map these into one another and expand the weights to the
+    same size as the visibilities. This assumes that the vis/weight axes are in the
+    same order when present
+
+    Parameters
+    ----------
+    dset1
+        The dataset with more axes.
+    dset2
+        The dataset with a subset of axes. For the moment these are assumed to be in
+        the same order.
+
+    Returns
+    -------
+    dset2_view
+        A view of dset2 with length-1 axes inserted to match the axes missing from
+        dset1.
+    """
+
+    axes1 = dset1.attrs["axis"]
+    axes2 = dset2.attrs["axis"]
+    bcast_slice = tuple(slice(None) if ax in axes2 else np.newaxis for ax in axes1)
+
+    return dset2[:][bcast_slice]
+
+
+def _move_front(arr: np.ndarray, axis: int, shape: tuple) -> np.ndarray:
+    # Move the specified axis to the front and flatten to give a 2D array
+    new_arr = np.moveaxis(arr, axis, 0)
+    return new_arr.reshape(shape[axis], -1)
+
+
+def _inv_move_front(arr: np.ndarray, axis: int, shape: tuple) -> np.ndarray:
+    # Move the first axis back to it's original position and return the original shape,
+    # i.e. reverse the above operation
+    rshape = (shape[axis],) + shape[:axis] + shape[(axis + 1) :]
+    new_arr = arr.reshape(rshape)
+    new_arr = np.moveaxis(new_arr, 0, axis)
+    return new_arr.reshape(shape)
+
+
+def _take_view(arr: np.ndarray, ind: int, axis: int) -> np.ndarray:
+    # Like np.take but returns a view (instead of a copy), but only supports a scalar
+    # index
+    sl = (slice(None),) * axis
+    return arr[sl + (ind,)]

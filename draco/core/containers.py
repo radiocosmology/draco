@@ -3,19 +3,48 @@ Distributed containers for holding various types of analysis data.
 
 Containers
 ==========
-- :py:class:`TimeStream`
-- :py:class:`SiderealStream`
-- :py:class:`GainData`
-- :py:class:`StaticGainData`
 - :py:class:`Map`
+- :py:class:`SiderealStream`
+- :py:class:`SystemSensitivity`
+- :py:class:`RFIMask`
+- :py:class:`TimeStream`
+- :py:class:`GridBeam`
+- :py:class:`TrackBeam`
 - :py:class:`MModes`
+- :py:class:`SVDModes`
+- :py:class:`KLModes`
+- :py:class:`VisGridStream`
+- :py:class:`HybridVisStream`
+- :py:class:`HybridVisMModes`
 - :py:class:`RingMap`
+- :py:class:`RingMapMask`
+- :py:class:`CommonModeGainData`
+- :py:class:`CommonModeSiderealGainData`
+- :py:class:`GainData`
+- :py:class:`SiderealGainData`
+- :py:class:`StaticGainData`
+- :py:class:`DelaySpectrum`
+- :py:class:`Powerspectrum2D`
+- :py:class:`SVDSpectrum`
+- :py:class:`FrequencyStack`
+- :py:class:`FrequencyStackByPol`
+- :py:class:`SourceCatalog`
+- :py:class:`SpectroscopicCatalog`
+- :py:class:`FormedBeam`
+- :py:class:`FormedBeamHA`
+- :py:class:`FormedBeamMask`
+- :py:class:`FormedBeamHAMask`
 
 Container Base Classes
 ----------------------
 - :py:class:`ContainerBase`
+- :py:class:`TableBase`
 - :py:class:`TODContainer`
 - :py:class:`VisContainer`
+- :py:class:`SampleVarianceContainer`
+- :py:class:`FreqContainer`
+- :py:class:`SiderealContainer`
+- :py:class:`MContainer`
 
 Helper Routines
 ---------------
@@ -29,8 +58,9 @@ their own custom container types.
 import inspect
 
 import numpy as np
-
 from caput import memh5, tod
+
+from ..util import tools
 
 # Try to import bitshuffle to set the default compression options
 try:
@@ -710,6 +740,131 @@ class VisContainer(ContainerBase):
         return len(self.stack) != len(self.prod)
 
 
+class SampleVarianceContainer(ContainerBase):
+    """Base container for holding the sample variance over observations.
+
+    This works like :class:`ContainerBase` but provides additional capabilities
+    for containers that may be used to hold the sample mean and variance over
+    complex-valued observations.  These capabilities include automatic definition
+    of the component axis, properties for accessing standard datasets, properties
+    that rotate the sample variance into common bases, and a `sample_weight` property
+    that provides an equivalent to the `weight` dataset that is determined from the
+    sample variance over observations.
+
+    Subclasses must include a `sample_variance` and `nsample` dataset
+    in there `_dataset_spec` dictionary.  They must also specify a
+    `_mean` property that returns the dataset containing the mean over observations.
+    """
+
+    _axes = ("component",)
+
+    def __init__(self, *args, **kwargs):
+
+        # Set component axis to default real-imaginary basis if not already provided
+        if "component" not in kwargs:
+            kwargs["component"] = np.array(
+                [("real", "real"), ("real", "imag"), ("imag", "imag")],
+                dtype=[("component_a", "<U8"), ("component_b", "<U8")],
+            )
+
+        super(SampleVarianceContainer, self).__init__(*args, **kwargs)
+
+    @property
+    def component(self):
+        return self.index_map["component"]
+
+    @property
+    def sample_variance(self):
+        """Convience access to the sample variance dataset.
+
+        Returns
+        -------
+        C: np.ndarray[ncomponent, ...]
+            The variance over the dimension that was stacked
+            (e.g., sidereal days, holographic observations)
+            in the default real-imaginary basis. The array is packed
+            into upper-triangle format such that the component axis
+            contains [('real', 'real'), ('real', 'imag'), ('imag', 'imag')].
+        """
+        if "sample_variance" in self.datasets:
+            return self.datasets["sample_variance"]
+        else:
+            raise KeyError("Dataset 'sample_variance' not initialised.")
+
+    @property
+    def sample_variance_iq(self):
+        """Rotate the sample variance to the in-phase/quadrature basis.
+
+        Returns
+        -------
+        C: np.ndarray[ncomponent, ...]
+            The `sample_variance` dataset in the in-phase/quadrature basis,
+            packed into upper triangle format such that the component axis
+            contains [('I', 'I'), ('I', 'Q'), ('Q', 'Q')].
+        """
+        C = self.sample_variance[:].view(np.ndarray)
+
+        # Construct rotation coefficients from average vis angle
+        phi = np.angle(self._mean[:].view(np.ndarray))
+        cc = np.cos(phi) ** 2
+        cs = np.cos(phi) * np.sin(phi)
+        ss = np.sin(phi) ** 2
+
+        # Rotate the covariance matrix from real-imag to in-phase/quadrature
+        Cphi = np.zeros_like(C)
+        Cphi[0] = cc * C[0] + 2 * cs * C[1] + ss * C[2]
+        Cphi[1] = -cs * C[0] + (cc - ss) * C[1] + cs * C[2]
+        Cphi[2] = ss * C[0] - 2 * cs * C[1] + cc * C[2]
+
+        return Cphi
+
+    @property
+    def sample_variance_amp_phase(self):
+        """Calculate the amplitude/phase covariance.
+
+        This interpretation is only valid if the fractional
+        variations in the amplitude and phase are small.
+
+        Returns
+        -------
+        C: np.ndarray[ncomponent, ...]
+            The observed amplitude/phase covariance matrix, packed
+            into upper triangle format such that the component axis
+            contains [('amp', 'amp'), ('amp', 'phase'), ('phase', 'phase')].
+        """
+        # Rotate to in-phase/quadrature basis and then
+        # normalize by squared amplitude to convert to
+        # fractional units (amplitude) and radians (phase).
+        return self.sample_variance_iq * tools.invert_no_zero(
+            np.abs(self._mean[:][np.newaxis, ...]) ** 2
+        )
+
+    @property
+    def nsample(self):
+        if "nsample" in self.datasets:
+            return self.datasets["nsample"]
+        else:
+            raise KeyError("Dataset 'nsample' not initialised.")
+
+    @property
+    def sample_weight(self):
+        """Calculate a weight from the sample variance.
+
+        Returns
+        -------
+        weight: np.ndarray[...]
+            The trace of the `sample_variance` dataset is used
+            as an estimate of the total variance and divided by the
+            `nsample` dataset to yield the uncertainty on the mean.
+            The inverse of this quantity is returned, and can be compared
+            directly to the `weight` dataset.
+        """
+        C = self.sample_variance[:].view(np.ndarray)
+        nsample = self.nsample[:].view(np.ndarray)
+
+        return nsample * tools.invert_no_zero(C[0] + C[2])
+
+
 class FreqContainer(ContainerBase):
     """A pipeline container for data with a frequency axis.
 
@@ -797,8 +952,33 @@ class MContainer(ContainerBase):
 
         super().__init__(*args, **kwargs)
 
+    @property
+    def mmax(self):
+        """The maximum m stored."""
+        return int(self.index_map["m"][-1])
 
-class Map(FreqContainer):
+
+class HealpixContainer(ContainerBase):
+    """Base class container for holding Healpix map data.
+
+    Parameters
+    ----------
+    nside : int
+        The nside of the Healpix maps.
+    """
+
+    _axes = ("pixel",)
+
+    def __init__(self, nside=None, *args, **kwargs):
+
+        # Set up axes from passed arguments
+        if nside is not None:
+            kwargs["pixel"] = 12 * nside ** 2
+
+        super().__init__(*args, **kwargs)
+
+
+class Map(FreqContainer, HealpixContainer):
     """Container for holding multifrequency sky maps.
 
     The maps are packed in format `[freq, pol, pixel]` where the polarisations
@@ -813,7 +993,7 @@ class Map(FreqContainer):
         stored.
     """
 
-    _axes = ("pol", "pixel")
+    _axes = ("pol",)
 
     _dataset_spec = {
         "map": {
@@ -825,24 +1005,27 @@ class Map(FreqContainer):
         }
     }
 
-    def __init__(self, nside=None, polarisation=True, *args, **kwargs):
+    def __init__(self, polarisation=True, *args, **kwargs):
 
         # Set up axes from passed arguments
-        if nside is not None:
-            kwargs["pixel"] = 12 * nside ** 2
-
         kwargs["pol"] = (
             np.array(["I", "Q", "U", "V"]) if polarisation else np.array(["I"])
         )
 
-        super(Map, self).__init__(*args, **kwargs)
+        super().__init__(*args, **kwargs)
 
     @property
     def map(self):
         return self.datasets["map"]
 
+    @property
+    def nside(self):
+        return int((len(self.index_map["pixel"]) // 12) ** 0.5)
 
-class SiderealStream(FreqContainer, VisContainer, SiderealContainer):
+
+class SiderealStream(
+    FreqContainer, VisContainer, SiderealContainer, SampleVarianceContainer
+):
     """A container for holding a visibility dataset in sidereal time.
 
     Parameters
@@ -885,6 +1068,26 @@ class SiderealStream(FreqContainer, VisContainer, SiderealContainer):
             "distributed": True,
             "distributed_axis": "freq",
         },
+        "sample_variance": {
+            "axes": ["component", "freq", "stack", "ra"],
+            "dtype": np.float32,
+            "initialise": False,
+            "distributed": True,
+            "distributed_axis": "freq",
+            "compression": COMPRESSION,
+            "compression_opts": COMPRESSION_OPTS,
+            "chunks": (3, 64, 256, 128),
+        },
+        "nsample": {
+            "axes": ["freq", "stack", "ra"],
+            "dtype": np.uint16,
+            "initialise": False,
+            "distributed": True,
+            "distributed_axis": "freq",
+            "compression": COMPRESSION,
+            "compression_opts": COMPRESSION_OPTS,
+            "chunks": (64, 256, 128),
+        },
     }
 
     @property
@@ -894,6 +1097,10 @@ class SiderealStream(FreqContainer, VisContainer, SiderealContainer):
     @property
     def input_flags(self):
         return self.datasets["input_flags"]
+
+    @property
+    def _mean(self):
+        return self.datasets["vis"]
 
 
 class SystemSensitivity(FreqContainer, TODContainer):
@@ -978,6 +1185,28 @@ class RFIMask(FreqContainer, TODContainer):
         return self.datasets["mask"]
 
 
+class SiderealRFIMask(FreqContainer, SiderealContainer):
+    """A container for holding RFI mask.
+
+    The mask is `True` for contaminated samples that should be excluded, and
+    `False` for clean samples.
+    """
+
+    _dataset_spec = {
+        "mask": {
+            "axes": ["freq", "ra"],
+            "dtype": bool,
+            "initialise": True,
+            "distributed": False,
+            "distributed_axis": "freq",
+        }
+    }
+
+    @property
+    def mask(self):
+        return self.datasets["mask"]
+
+
 class TimeStream(FreqContainer, VisContainer, TODContainer):
     """A container for holding a visibility dataset in time.
 
@@ -1032,9 +1261,7 @@ class TimeStream(FreqContainer, VisContainer, TODContainer):
 
 
 class GridBeam(FreqContainer):
-    """Generic container for representing the 2-d beam in spherical
-    coordinates on a rectangular grid.
-    """
+    """Generic container for representing a 2D beam on a rectangular grid."""
 
     _axes = ("pol", "input", "theta", "phi")
 
@@ -1053,6 +1280,13 @@ class GridBeam(FreqContainer):
             "distributed": True,
             "distributed_axis": "freq",
         },
+        "quality": {
+            "axes": ["freq", "pol", "input", "theta", "phi"],
+            "dtype": np.uint8,
+            "initialise": False,
+            "distributed": True,
+            "distributed_axis": "freq",
+        },
         "gain": {
             "axes": ["freq", "input"],
             "dtype": np.complex64,
@@ -1064,8 +1298,8 @@ class GridBeam(FreqContainer):
 
     def __init__(self, coords="celestial", *args, **kwargs):
 
-        self.attrs["coords"] = coords
         super(GridBeam, self).__init__(*args, **kwargs)
+        self.attrs["coords"] = coords
 
     @property
     def beam(self):
@@ -1074,6 +1308,10 @@ class GridBeam(FreqContainer):
     @property
     def weight(self):
         return self.datasets["weight"]
+
+    @property
+    def quality(self):
+        return self.datasets["quality"]
 
     @property
     def gain(self):
@@ -1100,10 +1338,75 @@ class GridBeam(FreqContainer):
         return self.index_map["phi"]
 
 
-class TrackBeam(FreqContainer):
-    """Container for a sequence of beam samples at arbitrary locations
-    on the sphere. The axis of the beam samples is 'pix', defined by
-    the numpy.dtype [('theta', np.float32), ('phi', np.float32)].
+class HEALPixBeam(FreqContainer, HealpixContainer):
+    """Container for representing the spherical 2-d beam in a HEALPix grid.
+
+    Parameters
+    ----------
+    ordering : {"nested", "ring"}
+        The HEALPix ordering scheme used for the beam map.
+    coords : {"celestial", "galactic", "telescope"}
+        The coordinate system that the beam map is defined on.
+    """
+
+    _axes = ("pol", "input")
+
+    _dataset_spec = {
+        "beam": {
+            "axes": ["freq", "pol", "input", "pixel"],
+            "dtype": [("Et", np.complex64), ("Ep", np.complex64)],
+            "initialise": True,
+            "distributed": True,
+            "distributed_axis": "freq",
+        },
+        "weight": {
+            "axes": ["freq", "pol", "input", "pixel"],
+            "dtype": [("Et", np.float32), ("Ep", np.float32)],
+            "initialise": False,
+            "distributed": True,
+            "distributed_axis": "freq",
+        },
+    }
+
+    def __init__(self, coords="unknown", ordering="unknown", *args, **kwargs):
+        super(HEALPixBeam, self).__init__(*args, **kwargs)
+        self.attrs["coords"] = coords
+        self.attrs["ordering"] = ordering
+
+    @property
+    def beam(self):
+        return self.datasets["beam"]
+
+    @property
+    def weight(self):
+        return self.datasets["weight"]
+
+    @property
+    def ordering(self):
+        return self.attrs["ordering"]
+
+    @property
+    def coords(self):
+        return self.attrs["coords"]
+
+    @property
+    def pol(self):
+        return self.index_map["pol"]
+
+    @property
+    def input(self):
+        return self.index_map["input"]
+
+    @property
+    def nside(self):
+        return int(np.sqrt(len(self.index_map["pixel"]) / 12))
+
+
+class TrackBeam(FreqContainer, SampleVarianceContainer):
+    """Container for a sequence of beam samples at arbitrary locations on the sphere.
+
+    The axis of the beam samples is 'pix', defined by the numpy.dtype
+    [('theta', np.float32), ('phi', np.float32)].
     """
 
     _axes = ("pol", "input", "pix")
@@ -1123,6 +1426,26 @@ class TrackBeam(FreqContainer):
             "axes": ["freq", "pol", "input", "pix"],
             "dtype": np.float32,
             "initialise": True,
+            "distributed": True,
+            "distributed_axis": "freq",
+            "compression": COMPRESSION,
+            "compression_opts": COMPRESSION_OPTS,
+            "chunks": (128, 2, 128, 128),
+        },
+        "sample_variance": {
+            "axes": ["component", "freq", "pol", "input", "pix"],
+            "dtype": np.float32,
+            "initialise": False,
+            "distributed": True,
+            "distributed_axis": "freq",
+            "compression": COMPRESSION,
+            "compression_opts": COMPRESSION_OPTS,
+            "chunks": (3, 128, 2, 128, 128),
+        },
+        "nsample": {
+            "axes": ["freq", "pol", "input", "pix"],
+            "dtype": np.uint8,
+            "initialise": False,
             "distributed": True,
             "distributed_axis": "freq",
             "compression": COMPRESSION,
@@ -1193,6 +1516,10 @@ class TrackBeam(FreqContainer):
     @property
     def pix(self):
         return self.index_map["pix"]
+
+    @property
+    def _mean(self):
+        return self.datasets["beam"]
 
 
 class MModes(FreqContainer, VisContainer, MContainer):
@@ -1360,7 +1687,7 @@ class HybridVisStream(FreqContainer, SiderealContainer):
         "dirty_beam": {
             "axes": ["pol", "freq", "ew", "el", "ra"],
             "dtype": np.float32,
-            "initialise": True,
+            "initialise": False,
             "distributed": True,
             "distributed_axis": "freq",
         },
@@ -1448,7 +1775,7 @@ class RingMap(FreqContainer, SiderealContainer):
             "distributed_axis": "freq",
         },
         "weight": {
-            "axes": ["pol", "freq", "ra"],
+            "axes": ["pol", "freq", "ra", "el"],
             "dtype": np.float64,
             "initialise": True,
             "distributed": True,
@@ -1493,6 +1820,26 @@ class RingMap(FreqContainer, SiderealContainer):
     @property
     def dirty_beam(self):
         return self.datasets["dirty_beam"]
+
+
+class RingMapMask(FreqContainer, SiderealContainer):
+    """Mask bad ringmap pixels."""
+
+    _axes = ("pol", "el")
+
+    _dataset_spec = {
+        "mask": {
+            "axes": ["pol", "freq", "ra", "el"],
+            "dtype": np.bool,
+            "initialise": True,
+            "distributed": True,
+            "distributed_axis": "freq",
+        }
+    }
+
+    @property
+    def mask(self):
+        return self.datasets["mask"]
 
 
 class CommonModeGainData(FreqContainer, TODContainer):
@@ -1814,6 +2161,60 @@ class FrequencyStack(FreqContainer):
         return self.datasets["weight"]
 
 
+class FrequencyStackByPol(FrequencyStack):
+    """Container for a frequency stack split by polarisation."""
+
+    _axes = ("pol",)
+
+    _dataset_spec = {
+        "stack": {
+            "axes": ["pol", "freq"],
+            "dtype": np.float64,
+            "initialise": True,
+            "distributed": False,
+        },
+        "weight": {
+            "axes": ["pol", "freq"],
+            "dtype": np.float64,
+            "initialise": True,
+            "distributed": False,
+        },
+    }
+
+    @property
+    def pol(self):
+        return self.index_map["pol"]
+
+
+class Stack3D(FreqContainer):
+    """Container for a 3D frequency stack."""
+
+    _axes = ("pol", "delta_ra", "delta_dec")
+
+    _dataset_spec = {
+        "stack": {
+            "axes": ["pol", "delta_ra", "delta_dec", "freq"],
+            "dtype": np.float64,
+            "initialise": True,
+            "distributed": False,
+        },
+        "weight": {
+            "axes": ["pol", "delta_ra", "delta_dec", "freq"],
+            "dtype": np.float64,
+            "initialise": True,
+            "distributed": False,
+        },
+    }
+
+    @property
+    def stack(self):
+        return self.datasets["stack"]
+
+    @property
+    def weight(self):
+        return self.datasets["weight"]
+
+
 class SourceCatalog(TableBase):
     """A basic container for holding astronomical source catalogs.
 
@@ -1930,6 +2331,42 @@ class FormedBeamHA(FormedBeam):
     @property
     def ha(self):
         return self.datasets["object_ha"]
+
+
+class FormedBeamMask(FreqContainer):
+    """Mask bad formed beams."""
+
+    _axes = ("object_id", "pol")
+
+    _dataset_spec = {
+        "mask": {
+            "axes": ["object_id", "pol", "freq"],
+            "dtype": np.bool,
+            "initialise": True,
+            "distributed": True,
+            "distributed_axis": "freq",
+        }
+    }
+
+    @property
+    def mask(self):
+        return self.datasets["mask"]
+
+
+class FormedBeamHAMask(FormedBeamMask):
+    """Mask bad formed beams as a function of hour angle."""
+
+    _axes = ("ha",)
+
+    _dataset_spec = {
+        "mask": {
+            "axes": ["object_id", "pol", "freq", "ha"],
+            "dtype": np.bool,
+            "initialise": True,
+            "distributed": True,
+            "distributed_axis": "freq",
+        }
+    }
 
 
 def empty_like(obj, **kwargs):

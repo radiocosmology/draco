@@ -1,6 +1,7 @@
-"""Beam Forming"""
+"""Beamform visibilities to the location of known sources."""
 
 import numpy as np
+import scipy.interpolate
 from skyfield.api import Star, Angle
 
 from caput import config
@@ -27,22 +28,29 @@ class BeamFormBase(task.SingleTask):
     Attributes
     ----------
     collapse_ha : bool
-        Wether or not to sum over hour-angle/time to complete
-        the beamforming. Default is True, which sums over.
+        Sum over hour-angle/time to complete the beamforming. Default is True.
     polarization : string
-        One of:
-        'I' : Stokes I only.
-        'full' : 'XX', 'XY', 'YX' and 'YY' in this order.
-        'copol' : 'XX' and 'YY' only.
-        'stokes' : 'I', 'Q', 'U' and 'V' in this order. Not implemented.
-    weight : string ('natural', 'uniform', or 'inverse_variance')
+        Determines the polarizations that will be output:
+            - 'I' : Stokes I only.
+            - 'full' : 'XX', 'XY', 'YX' and 'YY' in this order. (default)
+            - 'copol' : 'XX' and 'YY' only.
+            - 'stokes' : 'I', 'Q', 'U' and 'V' in this order. Not implemented.
+    weight : string
         How to weight the redundant baselines when adding:
-            'natural' - each baseline weighted by its redundancy (default)
-            'uniform' - each baseline given equal weight
-            'inverse_variance' - each baseline weighted by the weight attribute
+            - 'natural' : each baseline weighted by its redundancy (default)
+            - 'uniform' : each baseline given equal weight
+            - 'inverse_variance' : each baseline weighted by the weight attribute
+    no_beam_model : string
+        Do not include a primary beam factor in the beamforming
+        weights, i.e., use uniform weighting as a function of hour angle
+        and declination.
     timetrack : float
         How long (in seconds) to track sources at each side of transit.
-        Total transit time will be ~ 2 * timetrack.
+        Default is 900 seconds.  Total transit time will be 2 * timetrack.
+    variable_timetrack : bool
+        Scale the total time to track each source by the secant of the
+        source declination, so that all sources are tracked through
+        the same angle on the sky.  Default is False.
     freqside : int
         Number of frequencies to process at each side of the source.
         Default (None) processes all frequencies.
@@ -51,14 +59,15 @@ class BeamFormBase(task.SingleTask):
     collapse_ha = config.Property(proptype=bool, default=True)
     polarization = config.enum(["I", "full", "copol", "stokes"], default="full")
     weight = config.enum(["natural", "uniform", "inverse_variance"], default="natural")
+    no_beam_model = config.Property(proptype=bool, default=False)
     timetrack = config.Property(proptype=float, default=900.0)
+    variable_timetrack = config.Property(proptype=bool, default=False)
     freqside = config.Property(proptype=int, default=None)
 
     def setup(self, manager):
         """Generic setup method.
 
-        To be complemented by specific
-        setup methods in daughter tasks.
+        To be complemented by specific setup methods in daughter tasks.
 
         Parameters
         ----------
@@ -67,6 +76,8 @@ class BeamFormBase(task.SingleTask):
         """
         # Get the TransitTelescope object
         self.telescope = io.get_telescope(manager)
+        self.latitude = np.deg2rad(self.telescope.latitude)
+
         # Polarizations.
         if self.polarization == "I":
             self.process_pol = ["XX", "YY"]
@@ -87,16 +98,39 @@ class BeamFormBase(task.SingleTask):
             msg = "Invalid polarization parameter: {0}"
             msg = msg.format(self.polarization)
             raise ValueError(msg)
-        # Number of polarizations to process
+
         self.npol = len(self.process_pol)
-        self.latitude = np.deg2rad(self.telescope.latitude)
+
+        self.map_pol_feed = {
+            pstr: list(self.telescope.polarisation).index(pstr) for pstr in ["X", "Y"]
+        }
+
+        # Ensure that if we are using variable time tracking,
+        # then we are also collapsing over hour angle.
+        if self.variable_timetrack:
+
+            if self.collapse_ha:
+                self.log.info(
+                    "Tracking source for declination dependent amount of time "
+                    "[%d seconds at equator]" % self.timetrack
+                )
+            else:
+                raise NotImplementedError(
+                    "Must collapse over hour angle if tracking "
+                    "sources for declination dependent "
+                    "amount of time."
+                )
+
+        else:
+            self.log.info(
+                "Tracking source for fixed amount of time [%d seconds]" % self.timetrack
+            )
 
     def process(self):
         """Generic process method.
 
-        Performs all the beamforming,
-        but not the data parsing. To be complemented by specific
-        process methods in daughter tasks.
+        Performs all the beamforming, but not the data parsing.
+        To be complemented by specific process methods in daughter tasks.
 
         Returns
         -------
@@ -104,6 +138,10 @@ class BeamFormBase(task.SingleTask):
             Formed beams at each source. Shape depends on parameter
             `collapse_ha`.
         """
+
+        # Perform data dependent beam initialization
+        self._initialize_beam_with_data()
+
         # Contruct containers for formed beams
         if self.collapse_ha:
             # Container to hold the formed beams
@@ -125,9 +163,14 @@ class BeamFormBase(task.SingleTask):
             # Initialize container to zeros.
             formed_beam.ha[:] = 0.0
 
+        formed_beam.attrs["tag"] = "_".join(
+            [tag for tag in [self.tag_data, self.tag_catalog] if tag is not None]
+        )
+
         # Initialize container to zeros.
         formed_beam.beam[:] = 0.0
         formed_beam.weight[:] = 0.0
+
         # Copy catalog information
         formed_beam["position"][:] = self.source_cat["position"][:]
         if "redshift" in self.source_cat:
@@ -137,6 +180,7 @@ class BeamFormBase(task.SingleTask):
             # should I have a different formed_beam container?
             formed_beam["redshift"]["z"][:] = 0.0
             formed_beam["redshift"]["z_error"][:] = 0.0
+
         # Ensure container is distributed in frequency
         formed_beam.redistribute("freq")
 
@@ -152,7 +196,7 @@ class BeamFormBase(task.SingleTask):
         for src in range(self.nsource):
 
             if src % 1000 == 0:
-                self.log.debug(f"Source {src}/{self.nsource}")
+                self.log.info(f"Source {src}/{self.nsource}")
 
             # Declination of this source
             dec = np.radians(self.sdec[src])
@@ -199,9 +243,14 @@ class BeamFormBase(task.SingleTask):
                 if transit_diff[sra_index] > 1.5 * ra_cadence:
                     continue
 
+            if self.variable_timetrack:
+                ha_side = int(self.ha_side / np.cos(dec))
+            else:
+                ha_side = int(self.ha_side)
+
             # Compute hour angle array
             ha_array, ra_index_range, ha_mask = self._ha_array(
-                self.ra, sra_index, self.sra[src], self.ha_side, self.is_sstream
+                self.ra, sra_index, self.sra[src], ha_side, self.is_sstream
             )
 
             # Arrays to store beams and weights for this source
@@ -214,16 +263,11 @@ class BeamFormBase(task.SingleTask):
                     (self.npol, self.ls, self.nha), dtype=np.float64
                 )
                 weight_full = np.zeros((self.npol, self.ls, self.nha), dtype=np.float64)
-            # For each polarization
-            for pol in range(self.npol):
 
-                # Compute primary beams to be used in the weighting
-                primary_beam = self._beamfunc(
-                    ha_array[np.newaxis, :],
-                    self.process_pol[pol],
-                    self.freq_local[:, np.newaxis],
-                    dec,
-                )
+            # Loop over polarisations
+            for pol, pol_str in enumerate(self.process_pol):
+
+                primary_beam = self._beamfunc(pol_str, dec, ha_array)
 
                 # Fringestop and sum over products
                 # 'beamform' does not normalize sum.
@@ -247,6 +291,7 @@ class BeamFormBase(task.SingleTask):
                     # Sum over RA. Does not multiply by weights because
                     # this_formed_beam was never normalized (this avoids
                     # re-work and makes code more efficient).
+
                     this_sumweight = np.sum(
                         np.sum(sumweight_inrange, axis=-1) * primary_beam ** 2, axis=1
                     )
@@ -320,7 +365,13 @@ class BeamFormBase(task.SingleTask):
 
             # Populate container.
             fbb[src] = formed_beam_full
-            fbw[src] = weight_full
+
+            # Scale the weights by a factor of 2 to account for the fact that we
+            # have taken the real-component of the fringestopped visibility, which
+            # has a variance that is 1/2 the variance of the complex visibility
+            # that was encoded in our original weight dataset.
+            fbw[src] = 2.0 * weight_full
+
             if not self.collapse_ha:
                 if self.is_sstream:
                     formed_beam.ha[src, :] = ha_array
@@ -329,33 +380,6 @@ class BeamFormBase(task.SingleTask):
                     formed_beam.ha[src, ha_mask] = ha_array
 
         return formed_beam
-
-    def _ha_side(self, data, timetrack=900.0):
-        """Number of RA/time bins to track the source at each side of transit.
-
-        Parameters
-        ----------
-        data : `containers.SiderealStream` or `containers.TimeStream`
-            Data to read time from.
-        timetrack : float
-            Time in seconds to track at each side of transit.
-            Default is 15 minutes.
-
-        Returns
-        -------
-        ha_side : int
-            Number of RA bins to track the source at each side of transit.
-        """
-        # TODO: Instead of a fixed time for transit, I could have a minimum
-        # drop in the beam at a conventional distance from the NCP.
-        if "ra" in data.index_map:
-            # In seconds
-            approx_time_perbin = 24.0 * 3600.0 / float(len(data.index_map["ra"]))
-        else:
-            approx_time_perbin = data.time[1] - data.time[0]
-
-        # Track for `timetrack` seconds at each side of transit
-        return int(timetrack / approx_time_perbin)
 
     def _ha_array(self, ra, source_ra_index, source_ra, ha_side, is_sstream=True):
         """Hour angle for each RA/time bin to be processed.
@@ -414,78 +438,75 @@ class BeamFormBase(task.SingleTask):
 
         return ha_array, ra_index_range, ha_mask
 
-    # TODO: This is very CHIME specific. Should probably be moved somewhere else.
-    def _beamfunc(self, ha, pol, freq, dec, zenith=0.70999994):
-        """Simple and fast beam model to be used as beamforming weights.
+    def _initialize_beam_with_data(self):
+        """Beam initialization that requires data.
+
+        This is called at the start of the process method
+        and can be overridden to perform any beam initialization
+        that requires the data and catalog to be parsed first.
+        """
+
+        # Find the index of the local frequencies in
+        # the frequency axis of the telescope instance
+        if not self.no_beam_model:
+
+            self.freq_local_telescope_index = np.array(
+                [
+                    np.argmin(np.abs(nu - self.telescope.frequencies))
+                    for nu in self.freq_local
+                ]
+            )
+
+    def _beamfunc(self, pol, dec, ha):
+        """Calculate the primary beam at the location of a source as it transits.
+
+        Uses the frequencies in the freq_local_telescope_index attribute.
 
         Parameters
         ----------
-        ha : array or float
-            Hour angle (in radians) to compute beam at.
-        freq : array or float
-            Frequency in MHz
-        dec : array or float
-            Declination in radians
-        pol : int or string
-            Polarization index. 0: X, 1: Y, >=2: XY
-            or one of 'XX', 'XY', 'YX', 'YY'
-        zenith : float
-            Polar angle of the telescope zenith in radians.
-            Equal to pi/2 - latitude
+        pol : str
+            String specifying the polarisation,
+            either 'XX', 'XY', 'YX', or 'YY'.
+        dec : float
+            The declination of the source in radians.
+        ha : np.ndarray[nha,]
+            The hour angle of the source in radians.
 
         Returns
         -------
-        beam : array or float
-            The beam at the designated hhour angles, frequencies
-            and declinations. This is the beam 'power', that is,
-            voltage squared. To get the beam voltage, take the
-            square root.
+        primary_beam : np.ndarray[nfreq, nha]
+            The primary beam as a function of frequency and hour angle
+            at the sources declination for the requested polarisation.
         """
 
-        pollist = ["XX", "YY", "XY", "YX"]
-        if pol in pollist:
-            pol = pollist.index(pol)
+        nfreq = self.freq_local.size
 
-        def _sig(pp, freq, dec):
-            sig_amps = [14.87857614, 9.95746878]
-            return sig_amps[pp] / freq / np.cos(dec)
+        if self.no_beam_model:
+            return np.ones((nfreq, ha.size), dtype=np.float64)
 
-        def _amp(pp, dec, zenith):
-            def _flat_top_gauss6(x, A, sig, x0):
-                """Flat-top gaussian. Power of 6."""
-                return A * np.exp(-abs((x - x0) / sig) ** 6)
+        angpos = np.array([(0.5 * np.pi - dec) * np.ones_like(ha), ha]).T
 
-            def _flat_top_gauss3(x, A, sig, x0):
-                """Flat-top gaussian. Power of 3."""
-                return A * np.exp(-abs((x - x0) / sig) ** 3)
+        primary_beam = np.zeros((nfreq, ha.size), dtype=np.float64)
 
-            prm_ns_x = np.array([9.97981768e-01, 1.29544939e00, 0.0])
-            prm_ns_y = np.array([9.86421047e-01, 8.10213326e-01, 0.0])
+        for ff, freq in enumerate(self.freq_local_telescope_index):
 
-            if pp == 0:
-                return _flat_top_gauss6(dec - (0.5 * np.pi - zenith), *prm_ns_x)
+            bii = self.telescope.beam(self.map_pol_feed[pol[0]], freq, angpos)
+
+            if pol[0] != pol[1]:
+                bjj = self.telescope.beam(self.map_pol_feed[pol[1]], freq, angpos)
             else:
-                return _flat_top_gauss3(dec - (0.5 * np.pi - zenith), *prm_ns_y)
+                bjj = bii
 
-        ha0 = 0.0
-        if pol < 2:
-            # XX or YY
-            return _amp(pol, dec, zenith) * np.exp(
-                -(((ha - ha0) / _sig(pol, freq, dec)) ** 2)
-            )
-        else:
-            # XY or YX
-            return (
-                _amp(0, dec, zenith)
-                * np.exp(-(((ha - ha0) / _sig(0, freq, dec)) ** 2))
-                * _amp(1, dec, zenith)
-                * np.exp(-(((ha - ha0) / _sig(1, freq, dec)) ** 2))
-            ) ** 0.5
+            primary_beam[ff] = np.sum(bii * bjj.conjugate(), axis=1)
+
+        return primary_beam
 
     def _process_data(self, data):
         """Store code for parsing and formating data prior to beamforming."""
         # Easy access to communicator
         self.comm_ = data.comm
+
+        self.tag_data = data.attrs["tag"] if "tag" in data.attrs else None
 
         # Extract data info
         if "ra" in data.index_map:
@@ -499,14 +520,10 @@ class BeamFormBase(task.SingleTask):
                     "SiderealStream must have an LSD attribute to calculate the epoch."
                 )
 
-            # This will be a float for a single sidereal day, or a list of
-            # floats for a stack
-            lsd = (
-                data.attrs["lsd"][0]
-                if isinstance(data.attrs["lsd"], np.ndarray)
-                else data.attrs["lsd"]
-            )
+            lsd = np.mean(data.attrs["lsd"])
             self.epoch = self.telescope.lsd_to_unix(lsd)
+
+            dt = 240.0 * ctime.SIDEREAL_S * np.median(np.abs(np.diff(self.ra)))
 
         else:
             self.is_sstream = False
@@ -514,14 +531,16 @@ class BeamFormBase(task.SingleTask):
             self.ra = self.telescope.unix_to_lsa(data.time)
             self.epoch = data.time.mean()
 
+            dt = np.median(np.abs(np.diff(data.time)))
+
         self.freq = data.index_map["freq"]
         self.nfreq = len(self.freq)
         # Ensure data is distributed in freq axis
         data.redistribute(0)
 
         # Number of RA bins to track each source at each side of transit
-        self.ha_side = self._ha_side(data, self.timetrack)
-        self.nha = 2 * self.ha_side + 1
+        self.ha_side = self.timetrack / dt
+        self.nha = 2 * int(self.ha_side) + 1
 
         # polmap: indices of each vis product in
         # polarization list: ['XX', 'XY', 'YX', 'YY']
@@ -533,6 +552,7 @@ class BeamFormBase(task.SingleTask):
         self.lo = data.vis.local_offset[0]
         self.ls = data.vis.local_shape[0]
         self.freq_local = self.freq["centre"][self.lo : self.lo + self.ls]
+
         # These are to be used when gathering results in the end.
         # Tuple (not list!) of number of frequencies in each rank
         self.fsize = tuple(data.comm.allgather(self.ls))
@@ -607,9 +627,17 @@ class BeamFormBase(task.SingleTask):
         if "position" not in catalog:
             raise ValueError("Input is missing a position table.")
 
-        self.sra, self.sdec = icrs_to_cirs(
-            catalog["position"]["ra"], catalog["position"]["dec"], self.epoch
-        )
+        coord = catalog.attrs.get("coordinates", None)
+        if coord == "CIRS":
+            self.log.info("Catalog already in CIRS coordinates.")
+            self.sra = catalog["position"]["ra"]
+            self.sdec = catalog["position"]["dec"]
+
+        else:
+            self.log.info("Converting catalog from ICRS to CIRS coordinates.")
+            self.sra, self.sdec = icrs_to_cirs(
+                catalog["position"]["ra"], catalog["position"]["dec"], self.epoch
+            )
 
         if self.freqside is not None:
             if "redshift" not in catalog:
@@ -618,6 +646,8 @@ class BeamFormBase(task.SingleTask):
 
         self.source_cat = catalog
         self.nsource = len(self.sra)
+
+        self.tag_catalog = catalog.attrs["tag"] if "tag" in catalog.attrs else None
 
 
 class BeamForm(BeamFormBase):
@@ -696,6 +726,480 @@ class BeamFormCat(BeamFormBase):
 
         # Call generic process method.
         return super(BeamFormCat, self).process()
+
+
+class BeamFormExternalBase(BeamFormBase):
+    """Base class for tasks that beamform using an external model of the primary beam.
+
+    The primary beam is provided to the task during setup.  Do not use this class
+    directly, instead use BeamFormExternal and BeamFormExternalCat.
+    """
+
+    def setup(self, beam, *args):
+        """Initialize the beam.
+
+        Parameters
+        ----------
+        beam : GridBeam
+            Model for the primary beam.
+        """
+
+        super().setup(*args)
+        self._initialize_beam(beam)
+
+    def _initialize_beam(self, beam):
+        """Initialize based on the beam container type.
+
+        Parameters
+        ----------
+        beam : GridBeam
+            Container holding the model for the primary beam.
+            Currently only accepts GridBeam type containers.
+        """
+
+        if isinstance(beam, containers.GridBeam):
+            self._initialize_grid_beam(beam)
+            self._beamfunc = self._grid_beam
+
+        else:
+            raise ValueError(f"Do not recognize beam container: {beam.__class__}")
+
+    def _initialize_beam_with_data(self):
+        """Ensure that the beam and visibilities have the same frequency axis."""
+
+        if not np.array_equal(self.freq_local, self._beam_freq):
+            raise RuntimeError("Beam and visibility frequency axes do not match.")
+
+    def _initialize_grid_beam(self, gbeam):
+        """Create an interpolator for a GridBeam.
+
+        Parameters
+        ----------
+        gbeam : GridBeam
+            Model for the primary beam on a celestial grid where
+            (theta, phi) = (declination, hour angle) in degrees.  The beam
+            must be in power units and must have a length 1 input axis that
+            contains the "baseline averaged" beam, which will be applied to
+            all baselines of a given polarisation.
+        """
+
+        # Make sure the beam is in celestial coordinates
+        if gbeam.coords != "celestial":
+            raise RuntimeError(
+                "GridBeam must be converted to celestial coordinates for beamforming."
+            )
+
+        # Make sure there is a single beam to use for all inputs
+        if gbeam.input.size > 1:
+            raise NotImplementedError(
+                "Do not support input-dependent beams at the moment."
+            )
+
+        # Distribute over frequencies, extract local frequencies
+        gbeam.redistribute("freq")
+
+        lo = gbeam.beam.local_offset[0]
+        nfreq = gbeam.beam.local_shape[0]
+        self._beam_freq = gbeam.freq[lo : lo + nfreq]
+
+        # Find the relevant indices into the polarisation axis
+        ipol = np.array([list(gbeam.pol).index(pstr) for pstr in self.process_pol])
+        npol = ipol.size
+        self._beam_pol = [gbeam.pol[ip] for ip in ipol]
+
+        # Extract beam
+        flag = gbeam.weight[:, :, 0][:, ipol] > 0.0
+        beam = np.where(flag, gbeam.beam[:, :, 0][:, ipol].real, 0.0)
+
+        # Convert the declination and hour angle axis to radians, make sure they are sorted
+        ha = (gbeam.phi + 180.0) % 360.0 - 180.0
+        isort = np.argsort(ha)
+        ha = np.radians(ha[isort])
+
+        dec = np.radians(gbeam.theta)
+
+        # Create a 2D interpolator for the beam at each frequency and polarisation
+        self._beam = [
+            [
+                scipy.interpolate.RectBivariateSpline(dec, ha, beam[ff, pp][:, isort])
+                for pp in range(npol)
+            ]
+            for ff in range(nfreq)
+        ]
+
+        # Create a similair interpolator for the flag array
+        self._beam_flag = [
+            [
+                scipy.interpolate.RectBivariateSpline(
+                    dec, ha, flag[ff, pp][:, isort].astype(np.float32)
+                )
+                for pp in range(npol)
+            ]
+            for ff in range(nfreq)
+        ]
+
+        self.log.info("Grid beam initialized.")
+
+    def _grid_beam(self, pol, dec, ha):
+        """Interpolate a GridBeam to the requested declination and hour angles.
+
+        Parameters
+        ----------
+        pol : str
+            String specifying the polarisation,
+            either 'XX', 'XY', 'YX', or 'YY'.
+        dec : float
+            The declination of the source in radians.
+        ha : np.ndarray[nha,]
+            The hour angle of the source in radians.
+
+        Returns
+        -------
+        primay_beam : np.ndarray[nfreq, nha]
+            The primary beam as a function of frequency and hour angle
+            at the sources declination for the requested polarisation.
+        """
+
+        pp = self._beam_pol.index(pol)
+
+        primay_beam = np.array(
+            [self._beam[ff][pp](dec, ha)[0] for ff in range(self._beam_freq.size)]
+        )
+
+        # If the interpolated flags deviate from 1.0, then we mask
+        # the interpolated beam, since some fraction the underlying
+        # data used to construct the interpolator was masked.
+        flag = np.array(
+            [
+                np.abs(self._beam_flag[ff][pp](dec, ha)[0] - 1.0) < 0.01
+                for ff in range(self._beam_freq.size)
+            ]
+        )
+
+        return np.where(flag, primay_beam, 0.0)
+
+
+class BeamFormExternal(BeamFormExternalBase, BeamForm):
+    """Beamform a single catalog and multiple datasets using an external beam model.
+
+    The setup method requires [beam, manager, source_cat] as arguments.
+    """
+
+
+class BeamFormExternalCat(BeamFormExternalBase, BeamFormCat):
+    """Beamform multiple catalogs and a single dataset using an external beam model.
+
+    The setup method requires [beam, manager, data] as arguments.
+    """
+
+
+class RingMapBeamForm(task.SingleTask):
+    """Beamform by extracting the pixel containing each source form a RingMap.
+
+    This is significantly faster than `Beamform` or `BeamformCat` with the caveat
+    that they can beamform exactly on a source whereas this task is at the mercy of
+    what was done to produce the `RingMap` (use `DeconvolveHybridM` for best
+    results).
+    """
+
+    def setup(self, telescope: io.TelescopeConvertible, ringmap: containers.RingMap):
+        """Set the telescope object.
+
+        Parameters
+        ----------
+        manager
+            The telescope object to use.
+        ringmap
+            The ringmap to extract the sources from.
+        """
+
+        self.telescope = io.get_telescope(telescope)
+        self.ringmap = ringmap
+
+    def process(self, catalog: containers.SourceCatalog) -> containers.FormedBeam:
+        """Extract sources from a ringmap.
+
+        Parameters
+        ----------
+        catalog
+            The catalog to extract sources from.
+
+        Returns
+        -------
+        sources
+            The source spectra.
+        """
+
+        ringmap = self.ringmap
+
+        if "position" not in catalog:
+            raise ValueError("Input is missing a position table.")
+
+        # Calculate the epoch for the data so we can calculate the correct
+        # CIRS coordinates
+        if "lsd" not in ringmap.attrs:
+            ringmap.attrs["lsd"] = 1950
+            self.log.error("Input must have an LSD attribute to calculate the epoch.")
+        # if "lsd" not in ringmap.attrs:
+        #     raise ValueError("Input must have an LSD attribute to calculate the epoch.")
+
+        # This will be a float for a single sidereal day, or a list of
+        # floats for a stack
+        lsd = (
+            ringmap.attrs["lsd"][0]
+            if isinstance(ringmap.attrs["lsd"], np.ndarray)
+            else ringmap.attrs["lsd"]
+        )
+        epoch = self.telescope.lsd_to_unix(lsd)
+
+        # Container to hold the formed beams
+        formed_beam = containers.FormedBeam(
+            object_id=catalog.index_map["object_id"],
+            axes_from=ringmap,
+            distributed=True,
+        )
+
+        # Initialize container to zeros.
+        formed_beam.beam[:] = 0.0
+        formed_beam.weight[:] = 0.0
+
+        # Copy catalog information
+        formed_beam["position"][:] = catalog["position"][:]
+        if "redshift" in catalog:
+            formed_beam["redshift"][:] = catalog["redshift"][:]
+
+        # Get the source positions at the current epoch
+        src_ra, src_dec = icrs_to_cirs(
+            catalog["position"]["ra"], catalog["position"]["dec"], epoch
+        )
+
+        # Get the grid size of the map in RA and sin(ZA)
+        dra = np.median(np.abs(np.diff(ringmap.index_map["ra"])))
+        dza = np.median(np.abs(np.diff(ringmap.index_map["el"])))
+
+        # Get the source indices in RA
+        # NOTE: that we need to take into account that sources might be less than 360
+        # deg, but still closer to ind=0
+        max_ra_ind = len(ringmap.ra) - 1
+        ra_ind = (np.rint(src_ra / dra) % max_ra_ind).astype(np.int)
+
+        # Get the indices for the ZA direction
+        za_ind = np.rint(
+            (np.sin(np.radians(src_dec - self.telescope.latitude)) + 1) / dza
+        ).astype(np.int)
+
+        # Ensure containers are distributed in frequency
+        formed_beam.redistribute("freq")
+        ringmap.redistribute("freq")
+
+        # Dereference the datasets
+        fbb = formed_beam.beam[:]
+        fbw = formed_beam.weight[:]
+        rmm = ringmap.map[:]
+        rmw = (
+            ringmap.weight[:]
+            if "weight" in ringmap.datasets
+            else invert_no_zero(ringmap.rms[:]) ** 2
+        )
+
+        # Loop over sources and extract the polarised pencil beams containing them from
+        # the ringmaps
+        for si, (ri, zi) in enumerate(zip(ra_ind, za_ind)):
+            fbb[si] = rmm[0, :, :, ri, zi]
+            fbw[si] = rmw[:, :, ri]
+
+        return formed_beam
+
+
+class RingMapStack2D(task.SingleTask):
+    """Stack RingMap's on sources directly.
+
+    Parameters
+    ----------
+    num_ra, num_dec : int
+        The number of RA and DEC pixels to stack either side of the source.
+    num_freq : int
+        Number of final frequency channels either side of the source redshift to
+        stack.
+    freq_width : float
+        Length of frequency interval either side of source to use in MHz.
+    weight : {"patch", "dec", "enum"}
+        How to weight the data. If `"input"` the data is weighted on a pixel by pixel
+        basis according to the input data. If `"patch"` then the inverse of the
+        variance of the extracted patch is used. If `"dec"` then the inverse variance
+        of each declination strip is used.
+    """
+
+    num_ra = config.Property(proptype=int, default=10)
+    num_dec = config.Property(proptype=int, default=10)
+    num_freq = config.Property(proptype=int, default=256)
+    freq_width = config.Property(proptype=float, default=100.0)
+    weight = config.enum(["patch", "dec", "input"], default="input")
+
+    def setup(self, telescope: io.TelescopeConvertible, ringmap: containers.RingMap):
+        """Set the telescope object.
+
+        Parameters
+        ----------
+        manager
+            The telescope object to use.
+        ringmap
+            The ringmap to extract the sources from.
+        """
+
+        self.telescope = io.get_telescope(telescope)
+        self.ringmap = ringmap
+
+    def process(self, catalog: containers.SourceCatalog) -> containers.FormedBeam:
+        """Extract sources from a ringmap.
+
+        Parameters
+        ----------
+        catalog
+            The catalog to extract sources from.
+
+        Returns
+        -------
+        sources
+            The source spectra.
+        """
+        from mpi4py import MPI
+
+        ringmap = self.ringmap
+
+        if "position" not in catalog:
+            raise ValueError("Input is missing a position table.")
+
+        # Calculate the epoch for the data so we can calculate the correct
+        # CIRS coordinates
+        if "lsd" not in ringmap.attrs:
+            ringmap.attrs["lsd"] = 1950
+            self.log.error("Input must have an LSD attribute to calculate the epoch.")
+
+        # This will be a float for a single sidereal day, or a list of
+        # floats for a stack
+        lsd = (
+            ringmap.attrs["lsd"][0]
+            if isinstance(ringmap.attrs["lsd"], np.ndarray)
+            else ringmap.attrs["lsd"]
+        )
+        epoch = self.telescope.lsd_to_unix(lsd)
+
+        # Get the source positions at the current epoch
+        src_ra, src_dec = icrs_to_cirs(
+            catalog["position"]["ra"], catalog["position"]["dec"], epoch
+        )
+        src_z = catalog["redshift"]["z"]
+
+        # Get the grid size of the map in RA and sin(ZA)
+        dra = np.median(np.abs(np.diff(ringmap.index_map["ra"])))
+        dza = np.median(np.abs(np.diff(ringmap.index_map["el"])))
+
+        # Get the source indices in RA
+        # NOTE: that we need to take into account that sources might be less than 360
+        # deg, but still closer to ind=0
+        max_ra_ind = len(ringmap.ra) - 1
+        ra_ind = (np.rint(src_ra / dra) % max_ra_ind).astype(np.int)
+
+        # Get the indices for the ZA direction
+        za_ind = np.rint(
+            (np.sin(np.radians(src_dec - self.telescope.latitude)) + 1) / dza
+        ).astype(np.int)
+
+        # Ensure containers are distributed in frequency
+        ringmap.redistribute("freq")
+
+        # Get the frequencies on this rank
+        fs = ringmap.map.local_offset[2]
+        fe = fs + ringmap.map.local_shape[2]
+        local_freq = ringmap.freq[fs:fe]
+
+        # Dereference the datasets
+        rmm = ringmap.map[:]
+        rmw = (
+            ringmap.weight[:]
+            if "weight" in ringmap.datasets
+            else invert_no_zero(ringmap.rms[:]) ** 2
+        )
+
+        # Calculate the frequencies bins to use
+        nbins = 2 * self.num_freq + 1
+        bin_edges = np.linspace(
+            -self.freq_width, self.freq_width, nbins + 1, endpoint=True
+        )
+
+        # Calculate the edges of the frequency distribution, sources outside this range
+        # will be dropped
+        global_fmin = ringmap.freq.min()
+        global_fmax = ringmap.freq.max()
+
+        # Create temporary array to accumulate into
+        wstack = np.zeros(
+            (nbins + 2, len(ringmap.pol), 2 * self.num_ra + 1, 2 * self.num_dec + 1)
+        )
+        weight = np.zeros(
+            (nbins + 2, len(ringmap.pol), 2 * self.num_ra + 1, 2 * self.num_dec + 1)
+        )
+
+        rmvar = rmm[0].var(axis=2)
+        w_global = invert_no_zero(np.where(rmvar < 3e-7, 0.0, rmvar))
+
+        # Loop over sources and extract the polarised pencil beams containing them from
+        # the ringmaps
+        for si, (ri, zi, z) in enumerate(zip(ra_ind, za_ind, src_z)):
+            source_freq = 1420.406 / (1 + z)
+
+            if source_freq > global_fmax or source_freq < global_fmin:
+                continue
+
+            # Get bin indices
+            bin_ind = np.digitize(local_freq - source_freq, bin_edges)
+
+            # Get the slices to extract the enclosing angular region
+            ri_slice = slice(ri - self.num_ra, ri + self.num_ra + 1)
+            zi_slice = slice(zi - self.num_dec, zi + self.num_dec + 1)
+
+            b = rmm[0, :, :, ri_slice, zi_slice]
+            w = rmw[:, :, ri_slice, np.newaxis]
+
+            if self.weight == "patch":
+                # Replace the weights with the variance of the patch
+                w = (w != 0) * invert_no_zero(b.var(axis=(2, 3)))[
+                    :, :, np.newaxis, np.newaxis
+                ]
+            elif self.weight == "dec":
+                # w = (w != 0) * invert_no_zero(b.var(axis=2))[:, :, np.newaxis, :]
+                w = (w != 0) * w_global[:, :, np.newaxis, zi_slice]
+
+            bw = b * w
+
+            # TODO: this is probably slow so should be moved into Cython
+            for lfi, bi in enumerate(bin_ind):
+                wstack[bi] += bw[:, lfi]
+                weight[bi] += w[:, lfi]
+
+        # Arrays to reduce the data into
+        wstack_all = np.zeros_like(wstack)
+        weight_all = np.zeros_like(weight)
+
+        self.comm.Allreduce(wstack, wstack_all, op=MPI.SUM)
+        self.comm.Allreduce(weight, weight_all, op=MPI.SUM)
+
+        stack_all = wstack_all * invert_no_zero(weight_all)
+
+        # Create the container to store the data in
+        bin_centres = 0.5 * (bin_edges[1:] + bin_edges[:-1])
+        stack = containers.Stack3D(
+            freq=bin_centres,
+            delta_ra=np.arange(-self.num_ra, self.num_ra + 1),
+            delta_dec=np.arange(-self.num_dec, self.num_dec + 1),
+            axes_from=ringmap,
+            attrs_from=ringmap,
+        )
+        stack.attrs["tag"] = catalog.attrs["tag"]
+        stack.stack[:] = stack_all[1:-1].transpose((1, 2, 3, 0))
+
+        return stack
 
 
 def icrs_to_cirs(ra, dec, epoch, apparent=True):

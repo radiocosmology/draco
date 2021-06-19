@@ -30,10 +30,11 @@ import numpy as np
 from typing import Union, Dict, List
 from yaml import dump as yamldump
 
-from caput import pipeline
-from caput import config
+from caput import pipeline, config, memh5
 
 from cora.util import units
+
+from drift.core import telescope, manager, beamtransfer
 
 from . import task
 from ..util.exception import ConfigError
@@ -64,13 +65,13 @@ TRUNC_SPEC = {
 
 
 def _list_of_filelists(files: Union[List[str], List[List[str]]]) -> List[List[str]]:
-    """
-    Take in a list of lists/glob patterns of filenames
+    """Take in a list of lists/glob patterns of filenames
 
     Parameters
     ----------
     files
-        A path or glob pattern (e.g. /my/data/\*.h5) or a list of those (or a list of lists of those).
+        A path or glob pattern (e.g. /my/data/*.h5) or a list of those (or a list of
+        lists of those).
 
     Raises
     ------
@@ -79,7 +80,8 @@ def _list_of_filelists(files: Union[List[str], List[List[str]]]) -> List[List[st
 
     Returns
     -------
-    The input file list list. Any glob patterns will be flattened to file path string lists.
+    The input file list list. Any glob patterns will be flattened to file path string
+    lists.
     """
     import glob
 
@@ -102,13 +104,12 @@ def _list_of_filelists(files: Union[List[str], List[List[str]]]) -> List[List[st
 
 
 def _list_or_glob(files: Union[str, List[str]]) -> List[str]:
-    """
-    Take in a list of lists/glob patterns of filenames
+    """Take in a list of lists/glob patterns of filenames
 
     Parameters
     ----------
     files
-        A path or glob pattern (e.g. /my/data/\*.h5) or a list of those
+        A path or glob pattern (e.g. /my/data/*.h5) or a list of those
 
     Returns
     -------
@@ -136,17 +137,18 @@ def _list_or_glob(files: Union[str, List[str]]) -> List[str]:
 
 
 def _list_of_filegroups(groups: Union[List[Dict] or Dict]) -> List[Dict]:
-    """
-    Process a file group/groups
+    """Process a file group/groups
 
     Parameters
     ----------
     groups
-        Dicts should contain keys 'files': An iterable with file path or glob pattern strings, 'tag': the group tag str
+        Dicts should contain keys 'files': An iterable with file path or glob pattern
+        strings, 'tag': the group tag str
 
     Returns
     -------
-    The input groups. Any glob patterns in the 'files' list will be flattened to file path strings.
+    The input groups. Any glob patterns in the 'files' list will be flattened to file
+    path strings.
 
     Raises
     ------
@@ -359,13 +361,13 @@ class LoadFITSCatalog(task.SingleTask):
         return catalog
 
 
-class LoadFilesFromParams(task.SingleTask):
-    """Load data from files given in the tasks parameters.
+class BaseLoadFiles(task.SingleTask):
+    """Base class for loading containers from a file on disk.
+
+    Provides the capability to make selections along axes.
 
     Attributes
     ----------
-    files : glob pattern, or list
-        Can either be a glob pattern, or lists of actual files.
     distributed : bool, optional
         Whether the file should be loaded distributed across ranks.
     convert_strings : bool, optional
@@ -397,7 +399,6 @@ class LoadFilesFromParams(task.SingleTask):
             stack_range: [1, 14]  # Will override the selection above
     """
 
-    files = config.Property(proptype=_list_or_glob)
     distributed = config.Property(proptype=bool, default=True)
     convert_strings = config.Property(proptype=bool, default=True)
     selections = config.Property(proptype=dict, default=None)
@@ -406,29 +407,13 @@ class LoadFilesFromParams(task.SingleTask):
         """Resolve the selections."""
         self._sel = self._resolve_sel()
 
-    def process(self):
-        """Load the given files in turn and pass on.
+    def _load_file(self, filename):
+        # Load the file into the relevant container
 
-        Returns
-        -------
-        cont : subclass of `memh5.BasicCont`
-        """
+        if not os.path.exists(filename):
+            raise RuntimeError(f"File does not exist: {filename}")
 
-        from caput import memh5
-
-        # Garbage collect to workaround leaking memory from containers.
-        # TODO: find actual source of leak
-        import gc
-
-        gc.collect()
-
-        if len(self.files) == 0:
-            raise pipeline.PipelineStopIteration
-
-        # Fetch and remove the first item in the list
-        file_ = self.files.pop(0)
-
-        self.log.info(f"Loading file {file_}")
+        self.log.info(f"Loading file {filename}")
         self.log.debug(f"Reading with selections: {self._sel}")
 
         # If we are applying selections we need to dispatch the `from_file` via the
@@ -437,7 +422,7 @@ class LoadFilesFromParams(task.SingleTask):
         # rank=0 and is then broadcast
         if self._sel:
             if self.comm.rank == 0:
-                with h5py.File(file_, "r") as fh:
+                with h5py.File(filename, "r") as fh:
                     clspath = memh5.MemDiskGroup._detect_subclass_path(fh)
             else:
                 clspath = None
@@ -447,19 +432,13 @@ class LoadFilesFromParams(task.SingleTask):
             new_cls = memh5.BasicCont
 
         cont = new_cls.from_file(
-            file_,
+            filename,
             distributed=self.distributed,
             comm=self.comm,
             convert_attribute_strings=self.convert_strings,
             convert_dataset_strings=self.convert_strings,
             **self._sel,
         )
-
-        if "tag" not in cont.attrs:
-            # Get the first part of the actual filename and use it as the tag
-            tag = os.path.splitext(os.path.basename(file_))[0]
-
-            cont.attrs["tag"] = tag
 
         return cont
 
@@ -513,6 +492,48 @@ class LoadFilesFromParams(task.SingleTask):
                 raise ValueError(f"All elements of index spec must be ints. Got {x}")
 
         return list(x)
+
+
+class LoadFilesFromParams(BaseLoadFiles):
+    """Load data from files given in the tasks parameters.
+
+    Attributes
+    ----------
+    files : glob pattern, or list
+        Can either be a glob pattern, or lists of actual files.
+    """
+
+    files = config.Property(proptype=_list_or_glob)
+
+    def process(self):
+        """Load the given files in turn and pass on.
+
+        Returns
+        -------
+        cont : subclass of `memh5.BasicCont`
+        """
+        # Garbage collect to workaround leaking memory from containers.
+        # TODO: find actual source of leak
+        import gc
+
+        gc.collect()
+
+        if len(self.files) == 0:
+            raise pipeline.PipelineStopIteration
+
+        # Fetch and remove the first item in the list
+        file_ = self.files.pop(0)
+
+        # Load into a container
+        cont = self._load_file(file_)
+
+        if "tag" not in cont.attrs:
+            # Get the first part of the actual filename and use it as the tag
+            tag = os.path.splitext(os.path.basename(file_))[0]
+
+            cont.attrs["tag"] = tag
+
+        return cont
 
 
 # Define alias for old code
@@ -879,12 +900,15 @@ class SaveConfig(task.SingleTask):
         return
 
 
+# Python types for objects convertible to beamtransfers or telescope instances
+BeamTransferConvertible = Union[manager.ProductManager, beamtransfer.BeamTransfer]
+TelescopeConvertible = Union[BeamTransferConvertible, telescope.TransitTelescope]
+
+
 def get_telescope(obj):
     """Return a telescope object out of the input (either `ProductManager`,
     `BeamTransfer` or `TransitTelescope`).
     """
-    from drift.core import telescope
-
     try:
         return get_beamtransfer(obj).telescope
     except RuntimeError:
@@ -898,8 +922,6 @@ def get_beamtransfer(obj):
     """Return a BeamTransfer object out of the input (either `ProductManager`,
     `BeamTransfer`).
     """
-    from drift.core import manager, beamtransfer
-
     if isinstance(obj, beamtransfer.BeamTransfer):
         return obj
 
