@@ -573,6 +573,8 @@ class ThresholdVisWeight(task.SingleTask):
         timestream : same as input timestream
             The input container with modified weights.
         """
+        from mpi4py import MPI
+
         timestream.redistribute(["prod", "stack"])
 
         weight = timestream.weight[:]
@@ -586,8 +588,10 @@ class ThresholdVisWeight(task.SingleTask):
             self.absolute_threshold, self.relative_threshold * mean_weight
         )
         keep = weight > threshold[np.newaxis, :, np.newaxis]
+        keep_sum = np.sum(keep)
+        keep_total = np.zeros_like(keep_sum)
 
-        keep_total = timestream.comm.allreduce(np.sum(keep))
+        timestream.comm.Allreduce(keep_sum, keep_total, op=MPI.SUM)
         keep_frac = keep_total / float(np.prod(weight.global_shape))
 
         self.log.info(
