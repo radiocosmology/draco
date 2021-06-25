@@ -1,5 +1,6 @@
 """Beamform visibilities to the location of known sources."""
 
+import healpy
 import numpy as np
 import scipy.interpolate
 from skyfield.api import Star, Angle
@@ -939,9 +940,10 @@ class RingMapBeamForm(task.SingleTask):
         # CIRS coordinates
         if "lsd" not in ringmap.attrs:
             ringmap.attrs["lsd"] = 1950
-            self.log.error("Input must have an LSD attribute to calculate the epoch.")
-        # if "lsd" not in ringmap.attrs:
-        #     raise ValueError("Input must have an LSD attribute to calculate the epoch.")
+            self.log.error(
+                "Input does not have an LSD attribute to calculate the epoch. "
+                "Assuming CSD=1950, but this might be completely wrong."
+            )
 
         # This will be a float for a single sidereal day, or a list of
         # floats for a stack
@@ -1234,3 +1236,79 @@ def icrs_to_cirs(ra, dec, epoch, apparent=True):
     ra_cirs, dec_cirs, _ = positions.cirs_radec(epoch)
 
     return ra_cirs._degrees, dec_cirs._degrees
+
+
+class HealpixBeamForm(task.SingleTask):
+    """Beamform by extracting the pixel containing each source form a Healpix map.
+
+    The Healpix map is assumed to be in ICRS coordinates, unless `epoch` is set in which
+    case it assumed to be in CIRS coordinates at that epoch.
+    """
+
+    epoch = config.utc_time(default=None)
+
+    def setup(self, hpmap: containers.Map):
+        """Set the map to extract beams from at each catalog location.
+
+        Parameters
+        ----------
+        hpmap
+            The Healpix map to extract the sources from.
+        """
+
+        self.map = hpmap
+
+    def process(self, catalog: containers.SourceCatalog) -> containers.FormedBeam:
+        """Extract sources from a ringmap.
+
+        Parameters
+        ----------
+        catalog
+            The catalog to extract sources from.
+
+        Returns
+        -------
+        formed_beam
+            The source spectra.
+        """
+
+        if "position" not in catalog:
+            raise ValueError("Input is missing a position table.")
+
+        # Container to hold the formed beams
+        formed_beam = containers.FormedBeam(
+            object_id=catalog.index_map["object_id"],
+            axes_from=self.map,
+            distributed=True,
+        )
+
+        # Initialize container to zeros.
+        formed_beam.beam[:] = 0.0
+        formed_beam.weight[:] = 0.0
+
+        # Copy catalog information
+        formed_beam["position"][:] = catalog["position"][:]
+        if "redshift" in catalog:
+            formed_beam["redshift"][:] = catalog["redshift"][:]
+
+        # Get the source positions at the current epoch
+        if self.epoch:
+            src_ra, src_dec = icrs_to_cirs(
+                catalog["position"]["ra"], catalog["position"]["dec"], self.epoch
+            )
+        else:
+            src_ra = catalog["position"]["ra"]
+            src_dec = catalog["position"]["dec"]
+
+        # Use Healpix to get the pixels containing the sources
+        pix_ind = healpy.ang2pix(self.map.nside, src_ra, src_dec, lonlat=True)
+
+        # Ensure containers are distributed in frequency
+        formed_beam.redistribute("freq")
+        self.map.redistribute("freq")
+
+        formed_beam.beam[:] = self.map.map[:, :, pix_ind].transpose(2, 1, 0)
+        # Set to some non-zero value as the Map container doesn't have a weight
+        formed_beam.weight[:] = 1.0
+
+        return formed_beam
