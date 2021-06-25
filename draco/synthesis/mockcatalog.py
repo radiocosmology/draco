@@ -286,7 +286,6 @@ class ResizeSelectionFunctionMap(task.SingleTask):
         # pixel values (which the Lanczos interpolation can create) to zero
         for fi in range(selfunc_map_newz.local_shape[0]):
             new_selfunc_map_local[:][fi, 0] = hp.ud_grade(selfunc_map_newz[fi], nside)
-            new_selfunc_map_local[:][fi, 0][new_selfunc_map_local[:][fi, 0][:] < 0] = 0
 
             # If desired, convolve the resized selection function with a
             # Gaussian with FWHM equal to the sqrt of the original pixel area.
@@ -298,6 +297,8 @@ class ResizeSelectionFunctionMap(task.SingleTask):
                 new_selfunc_map_local[:][fi, 0] = hp.smoothing(
                     new_selfunc_map_local[:][fi, 0], fwhm=smoothing_fwhm, verbose=False
                 )
+
+            new_selfunc_map_local[:][fi, 0][new_selfunc_map_local[:][fi, 0][:] < 0] = 0
 
         return new_selfunc
 
