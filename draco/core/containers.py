@@ -56,6 +56,7 @@ their own custom container types.
 """
 
 import inspect
+from typing import Optional
 
 import numpy as np
 from caput import memh5, tod
@@ -937,11 +938,17 @@ class MContainer(ContainerBase):
     ----------
     mmax : integer, optional
         Largest m to be held.
+    oddra : bool, optional
+        Does this MContainer come from an underlying odd number of RA points. This
+        determines if the largest negative m is filled or not (it is for odd=True, not
+        for odd=False). Default is odd=False.
     """
 
     _axes = ("m", "msign")
 
-    def __init__(self, mmax=None, *args, **kwargs):
+    def __init__(
+        self, mmax: Optional[int] = None, oddra: Optional[bool] = None, *args, **kwargs
+    ):
 
         # Set up axes from passed arguments
         if mmax is not None:
@@ -952,10 +959,21 @@ class MContainer(ContainerBase):
 
         super().__init__(*args, **kwargs)
 
+        # Set oddra, prioritising an explicit keyword argument over anything else
+        if oddra is not None:
+            self.attrs["oddra"] = oddra
+        elif "oddra" not in self.attrs:
+            self.attrs["oddra"] = False
+
     @property
-    def mmax(self):
+    def mmax(self) -> int:
         """The maximum m stored."""
         return int(self.index_map["m"][-1])
+
+    @property
+    def oddra(self) -> bool:
+        """Whether this represents an odd or even number of RA points."""
+        return self.attrs["oddra"]
 
 
 class HealpixContainer(ContainerBase):
