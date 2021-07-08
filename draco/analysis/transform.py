@@ -494,7 +494,9 @@ class MModeTransform(task.SingleTask):
             mmax = sstream.vis.shape[-1] // 2
 
         # Create the container to store the modes in
-        ma = out_cont(mmax=mmax, axes_from=sstream, comm=sstream.comm)
+        ma = out_cont(
+            mmax=mmax, oddra=bool(nra % 2), axes_from=sstream, comm=sstream.comm
+        )
         ma.redistribute("freq")
 
         # Generate the m-mode transform directly into the output container
@@ -597,8 +599,13 @@ class MModeInverseTransform(task.SingleTask):
         # Ensure m-modes are distributed in frequency
         mmodes.redistribute("freq")
 
+        # Use the nra property if set otherwise use the natural nra from the incoming
+        # container
+        nra_cont = 2 * mmodes.mmax + (1 if mmodes.oddra else 0)
+        nra = self.nra if self.nra is not None else nra_cont
+
         # Re-construct array of S-streams
-        ssarray = _make_ssarray(mmodes.vis[:], n=self.nra)
+        ssarray = _make_ssarray(mmodes.vis[:], n=nra)
         nra = ssarray.shape[-1]  # Get the actual nra used
         ssarray = mpiarray.MPIArray.wrap(ssarray[:], axis=0, comm=mmodes.comm)
 

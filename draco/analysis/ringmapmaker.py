@@ -547,8 +547,7 @@ class DeconvolveHybridMBase(task.SingleTask):
         m = hybrid_vis_m.index_map["m"]
         mmax = hybrid_vis_m.mmax
 
-        is_odd = np.any(hybrid_vis_m.vis[mmax, 1] != 0.0)
-        nra = 2 * mmax + int(is_odd)
+        nra = 2 * mmax + int(hybrid_vis_m.oddra)
 
         # Create ring map, copying over axes/attrs
         rm = containers.RingMap(
@@ -858,9 +857,7 @@ class DeconvolveAnalyticalBeam(DeconvolveHybridMBase):
 
         # Determine the RA axis from the maximum m-mode in the hybrid visibilities
         mmax = hybrid_vis_m.mmax
-        is_odd = np.any(hybrid_vis_m.vis[mmax, 1] != 0.0)
-        is_odd = hybrid_vis_m.comm.allreduce(is_odd)
-        nra = 2 * mmax + int(is_odd)
+        nra = 2 * mmax + int(hybrid_vis_m.oddra)
 
         dec = np.arcsin(hybrid_vis_m.index_map["el"]) + np.radians(
             self.telescope.latitude
