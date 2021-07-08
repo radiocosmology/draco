@@ -2,6 +2,8 @@
 
 This includes grouping frequencies and products to performing the m-mode transform.
 """
+from typing import Optional
+
 import numpy as np
 from numpy.lib.recfunctions import structured_to_unstructured
 from caput import mpiarray, config
@@ -441,7 +443,7 @@ class MModeTransform(task.SingleTask):
     time samples, or if a manager is supplied `telescope.mmax` is used.
     """
 
-    def setup(self, manager=None):
+    def setup(self, manager: Optional[io.TelescopeConvertible] = None):
         """Set the telescope instance if a manager object is given.
 
         This is used to set the `mmax` used in the transform.
@@ -457,7 +459,7 @@ class MModeTransform(task.SingleTask):
         else:
             self.telescope = None
 
-    def process(self, sstream):
+    def process(self, sstream: containers.SiderealContainer) -> containers.MContainer:
         """Perform the m-mode transform.
 
         Parameters
@@ -578,7 +580,7 @@ class MModeInverseTransform(task.SingleTask):
 
     nra = config.Property(proptype=int, default=None)
 
-    def process(self, mmodes):
+    def process(self, mmodes: containers.MContainer) -> containers.SiderealContainer:
         """Perform the m-mode inverse transform.
 
         Parameters
