@@ -994,21 +994,19 @@ class RingMapBeamForm(task.SingleTask):
         formed_beam.redistribute("freq")
         ringmap.redistribute("freq")
 
+        has_weight = "weight" in ringmap.datasets
+
         # Dereference the datasets
         fbb = formed_beam.beam[:]
         fbw = formed_beam.weight[:]
         rmm = ringmap.map[:]
-        rmw = (
-            ringmap.weight[:]
-            if "weight" in ringmap.datasets
-            else invert_no_zero(ringmap.rms[:]) ** 2
-        )
+        rmw = ringmap.weight[:] if has_weight else invert_no_zero(ringmap.rms[:]) ** 2
 
         # Loop over sources and extract the polarised pencil beams containing them from
         # the ringmaps
         for si, (ri, zi) in enumerate(zip(ra_ind, za_ind)):
             fbb[si] = rmm[0, :, :, ri, zi]
-            fbw[si] = rmw[:, :, ri]
+            fbw[si] = rmw[:, :, ri, zi] if has_weight else rmw[:, :, ri]
 
         return formed_beam
 
