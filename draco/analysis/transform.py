@@ -2,15 +2,11 @@
 
 This includes grouping frequencies and products to performing the m-mode transform.
 """
-<<<<<<< HEAD
 from typing import Optional
 
 import numpy as np
 from numpy.lib.recfunctions import structured_to_unstructured
-=======
 import datetime
-
-import numpy as np
 
 from astropy.coordinates import SkyCoord
 from astropy import units as u
@@ -18,7 +14,6 @@ from astropy.time import Time
 import pandas as pd
 import healpy as hp
 
->>>>>>> 03e8106... feat(transform): add task to convert ringmap to healpix map
 from caput import mpiarray, config
 from ch_util import ephemeris
 from cora.util import hputil
