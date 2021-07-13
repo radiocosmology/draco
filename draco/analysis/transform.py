@@ -1357,7 +1357,7 @@ class MultiplyMaps(task.SingleTask):
     """Multiply two healpix maps.
 
     If the map resolutions differ, the second map is up/downgraded
-    to match the first. There is also the option to filter the |m>0|
+    to match the first. There is also the option to filter the |m|>0
     components out of the second map, and to normalize the second map
     by its mean.
 
