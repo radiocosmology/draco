@@ -455,13 +455,8 @@ class SimulateSingleHarmonicSidereal(task.SingleTask):
         self.beamtransfer = io.get_beamtransfer(bt)
         self.telescope = io.get_telescope(bt)
 
-    def process(self, map_):
+    def process(self):
         """Simulate a SiderealStream.
-
-        Parameters
-        ----------
-        map : :class:`containers.Map`
-            Sky map, which we only use to pull out frequency information.
 
         Returns
         -------
@@ -496,8 +491,11 @@ class SimulateSingleHarmonicSidereal(task.SingleTask):
         else:
             mmax_compute = self.ell
         
-        freqmap = map_.index_map["freq"][:]
-
+        # Construct frequency index map, assuming equal-width channels
+        freqmap = np.zeros(len(tel.frequencies), dtype=[("centre", np.float64), ("width", np.float64)])
+        freqmap["centre"][:] = tel.frequencies
+        freqmap["width"][:] = np.abs(np.diff(tel.frequencies)[0])
+        
         if self.kpar is None:
             # If not input kpar specified, use all ones as input values
             vals = np.ones(lfreq)
@@ -612,7 +610,7 @@ class SimulateSingleHarmonicSidereal(task.SingleTask):
             ra=ntime,
             input=feed_index,
             distributed=True,
-            comm=map_.comm,
+            comm=self.comm,
             **kwargs,
         )
         sstream.vis[:] = mpiarray.MPIArray.wrap(vis_stream, axis=0)
