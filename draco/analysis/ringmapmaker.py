@@ -521,6 +521,10 @@ class DeconvolveHybridMBase(task.SingleTask):
         Use the same window for all frequencies in an attempt to produce
         a frequency independent synthesized beam in the EW direction.
         Only relevant if the window_type parameter is provided.
+    nra : int
+        Number of RA bins in the output. Note that if the number of samples does not
+        Nyquist sample the maximum m, information may be lost. If not set, determine
+        an appropriate number of RA bins from the mmax.
     """
 
     exclude_intracyl = config.Property(proptype=bool, default=False)
@@ -542,6 +546,7 @@ class DeconvolveHybridMBase(task.SingleTask):
     )
     window_size = config.Property(proptype=float, default=1.0)
     window_scaled = config.Property(proptype=bool, default=False)
+    nra = config.Property(proptype=int, default=None)
 
     def setup(self, manager: io.TelescopeConvertible = None):
         """Set the telescope instance if a manager object is given.
@@ -620,7 +625,8 @@ class DeconvolveHybridMBase(task.SingleTask):
         m = hybrid_vis_m.index_map["m"]
         mmax = hybrid_vis_m.mmax
 
-        nra = 2 * mmax + int(hybrid_vis_m.oddra)
+        nra_from_mmax = 2 * mmax + int(hybrid_vis_m.oddra)
+        nra = self.nra if self.nra is not None else nra_from_mmax
 
         # Create ring map, copying over axes/attrs
         rm = containers.RingMap(
