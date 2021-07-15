@@ -934,10 +934,12 @@ class DeconvolveAnalyticalBeam(DeconvolveHybridMBase):
             """Azimuthal beam transfer function."""
             return np.exp(2.0j * np.pi * u * np.sin(phi)) * A(phi, sigma)
 
-        # Determine the RA axis from the maximum m-mode in the hybrid visibilities
+        # Determine the RA axis from the maximum m-mode in the hybrid visibilities,
+        # or from the user's specification
         mmax = hybrid_vis_m.mmax
-        nra = 2 * mmax + int(hybrid_vis_m.oddra)
-
+        nra_from_mmax = 2 * mmax + int(hybrid_vis_m.oddra)
+        nra = self.nra if self.nra is not None else nra_from_mmax
+        
         dec = np.arcsin(hybrid_vis_m.index_map["el"]) + np.radians(
             self.telescope.latitude
         )
