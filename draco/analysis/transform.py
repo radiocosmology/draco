@@ -1095,15 +1095,19 @@ class RingMapToHealpixMap(task.SingleTask):
         pixels for default CHIME ringmap resolution. Default: 128
     fill_value : float
         Value to fill empty healpix pixels with. Default: NaN
-    median_subtract: bool
+    median_subtract: bool, optional
         Whether to subtract the median across RA from the ringmap before
         converting to healpix. Default: False
+    mult_by_weights : bool, optional
+        Whether to multiply the ringmap by its (normalized) weights at
+        each pol and frequency before converting to healpix. Default: False
     """
 
     nside = config.Property(proptype=int, default=128)
     fill_value = config.Property(proptype=float, default=np.nan)
     median_subtract = config.Property(proptype=bool, default=False)
-
+    mult_by_weights = config.Property(proptype=bool, default=False)
+    
     # Skip NaN checks, because it is likely (and expected) that output
     # map will contain some NaNs
     nan_check = False
@@ -1170,8 +1174,11 @@ class RingMapToHealpixMap(task.SingleTask):
             comm=ringmap.comm,
         )
 
-        # Get local sections of ringmap and healpix map, and local offset and shape of each frequency section
+        # Get local sections of ringmap, weights (if needed late), and healpix map,
+        # along with local offset and shape of each frequency section
         ringmap_local = ringmap.map[:]
+        if self.mult_by_weights:
+            weight_local = ringmap.weight[:]
         map_local = map_.map[:]
         lo = ringmap.map.local_offset[2]
         ls = ringmap.map.local_shape[2]
@@ -1187,6 +1194,12 @@ class RingMapToHealpixMap(task.SingleTask):
                 # and transpose to be packed as [el, ra]
                 in_map = ringmap_local[0, pi, fi_local].T
 
+                # If requested, multiply map by weights, normalized
+                # to sum to unity at each RA
+                if self.mult_by_weights:
+                    weight = weight_local[pi, fi_local].T
+                    in_map *= weight / weight.sum(axis=0)[np.newaxis, :]
+                
                 # Cut sin(za) range to be < 90 deg
                 in_map = in_map[:el_imax]
 
