@@ -702,10 +702,10 @@ class DeconvolveHybridMBase(task.SingleTask):
 
             # Calculate the dirty beam m-modes
             dirty_beam_m = winf * sum_weight * tools.invert_no_zero(C_inv)
-
+            
             # Calculate the point source normalization (dirty beam at transit)
-            norm = tools.invert_no_zero(dirty_beam_m.mean(axis=0))[:, np.newaxis, :]
-
+            norm = tools.invert_no_zero(dirty_beam_m[: nra // 2 + 1].sum(axis=0) / (nra // 2 + 1))[:, np.newaxis, :]
+            
             # Fill in the ringmap
             rmm[0, :, lfi] = (
                 np.fft.irfft(map_m.transpose(1, 2, 0), axis=-1, n=nra).transpose(
@@ -729,7 +729,7 @@ class DeconvolveHybridMBase(task.SingleTask):
             var *= (winf * tools.invert_no_zero(C_inv)) ** 2
             sum_var_map_m = 0.5 * np.sum(var, axis=0)[:, np.newaxis, :]
 
-            rmw[:, lfi] = (mmax + 1) ** 2 * tools.invert_no_zero(
+            rmw[:, lfi] = (nra // 2 + 1) ** 2 * tools.invert_no_zero(
                 norm ** 2 * sum_var_map_m
             )
 
