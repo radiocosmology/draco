@@ -1198,11 +1198,11 @@ class RingMapToHealpixMap(task.SingleTask):
                 # to sum to unity at each RA
                 if self.mult_by_weights:
                     weight = weight_local[pi, fi_local].T
-                    in_map *= weight / weight.sum(axis=0)[np.newaxis, :]
+                    in_map *= weight / weight.mean(axis=0)[np.newaxis, :]
 
                 # Cut sin(za) range to be < 90 deg
                 in_map = in_map[:el_imax]
-
+                
                 # If requested, subtract median at each dec from map
                 if self.median_subtract:
                     in_map = self._subtract_median(in_map)
