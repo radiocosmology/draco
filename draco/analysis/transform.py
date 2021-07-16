@@ -1107,7 +1107,7 @@ class RingMapToHealpixMap(task.SingleTask):
     fill_value = config.Property(proptype=float, default=np.nan)
     median_subtract = config.Property(proptype=bool, default=False)
     mult_by_weights = config.Property(proptype=bool, default=False)
-    
+
     # Skip NaN checks, because it is likely (and expected) that output
     # map will contain some NaNs
     nan_check = False
@@ -1199,7 +1199,7 @@ class RingMapToHealpixMap(task.SingleTask):
                 if self.mult_by_weights:
                     weight = weight_local[pi, fi_local].T
                     in_map *= weight / weight.sum(axis=0)[np.newaxis, :]
-                
+
                 # Cut sin(za) range to be < 90 deg
                 in_map = in_map[:el_imax]
 
@@ -1471,3 +1471,99 @@ class MultiplyMaps(task.SingleTask):
         out_map_local[:] = map1_local * map2_local
 
         return out_map
+
+
+class ModulateMapFrequencies(task.SingleTask):
+    """Modulate map or ringmap with frequency oscillations.
+
+    This task constructs a (real) Fourier mode along the frequency
+    direction with a given value of k_parallel, and multiplies
+    it into the frequency direction of a map or ringmap.
+
+    Parameters
+    ----------
+    kpar : float
+        The k_parallel value to use, interpreted depending on
+        how kpar_as_kf_mult is set.
+    kpar_as_kf_mult : bool, optional
+        If True, kpar is interpreted as a multiple of k_fundmanental,
+        defined as 2 * pi / (chi_max - chi_min) where chi_X is
+        the comoving radial distance to the lower and upper band
+        edges respectively, in Mpc/h. If False, kpar is interpreted
+        as k_parallel itself, in h/Mpc. Default: True
+    """
+
+    kpar = config.Property(proptype=float, default=None)
+    kpar_as_kf_mult = config.Property(proptype=bool, default=True)
+
+    def process(self, map_: containers.FreqContainer) -> containers.FreqContainer:
+        """Modulate frequency direction by k_parallel mode.
+
+        Parameters
+        ----------
+        map_: containers.Map or containers.Ringmap
+            Input map.
+
+        Returns
+        -------
+        out_map : containers.Map or containers.Ringmap
+            Output map.
+        """
+        from draco.synthesis.stream import channel_values_from_kpar
+
+        # Create output container with same type as input
+        cont = map_.__class__
+        if cont not in [containers.Map, containers.RingMap]:
+            raise InputError("Input container must be Map or RingMap!")
+        out_cont = cont(
+            axes_from=map_,
+            attrs_from=map_,
+            distributed=True,
+            comm=self.comm
+        )
+
+        # Construct k_parallel mode, sampled at frequency channel centers
+        freq = map_.freq
+        mode_vals, kpar_value = channel_values_from_kpar(
+            freq, self.kpar, kpar_as_kf_mult=True
+        )
+        self.log.debug("Modulating map with kpar = %g h/Mpc" % kpar_value)
+
+        if cont is containers.Map:
+            # For healpix map, multiply map data by k-mode and copy to
+            # new container
+            map_.redistribute("pixel")
+            out_cont.redistribute("pixel")
+            map_local = map_.map[:]
+            out_map_local = out_cont.map[:]
+
+            out_map_local[:] = map_local * mode_vals[:, np.newaxis, np.newaxis]
+
+        else:
+            # For ringmap, multiply map data by k-mode and copy to
+            # new container
+            map_.redistribute("el")
+            out_cont.redistribute("el")
+            map_local = map_.map[:]
+            out_map_local = out_cont.map[:]
+
+            out_map_local[:] = map_local * mode_vals[
+                np.newaxis, np.newaxis, :, np.newaxis, np.newaxis
+            ]
+
+            # Also copy weights, dirty beam, and rms to new container
+            out_cont.weight[:] = map_.weight[:]
+            if "dirty_beam" in map_.datasets:
+                out_cont.add_dataset("dirty_beam")
+                out_cont.redistribute("el")
+                out_cont.dirty_beam[:] = map_.dirty_beam[:]
+            if "rms" in map_.datasets:
+                out_cont.add_dataset("rms")
+                out_cont.redistribute("el")
+                out_cont.rms[:] = map_.rms[:]
+
+        # Other tasks that use the original map will typically assume
+        # it is distributed in frequency, so we redistribute here
+        map_.redistribute("freq")
+
+        return out_cont
