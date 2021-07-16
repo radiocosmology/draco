@@ -1020,7 +1020,14 @@ class Map(FreqContainer, HealpixContainer):
             "initialise": True,
             "distributed": True,
             "distributed_axis": "freq",
-        }
+        },
+        "weight": {
+            "axes": ["freq", "pol", "pixel"],
+            "dtype": np.float64,
+            "initialise": False,
+            "distributed": True,
+            "distributed_axis": "freq",
+        },
     }
 
     def __init__(self, polarisation=True, pol=None, *args, **kwargs):
@@ -1037,6 +1044,10 @@ class Map(FreqContainer, HealpixContainer):
     def map(self):
         return self.datasets["map"]
 
+    @property
+    def weight(self):
+        return self.datasets["weight"]
+    
     @property
     def nside(self):
         return int((len(self.index_map["pixel"]) // 12) ** 0.5)
