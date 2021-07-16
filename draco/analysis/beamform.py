@@ -906,8 +906,16 @@ class RingMapBeamForm(task.SingleTask):
     that they can beamform exactly on a source whereas this task is at the mercy of
     what was done to produce the `RingMap` (use `DeconvolveHybridM` for best
     results).
+
+    Parameters
+    ----------
+    ignore_ringmap_weights : bool, optional
+        Set weights for formed beams to unity instead of propagating weights
+        from ringmap. Default: False.
     """
 
+    ignore_ringmap_weights = config.Property(proptype=bool, default=False)
+    
     def setup(self, telescope: io.TelescopeConvertible, ringmap: containers.RingMap):
         """Set the telescope object.
 
@@ -1013,6 +1021,11 @@ class RingMapBeamForm(task.SingleTask):
         for si, (ri, zi) in enumerate(zip(ra_ind, za_ind)):
             fbb[si] = rmm[0, :, :, ri, zi]
             fbw[si] = rmw[:, :, ri, zi]
+
+            # If desired, ignore ringmap weights when stacking, by setting them to
+            # unity here
+            if self.ignore_ringmap_weights:
+                fbw[si] = np.ones_like(fbw[si])
 
         return formed_beam
 
