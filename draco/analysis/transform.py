@@ -1173,13 +1173,15 @@ class RingMapToHealpixMap(task.SingleTask):
             distributed=True,
             comm=ringmap.comm,
         )
+        map_.add_dataset("weight")
+        map_.redistribute("freq")
 
         # Get local sections of ringmap, weights (if needed late), and healpix map,
         # along with local offset and shape of each frequency section
         ringmap_local = ringmap.map[:]
-        if self.mult_by_weights:
-            weight_local = ringmap.weight[:]
+        weight_local = ringmap.weight[:]
         map_local = map_.map[:]
+        map_weight_local = map_.weight[:]
         lo = ringmap.map.local_offset[2]
         ls = ringmap.map.local_shape[2]
 
@@ -1190,9 +1192,10 @@ class RingMapToHealpixMap(task.SingleTask):
             )
 
             for pi in range(len(ringmap.pol)):
-                # Fetch map at this frequency and polarization,
+                # Fetch map and weights at this frequency and polarization,
                 # and transpose to be packed as [el, ra]
                 in_map = ringmap_local[0, pi, fi_local].T
+                in_weight = weight_local[pi, fi_local].T
 
                 # If requested, multiply map by weights, normalized
                 # to sum to unity at each RA
@@ -1202,6 +1205,7 @@ class RingMapToHealpixMap(task.SingleTask):
 
                 # Cut sin(za) range to be < 90 deg
                 in_map = in_map[:el_imax]
+                in_weight = in_weight[:el_imax]
                 
                 # If requested, subtract median at each dec from map
                 if self.median_subtract:
@@ -1221,6 +1225,17 @@ class RingMapToHealpixMap(task.SingleTask):
                 desired_indices[is_in_index] = datalist.data
                 map_local[fi_local, pi] = np.array(desired_indices)
 
+                # Do same thing for weights
+                df = pd.DataFrame({"indices": hp_pix_coords, "data": in_weight.flatten()})
+                datalist = df.groupby("indices").mean()
+                desired_indices = pd.Series(np.arange(hp.nside2npix(self.nside)))
+                is_in_index = desired_indices.isin(datalist.index)
+                desired_indices[:] = self.fill_value
+                desired_indices[is_in_index] = datalist.data
+                map_weight_local[fi_local, pi] = np.array(desired_indices)
+                # Additionally, convert any NaNs to zeros in weights
+                map_weight_local[fi_local, pi] = np.nan_to_num(map_weight_local[fi_local, pi])
+                
         return map_
 
     def _make_healpix_pixel_coords(self, ra, dec, csd, nside):
