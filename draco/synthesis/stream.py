@@ -490,19 +490,21 @@ class SimulateSingleHarmonicSidereal(task.SingleTask):
             mmax_compute = self.m
         else:
             mmax_compute = self.ell
-        
+
         # Construct frequency index map, assuming equal-width channels
         freqmap = np.zeros(len(tel.frequencies), dtype=[("centre", np.float64), ("width", np.float64)])
         freqmap["centre"][:] = tel.frequencies
         freqmap["width"][:] = np.abs(np.diff(tel.frequencies)[0])
-        
+
         if self.kpar is None:
             # If not input kpar specified, use all ones as input values
             vals = np.ones(lfreq)
         else:
             # If input kpar specified, set map values along frequency
             # axis based on a single Fourier mode with that kpar
-            vals = channel_values_from_kpar(freqmap, self.kpar, self.kpar_as_kf_mult)
+            vals, kpar_value = channel_values_from_kpar(
+                freqmap, self.kpar, self.kpar_as_kf_mult
+            )
             vals = vals[sfreq: efreq]
 
         # Calculate the alm's for the local sections.
@@ -585,7 +587,7 @@ class SimulateSingleHarmonicSidereal(task.SingleTask):
             feed_index = tel.input_index
         except AttributeError:
             feed_index = tel.nfeed
-        
+
         kwargs = {}
 
         if tel.npairs != (tel.nfeed + 1) * tel.nfeed // 2:
@@ -603,7 +605,7 @@ class SimulateSingleHarmonicSidereal(task.SingleTask):
             prod_map["input_b"] = tel.uniquepairs[:, 1]
 
             kwargs["prod"] = prod_map
-        
+
         # Construct container and set visibility data
         sstream = containers.SiderealStream(
             freq=freqmap,
@@ -639,7 +641,7 @@ def relative_freq_channel_distances(freqs):
     return rel_chi
 
 
-def channel_values_from_kpar(freqmap, kpar_in, kpar_as_kf_mult=True):
+def channel_values_from_kpar(freqmap, kpar_in, kpar_as_kf_mult=True, unit_amplitude=True):
     """For an input k_parallel value, sample the corresponding
     Fourier mode at the channel frequency centers, relative to
     the lowest channel.
@@ -651,7 +653,11 @@ def channel_values_from_kpar(freqmap, kpar_in, kpar_as_kf_mult=True):
 
     # Get comoving distances corresponding to frequency channel
     # centers, relative to lowest comoving distance from z=0
-    freqs = np.array([x[0] for x in freqmap])
+    try:
+        freqs = freqmap["centre"]
+    except:
+        freqs = freqmap
+    # freqs = np.array([x[0] for x in freqmap])
     rel_chi = relative_freq_channel_distances(freqs)
 
     # Get max comoving distance (i.e. distance spanned by band),
@@ -670,16 +676,18 @@ def channel_values_from_kpar(freqmap, kpar_in, kpar_as_kf_mult=True):
 
     # Set input mode values to be unity at specified kpar
     # and zero elsewhere
-    if kpar_as_kf_mult:
-        mode_k[np.searchsorted(kpar, kpar_in * kf)] = 1
-    else:
-        mode_k[np.searchsorted(kpar, kpar_in)] = 1
+    kpar_value = kpar_in * kf if kpar_as_kf_mult else kpar_in
+    mode_k[np.searchsorted(kpar, kpar_value)] = 1
 
-    # Do DCT, normalizing results so that iDCT gives unity at input kpar
-    mode_ft = fftpack.dct(mode_k, type=1) / (2 * nkpar)
+    # Do DCT, normalizing results so that iDCT gives unity at input kpar (if desired)
+    mode_ft = fftpack.dct(mode_k, type=1)
+    if not unit_amplitude:
+        mode_ft /= (2 * nkpar)
+    elif kpar_in != 0:
+        mode_ft /= 2
     mode_ft_x = np.arange(nkpar) * np.pi / kparmax
 
     # Define interpolating function over results, and return results
     # sampled at channel centers
     mode_ft_interp = interp1d(mode_ft_x, mode_ft, kind='cubic')
-    return mode_ft_interp(rel_chi)
+    return mode_ft_interp(rel_chi), kpar_value
