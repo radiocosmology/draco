@@ -1197,12 +1197,6 @@ class RingMapToHealpixMap(task.SingleTask):
                 in_map = ringmap_local[0, pi, fi_local].T
                 in_weight = weight_local[pi, fi_local].T
 
-                # If requested, multiply map by weights, normalized
-                # to sum to unity at each RA
-                if self.mult_by_weights:
-                    weight = weight_local[pi, fi_local].T
-                    in_map *= weight / weight.mean(axis=0)[np.newaxis, :]
-
                 # Cut sin(za) range to be < 90 deg
                 in_map = in_map[:el_imax]
                 in_weight = in_weight[:el_imax]
@@ -1235,6 +1229,11 @@ class RingMapToHealpixMap(task.SingleTask):
                 map_weight_local[fi_local, pi] = np.array(desired_indices)
                 # Additionally, convert any NaNs to zeros in weights
                 map_weight_local[fi_local, pi] = np.nan_to_num(map_weight_local[fi_local, pi])
+
+                # If requested, multiply weights into map, normalized by mean of weights
+                # (with mean taken in healpix pixelization)
+                if self.mult_by_weights:
+                    map_local[fi_local, pi] *= map_weight_local[fi_local, pi] / map_weight_local[fi_local, pi].mean()
                 
         return map_
 
