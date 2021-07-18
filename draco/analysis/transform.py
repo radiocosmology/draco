@@ -1100,14 +1100,20 @@ class RingMapToHealpixMap(task.SingleTask):
         converting to healpix. Default: False
     mult_by_weights : bool, optional
         Whether to multiply the ringmap by its (normalized) weights at
-        each pol and frequency before converting to healpix. Default: False
+        each pol and frequency before converting to healpix. Default: False.
+    use_unit_weights : bool, optional
+        In mult_by_weights, use unit weights instead of weights taken from
+        ringmap. (This can be used to check the impact of the ringmap weights,
+        while still accounting for the ringmap's incomplete sky coverage.)
+        Default: False.
     """
 
     nside = config.Property(proptype=int, default=128)
     fill_value = config.Property(proptype=float, default=np.nan)
     median_subtract = config.Property(proptype=bool, default=False)
     mult_by_weights = config.Property(proptype=bool, default=False)
-
+    use_unit_weights = config.Property(proptype=bool, default=False)
+    
     # Skip NaN checks, because it is likely (and expected) that output
     # map will contain some NaNs
     nan_check = False
@@ -1220,7 +1226,10 @@ class RingMapToHealpixMap(task.SingleTask):
                 map_local[fi_local, pi] = np.array(desired_indices)
 
                 # Do same thing for weights
-                df = pd.DataFrame({"indices": hp_pix_coords, "data": in_weight.flatten()})
+                if not self.use_unit_weights:
+                    df = pd.DataFrame({"indices": hp_pix_coords, "data": in_weight.flatten()})
+                else:
+                    df = pd.DataFrame({"indices": hp_pix_coords, "data": np.ones_like(in_weight.flatten())})
                 datalist = df.groupby("indices").mean()
                 desired_indices = pd.Series(np.arange(hp.nside2npix(self.nside)))
                 is_in_index = desired_indices.isin(datalist.index)
@@ -1229,7 +1238,7 @@ class RingMapToHealpixMap(task.SingleTask):
                 map_weight_local[fi_local, pi] = np.array(desired_indices)
                 # Additionally, convert any NaNs to zeros in weights
                 map_weight_local[fi_local, pi] = np.nan_to_num(map_weight_local[fi_local, pi])
-
+                
                 # If requested, multiply weights into map, normalized by mean of weights
                 # (with mean taken in healpix pixelization)
                 if self.mult_by_weights:
