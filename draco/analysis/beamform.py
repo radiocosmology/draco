@@ -997,10 +997,15 @@ class RingMapBeamForm(task.SingleTask):
         max_ra_ind = len(ringmap.ra) - 1
         ra_ind = (np.rint(src_ra / dra) % max_ra_ind).astype(np.int)
 
-        # Get the indices for the ZA direction
+        # Get the indices for the ZA direction. However, any source with
+        # dec - telescope_latitude < -90deg will not show up in the ringmap,
+        # so we make a mask for these.
         za_ind = np.rint(
             (np.sin(np.radians(src_dec - self.telescope.latitude)) + 1) / dza
         ).astype(np.int)
+        mask_ind = src_dec - self.telescope.latitude <= -90
+        if np.sum(mask_ind) > 0:
+            self.log.info("%d local sources in catalog are outside of ringmap coverage" % np.sum(mask_ind))
 
         # Ensure containers are distributed in frequency
         formed_beam.redistribute("freq")
@@ -1018,14 +1023,17 @@ class RingMapBeamForm(task.SingleTask):
 
         # Loop over sources and extract the polarised pencil beams containing them from
         # the ringmaps
+        fbb[:] = 0
+        fbw[:] = 0
         for si, (ri, zi) in enumerate(zip(ra_ind, za_ind)):
-            fbb[si] = rmm[0, :, :, ri, zi]
-            fbw[si] = rmw[:, :, ri, zi]
+            if not mask_ind[si]:
+                fbb[si] = rmm[0, :, :, ri, zi]
+                fbw[si] = rmw[:, :, ri, zi]
 
-            # If desired, ignore ringmap weights when stacking, by setting them to
-            # unity here
-            if self.ignore_ringmap_weights:
-                fbw[si] = np.ones_like(fbw[si])
+        # If desired, ignore ringmap weights when stacking, by setting weights of
+        # unmasked beams to unity here
+        if self.ignore_ringmap_weights:
+            fbw[~mask_ind] = 1
 
         return formed_beam
 
