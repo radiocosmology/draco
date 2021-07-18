@@ -912,9 +912,13 @@ class RingMapBeamForm(task.SingleTask):
     ignore_ringmap_weights : bool, optional
         Set weights for formed beams to unity instead of propagating weights
         from ringmap. Default: False.
+    linear_weights_test : bool, optional
+        Overwrite weights with dec values of each source (useful for testing
+        a specific, known form for the weights). Default: False.
     """
 
     ignore_ringmap_weights = config.Property(proptype=bool, default=False)
+    linear_weights_test = config.Property(proptype=bool, default=False)
     
     def setup(self, telescope: io.TelescopeConvertible, ringmap: containers.RingMap):
         """Set the telescope object.
@@ -1029,7 +1033,12 @@ class RingMapBeamForm(task.SingleTask):
             if not mask_ind[si]:
                 fbb[si] = rmm[0, :, :, ri, zi]
                 fbw[si] = rmw[:, :, ri, zi]
+                # If desired, overwrite previous weights with weights that are equal to
+                # the dec of each source (for testing)
+                if self.linear_weights_test:
+                    fbw[si][:] = formed_beam["position"]["dec"][si]
 
+                
         # If desired, ignore ringmap weights when stacking, by setting weights of
         # unmasked beams to unity here
         if self.ignore_ringmap_weights:
