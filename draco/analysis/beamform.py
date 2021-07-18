@@ -1290,6 +1290,7 @@ class HealpixBeamForm(task.SingleTask):
         """
 
         self.map = hpmap
+        self.has_weight = "weight" in hpmap.datasets
 
     def process(self, catalog: containers.SourceCatalog) -> containers.FormedBeam:
         """Extract sources from a ringmap.
@@ -1341,8 +1342,12 @@ class HealpixBeamForm(task.SingleTask):
         self.map.redistribute("freq")
 
         formed_beam.beam[:] = self.map.map[:, :, pix_ind].transpose(2, 1, 0)
-        # Set to some non-zero value as the Map container doesn't have a weight
-        formed_beam.weight[:] = 1.0
+        # Set beamforming weights based on map weights if they exist, otherwise
+        # set to some nonzero value
+        if self.has_weight:
+            formed_beam.weight[:] = self.map.weight[:, :, pix_ind].transpose(2, 1, 0)
+        else:
+            formed_beam.weight[:] = 1.0
 
         return formed_beam
 
