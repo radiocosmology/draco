@@ -1106,6 +1106,13 @@ class RingMapToHealpixMap(task.SingleTask):
         ringmap. (This can be used to check the impact of the ringmap weights,
         while still accounting for the ringmap's incomplete sky coverage.)
         Default: False.
+    filter_weights_m0 : bool
+        Filter |m|>0 components out of the weights. Default: False.
+    filter_map_with_m_pixwin : bool
+        After convering the ringmap to healpix, apply a filter in m space
+        corresponding to a top-hat in RA, with width equal to the RA width
+        of pixels in the original ringmap. This filter takes the form
+        W_m = 2 / (m * dra) sin(m * dra / 2) with dra in rad. Default: False.
     """
 
     nside = config.Property(proptype=int, default=128)
@@ -1113,6 +1120,8 @@ class RingMapToHealpixMap(task.SingleTask):
     median_subtract = config.Property(proptype=bool, default=False)
     mult_by_weights = config.Property(proptype=bool, default=False)
     use_unit_weights = config.Property(proptype=bool, default=False)
+    filter_weights_m0 = config.Property(proptype=bool, default=False)
+    filter_map_with_m_pixwin = config.Property(proptype=bool, default=False)
     
     # Skip NaN checks, because it is likely (and expected) that output
     # map will contain some NaNs
@@ -1224,6 +1233,16 @@ class RingMapToHealpixMap(task.SingleTask):
                 desired_indices[:] = self.fill_value
                 desired_indices[is_in_index] = datalist.data
                 map_local[fi_local, pi] = np.array(desired_indices)
+                # If desired, apply pixel window function corresponding to dra from ringmap
+                if self.filter_map_with_m_pixwin:
+                    alm = hputil.sphtrans_sky(map_local[fi_local : fi_local+1])
+                    m_for_filt = np.arange(alm.shape[-1])
+                    dra_for_filt = np.deg2rad(np.median(np.abs(np.diff(ringmap.index_map["ra"]))))
+                    x_for_filt = m_for_filt * dra_for_filt / 2
+                    w_rm_filt = np.ones_like(x_for_filt)
+                    w_rm_filt[1:] = np.sin(x_for_filt[1:]) / x_for_filt[1:]
+                    alm *= w_rm_filt[np.newaxis, np.newaxis, np.newaxis, :]
+                    map_local[fi_local : fi_local+1] = hputil.sphtrans_inv_sky(alm, self.nside)
 
                 # Do same thing for weights
                 if not self.use_unit_weights:
@@ -1238,11 +1257,23 @@ class RingMapToHealpixMap(task.SingleTask):
                 map_weight_local[fi_local, pi] = np.array(desired_indices)
                 # Additionally, convert any NaNs to zeros in weights
                 map_weight_local[fi_local, pi] = np.nan_to_num(map_weight_local[fi_local, pi])
+                # If desired, overwrite weights with weights that are equal to the dec of each source
+                # (for testing purposes)
+                if self.linear_weights_test:
+                    map_weight_local[fi_local, pi][map_weight_local[fi_local, pi] != 0] = hp.pix2ang(
+                        self.nside, np.arange(len(map_weight_local[fi_local, pi]))[map_weight_local[fi_local, pi] != 0], lonlat=True
+                    )[1]
+
+            # If desired, filter healpix weight map to only have m=0 component
+            if self.filter_weights_m0:
+                alm = hputil.sphtrans_sky(map_weight_local[fi_local : fi_local+1])
+                alm[:, :, :, 1:] = 0
+                map_weight_local[fi_local : fi_local+1] = hputil.sphtrans_inv_sky(alm, self.nside)
                 
-                # If requested, multiply weights into map, normalized by mean of weights
-                # (with mean taken in healpix pixelization)
-                if self.mult_by_weights:
-                    map_local[fi_local, pi] *= map_weight_local[fi_local, pi] / map_weight_local[fi_local, pi].mean()
+            # If requested, multiply weights into map, normalized by mean of weights
+            # (with mean taken in healpix pixelization)
+            if self.mult_by_weights:
+                map_local[fi_local] *= map_weight_local[fi_local] / map_weight_local[fi_local].mean(axis=1)[:, np.newaxis]
                 
         return map_
 
