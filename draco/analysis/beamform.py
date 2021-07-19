@@ -908,8 +908,14 @@ class RingMapBeamForm(task.SingleTask):
     what was done to produce the `RingMap` (use `DeconvolveHybridM` for best
     results).
 
+    The ringmap is assumed to be in CIRA coordinates, with epoch specified in an
+    attribute, unless `coord_frame` is set to `icrs`.
+
     Parameters
     ----------
+    coord_frame : string, optional
+        Coordinate frame for sky positions in catalog.
+        Must be one of 'icrs' or 'cirs'. Default: 'cirs'.
     ignore_ringmap_weights : bool, optional
         Set weights for formed beams to unity instead of propagating weights
         from ringmap. Default: False.
@@ -918,6 +924,7 @@ class RingMapBeamForm(task.SingleTask):
         a specific, known form for the weights). Default: False.
     """
 
+    coord_frame = config.enum(["icrs", "cirs"], default="cirs")
     ignore_ringmap_weights = config.Property(proptype=bool, default=False)
     linear_weights_test = config.Property(proptype=bool, default=False)
     
@@ -954,24 +961,6 @@ class RingMapBeamForm(task.SingleTask):
         if "position" not in catalog:
             raise ValueError("Input is missing a position table.")
 
-        # Calculate the epoch for the data so we can calculate the correct
-        # CIRS coordinates
-        if "lsd" not in ringmap.attrs:
-            ringmap.attrs["lsd"] = 1950
-            self.log.error(
-                "Input does not have an LSD attribute to calculate the epoch. "
-                "Assuming CSD=1950, but this might be completely wrong."
-            )
-
-        # This will be a float for a single sidereal day, or a list of
-        # floats for a stack
-        lsd = (
-            ringmap.attrs["lsd"][0]
-            if isinstance(ringmap.attrs["lsd"], np.ndarray)
-            else ringmap.attrs["lsd"]
-        )
-        epoch = self.telescope.lsd_to_unix(lsd)
-
         # Container to hold the formed beams
         formed_beam = containers.FormedBeam(
             object_id=catalog.index_map["object_id"],
@@ -988,10 +977,32 @@ class RingMapBeamForm(task.SingleTask):
         if "redshift" in catalog:
             formed_beam["redshift"][:] = catalog["redshift"][:]
 
-        # Get the source positions at the current epoch
-        src_ra, src_dec = icrs_to_cirs(
-            catalog["position"]["ra"], catalog["position"]["dec"], epoch
-        )
+        if self.coord_frame == "cirs":
+            # Calculate the epoch for the data so we can calculate the correct
+            # CIRS coordinates
+            if "lsd" not in ringmap.attrs:
+                ringmap.attrs["lsd"] = 1950
+                self.log.error(
+                    "Input does not have an LSD attribute to calculate the epoch. "
+                    "Assuming CSD=1950, but this might be completely wrong."
+                )
+
+            # This will be a float for a single sidereal day, or a list of
+            # floats for a stack
+            lsd = (
+                ringmap.attrs["lsd"][0]
+                if isinstance(ringmap.attrs["lsd"], np.ndarray)
+                else ringmap.attrs["lsd"]
+            )
+            epoch = self.telescope.lsd_to_unix(lsd)
+
+            # Get the source positions at the current epoch
+            src_ra, src_dec = icrs_to_cirs(
+                catalog["position"]["ra"], catalog["position"]["dec"], epoch
+            )
+        else: # icrs
+            src_ra = catalog["position"]["ra"]
+            src_dec = catalog["position"]["dec"]
 
         # Get the grid size of the map in RA and sin(ZA)
         dra = np.median(np.abs(np.diff(ringmap.index_map["ra"])))
