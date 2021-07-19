@@ -1093,7 +1093,10 @@ class RingMapToHealpixMap(task.SingleTask):
         Nside parameter for output healpix map.
         Recommended value is <=128 to avoid too many blank healpix
         pixels for default CHIME ringmap resolution. Default: 128
-    fill_value : float
+    coord_frame : string, optional
+        Coordinate frame to use in computing sky positions of healpix pixels.
+        Must be one of 'icrs' or 'cirs'. Default: 'cirs'.
+    fill_value : float, optional
         Value to fill empty healpix pixels with. Default: NaN
     median_subtract: bool, optional
         Whether to subtract the median across RA from the ringmap before
@@ -1118,6 +1121,7 @@ class RingMapToHealpixMap(task.SingleTask):
     """
 
     nside = config.Property(proptype=int, default=128)
+    coord_frame = config.enum(["icrs", "cirs"], default="cirs")
     fill_value = config.Property(proptype=float, default=np.nan)
     median_subtract = config.Property(proptype=bool, default=False)
     mult_by_weights = config.Property(proptype=bool, default=False)
@@ -1312,7 +1316,7 @@ class RingMapToHealpixMap(task.SingleTask):
         skycoord = SkyCoord(
             rara.flatten() * u.deg,
             decdec.flatten() * u.deg,
-            frame="cirs",
+            frame=self.coord_frame,
             obstime=Time(datetime.datetime.fromtimestamp(ephemeris.csd_to_unix(csd))),
         )
         del rara
