@@ -1113,6 +1113,8 @@ class RingMapToHealpixMap(task.SingleTask):
         corresponding to a top-hat in RA, with width equal to the RA width
         of pixels in the original ringmap. This filter takes the form
         W_m = 2 / (m * dra) sin(m * dra / 2) with dra in rad. Default: False.
+    map_nan_to_num : bool, optional
+        Convert NaNs in output map to numbers. Default: False.
     """
 
     nside = config.Property(proptype=int, default=128)
@@ -1123,6 +1125,7 @@ class RingMapToHealpixMap(task.SingleTask):
     filter_weights_m0 = config.Property(proptype=bool, default=False)
     filter_map_with_m_pixwin = config.Property(proptype=bool, default=False)
     linear_weights_test = config.Property(proptype=bool, default=False)
+    map_nan_to_num = config.Property(proptype=bool, default=False)
     
     # Skip NaN checks, because it is likely (and expected) that output
     # map will contain some NaNs
@@ -1234,6 +1237,8 @@ class RingMapToHealpixMap(task.SingleTask):
                 desired_indices[:] = self.fill_value
                 desired_indices[is_in_index] = datalist.data
                 map_local[fi_local, pi] = np.array(desired_indices)
+                if self.map_nan_to_num:
+                    map_local[fi_local, pi] = np.nan_to_num(map_local[fi_local, pi])
                 # If desired, apply pixel window function corresponding to dra from ringmap
                 if self.filter_map_with_m_pixwin:
                     alm = hputil.sphtrans_sky(map_local[fi_local : fi_local+1])
