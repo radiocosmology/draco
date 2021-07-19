@@ -1122,6 +1122,7 @@ class RingMapToHealpixMap(task.SingleTask):
     use_unit_weights = config.Property(proptype=bool, default=False)
     filter_weights_m0 = config.Property(proptype=bool, default=False)
     filter_map_with_m_pixwin = config.Property(proptype=bool, default=False)
+    linear_weights_test = config.Property(proptype=bool, default=False)
     
     # Skip NaN checks, because it is likely (and expected) that output
     # map will contain some NaNs
