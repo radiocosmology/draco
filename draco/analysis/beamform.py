@@ -1279,7 +1279,8 @@ class HealpixBeamForm(task.SingleTask):
     """
 
     epoch = config.utc_time(default=None)
-
+    ignore_map_weights = config.Property(proptype=bool, default=False)
+    
     def setup(self, hpmap: containers.Map):
         """Set the map to extract beams from at each catalog location.
 
@@ -1346,6 +1347,8 @@ class HealpixBeamForm(task.SingleTask):
         # set to some nonzero value
         if self.has_weight:
             formed_beam.weight[:] = self.map.weight[:, :, pix_ind].transpose(2, 1, 0)
+            if self.ignore_map_weights:
+                formed_beam.weight[:][formed_beam.weight[:] != 0] = 1
         else:
             formed_beam.weight[:] = 1.0
 
