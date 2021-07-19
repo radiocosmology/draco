@@ -507,7 +507,7 @@ class MModeTransform(task.SingleTask):
 
         # Create the container to store the modes in
         ma = out_cont(
-            mmax=mmax, oddra=bool(nra % 2), axes_from=sstream, comm=sstream.comm
+            mmax=mmax, oddra=bool(nra % 2), axes_from=sstream, comm=sstream.comm, attrs_from=sstream
         )
         ma.redistribute("freq")
 
