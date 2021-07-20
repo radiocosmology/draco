@@ -1381,6 +1381,11 @@ class MSumTable(containers.FreqContainer):
 class MapEllMSum(task.SingleTask):
     """Sum a map's spherical harmonic coefficients over m for specific ell.
 
+    Specifically, this task computes
+        1 / (4 \pi) * ( a_{\ell 0} + 2 * \sum_{m=1}^\ell Re[a_{\ell m}] )
+    for a specific input ell. This sum corresponds to the angular transfer
+    function associated with stacking on a source catalog. 
+
     Attributes
     ----------
     ell : int
@@ -1425,7 +1430,10 @@ class MapEllMSum(task.SingleTask):
         alm_local = hputil.sphtrans_sky(np.nan_to_num(map_local))
 
         # Put m sums into container
-        msum_local[:] = alm_local[:, :, self.ell].sum(axis=-1).real
+        msum_local[:] = (
+            alm_local[:, :, self.ell, 0]
+            + 2 * alm_local[:, :, self.ell, 1:].sum(axis=-1).real
+        ) / (4 * np.pi)
 
         return msum
 
