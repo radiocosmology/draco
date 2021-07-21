@@ -1168,6 +1168,9 @@ class RingMapToHealpixMap(task.SingleTask):
             ringmap.attrs["lsd"] = 1950
             self.log.error("Input must have an LSD attribute to calculate the epoch.")
 
+        # Ensure ringmap is distrubited in frequency
+        ringmap.redistribute("freq")
+            
         # Convert elevation coordinates in ringnmap to dec
         dec = np.degrees(np.arcsin(ringmap.el)) + self.telescope.latitude
 
