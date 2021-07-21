@@ -497,7 +497,11 @@ class MModeTransform(task.SingleTask):
 
         # Create the container to store the modes in
         ma = out_cont(
-            mmax=mmax, oddra=bool(nra % 2), axes_from=sstream, comm=sstream.comm
+            mmax=mmax,
+            oddra=bool(nra % 2),
+            axes_from=sstream,
+            attrs_from=sstream,
+            comm=sstream.comm,
         )
         ma.redistribute("freq")
 
@@ -613,7 +617,11 @@ class MModeInverseTransform(task.SingleTask):
 
         # Construct container and set visibility data
         sstream = containers.SiderealStream(
-            ra=nra, axes_from=mmodes, distributed=True, comm=mmodes.comm
+            ra=nra,
+            axes_from=mmodes,
+            attrs_from=mmodes,
+            distributed=True,
+            comm=mmodes.comm,
         )
         sstream.redistribute("freq")
 
