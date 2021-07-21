@@ -1597,10 +1597,14 @@ class ModulateMapFrequencies(task.SingleTask):
         # Construct k_parallel mode, sampled at frequency channel centers
         freq = map_.freq
         mode_vals, kpar_value = channel_values_from_kpar(
-            freq, self.kpar, kpar_as_kf_mult=True
+            freq, self.kpar, kpar_as_kf_mult=self.kpar_as_kf_mult
         )
         self.log.debug("Modulating map with kpar = %g h/Mpc" % kpar_value)
-
+        # Save kpar to attribute of output container
+        out_cont.attrs["kpar"] = kpar_value        
+        if self.kpar_as_kf_mult:
+            out_cont.attrs["kf"] = kpar_value / self.kpar
+        
         if cont is containers.Map:
             # For healpix map, multiply map data by k-mode and copy to
             # new container
