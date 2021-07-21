@@ -978,6 +978,7 @@ class RingMapBeamForm(task.SingleTask):
         # Get the grid size of the map in RA and sin(ZA)
         dra = np.median(np.abs(np.diff(ringmap.index_map["ra"])))
         dza = np.median(np.abs(np.diff(ringmap.index_map["el"])))
+        za_min = ringmap.index_map["el"][:].min()
 
         # Get the source indices in RA
         # NOTE: that we need to take into account that sources might be less than 360
@@ -987,7 +988,7 @@ class RingMapBeamForm(task.SingleTask):
 
         # Get the indices for the ZA direction
         za_ind = np.rint(
-            (np.sin(np.radians(src_dec - self.telescope.latitude)) + 1) / dza
+            (np.sin(np.radians(src_dec - self.telescope.latitude)) - za_min) / dza
         ).astype(np.int)
 
         # Ensure containers are distributed in frequency
