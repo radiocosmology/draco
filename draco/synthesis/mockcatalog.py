@@ -97,7 +97,7 @@ from cora.util import units
 from caput import config
 from caput import mpiarray, mpiutil
 from ..core import task, containers
-from ..util import random
+from ..util import random, tools
 from mpi4py import MPI
 
 
@@ -336,12 +336,18 @@ class PdfGeneratorBase(task.SingleTask):
         # Assuming source map is overdensity, add 1 to form rho/rho_mean
         rho = mpiarray.MPIArray.wrap(source_map.map[:, 0, :] + 1.0, axis=0)
 
+        if (rho < 0).any():
+            self.log.error("Found negative entries in source map.")
+
         # Normalize density to have unit mean in each z-bin:
         rho = mpiarray.MPIArray.wrap(rho / np.mean(rho, axis=1)[:, np.newaxis], axis=0)
 
         if selfunc is not None:
             # Get local section of selection function
             selfunc_local = selfunc.map[:, 0, :]
+
+            if (selfunc_local < 0).any():
+                self.log.error("Found negative entries in selection function.")
 
             # Multiply selection function into density
             pdf = mpiarray.MPIArray.wrap(rho * selfunc_local, axis=0)
@@ -351,7 +357,10 @@ class PdfGeneratorBase(task.SingleTask):
 
         # Normalize by redshift weights
         pdf = mpiarray.MPIArray.wrap(
-            pdf / np.sum(pdf, axis=1)[:, np.newaxis] * z_weights[:, np.newaxis], axis=0
+            pdf
+            * tools.invert_no_zero(np.sum(pdf, axis=1))[:, np.newaxis]
+            * z_weights[:, np.newaxis],
+            axis=0,
         )
 
         # Make container for PDF
