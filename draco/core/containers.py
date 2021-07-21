@@ -23,6 +23,7 @@ Containers
 - :py:class:`GainData`
 - :py:class:`SiderealGainData`
 - :py:class:`StaticGainData`
+- :py:class:`DelayCutoff`
 - :py:class:`DelaySpectrum`
 - :py:class:`Powerspectrum2D`
 - :py:class:`SVDSpectrum`
@@ -2046,6 +2047,34 @@ class StaticGainData(FreqContainer):
     def input(self):
         return self.index_map["input"]
 
+
+class DelayCutoff(ContainerBase):
+    """Container for a delay cutoff."""
+
+    _axes = ("pol", "el")
+
+    _dataset_spec = {
+        "cutoff": {
+            "axes": ["pol", "el"],
+            "dtype": np.float64,
+            "initialise": True,
+            "distributed": False,
+            "distributed_axis": "el",
+        }
+    }
+
+    @property
+    def cutoff(self):
+        return self.datasets["cutoff"]
+
+    @property
+    def pol(self):
+        return self.index_map["pol"]
+
+    @property
+    def el(self):
+        return self.index_map["el"]
+    
 
 class DelaySpectrum(ContainerBase):
     """Container for a delay spectrum."""
