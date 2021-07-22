@@ -4,6 +4,7 @@ This includes data quality flagging on timestream data; sun excision on sidereal
 data; and pre-map making flagging on m-modes.
 """
 
+from typing import Union
 import numpy as np
 import scipy.signal
 from scipy.ndimage import median_filter
@@ -1134,50 +1135,77 @@ class MaskFreq(task.SingleTask):
         start and end indices of a range to flag (as with a standard slice, the end
         is *not* included.)
     factorize : bool, optional
-        Find the smallest factorizable mask of the time-frequency axis that covers all samples already flagged in the data.
+        Find the smallest factorizable mask of the time-frequency axis that covers all
+        samples already flagged in the data.
     all_time : bool, optional
         Only include frequencies where all time samples are present.
-    mask_missing_baselines : bool, optional
-        Mask time-freq samples where some baselines are missing.
+    mask_missing_data : bool, optional
+        Mask time-freq samples where some baselines (for visibily data) or
+        polarisations/elevations (for ring map data) are missing.
     """
 
     bad_freq_ind = config.Property(proptype=list, default=None)
     factorize = config.Property(proptype=bool, default=False)
     all_time = config.Property(proptype=bool, default=False)
-    mask_missing_baselines = config.Property(proptype=bool, default=False)
+    mask_missing_data = config.Property(proptype=bool, default=False)
 
-    def process(self, data):
+    def process(
+        self, data: Union[containers.VisContainer, containers.RingMap]
+    ) -> Union[containers.RFIMask, containers.SiderealRFIMask]:
         """Apply the mask to the data.
 
         Parameters
         ----------
-        data : SiderealStream or TimeStream
+        data
             The data to mask.
 
         Returns
         -------
-        data_masked : SiderealRFIMask or RFIMask
+        data_masked
             The mask marking bad data.
         """
 
         data.redistribute("freq")
 
-        # Get the total number of baselines observed at each freq-time. This is used to
-        # create an initial mask
-        present_baselines = mpiarray.MPIArray.wrap(
-            (data.weight[:] > 0).sum(axis=1), comm=data.weight.comm, axis=0
+        maskcls = (
+            containers.SiderealRFIMask
+            if isinstance(data, containers.SiderealContainer)
+            else containers.RFIMask
         )
-        all_present_baselines = present_baselines.allgather()
-        mask = all_present_baselines == 0
+        maskcont = maskcls(axes_from=data, attrs_from=data)
+        mask = maskcont.mask[:]
+
+        # Get the total number of amount of data for each freq-time. This is used to
+        # create an initial mask. For visibilities find the number of baselines
+        # present...
+        if isinstance(data, containers.VisContainer):
+            present_data = mpiarray.MPIArray.wrap(
+                (data.weight[:] > 0).sum(axis=1), comm=data.weight.comm, axis=0
+            )
+        # ... for ringmaps find the number of polarisations/elevations present
+        elif isinstance(data, containers.RingMap):
+            present_data = mpiarray.MPIArray.wrap(
+                (data.weight[:] > 0).sum(axis=3).sum(axis=0),
+                comm=data.weight.comm,
+                axis=0,
+            )
+        else:
+            raise ValueError(
+                f"Received data of type {data._class__}. "
+                "Only visibility type data and ringmaps are supported."
+            )
+
+        all_present_data = present_data.allgather()
+        mask[:] = all_present_data == 0
 
         self.log.info(f"Input data: {100.0 * mask.mean():.2f}% flagged.")
 
         # Create an initial mask of the freq-time space, where bad samples are
-        # True. If missing_baselines is set this masks any sample where the number
-        # of present baselines is less than the maximum, otherwise it is where all
-        # baselines are missing
-        if self.mask_missing_baselines:
-            mask = all_present_baselines < all_present_baselines.max()
+        # True. If `mask_missing_data` is set this masks any sample where the amount
+        # of present data is less than the maximum, otherwise it is where all
+        # data is missing
+        if self.mask_missing_data:
+            mask = all_present_data < all_present_data.max()
             self.log.info(
                 f"Requiring all baselines: {100.0 * mask.mean():.2f}% flagged."
             )
@@ -1191,20 +1219,12 @@ class MaskFreq(task.SingleTask):
             mask |= mask.any(axis=1)[:, np.newaxis]
             self.log.info(f"All time mask: {100.0 * mask.mean():.2f}% flagged.")
         elif self.factorize:
-            mask = self._optimal_mask(mask)
+            mask[:] = self._optimal_mask(mask)
             self.log.info(f"Factorizable mask: {100.0 * mask.mean():.2f}% flagged.")
-
-        maskcls = (
-            containers.SiderealRFIMask
-            if isinstance(data, containers.SiderealStream)
-            else containers.RFIMask
-        )
-        maskcont = maskcls(axes_from=data, attrs_from=data)
-        maskcont.mask[:] = mask
 
         return maskcont
 
-    def _bad_freq_mask(self, nfreq):
+    def _bad_freq_mask(self, nfreq: int) -> np.ndarray:
         # Parse the bad frequency list to create a per frequency mask
 
         mask = np.zeros(nfreq, dtype=np.bool)
@@ -1212,7 +1232,8 @@ class MaskFreq(task.SingleTask):
         for s in self.bad_freq_ind:
 
             if isinstance(s, int):
-                mask[s] = True
+                if s < nfreq:
+                    mask[s] = True
             elif isinstance(s, (tuple, list)) and len(s) == 2:
                 mask[s[0] : s[1]] = True
             else:
@@ -1223,7 +1244,7 @@ class MaskFreq(task.SingleTask):
 
         return mask
 
-    def _optimal_mask(self, mask):
+    def _optimal_mask(self, mask: np.ndarray) -> np.ndarray:
         # From the freq-time input mask, create the smallest factorizable mask that
         # covers all the original masked samples
 
