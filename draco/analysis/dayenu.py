@@ -171,12 +171,15 @@ class DayenuDelayFilterMap(task.SingleTask):
         frequencies where the weights are nonzero for all times.
         Otherwise will construct a filter for all unique single-time
         frequency masks (can be significantly slower).
+    weights_only : bool
+        Only modify the weights and not the map itself. Default: False.
     """
 
     epsilon = config.Property(proptype=float, default=1e-12)
     filename = config.Property(proptype=str, default=None)
     tauw = config.Property(proptype=float, default=0.100)
     single_mask = config.Property(proptype=bool, default=True)
+    weights_only = config.Property(proptype=bool, default=False)
 
     _ax_dist = "el"
 
@@ -284,7 +287,9 @@ class DayenuDelayFilterMap(task.SingleTask):
                 # Apply the filter
                 if self.single_mask:
 
-                    rm[slc] = np.matmul(NF[:, :, 0], erm)
+                    if not self.weights_only:
+                        rm[slc] = np.matmul(NF[:, :, 0], erm)
+                        
                     weight[wslc] = tools.invert_no_zero(
                         np.matmul(NF[:, :, 0] ** 2, evar)
                     )
@@ -294,7 +299,9 @@ class DayenuDelayFilterMap(task.SingleTask):
                     self.log.info("There are %d unique masks/filters." % len(index))
 
                     for ii, rr in enumerate(index):
-                        rm[ind][:, rr, ee] = np.matmul(NF[:, :, ii], erm[:, rr])
+                        if not self.weights_only:
+                            rm[ind][:, rr, ee] = np.matmul(NF[:, :, ii], erm[:, rr])
+
                         weight[wind][:, rr, ee] = tools.invert_no_zero(
                             np.matmul(NF[:, :, ii] ** 2, evar[:, rr])
                         )
