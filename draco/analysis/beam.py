@@ -14,6 +14,7 @@ Tasks
     :toctree: generated/
 
     CreateBeamStream
+    CreateBeamStreamFromTelescope
 """
 
 import numpy as np
@@ -54,7 +55,7 @@ class CreateBeamStream(task.SingleTask):
         ----------
         data : containers.HybridVisStream
             Data to be de-convolved.
-        beam : containers.CommonModeGridBeam
+        beam : containers.GridBeam
             Model for the beam.
 
         Returns
@@ -157,5 +158,110 @@ class CreateBeamStream(task.SingleTask):
 
         out.weight[:][..., map_ra] = bweight
         out.vis[:][..., map_ra] = bvis * phi[np.newaxis, ...]
+
+        return out
+
+
+class CreateBeamStreamFromTelescope(CreateBeamStream):
+    """Create a HybridVisStream from a telescope instance."""
+
+    def process(self, data):
+        """Convert the beam model into a format that can be applied to the data.
+
+        Parameters
+        ----------
+        data : containers.HybridVisStream
+            Data to be de-convolved.
+
+        Returns
+        -------
+        out : containers.HybridVisStream
+            Effective beam transfer function.
+        """
+
+        beam = self._evaluate_beam(data)
+
+        return super().process(data, beam)
+
+    def _evaluate_beam(self, data):
+        """Evaluate the beam model at the coordinates in the data container."""
+
+        # Create the beam container
+        inputs = np.array(["common-mode"])
+        ha = (data.ra + 180.0) % 360.0 - 180.0
+        dec = np.degrees(np.arcsin(data.index_map["el"])) + self.telescope.latitude
+
+        out = containers.GridBeam(
+            theta=dec,
+            phi=ha,
+            input=inputs,
+            axes_from=data,
+            attrs_from=data,
+            distributed=data.distributed,
+            comm=data.comm,
+        )
+
+        out.redistribute("freq")
+        out.beam[:] = 0.0
+        out.weight[:] = 1.0
+
+        # Dereference datasets
+        beam = out.beam[:].view(np.ndarray)
+        weight = out.weight[:].view(np.ndarray)
+
+        # Extract polarisations pairs.  For each polarisation,
+        # find a corresponding feed in the telescope instance.
+        pol_pairs = out.index_map["pol"]
+        unique_pol = list({p for pp in pol_pairs for p in pp})
+        map_pol_to_feed = {
+            pol: list(self.telescope.polarisation).index(pol) for pol in unique_pol
+        }
+
+        # Determine local frequencies
+        nfreq = out.beam.local_shape[0]
+        fstart = out.beam.local_offset[0]
+        fstop = fstart + nfreq
+
+        local_freq = data.index_map["freq"][fstart:fstop]
+
+        # Find the index of the frequency in the telescope instance
+        local_freq_index = np.array(
+            [
+                np.argmin(np.abs(nu - self.telescope.frequencies))
+                for nu in local_freq["centre"]
+            ]
+        )
+
+        local_freq_flag = np.abs(
+            local_freq["center"] - self.telescope.frequencies[local_freq_index]
+        ) <= (0.5 * local_freq["width"])
+
+        # Construct a vector that contains the coordinates in the format
+        # required for the beam method of the telescope class
+        angpos = np.meshgrid(
+            0.5 * np.pi - np.radians(dec), np.radians(ha), indexing="ij"
+        )
+        angpos = np.hstack([ap.reshape(ap.size, 1) for ap in angpos])
+
+        shp = (dec.size, ha.size)
+
+        # Loop over local frequencies and polarisations and evaluate the beam
+        # by calling the telescopes beam method.
+        for ff, freq in enumerate(local_freq_index):
+
+            if not local_freq_flag[ff]:
+                weight[ff] = 0.0
+                continue
+
+            for pp, pol in enumerate(pol_pairs):
+
+                bii = self.telescope.beam(map_pol_to_feed[pol[0]], freq, angpos)
+
+                if pol[0] != pol[1]:
+                    bjj = self.telescope.beam(map_pol_to_feed[pol[1]], freq, angpos)
+                else:
+                    bjj = bii
+
+                beam[ff, pp, 0] = np.sum(bii * bjj.conjugate(), axis=1).reshape(shp)
 
         return out
