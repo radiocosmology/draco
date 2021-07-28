@@ -811,11 +811,13 @@ class AddGaussianZErrorsToCatalog(task.SingleTask, random.RandomTask):
         # Multiply by appropriate sigma
         if self.use_catalog_z_errors:
             if not np.any(cat_z_err):
-                self.log.error("Warning: no existing z_error information in catalog, so no z errors will be added")
+                self.log.error(
+                    "Warning: no existing z_error information in catalog, so no z errors will be added"
+                )
             z_err *= cat_z_err
         elif self.sigma_type == "sigma_z":
             z_err *= self.sigma
-        else: # self.sigma_type == "sigma_z_over_1plusz"
+        else:  # self.sigma_type == "sigma_z_over_1plusz"
             z_err *= self.sigma * (1 + cat_z)
 
         # Add errors to catalog redshifts
