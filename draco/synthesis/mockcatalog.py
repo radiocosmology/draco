@@ -757,10 +757,15 @@ class AddGaussianZErrorsToCatalog(task.SingleTask, random.RandomTask):
     """Add random Gaussian redshift errors to redshifts in a catalog.
 
     The standard deviation of the errors is determined either
-    by sigma_z or sigma_z / (1+z).
+    by sigma_z or sigma_z / (1+z), or by the `z_error` field of the
+    catalog.
 
     Attributes
     ----------
+    use_catalog_z_errors : bool
+        Set standard deviation of Gaussian error based on `z_error` value
+        for each source in catalog. If True, overrides `sigma`.
+        Default: False.
     sigma : float
         Standard deviation corresponding to choice in `sigma_type`.
     sigma_type : string
@@ -769,6 +774,7 @@ class AddGaussianZErrorsToCatalog(task.SingleTask, random.RandomTask):
             'sigma_z_over_1plusz' - Standard deviation divided by (1+z).
     """
 
+    use_catalog_z_errors = config.Property(proptype=bool, default=False)
     sigma = config.Property(proptype=float)
     sigma_type = config.enum(["sigma_z", "sigma_z_over_1plusz"])
 
@@ -793,16 +799,21 @@ class AddGaussianZErrorsToCatalog(task.SingleTask, random.RandomTask):
         # Generate standard normal z errors
         z_err = self.rng.normal(size=cat_z.shape[0])
         # Multiply by appropriate sigma
-        z_err *= (
-            self.sigma * np.ones_like(cat_z)
-            if self.sigma_type == "sigma_z"
-            else self.sigma * (1 + cat_z)
-        )
+        if self.use_catalog_z_errors:
+            if not np.any(cat_z_err):
+                self.log.error("Warning: no existing z_error information in catalog, so no z errors will be added")
+            z_err *= cat_z_err
+        elif self.sigma_type == "sigma_z":
+            z_err *= self.sigma
+        else: # self.sigma_type == "sigma_z_over_1plusz"
+            z_err *= self.sigma * (1 + cat_z)
 
         # Add errors to catalog redshifts
         cat_z += z_err
-        # Add errors in quadrature with existing stored errors
-        cat_z_err = (z_err ** 2 + cat_z_err ** 2) ** 0.5
+        # If not using existing z_error information, add errors in quadrature
+        # with existing stored errors
+        if not self.use_catalog_z_errors:
+            cat_z_err = (z_err ** 2 + cat_z_err ** 2) ** 0.5
 
         return cat
 
