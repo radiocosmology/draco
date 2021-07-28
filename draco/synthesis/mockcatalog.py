@@ -753,13 +753,11 @@ class MockCatalogGenerator(task.SingleTask, random.RandomTask):
         return mock_catalog
 
 
-class AddZErrorsToCatalog(task.SingleTask, random.RandomTask):
-    """Add random redshift errors to redshifts in a catalog.
+class AddGaussianZErrorsToCatalog(task.SingleTask, random.RandomTask):
+    """Add random Gaussian redshift errors to redshifts in a catalog.
 
-    Currently, only Gaussian errors are implemented, determined either
+    The standard deviation of the errors is determined either
     by sigma_z or sigma_z / (1+z).
-
-    TODO: allow for user-specified PDF.
 
     Attributes
     ----------
