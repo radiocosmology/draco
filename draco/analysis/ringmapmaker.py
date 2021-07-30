@@ -108,7 +108,12 @@ class MakeVisGrid(task.SingleTask):
 
         # Create container for output
         grid = containers.VisGridStream(
-            pol=pol, ew=vis_pos_x, ns=vis_pos_y, ra=ra, axes_from=sstream
+            pol=pol,
+            ew=vis_pos_x,
+            ns=vis_pos_y,
+            ra=ra,
+            axes_from=sstream,
+            attrs_from=sstream,
         )
 
         # Redistribute over frequency
@@ -488,21 +493,53 @@ class DeconvolveHybridMBase(task.SingleTask):
         else:
             self.telescope = None
 
-    def process(self, hybrid_vis_m: containers.HybridVisMModes) -> containers.RingMap:
-        """Generate a deconvolved ringmap.
+    def process(
+        self,
+        hybrid_vis_m: containers.HybridVisMModes,
+        hybrid_beam_m: containers.HybridVisMModes,
+    ) -> containers.RingMap:
+        """Generate a deconvolved ringmap using an input beam model.
 
         Parameters
         ----------
         hybrid_vis_m : containers.HybridVisMModes
             M-mode transform of hybrid beamformed visibilities.
 
+        hybrid_beam_m : containers.HybridVisMModes
+            M-mode transform of the beam after converting into
+            hybrid beamformed visibilities.
+
         Returns
         -------
-        ringmap : containers.RingMap
-            Deconvolved ring map.
+        ringmap
+            The deconvolved ring map.
         """
+
+        # Validate that the visibilites and beams match
+        if not np.array_equal(hybrid_vis_m.freq, hybrid_beam_m.freq):
+            raise ValueError("Frequencies do not match for beam and visibilities.")
+
+        if not np.array_equal(
+            hybrid_vis_m.index_map["el"], hybrid_beam_m.index_map["el"]
+        ):
+            raise ValueError("Elevations do not match for beam and visibilities.")
+
+        if not np.array_equal(
+            hybrid_vis_m.index_map["ew"], hybrid_beam_m.index_map["ew"]
+        ):
+            raise ValueError("EW baselines do not match for beam and visibilities.")
+
+        if not np.array_equal(
+            hybrid_vis_m.index_map["pol"], hybrid_beam_m.index_map["pol"]
+        ):
+            raise ValueError("Polarisations do not match for beam and visibilities.")
+
+        if hybrid_vis_m.mmax > hybrid_beam_m.mmax:
+            raise ValueError("Beam model must have higher m-max than the visibilities")
+
         # Distribute over frequency
         hybrid_vis_m.redistribute("freq")
+        hybrid_beam_m.redistribute("freq")
 
         # Determine local frequencies
         nfreq = hybrid_vis_m.vis.local_shape[3]
@@ -515,8 +552,7 @@ class DeconvolveHybridMBase(task.SingleTask):
         m = hybrid_vis_m.index_map["m"]
         mmax = hybrid_vis_m.mmax
 
-        is_odd = np.any(hybrid_vis_m.vis[mmax, 1] != 0.0)
-        nra = 2 * mmax + int(is_odd)
+        nra = 2 * mmax + int(hybrid_vis_m.oddra)
 
         # Create ring map, copying over axes/attrs
         rm = containers.RingMap(
@@ -551,6 +587,9 @@ class DeconvolveHybridMBase(task.SingleTask):
         hv = hybrid_vis_m.vis[:].view(np.ndarray)
         hw = hybrid_vis_m.weight[:].view(np.ndarray)
 
+        # Dereference the beams, and trim to the set of m's present in the input data
+        bv = hybrid_beam_m.vis[:].view(np.ndarray)[: (mmax + 1)]
+
         rmm = rm.map[:]
         rmw = rm.weight[:]
         if self.save_dirty_beam:
@@ -562,6 +601,7 @@ class DeconvolveHybridMBase(task.SingleTask):
             find = (slice(None),) * 3 + (lfi,)
 
             hvf = hv[find]
+            bvf = bv[find]
 
             winf = window[lfi]
 
@@ -570,9 +610,6 @@ class DeconvolveHybridMBase(task.SingleTask):
 
             # Get the EW weights using method defined by subclass
             weight = self._get_weight(inv_var) * (inv_var > 0.0)
-
-            # Get the beam m-modes using method defined by subclass
-            bvf = self._get_beam_mmodes(freq, hybrid_vis_m)
 
             # Get the regularisation term, exact prescription is defined by subclass
             epsilon = self._get_regularisation(freq, m)
@@ -718,28 +755,6 @@ class DeconvolveHybridMBase(task.SingleTask):
 
         return window
 
-    def _get_beam_mmodes(self, freq, hybrid_vis_m):
-        """Return the m-mode transform of the beam model at a particular frequency.
-
-        Any subclass must define this method in order to be a functional
-        deconvolving ringmap maker.
-
-        Parameters
-        ----------
-        freq : float
-            The frequency in MHz.
-        hybrid_vis_m : containers.HybridVisMModes
-            The m-mode transform of the hybrid visiblities.
-
-        Returns
-        -------
-        hybrid_beam_m : np.ndarray[nm, nmsign, npol, new, nel]
-            The m-mode transform of the beam model at the requested frequency.
-        """
-        raise NotImplementedError(
-            f"{self.__class__} must define a _get_beam_mmodes method."
-        )
-
     def _get_weight(self, inv_var):
         """Return the weight to be used when averaging over EW baselines.
 
@@ -799,7 +814,31 @@ class DeconvolveAnalyticalBeam(DeconvolveHybridMBase):
 
         self.telescope = io.get_telescope(telescope)
 
-    def _get_beam_mmodes(self, freq, hybrid_vis_m):
+    def process(
+        self,
+        hybrid_vis_m: containers.HybridVisMModes,
+    ) -> containers.RingMap:
+        """Generate a deconvolved ringmap using an analytic beam model.
+
+        Parameters
+        ----------
+        hybrid_vis_m : containers.HybridVisMModes
+            M-mode transform of hybrid beamformed visibilities.
+
+        Returns
+        -------
+        ringmap
+            The deconvolved ring map.
+        """
+
+        # Prepare the external beam m-modes and save to class attribute
+        hybrid_beam_m = self._get_beam_mmodes(hybrid_vis_m)
+
+        return super().process(hybrid_vis_m, hybrid_beam_m)
+
+    def _get_beam_mmodes(
+        self, hybrid_vis_m: containers.HybridVisMModes
+    ) -> containers.HybridVisMModes:
 
         # NOTE: Coefficients taken from Mateus's fits, but adjust to fix the definition
         # of sigma, and be the widths for the "voltage" beam
@@ -821,93 +860,58 @@ class DeconvolveAnalyticalBeam(DeconvolveHybridMBase):
             """Azimuthal beam transfer function."""
             return np.exp(2.0j * np.pi * u * np.sin(phi)) * A(phi, sigma)
 
-        # Deteremine the RA axis from the maximum m-mode in the hybrid visibilities
+        # Determine the RA axis from the maximum m-mode in the hybrid visibilities
         mmax = hybrid_vis_m.mmax
-        is_odd = np.any(hybrid_vis_m.vis[mmax, 1] != 0.0)
-        nra = 2 * mmax + int(is_odd)
+        nra = 2 * mmax + int(hybrid_vis_m.oddra)
 
-        ra = np.linspace(0.0, 360.0, nra, endpoint=False)
-        phi_arr = np.radians(ra)[np.newaxis, np.newaxis, np.newaxis, :]
-
-        # Calculate the baseline distance in wavelengths
-        wv = scipy.constants.c * 1e-6 / freq
-        u = hybrid_vis_m.index_map["ew"] / wv
-
-        # Calculate the projected baseline distance
         dec = np.arcsin(hybrid_vis_m.index_map["el"]) + np.radians(
             self.telescope.latitude
         )
-        u_dec = u[:, np.newaxis] * np.cos(dec)[np.newaxis, :]
-        u_arr = u_dec[np.newaxis, :, :, np.newaxis]
-
-        # Construct an array containing the width of the beam for
-        # each polarisation and declination
         pol = hybrid_vis_m.index_map["pol"]
-        sig = np.zeros((pol.size, dec.size), dtype=dec.dtype)
-        for pi, (pa, pb) in enumerate(pol):
 
-            # Get the effective beamwidth for the polarisation combination
-            sig_a = beam_width[pa](freq, dec)
-            sig_b = beam_width[pb](freq, dec)
-            sig[pi] = sig_a * sig_b / (sig_a ** 2 + sig_b ** 2) ** 0.5
+        # Determine RA axis for beam
+        ra = np.linspace(0.0, 360.0, nra, endpoint=False)
+        phi_arr = np.radians(ra)[np.newaxis, np.newaxis, np.newaxis, :]
 
-        sig_arr = sig[:, np.newaxis, :, np.newaxis]
+        hybrid_beam_m = containers.empty_like(hybrid_vis_m)
 
-        # Calculate the effective beam transfer function
-        B_arr = B(phi_arr, u_arr, sig_arr)
+        # Loop over all local frequencies and calculate the beam m-modes
+        for lfi, fi in hybrid_vis_m.vis[:].enumerate(axis=3):
 
-        mB = transform._make_marray(B_arr.conj(), mmax=mmax)
+            freq = hybrid_vis_m.freq[fi]
 
-        return mB
+            # Calculate the baseline distance in wavelengths
+            wv = scipy.constants.c * 1e-6 / freq
+            u = hybrid_vis_m.index_map["ew"] / wv
 
+            # Calculate the projected baseline distance
+            u_dec = u[:, np.newaxis] * np.cos(dec)[np.newaxis, :]
+            u_arr = u_dec[np.newaxis, :, :, np.newaxis]
 
-class DeconvolveExternalBeam(DeconvolveHybridMBase):
-    """Base class for deconvolving an external model of the beam (non-functional)."""
+            # Construct an array containing the width of the beam for
+            # each polarisation and declination
+            sig = np.zeros((pol.size, dec.size), dtype=dec.dtype)
+            for pi, (pa, pb) in enumerate(pol):
 
-    def process(
-        self,
-        hybrid_vis_m: containers.HybridVisMModes,
-        hybrid_beam_m: containers.HybridVisMModes,
-    ) -> containers.RingMap:
-        """Generate a deconvolved ringmap using an external beam model.
+                # Get the effective beamwidth for the polarisation combination
+                sig_a = beam_width[pa](freq, dec)
+                sig_b = beam_width[pb](freq, dec)
+                sig[pi] = sig_a * sig_b / (sig_a ** 2 + sig_b ** 2) ** 0.5
 
-        Parameters
-        ----------
-        hybrid_vis_m : containers.HybridVisMModes
-            M-mode transform of hybrid beamformed visibilities.
+            sig_arr = sig[:, np.newaxis, :, np.newaxis]
 
-        hybrid_beam_m : containers.HybridVisMModes
-            M-mode transform of the beam after converting into
-            hybrid beamformed visibilities.
+            # Calculate the effective beam transfer function
+            B_arr = B(phi_arr, u_arr, sig_arr)
 
-        Returns
-        -------
-        ringmap
-            The deconvolved ring map.
-        """
-        # Prepare the external beam m-modes and save to class attribute
-        hybrid_beam_m.redistribute("freq")
+            hybrid_beam_m.vis[:, :, :, fi] = transform._make_marray(
+                B_arr.conj(), mmax=mmax
+            )
 
-        fstart = hybrid_beam_m.vis.local_offset[3]
-        fstop = fstart + hybrid_beam_m.vis.local_shape[3]
-
-        self.beam_freq = hybrid_beam_m.freq[fstart:fstop]
-        self.beam_mmodes = hybrid_beam_m.vis[:].view(np.ndarray)
-
-        return super(DeconvolveExternalBeam, self).process(hybrid_vis_m)
-
-    def _get_beam_mmodes(self, freq, hybrid_vis_m):
-
-        ifreq = np.argmin(np.abs(freq - self.beam_freq))
-
-        if np.abs(freq - self.beam_freq[ifreq]) > 0.0:
-            raise RuntimeError("Frequency axis of the beam m-modes does not match.")
-
-        return self.beam_mmodes[:, :, :, ifreq]
+        return hybrid_beam_m
 
 
 class TikhonovRingMapMaker(DeconvolveHybridMBase):
-    """Base class for making maps using a Tikhonov regularisation scheme (non-functional).
+    """Class for making maps using a Tikhonov regularisation scheme.
 
     Attributes
     ----------
@@ -959,7 +963,7 @@ class TikhonovRingMapMaker(DeconvolveHybridMBase):
 
 
 class WienerRingMapMaker(DeconvolveHybridMBase):
-    """Base class for map making using a Wiener regularisation scheme (non-functional).
+    """Class for map making using a Wiener regularisation scheme.
 
     Compared to TikhonovRingMapMaker, this task has a frequency and m-mode
     dependent regularisation parameter given by the ratio of the noise spectrum
@@ -1030,16 +1034,13 @@ class TikhonovRingMapMakerAnalytical(DeconvolveAnalyticalBeam, TikhonovRingMapMa
     """Make a ringmap using Tikhonov deconvolution of an analytical beam model."""
 
 
-class TikhonovRingMapMakerExternal(DeconvolveExternalBeam, TikhonovRingMapMaker):
-    """Make a ringmap using Tikhonov deconvolution of an external beam model."""
-
-
 class WienerRingMapMakerAnalytical(DeconvolveAnalyticalBeam, WienerRingMapMaker):
     """Make a ringmap using Wiener deconvolution of an analytical beam model."""
 
 
-class WienerRingMapMakerExternal(DeconvolveExternalBeam, WienerRingMapMaker):
-    """Make a ringmap using Wiener deconvolution of an external beam model."""
+# Aliases to support old names
+TikhonovRingMapMakerExternal = TikhonovRingMapMaker
+WienerRingMapMakerExternal = WienerRingMapMaker
 
 
 class RADependentWeights(task.SingleTask):

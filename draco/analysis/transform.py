@@ -2,7 +2,10 @@
 
 This includes grouping frequencies and products to performing the m-mode transform.
 """
+from typing import Optional
+
 import numpy as np
+from numpy.lib.recfunctions import structured_to_unstructured
 from caput import mpiarray, config
 
 from ..core import containers, task, io
@@ -66,9 +69,11 @@ class FrequencyRebin(task.SingleTask):
             ri = fi // self.channel_bin
 
             sb.vis[ri] += ss.vis[fi] * ss.weight[fi]
-            sb.gain[ri] += (
-                ss.gain[fi] / self.channel_bin
-            )  # Don't do weighted average for the moment
+
+            if "gain" in ss.datasets:
+                sb.gain[ri] += (
+                    ss.gain[fi] / self.channel_bin
+                )  # Don't do weighted average for the moment
 
             sb.weight[ri] += ss.weight[fi]
 
@@ -438,7 +443,7 @@ class MModeTransform(task.SingleTask):
     time samples, or if a manager is supplied `telescope.mmax` is used.
     """
 
-    def setup(self, manager=None):
+    def setup(self, manager: Optional[io.TelescopeConvertible] = None):
         """Set the telescope instance if a manager object is given.
 
         This is used to set the `mmax` used in the transform.
@@ -454,7 +459,7 @@ class MModeTransform(task.SingleTask):
         else:
             self.telescope = None
 
-    def process(self, sstream):
+    def process(self, sstream: containers.SiderealContainer) -> containers.MContainer:
         """Perform the m-mode transform.
 
         Parameters
@@ -491,10 +496,18 @@ class MModeTransform(task.SingleTask):
             mmax = sstream.vis.shape[-1] // 2
 
         # Create the container to store the modes in
-        ma = out_cont(mmax=mmax, axes_from=sstream, comm=sstream.comm)
+        ma = out_cont(
+            mmax=mmax,
+            oddra=bool(nra % 2),
+            axes_from=sstream,
+            attrs_from=sstream,
+            comm=sstream.comm,
+        )
         ma.redistribute("freq")
 
         # Generate the m-mode transform directly into the output container
+        # NOTE: Need to zero fill as not every element gets set within _make_marray
+        ma.vis[:] = 0.0
         _make_marray(sstream.vis[:], ma.vis[:])
 
         # Assign the weights into the container
@@ -562,15 +575,16 @@ class MModeInverseTransform(task.SingleTask):
 
     Attributes
     ----------
-    n_time : int
-        Number of time bins in the output. Note that if
-        the number of samples does not Nyquist sample the
-        maximum m, information may be lost.
+    nra : int
+        Number of RA bins in the output. Note that if the number of samples does not
+        Nyquist sample the maximum m, information may be lost. If not set, then try to
+        get from an `original_nra` attribute on the incoming MModes, otherwise determine
+        an appropriate number of RA bins from the mmax.
     """
 
-    n_time = config.Property(proptype=int, default=None)
+    nra = config.Property(proptype=int, default=None)
 
-    def process(self, mmodes):
+    def process(self, mmodes: containers.MContainer) -> containers.SiderealContainer:
         """Perform the m-mode inverse transform.
 
         Parameters
@@ -591,14 +605,23 @@ class MModeInverseTransform(task.SingleTask):
         # Ensure m-modes are distributed in frequency
         mmodes.redistribute("freq")
 
+        # Use the nra property if set otherwise use the natural nra from the incoming
+        # container
+        nra_cont = 2 * mmodes.mmax + (1 if mmodes.oddra else 0)
+        nra = self.nra if self.nra is not None else nra_cont
+
         # Re-construct array of S-streams
-        ssarray = _make_ssarray(mmodes.vis[:], n=self.n_time)
-        ntime = ssarray.shape[-1]
+        ssarray = _make_ssarray(mmodes.vis[:], n=nra)
+        nra = ssarray.shape[-1]  # Get the actual nra used
         ssarray = mpiarray.MPIArray.wrap(ssarray[:], axis=0, comm=mmodes.comm)
 
         # Construct container and set visibility data
         sstream = containers.SiderealStream(
-            ra=ntime, axes_from=mmodes, distributed=True, comm=mmodes.comm
+            ra=nra,
+            axes_from=mmodes,
+            attrs_from=mmodes,
+            distributed=True,
+            comm=mmodes.comm,
         )
         sstream.redistribute("freq")
 
@@ -606,9 +629,23 @@ class MModeInverseTransform(task.SingleTask):
         sstream.vis[:] = ssarray
         # There is no way to recover time information for the weights.
         # Just assign the time average to each baseline and frequency.
-        sstream.weight[:] = mmodes.weight[0, 0, :, :][:, :, np.newaxis] / ntime
+        sstream.weight[:] = mmodes.weight[0, 0, :, :][:, :, np.newaxis] / nra
 
         return sstream
+
+
+class SiderealMModeResample(task.group_tasks(MModeTransform, MModeInverseTransform)):
+    """Resample a sidereal stream by FFT.
+
+    This performs a forward and inverse m-mode transform to resample a sidereal stream.
+
+    Attributes
+    ----------
+    nra
+        The number of RA bins for the output stream.
+    """
+
+    nra = config.Property(proptype=int, default=None)
 
 
 def _make_ssarray(mmodes, n=None):
@@ -889,3 +926,156 @@ class SelectPol(task.SingleTask):
                 outcont.datasets[name][:] *= 0.5
 
         return outcont
+
+
+class TransformJanskyToKelvin(task.SingleTask):
+    """Task to convert from Jy to Kelvin and vice-versa.
+
+    This integrates over the primary beams in the telescope class to derive the
+    brightness temperature to flux conversion.
+
+    Attributes
+    ----------
+    convert_Jy_to_K : bool
+        If True, apply a Jansky to Kelvin conversion factor. If False apply a Kelvin to
+        Jansky conversion.
+    reference_declination : float, optional
+        The declination to set the flux reference for. A source transiting at this
+        declination will produce a visibility signal equal to its flux. If `None`
+        (default) use the zenith.
+    share : {"none", "all"}
+        Which datasets should the output share with the input. Default is "all".
+    nside : int
+        The NSIDE to use for the primary beam area calculation. This may need to be
+        increased for beams with intricate small scale structure. Default is 256.
+    """
+
+    convert_Jy_to_K = config.Property(proptype=bool, default=True)
+    reference_declination = config.Property(proptype=float, default=None)
+    share = config.enum(["none", "all"], default="all")
+
+    nside = config.Property(proptype=int, default=256)
+
+    def setup(self, telescope: io.TelescopeConvertible):
+        """Set the telescope object.
+
+        Parameters
+        ----------
+        telescope
+            An object we can get a telescope object from. This telescope must be able to
+            calculate the beams at all incoming frequencies.
+        """
+        self.telescope = io.get_telescope(telescope)
+        self.telescope._init_trans(self.nside)
+
+        # If not explicitly set, use the zenith as the reference declination
+        if self.reference_declination is None:
+            self.reference_declination = self.telescope.latitude
+
+        self._omega_cache = {}
+
+    def _beam_area(self, feed, freq):
+        """Calculate the primary beam solid angle."""
+
+        beam = self.telescope.beam(feed, freq)
+        horizon = self.telescope._horizon[:, np.newaxis]
+
+        pxarea = 4 * np.pi / beam.shape[0]
+        omega = np.sum(np.abs(beam) ** 2 * horizon) * pxarea
+
+        # Calculate the beam value at the reference point by temporarily swapping out
+        # the telescopes internal `_angpos` attribute for one that just contains the
+        # reference position
+        # This is a massive hack, that hopefully we can swap out with a better API for
+        # the telescope beams.
+        ap_ref = np.array([[np.pi / 2 - np.radians(self.reference_declination), 0.0]])
+        ap_orig = self.telescope._angpos
+        self.telescope._angpos = ap_ref
+        beam_ref = self.telescope.beam(feed, freq)
+        self.telescope._angpos = ap_orig
+
+        # Normalise omega by the squared magnitude of the beam at the reference position
+        beam_ref = np.sum(np.abs(beam_ref) ** 2)
+        omega *= tools.invert_no_zero(beam_ref)
+
+        return omega
+
+    def process(self, sstream: containers.SiderealStream) -> containers.SiderealStream:
+        """Apply the brightness temperature to flux conversion to the data.
+
+        Parameters
+        ----------
+        sstream
+            The visibilities to apply the conversion to. They are converted to/from
+            brightness temperature units depending on the setting of `convert_Jy_to_K`.
+
+        Returns
+        -------
+        new_sstream
+            Visibilities with the conversion applied. This may be the same as the input
+            container if `share == "all"`.
+        """
+
+        import scipy.constants as c
+
+        sstream.redistribute("freq")
+
+        # Get the local frequencies in the sidereal stream
+        sfreq = sstream.vis.local_offset[0]
+        efreq = sfreq + sstream.vis.local_shape[0]
+        local_freq = sstream.freq[sfreq:efreq]
+
+        # Get the indices of the incoming frequencies as far as the telescope class is
+        # concerned
+        local_freq_inds = []
+        for freq in local_freq:
+            local_freq_inds.append(np.argmin(np.abs(self.telescope.frequencies - freq)))
+
+        # Get the feedpairs we have data for and their beamclass (usually this maps to
+        # polarisation)
+        feedpairs = structured_to_unstructured(sstream.prodstack)
+        beamclass_pairs = self.telescope.beamclass[feedpairs]
+
+        # Calculate all the unique beams that we need to calculate areas for
+        unique_beamclass, bc_index = np.unique(beamclass_pairs, return_index=True)
+
+        # Calculate any missing beam areas and to the cache
+        for beamclass, bc_ind in zip(unique_beamclass, bc_index):
+            feed_ind = feedpairs.ravel()[bc_ind]
+
+            for freq, freq_ind in zip(local_freq, local_freq_inds):
+                key = (beamclass, freq)
+
+                if key not in self._omega_cache:
+                    self._omega_cache[key] = self._beam_area(feed_ind, freq_ind)
+
+        # Loop over all frequencies and visibilities and get the effective primary
+        # beam area for each
+        om_ij = np.zeros((len(local_freq), sstream.vis.shape[1]))
+        for fi, freq in enumerate(local_freq):
+            for bi, (bci, bcj) in enumerate(beamclass_pairs):
+                om_i = self._omega_cache[(bci, freq)]
+                om_j = self._omega_cache[(bcj, freq)]
+                om_ij[fi, bi] = (om_i * om_j) ** 0.5
+
+        # Calculate the Jy to K conversion
+        wavelength = (c.c / (local_freq * 10 ** 6))[:, np.newaxis, np.newaxis]
+        K_to_Jy = 2 * 1e26 * c.k * om_ij[:, :, np.newaxis] / wavelength ** 2
+        Jy_to_K = tools.invert_no_zero(K_to_Jy)
+
+        # Get the container we will apply the conversion to (either the input, or a
+        # copy)
+        if self.share == "all":
+            new_stream = sstream
+        else:  # self.share == "none"
+            new_stream = sstream.copy()
+
+        # Apply the conversion to the data and the weights
+        if self.convert_Jy_to_K:
+            new_stream.vis[:] *= Jy_to_K
+            new_stream.weight[:] *= K_to_Jy ** 2
+        else:
+            new_stream.vis[:] *= K_to_Jy
+            new_stream.weight[:] *= Jy_to_K ** 2
+
+        return new_stream

@@ -237,6 +237,12 @@ class SingleTask(MPILoggedTask, pipeline.BasicContMixin):
           - `output_root`: the value of the output root argument. This is deprecated
                            and is just used for legacy support. The default value of
                            `output_name` means the previous behaviour works.
+    tag : str, optional
+        Set a format for the tag attached to the output. This is a Python format string
+        which can interpolate two variables: the integer variable "count" which
+        incremements once every time `next` is run, and "tag" which is any existing tag
+        attached to the output (often copied over from the input). For example a tag of
+        "cat{count}" will generate catalogs with the tags "cat1", "cat2", etc.
     output_root : string
         Pipeline settable parameter giving the first part of the output path.
         Deprecated in favour of `output_name`.
@@ -255,7 +261,8 @@ class SingleTask(MPILoggedTask, pipeline.BasicContMixin):
     Raises
     ------
     `caput.pipeline.PipelineRuntimeError`
-        If this is used as a baseclass to a task overriding `self.process` with variable length or optional arguments.
+        If this is used as a baseclass to a task overriding `self.process` with variable
+        length or optional arguments.
     """
 
     save = config.Property(default=False, proptype=bool)
@@ -270,6 +277,8 @@ class SingleTask(MPILoggedTask, pipeline.BasicContMixin):
     # Metadata to get attached to the output
     versions = config.Property(default={}, proptype=dict)
     pipeline_config = config.Property(default={}, proptype=dict)
+
+    tag = config.Property(proptype=str, default="{tag}")
 
     _count = 0
 
@@ -322,15 +331,9 @@ class SingleTask(MPILoggedTask, pipeline.BasicContMixin):
         if output is None:
             return
 
-        # Set a tag in output if needed
-        if "tag" not in output.attrs and len(input) > 0 and "tag" in input[0].attrs:
-            output.attrs["tag"] = input[0].attrs["tag"]
-
-        # Check for NaN's etc
-        output = self._nan_process_output(output)
-
-        # Write the output if needed
-        self._save_output(output)
+        output = self._process_output(
+            output, input[0].attrs.get("tag", None) if len(input) else None
+        )
 
         # Increment internal counter
         self._count = self._count + 1
@@ -353,13 +356,24 @@ class SingleTask(MPILoggedTask, pipeline.BasicContMixin):
 
         output = self.process_finish()
 
+        output = self._process_output(output)
+
+        self.log.info(f"Leaving finish for task {class_name}")
+
+        return output
+
+    def _process_output(self, output, input_tag=None):
+
+        # Set the tag according to the format
+        output.attrs["tag"] = self.tag.format(
+            count=self._count, tag=output.attrs.get("tag", input_tag or self._count)
+        )
+
         # Check for NaN's etc
         output = self._nan_process_output(output)
 
         # Write the output if needed
         self._save_output(output)
-
-        self.log.info(f"Leaving finish for task {class_name}")
 
         return output
 
@@ -432,27 +446,28 @@ class SingleTask(MPILoggedTask, pipeline.BasicContMixin):
             if isinstance(n, memh5.MemDataset):
 
                 # Try to test for NaN's and infs. This will fail for compound datatypes...
-                arr = n[:]
+                # casting to ndarray, bc MPI ranks may fall out of sync, if a nan or inf are found
+                arr = n[:].view(np.ndarray)
                 try:
-                    is_nan = np.isnan(arr)
-                    is_inf = np.isinf(arr)
+                    total_nan = np.isnan(arr).sum()
+                    total_inf = np.isinf(arr).sum()
                 except TypeError:
                     continue
 
-                if is_nan.any():
+                if total_nan > 0:
                     self.log.info(
                         "NaN's found in dataset %s [%i of %i elements]",
                         n.name,
-                        is_nan.sum(),
+                        total_nan,
                         arr.size,
                     )
                     found = True
 
-                if is_inf.any():
+                if total_inf > 0:
                     self.log.info(
                         "Inf's found in dataset %s [%i of %i elements]",
                         n.name,
-                        is_inf.sum(),
+                        total_inf,
                         arr.size,
                     )
                     found = True

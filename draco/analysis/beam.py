@@ -74,7 +74,8 @@ class CreateBeamStream(task.SingleTask):
         # Make sure the beam is in celestial coordinates
         if beam.coords != "celestial":
             raise RuntimeError(
-                "Beam must be converted to celestial coordinates prior to generating a HybridVisStream."
+                "Beam must be converted to celestial coordinates prior to generating "
+                "a HybridVisStream."
             )
 
         # Check that el matches
@@ -89,17 +90,17 @@ class CreateBeamStream(task.SingleTask):
         # Map the RAs
         ha = beam.phi
         ra_beam = (ha + 360.0) % 360.0
-        ra_data = data.index_map["ra"]
+        nra = int(round(360.0 / np.abs(ha[1] - ha[0])))
+        delta_ra = 360.0 / nra
 
-        map_ra = np.searchsorted(ra_data, ra_beam)
+        map_ra = np.rint(ra_beam / delta_ra).astype(int)
 
-        if not np.allclose(ra_data[map_ra], ra_beam):
-            # This checks fails for rev_00 due to the shifted RA axis.
-            # Once we move on to processing later revisisions we can
-            # raise an error here.
-            self.log.info(
-                "RA axis of beam and data differ at most by %0.6f deg"
-                % np.max(ra_data[map_ra] - ra_beam)
+        # Test that the positions of the original beam samples are close enough to exact
+        # grid locations in the output grid. This 1e-4 number tolerance is just a guess
+        # as to what is reasonable.
+        if not np.allclose(ra_beam / delta_ra, map_ra, atol=1e-4):
+            raise ValueError(
+                "Input beam cannot be placed on an grid between 0 and 360 degrees."
             )
 
         # Determine other axes
@@ -143,6 +144,7 @@ class CreateBeamStream(task.SingleTask):
 
         # Create output container
         out = containers.HybridVisStream(
+            ra=nra,
             axes_from=data,
             attrs_from=data,
             distributed=data.distributed,

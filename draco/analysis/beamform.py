@@ -1,5 +1,7 @@
 """Beamform visibilities to the location of known sources."""
 
+from typing import Tuple
+import healpy
 import numpy as np
 import scipy.interpolate
 from skyfield.api import Star, Angle
@@ -900,6 +902,10 @@ class RingMapBeamForm(task.SingleTask):
     that they can beamform exactly on a source whereas this task is at the mercy of
     what was done to produce the `RingMap` (use `DeconvolveHybridM` for best
     results).
+
+    Unless it has an explicit `lsd` attribute, the ring map is assumed to be in the
+    same coordinate epoch as the catalog. If it does, the input catalog is assumed to be
+    in ICRS and then is precessed to the CIRS coordinates in the epoch of the map.
     """
 
     def setup(self, telescope: io.TelescopeConvertible, ringmap: containers.RingMap):
@@ -910,7 +916,8 @@ class RingMapBeamForm(task.SingleTask):
         manager
             The telescope object to use.
         ringmap
-            The ringmap to extract the sources from.
+            The ringmap to extract the sources from. See the class documentation for how
+            the epoch is determined.
         """
 
         self.telescope = io.get_telescope(telescope)
@@ -932,25 +939,7 @@ class RingMapBeamForm(task.SingleTask):
 
         ringmap = self.ringmap
 
-        if "position" not in catalog:
-            raise ValueError("Input is missing a position table.")
-
-        # Calculate the epoch for the data so we can calculate the correct
-        # CIRS coordinates
-        if "lsd" not in ringmap.attrs:
-            ringmap.attrs["lsd"] = 1950
-            self.log.error("Input must have an LSD attribute to calculate the epoch.")
-        # if "lsd" not in ringmap.attrs:
-        #     raise ValueError("Input must have an LSD attribute to calculate the epoch.")
-
-        # This will be a float for a single sidereal day, or a list of
-        # floats for a stack
-        lsd = (
-            ringmap.attrs["lsd"][0]
-            if isinstance(ringmap.attrs["lsd"], np.ndarray)
-            else ringmap.attrs["lsd"]
-        )
-        epoch = self.telescope.lsd_to_unix(lsd)
+        src_ra, src_dec = self._process_catalog(catalog)
 
         # Container to hold the formed beams
         formed_beam = containers.FormedBeam(
@@ -968,50 +957,85 @@ class RingMapBeamForm(task.SingleTask):
         if "redshift" in catalog:
             formed_beam["redshift"][:] = catalog["redshift"][:]
 
-        # Get the source positions at the current epoch
-        src_ra, src_dec = icrs_to_cirs(
-            catalog["position"]["ra"], catalog["position"]["dec"], epoch
-        )
-
-        # Get the grid size of the map in RA and sin(ZA)
-        dra = np.median(np.abs(np.diff(ringmap.index_map["ra"])))
-        dza = np.median(np.abs(np.diff(ringmap.index_map["el"])))
-
-        # Get the source indices in RA
-        # NOTE: that we need to take into account that sources might be less than 360
-        # deg, but still closer to ind=0
-        max_ra_ind = len(ringmap.ra) - 1
-        ra_ind = (np.rint(src_ra / dra) % max_ra_ind).astype(np.int)
-
-        # Get the indices for the ZA direction
-        za_ind = np.rint(
-            (np.sin(np.radians(src_dec - self.telescope.latitude)) + 1) / dza
-        ).astype(np.int)
-
         # Ensure containers are distributed in frequency
         formed_beam.redistribute("freq")
         ringmap.redistribute("freq")
+
+        has_weight = "weight" in ringmap.datasets
+
+        # Get the pixel indices
+        ra_ind, za_ind = self._source_ind(src_ra, src_dec)
 
         # Dereference the datasets
         fbb = formed_beam.beam[:]
         fbw = formed_beam.weight[:]
         rmm = ringmap.map[:]
-        rmw = (
-            ringmap.weight[:]
-            if "weight" in ringmap.datasets
-            else invert_no_zero(ringmap.rms[:]) ** 2
-        )
+        rmw = ringmap.weight[:] if has_weight else invert_no_zero(ringmap.rms[:]) ** 2
 
         # Loop over sources and extract the polarised pencil beams containing them from
         # the ringmaps
         for si, (ri, zi) in enumerate(zip(ra_ind, za_ind)):
             fbb[si] = rmm[0, :, :, ri, zi]
-            fbw[si] = rmw[:, :, ri]
+            fbw[si] = rmw[:, :, ri, zi] if has_weight else rmw[:, :, ri]
 
         return formed_beam
 
+    def _process_catalog(
+        self, catalog: containers.SourceCatalog
+    ) -> Tuple[np.ndarray, np.ndarray]:
+        """Get the current epoch coordinates of the catalog."""
 
-class RingMapStack2D(task.SingleTask):
+        if "position" not in catalog:
+            raise ValueError("Input is missing a position table.")
+
+        # Calculate the epoch for the data so we can calculate the correct
+        # CIRS coordinates
+        if "lsd" not in self.ringmap.attrs:
+            self.log.info(
+                "Input map has no epoch set, assuming that it matches the catalog."
+            )
+            src_ra, src_dec = catalog["position"]["ra"], catalog["position"]["dec"]
+
+        else:
+            lsd = (
+                self.ringmap.attrs["lsd"][0]
+                if isinstance(self.ringmap.attrs["lsd"], np.ndarray)
+                else self.ringmap.attrs["lsd"]
+            )
+            epoch = self.telescope.lsd_to_unix(lsd)
+
+            # Get the source positions at the current epoch
+            src_ra, src_dec = icrs_to_cirs(
+                catalog["position"]["ra"], catalog["position"]["dec"], epoch
+            )
+
+        return src_ra, src_dec
+
+    def _source_ind(
+        self, src_ra: np.ndarray, src_dec: np.ndarray
+    ) -> Tuple[np.ndarray, np.ndarray]:
+        """Get the RA/ZA ringmap pixel indices of the sources."""
+
+        # Get the grid size of the map in RA and sin(ZA)
+        dra = np.median(np.abs(np.diff(self.ringmap.index_map["ra"])))
+        dza = np.median(np.abs(np.diff(self.ringmap.index_map["el"])))
+        za_min = self.ringmap.index_map["el"][:].min()
+
+        # Get the source indices in RA
+        # NOTE: that we need to take into account that sources might be less than 360
+        # deg, but still closer to ind=0
+        max_ra_ind = len(self.ringmap.ra) - 1
+        ra_ind = (np.rint(src_ra / dra) % max_ra_ind).astype(np.int)
+
+        # Get the indices for the ZA direction
+        za_ind = np.rint(
+            (np.sin(np.radians(src_dec - self.telescope.latitude)) - za_min) / dza
+        ).astype(np.int)
+
+        return ra_ind, za_ind
+
+
+class RingMapStack2D(RingMapBeamForm):
     """Stack RingMap's on sources directly.
 
     Parameters
@@ -1036,20 +1060,6 @@ class RingMapStack2D(task.SingleTask):
     freq_width = config.Property(proptype=float, default=100.0)
     weight = config.enum(["patch", "dec", "input"], default="input")
 
-    def setup(self, telescope: io.TelescopeConvertible, ringmap: containers.RingMap):
-        """Set the telescope object.
-
-        Parameters
-        ----------
-        manager
-            The telescope object to use.
-        ringmap
-            The ringmap to extract the sources from.
-        """
-
-        self.telescope = io.get_telescope(telescope)
-        self.ringmap = ringmap
-
     def process(self, catalog: containers.SourceCatalog) -> containers.FormedBeam:
         """Extract sources from a ringmap.
 
@@ -1067,44 +1077,12 @@ class RingMapStack2D(task.SingleTask):
 
         ringmap = self.ringmap
 
-        if "position" not in catalog:
-            raise ValueError("Input is missing a position table.")
-
-        # Calculate the epoch for the data so we can calculate the correct
-        # CIRS coordinates
-        if "lsd" not in ringmap.attrs:
-            ringmap.attrs["lsd"] = 1950
-            self.log.error("Input must have an LSD attribute to calculate the epoch.")
-
-        # This will be a float for a single sidereal day, or a list of
-        # floats for a stack
-        lsd = (
-            ringmap.attrs["lsd"][0]
-            if isinstance(ringmap.attrs["lsd"], np.ndarray)
-            else ringmap.attrs["lsd"]
-        )
-        epoch = self.telescope.lsd_to_unix(lsd)
-
-        # Get the source positions at the current epoch
-        src_ra, src_dec = icrs_to_cirs(
-            catalog["position"]["ra"], catalog["position"]["dec"], epoch
-        )
+        # Get the current epoch catalog position
+        src_ra, src_dec = self._process_catalog(catalog)
         src_z = catalog["redshift"]["z"]
 
-        # Get the grid size of the map in RA and sin(ZA)
-        dra = np.median(np.abs(np.diff(ringmap.index_map["ra"])))
-        dza = np.median(np.abs(np.diff(ringmap.index_map["el"])))
-
-        # Get the source indices in RA
-        # NOTE: that we need to take into account that sources might be less than 360
-        # deg, but still closer to ind=0
-        max_ra_ind = len(ringmap.ra) - 1
-        ra_ind = (np.rint(src_ra / dra) % max_ra_ind).astype(np.int)
-
-        # Get the indices for the ZA direction
-        za_ind = np.rint(
-            (np.sin(np.radians(src_dec - self.telescope.latitude)) + 1) / dza
-        ).astype(np.int)
+        # Get the pixel indices
+        ra_ind, za_ind = self._source_ind(src_ra, src_dec)
 
         # Ensure containers are distributed in frequency
         ringmap.redistribute("freq")
@@ -1200,6 +1178,86 @@ class RingMapStack2D(task.SingleTask):
         stack.stack[:] = stack_all[1:-1].transpose((1, 2, 3, 0))
 
         return stack
+
+
+class HealpixBeamForm(task.SingleTask):
+    """Beamform by extracting the pixel containing each source form a Healpix map.
+
+    Unless it has an explicit `epoch` attribute, the Healpix map is assumed to be in the
+    same coordinate epoch as the catalog. If it does, the input catalog is assumed to be
+    in ICRS and then is precessed to the CIRS coordinates in the epoch of the map.
+    """
+
+    def setup(self, hpmap: containers.Map):
+        """Set the map to extract beams from at each catalog location.
+
+        Parameters
+        ----------
+        hpmap
+            The Healpix map to extract the sources from.
+        """
+
+        self.map = hpmap
+
+    def process(self, catalog: containers.SourceCatalog) -> containers.FormedBeam:
+        """Extract sources from a ringmap.
+
+        Parameters
+        ----------
+        catalog
+            The catalog to extract sources from.
+
+        Returns
+        -------
+        formed_beam
+            The source spectra.
+        """
+
+        if "position" not in catalog:
+            raise ValueError("Input is missing a position table.")
+
+        # Container to hold the formed beams
+        formed_beam = containers.FormedBeam(
+            object_id=catalog.index_map["object_id"],
+            axes_from=self.map,
+            distributed=True,
+        )
+
+        # Initialize container to zeros.
+        formed_beam.beam[:] = 0.0
+        formed_beam.weight[:] = 0.0
+
+        # Copy catalog information
+        formed_beam["position"][:] = catalog["position"][:]
+        if "redshift" in catalog:
+            formed_beam["redshift"][:] = catalog["redshift"][:]
+
+        # Get the source positions at the epoch of the input map
+        epoch = self.map.attrs.get("epoch", None)
+        epoch = ctime.ensure_unix(epoch) if epoch is not None else None
+        if epoch:
+            src_ra, src_dec = icrs_to_cirs(
+                catalog["position"]["ra"], catalog["position"]["dec"], epoch
+            )
+        else:
+            self.log.info(
+                "Input map has no epoch set, assuming that it matches the catalog."
+            )
+            src_ra = catalog["position"]["ra"]
+            src_dec = catalog["position"]["dec"]
+
+        # Use Healpix to get the pixels containing the sources
+        pix_ind = healpy.ang2pix(self.map.nside, src_ra, src_dec, lonlat=True)
+
+        # Ensure containers are distributed in frequency
+        formed_beam.redistribute("freq")
+        self.map.redistribute("freq")
+
+        formed_beam.beam[:] = self.map.map[:, :, pix_ind].transpose(2, 1, 0)
+        # Set to some non-zero value as the Map container doesn't have a weight
+        formed_beam.weight[:] = 1.0
+
+        return formed_beam
 
 
 def icrs_to_cirs(ra, dec, epoch, apparent=True):

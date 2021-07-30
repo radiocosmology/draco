@@ -100,6 +100,9 @@ class GaussianNoise(task.SingleTask, random.RandomTask):
         Multiplies the number of samples in each measurement.
     set_weights : bool
         Set the weights to the appropriate values.
+    add_noise : bool
+        Add Gaussian noise to the visibilities. By default this is True, but it may be
+        desirable to only set the weights.
     recv_temp : bool
         The temperature of the noise to add.
     """
@@ -107,6 +110,7 @@ class GaussianNoise(task.SingleTask, random.RandomTask):
     recv_temp = config.Property(proptype=float, default=50.0)
     ndays = config.Property(proptype=float, default=733.0)
     set_weights = config.Property(proptype=bool, default=True)
+    add_noise = config.Property(proptype=bool, default=True)
 
     def setup(self, manager=None):
         """Set the telescope instance if a manager object is given.
@@ -170,19 +174,22 @@ class GaussianNoise(task.SingleTask, random.RandomTask):
         nsamp = int(self.ndays * dt * df) * redundancy
         std = self.recv_temp / np.sqrt(nsamp)
 
-        noise = random.complex_normal(
-            (nfreq, nprod, ntime), scale=std[np.newaxis, :, np.newaxis], rng=self.rng
-        )
+        if self.add_noise:
+            noise = random.complex_normal(
+                (nfreq, nprod, ntime),
+                scale=std[np.newaxis, :, np.newaxis],
+                rng=self.rng,
+            )
 
-        # Iterate over the products to find the auto-correlations and add the noise
-        for pi, prod in enumerate(data.prodstack):
+            # Iterate over the products to find the auto-correlations and add the noise
+            for pi, prod in enumerate(data.prodstack):
 
-            # Auto: multiply by sqrt(2) because auto has twice the variance
-            if prod[0] == prod[1]:
-                visdata[:, pi].real += np.sqrt(2) * noise[:, pi].real
+                # Auto: multiply by sqrt(2) because auto has twice the variance
+                if prod[0] == prod[1]:
+                    visdata[:, pi].real += np.sqrt(2) * noise[:, pi].real
 
-            else:
-                visdata[:, pi] += noise[:, pi]
+                else:
+                    visdata[:, pi] += noise[:, pi]
 
         # Construct and set the correct weights in place
         if self.set_weights:
