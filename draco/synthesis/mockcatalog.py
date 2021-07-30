@@ -844,9 +844,11 @@ class AddEBOSSZErrorsToCatalog(task.SingleTask, random.RandomTask):
     ----------
     tracer : {"ELG"|"LRG"|"QSO"}
         Generate redshift errors corresponding to this eBOSS sample.
+        If not specified, task will attempt to detect the tracre type from
+        the catalog's `tracer` attribute or its tag. Default: None
     """
 
-    tracer = config.enum(["QSO", "ELG", "LRG"])
+    tracer = config.enum(["QSO", "ELG", "LRG"], default=None)
 
     def process(self, cat):
         """Generate random redshift errors and add to redshifts in catalog.
@@ -861,6 +863,27 @@ class AddEBOSSZErrorsToCatalog(task.SingleTask, random.RandomTask):
         cat_out : :class:`containers.SpectroscopicCatalog`
             Catalog with redshift errors added.
         """
+
+        tracer = self.tracer
+
+        # If tracer not specified in config, check to see whether it's stored
+        # in the catalog's 'tracer' attribute or in its tag
+        if tracer is None:
+            if "tracer" in cat.attrs:
+                tracer = cat.attrs["tracer"]
+            else:
+                for key in _velocity_error_function_lookup.keys():
+                    if key in cat.attrs["tag"]:
+                        tracer = key
+                        break
+
+                if tracer is None:
+                    raise ValueError(
+                        "Must specify eBOSS tracer in config property, "
+                        "catalog 'tracer' attribute, or catalog 'tag' attribute."
+                    )
+
+        self.log.info(f"Applying {tracer} redshift errors.")
 
         # Get redshifts from catalog
         cat_z = cat["redshift"]["z"][:]
@@ -894,12 +917,6 @@ class AddEBOSSZErrorsToCatalog(task.SingleTask, random.RandomTask):
         dz: np.ndarray[nsource,]
             Perturbations to source redshifts based on random velocity errors.
         """
-
-        _velocity_error_function_lookup = {
-            "QSO": self.qso_velocity_error,
-            "ELG": self.elg_velocity_error,
-            "LRG": self.lrg_velocity_error,
-        }
 
         if tracer not in _velocity_error_function_lookup:
             raise ValueError(
@@ -1015,6 +1032,13 @@ class AddEBOSSZErrorsToCatalog(task.SingleTask, random.RandomTask):
         dv = dist.rvs(ELG_LAMBDA, scale=ELG_SIG, size=nsample)
 
         return dv
+
+
+_velocity_error_function_lookup = {
+    "QSO": AddEBOSSZErrorsToCatalog.qso_velocity_error,
+    "ELG": AddEBOSSZErrorsToCatalog.elg_velocity_error,
+    "LRG": AddEBOSSZErrorsToCatalog.lrg_velocity_error,
+}
 
 
 class MapPixelLocationGenerator(task.SingleTask):
