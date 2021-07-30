@@ -896,9 +896,9 @@ class AddEBOSSZErrorsToCatalog(task.SingleTask, random.RandomTask):
         """
 
         _velocity_error_function_lookup = {
-            "QSO": self._qso_velocity_error,
-            "ELG": self._elg_velocity_error,
-            "LRG": self._lrg_velocity_error,
+            "QSO": self.qso_velocity_error,
+            "ELG": self.elg_velocity_error,
+            "LRG": self.lrg_velocity_error,
         }
 
         if tracer not in _velocity_error_function_lookup:
@@ -916,7 +916,7 @@ class AddEBOSSZErrorsToCatalog(task.SingleTask, random.RandomTask):
         return dz
 
     @staticmethod
-    def _qso_velocity_error(nsample, rng):
+    def qso_velocity_error(nsample, rng):
         """Draw random velocity errors for quasars.
 
         This is taken from Lyke et al. 2020 (https://arxiv.org/abs/2007.09001).
@@ -953,7 +953,7 @@ class AddEBOSSZErrorsToCatalog(task.SingleTask, random.RandomTask):
         return dv
 
     @staticmethod
-    def _lrg_velocity_error(nsample, rng):
+    def lrg_velocity_error(nsample, rng):
         """Draw random velocity errors for luminous red galaxies.
 
         This is taken from Ross et al. 2020 (https://arxiv.org/abs/2007.09000).
@@ -981,7 +981,7 @@ class AddEBOSSZErrorsToCatalog(task.SingleTask, random.RandomTask):
         return dv
 
     @staticmethod
-    def _elg_velocity_error(nsample, rng):
+    def elg_velocity_error(nsample, rng):
         """Draw random velocity errors for emission line galaxies.
 
         This is taken from Raichoor et al. 2020 (https://arxiv.org/abs/2007.09007).
