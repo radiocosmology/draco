@@ -822,10 +822,8 @@ class AddGaussianZErrorsToCatalog(task.SingleTask, random.RandomTask):
 
         # Add errors to catalog redshifts
         cat_z += z_err
-        # If not using existing z_error information, add errors in quadrature
-        # with existing stored errors
-        if not self.use_catalog_z_errors:
-            cat_z_err[:] = (z_err ** 2 + cat_z_err ** 2) ** 0.5
+
+        # TODO: store information about error distribution in z_error field
 
         return cat
 
@@ -894,8 +892,8 @@ class AddEBOSSZErrorsToCatalog(task.SingleTask, random.RandomTask):
 
         # Add errors to catalog redshifts
         cat_z += z_err
-        # Add errors in quadrature with existing stored errors
-        cat_z_err[:] = (z_err ** 2 + cat_z_err ** 2) ** 0.5
+
+        # TODO: store information about error distribution in z_error field
 
         return cat
 
