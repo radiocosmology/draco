@@ -171,12 +171,17 @@ class DayenuDelayFilterMap(task.SingleTask):
         frequencies where the weights are nonzero for all times.
         Otherwise will construct a filter for all unique single-time
         frequency masks (can be significantly slower).
+    atten_threshold : float
+        Mask any frequency where the diagonal element of the filter
+        is less than this fraction of the median value over all
+        unmasked frequencies.
     """
 
     epsilon = config.Property(proptype=float, default=1e-12)
     filename = config.Property(proptype=str, default=None)
     tauw = config.Property(proptype=float, default=0.100)
     single_mask = config.Property(proptype=bool, default=True)
+    atten_threshold = config.Property(proptype=float, default=0.0)
 
     _ax_dist = "el"
 
@@ -206,6 +211,12 @@ class DayenuDelayFilterMap(task.SingleTask):
 
         else:
             self._cut_interpolator = None
+
+        if self.atten_threshold > 0.0:
+            self.log.info(
+                "Flagging frequencies with attenuation less "
+                f"than {self.atten_threshold:0.2f} of median attenuation."
+            )
 
     def process(self, ringmap):
         """Filter out delays from a RingMap.
@@ -269,17 +280,27 @@ class DayenuDelayFilterMap(task.SingleTask):
                 # Determine the delay cutoff
                 ecut = self._get_cut(el, **kwargs)
 
-                self.log.info(
-                    "Filtering el %d of %d. [%0.3f micro-sec]" % (ee, nel, ecut)
+                self.log.debug(
+                    "Filtering el %0.3f, %d of %d. [%0.3f micro-sec]"
+                    % (el, ee, nel, ecut)
                 )
 
                 erm = rm[slc]
                 evar = tools.invert_no_zero(weight[wslc])
 
                 # Construct the filter
-                NF, index = highpass_delay_filter(
-                    freq, ecut, flag, epsilon=self.epsilon
-                )
+                try:
+                    NF, index = highpass_delay_filter(
+                        freq, ecut, flag, epsilon=self.epsilon
+                    )
+
+                except np.linalg.LinAlgError as exc:
+                    self.log.error(
+                        "Failed to converge while processing el "
+                        f"{el:0.3f} [{ecut:0.3f} micro-sec]: {exc}"
+                    )
+                    weight[wslc] = 0.0
+                    continue
 
                 # Apply the filter
                 if self.single_mask:
@@ -289,9 +310,16 @@ class DayenuDelayFilterMap(task.SingleTask):
                         np.matmul(NF[:, :, 0] ** 2, evar)
                     )
 
-                else:
+                    if self.atten_threshold > 0.0:
 
-                    self.log.info("There are %d unique masks/filters." % len(index))
+                        diag = np.diag(NF[:, :, 0])
+                        med_diag = np.median(diag[diag > 0.0])
+
+                        flag_low = diag > (self.atten_threshold * med_diag)
+
+                        weight[wslc] *= flag_low[:, np.newaxis].astype(np.float32)
+
+                else:
 
                     for ii, rr in enumerate(index):
                         rm[ind][:, rr, ee] = np.matmul(NF[:, :, ii], erm[:, rr])
@@ -299,7 +327,18 @@ class DayenuDelayFilterMap(task.SingleTask):
                             np.matmul(NF[:, :, ii] ** 2, evar[:, rr])
                         )
 
-                self.log.info("Took %0.2f seconds." % (time.time() - t0,))
+                        if self.atten_threshold > 0.0:
+
+                            diag = np.diag(NF[:, :, ii])
+                            med_diag = np.median(diag[diag > 0.0])
+
+                            flag_low = diag > (self.atten_threshold * med_diag)
+
+                            weight[wind][:, rr, ee] *= flag_low[:, np.newaxis].astype(
+                                np.float32
+                            )
+
+                self.log.debug("Took %0.2f seconds." % (time.time() - t0,))
 
         return ringmap
 
