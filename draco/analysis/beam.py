@@ -49,7 +49,7 @@ class CreateBeamStream(task.SingleTask):
         )
 
     def process(self, data, beam):
-        """Convert the beam model into a format that can be applied to the data.
+        """Convert the beam model into a format that can be deconvolved from data.
 
         Parameters
         ----------
@@ -166,7 +166,7 @@ class CreateBeamStreamFromTelescope(CreateBeamStream):
     """Create a HybridVisStream from a telescope instance."""
 
     def process(self, data):
-        """Convert the beam model into a format that can be applied to the data.
+        """Convert a telescope's beam into a format that can be deconvolved from data.
 
         Parameters
         ----------
@@ -233,7 +233,7 @@ class CreateBeamStreamFromTelescope(CreateBeamStream):
         )
 
         local_freq_flag = np.abs(
-            local_freq["center"] - self.telescope.frequencies[local_freq_index]
+            local_freq["centre"] - self.telescope.frequencies[local_freq_index]
         ) <= (0.5 * local_freq["width"])
 
         # Construct a vector that contains the coordinates in the format
