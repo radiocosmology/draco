@@ -15,6 +15,8 @@ Pipeline tasks
     PdfGeneratorNoSelectionFunction
     PdfGeneratorWithSelectionFunction
     MockCatalogGenerator
+    AddGaussianZErrorsToCatalog
+    AddEBOSSZErrorsToCatalog
     MapPixelLocationGenerator
 
 Usage
@@ -91,6 +93,7 @@ from future.builtins.disabled import *  # noqa  pylint: disable=W0401, W0614
 
 import numpy as np
 import healpy as hp
+import scipy.stats
 
 from cora.signal import corr21cm
 from cora.util import units
@@ -99,6 +102,9 @@ from caput import mpiarray, mpiutil
 from ..core import task, containers
 from ..util import random, tools
 from mpi4py import MPI
+
+# Constants
+C = units.c
 
 
 # Pipeline tasks
@@ -753,16 +759,23 @@ class MockCatalogGenerator(task.SingleTask, random.RandomTask):
         return mock_catalog
 
 
-class AddZErrorsToCatalog(task.SingleTask, random.RandomTask):
-    """Add random redshift errors to redshifts in a catalog.
+class AddGaussianZErrorsToCatalog(task.SingleTask, random.RandomTask):
+    """Add random Gaussian redshift errors to redshifts in a catalog.
 
-    Currently, only Gaussian errors are implemented, determined either
-    by sigma_z or sigma_z / (1+z).
+    The standard deviation of the errors is determined either
+    by sigma_z or sigma_z / (1+z), or by the `z_error` field of the
+    catalog.
 
-    TODO: allow for user-specified PDF.
+    Note that the errors are added to the catalog in place, such that
+    if the original catalog is subsequently used in a pipeline, it will
+    have the errors included.
 
     Attributes
     ----------
+    use_catalog_z_errors : bool
+        Set standard deviation of Gaussian error based on `z_error` value
+        for each source in catalog. If True, overrides `sigma`.
+        Default: False.
     sigma : float
         Standard deviation corresponding to choice in `sigma_type`.
     sigma_type : string
@@ -771,6 +784,7 @@ class AddZErrorsToCatalog(task.SingleTask, random.RandomTask):
             'sigma_z_over_1plusz' - Standard deviation divided by (1+z).
     """
 
+    use_catalog_z_errors = config.Property(proptype=bool, default=False)
     sigma = config.Property(proptype=float)
     sigma_type = config.enum(["sigma_z", "sigma_z_over_1plusz"])
 
@@ -795,18 +809,239 @@ class AddZErrorsToCatalog(task.SingleTask, random.RandomTask):
         # Generate standard normal z errors
         z_err = self.rng.normal(size=cat_z.shape[0])
         # Multiply by appropriate sigma
-        z_err *= (
-            self.sigma * np.ones_like(cat_z)
-            if self.sigma_type == "sigma_z"
-            else self.sigma * (1 + cat_z)
-        )
+        if self.use_catalog_z_errors:
+            if not np.any(cat_z_err):
+                self.log.error(
+                    "Warning: no existing z_error information in catalog, so no z errors will be added"
+                )
+            z_err *= cat_z_err
+        elif self.sigma_type == "sigma_z":
+            z_err *= self.sigma
+        else:  # self.sigma_type == "sigma_z_over_1plusz"
+            z_err *= self.sigma * (1 + cat_z)
 
         # Add errors to catalog redshifts
         cat_z += z_err
-        # Add errors in quadrature with existing stored errors
-        cat_z_err = (z_err ** 2 + cat_z_err ** 2) ** 0.5
+
+        # TODO: store information about error distribution in z_error field
 
         return cat
+
+
+class AddEBOSSZErrorsToCatalog(task.SingleTask, random.RandomTask):
+    """Add eBOSS-type random redshift errors to redshifts in a catalog.
+
+    See the docstrings for _{qso,elg,lrg}_velocity_error() for descriptions
+    of each redshift error distribution.
+
+    Note also that the errors are added to the catalog in place, such that
+    if the original catalog is subsequently used in a pipeline, it will
+    have the errors included.
+
+    Attributes
+    ----------
+    tracer : {"ELG"|"LRG"|"QSO"}
+        Generate redshift errors corresponding to this eBOSS sample.
+        If not specified, task will attempt to detect the tracer type from
+        the catalog's `tracer` attribute or its tag. Default: None
+    """
+
+    tracer = config.enum(["QSO", "ELG", "LRG"], default=None)
+
+    def process(self, cat):
+        """Generate random redshift errors and add to redshifts in catalog.
+
+        Parameters
+        ----------
+        cat : :class:`containers.SpectroscopicCatalog`
+            Input catalog.
+
+        Returns
+        ----------
+        cat_out : :class:`containers.SpectroscopicCatalog`
+            Catalog with redshift errors added.
+        """
+
+        tracer = self.tracer
+
+        # If tracer not specified in config, check to see whether it's stored
+        # in the catalog's 'tracer' attribute or in its tag
+        if tracer is None:
+            if "tracer" in cat.attrs:
+                tracer = cat.attrs["tracer"].upper()
+
+                if tracer not in _velocity_error_function_lookup:
+                    raise ValueError(
+                        f"Tracer explicitly set to '{tracer}' in catalog, but value not supported."
+                    )
+            else:
+                for key in _velocity_error_function_lookup.keys():
+                    if key in cat.attrs["tag"].upper():
+                        tracer = key
+                        break
+
+                if tracer is None:
+                    raise ValueError(
+                        "Must specify eBOSS tracer in config property, "
+                        "catalog 'tracer' attribute, or catalog 'tag' attribute."
+                    )
+
+        self.log.info(f"Applying {tracer} redshift errors.")
+
+        # Get redshifts from catalog
+        cat_z = cat["redshift"]["z"][:]
+        cat_z_err = cat["redshift"]["z_error"][:]
+
+        # Generate redshift errors for the chosen tracer
+        z_err = self._generate_z_errors(cat_z, self.tracer)
+
+        # Add errors to catalog redshifts
+        cat_z += z_err
+
+        # TODO: store information about error distribution in z_error field
+
+        return cat
+
+    def _generate_z_errors(self, z, tracer):
+        """Generate redshift errors using a tracer-specific velocity error distribution.
+
+        See e.g. Eq. (A1) from https://arxiv.org/abs/1012.2912 for the
+        relationship between redshift errors and peculiar velocity errors.
+
+        Parameters
+        ----------
+        z: np.ndarray[nsource,]
+            Source redshifts.
+        tracer : {"ELG"|"LRG"|"QSO"}
+            Name of the tracer.
+
+        Returns
+        -------
+        dz: np.ndarray[nsource,]
+            Perturbations to source redshifts based on random velocity errors.
+        """
+
+        if tracer not in _velocity_error_function_lookup:
+            raise ValueError(
+                f"Do not recognize {tracer}.  Must define a method "
+                "for drawing random velocity errors for this tracer."
+            )
+
+        err_func = _velocity_error_function_lookup[tracer]
+
+        dv = err_func(z.size, self.rng)
+
+        dz = (1.0 + z) * dv / (C * 1e-3)
+
+        return dz
+
+    @staticmethod
+    def qso_velocity_error(nsample, rng):
+        """Draw random velocity errors for quasars.
+
+        This is taken from Lyke et al. 2020 (https://arxiv.org/abs/2007.09001).
+        Section 4.6 and Appendix A are the relevant parts. Figure 4 shows the
+        distribution of redshift errors. It is well modelled by the sum of
+        two Gaussians with standard deviations 150 and 1000 km/s.
+        Roughly 1/6 of the quasars belong to the wider Gaussian.
+
+        Parameters
+        ----------
+        nsample: int
+            Number of random numbers to draw.
+        rng : numpy.random.Generator
+            Numpy RNG to use for generating random numbers.
+
+        Returns
+        -------
+        dv: np.ndarray[nsample,]
+            Velocity errors in km / s.
+        """
+
+        QSO_SIG1 = 150.0
+        QSO_SIG2 = 1000.0
+        QSO_F = 4.478
+
+        dv1 = rng.normal(scale=QSO_SIG1, size=nsample)
+        dv2 = rng.normal(scale=QSO_SIG2, size=nsample)
+
+        u = rng.uniform(size=nsample)
+        flag = u >= (1.0 / (1.0 + QSO_F))
+
+        dv = np.where(flag, dv1, dv2)
+
+        return dv
+
+    @staticmethod
+    def lrg_velocity_error(nsample, rng):
+        """Draw random velocity errors for luminous red galaxies.
+
+        This is taken from Ross et al. 2020 (https://arxiv.org/abs/2007.09000).
+        Figure 2 shows the LRG error distribution and the best-fit Gaussian
+        with width 92 km/s. There is a bit of a tail that is not being captured
+        in their Gaussian fit and is hence not simulated in this routine.
+
+        Parameters
+        ----------
+        nsample: int
+            Number of random numbers to draw.
+        rng : numpy.random.Generator
+            Numpy RNG to use for generating random numbers.
+
+        Returns
+        -------
+        dv: np.ndarray[nsample,]
+            Velocity errors in km / s.
+        """
+
+        LRG_SIG = 91.8
+
+        dv = rng.normal(scale=LRG_SIG, size=nsample)
+
+        return dv
+
+    @staticmethod
+    def elg_velocity_error(nsample, rng):
+        """Draw random velocity errors for emission line galaxies.
+
+        This is taken from Raichoor et al. 2020 (https://arxiv.org/abs/2007.09007).
+        They do not plot the error distribution, but Section 2.3 provides three
+        percentiles:
+            "Additionally, we can assess with repeats that 99.5, 95, and 50
+            percent of our redshift estimates have a precision better than
+            300 km s−1, 100 km s−1, and 20 km s−1, respectively."
+        These percentiles do not follow a Gaussian, but are reasonably well fit
+        by a Tukey lambda distribution if the scale and shape parameters
+        are allowed to float.
+
+        Parameters
+        ----------
+        nsample: int
+            Number of random numbers to draw.
+        rng : numpy.random.Generator
+            Numpy RNG to use for generating random numbers.
+
+        Returns
+        -------
+        dv: np.ndarray[nsample,]
+            Velocity errors in km / s.
+        """
+
+        ELG_SIG = 11.877
+        ELG_LAMBDA = -0.4028
+
+        dist = scipy.stats.tukeylambda
+        dist.random_state = rng
+        dv = dist.rvs(ELG_LAMBDA, scale=ELG_SIG, size=nsample)
+
+        return dv
+
+
+_velocity_error_function_lookup = {
+    "QSO": AddEBOSSZErrorsToCatalog.qso_velocity_error,
+    "ELG": AddEBOSSZErrorsToCatalog.elg_velocity_error,
+    "LRG": AddEBOSSZErrorsToCatalog.lrg_velocity_error,
+}
 
 
 class MapPixelLocationGenerator(task.SingleTask):
