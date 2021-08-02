@@ -842,7 +842,7 @@ class AddEBOSSZErrorsToCatalog(task.SingleTask, random.RandomTask):
     ----------
     tracer : {"ELG"|"LRG"|"QSO"}
         Generate redshift errors corresponding to this eBOSS sample.
-        If not specified, task will attempt to detect the tracre type from
+        If not specified, task will attempt to detect the tracer type from
         the catalog's `tracer` attribute or its tag. Default: None
     """
 
