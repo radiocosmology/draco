@@ -140,6 +140,9 @@ class SelectionFunctionEstimator(task.SingleTask):
         Number of SVD modes used in recovering the selection function from
         the catalog maps.
         Default: 7.
+    tracer : str, optional
+        Set an optional tracer attribute that can be used to identify the type of
+        catalog later in the pipeline.
     """
 
     bcat_path = config.Property(proptype=str, default=None)
@@ -151,6 +154,8 @@ class SelectionFunctionEstimator(task.SingleTask):
     z_min = config.Property(proptype=float, default=0.8)
     z_max = config.Property(proptype=float, default=2.5)
     n_modes = config.Property(proptype=int, default=7)
+
+    tracer = config.Property(proptype=str, default=None)
 
     def process(self, cat):
         """Estimate selection function from SVD of catalog map.
@@ -182,7 +187,7 @@ class SelectionFunctionEstimator(task.SingleTask):
 
         # Create Map container to store the selection function
         selfunc = containers.Map(
-            nside=self.nside, polarisation=False, freq=freq_selfunc
+            nside=self.nside, polarisation=False, freq=freq_selfunc, attrs_from=cat
         )
 
         # Initialize selection function to zero
@@ -213,6 +218,10 @@ class SelectionFunctionEstimator(task.SingleTask):
 
         # Remove negative entries remaining from SVD recovery:
         selfunc["map"][np.where(selfunc.map[:] < 0.0)] = 0.0
+
+        # Set a tracer attribute
+        if self.tracer is not None:
+            selfunc.attrs["tracer"] = self.tracer
 
         return selfunc
 
@@ -318,7 +327,15 @@ class PdfGeneratorBase(task.SingleTask):
     by the task :class:`MockCatalogGenerator` to draw mock catalogs.
 
     Derived classes must implement process().
+
+    Attributes
+    ----------
+    tracer : str, optional
+        Set an optional tracer attribute that can be used to identify the type of
+        catalog later in the pipeline.
     """
+
+    tracer = config.Property(proptype=str, default=None)
 
     def make_pdf_map(self, source_map, z_weights, selfunc=None):
         """Make PDF map from source map, redshift weights, and selection function.
@@ -374,11 +391,16 @@ class PdfGeneratorBase(task.SingleTask):
             nside=source_map.nside,
             polarisation=False,
             freq=source_map.index_map["freq"],
+            attrs_from=selfunc,
         )
 
         # Put computed PDF into local section of container
         pdf_map_local = pdf_map.map[:]
         pdf_map_local[:, 0, :] = pdf
+
+        # Set a tracer attribute
+        if self.tracer is not None:
+            pdf_map.attrs["tracer"] = self.tracer
 
         return pdf_map
 
@@ -736,7 +758,8 @@ class MockCatalogGenerator(task.SingleTask, random.RandomTask):
 
         # Create catalog container
         mock_catalog = containers.SpectroscopicCatalog(
-            object_id=np.arange(self.nsource, dtype=np.uint64)
+            object_id=np.arange(self.nsource, dtype=np.uint64),
+            attrs_from=self.pdf,
         )
 
         # Create position and redshift datasets
