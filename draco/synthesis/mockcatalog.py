@@ -868,10 +868,15 @@ class AddEBOSSZErrorsToCatalog(task.SingleTask, random.RandomTask):
         # in the catalog's 'tracer' attribute or in its tag
         if tracer is None:
             if "tracer" in cat.attrs:
-                tracer = cat.attrs["tracer"]
+                tracer = cat.attrs["tracer"].upper()
+                
+                if tracer not in _velocity_error_function_lookup:
+                    raise ValueError(
+                        f"Tracer explicitly set to '{tracer}' in catalog, but value not supported."
+                    )
             else:
                 for key in _velocity_error_function_lookup.keys():
-                    if key in cat.attrs["tag"]:
+                    if key in cat.attrs["tag"].upper():
                         tracer = key
                         break
 
