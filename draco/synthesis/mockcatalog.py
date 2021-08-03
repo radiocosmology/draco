@@ -916,7 +916,7 @@ class AddEBOSSZErrorsToCatalog(task.SingleTask, random.RandomTask):
         cat_z_err = cat["redshift"]["z_error"][:]
 
         # Generate redshift errors for the chosen tracer
-        z_err = self._generate_z_errors(cat_z, self.tracer)
+        z_err = self._generate_z_errors(cat_z, tracer)
 
         # Add errors to catalog redshifts
         cat_z += z_err
