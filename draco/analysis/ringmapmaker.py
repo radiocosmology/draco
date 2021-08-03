@@ -111,7 +111,12 @@ class MakeVisGrid(task.SingleTask):
 
         # Create container for output
         grid = containers.VisGridStream(
-            pol=pol, ew=vis_pos_x, ns=vis_pos_y, ra=ra, axes_from=sstream, attrs_from=sstream
+            pol=pol,
+            ew=vis_pos_x,
+            ns=vis_pos_y,
+            ra=ra,
+            axes_from=sstream,
+            attrs_from=sstream,
         )
 
         # Redistribute over frequency
