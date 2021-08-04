@@ -2,7 +2,7 @@
 
 This includes grouping frequencies and products to performing the m-mode transform.
 """
-from typing import Optional
+from typing import Optional, Union
 
 import numpy as np
 from numpy.lib.recfunctions import structured_to_unstructured
@@ -1079,3 +1079,117 @@ class TransformJanskyToKelvin(task.SingleTask):
             new_stream.weight[:] *= Jy_to_K ** 2
 
         return new_stream
+
+
+class MixData(task.SingleTask):
+    """Mix together pieces of data with specified weights.
+
+    This can generate arbitrary linear combinations of the data and weights for both
+    `SiderealStream` and `RingMap` objects, and can be used for many purposes such as:
+    adding together simulated timestreams, injecting signal into data, replacing weights
+    in simulated data with those from real data, etc.
+
+    All coefficients are applied naively to generate the final combinations, i.e. no
+    normalisations or weighted summation is performed.
+
+    Attributes
+    ----------
+    data_coeff : list
+        A list of coefficients to apply to the data dataset of each input containter to
+        produce the final output. These are applied to either the `vis` or `map` dataset
+        depending on the the type of the input container.
+    weight_coeff : list
+        Coefficient to be applied to each input containers weights to generate the
+        output.
+    """
+
+    data_coeff = config.list_type(type_=float)
+    weight_coeff = config.list_type(type_=float)
+
+    mixed_data = None
+
+    def setup(self):
+        """Check the lists have the same length."""
+
+        if len(self.data_coeff) != len(self.weight_coeff):
+            raise config.CaputConfigError(
+                "data and weight coefficient lists must be the same length"
+            )
+
+        self._data_ind = 0
+
+    def process(self, data: Union[containers.SiderealStream, containers.RingMap]):
+        """Add the input data into the mixed data output.
+
+        Parameters
+        ----------
+        data
+            The data to be added into the mix.
+        """
+
+        def _get_dset(data):
+            # Helpful routine to get the data dset depending on the type
+            if isinstance(data, containers.SiderealStream):
+                return data.vis
+            elif isinstance(data, containers.RingMap):
+                return data.map
+
+        if self._data_ind >= len(self.data_coeff):
+            raise RuntimeError(
+                "This task cannot accept more items than there are coefficents set."
+            )
+
+        if self.mixed_data is None:
+            self.mixed_data = containers.empty_like(data)
+            self.mixed_data.redistribute("freq")
+
+            # Zero out data and weights
+            _get_dset(self.mixed_data)[:] = 0.0
+            self.mixed_data.weight[:] = 0.0
+
+        # Validate the types are the same
+        if type(self.mixed_data) != type(data):
+            raise TypeError(
+                f"type(data) (={type(data)}) must match "
+                f"type(data_stack) (={type(self.type)}"
+            )
+
+        data.redistribute("freq")
+
+        mixed_dset = _get_dset(self.mixed_data)[:]
+        data_dset = _get_dset(data)[:]
+
+        # Validate the shapes match
+        if mixed_dset.shape != data_dset.shape:
+            raise ValueError(
+                f"Size of data ({data_dset.shape}) must match "
+                f"data_stack ({mixed_dset.shape})"
+            )
+
+        # Mix in the data and weights
+        mixed_dset[:] += self.data_coeff[self._data_ind] * data_dset[:]
+        self.mixed_data.weight[:] += self.weight_coeff[self._data_ind] * data.weight[:]
+
+        self._data_ind += 1
+
+    def process_finish(self) -> Union[containers.SiderealStream, containers.RingMap]:
+        """Return the container with the mixed inputs.
+
+        Returns
+        -------
+        mixed_data
+            The mixed data.
+        """
+
+        if self._data_ind != len(self.data_coeff):
+            raise RuntimeError(
+                "Did not receive enough inputs. "
+                f"Got {self._data_ind}, expected {len(self.data_coeff)}."
+            )
+
+        # Get an ephemeral reference to the mixed data and remove the task reference so
+        # the object can be eventually deleted
+        data = self.mixed_data
+        self.mixed_data = None
+
+        return data
