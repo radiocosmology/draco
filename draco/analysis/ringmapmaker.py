@@ -405,7 +405,7 @@ class BeamformEW(task.SingleTask):
                 # Only need the 0th term of the irfft, equivalent to summing in
                 # then EW direction
                 beamformed_data = np.sum(v.real, axis=1)[:, np.newaxis]
-                dirty_beam = np.sum(b, axis=1)[:, np.newaxis]
+                dirty_beam = np.sum(b.real, axis=1)[:, np.newaxis]
             else:
                 beamformed_data = np.fft.irfft(v, nbeam, axis=1) * nbeam
                 dirty_beam = np.fft.irfft(b, nbeam, axis=1) * nbeam
