@@ -976,26 +976,27 @@ class TransformJanskyToKelvin(task.SingleTask):
 
     def _beam_area(self, feed, freq):
         """Calculate the primary beam solid angle."""
+        import healpy
 
         beam = self.telescope.beam(feed, freq)
         horizon = self.telescope._horizon[:, np.newaxis]
+        beam_pow = np.sum(np.abs(beam) ** 2 * horizon, axis=1)
 
         pxarea = 4 * np.pi / beam.shape[0]
-        omega = np.sum(np.abs(beam) ** 2 * horizon) * pxarea
-
-        # Calculate the beam value at the reference point by temporarily swapping out
-        # the telescopes internal `_angpos` attribute for one that just contains the
-        # reference position
-        # This is a massive hack, that hopefully we can swap out with a better API for
-        # the telescope beams.
-        ap_ref = np.array([[np.pi / 2 - np.radians(self.reference_declination), 0.0]])
-        ap_orig = self.telescope._angpos
-        self.telescope._angpos = ap_ref
-        beam_ref = self.telescope.beam(feed, freq)
-        self.telescope._angpos = ap_orig
+        omega = beam_pow.sum() * pxarea
 
         # Normalise omega by the squared magnitude of the beam at the reference position
-        beam_ref = np.sum(np.abs(beam_ref) ** 2)
+        # NOTE: this is slightly less accurate than the previous approach of reseting
+        # the internal `_angpos` property to force evaluation of the beam at the exact
+        # coordinates, but is more generically applicable, and works (for instance) with
+        # the CHIMEExternalBeam class.
+        #
+        # Also, for a reason I don't fully understand it's more accurate to use the
+        # value of the pixel including the reference position, and not do an
+        # interpolation using it's neighbours...
+        beam_ref = beam_pow[
+            healpy.ang2pix(self.nside, 0.0, self.reference_declination, lonlat=True)
+        ]
         omega *= tools.invert_no_zero(beam_ref)
 
         return omega
