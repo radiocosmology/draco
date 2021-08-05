@@ -956,6 +956,7 @@ class RingMapBeamForm(task.SingleTask):
         """
 
         ringmap = self.ringmap
+        equispaced_za = "equispaced_za" in ringmap.attrs
 
         src_ra, src_dec = self._process_catalog(catalog)
 
@@ -982,7 +983,7 @@ class RingMapBeamForm(task.SingleTask):
         has_weight = "weight" in ringmap.datasets
 
         # Get the pixel indices
-        ra_ind, za_ind, mask_ind = self._source_ind(src_ra, src_dec)
+        ra_ind, za_ind, mask_ind = self._source_ind(src_ra, src_dec, equispaced_za=equispaced_za)
 
         # Dereference the datasets
         fbb = formed_beam.beam[:]
@@ -1017,7 +1018,7 @@ class RingMapBeamForm(task.SingleTask):
 
         if "position" not in catalog:
             raise ValueError("Input is missing a position table.")
-
+        
         # Calculate the epoch for the data so we can calculate the correct
         # CIRS coordinates
         if "lsd" not in self.ringmap.attrs:
@@ -1042,27 +1043,38 @@ class RingMapBeamForm(task.SingleTask):
         return src_ra, src_dec
 
     def _source_ind(
-        self, src_ra: np.ndarray, src_dec: np.ndarray
+            self, src_ra: np.ndarray, src_dec: np.ndarray, equispaced_za: bool
     ) -> Tuple[np.ndarray, np.ndarray]:
         """Get the RA/ZA ringmap pixel indices of the sources."""
 
-        # Get the grid size of the map in RA and sin(ZA)
-        dra = np.median(np.abs(np.diff(self.ringmap.index_map["ra"])))
-        dza = np.median(np.abs(np.diff(self.ringmap.index_map["el"])))
-        za_min = self.ringmap.index_map["el"][:].min()
-
-        # Get the source indices in RA
-        # NOTE: that we need to take into account that sources might be less than 360
+        # Get the grid size of the map in RA, and use to compute
+        # the source indices in RA
+        # NOTE: we need to take into account that sources might be less than 360
         # deg, but still closer to ind=0
+        dra = np.median(np.abs(np.diff(self.ringmap.index_map["ra"])))
         max_ra_ind = len(self.ringmap.ra) - 1
         ra_ind = (np.rint(src_ra / dra) % max_ra_ind).astype(np.int)
 
-        # Get the indices for the ZA direction. Note that any source with
-        # dec - telescope_latitude < za_min will not show up in the ringmap,
-        # so we need to make a mask for those
-        za_ind = np.rint(
-            (np.sin(np.radians(src_dec - self.telescope.latitude)) - za_min) / dza
-        ).astype(np.int)
+        # Get the minimum sin(ZA) present in the map
+        za_min = self.ringmap.index_map["el"][:].min()        
+
+        if equispaced_za:
+            # Get the ZA grid size of the map, and use to compute the source
+            # indices for the ZA direction.
+            self.log.info("Equispaced ZA detected for ringmap el axis")
+            dza = np.median(np.abs(np.diff(np.arcsin(self.ringmap.index_map["el"]))))
+            za_ind = np.rint(
+                (np.radians(src_dec - self.telescope.latitude) - np.arcsin(za_min)) / dza
+            ).astype(np.int)
+        else:
+            # As above, except assuming a regular grid in sin(ZA) instead of ZA
+            dza = np.median(np.abs(np.diff(self.ringmap.index_map["el"])))
+            za_ind = np.rint(
+                (np.sin(np.radians(src_dec - self.telescope.latitude)) - za_min) / dza
+            ).astype(np.int)
+
+        # Any source with dec - telescope_latitude < za_min will not
+        # show up in the ringmap, so we need to make a mask for those
         mask_ind = src_dec - self.telescope.latitude <= np.rad2deg(np.arcsin(za_min))
         if np.sum(mask_ind) > 0:
             self.log.info("%d local sources in catalog are outside of ringmap coverage" % np.sum(mask_ind))
@@ -1111,13 +1123,14 @@ class RingMapStack2D(RingMapBeamForm):
         from mpi4py import MPI
 
         ringmap = self.ringmap
+        equispaced_za = "equispaced_za" in ringmap.attrs
 
         # Get the current epoch catalog position
         src_ra, src_dec = self._process_catalog(catalog)
         src_z = catalog["redshift"]["z"]
 
         # Get the pixel indices
-        ra_ind, za_ind, mask_ind = self._source_ind(src_ra, src_dec)
+        ra_ind, za_ind, mask_ind = self._source_ind(src_ra, src_dec, equispaced_za)
 
         # Ensure containers are distributed in frequency
         ringmap.redistribute("freq")
