@@ -174,6 +174,10 @@ class BeamformNS(task.SingleTask):
         Span of map in the declination dimension. Value of 1.0 generates a map
         that spans from horizon-to-horizon.  Default is 1.0.
 
+    equispace_za : bool
+        If True, set elevation axis to be equispaced in za instead of
+        sin(za). Default: False.
+
     el_from_healpix_nside : int, optional
         If specified, set elevation axis according to latitudes of pixels in a
         healpix map with the specified Nside (overriding npix and span).
@@ -202,6 +206,7 @@ class BeamformNS(task.SingleTask):
 
     npix = config.Property(proptype=int, default=512)
     span = config.Property(proptype=float, default=1.0)
+    equispace_za = config.Property(proptype=bool, default=False)
     el_from_healpix_nside = config.Property(proptype=int, default=None)
     weight = config.enum(
         [
@@ -252,7 +257,7 @@ class BeamformNS(task.SingleTask):
         gsv = gstream.vis[:]
         gsw = gstream.weight[:]
         gsr = gstream.redundancy[:]
-
+        
         # Construct phase array
         if self.el_from_healpix_nside is not None:
             import healpy as hp
@@ -270,20 +275,29 @@ class BeamformNS(task.SingleTask):
             lat = lat[np.abs(lat) <= 90]
             # Convert latitudes to elevations
             el = np.sin(np.deg2rad(lat))
-
+            
         else:
-            el = self.span * np.linspace(-1.0, 1.0, self.npix)
+            if self.equispace_za:
+                el = self.span * np.sin(np.linspace(-0.5*np.pi, 0.5*np.pi, self.npix))
+            else:
+                el = self.span * np.linspace(-1.0, 1.0, self.npix)
 
         # Create empty ring map
         hv = containers.HybridVisStream(el=el, axes_from=gstream, attrs_from=gstream)
         hv.add_dataset("dirty_beam")
         hv.redistribute("freq")
 
+        # Store attribute if el is not equispaced in sin(za)
+        if self.el_from_healpix_nside:
+            hv.attrs["healpix_nside_for_el"] = self.el_from_healpix_nside
+        elif self.equispace_za:
+            hv.attrs["equispaced_za"] = True
+        
         # Dereference datasets
         hvv = hv.vis[:]
         hvw = hv.weight[:]
         hvb = hv.dirty_beam[:]
-
+                
         nspos = gstream.index_map["ns"][:]
         freq = gstream.index_map["freq"]["centre"]
 
