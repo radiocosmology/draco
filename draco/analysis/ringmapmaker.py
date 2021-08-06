@@ -650,14 +650,25 @@ class DeconvolveHybridMBase(task.SingleTask):
                 )
 
             # Calculate the expected map noise by propagating the uncertainty on the m's
+            # We use an unusual order of operations here to prevent floating point
+            # overflow, which can occur as the north-south beam drops to zero at large
+            # zenith angles.  This results in an otherwise unnecessary sqrt and several
+            # multiplications.
             var = tools.invert_no_zero(inv_var)
-            var = ((weight * np.abs(bvf)) ** 2 * var).sum(axis=(1, -2))
-            var *= (winf * tools.invert_no_zero(C_inv)) ** 2
-            sum_var_map_m = 0.5 * np.sum(var, axis=0)[:, np.newaxis, :]
+            sigma = np.sqrt(np.sum((weight * np.abs(bvf)) ** 2 * var, axis=(1, -2)))
 
-            rmw[:, lfi] = (mmax + 1) ** 2 * tools.invert_no_zero(
-                norm ** 2 * sum_var_map_m
-            )
+            sum_var_map_m = 0.5 * np.sum(
+                (
+                    sigma
+                    * winf
+                    * norm[np.newaxis, :, 0]
+                    * tools.invert_no_zero((mmax + 1) * C_inv)
+                )
+                ** 2,
+                axis=0,
+            )[:, np.newaxis, :]
+
+            rmw[:, lfi] = tools.invert_no_zero(sum_var_map_m)
 
         return rm
 
