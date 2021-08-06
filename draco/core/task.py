@@ -356,6 +356,11 @@ class SingleTask(MPILoggedTask, pipeline.BasicContMixin):
 
         output = self.process_finish()
 
+        # Return immediately if output is None to skip writing phase.
+        if output is None:
+            self.log.info(f"Leaving finish for task {class_name}")
+            return None
+
         output = self._process_output(output)
 
         self.log.info(f"Leaving finish for task {class_name}")
@@ -363,6 +368,11 @@ class SingleTask(MPILoggedTask, pipeline.BasicContMixin):
         return output
 
     def _process_output(self, output, input_tag=None):
+
+        if not isinstance(output, memh5.MemDiskGroup):
+            raise pipeline.PipelineRuntimeError(
+                f"Task must output a valid memh5 container; given {type(output)}"
+            )
 
         # Set the tag according to the format
         output.attrs["tag"] = self.tag.format(
@@ -409,6 +419,11 @@ class SingleTask(MPILoggedTask, pipeline.BasicContMixin):
     def _nan_process_output(self, output):
         # Process the output to check for NaN's
         # Returns the output or, None if it should be skipped
+
+        if not isinstance(output, memh5.MemDiskGroup):
+            raise pipeline.PipelineRuntimeError(
+                f"Task must output a valid memh5 container; given {type(output)}"
+            )
 
         if self.nan_check:
             nan_found = self._nan_check_walk(output)
