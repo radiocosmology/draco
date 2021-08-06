@@ -108,26 +108,37 @@ class DayenuDelayFilter(task.SingleTask):
 
             var = tools.invert_no_zero(weight[:, bb])
 
-            self.log.info(
+            self.log.debug(
                 "Filtering baseline %d of %d. [%0.3f micro-sec]" % (bb, nprod, bcut)
             )
 
             # Construct the filter
-            NF, index = highpass_delay_filter(freq, bcut, flag, epsilon=self.epsilon)
+            try:
+                NF, index = highpass_delay_filter(
+                    freq, bcut, flag, epsilon=self.epsilon
+                )
+
+            except np.linalg.LinAlgError as exc:
+                self.log.error(
+                    "Failed to converge while processing baseline "
+                    f"{bb} [{bcut:0.3f} micro-sec]: {exc}"
+                )
+                weight[:, bb] = 0.0
+                continue
 
             # Apply the filter
             if self.single_mask:
                 vis[:, bb] = np.matmul(NF[:, :, 0], vis[:, bb])
                 weight[:, bb] = tools.invert_no_zero(np.matmul(NF[:, :, 0] ** 2, var))
             else:
-                self.log.info("There are %d unique masks/filters." % len(index))
+                self.log.debug("There are %d unique masks/filters." % len(index))
                 for ii, ind in enumerate(index):
                     vis[:, bb, ind] = np.matmul(NF[:, :, ii], vis[:, bb, ind])
                     weight[:, bb, ind] = tools.invert_no_zero(
                         np.matmul(NF[:, :, ii] ** 2, var[:, ind])
                     )
 
-            self.log.info("Took %0.2f seconds." % (time.time() - t0,))
+            self.log.debug("Took %0.2f seconds." % (time.time() - t0,))
 
         return stream
 
@@ -454,7 +465,7 @@ class DayenuMFilter(task.SingleTask):
             if not np.any(flag):
                 continue
 
-            self.log.info("Filtering freq %d of %d." % (ff, nfreq))
+            self.log.debug("Filtering freq %d of %d." % (ff, nfreq))
 
             # Construct the filters
             m_cut = np.abs(self._get_cut(nu, db))
@@ -490,7 +501,7 @@ class DayenuMFilter(task.SingleTask):
                         * mixer.conj()
                     )
 
-            self.log.info("Took %0.2f seconds." % (time.time() - t0,))
+            self.log.debug("Took %0.2f seconds." % (time.time() - t0,))
 
         return stream
 
