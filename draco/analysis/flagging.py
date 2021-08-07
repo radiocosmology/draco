@@ -430,7 +430,15 @@ class MaskBeamformedOutliers(task.SingleTask):
 
 
 class MaskBeamformedWeights(task.SingleTask):
-    """Mask beamformed visibilities with anomalously large weights before stacking."""
+    """Mask beamformed visibilities with anomalously large weights before stacking.
+
+    Attributes
+    ----------
+    nmed : float
+        Any weight that is more than `nmed` times the median weight
+        over all objects and frequencies will be set to zero.
+        Default is 8.0.
+    """
 
     nmed = config.Property(proptype=float, default=8.0)
 

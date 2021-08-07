@@ -22,7 +22,7 @@ class DayenuDelayFilter(task.SingleTask):
     ----------
     za_cut : float
         Sine of the maximum zenith angle included in
-        baseline-dependent delay filtering. Default is 1
+        baseline-dependent delay filtering. Default is 1.0,
         which corresponds to the horizon (ie: filters
         out all zenith angles). Setting to zero turns off
         baseline dependent cut.
@@ -32,19 +32,19 @@ class DayenuDelayFilter(task.SingleTask):
         baseline length. For cylindrical telescopes oriented in the
         NS direction (like CHIME) use 'NS'. The default is 'NS'.
     epsilon : float
-        The stop-band rejection of the filter.
+        The stop-band rejection of the filter.  Default is 1e-12.
     tauw : float
-        Delay cutoff in micro-seconds.
+        Delay cutoff in micro-seconds.  Default is 0.1 micro-seconds.
     single_mask : bool
         Apply a single frequency mask for all times.  Only includes
         frequencies where the weights are nonzero for all times.
         Otherwise will construct a filter for all unique single-time
-        frequency masks (can be significantly slower).
+        frequency masks (can be significantly slower).  Default is True.
     """
 
     za_cut = config.Property(proptype=float, default=1.0)
     telescope_orientation = config.enum(["NS", "EW", "none"], default="NS")
-    epsilon = config.Property(proptype=float, default=1e-10)
+    epsilon = config.Property(proptype=float, default=1e-12)
     tauw = config.Property(proptype=float, default=0.100)
     single_mask = config.Property(proptype=bool, default=True)
 
@@ -167,25 +167,28 @@ class DayenuDelayFilterMap(task.SingleTask):
     Attributes
     ----------
     epsilon : float
-        The stop-band rejection of the filter.
+        The stop-band rejection of the filter.  Default is 1e-12.
     filename : str
         The name of an hdf5 file containing a DelayCutoff container.
         If a filename is provided, then it will be loaded during setup
         and the `cutoff` dataset will be interpolated to determine
         the cutoff of the filter based on the el coordinate of the map.
-        If a filename is not provided, then a single cutoff given by the
-        tauw property will be used for all el.
     tauw : float
-        Delay cutoff in micro-seconds.
+        Delay cutoff in micro-seconds.  If a filename is not provided,
+        then tauw will be used as the delay cutoff for all el.
+        If a filename is provided, then tauw will be used as the delay
+        cutoff for any el that is beyond the range of el contained in
+        that file.  Default is 0.1 micro-second.
     single_mask : bool
         Apply a single frequency mask for all times.  Only includes
         frequencies where the weights are nonzero for all times.
         Otherwise will construct a filter for all unique single-time
-        frequency masks (can be significantly slower).
+        frequency masks (can be significantly slower).  Default is True.
     atten_threshold : float
         Mask any frequency where the diagonal element of the filter
         is less than this fraction of the median value over all
-        unmasked frequencies.
+        unmasked frequencies.  Default is 0.0 (i.e., do not mask
+        frequencies with low attenuation).
     """
 
     epsilon = config.Property(proptype=float, default=1e-12)
@@ -376,14 +379,15 @@ class DayenuMFilter(task.SingleTask):
     dec: float
         The bandpass filter is centered on the m corresponding to the
         fringe rate of a source at the meridian at this declination.
+        Default is 40 degrees.
     epsilon : float
-        The stop-band rejection of the filter.
+        The stop-band rejection of the filter.  Default is 1e-10.
     fkeep_intra : float
         Width of the bandpass filter for intracylinder baselines in terms
-        of the fraction of the telescope cylinder width.
+        of the fraction of the telescope cylinder width.  Default is 0.75.
     fkeep_inter : float
         Width of the bandpass filter for intercylinder baselines in terms
-        of the fraction of the telescope cylinder width.
+        of the fraction of the telescope cylinder width.  Default is 0.75.
     """
 
     dec = config.Property(proptype=float, default=40.0)
@@ -450,14 +454,18 @@ class DayenuMFilter(task.SingleTask):
 
             t0 = time.time()
 
-            # Flag frequencies and times with zero weight
+            # The next several lines determine the mask as a function of time
+            # that is used to construct the filter.
             flag = weight[ff, :, :] > 0.0
 
+            # Identify the valid baselines, i.e., those that have nonzero weight
+            # for some fraction of the time.
             gb = np.flatnonzero(np.any(flag, axis=-1))
 
             if gb.size == 0:
                 continue
 
+            # Mask any RA where more than 10 percent of the valid baselines are masked.
             flag = np.sum(flag[gb, :], axis=0, keepdims=True) > (0.90 * float(gb.size))
 
             weight[ff] *= flag.astype(weight.dtype)
@@ -516,7 +524,7 @@ class DayenuMFilter(task.SingleTask):
         return m
 
 
-def highpass_delay_filter(freq, tau_cut, flag, epsilon=1e-10):
+def highpass_delay_filter(freq, tau_cut, flag, epsilon=1e-12):
     """Construct a high-pass delay filter.
 
     The stop band will range from [-tau_cut, tau_cut].
@@ -531,7 +539,7 @@ def highpass_delay_filter(freq, tau_cut, flag, epsilon=1e-10):
         Boolean flag that indicates what frequencies are valid
         as a function of time.
     epsilon : float
-        The stop-band rejection of the filter.  Defaults to 1e-10.
+        The stop-band rejection of the filter.  Defaults to 1e-12.
 
     Returns
     -------
@@ -561,6 +569,14 @@ def highpass_delay_filter(freq, tau_cut, flag, epsilon=1e-10):
 
     pinv = np.linalg.pinv(ucov, hermitian=True) * uflag
     pinv = np.swapaxes(pinv, 0, 2)
+
+    # We may be able to speed up the pseudo-inverse by switching to the
+    # scipy version, which is MKL accelerated.  This would involve replacing
+    # the two lines above with:
+    # nuniq = uflag.shape[0]
+    # pinv = np.zeros((nfreq, nfreq, nuniq), dtype=ucov.dtype)
+    # for uu in range(nuniq):
+    #     pinv[:, :, uu] = scipy.linalg.pinvh(ucov[uu]) * uflag[uu]
 
     index = [np.flatnonzero(uindex == ii) for ii in range(pinv.shape[-1])]
 
@@ -617,6 +633,7 @@ def bandpass_mmode_filter(ra, m_center, m_cut, flag, epsilon=1e-10):
 
     ucov = uflag * cov[np.newaxis, :, :]
 
+    # We may be able to speed up the pseudo-inverse by switching to the scipy version.
     pinv = np.linalg.pinv(ucov, hermitian=True) * uflag
     pinv = pinv[uindex, :, :].reshape(oshp)
 
@@ -665,6 +682,7 @@ def lowpass_mmode_filter(ra, m_cut, flag, epsilon=1e-10):
 
     ucov = uflag * cov[np.newaxis, :, :]
 
+    # We may be able to speed up the pseudo-inverse by switching to the scipy version.
     pinv = np.linalg.pinv(ucov, hermitian=True) * uflag
     pinv = pinv[uindex, :, :].reshape(oshp)
 
@@ -710,6 +728,7 @@ def highpass_mmode_filter(ra, m_cut, flag, epsilon=1e-10):
 
     ucov = uflag * cov[np.newaxis, :, :]
 
+    # We may be able to speed up the pseudo-inverse by switching to the scipy version.
     pinv = np.linalg.pinv(ucov, hermitian=True) * uflag
     pinv = pinv[uindex, :, :].reshape(oshp)
 
@@ -723,6 +742,8 @@ def instantaneous_m(ha, lat, dec, u, v, w=0.0):
     ----------
     ha : float
         Hour angle in radians.
+    lat : float
+        Latitude of the telescope in radians.
     dec : float
         Declination in radians.
     u : float
