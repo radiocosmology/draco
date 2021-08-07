@@ -2,7 +2,7 @@
 
 This includes grouping frequencies and products to performing the m-mode transform.
 """
-from typing import Optional
+from typing import Optional, Union
 
 import numpy as np
 from numpy.lib.recfunctions import structured_to_unstructured
@@ -1397,31 +1397,61 @@ class MapEllMSum(task.SingleTask):
     for a specific input ell. This sum corresponds to the angular transfer
     function associated with stacking on a source catalog. 
 
+    This task accepts healpix maps and ringmaps: cora's healpy-based routines
+    are used for harmonic transforms of the former, while a libsharp-based
+    routine is used for the latter.
+
     Attributes
     ----------
     ell : int
         Spherical harmonic ell of interest.
+    nthreads : int
+        Number of OpenMP threads to use for SHTs of ringmaps (ignored for
+        healpix maps). Default: 1.
+    mult_by_weights : bool
+        Multiply ringmap by weights (normalized by mean at each frequency)
+        before taking SHT (ignored for healpix maps). Default: False.
+    use_unit_weights : bool
+        Replace ringmap weights by unity for pixels within the horizon,
+        if multiplying map by weights before SHT. Ignored in mult_by_weights
+        is False or working with a healpix map. Default: False.
     """
 
     ell = config.Property(proptype=int)
 
-    def process(self, map_: containers.Map) -> MSumTable:
+    nthreads = config.Property(proptype=int, default=1)
+    mult_by_weights = config.Property(proptype=bool, default=False)
+    use_unit_weights = config.Property(proptype=bool, default=False)
+
+    latitude = None
+    
+    def setup(self, manager: Optional[io.TelescopeConvertible] = None):
+        """Set the telescope that determines the observing latitude.
+
+        Parameters
+        ----------
+        manager : manager.ProductManager, optional
+            The telescope/manager used to set the observing latitude.
+            Ignored if working with a healpix map.
+        """
+        if manager is not None:
+            tel = io.get_telescope(manager)
+            self.latitude = np.deg2rad(tel.latitude)
+            
+    
+    def process(self, map_: Union[containers.Map, containers.RingMap]) -> MSumTable:
         """Take SHT of map and sum a_{ell m} over m for specific ell.
 
         Parameters
         ----------
-        map_: Map
-            The input healpix map.
+        map_: Map or RingMap
+            The input healpix map or ringmap.
 
         Returns
         -------
         msum: MSumTable
             The output sums of spherical harmonic coefficients.
         """
-
-        nside = hp.npix2nside(len(map_.index_map["pixel"]))
-        if self.ell > 3 * nside - 1:
-            raise ValueError("Ell cannot be larger than 3*nside-1!")
 
         # Create MSumTable container
         msum = MSumTable(
@@ -1432,20 +1462,114 @@ class MapEllMSum(task.SingleTask):
             comm=map_.comm,
         )
 
+        # Make sure map is distributed in frequency
+        map_.redistribute("freq")
+        
         # Get local sections of input map and output table
-        map_local = map_.map[:]
         msum_local = msum.msum[:]
+        map_local = map_.map[:]
+        
+        if isinstance(map_, containers.Map):
+        
+            nside = hp.npix2nside(len(map_.index_map["pixel"]))
+            if self.ell > 3 * nside - 1:
+                raise ValueError("Ell cannot be larger than 3*nside-1!")   
 
-        # Compute spherical harmonic coefficients for local map section,
-        # packed as [freq, pol, ell, m]
-        alm_local = hputil.sphtrans_sky(np.nan_to_num(map_local))
+            # Compute spherical harmonic coefficients for local map section,
+            # packed as [freq, pol, ell, m]
+            alm_local = hputil.sphtrans_sky(np.nan_to_num(map_local))
 
-        # Put m sums into container
-        msum_local[:] = (
-            alm_local[:, :, self.ell, 0]
-            + 2 * alm_local[:, :, self.ell, 1:].sum(axis=-1).real
-        ) / (4 * np.pi)
+            # Put m sums into container
+            msum_local[:] = (
+                alm_local[:, :, self.ell, 0]
+                + 2 * alm_local[:, :, self.ell, 1:].sum(axis=-1).real
+            ) / (4 * np.pi)
 
+        else: # containers.RingMap
+            import ducc0
+
+            if self.latitude is None:
+                raise ValueError("Must specify telescope to transform a ringmap!")
+
+            # ducc's Gauss-Legendre scheme requires a number of iso-latitude rings
+            # equal to lmax+1, so we set our lmax based on the length of the el axis
+            lmax = len(map_.el) - 1
+            mmax = lmax
+
+            # For the Gauss-Legendre scheme, it is recommended that each ring contain
+            # >=2*lmax+1 values, so let's warn the user if this is not satisfied
+            if len(map_.ra) < 2*lmax+1:
+                self.log.warning(
+                    "Warning: ringmap has < 2*lmax+1 RA values, which is not recommended for the ducc SHT"
+                )
+
+            # Get indices of m=0 and m>0 elements of alm array
+            m0_idx = hp.Alm.getidx(lmax, self.ell, 0)
+            mg0_idx = hp.Alm.getidx(lmax, self.ell, np.arange(1, self.ell+1))
+
+            # The outputs of the ducc routines appear to have a different convention
+            # than a_lm's from healpix, requiring us to flip the sign of odd-m coefficients
+            mg0_signflip = (-1)**(np.arange(1, self.ell+1) % 2)
+
+            # If we'll need the weights, get the local section
+            if self.mult_by_weights:
+                weight_local = map_.weight[:]
+                self.log.info("Multiplying ringmap by normalized weights before taking SHT")
+            
+            # Need to loop over pol and freq, since ducc routine requires a 3d array
+            # where the zeroth axis has length 1 for a spin-0 map.
+            for pi, p in enumerate(map_.pol):
+                for fi in range(map_local.shape[2]):
+                    # Only consider zeroth beam in ringmap, and transpose map input
+                    # to be packed as [el, ra]
+                    map_for_sht = np.array([map_local[0, pi, fi].view(np.ndarray).T])
+
+                    # If telescope is not at the equator, shift el axis of map such that
+                    # NCP corresponds to final element of el axis
+                    if self.latitude != 0.:
+                        original_za = np.arcsin(map_.el)
+                        ncp_idx = np.argmin(np.abs(original_za + self.latitude - 0.5 * np.pi))
+                        el_idx_shift = len(original_za) - 1 - ncp_idx
+                        map_for_sht = np.roll(map_for_sht, el_idx_shift, axis=1)
+                        map_for_sht[0, :el_idx_shift] = 0
+                    
+                    # If desired, multiply by normalized weights
+                    if self.mult_by_weights:
+                        weight_for_sht = weight_local[pi, fi].view(np.ndarray).T
+
+                        # If telescope is not at the equator, translate weights in same manner
+                        # as map
+                        if self.latitude != 0:
+                            weight_for_sht = np.roll(weight_for_sht, el_idx_shift, axis=0)
+                            weight_for_sht[:el_idx_shift] = 0
+                            if self.use_unit_weights:
+                                weight_for_sht[el_idx_shift:] = 1
+                        
+                        # We want to normalize the weights by their mean over the sphere.
+                        # To do so, we multiply the weights by a cos(za) factor that accounts
+                        # for the polar-angle-dependence of the ringmap pixel solid angle,
+                        # and further multiply by pi/2. The latter factor can be derived
+                        # from the expression for the pixel-solid-angle-weighted mean
+                        # of the ringmap weights: \sum_pix \Omega_pix w_pix / \sum_pix Omega_pix.
+                        weight_sky_mean = 0.5 * np.pi * np.mean(np.cos(np.arcsin(map_.el))[:, np.newaxis] * weight_for_sht)
+                        map_for_sht *= weight_for_sht / weight_sky_mean
+
+                    # Do SHT
+                    alm_local = ducc0.sht.experimental.analysis_2d(
+                        map=map_for_sht,
+                        lmax=lmax,
+                        mmax=mmax, 
+                        spin=0,
+                        geometry="GL",
+                        nthreads=self.nthreads
+                    )
+
+                    # Put m sums into container
+                    msum_local[fi, pi] = (
+                        alm_local[0, m0_idx].real
+                        + 2 * (mg0_signflip * alm_local[0, mg0_idx]).sum().real
+                    ) / (4 * np.pi)
+            
         return msum
 
 
