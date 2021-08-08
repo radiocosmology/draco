@@ -7,7 +7,6 @@ import time
 
 import numpy as np
 import scipy.interpolate
-import scipy.linalg
 
 from caput import config, memh5
 from cora.util import units
@@ -120,7 +119,7 @@ class DayenuDelayFilter(task.SingleTask):
                     freq, bcut, flag, epsilon=self.epsilon
                 )
 
-            except scipy.linalg.LinAlgError as exc:
+            except np.linalg.LinAlgError as exc:
                 self.log.error(
                     "Failed to converge while processing baseline "
                     f"{bb} [{bcut:0.3f} micro-sec]: {exc}"
@@ -310,7 +309,7 @@ class DayenuDelayFilterMap(task.SingleTask):
                         freq, ecut, flag, epsilon=self.epsilon
                     )
 
-                except scipy.linalg.LinAlgError as exc:
+                except np.linalg.LinAlgError as exc:
                     self.log.error(
                         "Failed to converge while processing el "
                         f"{el:0.3f} [{ecut:0.3f} micro-sec]: {exc}"
@@ -567,13 +566,8 @@ def highpass_delay_filter(freq, tau_cut, flag, epsilon=1e-12):
 
     ucov = uflag * cov[np.newaxis, :, :]
 
-    nuniq = uflag.shape[0]
-    pinv = np.zeros((nuniq, nfreq, nfreq), dtype=ucov.dtype)
-    index = []
-
-    for uu in range(nuniq):
-        pinv[uu] = scipy.linalg.pinvh(ucov[uu]) * uflag[uu]
-        index.append(np.flatnonzero(uindex == uu))
+    pinv = np.linalg.pinv(ucov, hermitian=True) * uflag
+    index = [np.flatnonzero(uindex == uu) for uu in range(pinv.shape[0])]
 
     return pinv, index
 
@@ -606,6 +600,7 @@ def bandpass_mmode_filter(ra, m_center, m_cut, flag, epsilon=1e-10):
         Maps the first axis of pinv to the original flag array.
         Apply pinv[i] to the sub-array at index[i].
     """
+
     ishp = flag.shape
     nra = ra.size
     assert ishp[-1] == nra
@@ -630,13 +625,11 @@ def bandpass_mmode_filter(ra, m_center, m_cut, flag, epsilon=1e-10):
 
     ucov = uflag * cov[np.newaxis, :, :]
 
-    nuniq = uflag.shape[0]
-    pinv = np.zeros((nuniq, nra, nra), dtype=ucov.dtype)
-    index = []
-
-    for uu in range(nuniq):
-        pinv[uu] = scipy.linalg.pinvh(ucov[uu]) * uflag[uu]
-        index.append(np.unravel_index(np.flatnonzero(uindex == uu), ishp[:-1]))
+    pinv = np.linalg.pinv(ucov, hermitian=True) * uflag
+    index = [
+        np.unravel_index(np.flatnonzero(uindex == uu), ishp[:-1])
+        for uu in range(pinv.shape[0])
+    ]
 
     return pinv, index
 
@@ -667,6 +660,7 @@ def lowpass_mmode_filter(ra, m_cut, flag, epsilon=1e-10):
         Maps the first axis of pinv to the original flag array.
         Apply pinv[i] to the sub-array at index[i].
     """
+
     ishp = flag.shape
     nra = ra.size
     assert ishp[-1] == nra
@@ -685,13 +679,11 @@ def lowpass_mmode_filter(ra, m_cut, flag, epsilon=1e-10):
 
     ucov = uflag * cov[np.newaxis, :, :]
 
-    nuniq = uflag.shape[0]
-    pinv = np.zeros((nuniq, nra, nra), dtype=ucov.dtype)
-    index = []
-
-    for uu in range(nuniq):
-        pinv[uu] = scipy.linalg.pinvh(ucov[uu]) * uflag[uu]
-        index.append(np.unravel_index(np.flatnonzero(uindex == uu), ishp[:-1]))
+    pinv = np.linalg.pinv(ucov, hermitian=True) * uflag
+    index = [
+        np.unravel_index(np.flatnonzero(uindex == uu), ishp[:-1])
+        for uu in range(pinv.shape[0])
+    ]
 
     return pinv, index
 
@@ -722,6 +714,7 @@ def highpass_mmode_filter(ra, m_cut, flag, epsilon=1e-10):
         Maps the first axis of pinv to the original flag array.
         Apply pinv[i] to the sub-array at index[i].
     """
+
     ishp = flag.shape
     nra = ra.size
     assert ishp[-1] == nra
@@ -737,13 +730,11 @@ def highpass_mmode_filter(ra, m_cut, flag, epsilon=1e-10):
 
     ucov = uflag * cov[np.newaxis, :, :]
 
-    nuniq = uflag.shape[0]
-    pinv = np.zeros((nuniq, nra, nra), dtype=ucov.dtype)
-    index = []
-
-    for uu in range(nuniq):
-        pinv[uu] = scipy.linalg.pinvh(ucov[uu]) * uflag[uu]
-        index.append(np.unravel_index(np.flatnonzero(uindex == uu), ishp[:-1]))
+    pinv = np.linalg.pinv(ucov, hermitian=True) * uflag
+    index = [
+        np.unravel_index(np.flatnonzero(uindex == uu), ishp[:-1])
+        for uu in range(pinv.shape[0])
+    ]
 
     return pinv, index
 
