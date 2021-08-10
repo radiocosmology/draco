@@ -945,6 +945,7 @@ class RingMapBeamForm(task.SingleTask):
         formed_beam = containers.FormedBeam(
             object_id=catalog.index_map["object_id"],
             axes_from=ringmap,
+            attrs_from=catalog,
             distributed=True,
         )
 
