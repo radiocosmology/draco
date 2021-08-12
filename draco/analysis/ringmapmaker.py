@@ -492,7 +492,7 @@ class BeamformEW(task.SingleTask):
                 # Only need the 0th term of the irfft, equivalent to summing in
                 # then EW direction
                 beamformed_data = np.sum(v.real, axis=1)[:, np.newaxis]
-                dirty_beam = np.sum(b, axis=1)[:, np.newaxis]
+                dirty_beam = np.sum(b.real, axis=1)[:, np.newaxis]
             else:
                 beamformed_data = np.fft.irfft(v, nbeam, axis=1) * nbeam
                 dirty_beam = np.fft.irfft(b, nbeam, axis=1) * nbeam
@@ -743,10 +743,23 @@ class DeconvolveHybridMBase(task.SingleTask):
                 )
 
             # Calculate the expected map noise by propagating the uncertainty on the m's
+            # We use an unusual order of operations here to prevent floating point
+            # overflow, which can occur as the north-south beam drops to zero at large
+            # zenith angles.  This results in an otherwise unnecessary sqrt and several
+            # multiplications.
             var = tools.invert_no_zero(inv_var)
-            var = ((weight * np.abs(bvf)) ** 2 * var).sum(axis=(1, -2))
-            var *= (winf * tools.invert_no_zero(C_inv)) ** 2
-            sum_var_map_m = 0.5 * np.sum(var, axis=0)[:, np.newaxis, :]
+            sigma = np.sqrt(np.sum((weight * np.abs(bvf)) ** 2 * var, axis=(1, -2)))
+
+            sum_var_map_m = 0.5 * np.sum(
+                (
+                    sigma
+                    * winf
+                    * norm[np.newaxis, :, 0]
+                    * tools.invert_no_zero((mmax + 1) * C_inv)
+                )
+                ** 2,
+                axis=0,
+            )[:, np.newaxis, :]
 
             rmw[:, lfi] = (nra // 2 + 1) ** 2 * tools.invert_no_zero(
                 norm ** 2 * sum_var_map_m

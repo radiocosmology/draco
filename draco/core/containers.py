@@ -143,7 +143,7 @@ class ContainerBase(memh5.BasicCont):
         self.allow_chunked = kwargs.pop("allow_chunked", False)
 
         # Run base initialiser
-        memh5.BasicCont.__init__(self, distributed=dist, comm=comm)
+        super().__init__(distributed=dist, comm=comm)
 
         # Check to see if this call looks like it was called like
         # memh5.MemDiskGroup would have been. If it is, we're probably trying to
@@ -2074,8 +2074,8 @@ class DelayCutoff(ContainerBase):
     @property
     def el(self):
         return self.index_map["el"]
-    
 
+    
 class DelaySpectrum(ContainerBase):
     """Container for a delay spectrum."""
 
