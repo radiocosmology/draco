@@ -1511,11 +1511,46 @@ class MapEllMSum(task.SingleTask):
             # than a_lm's from healpix, requiring us to flip the sign of odd-m coefficients
             mg0_signflip = (-1)**(np.arange(1, self.ell+1) % 2)
 
-            # If we'll need the weights, get the local section
+            # If telescope is not at the equator, we'll need to shift the el axis of
+            # the ringmap such that the NCP corresponds to final element of the el axis.
+            # We prepare for this by finding the amount to shift by
+            if self.latitude != 0.:
+                original_za = np.arcsin(map_.el)
+                ncp_idx = np.argmin(np.abs(original_za + self.latitude - 0.5 * np.pi))
+                el_idx_shift = len(original_za) - 1 - ncp_idx
+            else:
+                el_idx_shift = 0
+            
+            # If we'll need the weights, we need to find their mean over frequency and sky
+            # at each pol, after shifting the el axis as above
             if self.mult_by_weights:
                 weight_local = map_.weight[:]
+
+                # If telescope is not at the equator, translate weights along el axis
+                # as described above
+                weight_rolled = np.roll(weight_local, el_idx_shift, axis=3)
+                weight_rolled[:, :, :, :el_idx_shift] = 0
+                # If using unit weights, set weights corresponding to observable part of
+                # sky to unity
+                if self.use_unit_weights:
+                    weight_rolled[:, :, :, el_idx_shift:] = 1
+
+                # We want to normalize the weights by their mean over the sphere, and
+                # over frequency.
+                # To do so, we multiply the weights by a cos(za) factor that accounts
+                # for the polar-angle-dependence of the ringmap pixel solid angle,
+                # and further multiply by pi/2. The latter factor can be derived
+                # from the expression for the pixel-solid-angle-weighted mean
+                # of the ringmap weights: \sum_pix \Omega_pix w_pix / \sum_pix Omega_pix.
+                weight_local_sum = 0.5 * np.pi * np.sum(
+                    np.cos(np.arcsin(map_.el))[np.newaxis, np.newaxis, np.newaxis, :] * weight_rolled,
+                    axis=(2,3)
+                )
+                weight_global_mean = self.comm.allreduce(weight_local_sum.sum(axis=1))
+                weight_global_mean /= np.prod(map_.weight.global_shape[1:])
+                
                 self.log.info("Multiplying ringmap by normalized weights before taking SHT")
-            
+                
             # Need to loop over pol and freq, since ducc routine requires a 3d array
             # where the zeroth axis has length 1 for a spin-0 map.
             for pi, p in enumerate(map_.pol):
@@ -1526,12 +1561,8 @@ class MapEllMSum(task.SingleTask):
 
                     # If telescope is not at the equator, shift el axis of map such that
                     # NCP corresponds to final element of el axis
-                    if self.latitude != 0.:
-                        original_za = np.arcsin(map_.el)
-                        ncp_idx = np.argmin(np.abs(original_za + self.latitude - 0.5 * np.pi))
-                        el_idx_shift = len(original_za) - 1 - ncp_idx
-                        map_for_sht = np.roll(map_for_sht, el_idx_shift, axis=1)
-                        map_for_sht[0, :el_idx_shift] = 0
+                    map_for_sht = np.roll(map_for_sht, el_idx_shift, axis=1)
+                    map_for_sht[0, :el_idx_shift] = 0
                     
                     # If desired, multiply by normalized weights
                     if self.mult_by_weights:
@@ -1539,20 +1570,13 @@ class MapEllMSum(task.SingleTask):
 
                         # If telescope is not at the equator, translate weights in same manner
                         # as map
-                        if self.latitude != 0:
-                            weight_for_sht = np.roll(weight_for_sht, el_idx_shift, axis=0)
-                            weight_for_sht[:el_idx_shift] = 0
-                            if self.use_unit_weights:
-                                weight_for_sht[el_idx_shift:] = 1
-                        
-                        # We want to normalize the weights by their mean over the sphere.
-                        # To do so, we multiply the weights by a cos(za) factor that accounts
-                        # for the polar-angle-dependence of the ringmap pixel solid angle,
-                        # and further multiply by pi/2. The latter factor can be derived
-                        # from the expression for the pixel-solid-angle-weighted mean
-                        # of the ringmap weights: \sum_pix \Omega_pix w_pix / \sum_pix Omega_pix.
-                        weight_sky_mean = 0.5 * np.pi * np.mean(np.cos(np.arcsin(map_.el))[:, np.newaxis] * weight_for_sht)
-                        map_for_sht *= weight_for_sht / weight_sky_mean
+                        weight_for_sht = np.roll(weight_for_sht, el_idx_shift, axis=0)
+                        weight_for_sht[:el_idx_shift] = 0
+                        if self.use_unit_weights:
+                            weight_for_sht[el_idx_shift:] = 1
+
+                        # Multiply weights into map, normalized by mean computed earlier
+                        map_for_sht *= weight_for_sht / weight_global_mean[pi]
 
                     # Do SHT
                     alm_local = ducc0.sht.experimental.analysis_2d(
