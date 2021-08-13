@@ -324,26 +324,6 @@ class DayenuDelayFilterMap(task.SingleTask):
                 if self.single_mask:
 
                     if not self.weights_only:
-                        rm[slc] = np.matmul(NF[:, :, 0], erm)
-                        
-                    weight[wslc] = tools.invert_no_zero(
-                        np.matmul(NF[:, :, 0] ** 2, evar)
-                    )
-
-                else:
-
-                    self.log.info("There are %d unique masks/filters." % len(index))
-
-                    for ii, rr in enumerate(index):
-                        if not self.weights_only:
-                            rm[ind][:, rr, ee] = np.matmul(NF[:, :, ii], erm[:, rr])
-
-                        weight[wind][:, rr, ee] = tools.invert_no_zero(
-                            np.matmul(NF[:, :, ii] ** 2, evar[:, rr])
-                        )
-
-                self.log.info("Took %0.2f seconds." % (time.time() - t0,))
-                    if not self.weights_only:
                         rm[slc] = np.matmul(NF[0], erm)
                         
                     weight[wslc] = tools.invert_no_zero(np.matmul(NF[0] ** 2, evar))
