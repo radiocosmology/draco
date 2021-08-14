@@ -490,6 +490,43 @@ class MaskBeamformedWeights(task.SingleTask):
         return data
 
 
+class MaskRingMapEdgeChannels(task.SingleTask):
+    """Mask ringmap frequencies within specified distance of band edge.
+
+    Attributes
+    ----------
+    n : int
+        Set weights to zero for frequency channels within n channels
+        of the band edges (e.g. n=1 only masks lowest and highest channel).
+        Default: 2.
+    """
+
+    n = config.Property(proptype=int, default=2)
+
+    def process(self, map_: containers.RingMap) -> containers.RingMap:
+        """Mask weights close to band edges.
+
+        Parameters
+        ----------
+        map_ : RingMap
+            Input ringmap.
+
+        Returns
+        -------
+        map_ : RingMap
+            The ringmap with the relevant weights set to zero.
+        """
+
+        if self.n > 0:
+            map_.redistribute("el")
+        
+            weight_local = map_.weight[:]
+            weight_local[:, :self.n] = 0.
+            weight_local[:, -self.n:] = 0.
+        
+        return map_
+
+    
 class RadiometerWeight(task.SingleTask):
     """Update vis_weight according to the radiometer equation:
 
