@@ -210,6 +210,35 @@ class MaximumLikelihoodMapMaker(BaseMapMaker):
         return a
 
 
+class TikhonovMapMaker(BaseMapMaker):
+
+    epsilon = config.Property(proptype=float, default=1.0)
+
+    def _solve_m(self, m, f, v, Ni):
+
+        bt = self.beamtransfer
+
+        # Massage the arrays into shape
+        v = v.reshape(bt.ntel)
+        Ni = Ni.reshape(bt.ntel)
+        bm = bt.beam_m(m, fi=f).reshape(bt.ntel, bt.nsky)
+
+        # Tikhonov regularization
+        T = np.dot(bm.T.conj() * Ni, bm)
+        T[np.diag_indices(bt.nsky)] += self.epsilon
+
+        # Get the dirty map alms
+        a = np.dot(bm.T.conj(), Ni * v)
+
+        # Solve
+        a = np.linalg.solve(T, a)
+
+        # Reshape to the correct output
+        a = a.reshape(bt.telescope.num_pol_sky, bt.telescope.lmax + 1)
+
+        return a
+
+
 class WienerMapMaker(BaseMapMaker):
     r"""Generate a Wiener filtered map assuming that the signal is a Gaussian
     random field described by a power-law power spectum.
