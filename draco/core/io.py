@@ -29,7 +29,7 @@ from typing import Union, Dict, List
 import numpy as np
 from yaml import dump as yamldump
 
-from caput import pipeline, config, fileformats, memh5, truncate
+from caput import pipeline, config, fileformats, memh5, truncate, mpiutil
 
 from cora.util import units
 
@@ -351,6 +351,219 @@ class LoadFITSCatalog(task.SingleTask):
         catalog.attrs["tag"] = group["tag"]
 
         return catalog
+
+
+class LoadFITSDelta(task.SingleTask):
+    """Load eBOSS Lyman-alpha delta files in FITS format.
+
+    See https://data.sdss.org/datamodel/files/EBOSS_LYA/DELTA_LYAB/delta.html
+    for data format specification.
+
+    Attributes
+    ----------
+    delta_files : list or dict
+        A dictionary specifying a file group, or a list of them.
+    """
+
+    delta_files = config.Property(proptype=_list_of_filegroups)
+
+    def process(self):
+        """Load spectra from all files and combine into a single
+        container with a common frequency axis.
+
+        Returns
+        -------
+        spectra : :class:`containers.FormedBeam`
+        """
+
+        from astropy.io import fits
+        from . import containers
+        from time import time
+
+        # Exit this task if we have eaten all the file groups
+        if len(self.delta_files) == 0:
+            raise pipeline.PipelineStopIteration
+
+        group = self.delta_files.pop(0)
+
+        if self.comm.rank == 0:
+
+            # lists to read spectra into
+            delta = []
+            weight = []
+            pos = []
+            z = []
+            loglam = []
+            obj_id = []
+
+            for fname in group["files"]:
+
+                # read FITS file
+                with fits.open(fname, mode="readonly") as fh:
+                    # read all data into memory
+                    t0 = time()
+                    self.log.debug(f"(rank {self.comm.rank}) reading {fname}...")
+                    fh.readall()
+                    self.log.debug(f"in memory ({time() - t0} s)")
+
+                    # prepare arrays to copy into
+                    n_rec = len(fh) - 1
+                    this_pos = np.zeros((n_rec, 2), dtype=np.float64)
+                    this_z = np.zeros(n_rec, dtype=np.float64)
+                    this_id = np.zeros(n_rec, dtype=np.int32)
+
+                    # loop through HDUs and read
+                    for i, rec in enumerate(fh[1:]):
+                        this_pos[i] = tuple([rec.header[c] for c in ["RA", "DEC"]])
+                        this_z[i] = rec.header["Z"]
+                        this_id[i] = rec.header["THING_ID"]
+                        delta.append(np.ascontiguousarray(rec.data["DELTA"]))
+                        weight.append(np.ascontiguousarray(rec.data["WEIGHT"]))
+                        loglam.append(np.ascontiguousarray(rec.data["LOGLAM"]))
+
+                    pos.append(this_pos)
+                    z.append(this_z)
+                    obj_id.append(this_id)
+
+                    self.log.debug(f"{fname} done ({time() - t0} s)")
+
+            # these have a single value per object
+            pos = np.concatenate(pos, axis=0)
+            z = np.concatenate(z)
+            obj_id = np.concatenate(obj_id)
+
+            # create common wavelength axis
+            loglam_all = np.concatenate(loglam)
+            llam_max = loglam_all.max()
+            llam_min = loglam_all.min()
+            dllam = np.min(np.abs(np.diff(loglam[0])))
+            # N.B. all spectra must share a common resolution
+            for ll in loglam:
+                this_dllam = np.min(np.abs(np.diff(ll)))
+                if np.abs(dllam - this_dllam) / dllam > 1e-3:
+                    self.log.warn("Not all spectra use same gridding.")
+            nlam = int(np.round((llam_max - llam_min) / dllam)) + 1
+            lam = np.power(10, llam_min + np.arange(nlam) * dllam)
+
+            # sort data into a single array
+            delta_common = np.zeros((len(delta), nlam), dtype=delta[0].dtype)
+            weight_common = np.zeros((len(weight), nlam), dtype=weight[0].dtype)
+            t0 = time()
+            for i in range(len(delta)):
+                ind = np.argmin(
+                    np.abs(np.power(10, loglam[i])[:, np.newaxis] - lam), axis=1
+                )
+                delta_common[i, ind] = delta[i]
+                weight_common[i, ind] = weight[i]
+            self.log.debug(f"Done sorting spectra. ({time() - t0:.1f} s)")
+            delta = delta_common
+            weight = weight_common
+
+            # weights are inverse variance estimate with a redshift-dependent bias correction
+            # (eq. 7 in du Mas des Bourboux et al)
+
+            # can't just concatenate because lam axis is different
+            num_objects = len(pos)
+            num_pix = len(lam)
+
+            self.log.debug("rank 0 done reading files")
+            self.log.debug(f"delta shape {delta.shape}")
+
+        else:
+            num_objects = None
+            num_pix = None
+            delta = None
+            weight = None
+
+        self.comm.Barrier()
+
+        # Broadcast the size of the catalog to all ranks
+        num_objects = self.comm.bcast(num_objects, root=0)
+        num_pix = self.comm.bcast(num_pix, root=0)
+        self.log.debug(f"Reading spectra for {num_objects} objects.")
+
+        # broadcast the axes
+        if self.comm.rank != 0:
+            pos = np.zeros((num_objects, 2), dtype=np.float64)
+            z = np.zeros(num_objects, dtype=np.float64)
+            lam = np.zeros(num_pix, dtype=np.float64)
+            obj_id = np.zeros(num_objects, dtype=np.int32)
+        self.comm.Bcast(pos, root=0)
+        self.comm.Bcast(z, root=0)
+        self.comm.Bcast(lam, root=0)
+        self.comm.Bcast(obj_id, root=0)
+        self.log.debug(f"(rank {self.comm.rank}) got axes.")
+
+        # convert wavelength (A) to frequency (MHz)
+        freq = units.c / lam * 1e4
+
+        # scatter the distributed datasets over frequency
+        def scatter_array(array, root=0, axis=0):
+            # split distributed axis
+            if self.comm.rank == root:
+                shape = array.shape
+                n = shape[axis]
+                dtype = array.dtype
+            else:
+                shape = None
+                n = None
+                dtype = None
+            shape = self.comm.bcast(shape, root=root)
+            dtype = self.comm.bcast(dtype, root=root)
+            mpitype = mpiutil.typemap(dtype)
+            n = self.comm.bcast(n, root=root)
+            n_all, s_all, e_all = mpiutil.split_all(n, comm=self.comm)
+            slices = []
+            for r in range(self.comm.size):
+                this_slice = [slice(None)] * len(shape)
+                this_slice[axis] = slice(s_all[r], e_all[r])
+                slices.append(tuple(this_slice))
+
+            # scatter array from source rank
+            if self.comm.rank == root:
+                local = array[slices[root]]
+                # send to each rank
+                sends = []
+                for r in range(self.comm.size):
+                    if r == root:
+                        continue
+                    to_send = array[slices[r]].flatten()
+                    sends.append(self.comm.Isend([to_send, mpitype], dest=r))
+                for req in sends:
+                    req.wait()
+            else:
+                local_shape = list(shape)
+                local_shape[axis] = n_all[self.comm.rank]
+                local = np.zeros(local_shape, dtype=dtype)
+                self.comm.Recv([local, mpitype], source=root)
+
+            self.comm.Barrier()
+
+            return local
+
+        self.log.debug(f"(rank {self.comm.rank}) scattering arrays...")
+        delta_local = scatter_array(delta, root=0, axis=1)
+        weight_local = scatter_array(weight, root=0, axis=1)
+        self.log.debug(f"(rank {self.comm.rank}) done scattering arrays.")
+
+        # construct FormedBeam container
+        deltas = containers.FormedBeam(
+            freq=freq, object_id=obj_id, pol=np.array(["0"]), comm=self.comm
+        )
+        deltas["position"]["ra"] = pos[:, 0]
+        deltas["position"]["dec"] = pos[:, 1]
+        deltas["redshift"]["z"] = z
+        deltas["redshift"]["z_error"] = 0
+
+        # write to the distributed array
+        deltas.redistribute("freq")
+        deltas["beam"][:] = delta_local[:, np.newaxis, :]
+        deltas["weight"][:] = weight_local[:, np.newaxis, :]
+
+        # assign tag
+        deltas.attrs["tag"] = group["tag"]
+
+        return deltas
 
 
 class BaseLoadFiles(task.SingleTask):
