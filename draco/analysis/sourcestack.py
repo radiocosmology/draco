@@ -239,7 +239,7 @@ class RandomSubset(task.SingleTask, RandomTask):
                 self.distributed_axis = max(axis_size, key=axis_size.get)
 
                 self.log.info(
-                    f"Distributing over the {self.distributed_axis} "
+                    f"Distributing over the {self.distributed_axis} axis "
                     "to take random subsets of objects."
                 )
                 catalog.redistribute(self.distributed_axis)
@@ -320,7 +320,7 @@ class RandomSubset(task.SingleTask, RandomTask):
         return new_catalog
 
 
-class CollectFrequencyStacks(task.SingleTask):
+class GroupSourceStacks(task.SingleTask):
     """Accumulate many frequency stacks into a single container.
 
     Attributes
