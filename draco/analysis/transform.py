@@ -441,7 +441,16 @@ class MModeTransform(task.SingleTask):
 
     The maximum m used in the container is derived from the number of
     time samples, or if a manager is supplied `telescope.mmax` is used.
+
+    Attributes
+    ----------
+    remove_integration_window : bool
+        Deconvolve the effect of the finite width of the RA integration (presuming it
+        was a rectangular integration window). This is applied to both the visibilities
+        and the weights.
     """
+
+    remove_integration_window = config.Property(proptype=bool, default=False)
 
     def setup(self, manager: Optional[io.TelescopeConvertible] = None):
         """Set the telescope instance if a manager object is given.
@@ -513,6 +522,19 @@ class MModeTransform(task.SingleTask):
         # Assign the weights into the container
         ma.weight[:] = weight_sum[np.newaxis, np.newaxis, :, :]
 
+        # Divide out the m-mode sinc-suppression caused by the rectangular integration window
+        if self.remove_integration_window:
+
+            m = np.arange(mmax + 1)
+            w = np.sinc(m / nra)
+            inv_w = tools.invert_no_zero(w)
+
+            sl_vis = (slice(None),) + (np.newaxis,) * (len(ma.vis.shape) - 1)
+            ma.vis[:] *= inv_w[sl_vis]
+
+            sl_weight = (slice(None),) + (np.newaxis,) * (len(ma.weight.shape) - 1)
+            ma.weight[:] *= w[sl_weight] ** 2
+
         return ma
 
 
@@ -573,6 +595,9 @@ class MModeInverseTransform(task.SingleTask):
 
     Currently ignores any noise weighting.
 
+    .. warning::
+        Using `apply_integration_window` will modify the input mmodes.
+
     Attributes
     ----------
     nra : int
@@ -580,9 +605,15 @@ class MModeInverseTransform(task.SingleTask):
         Nyquist sample the maximum m, information may be lost. If not set, then try to
         get from an `original_nra` attribute on the incoming MModes, otherwise determine
         an appropriate number of RA bins from the mmax.
+    apply_integration_window : bool
+        Apply the effect of the finite width of the RA integration (presuming a
+        rectangular integration window). This is applied to both the visibilities and
+        the weights. If this is true, as a side effect the input data will be modified
+        in place.
     """
 
     nra = config.Property(proptype=int, default=None)
+    apply_integration_window = config.Property(proptype=bool, default=False)
 
     def process(self, mmodes: containers.MContainer) -> containers.SiderealContainer:
         """Perform the m-mode inverse transform.
@@ -609,6 +640,19 @@ class MModeInverseTransform(task.SingleTask):
         # container
         nra_cont = 2 * mmodes.mmax + (1 if mmodes.oddra else 0)
         nra = self.nra if self.nra is not None else nra_cont
+
+        # Apply the m-mode sinc-suppression caused by the rectangular integration window
+        if self.apply_integration_window:
+
+            m = np.arange(mmodes.mmax + 1)
+            w = np.sinc(m / nra)
+            inv_w = tools.invert_no_zero(w)
+
+            sl_vis = (slice(None),) + (np.newaxis,) * (len(mmodes.vis.shape) - 1)
+            mmodes.vis[:] *= w[sl_vis]
+
+            sl_weight = (slice(None),) + (np.newaxis,) * (len(mmodes.weight.shape) - 1)
+            mmodes.weight[:] *= inv_w[sl_weight] ** 2
 
         # Re-construct array of S-streams
         ssarray = _make_ssarray(mmodes.vis[:], n=nra)
@@ -641,11 +685,14 @@ class SiderealMModeResample(task.group_tasks(MModeTransform, MModeInverseTransfo
 
     Attributes
     ----------
-    nra
+    nra : int
         The number of RA bins for the output stream.
+    remove_integration_window, apply_integration_window : bool
+        Remove the integration window from the incoming data, and/or apply it to the
+        output sidereal stream.
     """
 
-    nra = config.Property(proptype=int, default=None)
+    pass
 
 
 def _make_ssarray(mmodes, n=None):
