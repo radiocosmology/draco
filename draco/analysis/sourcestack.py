@@ -221,18 +221,51 @@ class RandomSubset(task.SingleTask, RandomTask):
 
         Parameters
         ----------
-        catalog : containers.SourceCatalog
+        catalog : containers.SourceCatalog or containers.FormedBeam
             The mock catalog to draw from.
         """
+
+        # If the catalog is distributed, then we need to make sure that it
+        # is distributed over an axis other than the object_id axis.
+        if catalog.distributed:
+
+            axis_size = {
+                key: len(val)
+                for key, val in catalog.index_map.items()
+                if key != "object_id"
+            }
+
+            if len(axis_size) > 0:
+                self.distributed_axis = max(axis_size, key=axis_size.get)
+
+                self.log.info(
+                    f"Distributing over the {self.distributed_axis} "
+                    "to take random subsets of objects."
+                )
+                catalog.redistribute(self.distributed_axis)
+
+            else:
+                raise ValueError(
+                    "The catalog that was provided is distributed "
+                    "over the object_id axis. Unable to take a "
+                    "random subset over object_id."
+                )
+        else:
+            self.distributed_axis = None
+
+        if "tag" in catalog.attrs:
+            self.base_tag = f"{catalog.attrs['tag']}_mock_{{:05d}}"
+        else:
+            self.base_tag = "mock_{{:05d}}"
+
         self.catalog = catalog
-        self.base_tag = f'{catalog.attrs.get("tag", "mock")}_{{}}'
 
     def process(self):
         """Draw a new random catalog.
 
         Returns
         -------
-        new_catalog : containers.SourceCatalog subclass
+        new_catalog : containers.SourceCatalog or containers.FormedBeam
             A catalog of the same type as the input catalog, with a random set of
             objects.
         """
@@ -251,22 +284,180 @@ class RandomSubset(task.SingleTask, RandomTask):
         # Generate a random selection of objects on rank=0 and broadcast to all other
         # ranks
         if self.comm.rank == 0:
-            ind = rng.choice(num_cat, self.size, replace=False)
+            ind = np.sort(rng.choice(num_cat, self.size, replace=False))
         else:
             ind = np.zeros(self.size, dtype=np.int64)
         self.comm.Bcast(ind, root=0)
 
+        # Create new container
         new_catalog = self.catalog.__class__(
-            object_id=objects[ind], attrs_from=self.catalog
+            object_id=objects[ind],
+            attrs_from=self.catalog,
+            axes_from=self.catalog,
+            comm=self.catalog.comm,
         )
+
+        for name in self.catalog.datasets.keys():
+            if name not in new_catalog.datasets:
+                new_catalog.add_dataset(name)
+
+        if self.distributed_axis is not None:
+            new_catalog.redistribute(self.distributed_axis)
+
         new_catalog.attrs["tag"] = self.base_tag.format(self.catalog_ind)
 
         # Loop over all datasets and if they have an object_id axis, select the
         # relevant objects along that axis
-        for name, dset in new_catalog.datasets.items():
+        for name, dset in self.catalog.datasets.items():
+
             if dset.attrs["axis"][0] == "object_id":
-                dset[:] = self.catalog.datasets[name][ind]
+                new_catalog.datasets[name][:] = dset[:][ind]
+            else:
+                new_catalog.datasets[name][:] = dset[:]
 
         self.catalog_ind += 1
 
         return new_catalog
+
+
+class CollectFrequencyStacks(task.SingleTask):
+    """Accumulate many frequency stacks into a single container.
+
+    Attributes
+    ----------
+    ngroup : int
+        The number of frequency stacks to accumulate into a
+        single container.
+    """
+
+    ngroup = config.Property(proptype=int, default=100)
+
+    def setup(self):
+        """Create a list to be populated by the process method."""
+
+        self.stack = []
+        self.nmock = 0
+        self.counter = 0
+
+        self._container_lookup = {
+            containers.FrequencyStack: containers.MockFrequencyStack,
+            containers.FrequencyStackByPol: containers.MockFrequencyStackByPol,
+            containers.MockFrequencyStack: containers.MockFrequencyStack,
+            containers.MockFrequencyStackByPol: containers.MockFrequencyStackByPol,
+        }
+
+    def process(self, stack):
+        """Add a FrequencyStack to the list.
+
+        As soon as list contains `ngroup` items, they will be collapsed
+        into a single container and output by the task.
+
+        Parameters
+        ----------
+        stack : containers.FrequencyStack, containers.FrequencyStackByPol,
+                containers.MockFrequencyStack, containers.MockFrequencyStackByPol
+
+        Returns
+        -------
+        out : containers.MockFrequencyStack, containers.MockFrequencyStackByPol
+            The previous `ngroup` FrequencyStacks accumulated into a single container.
+        """
+
+        self.stack.append(stack)
+        if "mock" in stack.index_map:
+            self.nmock += stack.index_map["mock"].size
+        else:
+            self.nmock += 1
+
+        self.log.info(
+            "Collected frequency stack.  Current size is %d." % len(self.stack)
+        )
+
+        if (len(self.stack) % self.ngroup) == 0:
+
+            out = self._reset()
+            return out
+
+    def process_finish(self):
+        """Return whatever FrequencyStacks are currently in the list.
+
+        Returns
+        -------
+        out : containers.MockFrequencyStack, containers.MockFrequencyStackByPol
+            The remaining frequency stacks accumulated into a single container.
+        """
+
+        if len(self.stack) > 0:
+            out = self._reset()
+            return out
+
+    def _reset(self):
+        """Combine all frequency stacks currently in the list into new container.
+
+        Then, empty the list, reset the stack counter, and increment the group counter.
+        """
+
+        self.log.info(
+            "We have accumulated %d mock realizations.  Saving to file. [group %03d]"
+            % (self.nmock, self.counter)
+        )
+
+        mock = np.arange(self.nmock, dtype=np.int64)
+
+        # Create the output container
+        OutputContainer = self._container_lookup[self.stack[0].__class__]
+
+        out = OutputContainer(
+            mock=mock, axes_from=self.stack[0], attrs_from=self.stack[0]
+        )
+
+        counter_str = f"{self.counter:03d}"
+
+        # Update tag using the hierarchy that a group contains multiple mocks,
+        # and a supergroup contains multiple groups.
+        if "tag" in out.attrs:
+            tag = out.attrs["tag"].split("_")
+            if "group" in tag:
+                ig = max(ii for ii, tt in enumerate(tag) if tt == "group")
+                tag[ig] = "supergroup"
+                tag[ig + 1] = counter_str
+
+            elif "mock" in tag:
+                im = max(ii for ii, tt in enumerate(tag) if tt == "mock")
+                tag[im] = "group"
+                tag[im + 1] = counter_str
+
+            else:
+                tag.append(f"group_{counter_str}")
+
+            out.attrs["tag"] = "_".join(tag)
+        else:
+            out.attrs["tag"] = f"group_{counter_str}"
+
+        for name in self.stack[0].datasets.keys():
+            if name not in out.datasets:
+                out.add_dataset(name)
+
+        # Loop over mock stacks and save to output container
+        for name, odset in out.datasets.items():
+
+            mock_count = 0
+
+            for ss, stack in enumerate(self.stack):
+
+                dset = stack.datasets[name]
+                if dset.attrs["axis"][0] == "mock":
+                    data = dset[:]
+                else:
+                    data = dset[np.newaxis, ...]
+
+                for mdata in data:
+                    odset[mock_count] = mdata[:]
+                    mock_count += 1
+
+        # Reset the class attributes
+        self.stack = []
+        self.nmock = 0
+        self.counter += 1
+
+        return out

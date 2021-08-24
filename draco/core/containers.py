@@ -29,6 +29,8 @@ Containers
 - :py:class:`SVDSpectrum`
 - :py:class:`FrequencyStack`
 - :py:class:`FrequencyStackByPol`
+- :py:class:`MockFrequencyStack`
+- :py:class:`MockFrequencyStackByPol`
 - :py:class:`SourceCatalog`
 - :py:class:`SpectroscopicCatalog`
 - :py:class:`FormedBeam`
@@ -2231,6 +2233,54 @@ class FrequencyStackByPol(FrequencyStack):
     @property
     def pol(self):
         return self.index_map["pol"]
+
+
+class MockFrequencyStack(FrequencyStack):
+    """Container for holding a frequency stack for multiple mock catalogs.
+
+    Adds a `mock` axis as the first dimension of each dataset.
+    """
+
+    _axes = ("mock",)
+
+    _dataset_spec = {
+        "stack": {
+            "axes": ["mock", "freq"],
+            "dtype": np.float64,
+            "initialise": True,
+            "distributed": False,
+        },
+        "weight": {
+            "axes": ["mock", "freq"],
+            "dtype": np.float64,
+            "initialise": True,
+            "distributed": False,
+        },
+    }
+
+
+class MockFrequencyStackByPol(FrequencyStackByPol):
+    """Container for holding a frequency stack split by pol for multiple mock catalogs.
+
+    Adds a `mock` axis as the first dimension of each dataset.
+    """
+
+    _axes = ("mock",)
+
+    _dataset_spec = {
+        "stack": {
+            "axes": ["mock", "pol", "freq"],
+            "dtype": np.float64,
+            "initialise": True,
+            "distributed": False,
+        },
+        "weight": {
+            "axes": ["mock", "pol", "freq"],
+            "dtype": np.float64,
+            "initialise": True,
+            "distributed": False,
+        },
+    }
 
 
 class Stack3D(FreqContainer):
