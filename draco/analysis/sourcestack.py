@@ -68,8 +68,9 @@ class SourceStack(task.SingleTask):
         pol = formed_beam.pol
         npol = len(pol)
 
-        # Frequency of sources
-        source_freq = NU21 / (formed_beam["redshift"]["z"] + 1.0)  # MHz.
+        # Frequency of sources in MHz
+        source_freq = NU21 / (formed_beam["redshift"]["z"][loff : loff + lshape] + 1.0)
+
         # Size of source stack array
         self.nstack = 2 * self.freqside + 1
 
@@ -100,12 +101,16 @@ class SourceStack(task.SingleTask):
                 stackbins,
                 self.stack_axis["centre"][-1] + 0.5 * self.stack_axis["width"][-1],
             )
+
         # Index of each frequency in stack axis, for each source
         source_indices = np.digitize(freqdiff, stackbins) - 1
+
         # Indices to be processed in full frequency axis for each source
         f_mask = (source_indices >= 0) & (source_indices < self.nstack)
+
         # Only sources in the frequency range of the data.
         source_mask = (np.sum(f_mask, axis=1) > 0).astype(bool)
+
         # If desired, also restrict to sources within a specific channel.
         # This works because the frequency axis is not distributed between
         # ranks.
@@ -115,12 +120,6 @@ class SourceStack(task.SingleTask):
                 0.5 * fs["width"]
             )
             source_mask *= restricted_chan_mask
-
-        # Reduce mask and indices to this process range
-        # to reduce striding through this data
-        source_mask = source_mask[loff : loff + lshape]
-        source_indices = source_indices[loff : loff + lshape]
-        f_mask = f_mask[loff : loff + lshape]
 
         # Container to hold the stack
         if npol > 1:
@@ -135,34 +134,36 @@ class SourceStack(task.SingleTask):
         # Loop over polarisations
         for pp, pstr in enumerate(pol):
 
+            fb = formed_beam.beam[:, pp].view(np.ndarray)
+            fw = formed_beam.weight[:, pp].view(np.ndarray)
+
             # Source stack array.
             source_stack = np.zeros(self.nstack, dtype=np.float)
             source_weight = np.zeros(self.nstack, dtype=np.float)
 
             count = 0  # Source counter
             # For each source in the range of this process
-            for lq, gq in formed_beam.beam[:].enumerate(axis=0):
+            for lq in range(lshape):
+
                 if not source_mask[lq]:
                     # Source not in the data redshift range
                     continue
 
                 count += 1
+
                 # Indices and slice for frequencies included in the stack.
                 f_indices = np.arange(nfreq, dtype=np.int32)[f_mask[lq]]
                 f_slice = np.s_[f_indices[0] : f_indices[-1] + 1]
 
                 source_stack += np.bincount(
-                    source_indices[lq][f_slice],
-                    weights=(
-                        formed_beam.beam[gq, pp][f_slice]
-                        * formed_beam.weight[gq, pp][f_slice]
-                    ),
+                    source_indices[lq, f_slice],
+                    weights=fw[lq, f_slice] * fb[lq, f_slice],
                     minlength=self.nstack,
                 )
 
                 source_weight += np.bincount(
-                    source_indices[lq][f_slice],
-                    weights=formed_beam.weight[gq, pp][f_slice],
+                    source_indices[lq, f_slice],
+                    weights=fw[lq, f_slice],
                     minlength=self.nstack,
                 )
 
