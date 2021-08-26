@@ -952,14 +952,14 @@ class AddEBOSSZErrorsToCatalog(task.SingleTask, random.RandomTask):
 
         err_func = _velocity_error_function_lookup[tracer]
 
-        dv = err_func(z.size, self.rng)
+        dv = err_func(z, self.rng)
 
         dz = (1.0 + z) * dv / (C * 1e-3)
 
         return dz
 
     @staticmethod
-    def qso_velocity_error(nsample, rng):
+    def qso_velocity_error(z, rng):
         """Draw random velocity errors for quasars.
 
         This is taken from Lyke et al. 2020 (https://arxiv.org/abs/2007.09001).
@@ -970,8 +970,8 @@ class AddEBOSSZErrorsToCatalog(task.SingleTask, random.RandomTask):
 
         Parameters
         ----------
-        nsample: int
-            Number of random numbers to draw.
+        z : np.ndarray
+            True redshift for the object.
         rng : numpy.random.Generator
             Numpy RNG to use for generating random numbers.
 
@@ -985,6 +985,8 @@ class AddEBOSSZErrorsToCatalog(task.SingleTask, random.RandomTask):
         QSO_SIG2 = 1000.0
         QSO_F = 4.478
 
+        nsample = len(z)
+
         dv1 = rng.normal(scale=QSO_SIG1, size=nsample)
         dv2 = rng.normal(scale=QSO_SIG2, size=nsample)
 
@@ -996,7 +998,7 @@ class AddEBOSSZErrorsToCatalog(task.SingleTask, random.RandomTask):
         return dv
 
     @staticmethod
-    def lrg_velocity_error(nsample, rng):
+    def lrg_velocity_error(z, rng):
         """Draw random velocity errors for luminous red galaxies.
 
         This is taken from Ross et al. 2020 (https://arxiv.org/abs/2007.09000).
@@ -1006,8 +1008,8 @@ class AddEBOSSZErrorsToCatalog(task.SingleTask, random.RandomTask):
 
         Parameters
         ----------
-        nsample: int
-            Number of random numbers to draw.
+        z : np.ndarray
+            True redshift for the object.
         rng : numpy.random.Generator
             Numpy RNG to use for generating random numbers.
 
@@ -1019,12 +1021,12 @@ class AddEBOSSZErrorsToCatalog(task.SingleTask, random.RandomTask):
 
         LRG_SIG = 91.8
 
-        dv = rng.normal(scale=LRG_SIG, size=nsample)
+        dv = rng.normal(scale=LRG_SIG, size=len(z))
 
         return dv
 
     @staticmethod
-    def elg_velocity_error(nsample, rng):
+    def elg_velocity_error(z, rng):
         """Draw random velocity errors for emission line galaxies.
 
         This is taken from Raichoor et al. 2020 (https://arxiv.org/abs/2007.09007).
@@ -1039,8 +1041,8 @@ class AddEBOSSZErrorsToCatalog(task.SingleTask, random.RandomTask):
 
         Parameters
         ----------
-        nsample: int
-            Number of random numbers to draw.
+        z : np.ndarray
+            True redshift for the object.
         rng : numpy.random.Generator
             Numpy RNG to use for generating random numbers.
 
@@ -1055,7 +1057,7 @@ class AddEBOSSZErrorsToCatalog(task.SingleTask, random.RandomTask):
 
         dist = scipy.stats.tukeylambda
         dist.random_state = rng
-        dv = dist.rvs(ELG_LAMBDA, scale=ELG_SIG, size=nsample)
+        dv = dist.rvs(ELG_LAMBDA, scale=ELG_SIG, size=len(z))
 
         return dv
 
