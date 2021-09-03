@@ -8,7 +8,7 @@ from cora.util import units
 
 from ..util.tools import invert_no_zero
 from ..util.random import RandomTask
-from ..core import task, containers
+from ..core import task, containers, io
 
 # Constants
 NU21 = units.nu21
@@ -319,6 +319,154 @@ class RandomSubset(task.SingleTask, RandomTask):
         self.catalog_ind += 1
 
         return new_catalog
+
+
+class RedshiftSubsetFromParams(io.LoadFilesFromParams):
+    """Split spectroscopic catalogs that are saved to disk into redshift bins.
+
+    Note that a `freq_range` attribute will be added to the output container
+    that can be used to create appropriate filenames.
+
+    Attributes
+    ----------
+    boundaries : list or list of tuples
+        Boundaries of the bins.  If this is a list, then it will
+        be sorted and the i'th redshift bin will be given by
+        [ boundaries[i], boundaries[i+1] ).  Also accepts a list
+        of 2 element tuples, in which case the i'th redshift bin
+        will be given by [ boundaries[i][0], boundaries[i][1] ).
+    provided_z : bool
+        Set this to True if the boundaries provided are redshifts.
+        Otherwise the boundaries are assumed to refer to the frequency
+        of the redshifted 21cm emission in MHz.  Default is False.
+    """
+
+    boundaries = config.Property(proptype=list, default=[400.0, 800.0])
+    provided_z = config.Property(proptype=bool, default=False)
+
+    def setup(self):
+        """Resolve selections and parse the bin boundaries."""
+
+        # Call the baseclass setup to resolve any selections
+        super().setup()
+
+        # Determine the frequency ranges corresponding to the requested bins
+        if np.isscalar(self.boundaries[0]):
+            bnd = sorted(self.boundaries)
+            self._boundaries = [[bnd[ii], bnd[ii + 1]] for ii in range(len(bnd) - 1)]
+        else:
+            self._boundaries = [bnd[0:2] for bnd in self.boundaries]
+
+        if self.provided_z:
+            self._boundaries = [
+                sorted([NU21 / (rb + 1.0) for rb in bnd]) for bnd in self._boundaries
+            ]
+
+        self.nsub = len(self._boundaries)
+        self.counter = self.nsub
+
+    def process(self):
+        """Select objects in the next redshift bin.
+
+        Returns
+        -------
+        out : SpectroscopicCatalog or FormedBeam
+            Same container as the one provided on input containing
+            a subset of the objects that have redshifts in the next bin.
+        """
+
+        # Load the data from the internal file list
+        if self.counter == self.nsub:
+
+            self.counter = 0
+
+            data = super().process()
+
+            if data.distributed:
+
+                axis_size = {
+                    key: len(val)
+                    for key, val in data.index_map.items()
+                    if key != "object_id"
+                }
+
+                if len(axis_size) > 0:
+                    self.distributed_axis = max(axis_size, key=axis_size.get)
+                    data.redistribute(self.distributed_axis)
+                    self.log.debug(
+                        f"Distributing over the {self.distributed_axis} axis "
+                        "to take redshift subsets of objects."
+                    )
+                else:
+                    raise ValueError(
+                        "The catalog that was provided is distributed "
+                        "over the object_id axis. Unable to take a "
+                        "random subset over object_id."
+                    )
+
+            else:
+                self.distributed_axis = None
+
+            self.data = data
+
+            self.sfreq = NU21 / (self.data["redshift"]["z"][:] + 1.0)
+
+        # Determine the boundaries
+        f_lower, f_upper = self._boundaries[self.counter]
+
+        self.counter += 1
+
+        # Find sources within these boundaries
+        in_range = np.flatnonzero((self.sfreq >= f_lower) & (self.sfreq < f_upper))
+
+        self.log.info(
+            "%d sources between %0.2f and %0.2f MHz."
+            % (in_range.size, f_lower, f_upper)
+        )
+
+        if in_range.size == 0:
+            return None
+
+        # Create the output container
+        object_id = self.data.index_map["object_id"][in_range]
+
+        out = self.data.__class__(
+            object_id=object_id,
+            axes_from=self.data,
+            attrs_from=self.data,
+            comm=self.data.comm,
+        )
+
+        for name in self.data.keys():
+            if name not in out:
+                out.add_dataset(name)
+
+        if self.distributed_axis is not None:
+            out.redistribute(self.distributed_axis)
+
+        # Loop over datasets, select sources with the boundaries
+        for key, dset in self.data.items():
+
+            ax = list(dset.attrs["axis"])
+
+            if "object_id" in ax:
+
+                isel = ax.index("object_id")
+                slc = (slice(None),) * isel + (in_range,)
+                self.log.debug(
+                    "Selecting %d items from axis %s (%d) of dataset %s."
+                    % (in_range.size, ax[isel], isel, key)
+                )
+
+                out[key][:] = dset[:][slc]
+
+            else:
+                out[key][:] = dset[:]
+
+        # Create an attribute indicating the frequency range
+        out.attrs["freq_range"] = "%d_%dMHz" % (np.round(f_lower), np.round(f_upper))
+
+        return out
 
 
 class GroupSourceStacks(task.SingleTask):
