@@ -998,6 +998,10 @@ class HealpixContainer(ContainerBase):
 
         super().__init__(*args, **kwargs)
 
+    @property
+    def nside(self):
+        return int((len(self.index_map["pixel"]) // 12) ** 0.5)
+
 
 class Map(FreqContainer, HealpixContainer):
     """Container for holding multifrequency sky maps.
@@ -1038,10 +1042,6 @@ class Map(FreqContainer, HealpixContainer):
     @property
     def map(self):
         return self.datasets["map"]
-
-    @property
-    def nside(self):
-        return int((len(self.index_map["pixel"]) // 12) ** 0.5)
 
 
 class SiderealStream(
