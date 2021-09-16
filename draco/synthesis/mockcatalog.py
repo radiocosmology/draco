@@ -1001,10 +1001,13 @@ class AddEBOSSZErrorsToCatalog(task.SingleTask, random.RandomTask):
     def lrg_velocity_error(z, rng):
         """Draw random velocity errors for luminous red galaxies.
 
-        This is taken from Ross et al. 2020 (https://arxiv.org/abs/2007.09000).
-        Figure 2 shows the LRG error distribution and the best-fit Gaussian
-        with width 92 km/s. There is a bit of a tail that is not being captured
-        in their Gaussian fit and is hence not simulated in this routine.
+        This is taken from Ross et al. 2020 (https://arxiv.org/abs/2007.09000).  Figure
+        2 shows the distribution of redshift differences for repeated observations of
+        the same object; this is well fit by a Gaussian with width 92 km/s. They state
+        that this corresponds to a Gaussian distribution for the single-measurement
+        redshift errors, with width 65.6 km/s.  There is a bit of a tail that is not
+        being captured in their Gaussian fit, and is hence not simulated in this
+        routine.
 
         Parameters
         ----------
@@ -1019,7 +1022,7 @@ class AddEBOSSZErrorsToCatalog(task.SingleTask, random.RandomTask):
             Velocity errors in km / s.
         """
 
-        LRG_SIG = 91.8
+        LRG_SIG = 65.6
 
         dv = rng.normal(scale=LRG_SIG, size=len(z))
 
