@@ -110,3 +110,68 @@ class CombineLymanAB(task.SingleTask):
         deltas.dataset_common_to_distributed("weight")
 
         return deltas
+
+
+class TruncateRedshift(task.SingleTask):
+    """Truncate the Lyman-alpha spectra to a given range in redshift.
+
+    Attributes
+    ----------
+    zmin : float
+        The lower bound in redshift.
+    zmax : float
+        The upper bound in redshift.
+    rest_wavelength : float
+        Rest wavelength of the Lyman-alpha transition.
+    """
+
+    zmax = config.Property(proptype=float, default=np.inf)
+    zmin = config.Property(proptype=float, default=0.0)
+    rest_wavelength = config.Property(proptype=float, default=1215.67)  # Angstrom
+
+    def process(self, deltas):
+        """Truncate the frequency axis to given redshift bounds.
+
+        Parameters
+        ----------
+        deltas : :class:`..core.containers.FormedBeam`
+            Lyman-alpha spectra.
+        """
+
+        # convert redshift to frequency
+        fmin = units.c / (self.zmax + 1) / self.rest_wavelength * 1e4
+        fmax = units.c / (self.zmin + 1) / self.rest_wavelength * 1e4
+
+        # construct frequency slice
+        max_ind = np.argmin(np.abs(deltas.freq[:] - fmax))
+        min_ind = np.argmin(np.abs(deltas.freq[:] - fmin))
+        fslice = (
+            slice(max_ind, min_ind + 1)
+            if max_ind < min_ind
+            else slice(min_ind, max_ind + 1)
+        )
+
+        if fslice.start == 0 and fslice.stop == len(deltas.freq):
+            self.log.warn("Redshift bounds overlap the entire band. Doing nothing.")
+            return deltas
+        elif fslice.start == fslice.stop:
+            self.log.warn("Redshift bounds have no overlap with data.")
+            return None
+
+        # define a new frequency axis
+        freq = deltas.freq[fslice]
+
+        # create a new container
+        out = containers.FormedBeam(
+            axes_from=deltas, attrs_from=deltas, freq=freq, comm=self.comm
+        )
+
+        # fill with truncated frequency axis
+        deltas.redistribute("object_id")
+        out.redistribute("object_id")
+        out["beam"][:] = deltas["beam"][:, :, fslice]
+        out["weight"][:] = deltas["weight"][:, :, fslice]
+        out["position"][:] = deltas["position"][:]
+        out["redshift"][:] = deltas["redshift"][:]
+
+        return out
