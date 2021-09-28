@@ -238,8 +238,17 @@ def invert_no_zero(x):
     r : np.ndarray
         Return the reciprocal of x.
     """
-    with np.errstate(divide="ignore", invalid="ignore"):
-        return np.where(x == 0, 0.0, 1.0 / x)
+    if not isinstance(x, (np.generic, np.ndarray)):
+        cond = x == 0
+    elif np.iscomplexobj(x):
+        tol = 1.0 / np.finfo(x.real.dtype).max
+        cond = np.logical_and(np.abs(x.real) < tol, np.abs(x.imag) < tol)
+    else:
+        tol = 1.0 / np.finfo(x.dtype).max
+        cond = np.abs(x) < tol
+
+    with np.errstate(divide="ignore", invalid="ignore", over="ignore"):
+        return np.where(cond, 0.0, 1.0 / x)
 
 
 def extract_diagonal(utmat, axis=1):
