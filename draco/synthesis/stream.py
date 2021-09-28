@@ -439,8 +439,11 @@ class SimulateSingleHarmonicSidereal(task.SingleTask):
 
     done = False
 
-    ell = config.Property(proptype=int)
+    ell = config.Property(proptype=int, default=None)
     m = config.Property(proptype=int, default=None)
+
+    kperp = config.Property(proptype=float, default=None)
+
     kpar = config.Property(proptype=float, default=None)
     kpar_as_kf_mult = config.Property(proptype=bool, default=True)
 
@@ -454,6 +457,21 @@ class SimulateSingleHarmonicSidereal(task.SingleTask):
         """
         self.beamtransfer = io.get_beamtransfer(bt)
         self.telescope = io.get_telescope(bt)
+
+        if self.ell is None and self.kperp is None:
+            raise config.CaputConfigError("Must specify either ell or kperp!")
+
+        if self.kperp is not None:
+            c = Cosmology()
+            self.ell_arr = np.rint(
+                self.kperp
+                * c.comoving_distance(units.nu21/self.telescope.frequencies - 1)
+            ).astype(int)
+        else:
+            self.ell_arr = (
+                np.ones_like(self.telescope.frequencies, dtype=int)
+                * self.ell
+            )
 
     def process(self):
         """Simulate a SiderealStream.
@@ -489,12 +507,15 @@ class SimulateSingleHarmonicSidereal(task.SingleTask):
         if self.m is not None:
             mmax_compute = self.m
         else:
-            mmax_compute = self.ell
+            mmax_compute = self.ell_arr.max()
 
         # Construct frequency index map, assuming equal-width channels
         freqmap = np.zeros(len(tel.frequencies), dtype=[("centre", np.float64), ("width", np.float64)])
         freqmap["centre"][:] = tel.frequencies
         freqmap["width"][:] = np.abs(np.diff(tel.frequencies)[0])
+
+        # Get local section of ell array
+        local_ell_arr = self.ell_arr[sfreq : efreq]
 
         if self.kpar is None:
             # If not input kpar specified, use all ones as input values
@@ -513,11 +534,14 @@ class SimulateSingleHarmonicSidereal(task.SingleTask):
         row_alm = np.zeros((lfreq, npol, lmax + 1, lmax + 1), dtype=np.complex128)
 
         if self.m is not None:
-            row_alm[:, 0, self.ell, self.m] = vals
+            for li in range(lfreq):
+                row_alm[li, 0, local_ell_arr[li], self.m] = vals[li]
         else:
-            row_alm[:, 0, self.ell, : self.ell + 1] = vals[:, np.newaxis]
+            for li in range(lfreq):
+                row_alm[
+                    li, 0, local_ell_arr[li], : local_ell_arr[li] + 1
+                ] = vals[li] * np.ones(local_ell_arr[li] + 1)
             self.log.debug("No input m found! Setting a_lm=1 for all m")
-
 
         row_alm = row_alm.reshape((lfreq, npol * (lmax + 1), lmax + 1))
         # row_alm = hputil.sphtrans_sky(row_map, lmax=lmax).reshape(
@@ -617,6 +641,9 @@ class SimulateSingleHarmonicSidereal(task.SingleTask):
         )
         sstream.vis[:] = mpiarray.MPIArray.wrap(vis_stream, axis=0)
         sstream.weight[:] = 1.0
+
+        # Save ell array to attributes
+        sstream.attrs["ell"] = self.ell_arr
 
         self.done = True
 
