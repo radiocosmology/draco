@@ -1505,8 +1505,8 @@ class MapEllMSum(task.SingleTask):
             for fi in range(local_shape):
                 msum_local[fi, :] = (
                     alm_local[fi, :, self.ell_arr[local_offset + fi], 0]
-                    + 2 * alm_local[fi, :, self.ell_arr[local_offset + fi], 1:].sum(axis=-1).real
-                ) / (4 * np.pi)
+                    + 2 * alm_local[fi, :, self.ell_arr[local_offset + fi], 1:].sum(axis=-1)
+                ).real / (4 * np.pi)
 
         else: # containers.RingMap
             import ducc0
