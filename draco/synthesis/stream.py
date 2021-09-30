@@ -473,6 +473,8 @@ class SimulateSingleHarmonicSidereal(task.SingleTask):
                 * self.ell
             )
 
+        self.log.info("Ells being simulated: %s" % self.ell_arr)
+
     def process(self):
         """Simulate a SiderealStream.
 
