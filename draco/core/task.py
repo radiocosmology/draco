@@ -226,23 +226,31 @@ class SingleTask(MPILoggedTask, pipeline.BasicContMixin):
     ----------
     save : bool
         Whether to save the output to disk or not.
-    output_name : string
-        A python format string used to construct the filename. Valid identifiers are:
-          - `count`: an integer giving which iteration of the task is this.
-          - `tag`: a string identifier for the output derived from the
-                   containers `tag` attribute. If that attribute is not present
-                   `count` is used instead.
-          - `key`: the name of the output key.
-          - `task`: the (unqualified) name of the task.
-          - `output_root`: the value of the output root argument. This is deprecated
-                           and is just used for legacy support. The default value of
-                           `output_name` means the previous behaviour works.
+    attrs : dict, optional
+        A mapping of attribute names and values to set in the `.attrs` at the root of
+        the output container. String values will be formatted according to the standard
+        Python `.format(...)` rules, and can interpolate several other values into the
+        string. These are:
+
+        - `count`: an integer giving which iteration of the task is this.
+        - `tag`: a string identifier for the output derived from the
+                 containers `tag` attribute. If that attribute is not present
+                 `count` is used instead.
+        - `key`: the name of the output key.
+        - `task`: the (unqualified) name of the task.
+        - `input_tags`: a list of the tags for each input argument for the task.
+        - Any existing attribute in the container can be interpolated by the name of
+          its key. The specific values above will override any attribute with the same
+          name.
+
+        Incorrectly formatted values will cause an error to be thrown.
     tag : str, optional
         Set a format for the tag attached to the output. This is a Python format string
-        which can interpolate two variables: the integer variable "count" which
-        incremements once every time `next` is run, and "tag" which is any existing tag
-        attached to the output (often copied over from the input). For example a tag of
-        "cat{count}" will generate catalogs with the tags "cat1", "cat2", etc.
+        which can interpolate the variables listed under `attrs` above. For example a
+        tag of "cat{count}" will generate catalogs with the tags "cat1", "cat2", etc.
+    output_name : string
+        A python format string used to construct the filename. All variables given under
+        `attrs` above can be interpolated into the filename.
     output_root : string
         Pipeline settable parameter giving the first part of the output path.
         Deprecated in favour of `output_name`.
@@ -279,6 +287,7 @@ class SingleTask(MPILoggedTask, pipeline.BasicContMixin):
     pipeline_config = config.Property(default={}, proptype=dict)
 
     tag = config.Property(proptype=str, default="{tag}")
+    attrs = config.Property(proptype=dict, default=None)
 
     _count = 0
 
@@ -318,6 +327,16 @@ class SingleTask(MPILoggedTask, pipeline.BasicContMixin):
         except AttributeError:
             self.done = True
 
+        # Extract a list of the tags for all input arguments
+        input_tags = [
+            (
+                str(icont.attrs.get("tag"))
+                if isinstance(icont, memh5.MemDiskGroup)
+                else None
+            )
+            for icont in input
+        ]
+
         # Process input and fetch output
         if self._no_input:
             if len(input) > 0:
@@ -331,9 +350,10 @@ class SingleTask(MPILoggedTask, pipeline.BasicContMixin):
         if output is None:
             return
 
-        output = self._process_output(
-            output, input[0].attrs.get("tag", None) if len(input) else None
-        )
+        # Insert the input tags into the output container
+        output.attrs["input_tags"] = input_tags
+
+        output = self._process_output(output)
 
         # Increment internal counter
         self._count = self._count + 1
@@ -356,18 +376,35 @@ class SingleTask(MPILoggedTask, pipeline.BasicContMixin):
 
         output = self.process_finish()
 
+        # Return immediately if output is None to skip writing phase.
+        if output is None:
+            self.log.info(f"Leaving finish for task {class_name}")
+            return None
+
         output = self._process_output(output)
 
         self.log.info(f"Leaving finish for task {class_name}")
 
         return output
 
-    def _process_output(self, output, input_tag=None):
+    def _process_output(self, output):
+
+        if not isinstance(output, memh5.MemDiskGroup):
+            raise pipeline.PipelineRuntimeError(
+                f"Task must output a valid memh5 container; given {type(output)}"
+            )
 
         # Set the tag according to the format
-        output.attrs["tag"] = self.tag.format(
-            count=self._count, tag=output.attrs.get("tag", input_tag or self._count)
-        )
+        idict = self._interpolation_dict(output)
+
+        # Set the attributes in the output container (including from the `tag` config
+        # option)
+        attrs_to_set = {} if self.attrs is None else self.attrs.copy()
+        attrs_to_set["tag"] = self.tag
+        for attrname, attrval in attrs_to_set.items():
+            if isinstance(attrval, str):
+                attrval = attrval.format(**idict)
+            output.attrs[attrname] = attrval
 
         # Check for NaN's etc
         output = self._nan_process_output(output)
@@ -386,17 +423,11 @@ class SingleTask(MPILoggedTask, pipeline.BasicContMixin):
             for key, value in metadata.items():
                 output.add_history(key, value)
 
-            # Create a tag for the output file name
-            tag = output.attrs["tag"] if "tag" in output.attrs else self._count
-
             # Construct the filename
-            name_parts = {
-                "tag": tag,
-                "count": self._count,
-                "task": self.__class__.__name__,
-                "key": self._out_keys[0] if self._out_keys else "",
-                "output_root": self.output_root,
-            }
+            name_parts = self._interpolation_dict(output)
+            if self.output_root != "":
+                self.log.warn("Use of `output_root` is deprecated.")
+                name_parts["output_root"] = self.output_root
             outfile = self.output_name.format(**name_parts)
 
             # Expand any variables in the path
@@ -409,6 +440,11 @@ class SingleTask(MPILoggedTask, pipeline.BasicContMixin):
     def _nan_process_output(self, output):
         # Process the output to check for NaN's
         # Returns the output or, None if it should be skipped
+
+        if not isinstance(output, memh5.MemDiskGroup):
+            raise pipeline.PipelineRuntimeError(
+                f"Task must output a valid memh5 container; given {type(output)}"
+            )
 
         if self.nan_check:
             nan_found = self._nan_check_walk(output)
@@ -426,6 +462,22 @@ class SingleTask(MPILoggedTask, pipeline.BasicContMixin):
                 return None
 
         return output
+
+    def _interpolation_dict(self, output):
+        # Get the set of variables the can be interpolated into the various strings
+        idict = dict(output.attrs)
+        idict.update(
+            tag=(output.attrs["tag"] if "tag" in output.attrs else self._count),
+            count=self._count,
+            task=self.__class__.__name__,
+            key=(
+                self._out_keys[0]
+                if hasattr(self, "_out_keys") and self._out_keys
+                else ""
+            ),
+            output_root=self.output_root,
+        )
+        return idict
 
     def _nan_check_walk(self, cont):
         # Walk through a memh5 container and check for NaN's and Inf's.

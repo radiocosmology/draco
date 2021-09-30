@@ -417,7 +417,11 @@ class MaskBeamformedOutliers(task.SingleTask):
             The input container with the weight dataset set to zero
             for samples that were identified as outliers.
         """
+        # Redistribute data over frequency
+        data.redistribute("freq")
+        mask.redistribute("freq")
 
+        # Multiply the weights by the inverse of the mask
         flag = ~mask.mask[:].view(np.ndarray)
 
         data.weight[:] *= flag.astype(np.float32)
@@ -425,6 +429,104 @@ class MaskBeamformedOutliers(task.SingleTask):
         return data
 
 
+class MaskBeamformedWeights(task.SingleTask):
+    """Mask beamformed visibilities with anomalously large weights before stacking.
+
+    Attributes
+    ----------
+    nmed : float
+        Any weight that is more than `nmed` times the median weight
+        over all objects and frequencies will be set to zero.
+        Default is 8.0.
+    """
+
+    nmed = config.Property(proptype=float, default=8.0)
+
+    def process(self, data):
+        """Mask large weights.
+
+        Parameters
+        ----------
+        data : FormedBeam
+            Beamformed visibilities.
+
+        Returns
+        -------
+        data : FormedBeam
+            The input container with the weight dataset set to zero
+            if the weights exceed the threshold.
+        """
+
+        from caput import mpiutil
+
+        data.redistribute("object_id")
+
+        npol = data.pol.size
+        med_weight = np.zeros(npol, dtype=np.float32)
+
+        for pp in range(npol):
+
+            wlocal = data.weight[:, pp]
+            wglobal = np.zeros(wlocal.global_shape, dtype=wlocal.dtype)
+
+            mpiutil.gather_local(
+                wglobal, wlocal, wlocal.local_offset, root=0, comm=data.comm
+            )
+
+            if data.comm.rank == 0:
+                med_weight[pp] = np.median(wglobal[wglobal > 0])
+                self.log.info(
+                    f"Median weight for Pol {data.pol[pp]}: {med_weight[pp]:0.2e}"
+                )
+
+        # Broadcast the median weight to all ranks
+        data.comm.Bcast(med_weight, root=0)
+
+        w = data.weight[:].view(np.ndarray)
+        flag = w < (self.nmed * med_weight[np.newaxis, :, np.newaxis])
+
+        data.weight[:] *= flag.astype(np.float32)
+
+        return data
+
+
+class MaskRingMapEdgeChannels(task.SingleTask):
+    """Mask ringmap frequencies within specified distance of band edge.
+
+    Attributes
+    ----------
+    n : int
+        Set weights to zero for frequency channels within n channels
+        of the band edges (e.g. n=1 only masks lowest and highest channel).
+        Default: 2.
+    """
+
+    n = config.Property(proptype=int, default=2)
+
+    def process(self, map_: containers.RingMap) -> containers.RingMap:
+        """Mask weights close to band edges.
+
+        Parameters
+        ----------
+        map_ : RingMap
+            Input ringmap.
+
+        Returns
+        -------
+        map_ : RingMap
+            The ringmap with the relevant weights set to zero.
+        """
+
+        if self.n > 0:
+            map_.redistribute("el")
+        
+            weight_local = map_.weight[:]
+            weight_local[:, :self.n] = 0.
+            weight_local[:, -self.n:] = 0.
+        
+        return map_
+
+    
 class RadiometerWeight(task.SingleTask):
     """Update vis_weight according to the radiometer equation:
 

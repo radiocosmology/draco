@@ -2,7 +2,7 @@
 
 This includes grouping frequencies and products to performing the m-mode transform.
 """
-from typing import Optional
+from typing import Optional, Union
 
 import numpy as np
 from numpy.lib.recfunctions import structured_to_unstructured
@@ -508,7 +508,11 @@ class MModeTransform(task.SingleTask):
 
         # Create the container to store the modes in
         ma = out_cont(
-            mmax=mmax, oddra=bool(nra % 2), axes_from=sstream, comm=sstream.comm, attrs_from=sstream
+            mmax=mmax,
+            oddra=bool(nra % 2),
+            axes_from=sstream,
+            attrs_from=sstream,
+            comm=sstream.comm,
         )
         ma.redistribute("freq")
 
@@ -624,7 +628,11 @@ class MModeInverseTransform(task.SingleTask):
 
         # Construct container and set visibility data
         sstream = containers.SiderealStream(
-            ra=nra, axes_from=mmodes, distributed=True, comm=mmodes.comm
+            ra=nra,
+            axes_from=mmodes,
+            attrs_from=mmodes,
+            distributed=True,
+            comm=mmodes.comm,
         )
         sstream.redistribute("freq")
 
@@ -980,26 +988,27 @@ class TransformJanskyToKelvin(task.SingleTask):
 
     def _beam_area(self, feed, freq):
         """Calculate the primary beam solid angle."""
+        import healpy
 
         beam = self.telescope.beam(feed, freq)
         horizon = self.telescope._horizon[:, np.newaxis]
+        beam_pow = np.sum(np.abs(beam) ** 2 * horizon, axis=1)
 
         pxarea = 4 * np.pi / beam.shape[0]
-        omega = np.sum(np.abs(beam) ** 2 * horizon) * pxarea
-
-        # Calculate the beam value at the reference point by temporarily swapping out
-        # the telescopes internal `_angpos` attribute for one that just contains the
-        # reference position
-        # This is a massive hack, that hopefully we can swap out with a better API for
-        # the telescope beams.
-        ap_ref = np.array([[np.pi / 2 - np.radians(self.reference_declination), 0.0]])
-        ap_orig = self.telescope._angpos
-        self.telescope._angpos = ap_ref
-        beam_ref = self.telescope.beam(feed, freq)
-        self.telescope._angpos = ap_orig
+        omega = beam_pow.sum() * pxarea
 
         # Normalise omega by the squared magnitude of the beam at the reference position
-        beam_ref = np.sum(np.abs(beam_ref) ** 2)
+        # NOTE: this is slightly less accurate than the previous approach of reseting
+        # the internal `_angpos` property to force evaluation of the beam at the exact
+        # coordinates, but is more generically applicable, and works (for instance) with
+        # the CHIMEExternalBeam class.
+        #
+        # Also, for a reason I don't fully understand it's more accurate to use the
+        # value of the pixel including the reference position, and not do an
+        # interpolation using it's neighbours...
+        beam_ref = beam_pow[
+            healpy.ang2pix(self.nside, 0.0, self.reference_declination, lonlat=True)
+        ]
         omega *= tools.invert_no_zero(beam_ref)
 
         return omega
@@ -1390,6 +1399,10 @@ class MapEllMSum(task.SingleTask):
     for a specific input ell. This sum corresponds to the angular transfer
     function associated with stacking on a source catalog.
 
+    This task accepts healpix maps and ringmaps: cora's healpy-based routines
+    are used for harmonic transforms of the former, while a libsharp-based
+    routine is used for the latter.
+
     Attributes
     ----------
     ell : int
@@ -1398,12 +1411,28 @@ class MapEllMSum(task.SingleTask):
         k_perp value of interest (in units of h/Mpc), which is translated
         to an ell at each frequency using the flat-sky approximation
         (k_perp = ell / chi). Overrides ell if present.
+    nthreads : int
+        Number of OpenMP threads to use for SHTs of ringmaps (ignored for
+        healpix maps). Default: 1.
+    mult_by_weights : bool
+        Multiply ringmap by weights (normalized by mean at each frequency)
+        before taking SHT (ignored for healpix maps). Default: False.
+    use_unit_weights : bool
+        Replace ringmap weights by unity for pixels within the horizon,
+        if multiplying map by weights before SHT. Ignored if mult_by_weights
+        is False or working with a healpix map. Default: False.
     """
 
     ell = config.Property(proptype=int, default=None)
     kperp = config.Property(proptype=float, default=None)
 
-    def setup(self, bt):
+    nthreads = config.Property(proptype=int, default=1)
+    mult_by_weights = config.Property(proptype=bool, default=False)
+    use_unit_weights = config.Property(proptype=bool, default=False)
+
+    latitude = None
+
+    def setup(self, bt: io.TelescopeConvertible):
         """Get telescope and check input parameters.
 
         Parameters
@@ -1413,6 +1442,7 @@ class MapEllMSum(task.SingleTask):
         """
         self.beamtransfer = io.get_beamtransfer(bt)
         self.telescope = io.get_telescope(bt)
+        self.latitude = np.deg2rad(self.telescope.latitude)
 
         if self.ell is None and self.kperp is None:
             raise config.CaputConfigError("Must specify either ell or kperp!")
@@ -1429,23 +1459,19 @@ class MapEllMSum(task.SingleTask):
                 * self.ell
             )
 
-    def process(self, map_: containers.Map) -> MSumTable:
+    def process(self, map_: Union[containers.Map, containers.RingMap]) -> MSumTable:
         """Take SHT of map and sum a_{ell m} over m for specific ell(s).
 
         Parameters
         ----------
-        map_: Map
-            The input healpix map.
+        map_: Map or RingMap
+            The input healpix map or ringmap.
 
         Returns
         -------
         msum: MSumTable
             The output sums of spherical harmonic coefficients.
         """
-
-        nside = hp.npix2nside(len(map_.index_map["pixel"]))
-        if self.ell_arr.max() > 3 * nside - 1:
-            raise ValueError("Ell cannot be larger than 3*nside-1!")
 
         # Create MSumTable container
         msum = MSumTable(
@@ -1460,21 +1486,137 @@ class MapEllMSum(task.SingleTask):
         map_.redistribute("freq")
 
         # Get local sections of input map and output table
-        map_local = map_.map[:]
         msum_local = msum.msum[:]
         local_shape = msum.msum.local_shape[0]
         local_offset = msum.msum.local_offset[0]
+        map_local = map_.map[:]
 
-        # Compute spherical harmonic coefficients for local map section,
-        # packed as [freq, pol, ell, m]
-        alm_local = hputil.sphtrans_sky(np.nan_to_num(map_local))
+        if isinstance(map_, containers.Map):
 
-        # Put m sums into container
-        for fi in range(local_shape):
-            msum_local[fi, :] = (
-                alm_local[fi, :, self.ell_arr[local_offset + fi], 0]
-                + 2 * alm_local[fi, :, self.ell_arr[local_offset + fi], 1:].sum(axis=-1).real
-            ) / (4 * np.pi)
+            nside = hp.npix2nside(len(map_.index_map["pixel"]))
+            if self.ell_arr.max() > 3 * nside - 1:
+                raise ValueError("Ell cannot be larger than 3*nside-1!")
+
+            # Compute spherical harmonic coefficients for local map section,
+            # packed as [freq, pol, ell, m]
+            alm_local = hputil.sphtrans_sky(np.nan_to_num(map_local))
+
+            # Put m sums into container
+            for fi in range(local_shape):
+                msum_local[fi, :] = (
+                    alm_local[fi, :, self.ell_arr[local_offset + fi], 0]
+                    + 2 * alm_local[fi, :, self.ell_arr[local_offset + fi], 1:].sum(axis=-1).real
+                ) / (4 * np.pi)
+
+        else: # containers.RingMap
+            import ducc0
+
+            if self.latitude is None:
+                raise ValueError("Must specify telescope to transform a ringmap!")
+
+            # ducc's Gauss-Legendre scheme requires a number of iso-latitude rings
+            # equal to lmax+1, so we set our lmax based on the length of the el axis
+            lmax = len(map_.el) - 1
+            mmax = lmax
+
+            # For the Gauss-Legendre scheme, it is recommended that each ring contain
+            # >=2*lmax+1 values, so let's warn the user if this is not satisfied
+            if len(map_.ra) < 2*lmax+1:
+                self.log.warning(
+                    "Warning: ringmap has < 2*lmax+1 RA values, which is not recommended for the ducc SHT"
+                )
+
+            # If telescope is not at the equator, we'll need to shift the el axis of
+            # the ringmap such that the NCP corresponds to final element of the el axis.
+            # We prepare for this by finding the amount to shift by
+            if self.latitude != 0.:
+                original_za = np.arcsin(map_.el)
+                ncp_idx = np.argmin(np.abs(original_za + self.latitude - 0.5 * np.pi))
+                el_idx_shift = len(original_za) - 1 - ncp_idx
+            else:
+                el_idx_shift = 0
+
+            # If we'll need the weights, we need to find their mean over frequency and sky
+            # at each pol, after shifting the el axis as above
+            if self.mult_by_weights:
+                weight_local = map_.weight[:]
+
+                # If telescope is not at the equator, translate weights along el axis
+                # as described above
+                weight_rolled = np.roll(weight_local, el_idx_shift, axis=3)
+                weight_rolled[:, :, :, :el_idx_shift] = 0
+                # If using unit weights, set weights corresponding to observable part of
+                # sky to unity
+                if self.use_unit_weights:
+                    weight_rolled[:, :, :, el_idx_shift:] = 1
+
+                # We want to normalize the weights by their mean over the sphere, and
+                # over frequency.
+                # To do so, we multiply the weights by a cos(za) factor that accounts
+                # for the polar-angle-dependence of the ringmap pixel solid angle,
+                # and further multiply by pi/2. The latter factor can be derived
+                # from the expression for the pixel-solid-angle-weighted mean
+                # of the ringmap weights: \sum_pix \Omega_pix w_pix / \sum_pix Omega_pix.
+                weight_local_sum = 0.5 * np.pi * np.sum(
+                    np.cos(np.arcsin(map_.el))[np.newaxis, np.newaxis, np.newaxis, :] * weight_rolled,
+                    axis=(2,3)
+                )
+                weight_global_mean = self.comm.allreduce(weight_local_sum.sum(axis=1))
+                weight_global_mean /= np.prod(map_.weight.global_shape[1:])
+
+                self.log.info("Multiplying ringmap by normalized weights before taking SHT")
+
+            # Need to loop over pol and freq, since ducc routine requires a 3d array
+            # where the zeroth axis has length 1 for a spin-0 map.
+            for pi, p in enumerate(map_.pol):
+                for fi in range(map_local.shape[2]):
+                    # Only consider zeroth beam in ringmap, and transpose map input
+                    # to be packed as [el, ra]
+                    map_for_sht = np.array([map_local[0, pi, fi].view(np.ndarray).T])
+
+                    # If telescope is not at the equator, shift el axis of map such that
+                    # NCP corresponds to final element of el axis
+                    map_for_sht = np.roll(map_for_sht, el_idx_shift, axis=1)
+                    map_for_sht[0, :el_idx_shift] = 0
+
+                    # If desired, multiply by normalized weights
+                    if self.mult_by_weights:
+                        weight_for_sht = weight_local[pi, fi].view(np.ndarray).T
+
+                        # If telescope is not at the equator, translate weights in same manner
+                        # as map
+                        weight_for_sht = np.roll(weight_for_sht, el_idx_shift, axis=0)
+                        weight_for_sht[:el_idx_shift] = 0
+                        if self.use_unit_weights:
+                            weight_for_sht[el_idx_shift:] = 1
+
+                        # Multiply weights into map, normalized by mean computed earlier
+                        map_for_sht *= weight_for_sht / weight_global_mean[pi]
+
+                    # Do SHT
+                    alm_local = ducc0.sht.experimental.analysis_2d(
+                        map=map_for_sht,
+                        lmax=lmax,
+                        mmax=mmax,
+                        spin=0,
+                        geometry="GL",
+                        nthreads=self.nthreads
+                    )
+
+                    # Get indices of m=0 and m>0 elements of alm array
+                    ell = self.ell_arr[local_offset + fi]
+                    m0_idx = hp.Alm.getidx(lmax, ell, 0)
+                    mg0_idx = hp.Alm.getidx(lmax, ell, np.arange(1, ell))
+
+                    # The outputs of the ducc routines appear to have a different convention
+                    # than a_lm's from healpix, requiring us to flip the sign of odd-m coefficients
+                    mg0_signflip = (-1)**(np.arange(1, ell+1) % 2)
+
+                    # Put m sums into container
+                    msum_local[fi, pi] = (
+                        alm_local[0, m0_idx].real
+                        + 2 * (mg0_signflip * alm_local[0, mg0_idx]).sum().real
+                    ) / (4 * np.pi)
 
         # Save kperp to attributes
         if self.kperp is not None:
@@ -1688,3 +1830,117 @@ class ModulateMapFrequencies(task.SingleTask):
         map_.redistribute("freq")
 
         return out_cont
+
+
+class MixData(task.SingleTask):
+    """Mix together pieces of data with specified weights.
+
+    This can generate arbitrary linear combinations of the data and weights for both
+    `SiderealStream` and `RingMap` objects, and can be used for many purposes such as:
+    adding together simulated timestreams, injecting signal into data, replacing weights
+    in simulated data with those from real data, etc.
+
+    All coefficients are applied naively to generate the final combinations, i.e. no
+    normalisations or weighted summation is performed.
+
+    Attributes
+    ----------
+    data_coeff : list
+        A list of coefficients to apply to the data dataset of each input containter to
+        produce the final output. These are applied to either the `vis` or `map` dataset
+        depending on the the type of the input container.
+    weight_coeff : list
+        Coefficient to be applied to each input containers weights to generate the
+        output.
+    """
+
+    data_coeff = config.list_type(type_=float)
+    weight_coeff = config.list_type(type_=float)
+
+    mixed_data = None
+
+    def setup(self):
+        """Check the lists have the same length."""
+
+        if len(self.data_coeff) != len(self.weight_coeff):
+            raise config.CaputConfigError(
+                "data and weight coefficient lists must be the same length"
+            )
+
+        self._data_ind = 0
+
+    def process(self, data: Union[containers.SiderealStream, containers.RingMap]):
+        """Add the input data into the mixed data output.
+
+        Parameters
+        ----------
+        data
+            The data to be added into the mix.
+        """
+
+        def _get_dset(data):
+            # Helpful routine to get the data dset depending on the type
+            if isinstance(data, containers.SiderealStream):
+                return data.vis
+            elif isinstance(data, containers.RingMap):
+                return data.map
+
+        if self._data_ind >= len(self.data_coeff):
+            raise RuntimeError(
+                "This task cannot accept more items than there are coefficents set."
+            )
+
+        if self.mixed_data is None:
+            self.mixed_data = containers.empty_like(data)
+            self.mixed_data.redistribute("freq")
+
+            # Zero out data and weights
+            _get_dset(self.mixed_data)[:] = 0.0
+            self.mixed_data.weight[:] = 0.0
+
+        # Validate the types are the same
+        if type(self.mixed_data) != type(data):
+            raise TypeError(
+                f"type(data) (={type(data)}) must match "
+                f"type(data_stack) (={type(self.type)}"
+            )
+
+        data.redistribute("freq")
+
+        mixed_dset = _get_dset(self.mixed_data)[:]
+        data_dset = _get_dset(data)[:]
+
+        # Validate the shapes match
+        if mixed_dset.shape != data_dset.shape:
+            raise ValueError(
+                f"Size of data ({data_dset.shape}) must match "
+                f"data_stack ({mixed_dset.shape})"
+            )
+
+        # Mix in the data and weights
+        mixed_dset[:] += self.data_coeff[self._data_ind] * data_dset[:]
+        self.mixed_data.weight[:] += self.weight_coeff[self._data_ind] * data.weight[:]
+
+        self._data_ind += 1
+
+    def process_finish(self) -> Union[containers.SiderealStream, containers.RingMap]:
+        """Return the container with the mixed inputs.
+
+        Returns
+        -------
+        mixed_data
+            The mixed data.
+        """
+
+        if self._data_ind != len(self.data_coeff):
+            raise RuntimeError(
+                "Did not receive enough inputs. "
+                f"Got {self._data_ind}, expected {len(self.data_coeff)}."
+            )
+
+        # Get an ephemeral reference to the mixed data and remove the task reference so
+        # the object can be eventually deleted
+        data = self.mixed_data
+        self.mixed_data = None
+
+        return data
