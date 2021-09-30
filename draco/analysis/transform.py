@@ -1609,11 +1609,13 @@ class MapEllMSum(task.SingleTask):
                     mg0_idx = hp.Alm.getidx(lmax, ell, np.arange(1, ell+1))
 
                     # The outputs of the ducc routines appear to have a different convention
-                    # than a_lm's from healpix, requiring us to flip the sign of odd-m coefficients
+                    # than a_lm's from healpix, requiring us to flip the sign of odd-m
+                    # coefficients, and also the overall sign if ell is odd
                     mg0_signflip = (-1)**(np.arange(1, ell+1) % 2)
+                    overall_signflip = (-1)**(ell % 2)
 
                     # Put m sums into container
-                    msum_local[fi, pi] = (
+                    msum_local[fi, pi] = overall_signflip * (
                         alm_local[0, m0_idx].real
                         + 2 * (mg0_signflip * alm_local[0, mg0_idx]).sum().real
                     ) / (4 * np.pi)
