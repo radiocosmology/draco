@@ -642,8 +642,10 @@ class SimulateSingleHarmonicSidereal(task.SingleTask):
         sstream.vis[:] = mpiarray.MPIArray.wrap(vis_stream, axis=0)
         sstream.weight[:] = 1.0
 
-        # Save ell array to attributes
+        # Save ell array and kperp to attributes
         sstream.attrs["ell"] = self.ell_arr
+        if self.kperp is not None:
+            sstream.attrs["kperp"] = self.kperp
 
         self.done = True
 
