@@ -16,7 +16,8 @@ import healpy as hp
 
 from caput import mpiarray, config
 from ch_util import ephemeris
-from cora.util import hputil
+from cora.util import hputil, units
+from cora.util.cosmology import Cosmology
 
 from ..core import containers, task, io
 from ..util import tools
@@ -1130,7 +1131,7 @@ class RingMapToHealpixMap(task.SingleTask):
     filter_map_with_m_pixwin = config.Property(proptype=bool, default=False)
     linear_weights_test = config.Property(proptype=bool, default=False)
     map_nan_to_num = config.Property(proptype=bool, default=False)
-    
+
     # Skip NaN checks, because it is likely (and expected) that output
     # map will contain some NaNs
     nan_check = False
@@ -1170,7 +1171,7 @@ class RingMapToHealpixMap(task.SingleTask):
 
         # Ensure ringmap is distrubited in frequency
         ringmap.redistribute("freq")
-            
+
         # Convert elevation coordinates in ringnmap to dec
         dec = np.degrees(np.arcsin(ringmap.el)) + self.telescope.latitude
 
@@ -1226,7 +1227,7 @@ class RingMapToHealpixMap(task.SingleTask):
                 # Cut sin(za) range to be < 90 deg
                 in_map = in_map[:el_imax]
                 in_weight = in_weight[:el_imax]
-                
+
                 # If requested, subtract median at each dec from map
                 if self.median_subtract:
                     in_map = self._subtract_median(in_map)
@@ -1282,12 +1283,12 @@ class RingMapToHealpixMap(task.SingleTask):
                 alm = hputil.sphtrans_sky(map_weight_local[fi_local : fi_local+1])
                 alm[:, :, :, 1:] = 0
                 map_weight_local[fi_local : fi_local+1] = hputil.sphtrans_inv_sky(alm, self.nside)
-                
+
             # If requested, multiply weights into map, normalized by mean of weights
             # (with mean taken in healpix pixelization)
             if self.mult_by_weights:
                 map_local[fi_local] *= map_weight_local[fi_local] / map_weight_local[fi_local].mean(axis=1)[:, np.newaxis]
-                
+
         return map_
 
     def _make_healpix_pixel_coords(self, ra, dec, csd, nside):
@@ -1387,18 +1388,49 @@ class MapEllMSum(task.SingleTask):
     Specifically, this task computes
         1 / (4 \pi) * ( a_{\ell 0} + 2 * \sum_{m=1}^\ell Re[a_{\ell m}] )
     for a specific input ell. This sum corresponds to the angular transfer
-    function associated with stacking on a source catalog. 
+    function associated with stacking on a source catalog.
 
     Attributes
     ----------
     ell : int
         Spherical harmonic ell of interest.
+    kperp : float
+        k_perp value of interest (in units of h/Mpc), which is translated
+        to an ell at each frequency using the flat-sky approximation
+        (k_perp = ell / chi). Overrides ell if present.
     """
 
-    ell = config.Property(proptype=int)
+    ell = config.Property(proptype=int, default=None)
+    kperp = config.Property(proptype=float, default=None)
+
+    def setup(self, bt):
+        """Get telescope and check input parameters.
+
+        Parameters
+        ----------
+        bt : ProductManager or BeamTransfer
+            Beam Transfer maanger.
+        """
+        self.beamtransfer = io.get_beamtransfer(bt)
+        self.telescope = io.get_telescope(bt)
+
+        if self.ell is None and self.kperp is None:
+            raise config.CaputConfigError("Must specify either ell or kperp!")
+
+        if self.kperp is not None:
+            c = Cosmology()
+            self.ell_arr = np.rint(
+                self.kperp
+                * c.comoving_distance(units.nu21/self.telescope.frequencies - 1)
+            ).astype(int)
+        else:
+            self.ell_arr = (
+                np.ones_like(self.telescope.frequencies, dtype=int)
+                * self.ell
+            )
 
     def process(self, map_: containers.Map) -> MSumTable:
-        """Take SHT of map and sum a_{ell m} over m for specific ell.
+        """Take SHT of map and sum a_{ell m} over m for specific ell(s).
 
         Parameters
         ----------
@@ -1412,31 +1444,41 @@ class MapEllMSum(task.SingleTask):
         """
 
         nside = hp.npix2nside(len(map_.index_map["pixel"]))
-        if self.ell > 3 * nside - 1:
+        if self.ell_arr.max() > 3 * nside - 1:
             raise ValueError("Ell cannot be larger than 3*nside-1!")
 
         # Create MSumTable container
         msum = MSumTable(
-            ell = self.ell,
+            ell = self.ell_arr,
             axes_from=map_,
             attrs_from=map_,
             distributed=True,
             comm=map_.comm,
         )
 
+        # Ensure the map is distributed across frequency
+        map_.redistribute("freq")
+
         # Get local sections of input map and output table
         map_local = map_.map[:]
         msum_local = msum.msum[:]
+        local_shape = msum.msum.local_shape[0]
+        local_offset = msum.msum.local_offset[0]
 
         # Compute spherical harmonic coefficients for local map section,
         # packed as [freq, pol, ell, m]
         alm_local = hputil.sphtrans_sky(np.nan_to_num(map_local))
 
         # Put m sums into container
-        msum_local[:] = (
-            alm_local[:, :, self.ell, 0]
-            + 2 * alm_local[:, :, self.ell, 1:].sum(axis=-1).real
-        ) / (4 * np.pi)
+        for fi in range(local_shape):
+            msum_local[fi, :] = (
+                alm_local[fi, :, self.ell_arr[local_offset + fi], 0]
+                + 2 * alm_local[fi, :, self.ell_arr[local_offset + fi], 1:].sum(axis=-1).real
+            ) / (4 * np.pi)
+
+        # Save kperp to attributes
+        if self.kperp is not None:
+            msum.attrs["kperp"] = self.kperp
 
         return msum
 
@@ -1604,10 +1646,10 @@ class ModulateMapFrequencies(task.SingleTask):
         )
         self.log.debug("Modulating map with kpar = %g h/Mpc" % kpar_value)
         # Save kpar to attribute of output container
-        out_cont.attrs["kpar"] = kpar_value        
+        out_cont.attrs["kpar"] = kpar_value
         if self.kpar_as_kf_mult:
             out_cont.attrs["kf"] = kpar_value / self.kpar
-        
+
         if cont is containers.Map:
             # For healpix map, multiply map data by k-mode and copy to
             # new container
