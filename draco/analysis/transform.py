@@ -1606,7 +1606,7 @@ class MapEllMSum(task.SingleTask):
                     # Get indices of m=0 and m>0 elements of alm array
                     ell = self.ell_arr[local_offset + fi]
                     m0_idx = hp.Alm.getidx(lmax, ell, 0)
-                    mg0_idx = hp.Alm.getidx(lmax, ell, np.arange(1, ell))
+                    mg0_idx = hp.Alm.getidx(lmax, ell, np.arange(1, ell+1))
 
                     # The outputs of the ducc routines appear to have a different convention
                     # than a_lm's from healpix, requiring us to flip the sign of odd-m coefficients
