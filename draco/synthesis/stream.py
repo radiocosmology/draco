@@ -475,6 +475,9 @@ class SimulateSingleHarmonicSidereal(task.SingleTask):
 
         self.log.info("Ells being simulated: %s" % self.ell_arr)
 
+        if self.ell_arr.max() > self.telescope.mmax:
+            raise RuntimeError("User has requested ell values greater than telescope's m_max!")
+
     def process(self):
         """Simulate a SiderealStream.
 
