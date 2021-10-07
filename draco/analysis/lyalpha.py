@@ -4,6 +4,12 @@ from caput import config, pipeline
 from cora.util import units
 
 from ..core import task, containers
+from ..analysis import transform
+
+
+# Wavelengths of lyman-alpha and 21cm transitions
+LAM_LYA = 121.567e-9
+LAM_21 = 0.21106114054160
 
 
 class CombineLymanAB(task.SingleTask):
@@ -173,5 +179,45 @@ class TruncateRedshift(task.SingleTask):
         out["weight"][:] = deltas["weight"][:, :, fslice]
         out["position"][:] = deltas["position"][:]
         out["redshift"][:] = deltas["redshift"][:]
+
+        return out
+
+
+class SpectralRegridder(transform.Regridder):
+
+    zero_weight_thresh = config.Property(proptype=float, default=3.0)
+
+    def process(self, formed):
+
+        # convert observed to equivalent CHIME frequency
+        lya_freq = formed.freq[:] * LAM_LYA / LAM_21
+
+        # redistribute
+        formed.redistribute("object_id")
+
+        # move frequency axis last
+        spec = formed.beam[:].view(np.ndarray)
+        weight = formed.weight[:].view(np.ndarray)
+
+        # perform regridding
+        new_grid, sts, ni = self._regrid(spec, weight, lya_freq)
+
+        # create new container
+        out = containers.FormedBeam(axes_from=formed, attrs_from=formed, freq=new_grid)
+        out.redistribute("object_id")
+
+        # mask outside of overlap region
+        mask = (out.freq[:] <= lya_freq.max()) & (out.freq[:] >= lya_freq.min())
+        ni *= mask
+
+        # mask weights below a threshold
+        with np.errstate(divide="ignore", invalid="ignore"):
+            mask = (ni > self.snr_cov * self.zero_weight_thresh) * mask
+
+        # copy over datasets
+        out.beam[:] = sts * mask
+        out.weight[:] = ni * mask
+        out["position"][:] = formed["position"][:]
+        out["redshift"][:] = formed["redshift"][:]
 
         return out
