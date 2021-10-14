@@ -50,7 +50,16 @@ class ReceiverTemperature(task.SingleTask):
 class GaussianNoiseDataset(task.SingleTask, random.RandomTask):
     """Generates a Gaussian distributed noise dataset using the
     the noise estimates of an existing dataset.
+
+    Attributes
+    ----------
+    dataset : string
+        The dataset to fill with gaussian noise. If set to 'vis', will ensure
+        autos are real. If not set, will look for a default dataset in a list
+        of known containers.
     """
+
+    dataset = config.Property(proptype=str, default=None)
 
     def process(self, data):
         """Generates a Gaussian distributed noise dataset,
@@ -69,21 +78,53 @@ class GaussianNoiseDataset(task.SingleTask, random.RandomTask):
             a Gaussian distributed noise realisation.
 
         """
+        _default_dataset = {
+            containers.TimeStream: "vis",
+            containers.SiderealStream: "vis",
+            containers.HybridVisMModes: "vis",
+            containers.RingMap: "map",
+            containers.GridBeam: "beam",
+            containers.TrackBeam: "beam",
+        }
+        if self.dataset is None:
+            for cls, dataset in _default_dataset.items():
+                if isinstance(data, cls):
+                    dataset_name = dataset
+                    break
+            else:
+                raise ValueError(
+                    f"No default dataset known for {type(data)} container."
+                )
+        else:
+            dataset_name = self.dataset
+
+        if not dataset_name in data:
+            raise config.CaputConfigError(
+                f"Dataset '{dataset_name}' does not exist in container {type(data)}."
+            )
+
         # Distribute in something other than `stack`
         data.redistribute("freq")
 
         # Replace visibilities with noise
-        vis = data.vis[:]
-        random.complex_normal(
-            scale=tools.invert_no_zero(data.weight[:]) ** 0.5, out=vis, rng=self.rng
-        )
+        dset = data[dataset_name][:]
+        if np.iscomplexobj(dset):
+            random.complex_normal(
+                scale=tools.invert_no_zero(data.weight[:]) ** 0.5,
+                out=dset,
+                rng=self.rng,
+            )
+        else:
+            self.rng.standard_normal(out=dset)
+            dset *= tools.invert_no_zero(data.weight[:]) ** 0.5
 
         # We need to loop to ensure the autos are real and have the correct variance
-        for si, prod in enumerate(data.prodstack):
-            if prod[0] == prod[1]:
-                # This is an auto-correlation
-                vis[:, si].real *= 2 ** 0.5
-                vis[:, si].imag = 0.0
+        if dataset_name == "vis":
+            for si, prod in enumerate(data.prodstack):
+                if prod[0] == prod[1]:
+                    # This is an auto-correlation
+                    dset[:, si].real *= 2 ** 0.5
+                    dset[:, si].imag = 0.0
 
         return data
 
