@@ -863,13 +863,13 @@ class AddEBOSSZErrorsToCatalog(task.SingleTask, random.RandomTask):
 
     Attributes
     ----------
-    tracer : {"ELG"|"LRG"|"QSO"}
+    tracer : {"ELG"|"LRG"|"QSO"|"QSOalt"}
         Generate redshift errors corresponding to this eBOSS sample.
         If not specified, task will attempt to detect the tracer type from
         the catalog's `tracer` attribute or its tag. Default: None
     """
 
-    tracer = config.enum(["QSO", "ELG", "LRG"], default=None)
+    tracer = config.enum(["QSO", "ELG", "LRG", "QSOalt"], default=None)
 
     def process(self, cat):
         """Generate random redshift errors and add to redshifts in catalog.
@@ -998,6 +998,60 @@ class AddEBOSSZErrorsToCatalog(task.SingleTask, random.RandomTask):
         return dv
 
     @staticmethod
+    def qsoalt_velocity_error(z, rng):
+        """Draw random velocity errors for quasars using a redshift dependent model.
+
+        This is based on the Lyke et al. model use in `qso_velocity_error` but fixing an
+        issue with the fraction of quasars in the wide distribution at all redshifts, and
+        reducing the errors at low redshift to account for the behaviour seen in Figure
+        9 on Lyke et al.
+
+        Parameters
+        ----------
+        z : np.ndarray
+            True redshift for the object.
+        rng : numpy.random.Generator
+            Numpy RNG to use for generating random numbers.
+
+        Returns
+        -------
+        dv: np.ndarray[nsample,]
+            Velocity errors in km / s.
+        """
+        QSO_SIG1_highz = 150.0
+        QSO_SIG1_lowz = 90.0
+        QSO_SIG2 = 1000.0
+
+        QSO_F_highz = 35.0
+        QSO_ztrans = 1.0
+        QSO_zwidth = 0.05
+
+        def smooth_step_function(z, zt, zw, fl, fh):
+            return (1 + np.tanh((z - zt) / zw)) * (fh - fl) / 2 + fl
+
+        def invfz(z):
+            return smooth_step_function(z, QSO_ztrans, QSO_zwidth, 0, 1 / QSO_F_highz)
+
+        def sig1z(z):
+            return smooth_step_function(
+                z, QSO_ztrans, QSO_zwidth, QSO_SIG1_lowz, QSO_SIG1_highz
+            )
+
+        nsample = len(z)
+
+        # A random variable to decide which Gaussian to draw the error from
+        invf = invfz(z)
+        u = rng.uniform(size=nz)
+        flag = u >= (invf / (1.0 + invf))
+
+        dv1 = rng.standard_normal(nsample) * sig1z(z)
+        dv2 = rng.standard_normal(nsample) * QSO_SIG2
+
+        dv = np.where(flag, dv1, dv2)
+
+        return dv
+
+    @staticmethod
     def lrg_velocity_error(z, rng):
         """Draw random velocity errors for luminous red galaxies.
 
@@ -1067,6 +1121,7 @@ class AddEBOSSZErrorsToCatalog(task.SingleTask, random.RandomTask):
 
 _velocity_error_function_lookup = {
     "QSO": AddEBOSSZErrorsToCatalog.qso_velocity_error,
+    "QSOalt": AddEBOSSZErrorsToCatalog.qsoalt_velocity_error,
     "ELG": AddEBOSSZErrorsToCatalog.elg_velocity_error,
     "LRG": AddEBOSSZErrorsToCatalog.lrg_velocity_error,
 }
