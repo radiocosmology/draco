@@ -1,21 +1,12 @@
-"""Miscellaneous transformations to do on data, from grouping frequencies and
-products to performing the m-mode transform.
+"""Miscellaneous transformations to do on data.
 
-Tasks
-=====
-
-.. autosummary::
-    :toctree:
-
-    FrequencyRebin
-    SelectFreq
-    CollateProducts
-    MModeTransform
+This includes grouping frequencies and products to performing the m-mode transform.
 """
+from typing import Optional, Union
 
 import numpy as np
+from numpy.lib.recfunctions import structured_to_unstructured
 from caput import mpiarray, config
-from caput import mpiutil
 
 from ..core import containers, task, io
 from ..util import tools
@@ -78,9 +69,11 @@ class FrequencyRebin(task.SingleTask):
             ri = fi // self.channel_bin
 
             sb.vis[ri] += ss.vis[fi] * ss.weight[fi]
-            sb.gain[ri] += (
-                ss.gain[fi] / self.channel_bin
-            )  # Don't do weighted average for the moment
+
+            if "gain" in ss.datasets:
+                sb.gain[ri] += (
+                    ss.gain[fi] / self.channel_bin
+                )  # Don't do weighted average for the moment
 
             sb.weight[ri] += ss.weight[fi]
 
@@ -231,7 +224,7 @@ class CollateProducts(task.SingleTask):
             attrs_from=ss,
             distributed=True,
             comm=ss.comm,
-            **output_kwargs
+            **output_kwargs,
         )
 
         # Add gain dataset.
@@ -448,9 +441,18 @@ class MModeTransform(task.SingleTask):
 
     The maximum m used in the container is derived from the number of
     time samples, or if a manager is supplied `telescope.mmax` is used.
+
+    Attributes
+    ----------
+    remove_integration_window : bool
+        Deconvolve the effect of the finite width of the RA integration (presuming it
+        was a rectangular integration window). This is applied to both the visibilities
+        and the weights.
     """
 
-    def setup(self, manager=None):
+    remove_integration_window = config.Property(proptype=bool, default=False)
+
+    def setup(self, manager: Optional[io.TelescopeConvertible] = None):
         """Set the telescope instance if a manager object is given.
 
         This is used to set the `mmax` used in the transform.
@@ -466,12 +468,12 @@ class MModeTransform(task.SingleTask):
         else:
             self.telescope = None
 
-    def process(self, sstream):
+    def process(self, sstream: containers.SiderealContainer) -> containers.MContainer:
         """Perform the m-mode transform.
 
         Parameters
         ----------
-        sstream : containers.SiderealStream
+        sstream : containers.SiderealStream or containers.HybridVisStream
             The input sidereal stream.
 
         Returns
@@ -479,71 +481,113 @@ class MModeTransform(task.SingleTask):
         mmodes : containers.MModes
         """
 
+        contmap = {
+            containers.SiderealStream: containers.MModes,
+            containers.HybridVisStream: containers.HybridVisMModes,
+        }
+
+        # Get the output container and figure out at which position is it's
+        # frequency axis
+        out_cont = contmap[sstream.__class__]
+
         sstream.redistribute("freq")
 
         # Sum the noise variance over time samples, this will become the noise
         # variance for the m-modes
-        weight_sum = sstream.weight[:].sum(axis=-1)
+        nra = sstream.weight.shape[-1]
+        weight_sum = nra ** 2 * tools.invert_no_zero(
+            tools.invert_no_zero(sstream.weight[:]).sum(axis=-1)
+        )
 
         if self.telescope is not None:
             mmax = self.telescope.mmax
         else:
-            mmax = None
-
-        # Construct the array of m-modes
-        marray = _make_marray(sstream.vis[:], mmax)
-        marray = mpiarray.MPIArray.wrap(marray[:], axis=2, comm=sstream.comm)
+            mmax = sstream.vis.shape[-1] // 2
 
         # Create the container to store the modes in
-        mmax = marray.shape[0] - 1
-        ma = containers.MModes(mmax=mmax, axes_from=sstream, comm=sstream.comm)
+        ma = out_cont(
+            mmax=mmax,
+            oddra=bool(nra % 2),
+            axes_from=sstream,
+            attrs_from=sstream,
+            comm=sstream.comm,
+        )
         ma.redistribute("freq")
 
-        # Assign the visibilities and weights into the container
-        ma.vis[:] = marray
+        # Generate the m-mode transform directly into the output container
+        # NOTE: Need to zero fill as not every element gets set within _make_marray
+        ma.vis[:] = 0.0
+        _make_marray(sstream.vis[:], ma.vis[:])
+
+        # Assign the weights into the container
         ma.weight[:] = weight_sum[np.newaxis, np.newaxis, :, :]
 
-        ma.redistribute("m")
+        # Divide out the m-mode sinc-suppression caused by the rectangular integration window
+        if self.remove_integration_window:
+
+            m = np.arange(mmax + 1)
+            w = np.sinc(m / nra)
+            inv_w = tools.invert_no_zero(w)
+
+            sl_vis = (slice(None),) + (np.newaxis,) * (len(ma.vis.shape) - 1)
+            ma.vis[:] *= inv_w[sl_vis]
+
+            sl_weight = (slice(None),) + (np.newaxis,) * (len(ma.weight.shape) - 1)
+            ma.weight[:] *= w[sl_weight] ** 2
 
         return ma
 
 
-def _make_marray(ts, mmax):
-    # Construct an array of m-modes from a sidereal time stream
-    mmodes = np.fft.fft(ts, axis=-1) / ts.shape[-1]
-    marray = _pack_marray(mmodes, mmax)
+def _make_marray(ts, mmodes=None, mmax=None, dtype=None):
+    """Make an m-mode array from a sidereal stream.
 
-    return marray
+    This will loop over the first axis of `ts` to avoid needing a lot of memory for
+    intermediate arrays.
 
+    It can also write the m-mode output directly into a passed `mmodes` array.
+    """
 
-def _pack_marray(mmodes, mmax=None):
-    # Pack an FFT into the correct format for the m-modes (i.e. [m, freq, +/-,
-    # baseline])
+    if dtype is None:
+        dtype = np.complex64
 
-    N = mmodes.shape[-1]  # Total number of modes
-    N_pos_mmodes = N // 2  # Total number of positive modes
+    if mmodes is None and mmax is None:
+        raise ValueError("One of `mmodes` or `mmax` must be set.")
+
+    if mmodes is not None and mmax is not None:
+        raise ValueError("If mmodes is set, mmax must be None.")
+
+    if mmodes is not None and mmodes.shape[2:] != ts.shape[:-1]:
+        raise ValueError(
+            "ts and mmodes have incompatible shapes: "
+            f"{mmodes.shape[2:]} != {ts.shape[:-1]}"
+        )
+
+    if mmodes is None:
+        mmodes = np.zeros((mmax + 1, 2) + ts.shape[:-1], dtype=dtype)
+
     if mmax is None:
-        mmax = mlim = N_pos_mmodes
-        mlim_neg = mlim - 1 + N % 2  # Index for negative modes
-    elif mmax >= N_pos_mmodes:  # Modes larger than N_pos_mmodes set to 0.
-        mlim = N_pos_mmodes
-        mlim_neg = mlim - 1 + N % 2
-    else:
-        mlim = mmax
-        mlim_neg = mlim
+        mmax = mmodes.shape[0] - 1
 
-    shape = mmodes.shape[:-1]
+    # Total number of modes
+    N = ts.shape[-1]
+    # Calculate the max m to use for both positive and negative m. This is a little
+    # tricky to get correct as we need to account for the number of negative
+    # frequencies produced by the FFT
+    mlim = min(N // 2, mmax)
+    mlim_neg = N // 2 - 1 + N % 2 if mmax >= N // 2 else mmax
 
-    marray = np.zeros((mmax + 1, 2) + shape, dtype=np.complex128)
+    for i in range(ts.shape[0]):
+        m_fft = np.fft.fft(ts[i], axis=-1) / ts.shape[-1]
 
-    # Non-negative modes
-    marray[: mlim + 1, 0] = np.rollaxis(mmodes[..., : mlim + 1], -1, 0)
-    # Negative modes
-    marray[1 : mlim_neg + 1, 1] = np.rollaxis(
-        mmodes[..., -1 : -(mlim_neg + 1) : -1].conj(), -1, 0
-    )
+        # Loop and copy over positive and negative m's
+        # NOTE: this is done as a loop to try and save memory
+        for mi in range(mlim + 1):
+            mmodes[mi, 0, i] = m_fft[..., mi]
 
-    return marray
+        for mi in range(1, mlim_neg + 1):
+            mmodes[mi, 1, i] = m_fft[..., -mi].conj()
+
+    return mmodes
 
 
 class MModeInverseTransform(task.SingleTask):
@@ -551,17 +595,27 @@ class MModeInverseTransform(task.SingleTask):
 
     Currently ignores any noise weighting.
 
+    .. warning::
+        Using `apply_integration_window` will modify the input mmodes.
+
     Attributes
     ----------
-    n_time : int
-        Number of time bins in the output. Note that if
-        the number of samples does not Nyquist sample the
-        maximum m, information may be lost.
+    nra : int
+        Number of RA bins in the output. Note that if the number of samples does not
+        Nyquist sample the maximum m, information may be lost. If not set, then try to
+        get from an `original_nra` attribute on the incoming MModes, otherwise determine
+        an appropriate number of RA bins from the mmax.
+    apply_integration_window : bool
+        Apply the effect of the finite width of the RA integration (presuming a
+        rectangular integration window). This is applied to both the visibilities and
+        the weights. If this is true, as a side effect the input data will be modified
+        in place.
     """
 
-    n_time = config.Property(proptype=int, default=None)
+    nra = config.Property(proptype=int, default=None)
+    apply_integration_window = config.Property(proptype=bool, default=False)
 
-    def process(self, mmodes):
+    def process(self, mmodes: containers.MContainer) -> containers.SiderealContainer:
         """Perform the m-mode inverse transform.
 
         Parameters
@@ -582,14 +636,36 @@ class MModeInverseTransform(task.SingleTask):
         # Ensure m-modes are distributed in frequency
         mmodes.redistribute("freq")
 
+        # Use the nra property if set otherwise use the natural nra from the incoming
+        # container
+        nra_cont = 2 * mmodes.mmax + (1 if mmodes.oddra else 0)
+        nra = self.nra if self.nra is not None else nra_cont
+
+        # Apply the m-mode sinc-suppression caused by the rectangular integration window
+        if self.apply_integration_window:
+
+            m = np.arange(mmodes.mmax + 1)
+            w = np.sinc(m / nra)
+            inv_w = tools.invert_no_zero(w)
+
+            sl_vis = (slice(None),) + (np.newaxis,) * (len(mmodes.vis.shape) - 1)
+            mmodes.vis[:] *= w[sl_vis]
+
+            sl_weight = (slice(None),) + (np.newaxis,) * (len(mmodes.weight.shape) - 1)
+            mmodes.weight[:] *= inv_w[sl_weight] ** 2
+
         # Re-construct array of S-streams
-        ssarray = _make_ssarray(mmodes.vis[:], n=self.n_time)
-        ntime = ssarray.shape[-1]
+        ssarray = _make_ssarray(mmodes.vis[:], n=nra)
+        nra = ssarray.shape[-1]  # Get the actual nra used
         ssarray = mpiarray.MPIArray.wrap(ssarray[:], axis=0, comm=mmodes.comm)
 
         # Construct container and set visibility data
         sstream = containers.SiderealStream(
-            ra=ntime, axes_from=mmodes, distributed=True, comm=mmodes.comm
+            ra=nra,
+            axes_from=mmodes,
+            attrs_from=mmodes,
+            distributed=True,
+            comm=mmodes.comm,
         )
         sstream.redistribute("freq")
 
@@ -597,9 +673,26 @@ class MModeInverseTransform(task.SingleTask):
         sstream.vis[:] = ssarray
         # There is no way to recover time information for the weights.
         # Just assign the time average to each baseline and frequency.
-        sstream.weight[:] = mmodes.weight[0, 0, :, :][:, :, np.newaxis] / ntime
+        sstream.weight[:] = mmodes.weight[0, 0, :, :][:, :, np.newaxis] / nra
 
         return sstream
+
+
+class SiderealMModeResample(task.group_tasks(MModeTransform, MModeInverseTransform)):
+    """Resample a sidereal stream by FFT.
+
+    This performs a forward and inverse m-mode transform to resample a sidereal stream.
+
+    Attributes
+    ----------
+    nra : int
+        The number of RA bins for the output stream.
+    remove_integration_window, apply_integration_window : bool
+        Remove the integration window from the incoming data, and/or apply it to the
+        output sidereal stream.
+    """
+
+    pass
 
 
 def _make_ssarray(mmodes, n=None):
@@ -778,3 +871,373 @@ class Regridder(task.SingleTask):
             ni *= w_mask[..., np.newaxis]
 
         return interp_grid, sts, ni
+
+
+class ShiftRA(task.SingleTask):
+    """Add a shift to the RA axis.
+
+    This is useful for fixing a bug in earlier revisions of CHIME processing.
+
+    Parameters
+    ----------
+    delta : float
+        The shift to *add* to the RA axis.
+    """
+
+    delta = config.Property(proptype=float)
+
+    def process(
+        self, sscont: containers.SiderealContainer
+    ) -> containers.SiderealContainer:
+        """Add a shift to the input sidereal cont.
+
+        Parameters
+        ----------
+        sscont
+            The container to shift. The input is modified in place.
+
+        Returns
+        -------
+        sscont
+            The shifted container.
+        """
+
+        if not isinstance(sscont, containers.SiderealContainer):
+            raise TypeError(
+                f"Expected a SiderealContainer, got {type(sscont)} instead."
+            )
+
+        sscont.ra[:] += self.delta
+
+        return sscont
+
+
+class SelectPol(task.SingleTask):
+    """Extract a subset of polarisations, including Stokes parameters.
+
+    This currently only extracts Stokes I.
+
+    Attributes
+    ----------
+    pol : list
+        Polarisations to extract. Only Stokes I extraction is supported (i.e. `pol =
+        ["I"]`).
+    """
+
+    pol = config.Property(proptype=list)
+
+    def process(self, polcont):
+        """Extract the specified polarisation from the input.
+
+        This will combine polarisation pairs to get instrumental Stokes polarisations if
+        requested.
+
+        Parameters
+        ----------
+        polcont : ContainerBase
+            A container with a polarisation axis.
+
+        Returns
+        -------
+        selectedpolcont : same as polcont
+            A new container with the selected polarisation.
+        """
+
+        polcont.redistribute("freq")
+
+        if "pol" not in polcont.axes:
+            raise ValueError(
+                f"Container of type {type(polcont)} does not have a pol axis."
+            )
+
+        if len(self.pol) != 1 or self.pol[0] != "I":
+            raise NotImplementedError("Only selecting stokes I is currently working.")
+
+        outcont = containers.empty_like(polcont, pol=np.array(self.pol))
+        outcont.redistribute("freq")
+
+        # Get the locations of the XX and YY components
+        XX_ind = list(polcont.index_map["pol"]).index("XX")
+        YY_ind = list(polcont.index_map["pol"]).index("YY")
+
+        for name, dset in polcont.datasets.items():
+
+            if "pol" not in dset.attrs["axis"]:
+                outcont.datasets[name][:] = dset[:]
+            else:
+                pol_axis_pos = list(dset.attrs["axis"]).index("pol")
+
+                sl = tuple([slice(None)] * pol_axis_pos)
+                outcont.datasets[name][sl + (0,)] = dset[sl + (XX_ind,)]
+                outcont.datasets[name][sl + (0,)] += dset[sl + (YY_ind,)]
+                outcont.datasets[name][:] *= 0.5
+
+        return outcont
+
+
+class TransformJanskyToKelvin(task.SingleTask):
+    """Task to convert from Jy to Kelvin and vice-versa.
+
+    This integrates over the primary beams in the telescope class to derive the
+    brightness temperature to flux conversion.
+
+    Attributes
+    ----------
+    convert_Jy_to_K : bool
+        If True, apply a Jansky to Kelvin conversion factor. If False apply a Kelvin to
+        Jansky conversion.
+    reference_declination : float, optional
+        The declination to set the flux reference for. A source transiting at this
+        declination will produce a visibility signal equal to its flux. If `None`
+        (default) use the zenith.
+    share : {"none", "all"}
+        Which datasets should the output share with the input. Default is "all".
+    nside : int
+        The NSIDE to use for the primary beam area calculation. This may need to be
+        increased for beams with intricate small scale structure. Default is 256.
+    """
+
+    convert_Jy_to_K = config.Property(proptype=bool, default=True)
+    reference_declination = config.Property(proptype=float, default=None)
+    share = config.enum(["none", "all"], default="all")
+
+    nside = config.Property(proptype=int, default=256)
+
+    def setup(self, telescope: io.TelescopeConvertible):
+        """Set the telescope object.
+
+        Parameters
+        ----------
+        telescope
+            An object we can get a telescope object from. This telescope must be able to
+            calculate the beams at all incoming frequencies.
+        """
+        self.telescope = io.get_telescope(telescope)
+        self.telescope._init_trans(self.nside)
+
+        # If not explicitly set, use the zenith as the reference declination
+        if self.reference_declination is None:
+            self.reference_declination = self.telescope.latitude
+
+        self._omega_cache = {}
+
+    def _beam_area(self, feed, freq):
+        """Calculate the primary beam solid angle."""
+        import healpy
+
+        beam = self.telescope.beam(feed, freq)
+        horizon = self.telescope._horizon[:, np.newaxis]
+        beam_pow = np.sum(np.abs(beam) ** 2 * horizon, axis=1)
+
+        pxarea = 4 * np.pi / beam.shape[0]
+        omega = beam_pow.sum() * pxarea
+
+        # Normalise omega by the squared magnitude of the beam at the reference position
+        # NOTE: this is slightly less accurate than the previous approach of reseting
+        # the internal `_angpos` property to force evaluation of the beam at the exact
+        # coordinates, but is more generically applicable, and works (for instance) with
+        # the CHIMEExternalBeam class.
+        #
+        # Also, for a reason I don't fully understand it's more accurate to use the
+        # value of the pixel including the reference position, and not do an
+        # interpolation using it's neighbours...
+        beam_ref = beam_pow[
+            healpy.ang2pix(self.nside, 0.0, self.reference_declination, lonlat=True)
+        ]
+        omega *= tools.invert_no_zero(beam_ref)
+
+        return omega
+
+    def process(self, sstream: containers.SiderealStream) -> containers.SiderealStream:
+        """Apply the brightness temperature to flux conversion to the data.
+
+        Parameters
+        ----------
+        sstream
+            The visibilities to apply the conversion to. They are converted to/from
+            brightness temperature units depending on the setting of `convert_Jy_to_K`.
+
+        Returns
+        -------
+        new_sstream
+            Visibilities with the conversion applied. This may be the same as the input
+            container if `share == "all"`.
+        """
+
+        import scipy.constants as c
+
+        sstream.redistribute("freq")
+
+        # Get the local frequencies in the sidereal stream
+        sfreq = sstream.vis.local_offset[0]
+        efreq = sfreq + sstream.vis.local_shape[0]
+        local_freq = sstream.freq[sfreq:efreq]
+
+        # Get the indices of the incoming frequencies as far as the telescope class is
+        # concerned
+        local_freq_inds = []
+        for freq in local_freq:
+            local_freq_inds.append(np.argmin(np.abs(self.telescope.frequencies - freq)))
+
+        # Get the feedpairs we have data for and their beamclass (usually this maps to
+        # polarisation)
+        feedpairs = structured_to_unstructured(sstream.prodstack)
+        beamclass_pairs = self.telescope.beamclass[feedpairs]
+
+        # Calculate all the unique beams that we need to calculate areas for
+        unique_beamclass, bc_index = np.unique(beamclass_pairs, return_index=True)
+
+        # Calculate any missing beam areas and to the cache
+        for beamclass, bc_ind in zip(unique_beamclass, bc_index):
+            feed_ind = feedpairs.ravel()[bc_ind]
+
+            for freq, freq_ind in zip(local_freq, local_freq_inds):
+                key = (beamclass, freq)
+
+                if key not in self._omega_cache:
+                    self._omega_cache[key] = self._beam_area(feed_ind, freq_ind)
+
+        # Loop over all frequencies and visibilities and get the effective primary
+        # beam area for each
+        om_ij = np.zeros((len(local_freq), sstream.vis.shape[1]))
+        for fi, freq in enumerate(local_freq):
+            for bi, (bci, bcj) in enumerate(beamclass_pairs):
+                om_i = self._omega_cache[(bci, freq)]
+                om_j = self._omega_cache[(bcj, freq)]
+                om_ij[fi, bi] = (om_i * om_j) ** 0.5
+
+        # Calculate the Jy to K conversion
+        wavelength = (c.c / (local_freq * 10 ** 6))[:, np.newaxis, np.newaxis]
+        K_to_Jy = 2 * 1e26 * c.k * om_ij[:, :, np.newaxis] / wavelength ** 2
+        Jy_to_K = tools.invert_no_zero(K_to_Jy)
+
+        # Get the container we will apply the conversion to (either the input, or a
+        # copy)
+        if self.share == "all":
+            new_stream = sstream
+        else:  # self.share == "none"
+            new_stream = sstream.copy()
+
+        # Apply the conversion to the data and the weights
+        if self.convert_Jy_to_K:
+            new_stream.vis[:] *= Jy_to_K
+            new_stream.weight[:] *= K_to_Jy ** 2
+        else:
+            new_stream.vis[:] *= K_to_Jy
+            new_stream.weight[:] *= Jy_to_K ** 2
+
+        return new_stream
+
+
+class MixData(task.SingleTask):
+    """Mix together pieces of data with specified weights.
+
+    This can generate arbitrary linear combinations of the data and weights for both
+    `SiderealStream` and `RingMap` objects, and can be used for many purposes such as:
+    adding together simulated timestreams, injecting signal into data, replacing weights
+    in simulated data with those from real data, etc.
+
+    All coefficients are applied naively to generate the final combinations, i.e. no
+    normalisations or weighted summation is performed.
+
+    Attributes
+    ----------
+    data_coeff : list
+        A list of coefficients to apply to the data dataset of each input containter to
+        produce the final output. These are applied to either the `vis` or `map` dataset
+        depending on the the type of the input container.
+    weight_coeff : list
+        Coefficient to be applied to each input containers weights to generate the
+        output.
+    """
+
+    data_coeff = config.list_type(type_=float)
+    weight_coeff = config.list_type(type_=float)
+
+    mixed_data = None
+
+    def setup(self):
+        """Check the lists have the same length."""
+
+        if len(self.data_coeff) != len(self.weight_coeff):
+            raise config.CaputConfigError(
+                "data and weight coefficient lists must be the same length"
+            )
+
+        self._data_ind = 0
+
+    def process(self, data: Union[containers.SiderealStream, containers.RingMap]):
+        """Add the input data into the mixed data output.
+
+        Parameters
+        ----------
+        data
+            The data to be added into the mix.
+        """
+
+        def _get_dset(data):
+            # Helpful routine to get the data dset depending on the type
+            if isinstance(data, containers.SiderealStream):
+                return data.vis
+            elif isinstance(data, containers.RingMap):
+                return data.map
+
+        if self._data_ind >= len(self.data_coeff):
+            raise RuntimeError(
+                "This task cannot accept more items than there are coefficents set."
+            )
+
+        if self.mixed_data is None:
+            self.mixed_data = containers.empty_like(data)
+            self.mixed_data.redistribute("freq")
+
+            # Zero out data and weights
+            _get_dset(self.mixed_data)[:] = 0.0
+            self.mixed_data.weight[:] = 0.0
+
+        # Validate the types are the same
+        if type(self.mixed_data) != type(data):
+            raise TypeError(
+                f"type(data) (={type(data)}) must match "
+                f"type(data_stack) (={type(self.type)}"
+            )
+
+        data.redistribute("freq")
+
+        mixed_dset = _get_dset(self.mixed_data)[:]
+        data_dset = _get_dset(data)[:]
+
+        # Validate the shapes match
+        if mixed_dset.shape != data_dset.shape:
+            raise ValueError(
+                f"Size of data ({data_dset.shape}) must match "
+                f"data_stack ({mixed_dset.shape})"
+            )
+
+        # Mix in the data and weights
+        mixed_dset[:] += self.data_coeff[self._data_ind] * data_dset[:]
+        self.mixed_data.weight[:] += self.weight_coeff[self._data_ind] * data.weight[:]
+
+        self._data_ind += 1
+
+    def process_finish(self) -> Union[containers.SiderealStream, containers.RingMap]:
+        """Return the container with the mixed inputs.
+
+        Returns
+        -------
+        mixed_data
+            The mixed data.
+        """
+
+        if self._data_ind != len(self.data_coeff):
+            raise RuntimeError(
+                "Did not receive enough inputs. "
+                f"Got {self._data_ind}, expected {len(self.data_coeff)}."
+            )
+
+        # Get an ephemeral reference to the mixed data and remove the task reference so
+        # the object can be eventually deleted
+        data = self.mixed_data
+        self.mixed_data = None
+
+        return data

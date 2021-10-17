@@ -1,15 +1,4 @@
-"""Collection of routines for RFI excision.
-
-Functions
-=========
-
-.. autosummary::
-    :toctree:
-
-    sumthreshold
-    sir
-    sir1d
-"""
+"""Collection of routines for RFI excision."""
 import numpy as np
 from scipy.ndimage import convolve1d
 
@@ -46,8 +35,6 @@ def sumthreshold_py(
     mask : np.ndarray[:, :]
         Boolean array, with `True` entries marking outlier data.
     """
-
-    m_min = 4  # Minimum value of m to reach
     data = np.copy(data)
     (ny, nx) = data.shape
 
@@ -68,10 +55,9 @@ def sumthreshold_py(
             threshold = threshold1
         else:
             threshold = threshold1 / 1.5 ** (np.log2(m))
-        data_rms = np.std(data[~flag])
 
-        # The centre of the window for even windows is the bin right to the left of centre.
-        # I want the origin at the leftmost bin
+        # The centre of the window for even windows is the bin right to the left of
+        # centre. I want the origin at the leftmost bin
         if m == 1:
             centre = 0
         else:
@@ -125,6 +111,7 @@ def sumthreshold_py(
 
 # This routine might be substituted by a faster one later
 sumthreshold = sumthreshold_py
+
 
 # Scale-invariant rank (SIR) functions
 def sir1d(basemask, eta=0.2):

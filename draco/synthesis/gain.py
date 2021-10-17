@@ -1,15 +1,4 @@
-"""Tasks for generating random gain fluctuations in the data and stacking them.
-
-Tasks
-=====
-
-.. autosummary::
-    :toctree:
-
-    SiderealGains
-    RandomGains
-    GainStacker
-"""
+"""Tasks for generating random gain fluctuations in the data and stacking them."""
 
 
 import numpy as np
@@ -134,15 +123,16 @@ class SiderealGains(BaseGains):
     Attributes
     ----------
     start_time, end_time : float or datetime
-        Start and end times of the timestream to simulate. Needs to be either a
-        `float` (UNIX time) or a `datetime` objects in UTC.
+        Start and end times of the gain timestream to simulate. Needs to be either a
+        `float` (UNIX time) or a `datetime` objects in UTC. This determines the set
+        of LSDs to generate data for.
     """
 
     start_time = config.utc_time()
     end_time = config.utc_time()
 
     def setup(self, bt, sstream):
-        """Set up an oberserver and the data to use for this simulation.
+        """Set up an observer and the data to use for this simulation.
 
         Parameters
         ----------
@@ -539,8 +529,8 @@ def constrained_gaussian_realisation(x, corrfunc, n, x2, y2, rcond=1e-12):
     """Generate a constrained Gaussian random field.
 
     Given a correlation function generate a Gaussian random field that is
-    consistent with an existing set of values :param:`y2` located at
-    co-ordinates :param:`x2`.
+    consistent with an existing set of values of parameter `y2` located at
+    co-ordinates in parameter `x2`.
 
     Parameters
     ----------

@@ -1,23 +1,12 @@
-"""An improved base task implementing easy (and explicit) saving of outputs.
-
-Tasks
-=====
-
-.. autosummary::
-    :toctree:
-
-    SingleTask
-    ReturnLastInputOnFinish
-    ReturnFirstInputOnFinish
-    Delete
-"""
+"""An improved base task implementing easy (and explicit) saving of outputs."""
 
 import os
 import logging
+from inspect import getfullargspec
 
 import numpy as np
 
-from caput import pipeline, config, memh5, misc
+from caput import pipeline, config, memh5
 
 
 class MPILogFilter(logging.Filter):
@@ -237,17 +226,31 @@ class SingleTask(MPILoggedTask, pipeline.BasicContMixin):
     ----------
     save : bool
         Whether to save the output to disk or not.
+    attrs : dict, optional
+        A mapping of attribute names and values to set in the `.attrs` at the root of
+        the output container. String values will be formatted according to the standard
+        Python `.format(...)` rules, and can interpolate several other values into the
+        string. These are:
+
+        - `count`: an integer giving which iteration of the task is this.
+        - `tag`: a string identifier for the output derived from the
+                 containers `tag` attribute. If that attribute is not present
+                 `count` is used instead.
+        - `key`: the name of the output key.
+        - `task`: the (unqualified) name of the task.
+        - `input_tags`: a list of the tags for each input argument for the task.
+        - Any existing attribute in the container can be interpolated by the name of
+          its key. The specific values above will override any attribute with the same
+          name.
+
+        Incorrectly formatted values will cause an error to be thrown.
+    tag : str, optional
+        Set a format for the tag attached to the output. This is a Python format string
+        which can interpolate the variables listed under `attrs` above. For example a
+        tag of "cat{count}" will generate catalogs with the tags "cat1", "cat2", etc.
     output_name : string
-        A python format string used to construct the filename. Valid identifiers are:
-          - `count`: an integer giving which iteration of the task is this.
-          - `tag`: a string identifier for the output derived from the
-                   containers `tag` attribute. If that attribute is not present
-                   `count` is used instead.
-          - `key`: the name of the output key.
-          - `task`: the (unqualified) name of the task.
-          - `output_root`: the value of the output root argument. This is deprecated
-                           and is just used for legacy support. The default value of
-                           `output_name` means the previous behaviour works.
+        A python format string used to construct the filename. All variables given under
+        `attrs` above can be interpolated into the filename.
     output_root : string
         Pipeline settable parameter giving the first part of the output path.
         Deprecated in favour of `output_name`.
@@ -263,16 +266,11 @@ class SingleTask(MPILoggedTask, pipeline.BasicContMixin):
     pipeline_config : dict
         Global pipeline configuration. This is attached to output metadata.
 
-    Methods
-    -------
-    next
-    setup
-    process
-    finish
-    read_input
-    cast_input
-    write_output
-
+    Raises
+    ------
+    `caput.pipeline.PipelineRuntimeError`
+        If this is used as a baseclass to a task overriding `self.process` with variable
+        length or optional arguments.
     """
 
     save = config.Property(default=False, proptype=bool)
@@ -288,18 +286,19 @@ class SingleTask(MPILoggedTask, pipeline.BasicContMixin):
     versions = config.Property(default={}, proptype=dict)
     pipeline_config = config.Property(default={}, proptype=dict)
 
+    tag = config.Property(proptype=str, default="{tag}")
+    attrs = config.Property(proptype=dict, default=None)
+
     _count = 0
 
     done = False
     _no_input = False
 
     def __init__(self):
-        """Checks inputs and outputs and stuff."""
-
         super(SingleTask, self).__init__()
 
         # Inspect the `process` method to see how many arguments it takes.
-        pro_argspec = misc.getfullargspec(self.process)
+        pro_argspec = getfullargspec(self.process)
         n_args = len(pro_argspec.args) - 1
 
         if pro_argspec.varargs or pro_argspec.varkw or pro_argspec.defaults:
@@ -307,7 +306,7 @@ class SingleTask(MPILoggedTask, pipeline.BasicContMixin):
                 "`process` method may not have variable length or optional"
                 " arguments."
             )
-            raise pipeline.PipelineConfigError(msg)
+            raise pipeline.PipelineRuntimeError(msg)
 
         if n_args == 0:
             self._no_input = True
@@ -328,7 +327,17 @@ class SingleTask(MPILoggedTask, pipeline.BasicContMixin):
         except AttributeError:
             self.done = True
 
-        # Process input and fetch ouput
+        # Extract a list of the tags for all input arguments
+        input_tags = [
+            (
+                str(icont.attrs.get("tag"))
+                if isinstance(icont, memh5.MemDiskGroup)
+                else None
+            )
+            for icont in input
+        ]
+
+        # Process input and fetch output
         if self._no_input:
             if len(input) > 0:
                 # This should never happen.  Just here to catch bugs.
@@ -341,15 +350,10 @@ class SingleTask(MPILoggedTask, pipeline.BasicContMixin):
         if output is None:
             return
 
-        # Set a tag in output if needed
-        if "tag" not in output.attrs and len(input) > 0 and "tag" in input[0].attrs:
-            output.attrs["tag"] = input[0].attrs["tag"]
+        # Insert the input tags into the output container
+        output.attrs["input_tags"] = input_tags
 
-        # Check for NaN's etc
-        output = self._nan_process_output(output)
-
-        # Write the output if needed
-        self._save_output(output)
+        output = self._process_output(output)
 
         # Increment internal counter
         self._count = self._count + 1
@@ -362,24 +366,53 @@ class SingleTask(MPILoggedTask, pipeline.BasicContMixin):
     def finish(self):
         """Should not need to override. Implement `process_finish` instead."""
 
-        self.log.info("Starting finish for task %s" % self.__class__.__name__)
+        class_name = self.__class__.__name__
 
-        try:
-            output = self.process_finish()
+        self.log.info(f"Starting finish for task {class_name}")
 
-            # Check for NaN's etc
-            output = self._nan_process_output(output)
+        if not hasattr(self, "process_finish"):
+            self.log.info(f"No finish for task {class_name}")
+            return
 
-            # Write the output if needed
-            self._save_output(output)
+        output = self.process_finish()
 
-            self.log.info("Leaving finish for task %s" % self.__class__.__name__)
+        # Return immediately if output is None to skip writing phase.
+        if output is None:
+            self.log.info(f"Leaving finish for task {class_name}")
+            return None
 
-            return output
+        output = self._process_output(output)
 
-        except AttributeError:
-            self.log.info("No finish for task %s" % self.__class__.__name__)
-            pass
+        self.log.info(f"Leaving finish for task {class_name}")
+
+        return output
+
+    def _process_output(self, output):
+
+        if not isinstance(output, memh5.MemDiskGroup):
+            raise pipeline.PipelineRuntimeError(
+                f"Task must output a valid memh5 container; given {type(output)}"
+            )
+
+        # Set the tag according to the format
+        idict = self._interpolation_dict(output)
+
+        # Set the attributes in the output container (including from the `tag` config
+        # option)
+        attrs_to_set = {} if self.attrs is None else self.attrs.copy()
+        attrs_to_set["tag"] = self.tag
+        for attrname, attrval in attrs_to_set.items():
+            if isinstance(attrval, str):
+                attrval = attrval.format(**idict)
+            output.attrs[attrname] = attrval
+
+        # Check for NaN's etc
+        output = self._nan_process_output(output)
+
+        # Write the output if needed
+        self._save_output(output)
+
+        return output
 
     def _save_output(self, output):
         # Routine to write output if needed.
@@ -390,17 +423,11 @@ class SingleTask(MPILoggedTask, pipeline.BasicContMixin):
             for key, value in metadata.items():
                 output.add_history(key, value)
 
-            # Create a tag for the output file name
-            tag = output.attrs["tag"] if "tag" in output.attrs else self._count
-
             # Construct the filename
-            name_parts = {
-                "tag": tag,
-                "count": self._count,
-                "task": self.__class__.__name__,
-                "key": self._out_keys[0] if self._out_keys else "",
-                "output_root": self.output_root,
-            }
+            name_parts = self._interpolation_dict(output)
+            if self.output_root != "":
+                self.log.warn("Use of `output_root` is deprecated.")
+                name_parts["output_root"] = self.output_root
             outfile = self.output_name.format(**name_parts)
 
             # Expand any variables in the path
@@ -413,6 +440,11 @@ class SingleTask(MPILoggedTask, pipeline.BasicContMixin):
     def _nan_process_output(self, output):
         # Process the output to check for NaN's
         # Returns the output or, None if it should be skipped
+
+        if not isinstance(output, memh5.MemDiskGroup):
+            raise pipeline.PipelineRuntimeError(
+                f"Task must output a valid memh5 container; given {type(output)}"
+            )
 
         if self.nan_check:
             nan_found = self._nan_check_walk(output)
@@ -430,6 +462,22 @@ class SingleTask(MPILoggedTask, pipeline.BasicContMixin):
                 return None
 
         return output
+
+    def _interpolation_dict(self, output):
+        # Get the set of variables the can be interpolated into the various strings
+        idict = dict(output.attrs)
+        idict.update(
+            tag=(output.attrs["tag"] if "tag" in output.attrs else self._count),
+            count=self._count,
+            task=self.__class__.__name__,
+            key=(
+                self._out_keys[0]
+                if hasattr(self, "_out_keys") and self._out_keys
+                else ""
+            ),
+            output_root=self.output_root,
+        )
+        return idict
 
     def _nan_check_walk(self, cont):
         # Walk through a memh5 container and check for NaN's and Inf's.
@@ -450,28 +498,28 @@ class SingleTask(MPILoggedTask, pipeline.BasicContMixin):
             if isinstance(n, memh5.MemDataset):
 
                 # Try to test for NaN's and infs. This will fail for compound datatypes...
-                arr = n[:]
+                # casting to ndarray, bc MPI ranks may fall out of sync, if a nan or inf are found
+                arr = n[:].view(np.ndarray)
                 try:
-                    is_nan = np.isnan(arr)
-                    is_inf = np.isinf(arr)
-                    arr = n[:]
+                    total_nan = np.isnan(arr).sum()
+                    total_inf = np.isinf(arr).sum()
                 except TypeError:
                     continue
 
-                if is_nan.any():
+                if total_nan > 0:
                     self.log.info(
                         "NaN's found in dataset %s [%i of %i elements]",
                         n.name,
-                        is_nan.sum(),
+                        total_nan,
                         arr.size,
                     )
                     found = True
 
-                if is_inf.any():
+                if total_inf > 0:
                     self.log.info(
                         "Inf's found in dataset %s [%i of %i elements]",
                         n.name,
-                        is_inf.sum(),
+                        total_inf,
                         arr.size,
                     )
                     found = True
@@ -563,3 +611,35 @@ class Delete(SingleTask):
         gc.collect()
 
         return None
+
+
+def group_tasks(*tasks):
+    """Create a Task that groups a bunch of tasks together.
+
+    This method creates a class that inherits from all the subtasks, and
+    calls each `process` method in sequence, passing the output of one to the
+    input of the next.
+
+    This should be used like:
+
+    >>> class SuperTask(group_tasks(SubTask1, SubTask2)):
+    >>>     pass
+
+    At the moment if the ensemble has more than one setup method, the
+    SuperTask will need to implement an override that correctly calls each.
+    """
+
+    class TaskGroup(*tasks):
+
+        # TODO: figure out how to make the setup work at the moment it just picks the first in MRO
+        # def setup(self, x): pass
+
+        def process(self, x):
+
+            for t in tasks:
+                self.log.debug("Calling process for subtask %s", t.__name__)
+                x = t.process(self, x)
+
+            return x
+
+    return TaskGroup
