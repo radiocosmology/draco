@@ -1588,6 +1588,8 @@ class SVDModes(MContainer):
         Array of weights for each point.
     """
 
+    _axes = ("mode",)
+
     _dataset_spec = {
         "vis": {
             "axes": ["m", "mode"],
