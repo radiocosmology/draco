@@ -65,6 +65,7 @@ class BeamFormBase(task.SingleTask):
     timetrack = config.Property(proptype=float, default=900.0)
     variable_timetrack = config.Property(proptype=bool, default=False)
     freqside = config.Property(proptype=int, default=None)
+    data_available = True
 
     def setup(self, manager):
         """Generic setup method.
@@ -629,6 +630,10 @@ class BeamFormBase(task.SingleTask):
         if "position" not in catalog:
             raise ValueError("Input is missing a position table.")
 
+        if not hasattr(self, "epoch"):
+            self.log.warning("Epoch not set. Was the requested data not available?")
+            self.data_available = False
+
         coord = catalog.attrs.get("coordinates", None)
         if coord == "CIRS":
             self.log.info("Catalog already in CIRS coordinates.")
@@ -687,6 +692,9 @@ class BeamForm(BeamFormBase):
         self._process_data(data)
         self._process_catalog(self.catalog)
 
+        if not self.data_available:
+            return None
+
         # Call generic process method.
         return super(BeamForm, self).process()
 
@@ -725,6 +733,9 @@ class BeamFormCat(BeamFormBase):
             Formed beams at each source.
         """
         self._process_catalog(source_cat)
+
+        if not self.data_available:
+            return None
 
         # Call generic process method.
         return super(BeamFormCat, self).process()
