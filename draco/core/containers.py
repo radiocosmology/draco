@@ -176,7 +176,7 @@ class ContainerBase(memh5.BasicCont):
             if axis_map is not None:
                 self.create_index_map(axis, axis_map)
             else:
-                raise RuntimeError("No definition of axis %s supplied." % axis)
+                raise RuntimeError(f"No definition of axis {axis} supplied.")
 
         # Iterate over datasets and initialise any that specify it
         if not skip_datasets:
@@ -223,7 +223,7 @@ class ContainerBase(memh5.BasicCont):
 
         # Dataset must be specified
         if name not in self.dataset_spec:
-            raise RuntimeError("Dataset name not known.")
+            raise RuntimeError(f"Dataset {name} not known.")
 
         dspec = self.dataset_spec[name]
 
@@ -246,7 +246,7 @@ class ContainerBase(memh5.BasicCont):
                 if isinstance(axis, int):
                     l = axis
                 else:
-                    raise RuntimeError("Axis not defined in index_map")
+                    raise RuntimeError(f"Axis {axis} not defined in index_map")
             else:
                 l = len(self.index_map[axis])
 
@@ -1482,7 +1482,7 @@ class TrackBeam(FreqContainer, SampleVarianceContainer):
         coords="celestial",
         track_type="drift",
         *args,
-        **kwargs
+        **kwargs,
     ):
 
         if theta is not None and phi is not None:
@@ -1587,6 +1587,8 @@ class SVDModes(MContainer):
     weight : mpidataset.MPIArray
         Array of weights for each point.
     """
+
+    _axes = ("mode",)
 
     _dataset_spec = {
         "vis": {
