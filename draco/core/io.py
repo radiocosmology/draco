@@ -387,8 +387,6 @@ class BaseLoadFiles(task.SingleTask):
     name>_index` keys are given the former will take precedence, but you should
     clearly avoid doing this.
 
-    Additionally index based selections currently don't work for distributed reads.
-
     Here's an example in the YAML format that the pipeline uses:
 
     .. code-block:: yaml
