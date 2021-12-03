@@ -1,7 +1,7 @@
 import numpy as np
 
 from caput import config, pipeline
-from cora.util import units
+from cora.util import units, coord
 
 from ..core import task, containers
 from ..analysis import transform
@@ -221,3 +221,85 @@ class SpectralRegridder(transform.Regridder):
         out["redshift"][:] = formed["redshift"][:]
 
         return out
+
+
+class SelectField(task.SingleTask):
+    """Select objects in the catalog that are in either the NGC or SGC field.
+
+    Attributes
+    ----------
+    field : str
+        Name of the field. One of "NGC" or "SGC".
+    """
+
+    field = config.enum(["NGC", "SGC"], default="NGC")
+
+    def process(self, formed):
+        """Select objects that are in the chosen field.
+
+        Parameters
+        ----------
+        formed : :class:`..core.containers.FormedBeam`
+        """
+
+        # redistribute over frequency
+        formed.redistribute("freq")
+
+        # select lines of sight in field
+        if self.comm.rank == 0:
+            ra, dec = formed["position"]["ra"], formed["position"]["dec"]
+
+            # convert to spherical coords
+            phi, theta = ra, 0.5 * np.pi - dec
+
+            # rotate to galactic
+            gal = _cel2gal(np.array((theta, phi)).T)
+
+            if self.field == "NGC":
+                sel = gal[:, 0] <= 0.5 * np.pi
+            else:
+                sel = gal[:, 0] > 0.5 * np.pi
+        else:
+            sel = None
+
+        # broadcast selection to other ranks
+        sel = self.comm.bcast(sel, root=0)
+
+        # create a new container
+        out = containers.empty_like(formed, object_id=formed.id[sel])
+        out.redistribute("freq")
+
+        # copy over data
+        out.beam[:] = formed.beam[:][sel]
+        out.weight[:] = formed.weight[:][sel]
+        out["position"][:] = formed["position"][:][sel]
+        out["redshift"][:] = formed["redshift"][:][sel]
+
+        return out
+
+
+# Galactic coordinates rotation
+z_rot = -(12 + 51.4 / 60.0) * 2 * np.pi / 24
+y_rot = (90.0 - 27.13) * np.pi / 180
+R = np.dot(
+    np.array(
+        [
+            [np.cos(y_rot), 0, np.sin(-y_rot)],
+            [0, 1.0, 0],
+            [np.sin(y_rot), 0.0, np.cos(y_rot)],
+        ]
+    ),
+    np.array(
+        [
+            [np.cos(z_rot), np.sin(-z_rot), 0],
+            [np.sin(z_rot), np.cos(z_rot), 0],
+            [0, 0, 1.0],
+        ]
+    ),
+)
+
+
+def _cel2gal(sph_coords):
+    cart = coord.sph_to_cart(sph_coords)
+    gcart = np.matmul(R, cart[..., np.newaxis])[..., 0]
+    return coord.cart_to_sph(gcart)[:, 1:]
