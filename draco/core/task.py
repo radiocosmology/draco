@@ -466,8 +466,15 @@ class SingleTask(MPILoggedTask, pipeline.BasicContMixin):
     def _interpolation_dict(self, output):
         # Get the set of variables the can be interpolated into the various strings
         idict = dict(output.attrs)
+        if "tag" in output.attrs:
+            tag = output.attrs["tag"]
+        elif "input_tags" in output.attrs and len(output.attrs["input_tags"]):
+            tag = output.attrs["input_tags"][0]
+        else:
+            tag = self._count
+
         idict.update(
-            tag=(output.attrs["tag"] if "tag" in output.attrs else self._count),
+            tag=tag,
             count=self._count,
             task=self.__class__.__name__,
             key=(
