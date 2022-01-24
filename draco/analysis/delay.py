@@ -411,7 +411,9 @@ class DelaySpectrumEstimator(task.SingleTask, random.RandomTask):
         delays = np.fft.fftshift(np.fft.fftfreq(ndelay, d=self.freq_spacing))  # in us
 
         # Initialise the spectrum container
-        delay_spec = containers.DelaySpectrum(baseline=baselines, delay=delays)
+        delay_spec = containers.DelaySpectrum(
+            baseline=baselines, delay=delays, attrs_from=ss
+        )
         delay_spec.redistribute("baseline")
         delay_spec.spectrum[:] = 0.0
 
@@ -609,7 +611,9 @@ class DelaySpectrumEstimatorBase(task.SingleTask, random.RandomTask):
         # Use the "baselines" axis to generically represent all the other axes
 
         # Initialise the spectrum container
-        delay_spec = containers.DelaySpectrum(baseline=nbase, delay=delays)
+        delay_spec = containers.DelaySpectrum(
+            baseline=nbase, delay=delays, attrs_from=ss
+        )
         delay_spec.redistribute("baseline")
         delay_spec.spectrum[:] = 0.0
         bl_axes = [da for da in data_axes if da not in [self.average_axis, "freq"]]
