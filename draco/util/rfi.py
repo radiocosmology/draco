@@ -78,7 +78,7 @@ def sumthreshold_py(
             count, weights=np.ones(m, dtype=float), origin=-centre, axis=1
         )[:, : (nx - m + 1)]
         if correct_for_missing:
-            cconv = m ** 0.5 * cconv ** 0.5
+            cconv = m**0.5 * cconv**0.5
         flag_temp = dconv > cconv * threshold
         flag_temp += dconv < -cconv * threshold
         for ii in range(flag_temp.shape[1]):
@@ -97,7 +97,7 @@ def sumthreshold_py(
             count, weights=np.ones(m, dtype=float), origin=-centre, axis=0
         )[: (ny - m + 1), :]
         if correct_for_missing:
-            cconv = m ** 0.5 * cconv ** 0.5
+            cconv = m**0.5 * cconv**0.5
         flag_temp = dconv > cconv * threshold
         flag_temp += dconv < -cconv * threshold
 

@@ -84,7 +84,7 @@ class BaseGains(task.SingleTask):
 
         def _cf(x):
             dij = x[:, np.newaxis] - x[np.newaxis, :]
-            return amp ** 2 * np.exp(-0.5 * (dij / zeta) ** 2)
+            return amp**2 * np.exp(-0.5 * (dij / zeta) ** 2)
 
         return _cf
 
