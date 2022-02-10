@@ -172,12 +172,12 @@ class ComputeSystemSensitivity(task.SingleTask):
                 pvar = tools.invert_no_zero(bweight[ff, ipol, :])
                 pflag = bflag[ff, ipol, :].astype(np.float32)
 
-                var[ff, pp, :] = np.sum(pfcnt ** 2 * pscale * pflag * pvar, axis=0)
+                var[ff, pp, :] = np.sum(pfcnt**2 * pscale * pflag * pvar, axis=0)
 
                 counter[ff, pp, :] = np.sum(pfcnt * pscale * pflag, axis=0)
 
         # Normalize
-        var *= tools.invert_no_zero(counter ** 2)
+        var *= tools.invert_no_zero(counter**2)
 
         # Determine which of the stack indices correspond to autocorrelations
         auto_stack_id = np.flatnonzero(auto_flag)
@@ -228,7 +228,7 @@ class ComputeSystemSensitivity(task.SingleTask):
 
         # Normalize by the number of independent samples
         # and the total number of baselines squared
-        radiometer *= tools.invert_no_zero(nint * radiometer_counter ** 2)
+        radiometer *= tools.invert_no_zero(nint * radiometer_counter**2)
 
         # Create output container
         metrics = containers.SystemSensitivity(
