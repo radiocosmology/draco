@@ -633,6 +633,7 @@ class BeamFormBase(task.SingleTask):
         if not hasattr(self, "epoch"):
             self.log.warning("Epoch not set. Was the requested data not available?")
             self.data_available = False
+            return
 
         coord = catalog.attrs.get("coordinates", None)
         if coord == "CIRS":
