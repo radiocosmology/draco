@@ -668,7 +668,7 @@ class VisContainer(ContainerBase):
 
         if stack is None and prod is not None:
             stack = np.empty_like(prod, dtype=[("prod", "<u4"), ("conjugate", "u1")])
-            stack["prod"][:] = np.arange(len(prod))
+            stack["prod"][:] = np.arange(len(prod))[:, np.newaxis]
             stack["conjugate"] = 0
             kwargs["stack"] = stack
 
