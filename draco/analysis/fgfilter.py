@@ -73,7 +73,7 @@ class SVDModeProject(_ProjectFilterBase):
         tel = bt.telescope
 
         svdmodes = containers.SVDModes(
-            mode=bt.ndofmax, axes_from=mmodes, attrs_from=mmodes
+            mode=bt.ndofmax(), axes_from=mmodes, attrs_from=mmodes
         )
         svdmodes.vis[:] = 0.0
 
@@ -180,7 +180,7 @@ class KLModeProject(_ProjectFilterBase):
 
         # Construct the container and redistribute
         klmodes = containers.KLModes(
-            mode=bt.ndofmax, axes_from=svdmodes, attrs_from=svdmodes
+            mode=bt.ndofmax(), axes_from=svdmodes, attrs_from=svdmodes
         )
 
         klmodes.vis[:] = 0.0
@@ -220,7 +220,7 @@ class KLModeProject(_ProjectFilterBase):
         # Construct the container and redistribute
 
         svdmodes = containers.SVDModes(
-            mode=bt.ndofmax, axes_from=klmodes, attrs_from=klmodes
+            mode=bt.ndofmax(), axes_from=klmodes, attrs_from=klmodes
         )
         klmodes.redistribute("m")
         svdmodes.redistribute("m")
