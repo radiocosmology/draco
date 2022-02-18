@@ -353,6 +353,8 @@ class DelaySpectrumEstimator(task.SingleTask, random.RandomTask):
     skip_nyquist : bool, optional
         Whether the Nyquist frequency is included in the data. This is `True` by
         default to align with the output of CASPER PFBs.
+    window : one of {'nuttall', 'blackman_nuttall', 'blackman_harris', None}, optional
+        Apodisation to perform on frequency axis. Default: 'nuttall'.
     """
 
     nsamp = config.Property(proptype=int, default=20)
@@ -360,6 +362,9 @@ class DelaySpectrumEstimator(task.SingleTask, random.RandomTask):
     freq_spacing = config.Property(proptype=float, default=None)
     nfreq = config.Property(proptype=int, default=None)
     skip_nyquist = config.Property(proptype=bool, default=True)
+    window = config.enum(
+        ["nuttall", "blackman_nuttall", "blackman_harris", None], default="nuttall"
+    )
 
     def setup(self, telescope):
         """Set the telescope needed to generate Stokes I.
@@ -458,6 +463,7 @@ class DelaySpectrumEstimator(task.SingleTask, random.RandomTask):
                 ndelay,
                 weight,
                 initial_S,
+                window=self.window,
                 fsel=non_zero_channel,
                 niter=self.nsamp,
                 rng=rng,
@@ -505,6 +511,8 @@ class DelaySpectrumEstimatorBase(task.SingleTask, random.RandomTask):
         Calculate the delay spectrum of this dataset (e.g., "vis", "map", "beam").
     average_axis : str
         Name of the axis to take the average over.
+    window : one of {'nuttall', 'blackman_nuttall', 'blackman_harris', None}, optional
+        Apodisation to perform on frequency axis. Default: 'nuttall'.
     """
 
     nsamp = config.Property(proptype=int, default=20)
@@ -512,6 +520,9 @@ class DelaySpectrumEstimatorBase(task.SingleTask, random.RandomTask):
     freq_spacing = config.Property(proptype=float, default=None)
     nfreq = config.Property(proptype=int, default=None)
     skip_nyquist = config.Property(proptype=bool, default=True)
+    window = config.enum(
+        ["nuttall", "blackman_nuttall", "blackman_harris", None], default="nuttall"
+    )
 
     dataset = config.Property(proptype=str, default="vis")
     average_axis = config.Property(proptype=str)
@@ -663,6 +674,7 @@ class DelaySpectrumEstimatorBase(task.SingleTask, random.RandomTask):
                 ndelay,
                 weight,
                 initial_S,
+                window=self.window,
                 fsel=non_zero_channel,
                 niter=self.nsamp,
                 rng=self.rng,
@@ -847,7 +859,7 @@ def fourier_matrix_c2r(N, fsel=None):
 
 
 def delay_spectrum_gibbs(
-    data, N, Ni, initial_S, window=True, fsel=None, niter=20, rng=None
+    data, N, Ni, initial_S, window="nuttall", fsel=None, niter=20, rng=None
 ):
     """Estimate the delay spectrum by Gibbs sampling.
 
@@ -866,8 +878,8 @@ def delay_spectrum_gibbs(
         Inverse noise variance.
     initial_S : np.ndarray[delay]
         The initial delay spectrum guess.
-    window : bool, optional
-        Apply a Nuttall apodisation function. Default is True.
+    window : one of {'nuttall', 'blackman_nuttall', 'blackman_harris', None}, optional
+        Apply an apodisation function. Default: 'nuttall'.
     fsel : np.ndarray[freq], optional
         Indices of channels that we have data at. By default assume all channels.
     niter : int, optional
@@ -899,11 +911,11 @@ def delay_spectrum_gibbs(
     data = data.astype(np.complex128, order="C").view(np.float64).T.copy()
 
     # Window the frequency data
-    if window:
+    if window is not None:
 
         # Construct the window function
         x = fsel * 1.0 / total_freq
-        w = window_generalised(x, window="nuttall")
+        w = window_generalised(x, window=window)
         w = np.repeat(w, 2)
 
         # Apply to the projection matrix and the data
