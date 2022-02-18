@@ -332,7 +332,7 @@ class SingleTask(MPILoggedTask, pipeline.BasicContMixin):
             (
                 str(icont.attrs.get("tag"))
                 if isinstance(icont, memh5.MemDiskGroup)
-                else None
+                else ""
             )
             for icont in input
         ]
