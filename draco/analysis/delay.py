@@ -353,7 +353,9 @@ class DelaySpectrumEstimator(task.SingleTask, random.RandomTask):
     skip_nyquist : bool, optional
         Whether the Nyquist frequency is included in the data. This is `True` by
         default to align with the output of CASPER PFBs.
-    window : one of {'nuttall', 'blackman_nuttall', 'blackman_harris', 'none'}, optional
+    apply_window : bool, optional
+        Whether to apply apodisation to frequency axis. Default: True.
+    window : one of {'nuttall', 'blackman_nuttall', 'blackman_harris'}, optional
         Apodisation to perform on frequency axis. Default: 'nuttall'.
     """
 
@@ -362,8 +364,9 @@ class DelaySpectrumEstimator(task.SingleTask, random.RandomTask):
     freq_spacing = config.Property(proptype=float, default=None)
     nfreq = config.Property(proptype=int, default=None)
     skip_nyquist = config.Property(proptype=bool, default=True)
+    apply_window = config.Property(proptype=bool, default=True)
     window = config.enum(
-        ["nuttall", "blackman_nuttall", "blackman_harris", "none"], default="nuttall"
+        ["nuttall", "blackman_nuttall", "blackman_harris"], default="nuttall"
     )
 
     def setup(self, telescope):
@@ -465,7 +468,7 @@ class DelaySpectrumEstimator(task.SingleTask, random.RandomTask):
                 ndelay,
                 weight,
                 initial_S,
-                window=self.window,
+                window=self.window if self.apply_window else None,
                 fsel=non_zero_channel,
                 niter=self.nsamp,
                 rng=rng,
@@ -513,7 +516,9 @@ class DelaySpectrumEstimatorBase(task.SingleTask, random.RandomTask):
         Calculate the delay spectrum of this dataset (e.g., "vis", "map", "beam").
     average_axis : str
         Name of the axis to take the average over.
-    window : one of {'nuttall', 'blackman_nuttall', 'blackman_harris', "none"}, optional
+    apply_window : bool, optional
+        Whether to apply apodisation to frequency axis. Default: True.
+    window : one of {'nuttall', 'blackman_nuttall', 'blackman_harris', optional
         Apodisation to perform on frequency axis. Default: 'nuttall'.
     """
 
@@ -522,8 +527,9 @@ class DelaySpectrumEstimatorBase(task.SingleTask, random.RandomTask):
     freq_spacing = config.Property(proptype=float, default=None)
     nfreq = config.Property(proptype=int, default=None)
     skip_nyquist = config.Property(proptype=bool, default=True)
+    apply_window = config.Property(proptype=bool, default=True)
     window = config.enum(
-        ["nuttall", "blackman_nuttall", "blackman_harris", "none"], default="nuttall"
+        ["nuttall", "blackman_nuttall", "blackman_harris"], default="nuttall"
     )
 
     dataset = config.Property(proptype=str, default="vis")
@@ -537,8 +543,6 @@ class DelaySpectrumEstimatorBase(task.SingleTask, random.RandomTask):
         telescope : TransitTelescope
         """
         self.telescope = io.get_telescope(telescope)
-        if self.window == "none":
-            self.window = None
 
     def process(self, ss: FreqContainerType) -> containers.DelaySpectrum:
         """Estimate the delay spectrum.
@@ -678,7 +682,7 @@ class DelaySpectrumEstimatorBase(task.SingleTask, random.RandomTask):
                 ndelay,
                 weight,
                 initial_S,
-                window=self.window,
+                window=self.window if self.apply_window else None,
                 fsel=non_zero_channel,
                 niter=self.nsamp,
                 rng=self.rng,
