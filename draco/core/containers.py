@@ -2087,6 +2087,24 @@ class DelaySpectrum(ContainerBase):
     def spectrum(self):
         return self.datasets["spectrum"]
 
+class delayspec(ContainerBase):
+    """Container for a delay spectrum."""
+
+    _axes = ("baseline", "ra","delay")
+
+    _dataset_spec = {
+        "spectrum": {
+            "axes": ["baseline","ra","delay"],
+            "dtype": np.float64,
+            "initialise": True,
+            "distributed": True,
+            "distributed_axis": "baseline",
+        }
+    }
+
+    @property
+    def spectrum(self):
+        return self.datasets["spectrum"]
 
 class Powerspectrum2D(ContainerBase):
     """Container for a 2D cartesian power spectrum.
