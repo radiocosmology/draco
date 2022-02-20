@@ -1,0 +1,104 @@
+# Variables
+#   split=all,p0,p1
+#   cut=strict,relaxed
+#   rng=110deg_265deg,148deg_205deg
+#
+# Cluster configuration
+cluster:
+  name: delayspec_110deg_265deg
+
+  directory: /home/arnab92/projects/rpp-chime/arnab92/tmp/
+
+  time: 45
+  system: cedar
+  nodes: 4
+  ompnum: 6
+  pernode: 8
+  mem: 192000M
+
+  venv: /home/arnab92/projects/rpp-chime/arnab92/virtual_delay/venv
+
+variables:
+
+  ra_sel_110deg_265deg: &ra_sel_110deg_265deg [1280, 3008]
+  ra_sel_148deg_205deg: &ra_sel_148deg_205deg [1684, 2332]
+
+# Pipeline task configuration
+pipeline:
+    
+  logging:
+    root: DEBUG
+    peewee: INFO
+    matplotlib: INFO
+
+  save_versions:
+    - caput
+    - ch_util
+    - ch_pipeline
+    - chimedb.core
+    - chimedb.data_index
+    - chimedb.dataflag
+    - cora
+    - draco
+    - drift
+    - numpy
+    - scipy
+    - h5py
+    - mpi4py
+
+  tasks:
+    - type: ch_pipeline.core.containers.MonkeyPatchContainers
+
+    - type: draco.core.task.SetMPILogging
+      params:
+        level_rank0: INFO
+        level_all: WARNING
+
+    - type: draco.core.io.LoadProductManager
+      out: manager
+      params:
+        product_directory: "/project/rpp-krs/chime/beam_transfers/chime_4cyl_585-800_I_XX-YY_psbeam"
+
+    - type: draco.core.io.LoadFilesFromParams
+      out: ringmap_init
+      params:
+        files: ["/project/rpp-chime/chime/stacking/data/20211117/all/ringmap_intercyl_deconvolve_psbeam_all.h5"]
+        distributed: Yes
+        selections:
+            ra_range: *ra_sel_110deg_265deg
+            pol_range: [0, 4, 3]
+
+    - type: ch_pipeline.core.io.LoadFileFromTag
+      in: ringmap_init
+      out: mask      
+      params:
+        prefix: "/project/rpp-chime/chime/stacking/masks/mask_rfi_regions_dec_local_20210826.h5"
+        only_prefix: Yes
+        distributed: Yes
+        selections:
+            ra_range: *ra_sel_110deg_265deg
+            pol_range: [0, 4, 3]
+
+    - type: draco.analysis.flagging.MaskBeamformedOutliers
+      in: [ringmap_init, mask]
+      out: ringmap
+      params:
+        save: Yes
+        output_name: "ringmap_intercyl_ra_110deg_265deg_no_filter.h5"
+
+   
+
+    - type: draco.analysis.delay.DelaySpectrumWienerBase
+      requires: manager
+      in: ringmap
+      out: delay_spectrum
+      params:
+        delayps: "/scratch/arnab92/chime/relaxed/ra_110_265_deg/data/dspec/delay_spectrum_ra_110deg_265deg_deconvolve_psbeam_all.h5"
+       # freq_zero: 800.0
+        nfreq: 545
+       # nsamp: 100
+        average_axis: "ra"
+        dataset: "map"
+        tag: "wiener_filtered"
+        save: Yes
+        output_name: "dspec/delay_spectrum_ra_110deg_265deg_{tag}.h5"
