@@ -7,7 +7,7 @@
 cluster:
   name: delayspec_110deg_265deg
 
-  directory: /home/arnab92/projects/rpp-chime/arnab92/tmp/
+  directory: /home/arnab92/projects/rpp-chime/arnab92/tmp/  # The directory where the output will be stored
 
   time: 45
   system: cedar
@@ -16,7 +16,7 @@ cluster:
   pernode: 8
   mem: 192000M
 
-  venv: /home/arnab92/projects/rpp-chime/arnab92/virtual_delay/venv
+#  venv: /home/arnab92/projects/rpp-chime/arnab92/virtual_delay/venv # put your environment here
 
 variables:
 
