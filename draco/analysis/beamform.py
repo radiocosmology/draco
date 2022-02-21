@@ -296,7 +296,7 @@ class BeamFormBase(task.SingleTask):
                     # re-work and makes code more efficient).
 
                     this_sumweight = np.sum(
-                        np.sum(sumweight_inrange, axis=-1) * primary_beam**2, axis=1
+                        np.sum(sumweight_inrange, axis=-1) * primary_beam ** 2, axis=1
                     )
 
                     formed_beam_full[pol] = np.sum(
@@ -306,15 +306,15 @@ class BeamFormBase(task.SingleTask):
                     if self.weight != "inverse_variance":
                         this_weight2 = np.sum(
                             np.sum(
-                                sumweight_inrange**2
+                                sumweight_inrange ** 2
                                 * invert_no_zero(visweight_inrange),
                                 axis=-1,
                             )
-                            * primary_beam**2,
+                            * primary_beam ** 2,
                             axis=1,
                         )
 
-                        weight_full[pol] = this_sumweight**2 * invert_no_zero(
+                        weight_full[pol] = this_sumweight ** 2 * invert_no_zero(
                             this_weight2
                         )
 
@@ -332,13 +332,13 @@ class BeamFormBase(task.SingleTask):
                     ] = this_formed_beam * invert_no_zero(this_sumweight)
                     if self.weight != "inverse_variance":
                         this_weight2 = np.sum(
-                            sumweight_inrange**2 * invert_no_zero(visweight_inrange),
+                            sumweight_inrange ** 2 * invert_no_zero(visweight_inrange),
                             axis=-1,
                         )
                         # Populate only where ha_mask is true. Zero otherwise.
                         weight_full[pol][
                             :, ha_mask
-                        ] = this_sumweight**2 * invert_no_zero(this_weight2)
+                        ] = this_sumweight ** 2 * invert_no_zero(this_weight2)
                     else:
                         weight_full[pol][:, ha_mask] = this_sumweight
 

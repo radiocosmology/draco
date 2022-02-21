@@ -123,7 +123,7 @@ class GaussianNoiseDataset(task.SingleTask, random.RandomTask):
             for si, prod in enumerate(data.prodstack):
                 if prod[0] == prod[1]:
                     # This is an auto-correlation
-                    dset[:, si].real *= 2**0.5
+                    dset[:, si].real *= 2 ** 0.5
                     dset[:, si].imag = 0.0
 
         return data
@@ -324,7 +324,7 @@ class SampleNoise(task.SingleTask):
             # Construct and set the correct weights in place
             if self.set_weights:
                 autos = tools.extract_diagonal(vis_data[lfi], axis=0).real
-                weight_fac = nsamp**0.5 / autos
+                weight_fac = nsamp ** 0.5 / autos
                 tools.apply_gain(
                     data_exp.weight[fi][np.newaxis, ...],
                     weight_fac[np.newaxis, ...],
