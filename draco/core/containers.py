@@ -994,7 +994,7 @@ class HealpixContainer(ContainerBase):
 
         # Set up axes from passed arguments
         if nside is not None:
-            kwargs["pixel"] = 12 * nside ** 2
+            kwargs["pixel"] = 12 * nside**2
 
         super().__init__(*args, **kwargs)
 
@@ -2076,26 +2076,6 @@ class DelaySpectrum(ContainerBase):
     _dataset_spec = {
         "spectrum": {
             "axes": ["baseline", "delay"],
-            "dtype": np.float64,
-            "initialise": True,
-            "distributed": True,
-            "distributed_axis": "baseline",
-        }
-    }
-
-    @property
-    def spectrum(self):
-        return self.datasets["spectrum"]
-
-
-class delayspec(ContainerBase):
-    """Container for a delay spectrum."""
-
-    _axes = ("baseline", "ra", "delay")
-
-    _dataset_spec = {
-        "spectrum": {
-            "axes": ["baseline", "ra", "delay"],
             "dtype": np.float64,
             "initialise": True,
             "distributed": True,

@@ -305,14 +305,14 @@ class CollateProducts(task.SingleTask):
                 spv[:, sp_pi] += wss * ssv[freq_ind, ss_pi].conj()
 
             # Accumulate variances in quadrature.  Save in the weight dataset.
-            spw[:, sp_pi] += wss ** 2 * tools.invert_no_zero(ssw[freq_ind, ss_pi])
+            spw[:, sp_pi] += wss**2 * tools.invert_no_zero(ssw[freq_ind, ss_pi])
 
             # Increment counter
             counter[:, sp_pi] += wss
 
         # Divide through by counter to get properly weighted visibility average
         sp.vis[:] *= tools.invert_no_zero(counter)
-        sp.weight[:] = counter ** 2 * tools.invert_no_zero(sp.weight[:])
+        sp.weight[:] = counter**2 * tools.invert_no_zero(sp.weight[:])
 
         # Switch back to frequency distribution
         ss.redistribute("freq")
@@ -495,7 +495,7 @@ class MModeTransform(task.SingleTask):
         # Sum the noise variance over time samples, this will become the noise
         # variance for the m-modes
         nra = sstream.weight.shape[-1]
-        weight_sum = nra ** 2 * tools.invert_no_zero(
+        weight_sum = nra**2 * tools.invert_no_zero(
             tools.invert_no_zero(sstream.weight[:]).sum(axis=-1)
         )
 
@@ -1107,8 +1107,8 @@ class TransformJanskyToKelvin(task.SingleTask):
                 om_ij[fi, bi] = (om_i * om_j) ** 0.5
 
         # Calculate the Jy to K conversion
-        wavelength = (c.c / (local_freq * 10 ** 6))[:, np.newaxis, np.newaxis]
-        K_to_Jy = 2 * 1e26 * c.k * om_ij[:, :, np.newaxis] / wavelength ** 2
+        wavelength = (c.c / (local_freq * 10**6))[:, np.newaxis, np.newaxis]
+        K_to_Jy = 2 * 1e26 * c.k * om_ij[:, :, np.newaxis] / wavelength**2
         Jy_to_K = tools.invert_no_zero(K_to_Jy)
 
         # Get the container we will apply the conversion to (either the input, or a
@@ -1121,10 +1121,10 @@ class TransformJanskyToKelvin(task.SingleTask):
         # Apply the conversion to the data and the weights
         if self.convert_Jy_to_K:
             new_stream.vis[:] *= Jy_to_K
-            new_stream.weight[:] *= K_to_Jy ** 2
+            new_stream.weight[:] *= K_to_Jy**2
         else:
             new_stream.vis[:] *= K_to_Jy
-            new_stream.weight[:] *= Jy_to_K ** 2
+            new_stream.weight[:] *= Jy_to_K**2
 
         return new_stream
 

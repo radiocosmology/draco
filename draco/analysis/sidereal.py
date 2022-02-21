@@ -389,7 +389,7 @@ class SiderealRegridderLinear(SiderealRegridder):
             interp_vis[ff] = coeff1 * fvis[:, ind1] + coeff2 * fvis[:, ind2]
 
             interp_weight[ff] = tools.invert_no_zero(
-                coeff1 ** 2 * fvar[:, ind1] + coeff2 ** 2 * fvar[:, ind2]
+                coeff1**2 * fvar[:, ind1] + coeff2**2 * fvar[:, ind2]
             ) * finterp_flag.astype(np.float32)
 
         # Flag as bad any values that were extrapolated or that used distant points
@@ -441,9 +441,9 @@ class SiderealRegridderCubic(SiderealRegridder):
 
         coeff = np.zeros((4, u.size), dtype=np.float64)
         coeff[0] = u * ((2 - u) * u - 1)
-        coeff[1] = u ** 2 * (3 * u - 5) + 2
+        coeff[1] = u**2 * (3 * u - 5) + 2
         coeff[2] = u * ((4 - 3 * u) * u + 1)
-        coeff[3] = u ** 2 * (u - 1)
+        coeff[3] = u**2 * (u - 1)
         coeff *= 0.5
 
         # Initialize the output arrays
@@ -471,7 +471,7 @@ class SiderealRegridderCubic(SiderealRegridder):
             for ii, cc in zip(index, coeff):
 
                 finterp_flag &= fflag[:, ii]
-                finterp_var += cc ** 2 * fvar[:, ii]
+                finterp_var += cc**2 * fvar[:, ii]
 
                 interp_vis[ff] += cc * fvis[:, ii]
 
@@ -587,7 +587,7 @@ class SiderealStacker(task.SingleTask):
         if self.weight == "uniform":
             coeff = count.astype(np.float32)
             # Accumulate the variances in the stack.weight dataset.
-            self.stack.weight[:] += (coeff ** 2) * tools.invert_no_zero(sdata.weight[:])
+            self.stack.weight[:] += (coeff**2) * tools.invert_no_zero(sdata.weight[:])
         else:
             coeff = sdata.weight[:]
             # We are using inverse variance weights.  In this case,
@@ -617,7 +617,7 @@ class SiderealStacker(task.SingleTask):
         if self.with_sample_variance:
 
             # Accumulate the sum of squared coefficients.
-            self.sum_coeff_sq += coeff ** 2
+            self.sum_coeff_sq += coeff**2
 
             # Calculate the difference between the new data and the updated mean.
             delta_after = sdata.vis[:] - self.stack.vis[:]
@@ -643,7 +643,7 @@ class SiderealStacker(task.SingleTask):
         if self.weight == "uniform":
             norm = self.stack.nsample[:].astype(np.float32)
             self.stack.weight[:] = (
-                tools.invert_no_zero(self.stack.weight[:]) * norm ** 2
+                tools.invert_no_zero(self.stack.weight[:]) * norm**2
             )
 
         # We need to normalize the sample variance by the sum of coefficients.
@@ -806,7 +806,7 @@ class SiderealStackerMatch(task.SingleTask):
             sv[lfi] = sv[lfi] * N_s + np.dot(V, np.dot(A, np.dot(sv[lfi], V).T)).T
 
             # Normalise the weights
-            sw[lfi] = tools.invert_no_zero(sw[lfi]) * Ni_s ** 2
+            sw[lfi] = tools.invert_no_zero(sw[lfi]) * Ni_s**2
 
         # Remove the full day median to set a well defined normalisation, otherwise the
         # mean is undefined
