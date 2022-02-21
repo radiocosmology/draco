@@ -94,7 +94,7 @@ class DayMask(task.SingleTask):
             sstream.vis[:] *= mask
 
         # Modify the noise weights
-        sstream.weight[:] *= mask**2
+        sstream.weight[:] *= mask ** 2
 
         return sstream
 
@@ -239,7 +239,7 @@ class MaskBaselines(task.SingleTask):
             mask *= long_ns_mask[np.newaxis, :, np.newaxis]
 
         if self.mask_short is not None:
-            short_mask = np.sum(baselines**2, axis=1) ** 0.5 > self.mask_short
+            short_mask = np.sum(baselines ** 2, axis=1) ** 0.5 > self.mask_short
             mask *= short_mask[np.newaxis, :, np.newaxis]
 
         if self.mask_short_ew is not None:
@@ -548,7 +548,7 @@ class RadiometerWeight(task.SingleTask):
         # Construct and set the correct weights in place
         nsamp = 1e6 * freq_width * int_time
         autos = tools.extract_diagonal(stream.vis[:]).real
-        weight_fac = nsamp**0.5 / autos
+        weight_fac = nsamp ** 0.5 / autos
         tools.apply_gain(stream.weight[:], weight_fac, out=stream.weight[:])
 
         # Return timestream with updated weights
@@ -813,7 +813,7 @@ class RFISensitivityMask(task.SingleTask):
                 mad
                 * MAD_TO_RMS
                 * self.start_threshold_sigma
-                * self.max_m**RMS_SCALING_DIFF
+                * self.max_m ** RMS_SCALING_DIFF
             )
 
             # SumThreshold mask

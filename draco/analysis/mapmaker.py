@@ -196,7 +196,7 @@ class MaximumLikelihoodMapMaker(BaseMapMaker):
         Ni = Ni.reshape(bt.ntel)
         bm = bt.beam_m(m, fi=f).reshape(bt.ntel, bt.nsky)
 
-        Nh = Ni**0.5
+        Nh = Ni ** 0.5
 
         # Construct the beam pseudo inverse
         ib = pinv_svd(bm * Nh[:, np.newaxis])
@@ -256,7 +256,7 @@ class WienerMapMaker(BaseMapMaker):
         # Massage the arrays into shape
         v = v.reshape(bt.ntel)
         Ni = Ni.reshape(bt.ntel)
-        Nh = Ni**0.5
+        Nh = Ni ** 0.5
 
         # Construct pre-wightened beam and beam-conjugated matrices
         bmt = bm * Nh[:, np.newaxis]
@@ -269,7 +269,7 @@ class WienerMapMaker(BaseMapMaker):
         l = np.arange(bt.telescope.lmax + 1)
         l[0] = 1  # Change l=0 to get around singularity
         l = l[m:]  # Trim off any l < m
-        cl_TT = self.prior_amp**2 * l ** (-self.prior_tilt)
+        cl_TT = self.prior_amp ** 2 * l ** (-self.prior_tilt)
         S_diag = np.concatenate([cl_TT] * 4)
 
         # For large ntel it's quickest to solve in the standard Wiener filter way

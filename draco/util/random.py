@@ -104,7 +104,7 @@ def complex_normal(size=None, loc=0.0, scale=1.0, dtype=None, rng=None, out=None
     rng.standard_normal(rsize, dtype=rtype, out=out.view(rtype))
 
     # Use inplace ops for scaling and adding to avoid intermediate arrays
-    rscale = scale / 2**0.5
+    rscale = scale / 2 ** 0.5
     out *= rscale
 
     # Don't bother with the additions if not needed
@@ -160,7 +160,7 @@ def standard_complex_wishart(m, n, rng=None):
     T[np.tril_indices(m, k=-1)] = (
         rng.standard_normal(m * (m - 1) // 2)
         + 1.0j * rng.standard_normal(m * (m - 1) // 2)
-    ) / 2**0.5
+    ) / 2 ** 0.5
 
     # Gamma variables on the diagonal
     for i in range(m):
@@ -238,7 +238,7 @@ def mpi_random_seed(seed, extra=0, gen=None):
 
     # Just choose a random number per process as the seed if nothing was set.
     if seed is None:
-        seed = np.random.randint(2**30)
+        seed = np.random.randint(2 ** 30)
 
     # Construct the new process specific seed
     new_seed = seed + mpiutil.rank + 4096 * extra
