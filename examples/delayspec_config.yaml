@@ -33,7 +33,6 @@ pipeline:
 
   save_versions:
     - caput
-    - ch_pipeline
     - chimedb.core
     - chimedb.data_index
     - chimedb.dataflag
