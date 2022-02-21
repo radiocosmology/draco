@@ -676,6 +676,303 @@ class DelaySpectrumEstimatorBase(task.SingleTask, random.RandomTask):
         return delay_spec
 
 
+class DelaySpectrumWienerBase(task.SingleTask, random.RandomTask):
+    """Calculate the delay spectrum for each RA and DEC of any container with a frequency axis.
+
+    The spectrum is calculated by Wiener filtering method given the delay power spectrum at each DEC (or baselines) [https://arxiv.org/abs/2202.01242 see:- eqn A6]
+
+    The delay spectrum output is indexed by  `baseline` and 'RA' axis. The baseline axis is the
+    composite axis of all the axis (DEC, pol and beam axes) in the container except the RA and frequency axis.
+    These constituent axes are included in the index map,  which are ['beam', 'pol', 'ra', 'el'], and their
+    order is given by the `baseline_axes` attribute.
+
+    Attributes
+    ----------
+    delayps : str
+        The delay power spectrum for all baselines. This will be used in Wiener filter to generate the delay spectrum for all RA.
+
+    freq_zero : float, optional
+        The physical frequency (in MHz) of the *zero* channel. That is the DC
+        channel coming out of the F-engine. If not specified, use the first
+        frequency channel of the stream.
+    freq_spacing : float, optional
+        The spacing between the underlying channels (in MHz). This is conjugate
+        to the length of a frame of time samples that is transformed. If not
+        set, then use the smallest gap found between channels in the dataset.
+    nfreq : int, optional
+        The number of frequency channels in the full set produced by the
+        F-engine. If not set, assume the last included frequency is the last of
+        the full set (or is the penultimate if `skip_nyquist` is set).
+    skip_nyquist : bool, optional
+        Whether the Nyquist frequency is included in the data. This is `True` by
+        default to align with the output of CASPER PFBs.
+    dataset : str
+        Calculate the delay spectrum of this dataset (e.g., "vis", "map", "beam").
+    average_axis : str
+        Name of the axis to take the average over.
+    """
+
+    delayps = config.Property(proptype=str, default=None)
+    freq_zero = config.Property(proptype=float, default=None)
+    freq_spacing = config.Property(proptype=float, default=None)
+    nfreq = config.Property(proptype=int, default=None)
+    skip_nyquist = config.Property(proptype=bool, default=True)
+
+    dataset = config.Property(proptype=str, default="vis")
+    average_axis = config.Property(proptype=str)
+
+    def setup(self, telescope: io.TelescopeConvertible):
+        """Set the telescope needed to generate Stokes I.
+
+        Parameters
+        ----------
+        telescope : TransitTelescope
+        """
+        self.telescope = io.get_telescope(telescope)
+
+    def process(self, ss: FreqContainerType) -> containers.delayspec:
+        """Estimate the delay spectrum.
+
+        Parameters
+        ----------
+        ss
+            Data to transform. Must have a frequency axis and the "RA" axis over which the average was taken to generate
+            delay power spectrum for each baseline/DEC.
+
+
+        Returns
+        -------
+        delay_spectrum : Delay spectrum of all RA and baselines/DEC
+        """
+        ss.redistribute("freq")
+
+        if self.delayps is None:
+
+            raise ValueError(
+                f"No delay power spectrum is provided. To estimate the delay spectrum via Wiener filter method"
+                f"delay power spectrum of all baselines/DEC has to be provided"
+            )
+
+        # Loading the delay power spectrum ###
+        delayPSpectrum = containers.DelaySpectrum.from_file(self.delayps)
+        delay_ps = delayPSpectrum.spectrum[:]
+
+        if self.dataset not in ss.datasets:
+            raise ValueError(
+                f"Specified dataset to delay transform ({self.dataset}) not in "
+                f"container of type {type(ss)}."
+            )
+
+        if (
+            self.average_axis not in ss.axes
+            or self.average_axis not in ss.datasets[self.dataset].attrs["axis"]
+        ):
+            raise ValueError(
+                f"Specified axis to average over ({self.average_axis}) not in "
+                f"container of type {type(ss)}."
+            )
+
+        # ==== Figure out the frequency structure and delay values ====
+        if self.freq_zero is None:
+            self.freq_zero = ss.freq[0]
+
+        if self.freq_spacing is None:
+            self.freq_spacing = np.abs(np.diff(ss.freq[:])).min()
+
+        channel_ind = (np.abs(ss.freq[:] - self.freq_zero) / self.freq_spacing).astype(
+            np.int
+        )
+
+        if self.nfreq is None:
+            self.nfreq = channel_ind[-1] + 1
+
+            if self.skip_nyquist:
+                self.nfreq += 1
+
+        # Assume each transformed frame was an even number of samples long
+        ndelay = 2 * (self.nfreq - 1)
+        delays = np.fft.fftshift(np.fft.fftfreq(ndelay, d=self.freq_spacing))  # in us
+
+        # Find the relevant axis positions
+        data_axes = ss.datasets[self.dataset].attrs["axis"]
+        freq_axis_pos = list(data_axes).index("freq")
+        average_axis_pos = list(data_axes).index(self.average_axis)
+
+        # Create a view of the dataset with the relevant axes at the back,
+        # and all other axes compressed
+        data_view = np.moveaxis(
+            ss.datasets[self.dataset][:].view(np.ndarray),
+            [average_axis_pos, freq_axis_pos],
+            [-2, -1],
+        )
+        data_view = data_view.reshape(-1, data_view.shape[-2], data_view.shape[-1])
+        data_view = mpiarray.MPIArray.wrap(data_view, axis=2, comm=ss.comm)
+        nbase = int(np.prod(data_view.shape[:-2]))
+        data_view = data_view.redistribute(axis=0)
+
+        # ... do the same for the weights, but we also need to make the weights full
+        # size
+        weight_full = np.zeros(
+            ss.datasets[self.dataset][:].shape, dtype=ss.weight.dtype
+        )
+        weight_full[:] = match_axes(ss.datasets[self.dataset], ss.weight)
+        weight_view = np.moveaxis(
+            weight_full, [average_axis_pos, freq_axis_pos], [-2, -1]
+        )
+        weight_view = weight_view.reshape(
+            -1, weight_view.shape[-2], weight_view.shape[-1]
+        )
+        weight_view = mpiarray.MPIArray.wrap(weight_view, axis=2, comm=ss.comm)
+        weight_view = weight_view.redistribute(axis=0)
+
+        # We will generate delay spectrum for all RA at a give baseline/DEC and store that in a array of  shape : (nbase, nRA, ndelay)
+
+        ## The length of RA axis
+        nRA = int(data_view.shape[-2])
+
+        # Initialise the delay spectrum container
+        delay_spectrum = containers.delayspec(
+            baseline=nbase, ra=nRA, delay=delays, attrs_from=ss
+        )
+        delay_spectrum.redistribute("baseline")
+        delay_spectrum.spectrum[:] = 0.0
+        bl_axes = [da for da in data_axes if da not in ["freq"]]
+
+        # Copy the index maps for all the flattened axes into the output container, and
+        # write out their order into an attribute so we can reconstruct this easily
+        # when loading in the spectrum
+        for ax in bl_axes:
+            delay_spectrum.create_index_map(ax, ss.index_map[ax])
+        delay_spectrum.attrs["baseline_axes"] = bl_axes
+
+        # Iterate over all baselines and use the Wiener filter  to estimate the delay spectrum for all RA at a particular baseline/DEC
+        for lbi, bi in delay_spectrum.spectrum[:].enumerate(axis=0):
+
+            self.log.debug(
+                f"Estimating the Delay spectrum of each baseline {bi}/{nbase} using Wiener filter"
+            )
+
+            # Get the local selections
+            data = data_view[lbi].view(np.ndarray)
+            weight = weight_view[lbi].view(np.ndarray)
+
+            # Mask out data with completely zero'd weights and generate time
+            # averaged weights
+            weight_cut = (
+                1e-4 * weight.mean()
+            )  # Use approx threshold to ignore small weights
+            data = data * (weight > weight_cut)
+            weight = np.mean(weight, axis=0)
+
+            if (data == 0.0).all():
+                continue
+
+            # If there are no non-zero weighted entries skip
+            non_zero = weight > 0
+            if not non_zero.any():
+                continue
+
+            # Remove any frequency channel which is entirely zero, this is just to
+            # reduce the computational cost, it should make no difference to the result
+            data = data[:, non_zero]
+            weight = weight[non_zero]
+            non_zero_channel = channel_ind[non_zero]
+
+            ## Taking the delay power spectrum for each baseline, which will be passed to Wiener filter below ##
+            ## Note :- The delay power spectrum has been fftshifted in the DelaySpectrumEstimatorBase class and then saved/stored.
+            ##         So before passing the power spectrum to the Wiener filter we have to do another fftshift.
+            ##         This will give the correct Wiener filtered delay spectrum for all RA at each baseline.
+
+            delay_power_spectrum = np.fft.fftshift(delay_ps[lbi, :])
+
+            ## Now pass the delay_power_spectrum of the above and pass it here to estimate the delay spectrum using Wiener filter
+            y_spec = wiener_filter(
+                delay_power_spectrum,
+                data,
+                ndelay,
+                weight,
+                fsel=non_zero_channel
+            )
+
+            # FFT-shift and take the abs of the dpectrum
+
+            delay_spectrum.spectrum[bi] = np.abs(
+                np.fft.fftshift(y_spec)
+            )  ## should we return the abs of the spectrum or just the FFTshifted spectrum??
+
+        return delay_spectrum
+
+
+def wiener_filter(delay_PS, data, N, Ni, window=True, fsel=None):
+
+    """
+     delay_PS : this is the delay power spectrum of the particular baseline/DEC of shape ndelay:-  np.ndarray[ndelay]
+
+     data : np.ndarray[nRA, freq] :- Data to estimate the delay spectrum of.
+
+     N : int
+         The length of the output delay spectrum (ndelay). There are assumed to `N/2 + 1`
+         total frequency channels.
+     Ni : np.ndarray[freq]
+         Inverse noise variance. Same shape as data.
+
+    fsel : np.ndarray[freq], optional
+         Indices of channels that we have data at. By default assume all channels.
+
+    window : bool, optional
+         Apply a Nuttall apodisation function. Default is True.
+
+    """
+
+    total_freq = N // 2 + 1
+
+    if fsel is None:
+        fsel = np.arange(total_freq)
+
+    # Construct the Fourier matrix
+    F = fourier_matrix_r2c(N, fsel)
+
+    # Construct a view of the data with alternating real and imaginary parts
+    data = data.astype(np.complex128, order="C").view(np.float64).T.copy()
+
+    # Window the frequency data
+    if window:
+
+        # Construct the window function
+        x = fsel * 1.0 / total_freq
+        w = window_generalised(x, window="nuttall")
+        w = np.repeat(w, 2)
+
+        # Apply to the projection matrix and the data
+        F *= w[:, np.newaxis]
+        data *= w[:, np.newaxis]
+
+    is_real_freq = (fsel == 0) | (fsel == N // 2)
+
+    # Construct the Noise inverse array for the real and imaginary parts (taking
+    # into account that the zero and Nyquist frequencies are strictly real)
+    Ni_r = np.zeros(2 * Ni.shape[0])
+    Ni_r[0::2] = np.where(is_real_freq, Ni, Ni / 2 ** 0.5)
+    Ni_r[1::2] = np.where(is_real_freq, 0.0, Ni / 2 ** 0.5)
+
+    # Create the Hermitian conjugate weighted by the noise (this is used multiple times)
+    FTNih = F.T * Ni_r[np.newaxis, :] ** 0.5
+    FTNiF = np.dot(FTNih, FTNih.T)
+
+    # Pre-whiten the data to save doing it repeatedly
+    data = data * Ni_r[:, np.newaxis] ** 0.5
+
+    ### Solving the linear eqn ##
+    y = np.dot(FTNih, data)
+
+    Si = 1.0 / delay_PS
+    Ci = np.diag(Si) + FTNiF
+
+    y_spec = la.solve(Ci, y, sym_pos=True)
+
+    return y_spec.T
+
+
 def stokes_I(sstream, tel):
     """Extract instrumental Stokes I from a time/sidereal stream.
 
@@ -915,8 +1212,8 @@ def delay_spectrum_gibbs(
     # Construct the Noise inverse array for the real and imaginary parts (taking
     # into account that the zero and Nyquist frequencies are strictly real)
     Ni_r = np.zeros(2 * Ni.shape[0])
-    Ni_r[0::2] = np.where(is_real_freq, Ni, Ni / 2**0.5)
-    Ni_r[1::2] = np.where(is_real_freq, 0.0, Ni / 2**0.5)
+    Ni_r[0::2] = np.where(is_real_freq, Ni, Ni / 2 ** 0.5)
+    Ni_r[1::2] = np.where(is_real_freq, 0.0, Ni / 2 ** 0.5)
 
     # Create the Hermitian conjugate weighted by the noise (this is used multiple times)
     FTNih = F.T * Ni_r[np.newaxis, :] ** 0.5
@@ -956,7 +1253,7 @@ def delay_spectrum_gibbs(
         # frequencies. This is usually the regime we are in.
 
         # Construct various dependent matrices
-        Sh = S**0.5
+        Sh = S ** 0.5
         Rt = Sh[:, np.newaxis] * FTNih
         R = Rt.T
 
