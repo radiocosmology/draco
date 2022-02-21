@@ -2314,7 +2314,19 @@ class DelayCutoff(ContainerBase):
 
 
 class DelaySpectrum(ContainerBase):
-    """Container for a delay power spectrum."""
+    """Container for a delay power spectrum.
+
+    Notes
+    -----
+
+    A note about definitions: for a dataset with a frequency axis, the corresponding
+    delay spectrum is the result of Fourier transforming in frequency, while the delay
+    power spectrum is obtained by taking the squared magnitude of each element of the
+    delay spectrum, and then usually averaging over some other axis. Our unfortunate
+    convention is to store a delay power spectrum in a `DelaySpectrum` container, and
+    store a delay spectrum in a :py:class:`~draco.core.containers.DelayTransform`
+    container.
+    """
 
     _axes = ("baseline", "delay")
 
@@ -2331,6 +2343,33 @@ class DelaySpectrum(ContainerBase):
     @property
     def spectrum(self):
         """Get the spectrum dataset."""
+        return self.datasets["spectrum"]
+
+
+class DelayTransform(ContainerBase):
+    """Container for a delay spectrum.
+
+    Notes
+    -----
+
+    See the docstring for :py:class:`~draco.core.containers.DelaySpectrum` for a
+    description of the difference between `DelayTransform` and `DelaySpectrum`.
+    """
+
+    _axes = ("baseline", "sample", "delay")
+
+    _dataset_spec = {
+        "spectrum": {
+            "axes": ["baseline", "sample", "delay"],
+            "dtype": np.complex128,
+            "initialise": True,
+            "distributed": True,
+            "distributed_axis": "baseline",
+        }
+    }
+
+    @property
+    def spectrum(self):
         return self.datasets["spectrum"]
 
 
