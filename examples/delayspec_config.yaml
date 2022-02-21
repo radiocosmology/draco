@@ -33,12 +33,8 @@ pipeline:
 
   save_versions:
     - caput
-    - chimedb.core
-    - chimedb.data_index
-    - chimedb.dataflag
     - cora
     - draco
-    - drift
     - numpy
     - scipy
     - h5py
