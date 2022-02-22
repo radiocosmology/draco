@@ -887,11 +887,7 @@ class DelaySpectrumWienerBase(task.SingleTask, random.RandomTask):
 
             ## Now pass the delay_power_spectrum of the above and pass it here to estimate the delay spectrum using Wiener filter
             y_spec = wiener_filter(
-                delay_power_spectrum,
-                data,
-                ndelay,
-                weight,
-                fsel=non_zero_channel
+                delay_power_spectrum, data, ndelay, weight, fsel=non_zero_channel
             )
 
             # FFT-shift and take the abs of the dpectrum
@@ -952,15 +948,15 @@ def wiener_filter(delay_PS, data, N, Ni, window=True, fsel=None):
     # Construct the Noise inverse array for the real and imaginary parts (taking
     # into account that the zero and Nyquist frequencies are strictly real)
     Ni_r = np.zeros(2 * Ni.shape[0])
-    Ni_r[0::2] = np.where(is_real_freq, Ni, Ni / 2**0.5)
-    Ni_r[1::2] = np.where(is_real_freq, 0.0, Ni / 2**0.5)
+    Ni_r[0::2] = np.where(is_real_freq, Ni, Ni / 2 ** 0.5)
+    Ni_r[1::2] = np.where(is_real_freq, 0.0, Ni / 2 ** 0.5)
 
     # Create the Hermitian conjugate weighted by the noise (this is used multiple times)
-    FTNih = F.T * Ni_r[np.newaxis, :]**0.5
+    FTNih = F.T * Ni_r[np.newaxis, :] ** 0.5
     FTNiF = np.dot(FTNih, FTNih.T)
 
     # Pre-whiten the data to save doing it repeatedly
-    data = data * Ni_r[:, np.newaxis]**0.5
+    data = data * Ni_r[:, np.newaxis] ** 0.5
 
     ### Solving the linear eqn ##
     y = np.dot(FTNih, data)
@@ -1212,15 +1208,15 @@ def delay_spectrum_gibbs(
     # Construct the Noise inverse array for the real and imaginary parts (taking
     # into account that the zero and Nyquist frequencies are strictly real)
     Ni_r = np.zeros(2 * Ni.shape[0])
-    Ni_r[0::2] = np.where(is_real_freq, Ni, Ni / 2**0.5)
-    Ni_r[1::2] = np.where(is_real_freq, 0.0, Ni / 2**0.5)
+    Ni_r[0::2] = np.where(is_real_freq, Ni, Ni / 2 ** 0.5)
+    Ni_r[1::2] = np.where(is_real_freq, 0.0, Ni / 2 ** 0.5)
 
     # Create the Hermitian conjugate weighted by the noise (this is used multiple times)
-    FTNih = F.T * Ni_r[np.newaxis, :]**0.5
+    FTNih = F.T * Ni_r[np.newaxis, :] ** 0.5
     FTNiF = np.dot(FTNih, FTNih.T)
 
     # Pre-whiten the data to save doing it repeatedly
-    data = data * Ni_r[:, np.newaxis]**0.5
+    data = data * Ni_r[:, np.newaxis] ** 0.5
 
     # Set the initial starting points
     S_samp = initial_S
@@ -1244,7 +1240,7 @@ def delay_spectrum_gibbs(
 
         # Construct the random signal sample by forming a perturbed vector and
         # then doing a matrix solve
-        y = np.dot(FTNih, data + w2) + Si[:, np.newaxis]**0.5 * w1
+        y = np.dot(FTNih, data + w2) + Si[:, np.newaxis] ** 0.5 * w1
 
         return la.solve(Ci, y, sym_pos=True)
 
@@ -1253,7 +1249,7 @@ def delay_spectrum_gibbs(
         # frequencies. This is usually the regime we are in.
 
         # Construct various dependent matrices
-        Sh = S**0.5
+        Sh = S ** 0.5
         Rt = Sh[:, np.newaxis] * FTNih
         R = Rt.T
 

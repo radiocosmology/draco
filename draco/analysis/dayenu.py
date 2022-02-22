@@ -155,7 +155,7 @@ class DayenuDelayFilter(task.SingleTask):
         elif self.telescope_orientation == "EW":
             baselines = abs(baselines[:, 0])  # X baseline
         else:
-            baselines = np.sqrt(np.sum(baselines**2, axis=-1))  # Norm
+            baselines = np.sqrt(np.sum(baselines ** 2, axis=-1))  # Norm
 
         baseline_delay_cut = 1e6 * self.za_cut * baselines / units.c
 

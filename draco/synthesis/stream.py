@@ -330,7 +330,7 @@ class MakeTimeStream(task.SingleTask):
         if self.integration_time is not None:
             int_time = self.integration_time
         else:
-            int_time = 2.56e-6 * 2**self.integration_frame_exp
+            int_time = 2.56e-6 * 2 ** self.integration_frame_exp
 
         # Calculate number of samples in file and timestamps
         nsamp = min(
@@ -351,7 +351,7 @@ class MakeTimeStream(task.SingleTask):
             time["fpga_count"] = (
                 (timestamps - self.start_time)
                 / int_time
-                * 2**self.integration_frame_exp
+                * 2 ** self.integration_frame_exp
             ).astype(np.uint64)
 
         # Increment the current start time for the next iteration

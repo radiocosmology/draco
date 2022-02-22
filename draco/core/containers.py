@@ -810,9 +810,9 @@ class SampleVarianceContainer(ContainerBase):
 
         # Construct rotation coefficients from average vis angle
         phi = np.angle(self._mean[:].view(np.ndarray))
-        cc = np.cos(phi)**2
+        cc = np.cos(phi) ** 2
         cs = np.cos(phi) * np.sin(phi)
-        ss = np.sin(phi)**2
+        ss = np.sin(phi) ** 2
 
         # Rotate the covariance matrix from real-imag to in-phase/quadrature
         Cphi = np.zeros_like(C)
@@ -840,7 +840,7 @@ class SampleVarianceContainer(ContainerBase):
         # normalize by squared amplitude to convert to
         # fractional units (amplitude) and radians (phase).
         return self.sample_variance_iq * tools.invert_no_zero(
-            np.abs(self._mean[:][np.newaxis, ...])**2
+            np.abs(self._mean[:][np.newaxis, ...]) ** 2
         )
 
     @property
@@ -994,13 +994,13 @@ class HealpixContainer(ContainerBase):
 
         # Set up axes from passed arguments
         if nside is not None:
-            kwargs["pixel"] = 12 * nside**2
+            kwargs["pixel"] = 12 * nside ** 2
 
         super().__init__(*args, **kwargs)
 
     @property
     def nside(self):
-        return int((len(self.index_map["pixel"]) // 12)**0.5)
+        return int((len(self.index_map["pixel"]) // 12) ** 0.5)
 
 
 class Map(FreqContainer, HealpixContainer):
