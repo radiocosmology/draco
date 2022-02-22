@@ -948,8 +948,8 @@ def wiener_filter(delay_PS, data, N, Ni, window=True, fsel=None):
     # Construct the Noise inverse array for the real and imaginary parts (taking
     # into account that the zero and Nyquist frequencies are strictly real)
     Ni_r = np.zeros(2 * Ni.shape[0])
-    Ni_r[0::2] = np.where(is_real_freq, Ni, Ni / 2 ** 0.5)
-    Ni_r[1::2] = np.where(is_real_freq, 0.0, Ni / 2 ** 0.5)
+    Ni_r[0::2] = np.where(is_real_freq, Ni, Ni / 2**0.5)
+    Ni_r[1::2] = np.where(is_real_freq, 0.0, Ni / 2**0.5)
 
     # Create the Hermitian conjugate weighted by the noise (this is used multiple times)
     FTNih = F.T * Ni_r[np.newaxis, :] ** 0.5
@@ -1208,8 +1208,8 @@ def delay_spectrum_gibbs(
     # Construct the Noise inverse array for the real and imaginary parts (taking
     # into account that the zero and Nyquist frequencies are strictly real)
     Ni_r = np.zeros(2 * Ni.shape[0])
-    Ni_r[0::2] = np.where(is_real_freq, Ni, Ni / 2 ** 0.5)
-    Ni_r[1::2] = np.where(is_real_freq, 0.0, Ni / 2 ** 0.5)
+    Ni_r[0::2] = np.where(is_real_freq, Ni, Ni / 2**0.5)
+    Ni_r[1::2] = np.where(is_real_freq, 0.0, Ni / 2**0.5)
 
     # Create the Hermitian conjugate weighted by the noise (this is used multiple times)
     FTNih = F.T * Ni_r[np.newaxis, :] ** 0.5
@@ -1249,7 +1249,7 @@ def delay_spectrum_gibbs(
         # frequencies. This is usually the regime we are in.
 
         # Construct various dependent matrices
-        Sh = S ** 0.5
+        Sh = S**0.5
         Rt = Sh[:, np.newaxis] * FTNih
         R = Rt.T
 

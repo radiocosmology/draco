@@ -293,7 +293,7 @@ class BeamformNS(task.SingleTask):
             hvb[:, lfi] = np.matmul(F, gw * np.ones_like(gv)).real
 
             # Estimate the weights assuming that the errors are all uncorrelated
-            t = np.sum(tools.invert_no_zero(gsw[:, lfi]) * gw ** 2, axis=-2)
+            t = np.sum(tools.invert_no_zero(gsw[:, lfi]) * gw**2, axis=-2)
             hvw[:, lfi] = tools.invert_no_zero(t)
 
         return hv
@@ -417,7 +417,7 @@ class BeamformEW(task.SingleTask):
         # Estimate weights/rms noise in the ring map by propagating estimates of the
         # variance in the visibilities
         rm_var = (tools.invert_no_zero(hvw) * weight_ew[:, np.newaxis] ** 2).sum(axis=2)
-        rm.rms[:] = rm_var ** 0.5
+        rm.rms[:] = rm_var**0.5
         rm.weight[:] = tools.invert_no_zero(rm_var[..., np.newaxis])
 
         return rm
@@ -657,16 +657,19 @@ class DeconvolveHybridMBase(task.SingleTask):
             var = tools.invert_no_zero(inv_var)
             sigma = np.sqrt(np.sum((weight * np.abs(bvf)) ** 2 * var, axis=(1, -2)))
 
-            sum_var_map_m = 0.5 * np.sum(
-                (
-                    sigma
-                    * winf
-                    * norm[np.newaxis, :, 0]
-                    * tools.invert_no_zero((mmax + 1) * C_inv)
-                )
-                ** 2,
-                axis=0,
-            )[:, np.newaxis, :]
+            sum_var_map_m = (
+                0.5
+                * np.sum(
+                    (
+                        sigma
+                        * winf
+                        * norm[np.newaxis, :, 0]
+                        * tools.invert_no_zero((mmax + 1) * C_inv)
+                    )
+                    ** 2,
+                    axis=0,
+                )[:, np.newaxis, :]
+            )
 
             rmw[:, lfi] = tools.invert_no_zero(sum_var_map_m)
 
@@ -865,7 +868,7 @@ class DeconvolveAnalyticalBeam(DeconvolveHybridMBase):
 
         def A(phi, sigma):
             """A Gaussian like function on the circle."""
-            return np.exp(-((2 * np.tan(phi / 2)) ** 2) / (2 * sigma ** 2))
+            return np.exp(-((2 * np.tan(phi / 2)) ** 2) / (2 * sigma**2))
 
         def B(phi, u, sigma):
             """Azimuthal beam transfer function."""
@@ -907,7 +910,7 @@ class DeconvolveAnalyticalBeam(DeconvolveHybridMBase):
                 # Get the effective beamwidth for the polarisation combination
                 sig_a = beam_width[pa](freq, dec)
                 sig_b = beam_width[pb](freq, dec)
-                sig[pi] = sig_a * sig_b / (sig_a ** 2 + sig_b ** 2) ** 0.5
+                sig[pi] = sig_a * sig_b / (sig_a**2 + sig_b**2) ** 0.5
 
             sig_arr = sig[:, np.newaxis, :, np.newaxis]
 
@@ -1026,7 +1029,7 @@ class WienerRingMapMaker(DeconvolveHybridMBase):
         )
         psrc = self.psrc_amp * (freq / self.pivot_freq) ** self.psrc_alpha
 
-        spectrum = gal ** 2 + psrc ** 2
+        spectrum = gal**2 + psrc**2
 
         # Expand the array so that it can be broadcast against an
         # array of shape (nm, npol, nel)
@@ -1124,8 +1127,8 @@ class RADependentWeights(task.SingleTask):
         # the noise variance in the deconvolved ringmap.  Note that this is
         # inverted in the equation below since we want to scale the weights.
         ra_dependence = np.sum(
-            weight_ew ** 2 * var_time_avg, axis=-2
-        ) * tools.invert_no_zero(np.sum(weight_ew ** 2 * var, axis=-2))
+            weight_ew**2 * var_time_avg, axis=-2
+        ) * tools.invert_no_zero(np.sum(weight_ew**2 * var, axis=-2))
 
         # Scale the ringmap weights by the RA dependence
         ringmap.weight[:] *= ra_dependence[..., np.newaxis]

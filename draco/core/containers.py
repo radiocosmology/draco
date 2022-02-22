@@ -994,7 +994,7 @@ class HealpixContainer(ContainerBase):
 
         # Set up axes from passed arguments
         if nside is not None:
-            kwargs["pixel"] = 12 * nside ** 2
+            kwargs["pixel"] = 12 * nside**2
 
         super().__init__(*args, **kwargs)
 
