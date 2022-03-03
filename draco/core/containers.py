@@ -1614,6 +1614,10 @@ class SVDModes(MContainer):
         },
     }
 
+    def __init__(self, svcut=None, *args, **kwargs):
+        super(SVDModes, self).__init__(*args, **kwargs)
+        self.attrs["svcut"] = svcut
+
     @property
     def vis(self):
         return self.datasets["vis"]
@@ -1625,6 +1629,10 @@ class SVDModes(MContainer):
     @property
     def weight(self):
         return self.datasets["vis_weight"]
+
+    @property
+    def svcut(self):
+        return self.attrs["svcut"]
 
 
 class KLModes(SVDModes):
