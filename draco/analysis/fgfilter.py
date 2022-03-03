@@ -54,7 +54,16 @@ class SVDModeProject(_ProjectFilterBase):
 
     Note that this produces the packed SVD modes, with the modes from each
     frequency concatenated.
+
+    Attributes
+    ----------
+    svcut : float, optional
+        The relative precision below the maximum singular value to exclude low
+        sensitivity SVD modes. If not specified, the value set in the BeamTransfer
+        instance is used. Default: None.
     """
+
+    svcut = config.Property(proptype=float, default=None)
 
     def setup(self, bt):
         """Set the beamtransfer instance.
@@ -65,6 +74,8 @@ class SVDModeProject(_ProjectFilterBase):
             This can also take a ProductManager instance.
         """
         self.beamtransfer = io.get_beamtransfer(bt)
+        if self.svcut is None:
+            self.svcut = self.beamtransfer.svcut
 
     def _forward(self, mmodes):
         # Forward transform into SVD basis
@@ -73,7 +84,7 @@ class SVDModeProject(_ProjectFilterBase):
         tel = bt.telescope
 
         svdmodes = containers.SVDModes(
-            mode=bt.ndofmax(), axes_from=mmodes, attrs_from=mmodes
+            mode=bt.ndofmax(), axes_from=mmodes, attrs_from=mmodes, svcut=self.svcut
         )
         svdmodes.vis[:] = 0.0
 
@@ -84,7 +95,7 @@ class SVDModeProject(_ProjectFilterBase):
         for lm, mi in mmodes.vis[:].enumerate(axis=0):
 
             tm = mmodes.vis[mi].transpose((1, 0, 2)).reshape(tel.nfreq, 2 * tel.npairs)
-            svdm = bt.project_vector_telescope_to_svd(mi, tm)
+            svdm = bt.project_vector_telescope_to_svd(mi, tm, svcut=self.svcut)
 
             svdmodes.nmode[mi] = len(svdm)
             svdmodes.vis[mi, : svdmodes.nmode[mi]] = svdm
@@ -115,6 +126,10 @@ class SVDModeProject(_ProjectFilterBase):
         freqmap["centre"][:] = tel.frequencies
         freqmap["width"][:] = np.abs(np.diff(tel.frequencies)[0])
 
+        # Verify that input SVDModes container has svcut attribute
+        if svdmodes.svcut is None:
+            raise AttributeError("Input SVDModes container is missing svcut attribute!")
+
         # Construct the new m-mode container
         mmodes = containers.MModes(
             freq=freqmap,
@@ -130,7 +145,7 @@ class SVDModeProject(_ProjectFilterBase):
         for lm, mi in mmodes.vis[:].enumerate(axis=0):
 
             svdm = svdmodes.vis[mi]
-            tm = bt.project_vector_svd_to_telescope(mi, svdm)
+            tm = bt.project_vector_svd_to_telescope(mi, svdm, svcut=svdmodes.svcut)
 
             svdmodes.nmode[mi] = len(svdm)
             mmodes.vis[mi] = tm.transpose((1, 0, 2))
