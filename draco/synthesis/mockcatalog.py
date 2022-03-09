@@ -18,6 +18,7 @@ Pipeline tasks
     AddGaussianZErrorsToCatalog
     AddEBOSSZErrorsToCatalog
     MapPixelLocationGenerator
+    MakeTestCatalog
 
 Usage
 =====
@@ -1166,6 +1167,63 @@ class MapPixelLocationGenerator(task.SingleTask):
 
         self.done = True
         return mock_catalog
+
+
+class MakeTestCatalog(task.SingleTask):
+    """Generate a catalog of user-specified sources.
+
+    The user specifies lists of RA, dec, and z coordinates, and the task creates a
+    `SpectroscopicCatalog` containing sources at these coordinates. This can be useful
+    for testing, e.g. using `ch_pipeline.synthesis.inject.SpectroscopicCatalog` to
+    construct visibilites corresponding to a limited number of flat-spectrum or
+    delta-function point sources.
+
+    Attributes
+    ----------
+    ra, dec, z : list
+        Lists of RA, dec, z coordinates for sources in output catalog.
+    """
+
+    ra = config.Property(proptype=list)
+    dec = config.Property(proptype=list)
+    z = config.Property(proptype=list)
+
+    def setup(self):
+        """Check lengths of input lists."""
+        if len(self.ra) != len(self.dec) or len(self.ra) != len(self.z):
+            raise config.CaputConfigError("Lengths of RA, dec, and z lists must match!")
+
+        self.nsrcs = len(self.ra)
+
+    def process(self):
+        """Make the catalog.
+
+        Returns
+        ----------
+        cat : :class:`containers.SpectroscopicCatalog`
+            Output catalog.
+        """
+
+        # Create catalog container
+        cat = containers.SpectroscopicCatalog(
+            object_id=np.arange(self.nsrcs, dtype=np.uint64)
+        )
+
+        # Create position and redshift datasets
+        cat["position"][:] = np.empty(
+            self.nsrcs, dtype=[("ra", np.float64), ("dec", np.float64)]
+        )
+        cat["redshift"][:] = np.empty(
+            self.nsrcs, dtype=[("z", np.float64), ("z_error", np.float64)]
+        )
+        # Assign data to catalog container
+        cat["position"]["ra"][:] = self.ra
+        cat["position"]["dec"][:] = self.dec
+        cat["redshift"]["z"][:] = self.z
+        cat["redshift"]["z_error"][:] = 0.0
+
+        self.done = True
+        return cat
 
 
 # Internal functions
