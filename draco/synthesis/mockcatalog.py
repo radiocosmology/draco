@@ -28,8 +28,8 @@ low-rank SVD approximation to the positions in the catalog.
 :class:`ResizeSelectionFunctionMap` resizes this to match the resolution of a simulated
 map of galaxy overdensity delta_g. The resized selection function and delta_g
 map are then fed to :class:`PdfGeneratorWithSelectionFunction`, which makes a PDF map
-from which simulated sources are drawn in :class:`MockCatalogGenerator`. The PDF can also
-be generated without a selection function, or assuming a uniform distribution
+from which simulated sources are drawn in :class:`MockCatalogGenerator`. The PDF can
+also be generated without a selection function, or assuming a uniform distribution
 of sources.
 
 :class:`MapPixelLocationGenerator` is a specialized task that creates a catalog whose
@@ -835,7 +835,8 @@ class AddGaussianZErrorsToCatalog(task.SingleTask, random.RandomTask):
         if self.use_catalog_z_errors:
             if not np.any(cat_z_err):
                 self.log.error(
-                    "Warning: no existing z_error information in catalog, so no z errors will be added"
+                    "Warning: no existing z_error information in catalog, so no z "
+                    "errors will be added"
                 )
             z_err *= cat_z_err
         elif self.sigma_type == "sigma_z":
@@ -895,7 +896,8 @@ class AddEBOSSZErrorsToCatalog(task.SingleTask, random.RandomTask):
 
                 if tracer not in _velocity_error_function_lookup:
                     raise ValueError(
-                        f"Tracer explicitly set to '{tracer}' in catalog, but value not supported."
+                        f"Tracer explicitly set to '{tracer}' in catalog, but value "
+                        "not supported."
                     )
             else:
                 for key in _velocity_error_function_lookup.keys():
