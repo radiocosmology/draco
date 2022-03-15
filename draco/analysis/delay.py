@@ -111,7 +111,8 @@ class DelayFilter(task.SingleTask):
             # and seems to work well here
             number_cut = int(4.0 * bandwidth * delay_cut + 0.5)
 
-            # Flag frequencies and times with zero weight. This works much better if the incoming weight can be factorized
+            # Flag frequencies and times with zero weight. This works much better if the
+            # incoming weight can be factorized
             f_samp = (ssw[:, lbi] > 0.0).sum(axis=1)
             f_mask = (f_samp == f_samp.max()).astype(np.float64)
 
@@ -735,7 +736,8 @@ def stokes_I(sstream, tel):
         The instrumental Stokes I visibilities, distributed over baselines.
     vis_weight : mpiarray.MPIArray[nbase, nfreq, ntime]
         The weights for each visibility, distributed over baselines.
-    baselines : np.ndarray[nbase, 2]
+    ubase : np.ndarray[nbase, 2]
+        Baseline vectors corresponding to output.
     """
 
     # Construct a complex number representing each baseline (used for determining
@@ -831,7 +833,7 @@ def fourier_matrix_r2c(N, fsel=None):
 
     Returns
     -------
-    F : np.ndarray
+    Fr : np.ndarray
         An array performing the Fourier transform from a real time series to
         frequencies packed as alternating real and imaginary elements,
     """
@@ -865,7 +867,7 @@ def fourier_matrix_c2r(N, fsel=None):
 
     Returns
     -------
-    F : np.ndarray
+    Fr : np.ndarray
         An array performing the Fourier transform from frequencies packed as
         alternating real and imaginary elements, to the real time series.
     """
