@@ -357,6 +357,10 @@ class DelaySpectrumEstimator(task.SingleTask, random.RandomTask):
         Whether to apply apodisation to frequency axis. Default: True.
     window : one of {'nuttall', 'blackman_nuttall', 'blackman_harris'}, optional
         Apodisation to perform on frequency axis. Default: 'nuttall'.
+    complex_timedomain : bool, optional
+        Whether to assume the original time samples that were channelized into a
+        frequency spectrum were purely real (False) or complex (True). If True,
+        `freq_zero`, `nfreq`, and `skip_nyquist` are ignored. Default: False.
     """
 
     nsamp = config.Property(proptype=int, default=20)
@@ -368,6 +372,7 @@ class DelaySpectrumEstimator(task.SingleTask, random.RandomTask):
     window = config.enum(
         ["nuttall", "blackman_nuttall", "blackman_harris"], default="nuttall"
     )
+    complex_timedomain = config.Property(proptype=bool, default=False)
 
     def setup(self, telescope):
         """Set the telescope needed to generate Stokes I.
@@ -404,18 +409,24 @@ class DelaySpectrumEstimator(task.SingleTask, random.RandomTask):
         if self.freq_spacing is None:
             self.freq_spacing = np.abs(np.diff(ss.freq[:])).min()
 
-        channel_ind = (np.abs(ss.freq[:] - self.freq_zero) / self.freq_spacing).astype(
-            np.int
-        )
+        if self.complex_timedomain:
+            self.nfreq = len(ss.freq)
+            channel_ind = np.arange(self.nfreq)
+            ndelay = self.nfreq
+        else:
+            channel_ind = (
+                np.abs(ss.freq[:] - self.freq_zero) / self.freq_spacing
+            ).astype(np.int)
+            if self.nfreq is None:
+                self.nfreq = channel_ind[-1] + 1
 
-        if self.nfreq is None:
-            self.nfreq = channel_ind[-1] + 1
+                if self.skip_nyquist:
+                    self.nfreq += 1
 
-            if self.skip_nyquist:
-                self.nfreq += 1
+            # Assume each transformed frame was an even number of samples long
+            ndelay = 2 * (self.nfreq - 1)
 
-        # Assume each transformed frame was an even number of samples long
-        ndelay = 2 * (self.nfreq - 1)
+        # Compute delays corresponding to output delay power spectrum
         delays = np.fft.fftshift(np.fft.fftfreq(ndelay, d=self.freq_spacing))  # in us
 
         # Initialise the spectrum container
@@ -470,6 +481,7 @@ class DelaySpectrumEstimator(task.SingleTask, random.RandomTask):
                 fsel=non_zero_channel,
                 niter=self.nsamp,
                 rng=rng,
+                complex_timedomain=self.complex_timedomain,
             )
 
             # Take an average over the last half of the delay spectrum samples
@@ -487,7 +499,7 @@ class DelaySpectrumEstimatorBase(task.SingleTask, random.RandomTask):
     of the final half of the samples calculated.
 
     The delay spectrum output is indexed by a `baseline` axis. This axis is the
-    composite axis of all the axis in the container except the frequency axis or the
+    composite axis of all the axes in the container except the frequency axis or the
     `average_axis`. These constituent axes are included in the index map, and their
     order is given by the `baseline_axes` attribute.
 
@@ -518,6 +530,10 @@ class DelaySpectrumEstimatorBase(task.SingleTask, random.RandomTask):
         Whether to apply apodisation to frequency axis. Default: True.
     window : one of {'nuttall', 'blackman_nuttall', 'blackman_harris', optional
         Apodisation to perform on frequency axis. Default: 'nuttall'.
+    complex_timedomain : bool, optional
+        Whether to assume the original time samples that were channelized into a
+        frequency spectrum were purely real (False) or complex (True). If True,
+        `freq_zero`, `nfreq`, and `skip_nyquist` are ignored. Default: False.
     """
 
     nsamp = config.Property(proptype=int, default=20)
@@ -529,9 +545,9 @@ class DelaySpectrumEstimatorBase(task.SingleTask, random.RandomTask):
     window = config.enum(
         ["nuttall", "blackman_nuttall", "blackman_harris"], default="nuttall"
     )
-
     dataset = config.Property(proptype=str, default="vis")
     average_axis = config.Property(proptype=str)
+    complex_timedomain = config.Property(proptype=bool, default=False)
 
     def setup(self, telescope: io.TelescopeConvertible):
         """Set the telescope needed to generate Stokes I.
@@ -579,18 +595,24 @@ class DelaySpectrumEstimatorBase(task.SingleTask, random.RandomTask):
         if self.freq_spacing is None:
             self.freq_spacing = np.abs(np.diff(ss.freq[:])).min()
 
-        channel_ind = (np.abs(ss.freq[:] - self.freq_zero) / self.freq_spacing).astype(
-            np.int
-        )
+        if self.complex_timedomain:
+            self.nfreq = len(ss.freq)
+            channel_ind = np.arange(self.nfreq)
+            ndelay = self.nfreq
+        else:
+            channel_ind = (
+                np.abs(ss.freq[:] - self.freq_zero) / self.freq_spacing
+            ).astype(np.int)
+            if self.nfreq is None:
+                self.nfreq = channel_ind[-1] + 1
 
-        if self.nfreq is None:
-            self.nfreq = channel_ind[-1] + 1
+                if self.skip_nyquist:
+                    self.nfreq += 1
 
-            if self.skip_nyquist:
-                self.nfreq += 1
+            # Assume each transformed frame was an even number of samples long
+            ndelay = 2 * (self.nfreq - 1)
 
-        # Assume each transformed frame was an even number of samples long
-        ndelay = 2 * (self.nfreq - 1)
+        # Compute delays corresponding to output delay power spectrum
         delays = np.fft.fftshift(np.fft.fftfreq(ndelay, d=self.freq_spacing))  # in us
 
         # Find the relevant axis positions
@@ -684,6 +706,7 @@ class DelaySpectrumEstimatorBase(task.SingleTask, random.RandomTask):
                 fsel=non_zero_channel,
                 niter=self.nsamp,
                 rng=self.rng,
+                complex_timedomain=self.complex_timedomain,
             )
 
             # Take an average over the last half of the delay spectrum samples
@@ -861,26 +884,114 @@ def fourier_matrix_c2r(N, fsel=None):
     return Fr
 
 
+def fourier_matrix_c2c(N, fsel=None):
+    """Generate a Fourier matrix to represent a complex to complex FFT.
+
+    These Fourier conventions match `numpy.fft.fft()`.
+
+    Parameters
+    ----------
+    N : integer
+        Length of timestream that we are transforming to.
+    fsel : array_like, optional
+        Indices of the frequency channels to include in the transformation
+        matrix. By default, assume all channels.
+
+    Returns
+    -------
+    F : np.ndarray
+        An array performing the Fourier transform from a complex time series to
+        frequencies, with both input and output packed as alternating real and
+        imaginary elements.
+    """
+
+    if fsel is None:
+        fa = np.arange(N)
+    else:
+        fa = np.array(fsel)
+
+    fa = fa[:, np.newaxis]
+    ta = np.arange(N)[np.newaxis, :]
+
+    F = np.zeros((2 * fa.shape[0], 2 * N), dtype=np.float64)
+
+    arg = 2 * np.pi * ta * fa / N
+    F[0::2, 0::2] = np.cos(arg)
+    F[0::2, 1::2] = np.sin(arg)
+    F[1::2, 0::2] = -np.sin(arg)
+    F[1::2, 1::2] = np.cos(arg)
+
+    return F
+
+
+def _complex_to_alternating_real(array):
+    """View complex numbers as an array with alternating real and imaginary components.
+
+    Parameters
+    ----------
+    array : array_like
+        Input array of complex numbers.
+
+    Returns
+    -------
+    out : array_like
+        Output array of alternating real and imaginary components. These components are
+        expanded along the last axis, such that if `array` has `N` complex elements in
+        its last axis, `out` will have `2N` real elements.
+    """
+
+    return array.astype(np.complex128, order="C").view(np.float64)
+
+
+def _alternating_real_to_complex(array):
+    """View real numbers as complex, interpreted as alternating real and imag. components.
+
+    Parameters
+    ----------
+    array : array_like
+        Input array of real numbers. Last axis must have even number of elements.
+
+    Returns
+    -------
+    out : array_like
+        Output array of complex numbers, derived from compressing the last axis (if
+        `array` has `N` real elements in the last axis, `out` will have `N/2` complex
+        elements).
+    """
+
+    return array.astype(np.float64, order="C").view(np.complex128)
+
+
 def delay_spectrum_gibbs(
-    data, N, Ni, initial_S, window="nuttall", fsel=None, niter=20, rng=None
+    data,
+    N,
+    Ni,
+    initial_S,
+    window="nuttall",
+    fsel=None,
+    niter=20,
+    rng=None,
+    complex_timedomain=False,
 ):
-    """Estimate the delay spectrum by Gibbs sampling.
+    """Estimate the delay power spectrum by Gibbs sampling.
 
     This routine estimates the spectrum at the `N` delay samples conjugate to
-    the frequency spectrum of ``N/2 + 1`` channels. A subset of these channels
-    can be specified using the `fsel` argument.
+    an input frequency spectrum with ``N/2 + 1`` channels (if the delay spectrum is
+    assumed real) or `N` channels (if the delay spectrum is assumed complex).
+    A subset of these channels can be specified using the `fsel` argument.
 
     Parameters
     ----------
     data : np.ndarray[:, freq]
         Data to estimate the delay spectrum of.
     N : int
-        The length of the output delay spectrum. There are assumed to `N/2 + 1`
-        total frequency channels.
+        The length of the output delay spectrum. There are assumed to be `N/2 + 1`
+        total frequency channels if assuming a real delay spectrum, or `N` channels
+        for a complex delay spectrum.
     Ni : np.ndarray[freq]
         Inverse noise variance.
     initial_S : np.ndarray[delay]
-        The initial delay spectrum guess.
+        The initial delay power spectrum guess.
     window : one of {'nuttall', 'blackman_nuttall', 'blackman_harris', None}, optional
         Apply an apodisation function. Default: 'nuttall'.
     fsel : np.ndarray[freq], optional
@@ -889,6 +1000,10 @@ def delay_spectrum_gibbs(
         Number of Gibbs samples to generate.
     rng : np.random.Generator, optional
         A generator to use to produce the random samples.
+    complex_timedomain : bool, optional
+        If True, assume input data arose from a complex timestream. If False, assume
+        input data arose from a real timestream, such that the first and last frequency
+        channels have purely real values. Default: False.
 
     Returns
     -------
@@ -902,16 +1017,20 @@ def delay_spectrum_gibbs(
 
     spec = []
 
-    total_freq = N // 2 + 1
+    total_freq = N if complex_timedomain else N // 2 + 1
 
     if fsel is None:
         fsel = np.arange(total_freq)
 
     # Construct the Fourier matrix
-    F = fourier_matrix_r2c(N, fsel)
+    F = (
+        fourier_matrix_c2c(N, fsel)
+        if complex_timedomain
+        else fourier_matrix_r2c(N, fsel)
+    )
 
     # Construct a view of the data with alternating real and imaginary parts
-    data = data.astype(np.complex128, order="C").view(np.float64).T.copy()
+    data = _complex_to_alternating_real(data).T.copy()
 
     # Window the frequency data
     if window is not None:
@@ -925,39 +1044,55 @@ def delay_spectrum_gibbs(
         F *= w[:, np.newaxis]
         data *= w[:, np.newaxis]
 
-    is_real_freq = (fsel == 0) | (fsel == N // 2)
+    if complex_timedomain:
+        is_real_freq = np.zeros_like(fsel).astype(bool)
+    else:
+        is_real_freq = (fsel == 0) | (fsel == N // 2)
 
-    # Construct the Noise inverse array for the real and imaginary parts (taking
-    # into account that the zero and Nyquist frequencies are strictly real)
+    # Construct the Noise inverse array for the real and imaginary parts of the
+    # frequency spectrum (taking into account that the zero and Nyquist frequencies are
+    # strictly real if the delay spectrum is assumed to be real)
     Ni_r = np.zeros(2 * Ni.shape[0])
     Ni_r[0::2] = np.where(is_real_freq, Ni, Ni / 2**0.5)
     Ni_r[1::2] = np.where(is_real_freq, 0.0, Ni / 2**0.5)
 
-    # Create the Hermitian conjugate weighted by the noise (this is used multiple times)
+    # Create the transpose of the Fourier matrix weighted by the noise
+    # (this is used multiple times)
     FTNih = F.T * Ni_r[np.newaxis, :] ** 0.5
     FTNiF = np.dot(FTNih, FTNih.T)
 
     # Pre-whiten the data to save doing it repeatedly
     data = data * Ni_r[:, np.newaxis] ** 0.5
 
-    # Set the initial starting points
+    # Set the initial guess for the delay power spectrum.
     S_samp = initial_S
 
     def _draw_signal_sample_f(S):
-        # Draw a random sample of the signal assuming a Gaussian model with a
-        # given delay spectrum shape. Do this using the perturbed Wiener filter
-        # approach
+        # Draw a random sample of the signal (delay spectrum) assuming a Gaussian model
+        # with a given delay power spectrum `S`. Do this using the perturbed Wiener
+        # filter approach
 
         # This method is fastest if the number of frequencies is larger than the number
         # of delays we are solving for. Typically this isn't true, so we probably want
-        # `_draw_signal_sample2`
+        # `_draw_signal_sample_t`
 
         # Construct the Wiener covariance
+        if complex_timedomain:
+            # If delay spectrum is complex, extend S to correspond to the individual
+            # real and imaginary components of the delay spectrum, each of which have
+            # power spectrum equal to 0.5 times the power spectrum of the complex
+            # delay spectrum, if the statistics are circularly symmetric
+            S = 0.5 * np.repeat(S, 2)
         Si = 1.0 / S
         Ci = np.diag(Si) + FTNiF
 
         # Draw random vectors that form the perturbations
-        w1 = rng.standard_normal((N, data.shape[1]))
+        if complex_timedomain:
+            # If delay spectrum is complex, draw for real and imaginary components
+            # separately
+            w1 = rng.standard_normal((2 * N, data.shape[1]))
+        else:
+            w1 = rng.standard_normal((N, data.shape[1]))
         w2 = rng.standard_normal(data.shape)
 
         # Construct the random signal sample by forming a perturbed vector and
@@ -971,12 +1106,23 @@ def delay_spectrum_gibbs(
         # frequencies. This is usually the regime we are in.
 
         # Construct various dependent matrices
+        if complex_timedomain:
+            # If delay spectrum is complex, extend S to correspond to the individual
+            # real and imaginary components of the delay spectrum, each of which have
+            # power spectrum equal to 0.5 times the power spectrum of the complex
+            # delay spectrum, if the statistics are circularly symmetric
+            S = 0.5 * np.repeat(S, 2)
         Sh = S**0.5
         Rt = Sh[:, np.newaxis] * FTNih
-        R = Rt.T
+        R = Rt.T.conj()
 
         # Draw random vectors that form the perturbations
-        w1 = rng.standard_normal((N, data.shape[1]))
+        if complex_timedomain:
+            # If delay spectrum is complex, draw for real and imaginary components
+            # separately
+            w1 = rng.standard_normal((2 * N, data.shape[1]))
+        else:
+            w1 = rng.standard_normal((N, data.shape[1]))
         w2 = rng.standard_normal(data.shape)
 
         # Perform the solve step (rather than explicitly using the inverse)
@@ -988,10 +1134,14 @@ def delay_spectrum_gibbs(
         return s
 
     def _draw_ps_sample(d):
-        # Draw a random power spectrum sample assuming from the signal assuming
-        # the signal is Gaussian and we have a flat prior on the power spectrum.
+        # Draw a random delay power spectrum sample assuming the signal is Gaussian and
+        # we have a flat prior on the power spectrum.
         # This means drawing from a inverse chi^2.
 
+        if complex_timedomain:
+            # If delay spectrum is complex, combine real and imaginary components
+            # stored in d, such that variance below is variance of complex spectrum
+            d = d[0::2] + 1.0j * d[1::2]
         S_hat = d.var(axis=1)
 
         df = d.shape[1]
@@ -1004,7 +1154,7 @@ def delay_spectrum_gibbs(
     # Select the method to use for the signal sample based on how many frequencies
     # versus delays there are
     _draw_signal_sample = (
-        _draw_signal_sample_f if len(fsel) > 0.25 * N else _draw_signal_sample_t
+        _draw_signal_sample_f if (len(fsel) > 0.25 * N) else _draw_signal_sample_t
     )
 
     # Perform the Gibbs sampling iteration for a given number of loops and
