@@ -2224,7 +2224,7 @@ class DelayCutoff(ContainerBase):
 
 
 class DelaySpectrum(ContainerBase):
-    """Container for a delay spectrum."""
+    """Container for a delay power spectrum."""
 
     _axes = ("baseline", "delay")
 
