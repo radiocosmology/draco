@@ -105,6 +105,12 @@ class SVDModeProject(_ProjectFilterBase):
             # whether an m-mode should be masked comoletely
             svdmodes.weight[mi] = np.median(mmodes.weight[mi])
 
+        # Save telescope properties from input m-modes, so that they can be restored
+        # after a backwards SVD projection
+        svdmodes.attrs["input"] = mmodes.input
+        svdmodes.attrs["prod"] = mmodes.prod
+        svdmodes.attrs["stack"] = mmodes.stack
+
         return svdmodes
 
     def _backward(self, svdmodes):
@@ -113,11 +119,29 @@ class SVDModeProject(_ProjectFilterBase):
         bt = self.beamtransfer
         tel = bt.telescope
 
-        # Try and fetch out the feed index and info from the telescope object.
+        # Try to fetch the feed index and info from the SVDModes container, them from
+        # the telescope object.
         try:
-            feed_index = tel.input_index
-        except AttributeError:
-            feed_index = tel.nfeed
+            input = svdmodes.attrs["input"]
+        except:
+            try:
+                input = tel.input_index
+            except AttributeError:
+                input = tel.nfeed
+
+        # Try to fetch the product map from the SVDModes container, then from the
+        # telescope object
+        try:
+            prod = svdmodes.attrs["prod"]
+        except:
+            prod = tel.uniquepairs
+
+        # Try to fetch the stack info from the SVDModes container, then from the
+        # telescope object
+        try:
+            stack = svdmodes.attrs["stack"]
+        except:
+            prod = None
 
         # Construct frequency index map
         freqmap = np.zeros(
@@ -133,8 +157,9 @@ class SVDModeProject(_ProjectFilterBase):
         # Construct the new m-mode container
         mmodes = containers.MModes(
             freq=freqmap,
-            prod=tel.uniquepairs,
-            input=feed_index,
+            prod=prod,
+            input=input,
+            stack=stack,
             attrs_from=svdmodes,
             axes_from=svdmodes,
         )
