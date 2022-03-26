@@ -662,9 +662,10 @@ class VisContainer(ContainerBase):
         # Automatically construct product map from inputs if not given
         if prod is None and inputs is not None:
             nfeed = inputs if isinstance(inputs, int) else len(inputs)
+            prod_dtype = [("input_a", int), ("input_b", int)]
             kwargs["prod"] = np.array(
                 [[fi, fj] for fi in range(nfeed) for fj in range(fi, nfeed)]
-            )
+            ).flatten().view(prod_dtype)
 
         if stack is None and prod is not None:
             stack = np.empty_like(prod, dtype=[("prod", "<u4"), ("conjugate", "u1")])
