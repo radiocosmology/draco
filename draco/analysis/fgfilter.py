@@ -105,10 +105,10 @@ class SVDModeProject(_ProjectFilterBase):
             # whether an m-mode should be masked comoletely
             svdmodes.weight[mi] = np.median(mmodes.weight[mi])
 
-        # Save telescope properties from input m-modes, so that they can be restored
-        # after a backwards SVD projection
+        # Save input and stack axes from input m-modes, so that they can be restored
+        # after a backwards SVD projection (prodmap can be restored purely from input
+        # axis, plus it can run into HDF5 attribute size limits if we try to save it)
         svdmodes.attrs["input"] = mmodes.input
-        svdmodes.attrs["prod"] = mmodes.prod
         svdmodes.attrs["stack"] = mmodes.stack
 
         return svdmodes
@@ -129,19 +129,12 @@ class SVDModeProject(_ProjectFilterBase):
             except AttributeError:
                 input = tel.nfeed
 
-        # Try to fetch the product map from the SVDModes container, then from the
-        # telescope object
-        try:
-            prod = svdmodes.attrs["prod"]
-        except:
-            prod = tel.uniquepairs
-
         # Try to fetch the stack info from the SVDModes container, then from the
         # telescope object
         try:
             stack = svdmodes.attrs["stack"]
         except:
-            prod = None
+            stack = None
 
         # Construct frequency index map
         freqmap = np.zeros(
@@ -157,7 +150,6 @@ class SVDModeProject(_ProjectFilterBase):
         # Construct the new m-mode container
         mmodes = containers.MModes(
             freq=freqmap,
-            prod=prod,
             input=input,
             stack=stack,
             attrs_from=svdmodes,
