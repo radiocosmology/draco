@@ -679,7 +679,8 @@ class DelaySpectrumEstimatorBase(task.SingleTask, random.RandomTask):
 class DelaySpectrumWienerBase(task.SingleTask):
     """Calculate the delay spectrum for each RA and DEC of any container with a frequency axis.
 
-    The spectrum is calculated by Wiener filtering method given the delay power spectrum at each DEC/baselines [https://arxiv.org/abs/2202.01242 see:- eqn A6]
+    The spectrum is calculated by Wiener filtering method given the delay power spectrum 
+    at each DEC/baselines [https://arxiv.org/abs/2202.01242 see:- eqn A6].
 
     The delay spectrum output is indexed by  `baseline` and 'sample' axis. The baseline axis is the
     composite axis of all the axis (DEC, pol and beam axes) in the container except the 'sample' and frequency axis.
