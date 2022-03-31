@@ -227,3 +227,23 @@ class WaitUntil(task.MPILoggedTask):
     def next(self, input_):
         """Immediately forward any input."""
         return input_
+
+
+class CopyReverseMap(task.SingleTask):
+    """Copy reverse_map from one VisContainer to another."""
+
+    in_place = config.Property(proptype=bool, default=True)
+
+    def process(self, inp: containers.VisContainer, out: containers.VisContainer) -> containers.VisContainer:
+    # def process(self, inp, out):
+        """Copy reverse_map of `inp` to `out`."""
+
+        if self.in_place:
+            out_cont = out
+        else:
+            out_cont = out.copy()
+
+        for key in inp.reverse_map.keys():
+            out_cont.create_reverse_map(key, inp.reverse_map[key])
+
+        return out_cont
