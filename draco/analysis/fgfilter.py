@@ -58,9 +58,9 @@ class SVDModeProject(_ProjectFilterBase):
     Attributes
     ----------
     svcut : float, optional
-        The relative precision below the maximum singular value to exclude low
-        sensitivity SVD modes. If not specified, the value set in the BeamTransfer
-        instance is used. Default: None.
+        The relative precision below the maximum singular value (at each m separately)
+        to exclude low-sensitivity SVD modes. If not specified, the value set in the
+        BeamTransfer instance is used. Default: None.
     """
 
     svcut = config.Property(proptype=float, default=None)
