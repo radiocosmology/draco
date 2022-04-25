@@ -24,9 +24,14 @@ class MakePerturbedBeamStream(task.SingleTask):
         where a_i are the elements of pert_vals and A_pert are the beam perturbation
         templates. pert_vals must therefore have the same length as number of
         perturbation templates in the specified telescope class.
+    include_second_order : bool, optional
+        Include terms of order a_i^2 (i.e. visibilities that are products of two
+        perturbations). Normally, this should be turned on, but it can be useful for
+        testing. Default: True.
     """
 
     pert_vals = config.Property(proptype=list)
+    include_second_order = config.Property(proptype=bool, default=True)
 
     def setup(self, bt_pert, bt_unpert):
         """Set the telescope instance.
@@ -100,7 +105,8 @@ class MakePerturbedBeamStream(task.SingleTask):
         vis_out[:] = vis_full[:, mask]
         weight_out[:] = weight_full[:, mask]
 
-        # Transfer visibilities with one perturbed input and one unperturbed input
+        # Transfer visibilities with one perturbed input and one unperturbed input,
+        # and with two perturbed inputs
         for p in range(1, self.tel_pert.n_pert + 1):
 
             # a=unpert, b=pert (order pert_vals)
@@ -120,17 +126,18 @@ class MakePerturbedBeamStream(task.SingleTask):
             vis_out[:] += self.pert_vals[p - 1] * vis_full[:, mask]
 
             # a,b=pert (order pert_vals^2)
-            for pp in range(p, self.tel_pert.n_pert + 1):
-                mask = ((bc_a == 2 * p) | (bc_a == 2 * p + 1)) & (
-                    (bc_b == 2 * pp) | (bc_b == 2 * pp + 1)
-                )
-                if not (
-                    np.allclose(bc_a[mask] % 2, bc_a_u)
-                    and np.allclose(bc_b[mask] % 2, bc_b_u)
-                ):
-                    raise RuntimeError("Slicing error in perturbed sstream!")
-                vis_out[:] += (
-                    self.pert_vals[p - 1] * self.pert_vals[pp - 1] * vis_full[:, mask]
-                )
+            if self.include_second_order:
+                for pp in range(p, self.tel_pert.n_pert + 1):
+                    mask = ((bc_a == 2 * p) | (bc_a == 2 * p + 1)) & (
+                        (bc_b == 2 * pp) | (bc_b == 2 * pp + 1)
+                    )
+                    if not (
+                        np.allclose(bc_a[mask] % 2, bc_a_u)
+                        and np.allclose(bc_b[mask] % 2, bc_b_u)
+                    ):
+                        raise RuntimeError("Slicing error in perturbed sstream!")
+                    vis_out[:] += (
+                        self.pert_vals[p - 1] * self.pert_vals[pp - 1] * vis_full[:, mask]
+                    )
 
         return sstream_out
