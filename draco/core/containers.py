@@ -1617,7 +1617,8 @@ class SVDModes(MContainer):
 
     def __init__(self, svcut=None, *args, **kwargs):
         super(SVDModes, self).__init__(*args, **kwargs)
-        self.attrs["svcut"] = svcut
+        if svcut is not None:
+            self.attrs["svcut"] = svcut
 
     @property
     def vis(self):
