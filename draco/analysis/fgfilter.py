@@ -86,6 +86,7 @@ class SVDModeProject(_ProjectFilterBase):
         if (
             not self.compute_pinv
             and isinstance(self.beamtransfer, external_beam.BeamTransferSingleStepKLFilterTemplate)
+            and self.mode in ["backward", "filter"]
         ):
             raise config.CaputConfigError(
                 "Must set compute_pinv in SVDModeProject if using "
