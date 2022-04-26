@@ -61,9 +61,13 @@ class SVDModeProject(_ProjectFilterBase):
         The relative precision below the maximum singular value (at each m separately)
         to exclude low-sensitivity SVD modes. If not specified, the value set in the
         BeamTransfer instance is used. Default: None.
+    compute_pinv : bool, optional
+        If True, explicitly compute the pseudo-inverse of the SVD projection.
+        Default: False.
     """
 
     svcut = config.Property(proptype=float, default=None)
+    compute_pinv = config.Property(proptype=bool, default=False)
 
     def setup(self, bt):
         """Set the beamtransfer instance.
@@ -76,6 +80,15 @@ class SVDModeProject(_ProjectFilterBase):
         self.beamtransfer = io.get_beamtransfer(bt)
         if self.svcut is None:
             self.svcut = self.beamtransfer.svcut
+
+        if (
+            not self.compute_pinv
+            and isinstance(self.beamtransfer, external_beam.BeamTransferSingleStepKLFilterTemplate)
+        ):
+            raise config.CaputConfigError(
+                "Must set compute_pinv in SVDModeProject if using "
+                "BeamTransferSingleStepKLFilterTemplate"
+            )
 
     def _forward(self, mmodes):
         # Forward transform into SVD basis
@@ -162,7 +175,9 @@ class SVDModeProject(_ProjectFilterBase):
         for lm, mi in mmodes.vis[:].enumerate(axis=0):
 
             svdm = svdmodes.vis[mi]
-            tm = bt.project_vector_svd_to_telescope(mi, svdm, svcut=svdmodes.svcut)
+            tm = bt.project_vector_svd_to_telescope(
+                mi, svdm, svcut=svdmodes.svcut, use_pinv=self.compute_pinv
+            )
 
             svdmodes.nmode[mi] = len(svdm)
             mmodes.vis[mi] = tm.transpose((1, 0, 2))
