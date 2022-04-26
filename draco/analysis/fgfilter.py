@@ -6,6 +6,8 @@ import numpy as np
 from caput import config
 from ..core import task, containers, io
 
+from drift.telescope import external_beam
+
 
 class _ProjectFilterBase(task.SingleTask):
     """A base class for projecting data to/from a different basis.
