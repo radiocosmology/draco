@@ -99,8 +99,12 @@ class SVDModeProject(_ProjectFilterBase):
         bt = self.beamtransfer
         tel = bt.telescope
 
+        # Determine ntel and npairs from saved SVD file
+        npairs = len(bt.load_svd_baselines(0))
+        ntel = 2 * npairs
+
         svdmodes = containers.SVDModes(
-            mode=bt.ndofmax(), axes_from=mmodes, attrs_from=mmodes, svcut=self.svcut
+            mode=bt.ndofmax(ntel), axes_from=mmodes, attrs_from=mmodes, svcut=self.svcut
         )
         svdmodes.vis[:] = 0.0
 
