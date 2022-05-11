@@ -1,5 +1,6 @@
 """Tasks for foreground filtering data."""
 
+import logging
 
 import numpy as np
 
@@ -7,6 +8,9 @@ from caput import config
 from ..core import task, containers, io
 
 from drift.telescope import external_beam
+
+# Get the module logging object
+logger = logging.getLogger(__name__)
 
 
 class _ProjectFilterBase(task.SingleTask):
@@ -114,6 +118,8 @@ class SVDModeProject(_ProjectFilterBase):
         # Iterate over local m's, project mode and save to disk.
         for lm, mi in mmodes.vis[:].enumerate(axis=0):
 
+            logger.debug(f"m = {mi}: Projecting from tel to SVD basis")
+
             tm = mmodes.vis[mi].transpose((1, 0, 2)).reshape(tel.nfreq, -1)
             svdm = bt.project_vector_telescope_to_svd(mi, tm, svcut=self.svcut)
 
@@ -180,6 +186,8 @@ class SVDModeProject(_ProjectFilterBase):
 
         # Iterate over local m's, project mode and save to disk.
         for lm, mi in mmodes.vis[:].enumerate(axis=0):
+
+            logger.debug(f"m = {mi}: Projecting from SVD to tel basis")
 
             svdm = svdmodes.vis[mi]
             tm = bt.project_vector_svd_to_telescope(
