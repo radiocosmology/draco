@@ -317,15 +317,16 @@ class CreateHEALPixBeam(task.SingleTask):
             distributed_axis="freq"
         )
 
-        # Determine local frequencies
+        # Determine local frequencies and get local section of beam
         ls = out_beam.beam.local_shape[0]
         lo = out_beam.beam.local_offset[0]
+        beam_local = out_beam.beam[:]
 
         # Copy HEALPix-format beam into container
-        for fi in range(lo, lo + ls):
+        for fi in range(ls):
             for pi, pol in enumerate(["X", "Y"]):
-                out_beam.beam[fi, pi, 0]["Et"] = tel.beam(fi_pol[pi], lo + fi)[:, 0]
-                out_beam.beam[fi, pi, 0]["Ep"] = tel.beam(fi_pol[pi], lo + fi)[:, 1]
+                beam_local[fi, pi, 0]["Et"] = tel.beam(fi_pol[pi], lo + fi)[:, 0]
+                beam_local[fi, pi, 0]["Ep"] = tel.beam(fi_pol[pi], lo + fi)[:, 1]
 
         if orig_nside not in [self.nside, None]:
             tel._init_trans(orig_nside)
