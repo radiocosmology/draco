@@ -265,3 +265,71 @@ class CreateBeamStreamFromTelescope(CreateBeamStream):
                 beam[ff, pp, 0] = np.sum(bii * bjj.conjugate(), axis=1).reshape(shp)
 
         return out
+
+
+class CreateHEALPixBeam(task.SingleTask):
+    """Convert a HEALPixBeam from a telescope class."""
+
+    telescope = None
+
+    nside = config.Property(proptype=int)
+
+    def setup(self, telescope: io.TelescopeConvertible):
+        """Set the telescope object.
+
+        Parameters
+        ----------
+        telescope : io.TelescopeConvertible
+            The telescope object to use.
+        """
+        self.telescope = io.get_telescope(telescope)
+
+    def process(self):
+        """Save the telescope's primary beam model as a HEALPixBeam container.
+
+        Returns
+        -------
+        out_beam : containers.HEALPixBeam
+            Output beam container.
+        """
+
+        tel = self.telescope
+
+        # If Nside for telescope has already been set, save it and re-initialize with
+        # user-specified Nside for this task
+        orig_nside = tel._nside
+        if orig_nside != self.nside:
+            tel._init_trans(self.nside)
+
+        # Fetch feed indices corresponding to X and Y pols
+        out_pol = np.array(["X", "Y"])
+        fi_pol = [list(tel.polarisation).index(pol) for pol in out_pol]
+
+        # Create output HEALPixBeam container
+        out_beam = containers.HEALPixBeam(
+            coords="celestial",
+            ordering="ring",
+            input=np.array(["common-mode"]),
+            nside=self.nside,
+            freq=tel.frequencies,
+            pol=out_pol,
+            distributed=True,
+            distributed_axis="freq"
+        )
+
+        # Determine local frequencies
+        ls = out_beam.beam.local_shape[0]
+        lo = out_beam.beam.local_offset[0]
+
+        # Copy HEALPix-format beam into container
+        for fi in range(lo, lo + ls):
+            for pi, pol in enumerate(["X", "Y"]):
+                out_beam.beam[fi, pi, 0]["Et"] = tel.beam(fi_pol[pi], lo + fi)[:, 0]
+                out_beam.beam[fi, pi, 0]["Ep"] = tel.beam(fi_pol[pi], lo + fi)[:, 1]
+
+        if orig_nside not in [self.nside, None]:
+            tel._init_trans(orig_nside)
+
+        self.done = True
+
+        return out_beam
