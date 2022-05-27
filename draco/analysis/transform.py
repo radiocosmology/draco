@@ -1132,10 +1132,11 @@ class TransformJanskyToKelvin(task.SingleTask):
 class MixData(task.SingleTask):
     """Mix together pieces of data with specified weights.
 
-    This can generate arbitrary linear combinations of the data and weights for both
-    `SiderealStream` and `RingMap` objects, and can be used for many purposes such as:
-    adding together simulated timestreams, injecting signal into data, replacing weights
-    in simulated data with those from real data, etc.
+    This can generate arbitrary linear combinations of the data and weights for
+    `SiderealStream`, `RingMap`, and `HEALPixBeam` objects, and can be used for many
+    purposes such as: adding together simulated timestreams, injecting signal into data,
+    replacing weights in simulated data with those from real data, differencing two beam
+    models, etc.
 
     All coefficients are applied naively to generate the final combinations, i.e. no
     normalisations or weighted summation is performed.
@@ -1144,11 +1145,11 @@ class MixData(task.SingleTask):
     ----------
     data_coeff : list
         A list of coefficients to apply to the data dataset of each input containter to
-        produce the final output. These are applied to either the `vis` or `map` dataset
-        depending on the the type of the input container.
+        produce the final output. These are applied to either the `vis`, `map`, or
+        `beam` dataset depending on the the type of the input container.
     weight_coeff : list
         Coefficient to be applied to each input containers weights to generate the
-        output.
+        output. Ignored for `HEALPixBeam` objects.
     """
 
     data_coeff = config.list_type(type_=float)
@@ -1166,7 +1167,12 @@ class MixData(task.SingleTask):
 
         self._data_ind = 0
 
-    def process(self, data: Union[containers.SiderealStream, containers.RingMap]):
+    def process(
+        self,
+        data: Union[
+            containers.SiderealStream, containers.RingMap, containers.HEALPixBeam
+        ],
+    ):
         """Add the input data into the mixed data output.
 
         Parameters
@@ -1175,12 +1181,16 @@ class MixData(task.SingleTask):
             The data to be added into the mix.
         """
 
+        has_weight = not isinstance(data, containers.HEALPixBeam)
+
         def _get_dset(data):
             # Helpful routine to get the data dset depending on the type
             if isinstance(data, containers.SiderealStream):
                 return data.vis
             elif isinstance(data, containers.RingMap):
                 return data.map
+            elif isinstance(data, containers.HEALPixBeam):
+                return data.beam
 
         if self._data_ind >= len(self.data_coeff):
             raise RuntimeError(
@@ -1193,7 +1203,8 @@ class MixData(task.SingleTask):
 
             # Zero out data and weights
             _get_dset(self.mixed_data)[:] = 0.0
-            self.mixed_data.weight[:] = 0.0
+            if has_weight:
+                self.mixed_data.weight[:] = 0.0
 
         # Validate the types are the same
         if type(self.mixed_data) != type(data):
@@ -1215,8 +1226,15 @@ class MixData(task.SingleTask):
             )
 
         # Mix in the data and weights
-        mixed_dset[:] += self.data_coeff[self._data_ind] * data_dset[:]
-        self.mixed_data.weight[:] += self.weight_coeff[self._data_ind] * data.weight[:]
+        if isinstance(data, containers.HEALPixBeam):
+            mixed_dset[:]["Et"] += self.data_coeff[self._data_ind] * data_dset[:]["Et"]
+            mixed_dset[:]["Ep"] += self.data_coeff[self._data_ind] * data_dset[:]["Ep"]
+        else:
+            mixed_dset[:] += self.data_coeff[self._data_ind] * data_dset[:]
+        if has_weight:
+            self.mixed_data.weight[:] += (
+                self.weight_coeff[self._data_ind] * data.weight[:]
+            )
 
         self._data_ind += 1
 
