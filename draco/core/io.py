@@ -22,7 +22,7 @@ Several tasks accept groups of files as arguments. These are specified in the YA
     single_group:
         files: ['file1.h5', 'file2.h5']
 """
-
+import functools
 import os.path
 
 import h5py
@@ -30,7 +30,7 @@ import numpy as np
 from typing import Union, Dict, List
 from yaml import dump as yamldump
 
-from caput import pipeline, config, memh5
+from caput import pipeline, config, memh5, truncate
 
 from cora.util import units
 
@@ -38,30 +38,6 @@ from drift.core import telescope, manager, beamtransfer
 
 from . import task
 from ..util.exception import ConfigError
-from ..util.truncate import bit_truncate_weights, bit_truncate_fixed
-from .containers import SiderealStream, TimeStream, TrackBeam
-
-
-TRUNC_SPEC = {
-    SiderealStream: {
-        "dataset": ["vis", "vis_weight"],
-        "weight_dataset": ["vis_weight", None],
-        "fixed_precision": 1e-4,
-        "variance_increase": 1e-3,
-    },
-    TimeStream: {
-        "dataset": ["vis", "vis_weight"],
-        "weight_dataset": ["vis_weight", None],
-        "fixed_precision": 1e-4,
-        "variance_increase": 1e-3,
-    },
-    TrackBeam: {
-        "dataset": ["beam", "weight"],
-        "weight_dataset": ["weight", None],
-        "fixed_precision": 1e-4,
-        "variance_increase": 1e-3,
-    },
-}
 
 
 def _list_of_filelists(files: Union[List[str], List[List[str]]]) -> List[List[str]]:
@@ -724,50 +700,67 @@ class Truncate(task.SingleTask):
 
     Attributes
     ----------
-    dataset : list of str
-        Datasets to truncate.
-    weight_dataset : list of str
-        Datasets to use as inverse variance for truncation precision.
-    fixed_precision : float
-        Relative precision to truncate to (default 1e-4).
-    variance_increase : float
-        Maximum fractional increase in variance from numerical truncation.
+    dataset : dict
+        Datasets to be truncated as keys. Possible values are:
+        - bool : Whether or not to truncate, using default fixed precision.
+        - float : Truncate to this relative precision.
+        - dict : Specify values for `weight_dataset`, `fixed_precision`, `variance_increase`.
+    ensure_chunked : bool
+        If True, ensure datasets are chunked according to their dataset_spec.
     """
 
-    dataset = config.Property(proptype=list, default=None)
-    weight_dataset = config.Property(proptype=list, default=None)
-    fixed_precision = config.Property(proptype=float, default=None)
-    variance_increase = config.Property(proptype=float, default=None)
+    dataset = config.Property(proptype=dict, default=None)
+    ensure_chunked = config.Property(proptype=bool, default=True)
 
-    def _get_params(self, container):
-        """Load truncation parameters from config or container defaults."""
-        if container in TRUNC_SPEC:
-            self.log.info("Truncating from preset for container {}".format(container))
-            for key in [
-                "dataset",
-                "weight_dataset",
-                "fixed_precision",
-                "variance_increase",
-            ]:
-                attr = getattr(self, key)
-                if attr is None:
-                    setattr(self, key, TRUNC_SPEC[container][key])
-                else:
-                    self.log.info("Overriding container default for '{}'.".format(key))
+    default_params = {
+        "weight_dataset": None,
+        "fixed_precision": 1e-4,
+        "variance_increase": 1e-3,
+    }
+
+    def _get_params(self, container, dset):
+        """
+        Load truncation parameters for a dataset from config or container defaults.
+
+        Parameters
+        ----------
+        container
+            Container class.
+        dset : str
+            Dataset name
+
+        Returns
+        -------
+        Dict or None
+            Returns `None` if the dataset shouldn't get truncated.
+        """
+        # Check if dataset should get truncated at all
+        if (self.dataset is None) or (dset not in self.dataset):
+            if dset not in container._dataset_spec or not container._dataset_spec[
+                dset
+            ].get("truncate", False):
+                self.log.debug(f"Not truncating dataset '{dset}' in {container}.")
+                return None
+            # Use the dataset spec if nothing specified in config
+            given_params = container._dataset_spec[dset].get("truncate", False)
         else:
-            if (
-                self.dataset is None
-                or self.fixed_precision is None
-                or self.variance_increase is None
-            ):
-                raise config.CaputConfigError(
-                    "Container {} has no preset values. You must define all of 'dataset', "
-                    "'fixed_precision', and 'variance_increase' properties in the config.".format(
-                        container
-                    )
-                )
+            given_params = self.dataset[dset]
+
+        # Parse config parameters
+        params = self.default_params.copy()
+        if type(given_params) is dict:
+            params.update(given_params)
+        elif type(given_params) is float:
+            params["fixed_precision"] = given_params
+        elif not given_params:
+            self.log.debug(f"Not truncating dataset '{dset}' in {container}.")
+            return None
+
         # Factor of 3 for variance over uniform distribution of truncation errors
-        self.variance_increase *= 3
+        if params["variance_increase"] is not None:
+            params["variance_increase"] *= 3
+
+        return params
 
     def process(self, data):
         """Truncate the incoming data.
@@ -792,49 +785,61 @@ class Truncate(task.SingleTask):
              If the input data container has no preset values and `fixed_precision` or `variance_increase` are not set
              in the config.
         """
-        # get truncation parameters from config or container defaults
-        self._get_params(type(data))
 
-        if self.weight_dataset is None:
-            self.weight_dataset = [None] * len(self.dataset)
+        if self.ensure_chunked:
+            data._ensure_chunked()
 
-        for dset, wgt in zip(self.dataset, self.weight_dataset):
-            old_shape = data[dset].local_shape
-            val = np.ndarray.reshape(data[dset][:], data[dset][:].size)
-            if wgt is None:
+        for dset in data._dataset_spec:
+            # get truncation parameters from config or container defaults
+            specs = self._get_params(type(data), dset)
+
+            if (specs is None) or (dset not in data):
+                # Don't truncate this dataset
+                continue
+
+            old_shape = data[dset][:].shape
+            # np.ndarray.reshape must be used with ndarrays
+            # MPIArrays use MPIArray.reshape()
+            val = np.ndarray.reshape(data[dset][:].view(np.ndarray), data[dset][:].size)
+            if specs["weight_dataset"] is None:
                 if np.iscomplexobj(data[dset]):
-                    data[dset][:].real = bit_truncate_fixed(
-                        val.real, self.fixed_precision
+                    data[dset][:].real = truncate.bit_truncate_relative(
+                        val.real, specs["fixed_precision"]
                     ).reshape(old_shape)
-                    data[dset][:].imag = bit_truncate_fixed(
-                        val.imag, self.fixed_precision
+                    data[dset][:].imag = truncate.bit_truncate_relative(
+                        val.imag, specs["fixed_precision"]
                     ).reshape(old_shape)
                 else:
-                    data[dset][:] = bit_truncate_fixed(
-                        val, self.fixed_precision
+                    data[dset][:] = truncate.bit_truncate_relative(
+                        val, specs["fixed_precision"]
                     ).reshape(old_shape)
             else:
-                if data[dset][:].shape != data[wgt][:].shape:
-                    raise pipeline.PipelineRuntimeError(
-                        "Dataset and weight arrays must have same shape ({} != {})".format(
-                            data[dset].shape, data[wgt].shape
-                        )
+                invvar = (
+                    np.broadcast_to(
+                        data[specs["weight_dataset"]][:], data[dset][:].shape
                     )
-                invvar = np.ndarray.reshape(data[wgt][:], data[dset][:].size)
+                    .copy()
+                    .reshape(-1)
+                )
+                invvar *= (2.0 if np.iscomplexobj(data[dset]) else 1.0) / specs[
+                    "variance_increase"
+                ]
                 if np.iscomplexobj(data[dset]):
-                    data[dset][:].real = bit_truncate_weights(
+                    data[dset][:].real = truncate.bit_truncate_weights(
                         val.real,
-                        invvar * 2.0 / self.variance_increase,
-                        self.fixed_precision,
+                        invvar,
+                        specs["fixed_precision"],
                     ).reshape(old_shape)
-                    data[dset][:].imag = bit_truncate_weights(
+                    data[dset][:].imag = truncate.bit_truncate_weights(
                         val.imag,
-                        invvar * 2.0 / self.variance_increase,
-                        self.fixed_precision,
+                        invvar,
+                        specs["fixed_precision"],
                     ).reshape(old_shape)
                 else:
-                    data[dset][:] = bit_truncate_weights(
-                        val, invvar / self.variance_increase, self.fixed_precision
+                    data[dset][:] = truncate.bit_truncate_weights(
+                        val,
+                        invvar,
+                        specs["fixed_precision"],
                     ).reshape(old_shape)
 
         return data
