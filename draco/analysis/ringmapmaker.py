@@ -977,7 +977,7 @@ class TikhonovRingMapMaker(DeconvolveHybridMBase):
 
 
 class WienerRingMapMaker(DeconvolveHybridMBase):
-    """Class for map making using a Wiener regularisation scheme.
+    r"""Class for map making using a Wiener regularisation scheme.
 
     Compared to TikhonovRingMapMaker, this task has a frequency and m-mode
     dependent regularisation parameter given by the ratio of the noise spectrum

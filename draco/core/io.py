@@ -22,7 +22,6 @@ Several tasks accept groups of files as arguments. These are specified in the YA
     single_group:
         files: ['file1.h5', 'file2.h5']
 """
-import functools
 import os.path
 
 import h5py

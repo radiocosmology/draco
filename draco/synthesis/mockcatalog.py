@@ -95,7 +95,6 @@ import numpy as np
 import healpy as hp
 import scipy.stats
 
-from cora.signal import corr21cm
 from cora.util import units
 from caput import config
 from caput import mpiarray, mpiutil
@@ -263,7 +262,6 @@ class ResizeSelectionFunctionMap(task.SingleTask):
         # Convert frequency axes to redshifts
         z_selfunc = _freq_to_z(selfunc.index_map["freq"])
         z_source = _freq_to_z(source_map.index_map["freq"])
-        n_z_source = len(z_source)
 
         # Make container for resized selection function map
         new_selfunc = containers.Map(
@@ -913,7 +911,6 @@ class AddEBOSSZErrorsToCatalog(task.SingleTask, random.RandomTask):
 
         # Get redshifts from catalog
         cat_z = cat["redshift"]["z"][:]
-        cat_z_err = cat["redshift"]["z_error"][:]
 
         # Generate redshift errors for the chosen tracer
         z_err = self._generate_z_errors(cat_z, tracer)
@@ -1041,7 +1038,7 @@ class AddEBOSSZErrorsToCatalog(task.SingleTask, random.RandomTask):
 
         # A random variable to decide which Gaussian to draw the error from
         invf = invfz(z)
-        u = rng.uniform(size=nz)
+        u = rng.uniform(size=nsample)
         flag = u >= (invf / (1.0 + invf))
 
         dv1 = rng.standard_normal(nsample) * sig1z(z)
@@ -1151,9 +1148,6 @@ class MapPixelLocationGenerator(task.SingleTask):
 
         # Get MPI rank
         self.rank = self.comm.Get_rank()
-
-        # Global shape of frequency axis
-        n_z = self.map_.map[:, 0, :].global_shape[0]
 
         # Get desired N_pix and Nside
         self.npix = len(self.map_.index_map["pixel"])
