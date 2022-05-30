@@ -92,15 +92,15 @@ def test_LoadBasicCont_selection(ss_container, mpi_tmp_path):
         # Check the freq selection
         n, s, e = mpiutil.split_local(nf, comm=ss_load.comm)
         vis_real = np.arange(*freq_range)[s:e][:, np.newaxis, np.newaxis]
-        assert (ss_vis.real == vis_real).all()
+        assert (ss_vis.local_array.real == vis_real).all()
 
         # Check the ra selection
         vis_imag = np.arange(*ra_range)[np.newaxis, np.newaxis, :]
-        assert (ss_vis.imag == vis_imag).all()
+        assert (ss_vis.local_array.imag == vis_imag).all()
 
         # Check that nothing funky happened on the stack axis
         weight = np.arange(ss_container.vis.shape[1])[np.newaxis, :, np.newaxis]
-        assert (ss_weight == weight).all()
+        assert (ss_weight.local_array == weight).all()
 
     # Check the attributes...
     assert ss_load.attrs["test_attr1"] == "hello"
