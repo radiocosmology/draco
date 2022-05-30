@@ -142,7 +142,7 @@ class ContainerBase(memh5.BasicCont):
         skip_datasets = kwargs.pop("skip_datasets", False)
         dist = kwargs.pop("distributed", True)
         comm = kwargs.pop("comm", None)
-        self.allow_chunked = kwargs.pop("allow_chunked", False)
+        self.allow_chunked = kwargs.pop("allow_chunked", True)
 
         # Run base initialiser
         super().__init__(distributed=dist, comm=comm)
@@ -280,6 +280,36 @@ class ContainerBase(memh5.BasicCont):
         dset.attrs["axis"] = np.array(axes)
 
         return dset
+
+    def _ensure_chunked(self):
+        """Ensure datasets that have chunk/compression specs are chunked.
+
+        For every dataset, check if chunks and compression are set, and
+        if not set them to dataset_spec values.
+        """
+        for dset in self.dataset_spec:
+            if dset not in self:
+                continue
+            if "chunks" in self.dataset_spec[dset] and self[dset].chunks is None:
+                # ensure chunks aren't larger than dataset shape
+                chunks = ()
+                for i, l in enumerate(self[dset].shape):
+                    chunks += (min(self.dataset_spec[dset]["chunks"][i], l),)
+                self._data._storage_root[dset].chunks = chunks
+            if (
+                "compression" in self.dataset_spec[dset]
+                and self[dset].compression is None
+            ):
+                self._data._storage_root[dset].compression = self.dataset_spec[dset][
+                    "compression"
+                ]
+            if (
+                "compression_opts" in self.dataset_spec[dset]
+                and self[dset].compression_opts is None
+            ):
+                self._data._storage_root[dset].compression_opts = self.dataset_spec[
+                    dset
+                ]["compression_opts"]
 
     @property
     def datasets(self):
@@ -455,6 +485,10 @@ class ContainerBase(memh5.BasicCont):
                 # Copy over the data and attributes
                 dset[:] = data[:]
                 memh5.copyattrs(data.attrs, dset.attrs)
+                # TODO Is there a case where these properties don't exist?
+                data.chunks = dset.chunks
+                data.compression = dset.compression
+                data.compression_opts = dset.compression_opts
 
         return new_cont
 
@@ -1064,7 +1098,10 @@ class SiderealStream(
             "distributed_axis": "freq",
             "compression": COMPRESSION,
             "compression_opts": COMPRESSION_OPTS,
-            "chunks": (64, 256, 128),
+            "chunks": (64, 128, 128),
+            "truncate": {
+                "weight_dataset": "vis_weight",
+            },
         },
         "vis_weight": {
             "axes": ["freq", "stack", "ra"],
@@ -1074,7 +1111,8 @@ class SiderealStream(
             "distributed_axis": "freq",
             "compression": COMPRESSION,
             "compression_opts": COMPRESSION_OPTS,
-            "chunks": (64, 256, 128),
+            "chunks": (64, 128, 128),
+            "truncate": True,
         },
         "input_flags": {
             "axes": ["input", "ra"],
@@ -1097,7 +1135,8 @@ class SiderealStream(
             "distributed_axis": "freq",
             "compression": COMPRESSION,
             "compression_opts": COMPRESSION_OPTS,
-            "chunks": (3, 64, 256, 128),
+            "chunks": (3, 64, 128, 128),
+            "truncate": True,
         },
         "nsample": {
             "axes": ["freq", "stack", "ra"],
@@ -1107,7 +1146,7 @@ class SiderealStream(
             "distributed_axis": "freq",
             "compression": COMPRESSION,
             "compression_opts": COMPRESSION_OPTS,
-            "chunks": (64, 256, 128),
+            "chunks": (64, 128, 128),
         },
     }
 
@@ -1245,7 +1284,10 @@ class TimeStream(FreqContainer, VisContainer, TODContainer):
             "distributed_axis": "freq",
             "compression": COMPRESSION,
             "compression_opts": COMPRESSION_OPTS,
-            "chunks": (64, 256, 128),
+            "chunks": (64, 128, 128),
+            "truncate": {
+                "weight_dataset": "vis_weight",
+            },
         },
         "vis_weight": {
             "axes": ["freq", "stack", "time"],
@@ -1255,7 +1297,8 @@ class TimeStream(FreqContainer, VisContainer, TODContainer):
             "distributed_axis": "freq",
             "compression": COMPRESSION,
             "compression_opts": COMPRESSION_OPTS,
-            "chunks": (64, 256, 128),
+            "chunks": (64, 128, 128),
+            "truncate": True,
         },
         "input_flags": {
             "axes": ["input", "time"],
@@ -1441,7 +1484,10 @@ class TrackBeam(FreqContainer, SampleVarianceContainer):
             "distributed_axis": "freq",
             "compression": COMPRESSION,
             "compression_opts": COMPRESSION_OPTS,
-            "chunks": (128, 2, 128, 128),
+            "chunks": (64, 2, 64, 128),
+            "truncate": {
+                "weight_dataset": "weight",
+            },
         },
         "weight": {
             "axes": ["freq", "pol", "input", "pix"],
@@ -1451,7 +1497,8 @@ class TrackBeam(FreqContainer, SampleVarianceContainer):
             "distributed_axis": "freq",
             "compression": COMPRESSION,
             "compression_opts": COMPRESSION_OPTS,
-            "chunks": (128, 2, 128, 128),
+            "chunks": (64, 2, 64, 128),
+            "truncate": True,
         },
         "sample_variance": {
             "axes": ["component", "freq", "pol", "input", "pix"],
@@ -1461,7 +1508,8 @@ class TrackBeam(FreqContainer, SampleVarianceContainer):
             "distributed_axis": "freq",
             "compression": COMPRESSION,
             "compression_opts": COMPRESSION_OPTS,
-            "chunks": (3, 128, 2, 128, 128),
+            "chunks": (3, 64, 2, 64, 128),
+            "truncate": True,
         },
         "nsample": {
             "axes": ["freq", "pol", "input", "pix"],
@@ -1471,7 +1519,7 @@ class TrackBeam(FreqContainer, SampleVarianceContainer):
             "distributed_axis": "freq",
             "compression": COMPRESSION,
             "compression_opts": COMPRESSION_OPTS,
-            "chunks": (128, 2, 128, 128),
+            "chunks": (64, 2, 64, 128),
         },
     }
 
@@ -1661,6 +1709,12 @@ class VisGridStream(FreqContainer, SiderealContainer):
             "initialise": True,
             "distributed": True,
             "distributed_axis": "freq",
+            "chunks": (1, 64, 1, 64, 128),
+            "compression": COMPRESSION,
+            "compression_opts": COMPRESSION_OPTS,
+            "truncate": {
+                "weight_dataset": "weight",
+            },
         },
         "vis_weight": {
             "axes": ["pol", "freq", "ew", "ns", "ra"],
@@ -1668,12 +1722,19 @@ class VisGridStream(FreqContainer, SiderealContainer):
             "initialise": True,
             "distributed": True,
             "distributed_axis": "freq",
+            "chunks": (1, 64, 1, 64, 128),
+            "compression": COMPRESSION,
+            "compression_opts": COMPRESSION_OPTS,
+            "truncate": True,
         },
         "redundancy": {
             "axes": ["pol", "ew", "ns", "ra"],
             "dtype": np.int32,
             "initialise": True,
             "distributed": False,
+            "chunks": (1, 64, 1, 64, 128),
+            "compression": COMPRESSION,
+            "compression_opts": COMPRESSION_OPTS,
         },
     }
 
@@ -1796,6 +1857,12 @@ class RingMap(FreqContainer, SiderealContainer):
             "initialise": True,
             "distributed": True,
             "distributed_axis": "freq",
+            "chunks": (1, 1, 64, 128, 128),
+            "compression": COMPRESSION,
+            "compression_opts": COMPRESSION_OPTS,
+            "truncate": {
+                "weight_dataset": "weight",
+            },
         },
         "weight": {
             "axes": ["pol", "freq", "ra", "el"],
@@ -1803,6 +1870,10 @@ class RingMap(FreqContainer, SiderealContainer):
             "initialise": True,
             "distributed": True,
             "distributed_axis": "freq",
+            "chunks": (1, 64, 128, 128),
+            "compression": COMPRESSION,
+            "compression_opts": COMPRESSION_OPTS,
+            "truncate": True,
         },
         "dirty_beam": {
             "axes": ["beam", "pol", "freq", "ra", "el"],
@@ -1810,6 +1881,10 @@ class RingMap(FreqContainer, SiderealContainer):
             "initialise": False,
             "distributed": True,
             "distributed_axis": "freq",
+            "chunks": (1, 1, 64, 128, 128),
+            "compression": COMPRESSION,
+            "compression_opts": COMPRESSION_OPTS,
+            "truncate": True,
         },
         "rms": {
             "axes": ["pol", "freq", "ra"],
@@ -1817,6 +1892,10 @@ class RingMap(FreqContainer, SiderealContainer):
             "initialise": False,
             "distributed": True,
             "distributed_axis": "freq",
+            "chunks": (4, 512, 512),
+            "compression": COMPRESSION,
+            "compression_opts": COMPRESSION_OPTS,
+            "truncate": True,
         },
     }
 

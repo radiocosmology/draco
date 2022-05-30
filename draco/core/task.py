@@ -6,7 +6,7 @@ from inspect import getfullargspec
 
 import numpy as np
 
-from caput import pipeline, config, memh5
+from caput import fileformats, config, memh5, pipeline
 
 
 class MPILogFilter(logging.Filter):
@@ -251,6 +251,25 @@ class SingleTask(MPILoggedTask, pipeline.BasicContMixin):
     output_name : string
         A python format string used to construct the filename. All variables given under
         `attrs` above can be interpolated into the filename.
+        Valid identifiers are:
+
+          - `count`: an integer giving which iteration of the task is this.
+          - `tag`: a string identifier for the output derived from the
+                   containers `tag` attribute. If that attribute is not present
+                   `count` is used instead.
+          - `key`: the name of the output key.
+          - `task`: the (unqualified) name of the task.
+          - `output_root`: the value of the output root argument. This is deprecated
+                           and is just used for legacy support. The default value of
+                           `output_name` means the previous behaviour works.
+
+    compression : dict or bool, optional
+        Set compression options for each dataset. Provided as a dict with the dataset
+        names as keys and values for `chunks`, `compression`, and `compression_opts`.
+        If set to `False`, chunks and compression will be disabled for all datasets.
+        Otherwise, the default parameters set in the dataset spec are used.
+        Note that this will modify these parameters on the container itself, such that
+        if it is written out again downstream in the pipeline these will be used.
     output_root : string
         Pipeline settable parameter giving the first part of the output path.
         Deprecated in favour of `output_name`.
@@ -277,6 +296,10 @@ class SingleTask(MPILoggedTask, pipeline.BasicContMixin):
 
     output_root = config.Property(default="", proptype=str)
     output_name = config.Property(default="{output_root}{tag}.h5", proptype=str)
+    output_format = config.file_format()
+    compression = config.Property(
+        default={}, proptype=lambda x: x if isinstance(x, dict) else bool(x)
+    )
 
     nan_check = config.Property(default=True, proptype=bool)
     nan_skip = config.Property(default=True, proptype=bool)
@@ -415,8 +438,49 @@ class SingleTask(MPILoggedTask, pipeline.BasicContMixin):
         return output
 
     def _save_output(self, output):
+        if output is None:
+            return
+
+        # Parse compression/chunks options
+        def walk_dset_tree(grp, root=""):
+            # won't find forbidden datasets like index_map but we are not compressing those
+            datasets = []
+            for key in grp:
+                if isinstance(grp[key], memh5.MemGroup):
+                    datasets += walk_dset_tree(grp[key], f"{root}{key}/")
+                else:
+                    datasets.append(root + key)
+            return datasets
+
+        if self.compression == False:
+            for ds in walk_dset_tree(output):
+                output._data._storage_root[ds].chunks = None
+                output._data._storage_root[ds].compression = None
+                output._data._storage_root[ds].compression_opts = None
+        else:
+            datasets = walk_dset_tree(output)
+            for ds in self.compression:
+                if ds in datasets:
+                    for key, val in self.compression[ds].items():
+                        self.log.debug(
+                            f"Overriding default compression setting on dataset {ds}: {key}={val}."
+                        )
+                        setattr(output._data._storage_root[ds], key, val)
+                    # shorthand for bitshuffle
+                    if output[ds].compression in ("bitshuffle", fileformats.H5FILTER):
+                        output[ds].compression = fileformats.H5FILTER
+                        if output[ds].compression_opts is None:
+                            output._data._storage_root[ds].compression_opts = (
+                                0,
+                                fileformats.H5_COMPRESS_LZ4,
+                            )
+                else:
+                    self.log.warning(
+                        f"Ignoring config entry in `compression` for non-existing dataset `{ds}`"
+                    )
+
         # Routine to write output if needed.
-        if self.save and output is not None:
+        if self.save:
 
             # add metadata to output
             metadata = {"versions": self.versions, "config": self.pipeline_config}
@@ -435,7 +499,11 @@ class SingleTask(MPILoggedTask, pipeline.BasicContMixin):
             outfile = os.path.expandvars(outfile)
 
             self.log.debug("Writing output %s to disk.", outfile)
-            self.write_output(outfile, output)
+            self.write_output(
+                outfile,
+                output,
+                file_format=self.output_format,
+            )
 
     def _nan_process_output(self, output):
         # Process the output to check for NaN's

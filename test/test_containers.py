@@ -54,6 +54,11 @@ def test_copy(ss_container):
     assert ss_copy.vis.attrs["test_attr2"] == "hello2"
     assert ss_copy.weight.attrs["test_attr3"] == "hello3"
 
+    # Check the chunking parameters
+    assert ss_copy.vis.chunks == ss_container.vis.chunks
+    assert ss_copy.vis.compression == ss_container.vis.compression
+    assert ss_copy.vis.compression_opts == ss_container.vis.compression_opts
+
     # Modify the datasets
     ss_container.vis[:] = 1.0
     ss_container.weight[:] = 2.0
