@@ -452,7 +452,7 @@ class SingleTask(MPILoggedTask, pipeline.BasicContMixin):
                     datasets.append(root + key)
             return datasets
 
-        if self.compression == False:
+        if not self.compression:
             for ds in walk_dset_tree(output):
                 output._data._storage_root[ds].chunks = None
                 output._data._storage_root[ds].compression = None

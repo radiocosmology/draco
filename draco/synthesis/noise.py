@@ -98,7 +98,7 @@ class GaussianNoiseDataset(task.SingleTask, random.RandomTask):
         else:
             dataset_name = self.dataset
 
-        if not dataset_name in data:
+        if dataset_name not in data:
             raise config.CaputConfigError(
                 f"Dataset '{dataset_name}' does not exist in container {type(data)}."
             )

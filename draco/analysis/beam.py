@@ -20,7 +20,7 @@ Tasks
 import numpy as np
 import scipy.constants
 
-from caput import config, interferometry
+from caput import interferometry
 
 from ..core import task
 from ..core import io

@@ -8,7 +8,7 @@ import time
 import numpy as np
 import scipy.interpolate
 
-from caput import config, memh5
+from caput import config
 from cora.util import units
 
 from ..core import task, io, containers
@@ -440,7 +440,6 @@ class DayenuMFilter(task.SingleTask):
         )
 
         uniqb, indexb = np.unique(baselines, return_inverse=True)
-        nuniq = uniqb.size
 
         db = 0.5 * self.telescope.cylinder_spacing
 
