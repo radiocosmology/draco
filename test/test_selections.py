@@ -144,10 +144,10 @@ def test_test_H5FileSelect_distributed_on_disk_simple():
 
     local_from = int(len_axis / size * rank)
     local_to = int(len_axis / size * (rank + 1))
-    global_data1 = np.arange(len_axis * len_axis * len_axis, dtype=np.int)
+    global_data1 = np.arange(len_axis * len_axis * len_axis, dtype=np.int32)
     local_data1 = global_data1.reshape(len_axis, -1, len_axis)[local_from:local_to]
     d_array1 = mpiarray.MPIArray.wrap(local_data1, axis=0)
-    global_data2 = np.arange(len_axis * len_axis, dtype=np.int)
+    global_data2 = np.arange(len_axis * len_axis, dtype=np.int32)
     local_data2 = global_data2.reshape(len_axis, -1)[local_from:local_to]
     d_array2 = mpiarray.MPIArray.wrap(local_data2, axis=0)
 

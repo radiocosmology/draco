@@ -1932,7 +1932,7 @@ class RingMapMask(FreqContainer, SiderealContainer):
     _dataset_spec = {
         "mask": {
             "axes": ["pol", "freq", "ra", "el"],
-            "dtype": np.bool,
+            "dtype": bool,
             "initialise": True,
             "distributed": True,
             "distributed_axis": "freq",
@@ -2519,7 +2519,7 @@ class FormedBeamMask(FreqContainer):
     _dataset_spec = {
         "mask": {
             "axes": ["object_id", "pol", "freq"],
-            "dtype": np.bool,
+            "dtype": bool,
             "initialise": True,
             "distributed": True,
             "distributed_axis": "freq",
@@ -2539,7 +2539,7 @@ class FormedBeamHAMask(FormedBeamMask):
     _dataset_spec = {
         "mask": {
             "axes": ["object_id", "pol", "freq", "ha"],
-            "dtype": np.bool,
+            "dtype": bool,
             "initialise": True,
             "distributed": True,
             "distributed_axis": "freq",
