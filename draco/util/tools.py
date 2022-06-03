@@ -237,7 +237,8 @@ def invert_no_zero(x, out=None):
     Returns
     -------
     r : np.ndarray
-        Return the reciprocal of x.
+        Return the reciprocal of x. Where possible the output has the same memory layout
+        as the input, if this cannot be preserved the output is C-contiguous.
     """
     if not isinstance(x, (np.generic, np.ndarray)) or np.issubdtype(
         x.dtype, np.integer
@@ -251,9 +252,15 @@ def invert_no_zero(x, out=None):
                 f"Input and output arrays don't have same shape: {x.shape} != {out.shape}."
             )
     else:
-        out = np.zeros_like(x)
+        # This works even for MPIArrays, producing a correctly shaped MPIArray
+        out = np.empty_like(x, order="A")
 
-    _invert_no_zero(x.reshape(-1), out.reshape(-1))
+    # In order to be able to flatten the arrays to do element by element operations, we
+    # need to ensure the inputs are numpy arrays, and so we take a view which will work
+    # even if `x` (and thus `out`) are MPIArray's
+    _invert_no_zero(
+        x.view(np.ndarray).ravel(order="A"), out.view(np.ndarray).ravel(order="A")
+    )
 
     return out
 
