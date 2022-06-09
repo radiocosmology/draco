@@ -559,6 +559,47 @@ class LoadFiles(LoadFilesFromParams):
         self.files = files
 
 
+class LoadSingleFile(BaseLoadFiles):
+    """Load data from filename passed to the process method."""
+
+    def process(self, fname):
+        """Load the given file.
+
+        Parameters
+        ----------
+        fname : str
+            The filename to load data from.
+
+        Returns
+        -------
+        cont : subclass of `memh5.BasicCont`
+        """
+
+        # Garbage collect to workaround leaking memory from containers.
+        # TODO: find actual source of leak
+        import gc
+
+        gc.collect()
+
+        if isinstance(fname, (list, tuple)):
+            if len(fname) > 1:
+                raise pipeline.PipelineConfigError(
+                    f"This task accepts only one filename at a time. Received {len(fname)}."
+                )
+            fname = fname[0]
+
+        # Load into a container
+        cont = self._load_file(fname)
+
+        if "tag" not in cont.attrs:
+            # Get the first part of the actual filename and use it as the tag
+            tag = os.path.splitext(os.path.basename(fname))[0]
+
+            cont.attrs["tag"] = tag
+
+        return cont
+
+
 class Save(pipeline.TaskBase):
     """Save out the input, and pass it on.
 
