@@ -1,6 +1,8 @@
+from mpi4py import MPI
 import numpy as np
 import pytest
 
+from caput import mpiarray
 from draco.util.random import _default_bitgen
 from draco.util.tools import invert_no_zero
 
@@ -41,3 +43,45 @@ def test_invert_no_zero(a):
     b = invert_no_zero(a)
     assert np.allclose(b[good_ind], 1.0 / a[good_ind], atol=ATOL)
     assert (b[zero_ind] == 0).all()
+
+
+def test_invert_no_zero_mpiarray():
+
+    comm = MPI.COMM_WORLD
+    comm.Barrier()
+
+    a = mpiarray.MPIArray((20, 30), axis=0, comm=comm)
+    a[:] = comm.rank
+
+    b = invert_no_zero(a)
+
+    assert b.shape == a.shape
+    assert b.comm == a.comm
+    assert b.axis == a.axis
+    assert b.local_shape == a.local_shape
+
+    assert (a * b).local_array == pytest.approx(0.0 if comm.rank == 0 else 1.0)
+    comm.Barrier()
+
+
+def test_invert_no_zero_noncontiguous():
+
+    a = np.arange(100, dtype=np.float64).reshape(10, 10)
+
+    res = np.ones((10, 10), dtype=np.float64)
+    res[0, 0] = 0.0
+
+    # Check the contiguous layout is working
+    b_cont = invert_no_zero(a.T.copy())
+    assert a.T * b_cont == pytest.approx(res)
+
+    # Check that a Fortran contiguous array works
+    b_noncont = invert_no_zero(a.T)
+    assert a.T * b_noncont == pytest.approx(res)
+
+    # Check a complex sub slicing that is neither C nor F contiguous
+    a_noncont = a.T[1::2, 1::2]
+    b_noncont = invert_no_zero(a_noncont)
+    res_cont = invert_no_zero(a_noncont.copy(order="C"))
+    assert np.all(b_noncont == res_cont)
+    assert b_noncont.flags["C_CONTIGUOUS"]
