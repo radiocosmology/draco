@@ -2547,6 +2547,61 @@ class FormedBeamHAMask(FormedBeamMask):
     }
 
 
+class ContainerArray(ContainerBase):
+    """Container for holding a list of containers of the same type and
+    dimensions, and concatenating the datasets along a new `item` axis.
+    """
+
+    _axes = ("item",)
+
+    def __init__(self, cont_list, datasets=[]):
+        """Parameters
+        ----------
+        cont_list : list of ContainerBase
+            List of containers to be combined. Should be of the same type and have
+            the same dimensions.
+        datasets : list of str
+            The datasets to concatenate and copy into the new container. If left
+            empty, will get the datasets from the first container in the list.
+        """
+
+        n = len(cont_list)
+
+        # copy over axes
+        self._axes = self._axes + cont_list[0].axes
+        super(ContainerArray, self).__init__(
+            axes_from=cont_list[0],
+            item=n,
+            skip_datasets=True,
+            distributed=cont_list[0].distributed,
+        )
+
+        # concatenate specified datasets
+        if len(datasets) == 0:
+            datasets = cont_list[0].datasets.keys()
+        for d in datasets:
+            # update dataset spec
+            new_spec = cont_list[0].dataset_spec[d]
+            new_spec["axes"] = ["item"] + new_spec["axes"]
+            if "chunks" in new_spec:
+                new_spec["chunks"] = (1,) + new_spec["chunks"]
+            self._dataset_spec[d] = new_spec
+
+            # create new dataset and copy data
+            self.add_dataset(d)
+            for i, cont in enumerate(cont_list):
+                if cont[d].shape != self[d].shape[1:]:
+                    raise ValueError(
+                        f"Not all containers have the same shape for dataset{d}: "
+                        f"{cont[d].shape} != {self[d].shape[1:]}."
+                    )
+                self._data._storage_root[d].redistribute(cont[d].distributed_axis + 1)
+                self[d][i] = cont[d][:]
+
+        # copy attributes as a list
+        self.attrs["sub_attrs"] = [cont.attrs.copy() for cont in cont_list]
+
+
 def empty_like(obj, **kwargs):
     """Create an empty container like `obj`.
 
