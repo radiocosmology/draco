@@ -211,6 +211,26 @@ class AccumulateList(task.MPILoggedTask):
         return items
 
 
+class AccumulateArray(task.MPILoggedTask):
+    """Accumulate the inputs into a `ContainerArray` and return when the task *finishes*."""
+
+    def __init__(self):
+        super(AccumulateArray, self).__init__()
+        self._items = []
+
+    def next(self, input_):
+        self._items.append(input_)
+
+    def finish(self):
+
+        # Remove the internal reference to the items so they don't hang around after the task
+        # finishes
+        items = containers.ContainerArray(self._items)
+        del self._items
+
+        return items
+
+
 class WaitUntil(task.MPILoggedTask):
     """Wait until the the requires before forwarding inputs.
 
