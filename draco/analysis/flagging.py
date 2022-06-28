@@ -592,18 +592,21 @@ class SmoothVisWeight(task.SingleTask):
         weight = data.weight[:]
         # Data will be distributed in frequency.
         # So a frequency loop will not be too large.
+
+        weight_local = weight.local_array
+
         for lfi, gfi in weight.enumerate(axis=0):
 
             # MPIArray takes the local index, returns a local np.ndarray
             # Find values equal to zero to preserve them in final weights
-            zeromask = weight[lfi] == 0.0
+            zeromask = weight_local[lfi] == 0.0
             # Median filter. Mode='nearest' to prevent steps close to
             # the end from being washed
-            weight[lfi] = median_filter(
-                weight[lfi], size=(1, self.kernel_size), mode="nearest"
+            weight_local[lfi] = median_filter(
+                weight_local[lfi], size=(1, self.kernel_size), mode="nearest"
             )
             # Ensure zero values are zero
-            weight[lfi][zeromask] = 0.0
+            weight_local[lfi][zeromask] = 0.0
 
         return data
 
@@ -988,8 +991,8 @@ class RFIMask(task.SingleTask):
         if sstream.comm.rank == rank_with_ind:
 
             # Cut out the right section
-            wf = ssv[:, self.stack_ind - lstart].view(np.ndarray)
-            ww = ssw[:, self.stack_ind - lstart].view(np.ndarray)
+            wf = ssv.local_array[:, self.stack_ind - lstart]
+            ww = ssw.local_array[:, self.stack_ind - lstart]
 
             # Generate an initial mask and calculate the scaled deviations
             # TODO: replace this magic threshold
@@ -997,8 +1000,8 @@ class RFIMask(task.SingleTask):
             wm = ww < weight_cut
             maddev = mad(wf, wm)
 
-            # Replace any NaNs (where too much data is missing) with a large enough value to always
-            # be flagged
+            # Replace any NaNs (where too much data is missing) with a large enough
+            # value to always be flagged
             maddev = np.where(np.isnan(maddev), 2 * self.sigma, maddev)
 
             # Reflag for scattered TV emission

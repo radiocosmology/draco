@@ -428,8 +428,8 @@ class DelaySpectrumEstimator(task.SingleTask, random.RandomTask):
             self.log.debug("Delay transforming baseline %i/%i", bi, len(baselines))
 
             # Get the local selections
-            data = vis_I[lbi].view(np.ndarray).T
-            weight = vis_weight[lbi].view(np.ndarray)
+            data = vis_I.local_array[lbi].T
+            weight = vis_weight.local_array[lbi]
 
             # Mask out data with completely zero'd weights and generate time
             # averaged weights
