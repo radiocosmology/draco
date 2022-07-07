@@ -332,3 +332,60 @@ class SampleNoise(task.SingleTask, random.RandomTask):
                 )
 
         return data_exp
+
+
+class GaussianNoiseExternal(task.SingleTask, random.RandomTask):
+    """Add Gaussian noise to a dataset using the weights from an external data
+    container to set the scale.
+
+    Attributes
+    ----------
+    dataset: str
+        The dataset in which to add noise.
+    mask_zero_weight: bool
+        Whether to mask samples with zero weights.
+    """
+
+    dataset = config.Property(proptype=str, default="vis")
+    mask_zero_weight = config.Property(proptype=bool, default=True)
+
+    def process(self, sim, ext):
+        """Add the noise
+
+        Parameters
+        ----------
+        sim : container.ContainerBase
+            The container to which noise will be added.
+        ext : container.ContainerBase
+            The container from which weights will be extracted.
+        """
+
+        if self.dataset not in sim.datasets:
+            raise config.CaputConfigError(
+                f"Dataset {self.dataset} is not present in container of type {type(sim)}"
+            )
+
+        ds = sim[self.dataset][:].local_array
+        wgt = ext.weight[:].local_array
+
+        if ds.shape != wgt.shape:
+            raise config.CaputConfigError(
+                "Dataset and external weights don't have the same shape: "
+                f"{ds.shape} != {wgt.shape}."
+            )
+
+        if np.iscomplexobj(ds):
+            ds += random.complex_normal(
+                ds.shape, scale=tools.invert_no_zero(np.sqrt(wgt)), rng=self.rng
+            )
+        else:
+            ds += self.rng.standard_normal(size=ds.shape) * tools.invert_no_zero(
+                np.sqrt(wgt)
+            )
+
+        if self.mask_zero_weight:
+            ds[wgt == 0.0] = 0.0
+
+        sim.weight[:] = wgt
+
+        return sim
