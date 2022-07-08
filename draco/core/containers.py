@@ -2022,11 +2022,17 @@ class GainData(FreqContainer, TODContainer):
             "distributed_axis": "freq",
         },
         "weight": {
-            "axes": ["freq", "time"],
+            "axes": ["freq", "input", "time"],
             "dtype": np.float64,
             "initialise": False,
             "distributed": True,
             "distributed_axis": "freq",
+        },
+        "update_id": {
+            "axes": ["time"],
+            "dtype": np.dtype("<U64"),
+            "initialise": False,
+            "distributed": False,
         },
     }
 
@@ -2038,6 +2044,13 @@ class GainData(FreqContainer, TODContainer):
     def weight(self):
         try:
             return self.datasets["weight"]
+        except KeyError:
+            return None
+
+    @property
+    def update_id(self):
+        try:
+            return self.datasets["update_id"]
         except KeyError:
             return None
 
@@ -2060,7 +2073,7 @@ class SiderealGainData(FreqContainer, SiderealContainer):
             "distributed_axis": "freq",
         },
         "weight": {
-            "axes": ["freq", "ra"],
+            "axes": ["freq", "input", "ra"],
             "dtype": np.float64,
             "initialise": False,
             "distributed": True,
