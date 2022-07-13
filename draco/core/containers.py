@@ -92,9 +92,23 @@ class ContainerBase(memh5.BasicCont):
     attrs_from : `memh5.BasicCont`, optional
         Another container to copy attributes from. Must be supplied as keyword
         argument. This applies to attributes in default datasets too.
+    dsets_from : `memh5.BasicCont`, optional
+        A container to copy datasets from. Any dataset which an axis whose definition
+        has been explicitly set (i.e. does not come from `axes_from`) will not be
+        copied.
+    copy_from : `memh5.BasicCont`, optional
+        Set `axes_from`, `attrs_from` and `dsets_from` to this instance if they are
+        not set explicitly.
     skip_datasets : bool, optional
         Skip creating datasets. They must all be added manually with
         `.add_dataset` regardless of the entry in `.dataset_spec`. Default is False.
+    distributed : bool, optional
+        Should this be a distributed container. Defaults to True.
+    comm : mpi4py.MPI.Comm, optional
+        The MPI communicator to distribute over. Use COMM_WORLD if not set.
+    allow_chunked : bool, optional
+        Allow the datasets to be chunked. Default is True.
+
     kwargs : dict
         Should contain entries for all other axes.
 
@@ -136,22 +150,28 @@ class ContainerBase(memh5.BasicCont):
 
     def __init__(self, *args, **kwargs):
 
-        # Pull out the values of needed arguments
-        axes_from = kwargs.pop("axes_from", None)
-        attrs_from = kwargs.pop("attrs_from", None)
-        skip_datasets = kwargs.pop("skip_datasets", False)
+        # Arguments for pulling in definitions from other containers
+        copy_from = kwargs.pop("copy_from", None)
+        axes_from = kwargs.pop("axes_from", copy_from)
+        attrs_from = kwargs.pop("attrs_from", copy_from)
+        dsets_from = kwargs.pop("dsets_from", copy_from)
+
+        # MPI distribution arguments
         dist = kwargs.pop("distributed", True)
         comm = kwargs.pop("comm", None)
-        self.allow_chunked = kwargs.pop("allow_chunked", True)
 
-        # Run base initialiser
-        super().__init__(distributed=dist, comm=comm)
+        data_group = kwargs.pop("data_group", None)
+        self.allow_chunked = kwargs.pop("allow_chunked", True)
+        skip_datasets = kwargs.pop("skip_datasets", False)
+
+        # Run base initialiser, and exit early if data_group was provided
+        super().__init__(*args, data_group=data_group, distributed=dist, comm=comm)
 
         # Check to see if this call looks like it was called like
         # memh5.MemDiskGroup would have been. If it is, we're probably trying to
         # create a bare container, so don't initialise any datasets. This
         # behaviour is needed to support tod.concatenate
-        if len(args) or "data_group" in kwargs:
+        if args or data_group is not None:
             return
 
         # Create axis entries
@@ -183,6 +203,31 @@ class ContainerBase(memh5.BasicCont):
             for name, spec in self.dataset_spec.items():
                 if "initialise" in spec and spec["initialise"]:
                     self.add_dataset(name)
+
+        # Copy over datasets that have compatible axes
+        if dsets_from is not None:
+
+            # Get the list of axes names that have been overriden
+            changed_axes = {ax for ax in self.axes if ax in kwargs}
+
+            for name in self.dataset_spec.keys():
+                if name not in dsets_from:
+                    continue
+
+                source_dset = dsets_from[name]
+                source_axes = set(source_dset.attrs["axis"])
+
+                # Check if any of the axes of this dataset have been changed, if that's
+                # the case then we can't copy the data over
+                if not source_axes.isdisjoint(changed_axes):
+                    continue
+
+                # The dataset may not have been initialised by default, if not, create
+                # it
+                if name not in self:
+                    self.add_dataset(name)
+
+                self[name][:] = source_dset[:]
 
         # Copy over attributes
         if attrs_from is not None:
