@@ -240,7 +240,7 @@ class GaussianNoise(task.SingleTask, random.RandomTask):
         return data
 
 
-class SampleNoise(task.SingleTask,random.RandomTask):
+class SampleNoise(task.SingleTask, random.RandomTask):
     """Add properly distributed noise to a visibility dataset.
 
     This task draws properly (complex Wishart) distributed samples from an input
