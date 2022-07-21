@@ -18,8 +18,8 @@ len_axis = 8
 dset1 = np.arange(len_axis * len_axis * len_axis)
 dset1 = dset1.reshape((len_axis, len_axis, len_axis))
 
-dset2 = np.arange(len_axis * len_axis)
-dset2 = dset2.reshape((len_axis, len_axis))
+dset2 = np.arange(len_axis * len_axis * len_axis)
+dset2 = dset2.reshape((len_axis, len_axis, len_axis))
 
 freqs = np.arange(len_axis)
 inputs = np.arange(len_axis)
@@ -55,8 +55,8 @@ local_to = int(len_axis / size * (rank + 1))
 global_data1 = np.arange(len_axis * len_axis * len_axis, dtype=np.float32)
 local_data1 = global_data1.reshape(len_axis, -1, len_axis)[local_from:local_to]
 d_array1 = mpiarray.MPIArray.wrap(local_data1, axis=0)
-global_data2 = np.arange(len_axis * len_axis, dtype=np.float32)
-local_data2 = global_data2.reshape(len_axis, -1)[local_from:local_to]
+global_data2 = np.arange(len_axis * len_axis * len_axis, dtype=np.float32)
+local_data2 = global_data2.reshape(len_axis, -1, len_axis)[local_from:local_to]
 d_array2 = mpiarray.MPIArray.wrap(local_data2, axis=0)
 
 
@@ -94,7 +94,7 @@ def test_H5FileSelect(container_on_disk):
         container_on_disk, freq_sel=fsel, input_sel=isel, time_sel=tsel
     )
     assert np.all(m["gain"][:] == dset1[(fsel, isel, tsel)])
-    assert np.all(m["weight"][:] == dset2[(fsel, tsel)])
+    assert np.all(m["weight"][:] == dset2[(fsel, isel, tsel)])
     assert np.all(m.index_map["freq"] == freqs[fsel])
     assert np.all(m.index_map["input"] == inputs[isel])
     assert np.all(m.index_map["time"] == times[tsel])
@@ -111,7 +111,7 @@ def test_H5FileSelect_distributed(container_on_disk):
         distributed=True,
     )
     assert np.all(m["gain"][:] == dset1[(fsel, isel, tsel)])
-    assert np.all(m["weight"][:] == dset2[(fsel, tsel)])
+    assert np.all(m["weight"][:] == dset2[(fsel, isel, tsel)])
     assert np.all(m.index_map["freq"] == freqs[fsel])
     assert np.all(m.index_map["input"] == inputs[isel])
     assert np.all(m.index_map["time"] == times[tsel])
@@ -124,7 +124,7 @@ def test_H5FileSelect_distributed_on_disk(container_on_disk_distributed):
         md = GainData.from_file(container_on_disk_distributed, distributed=False)
 
         assert np.all(md["gain"][:] == dset1[(fsel, isel, tsel)])
-        assert np.all(md["weight"][:] == dset2[(fsel, tsel)])
+        assert np.all(md["weight"][:] == dset2[(fsel, isel, tsel)])
         assert np.all(md.index_map["freq"] == freqs[fsel])
         assert np.all(md.index_map["input"] == inputs[isel])
         assert np.all(md.index_map["time"] == times[tsel])
@@ -147,8 +147,8 @@ def test_test_H5FileSelect_distributed_on_disk_simple():
     global_data1 = np.arange(len_axis * len_axis * len_axis, dtype=np.int32)
     local_data1 = global_data1.reshape(len_axis, -1, len_axis)[local_from:local_to]
     d_array1 = mpiarray.MPIArray.wrap(local_data1, axis=0)
-    global_data2 = np.arange(len_axis * len_axis, dtype=np.int32)
-    local_data2 = global_data2.reshape(len_axis, -1)[local_from:local_to]
+    global_data2 = np.arange(len_axis * len_axis * len_axis, dtype=np.int32)
+    local_data2 = global_data2.reshape(len_axis, -1, len_axis)[local_from:local_to]
     d_array2 = mpiarray.MPIArray.wrap(local_data2, axis=0)
 
     fname = "tmp_test_memh5_select_distributed_simple.h5"
@@ -165,12 +165,12 @@ def test_test_H5FileSelect_distributed_on_disk_simple():
     if rank == 0:
         # should hold freq indices 0 and 1
         assert np.all(md["gain"][:] == dset1[(slice(2), slice(None), slice(None))])
-        assert np.all(md["weight"][:] == dset2[(slice(2), slice(None))])
+        assert np.all(md["weight"][:] == dset2[(slice(2), slice(None), slice(None))])
         assert np.all(md.index_map["freq"] == freqs[fsel])
     else:
         # should hold 1 freq index each
         assert np.all(
-            md["weight"][:] == dset2[(slice(rank + 1, rank + 2), slice(None))]
+            md["weight"][:] == dset2[(slice(rank + 1, rank + 2), slice(None), slice(None))]
         )
         assert np.all(
             md["gain"][:]
