@@ -170,7 +170,8 @@ def test_test_H5FileSelect_distributed_on_disk_simple():
     else:
         # should hold 1 freq index each
         assert np.all(
-            md["weight"][:] == dset2[(slice(rank + 1, rank + 2), slice(None), slice(None))]
+            md["weight"][:]
+            == dset2[(slice(rank + 1, rank + 2), slice(None), slice(None))]
         )
         assert np.all(
             md["gain"][:]
