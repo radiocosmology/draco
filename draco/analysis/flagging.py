@@ -612,11 +612,10 @@ class SmoothVisWeight(task.SingleTask):
 
 
 class ThresholdVisWeight(task.SingleTask):
-    """Set any weight less than the user specified threshold equal to zero.
+    """Create a mask to remove all weights below a per-frequency threshold.
 
-    Threshold is determined as `maximum(absolute_threshold,
-    relative_threshold * mean(weight))` and is evaluated per product/stack
-    entry.
+    A single relative threshold is set for each frequency along with an absolute
+    minimum weight threshold. Masking is done relative to the mean baseline.
 
     Parameters
     ----------
@@ -628,10 +627,10 @@ class ThresholdVisWeight(task.SingleTask):
     """
 
     absolute_threshold = config.Property(proptype=float, default=1e-7)
-    relative_threshold = config.Property(proptype=float, default=0.0)
+    relative_threshold = config.Property(proptype=float, default=0.9)
 
-    def process(self, timestream):
-        """Apply threshold to `weight` dataset.
+    def process(self, stream):
+        """Make a baseline-independent mask.
 
         Parameters
         ----------
@@ -639,38 +638,46 @@ class ThresholdVisWeight(task.SingleTask):
 
         Returns
         -------
-        timestream : same as input timestream
-            The input container with modified weights.
+        out : RFIMask container
+            RFIMask container with mask set
         """
-        from mpi4py import MPI
+        stream.redistribute("freq")
 
-        timestream.redistribute(["prod", "stack"])
+        # Make the output container depending on what 'stream' is
+        if "ra" in stream.axes:
+            out = containers.SiderealRFIMask(axes_from=stream, attrs_from=stream)
+        elif "time" in stream.axes:
+            out = containers.RFIMask(axes_from=stream, attrs_from=stream)
+        else:
+            raise TypeError(f"Require Timestream or SiderealStream. Got {type(stream)}")
 
-        weight = timestream.weight[:]
-
-        # Average over the frequency and time axes to get a per baseline
-        # average
-        mean_weight = weight.mean(axis=2).mean(axis=0)
-
-        # Figure out which entries to keep
-        threshold = np.maximum(
-            self.absolute_threshold, self.relative_threshold * mean_weight
+        weight = stream.weight[:]
+        # Average over the baselines (stack) axis
+        mean_baseline = np.mean(weight, axis=1, keepdims=True)
+        # Cut out any values below fixed threhold. Return a np.ndarray
+        threshold = np.where(
+            mean_baseline > self.absolute_threshold, mean_baseline, np.nan
         )
-        keep = weight > threshold[np.newaxis, :, np.newaxis]
-        keep_sum = np.sum(keep)
-        keep_total = np.zeros_like(keep_sum)
+        # Average across the time (ra) axis to get per-frequency thresholds,
+        # ignoring any nans
+        threshold = np.nanmean(threshold, axis=2, keepdims=True)
+        # Create a 2D baseline-independent mask.
+        mask = ~(
+            mean_baseline.local_array
+            > np.fmax(threshold * self.relative_threshold, self.absolute_threshold)
+        )[:, 0, :]
+        # Collect all parts of the mask. Method .allgather() returns a np.ndarray
+        mask = mpiarray.MPIArray.wrap(mask, axis=0).allgather()
+        if self.comm.rank == 0:
+            # Log the percent of data masked
+            drop_frac = np.sum(mask) / np.prod(mask.shape)
+            self.log.info(
+                "%0.5f%% of data is below the weight threshold" % (100.0 * (drop_frac))
+            )
 
-        timestream.comm.Allreduce(keep_sum, keep_total, op=MPI.SUM)
-        keep_frac = keep_total / float(np.prod(weight.global_shape))
+        out.mask[:] = mask
 
-        self.log.info(
-            "%0.5f%% of data is below the weight threshold"
-            % (100.0 * (1.0 - keep_frac))
-        )
-
-        timestream.weight[:] = np.where(keep, weight, 0.0)
-
-        return timestream
+        return out
 
 
 class RFISensitivityMask(task.SingleTask):
@@ -1121,8 +1128,11 @@ class ApplyRFIMask(task.SingleTask):
         else:  # self.share == "none"
             tsc = tstream.copy()
 
-        # Mask the data
-        tsc.weight[:] *= (~rfimask.mask[sf:ef][bcast_slice]).astype(np.float32)
+        # Mask the data. This will throw an mpiarray warning because the mask being
+        # applied is a numpy array matching the local array directly
+        tsc.weight[:].local_array *= (~rfimask.mask[sf:ef][bcast_slice]).astype(
+            np.float32
+        )
 
         return tsc
 
