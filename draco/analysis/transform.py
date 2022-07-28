@@ -295,7 +295,7 @@ class CollateProducts(task.SingleTask):
 
             else:
                 wss = (ssw[freq_ind, ss_pi] > 0.0).astype(np.float32)
-                wss *= nprod_in_stack[np.newaxis, ss_pi, stt:ett]
+                wss.local_array[:] *= nprod_in_stack[np.newaxis, ss_pi, stt:ett]
 
             # Accumulate visibilities, conjugating if required
             if feedconj == conj:
