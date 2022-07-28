@@ -428,8 +428,8 @@ class DelaySpectrumEstimator(task.SingleTask, random.RandomTask):
             self.log.debug("Delay transforming baseline %i/%i", bi, len(baselines))
 
             # Get the local selections
-            data = vis_I[lbi].view(np.ndarray).T
-            weight = vis_weight[lbi].view(np.ndarray)
+            data = vis_I.local_array[lbi].T
+            weight = vis_weight.local_array[lbi]
 
             # Mask out data with completely zero'd weights and generate time
             # averaged weights
@@ -706,9 +706,9 @@ def stokes_I(sstream, tel):
     ubase = ubase.astype(np.complex128, copy=False).view(np.float64).reshape(-1, 2)
     nbase = ubase.shape[0]
 
-    vis_shape = (nbase, sstream.vis.local_shape[0], sstream.vis.local_shape[2])
-    vis_I = np.zeros(vis_shape, dtype=sstream.vis.dtype)
-    vis_weight = np.zeros(vis_shape, dtype=sstream.weight.dtype)
+    vis_shape = (nbase, sstream.vis.global_shape[0], sstream.vis.global_shape[2])
+    vis_I = mpiarray.zeros(vis_shape, dtype=sstream.vis.dtype, axis=1)
+    vis_weight = mpiarray.zeros(vis_shape, dtype=sstream.weight.dtype, axis=1)
 
     # Iterate over products to construct the Stokes I vis
     # TODO: this should be updated when driftscan gains a concept of polarisation
@@ -735,11 +735,8 @@ def stokes_I(sstream, tel):
             vis_I[ui] += ssv[:, ii]
             vis_weight[ui] += ssw[:, ii]
 
-    vis_I = mpiarray.MPIArray.wrap(vis_I, axis=1, comm=sstream.comm)
     vis_I = vis_I.redistribute(axis=0)
-    vis_weight = mpiarray.MPIArray.wrap(
-        vis_weight, axis=1, comm=sstream.comm
-    ).redistribute(axis=0)
+    vis_weight = vis_weight.redistribute(axis=0)
 
     return vis_I, vis_weight, ubase
 

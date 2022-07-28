@@ -211,8 +211,8 @@ class BeamformNS(task.SingleTask):
         # Redistribute over frequency
         gstream.redistribute("freq")
 
-        gsv = gstream.vis[:]
-        gsw = gstream.weight[:]
+        gsv = gstream.vis[:].local_array
+        gsw = gstream.weight[:].local_array
         gsr = gstream.redundancy[:]
 
         # Construct phase array
@@ -224,9 +224,9 @@ class BeamformNS(task.SingleTask):
         hv.redistribute("freq")
 
         # Dereference datasets
-        hvv = hv.vis[:]
-        hvw = hv.weight[:]
-        hvb = hv.dirty_beam[:]
+        hvv = hv.vis[:].local_array
+        hvw = hv.weight[:].local_array
+        hvb = hv.dirty_beam[:].local_array
 
         nspos = gstream.index_map["ns"][:]
         freq = gstream.index_map["freq"]["centre"]
@@ -259,9 +259,9 @@ class BeamformNS(task.SingleTask):
                 vmax = nsmax / wv
 
             if self.weight == "inverse_variance":
-                gw = gsw.local_array[:, lfi].copy()
+                gw = gsw[:, lfi].copy()
             elif self.weight == "natural":
-                gw = gsr[:].astype(np.float32)
+                gw = gsr.astype(np.float32)
             else:
                 x = 0.5 * (vpos / vmax + 1)
                 ns_weight = tools.window_generalised(x, window=self.weight)
@@ -377,11 +377,11 @@ class BeamformEW(task.SingleTask):
         rm.redistribute("freq")
 
         # Dereference datasets
-        hvv = hstream.vis[:]
-        hvw = hstream.weight[:]
-        hvb = hstream.dirty_beam[:]
-        rmm = rm.map[:]
-        rmb = rm.dirty_beam[:]
+        hvv = hstream.vis[:].local_array
+        hvw = hstream.weight[:].local_array
+        hvb = hstream.dirty_beam[:].local_array
+        rmm = rm.map[:].local_array
+        rmb = rm.dirty_beam[:].local_array
 
         # This matrix takes the linear combinations of polarisations required to rotate
         # from XY, YX basis into reXY and imXY

@@ -168,7 +168,7 @@ class ApplyGain(task.SingleTask):
             self.log.info("Applying gain to weight.")
             gweight = np.abs(gain_arr if self.inverse else inverse_gain_arr) ** 2
         else:
-            gweight = np.ones(gain_arr.shape, dtype=np.float64)
+            gweight = np.ones_like(gain_arr, dtype=np.float64)
 
         if weight_arr is not None:
             gweight *= (weight_arr[:] > 0.0).astype(np.float64)
