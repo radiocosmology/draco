@@ -86,6 +86,10 @@ class ContainerBase(memh5.BasicCont):
 
     Parameters
     ----------
+    data_group : `memh5.MemDiskGroup`
+        A container to pass through for making a shallow copy. This is used by
+        routine like `caput.tod.concatenate` and generally shouldn't be used
+        directly. Either a keyword argument, or the first positional argument.
     axes_from : `memh5.BasicCont`, optional
         Another container to copy axis definitions from. Must be supplied as
         keyword argument.
@@ -160,18 +164,30 @@ class ContainerBase(memh5.BasicCont):
         dist = kwargs.pop("distributed", True)
         comm = kwargs.pop("comm", None)
 
-        data_group = kwargs.pop("data_group", None)
+        # Extract misc options
         self.allow_chunked = kwargs.pop("allow_chunked", True)
         skip_datasets = kwargs.pop("skip_datasets", False)
 
-        # Run base initialiser, and exit early if data_group was provided
-        super().__init__(*args, data_group=data_group, distributed=dist, comm=comm)
+        # Handle the data_group argument. We need to identify if the argument
+        # was actually supplied or not (both as a positional or keyword
+        # argument), and infer what its value should be, or None if not
+        # provided
+        if args and "data_group" in kwargs:
+            raise ValueError(
+                "Received conflicting definitions of `data_group`, as both the first "
+                "positional and a keyword argument."
+            )
+        has_data_group = args or ("data_group" in kwargs)
+        data_group = args[0] if args else kwargs.get("data_group", None)
 
-        # Check to see if this call looks like it was called like
-        # memh5.MemDiskGroup would have been. If it is, we're probably trying to
-        # create a bare container, so don't initialise any datasets. This
-        # behaviour is needed to support tod.concatenate
-        if args or data_group is not None:
+        # Run base initialiser, and exit early if data_group was provided
+        super().__init__(data_group=data_group, distributed=dist, comm=comm)
+
+        # If data_group was provided we need to exit early to behave like
+        # memh5.MemDiskGroup would have. In this case we're probably trying to
+        # create a bare container, or a shallow clone, so don't initialise any
+        # datasets. This behaviour is needed to support tod.concatenate
+        if has_data_group:
             return
 
         # Create axis entries
