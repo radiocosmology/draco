@@ -59,7 +59,7 @@ their own custom container types.
 """
 
 import inspect
-from typing import Optional
+from typing import List, Optional, Union
 
 import numpy as np
 from caput import memh5, tod
@@ -281,6 +281,8 @@ class ContainerBase(memh5.BasicCont):
         -------
         dset : `memh5.MemDataset`
         """
+        # Normalise name
+        name = name.strip("/")
 
         # Dataset must be specified
         if name not in self.dataset_spec:
@@ -2663,3 +2665,64 @@ def empty_timestream(**kwargs):
     ts : TimeStream
     """
     return TimeStream(**kwargs)
+
+
+def copy_datasets_filter(
+    source: ContainerBase,
+    dest: ContainerBase,
+    axis: str,
+    selection: Union[np.ndarray, list, slice],
+    exclude_axes: List[str] = None,
+):
+    """Copy datasets while filtering a given axis.
+
+    Only datasets containing the axis to be filtered will be copied.
+
+    Parameters
+    ----------
+    source, dest
+        Source and destination containers.
+    axis
+        Name of the axis to filter.
+    selection
+        A filtering selection to be applied to the axis.
+    exclude_axes
+        An optional set of axes that if a dataset contains one means it will
+        not be copied.
+    """
+    exclude_axes_set = set(exclude_axes) if exclude_axes else set()
+
+    stack = [source]
+
+    while stack:
+
+        item = stack.pop()
+
+        if memh5.is_group(item):
+            stack += list(item.values())
+            continue
+
+        axes = list(item.attrs.get("axis", ()))
+
+        # Only copy if the axis we are filtering is present, and there are no
+        # excluded axes in the dataset
+        if not (axis in axes and exclude_axes_set.isdisjoint(axes)):
+            continue
+
+        if item.name not in dest:
+            dest.add_dataset(item.name)
+
+        dest_dset = dest[item.name]
+        axis_ind = axes.index(axis)
+
+        if isinstance(item, memh5.MemDatasetDistributed):
+
+            if item.distributed_axis == axis_ind:
+                raise RuntimeError(
+                    f"Cannot redistristribute dataset={item.name} along "
+                    f"axis={axis_ind} as it is distributed."
+                )
+            dest_dset.redistribute(item.distributed_axis)
+
+        sl = axis_ind * (slice(None),) + (selection,)
+        dest_dset[:] = item[sl]
