@@ -111,7 +111,7 @@ def _list_or_glob(files: Union[str, List[str]]) -> List[str]:
     return files
 
 
-def _list_of_filegroups(groups: Union[List[Dict] or Dict]) -> List[Dict]:
+def _list_of_filegroups(groups: Union[List[Dict], Dict]) -> List[Dict]:
     """Process a file group/groups
 
     Parameters
