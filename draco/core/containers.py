@@ -486,9 +486,9 @@ class ContainerBase(memh5.BasicCont):
                 dset[:] = data[:]
                 memh5.copyattrs(data.attrs, dset.attrs)
                 # TODO Is there a case where these properties don't exist?
-                data.chunks = dset.chunks
-                data.compression = dset.compression
-                data.compression_opts = dset.compression_opts
+                dset.chunks = data.chunks
+                dset.compression = data.compression
+                dset.compression_opts = data.compression_opts
 
         return new_cont
 
