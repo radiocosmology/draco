@@ -5,6 +5,7 @@ data; and pre-map making flagging on m-modes.
 """
 
 from typing import Union
+import warnings
 import numpy as np
 import scipy.signal
 from scipy.ndimage import median_filter
@@ -659,8 +660,11 @@ class ThresholdVisWeight(task.SingleTask):
             mean_baseline > self.absolute_threshold, mean_baseline, np.nan
         )
         # Average across the time (ra) axis to get per-frequency thresholds,
-        # ignoring any nans
-        threshold = np.nanmean(threshold, axis=2, keepdims=True)
+        # ignoring any nans. np.nanmean will give a warning if an entire band is
+        # nan, which we expect to happen in some cases.
+        with warnings.catch_warnings():
+            warnings.filterwarnings(action="ignore", message="Mean of empty slice")
+            threshold = np.nanmean(threshold, axis=2, keepdims=True)
         # Create a 2D baseline-independent mask.
         mask = ~(
             mean_baseline.local_array
