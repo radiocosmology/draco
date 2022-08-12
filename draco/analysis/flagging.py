@@ -672,12 +672,11 @@ class ThresholdVisWeight(task.SingleTask):
         )[:, 0, :]
         # Collect all parts of the mask. Method .allgather() returns a np.ndarray
         mask = mpiarray.MPIArray.wrap(mask, axis=0).allgather()
-        if self.comm.rank == 0:
-            # Log the percent of data masked
-            drop_frac = np.sum(mask) / np.prod(mask.shape)
-            self.log.info(
-                "%0.5f%% of data is below the weight threshold" % (100.0 * (drop_frac))
-            )
+        # Log the percent of data masked
+        drop_frac = np.sum(mask) / np.prod(mask.shape)
+        self.log.info(
+            "%0.5f%% of data is below the weight threshold" % (100.0 * (drop_frac))
+        )
 
         out.mask[:] = mask
 
