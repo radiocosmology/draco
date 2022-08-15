@@ -1131,9 +1131,8 @@ class ApplyRFIMask(task.SingleTask):
         else:  # self.share == "none"
             tsc = tstream.copy()
 
-        # Mask the data. This will throw an mpiarray warning because the mask being
-        # applied is a numpy array matching the local array directly
-        tsc.weight[:].local_array *= (~rfimask.mask[sf:ef][bcast_slice]).astype(
+        # Mask the data.
+        tsc.weight[:].local_array[:] *= (~rfimask.mask[sf:ef][bcast_slice]).astype(
             np.float32
         )
 
