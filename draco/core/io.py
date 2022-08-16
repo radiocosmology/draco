@@ -550,8 +550,9 @@ class LoadFITSDelta(task.SingleTask):
         deltas = containers.FormedBeam(
             freq=freq, object_id=obj_id, pol=np.array(["0"]), comm=self.comm
         )
-        deltas["position"]["ra"] = pos[:, 0]
-        deltas["position"]["dec"] = pos[:, 1]
+        # DELTA files use radians
+        deltas["position"]["ra"] = np.degrees(pos[:, 0])
+        deltas["position"]["dec"] = np.degrees(pos[:, 1])
         deltas["redshift"]["z"] = z
         deltas["redshift"]["z_error"] = 0
 
