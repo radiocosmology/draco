@@ -206,22 +206,21 @@ class CollateProducts(task.SingleTask):
             ss_prod = ss.prod
             ss_conj = np.zeros(ss_prod.size, dtype=np.bool)
 
-        # Create output container
-        if isinstance(ss, containers.SiderealStream):
-            OutputContainer = containers.SiderealStream
-            output_kwargs = {"ra": ss.ra[:]}
-        else:
-            OutputContainer = containers.TimeStream
-            output_kwargs = {"time": ss.time[:]}
+        # Add the time-like axis to the kwargs
+        output_kwargs = (
+            {"ra": ss.ra[:]}
+            if isinstance(ss, containers.SiderealStream)
+            else {"time": ss.time[:]}
+        )
 
-        sp = OutputContainer(
+        # Create output container
+        sp = ss.__class__(
             freq=bt_freq,
             input=self.telescope.input_index,
             prod=self.bt_prod,
             stack=self.bt_stack,
             reverse_map_stack=self.bt_rev,
-            axes_from=ss,
-            attrs_from=ss,
+            copy_from=ss,
             distributed=True,
             comm=ss.comm,
             **output_kwargs,
@@ -296,7 +295,7 @@ class CollateProducts(task.SingleTask):
 
             else:
                 wss = (ssw[freq_ind, ss_pi] > 0.0).astype(np.float32)
-                wss *= nprod_in_stack[np.newaxis, ss_pi, stt:ett]
+                wss.local_array[:] *= nprod_in_stack[np.newaxis, ss_pi, stt:ett]
 
             # Accumulate visibilities, conjugating if required
             if feedconj == conj:
@@ -313,6 +312,11 @@ class CollateProducts(task.SingleTask):
         # Divide through by counter to get properly weighted visibility average
         sp.vis[:] *= tools.invert_no_zero(counter)
         sp.weight[:] = counter**2 * tools.invert_no_zero(sp.weight[:])
+
+        # Copy over any additional datasets that need to be frequency filtered
+        containers.copy_datasets_filter(
+            ss, sp, "freq", freq_ind, ["input", "prod", "stack"]
+        )
 
         # Switch back to frequency distribution
         ss.redistribute("freq")
@@ -387,7 +391,7 @@ class SelectFreq(task.SingleTask):
             )[0]
 
         else:
-            ValueError(
+            raise ValueError(
                 "Must specify either freq_physical, channel_range, or channel_index."
             )
 
@@ -410,16 +414,7 @@ class SelectFreq(task.SingleTask):
         # Copy over datasets. If the dataset has a frequency axis,
         # then we only copy over the subset.
         if isinstance(data, containers.ContainerBase):
-
-            for name, dset in data.datasets.items():
-
-                if "freq" in dset.attrs["axis"]:
-                    slc = [slice(None)] * len(dset.shape)
-                    slc[list(dset.attrs["axis"]).index("freq")] = newindex
-                    newdata.datasets[name][:] = dset[slc]
-                else:
-                    newdata.datasets[name][:] = dset[:]
-
+            containers.copy_datasets_filter(data, newdata, "freq", newindex)
         else:
             newdata.vis[:] = data.vis[newindex]
             newdata.weight[:] = data.weight[newindex]

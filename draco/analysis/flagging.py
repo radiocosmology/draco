@@ -5,6 +5,7 @@ data; and pre-map making flagging on m-modes.
 """
 
 from typing import Union
+import warnings
 import numpy as np
 import scipy.signal
 from scipy.ndimage import median_filter
@@ -592,28 +593,30 @@ class SmoothVisWeight(task.SingleTask):
         weight = data.weight[:]
         # Data will be distributed in frequency.
         # So a frequency loop will not be too large.
+
+        weight_local = weight.local_array
+
         for lfi, gfi in weight.enumerate(axis=0):
 
             # MPIArray takes the local index, returns a local np.ndarray
             # Find values equal to zero to preserve them in final weights
-            zeromask = weight[lfi] == 0.0
+            zeromask = weight_local[lfi] == 0.0
             # Median filter. Mode='nearest' to prevent steps close to
             # the end from being washed
-            weight[lfi] = median_filter(
-                weight[lfi], size=(1, self.kernel_size), mode="nearest"
+            weight_local[lfi] = median_filter(
+                weight_local[lfi], size=(1, self.kernel_size), mode="nearest"
             )
             # Ensure zero values are zero
-            weight[lfi][zeromask] = 0.0
+            weight_local[lfi][zeromask] = 0.0
 
         return data
 
 
 class ThresholdVisWeight(task.SingleTask):
-    """Set any weight less than the user specified threshold equal to zero.
+    """Create a mask to remove all weights below a per-frequency threshold.
 
-    Threshold is determined as `maximum(absolute_threshold,
-    relative_threshold * mean(weight))` and is evaluated per product/stack
-    entry.
+    A single relative threshold is set for each frequency along with an absolute
+    minimum weight threshold. Masking is done relative to the mean baseline.
 
     Parameters
     ----------
@@ -625,10 +628,10 @@ class ThresholdVisWeight(task.SingleTask):
     """
 
     absolute_threshold = config.Property(proptype=float, default=1e-7)
-    relative_threshold = config.Property(proptype=float, default=0.0)
+    relative_threshold = config.Property(proptype=float, default=0.9)
 
-    def process(self, timestream):
-        """Apply threshold to `weight` dataset.
+    def process(self, stream):
+        """Make a baseline-independent mask.
 
         Parameters
         ----------
@@ -636,38 +639,48 @@ class ThresholdVisWeight(task.SingleTask):
 
         Returns
         -------
-        timestream : same as input timestream
-            The input container with modified weights.
+        out : RFIMask container
+            RFIMask container with mask set
         """
-        from mpi4py import MPI
+        stream.redistribute("freq")
 
-        timestream.redistribute(["prod", "stack"])
+        # Make the output container depending on what 'stream' is
+        if "ra" in stream.axes:
+            out = containers.SiderealRFIMask(axes_from=stream, attrs_from=stream)
+        elif "time" in stream.axes:
+            out = containers.RFIMask(axes_from=stream, attrs_from=stream)
+        else:
+            raise TypeError(f"Require Timestream or SiderealStream. Got {type(stream)}")
 
-        weight = timestream.weight[:]
-
-        # Average over the frequency and time axes to get a per baseline
-        # average
-        mean_weight = weight.mean(axis=2).mean(axis=0)
-
-        # Figure out which entries to keep
-        threshold = np.maximum(
-            self.absolute_threshold, self.relative_threshold * mean_weight
+        weight = stream.weight[:]
+        # Average over the baselines (stack) axis
+        mean_baseline = np.mean(weight, axis=1, keepdims=True)
+        # Cut out any values below fixed threhold. Return a np.ndarray
+        threshold = np.where(
+            mean_baseline > self.absolute_threshold, mean_baseline, np.nan
         )
-        keep = weight > threshold[np.newaxis, :, np.newaxis]
-        keep_sum = np.sum(keep)
-        keep_total = np.zeros_like(keep_sum)
-
-        timestream.comm.Allreduce(keep_sum, keep_total, op=MPI.SUM)
-        keep_frac = keep_total / float(np.prod(weight.global_shape))
-
+        # Average across the time (ra) axis to get per-frequency thresholds,
+        # ignoring any nans. np.nanmean will give a warning if an entire band is
+        # nan, which we expect to happen in some cases.
+        with warnings.catch_warnings():
+            warnings.filterwarnings(action="ignore", message="Mean of empty slice")
+            threshold = np.nanmean(threshold, axis=2, keepdims=True)
+        # Create a 2D baseline-independent mask.
+        mask = ~(
+            mean_baseline.local_array
+            > np.fmax(threshold * self.relative_threshold, self.absolute_threshold)
+        )[:, 0, :]
+        # Collect all parts of the mask. Method .allgather() returns a np.ndarray
+        mask = mpiarray.MPIArray.wrap(mask, axis=0).allgather()
+        # Log the percent of data masked
+        drop_frac = np.sum(mask) / np.prod(mask.shape)
         self.log.info(
-            "%0.5f%% of data is below the weight threshold"
-            % (100.0 * (1.0 - keep_frac))
+            "%0.5f%% of data is below the weight threshold" % (100.0 * (drop_frac))
         )
 
-        timestream.weight[:] = np.where(keep, weight, 0.0)
+        out.mask[:] = mask
 
-        return timestream
+        return out
 
 
 class RFISensitivityMask(task.SingleTask):
@@ -988,8 +1001,8 @@ class RFIMask(task.SingleTask):
         if sstream.comm.rank == rank_with_ind:
 
             # Cut out the right section
-            wf = ssv[:, self.stack_ind - lstart].view(np.ndarray)
-            ww = ssw[:, self.stack_ind - lstart].view(np.ndarray)
+            wf = ssv.local_array[:, self.stack_ind - lstart]
+            ww = ssw.local_array[:, self.stack_ind - lstart]
 
             # Generate an initial mask and calculate the scaled deviations
             # TODO: replace this magic threshold
@@ -997,8 +1010,8 @@ class RFIMask(task.SingleTask):
             wm = ww < weight_cut
             maddev = mad(wf, wm)
 
-            # Replace any NaNs (where too much data is missing) with a large enough value to always
-            # be flagged
+            # Replace any NaNs (where too much data is missing) with a large enough
+            # value to always be flagged
             maddev = np.where(np.isnan(maddev), 2 * self.sigma, maddev)
 
             # Reflag for scattered TV emission
@@ -1118,8 +1131,10 @@ class ApplyRFIMask(task.SingleTask):
         else:  # self.share == "none"
             tsc = tstream.copy()
 
-        # Mask the data
-        tsc.weight[:] *= (~rfimask.mask[sf:ef][bcast_slice]).astype(np.float32)
+        # Mask the data.
+        tsc.weight[:].local_array[:] *= (~rfimask.mask[sf:ef][bcast_slice]).astype(
+            np.float32
+        )
 
         return tsc
 
@@ -1326,7 +1341,8 @@ def mad(x, mask, base_size=(11, 3), mad_size=(21, 21), debug=False, sigma=True):
     Returns
     -------
     mad : np.ndarray
-        Size of deviation at each point in MAD units.
+        Size of deviation at each point in MAD units. This output may contain
+        NaN's for regions of missing data.
     """
 
     xs = medfilt(x, mask, size=base_size)
@@ -1337,10 +1353,13 @@ def mad(x, mask, base_size=(11, 3), mad_size=(21, 21), debug=False, sigma=True):
     if sigma:
         mad *= 1.4826  # apply the conversion from MAD->sigma
 
-    if debug:
-        return dev / mad, dev, mad
+    # Suppress warnings about NaNs produced during the division
+    with np.errstate(divide="ignore", invalid="ignore"):
+        r = dev / mad
 
-    return dev / mad
+    if debug:
+        return r, dev, mad
+    return r
 
 
 def inverse_binom_cdf_prob(k, N, F):
@@ -1414,7 +1433,7 @@ def tv_channels_flag(x, freq, sigma=5, f=0.5, debug=False):
     """
 
     p_false = sigma_to_p(sigma)
-    frac = np.ones_like(x, dtype=np.float)
+    frac = np.ones_like(x, dtype=np.float32)
 
     tvstart_freq = 398
     tvwidth_freq = 6
@@ -1430,6 +1449,11 @@ def tv_channels_flag(x, freq, sigma=5, f=0.5, debug=False):
         fs = tvstart_freq + i * tvwidth_freq
         fe = fs + tvwidth_freq
         sel = (freq_end >= fs) & (freq_start <= fe)
+
+        # Don't continue processing channels for which we don't have
+        # frequencies in the incoming data
+        if not sel.any():
+            continue
 
         # Calculate the threshold to apply
         N = sel.sum()
@@ -1606,6 +1630,11 @@ class BlendStack(task.SingleTask):
                 (data_med_real - stack_med_real)
                 + 1.0j * (data_med_imag - stack_med_imag)
             )[..., np.newaxis]
+            stack_offset = mpiarray.MPIArray.wrap(
+                stack_offset,
+                axis=dset_stack.axis,
+                comm=dset_stack.comm,
+            )
 
         else:
             stack_offset = 0

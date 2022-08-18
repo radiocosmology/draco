@@ -59,7 +59,7 @@ their own custom container types.
 """
 
 import inspect
-from typing import Optional
+from typing import List, Optional, Union
 
 import numpy as np
 from caput import memh5, tod
@@ -86,15 +86,33 @@ class ContainerBase(memh5.BasicCont):
 
     Parameters
     ----------
+    data_group : `memh5.MemDiskGroup`
+        A container to pass through for making a shallow copy. This is used by
+        routine like `caput.tod.concatenate` and generally shouldn't be used
+        directly. Either a keyword argument, or the first positional argument.
     axes_from : `memh5.BasicCont`, optional
         Another container to copy axis definitions from. Must be supplied as
         keyword argument.
     attrs_from : `memh5.BasicCont`, optional
         Another container to copy attributes from. Must be supplied as keyword
         argument. This applies to attributes in default datasets too.
+    dsets_from : `memh5.BasicCont`, optional
+        A container to copy datasets from. Any dataset which an axis whose definition
+        has been explicitly set (i.e. does not come from `axes_from`) will not be
+        copied.
+    copy_from : `memh5.BasicCont`, optional
+        Set `axes_from`, `attrs_from` and `dsets_from` to this instance if they are
+        not set explicitly.
     skip_datasets : bool, optional
         Skip creating datasets. They must all be added manually with
         `.add_dataset` regardless of the entry in `.dataset_spec`. Default is False.
+    distributed : bool, optional
+        Should this be a distributed container. Defaults to True.
+    comm : mpi4py.MPI.Comm, optional
+        The MPI communicator to distribute over. Use COMM_WORLD if not set.
+    allow_chunked : bool, optional
+        Allow the datasets to be chunked. Default is True.
+
     kwargs : dict
         Should contain entries for all other axes.
 
@@ -136,22 +154,40 @@ class ContainerBase(memh5.BasicCont):
 
     def __init__(self, *args, **kwargs):
 
-        # Pull out the values of needed arguments
-        axes_from = kwargs.pop("axes_from", None)
-        attrs_from = kwargs.pop("attrs_from", None)
-        skip_datasets = kwargs.pop("skip_datasets", False)
+        # Arguments for pulling in definitions from other containers
+        copy_from = kwargs.pop("copy_from", None)
+        axes_from = kwargs.pop("axes_from", copy_from)
+        attrs_from = kwargs.pop("attrs_from", copy_from)
+        dsets_from = kwargs.pop("dsets_from", copy_from)
+
+        # MPI distribution arguments
         dist = kwargs.pop("distributed", True)
         comm = kwargs.pop("comm", None)
-        self.allow_chunked = kwargs.pop("allow_chunked", False)
 
-        # Run base initialiser
-        super().__init__(distributed=dist, comm=comm)
+        # Extract misc options
+        self.allow_chunked = kwargs.pop("allow_chunked", True)
+        skip_datasets = kwargs.pop("skip_datasets", False)
 
-        # Check to see if this call looks like it was called like
-        # memh5.MemDiskGroup would have been. If it is, we're probably trying to
-        # create a bare container, so don't initialise any datasets. This
-        # behaviour is needed to support tod.concatenate
-        if len(args) or "data_group" in kwargs:
+        # Handle the data_group argument. We need to identify if the argument
+        # was actually supplied or not (both as a positional or keyword
+        # argument), and infer what its value should be, or None if not
+        # provided
+        if args and "data_group" in kwargs:
+            raise ValueError(
+                "Received conflicting definitions of `data_group`, as both the first "
+                "positional and a keyword argument."
+            )
+        has_data_group = args or ("data_group" in kwargs)
+        data_group = args[0] if args else kwargs.get("data_group", None)
+
+        # Run base initialiser, and exit early if data_group was provided
+        super().__init__(data_group=data_group, distributed=dist, comm=comm)
+
+        # If data_group was provided we need to exit early to behave like
+        # memh5.MemDiskGroup would have. In this case we're probably trying to
+        # create a bare container, or a shallow clone, so don't initialise any
+        # datasets. This behaviour is needed to support tod.concatenate
+        if has_data_group:
             return
 
         # Create axis entries
@@ -183,6 +219,31 @@ class ContainerBase(memh5.BasicCont):
             for name, spec in self.dataset_spec.items():
                 if "initialise" in spec and spec["initialise"]:
                     self.add_dataset(name)
+
+        # Copy over datasets that have compatible axes
+        if dsets_from is not None:
+
+            # Get the list of axes names that have been overriden
+            changed_axes = {ax for ax in self.axes if ax in kwargs}
+
+            for name in self.dataset_spec.keys():
+                if name not in dsets_from:
+                    continue
+
+                source_dset = dsets_from[name]
+                source_axes = set(source_dset.attrs["axis"])
+
+                # Check if any of the axes of this dataset have been changed, if that's
+                # the case then we can't copy the data over
+                if not source_axes.isdisjoint(changed_axes):
+                    continue
+
+                # The dataset may not have been initialised by default, if not, create
+                # it
+                if name not in self:
+                    self.add_dataset(name)
+
+                self[name][:] = source_dset[:]
 
         # Copy over attributes
         if attrs_from is not None:
@@ -220,6 +281,8 @@ class ContainerBase(memh5.BasicCont):
         -------
         dset : `memh5.MemDataset`
         """
+        # Normalise name
+        name = name.strip("/")
 
         # Dataset must be specified
         if name not in self.dataset_spec:
@@ -280,6 +343,36 @@ class ContainerBase(memh5.BasicCont):
         dset.attrs["axis"] = np.array(axes)
 
         return dset
+
+    def _ensure_chunked(self):
+        """Ensure datasets that have chunk/compression specs are chunked.
+
+        For every dataset, check if chunks and compression are set, and
+        if not set them to dataset_spec values.
+        """
+        for dset in self.dataset_spec:
+            if dset not in self:
+                continue
+            if "chunks" in self.dataset_spec[dset] and self[dset].chunks is None:
+                # ensure chunks aren't larger than dataset shape
+                chunks = ()
+                for i, l in enumerate(self[dset].shape):
+                    chunks += (min(self.dataset_spec[dset]["chunks"][i], l),)
+                self._data._storage_root[dset].chunks = chunks
+            if (
+                "compression" in self.dataset_spec[dset]
+                and self[dset].compression is None
+            ):
+                self._data._storage_root[dset].compression = self.dataset_spec[dset][
+                    "compression"
+                ]
+            if (
+                "compression_opts" in self.dataset_spec[dset]
+                and self[dset].compression_opts is None
+            ):
+                self._data._storage_root[dset].compression_opts = self.dataset_spec[
+                    dset
+                ]["compression_opts"]
 
     @property
     def datasets(self):
@@ -455,6 +548,10 @@ class ContainerBase(memh5.BasicCont):
                 # Copy over the data and attributes
                 dset[:] = data[:]
                 memh5.copyattrs(data.attrs, dset.attrs)
+                # TODO Is there a case where these properties don't exist?
+                dset.chunks = data.chunks
+                dset.compression = data.compression
+                dset.compression_opts = data.compression_opts
 
         return new_cont
 
@@ -1064,7 +1161,10 @@ class SiderealStream(
             "distributed_axis": "freq",
             "compression": COMPRESSION,
             "compression_opts": COMPRESSION_OPTS,
-            "chunks": (64, 256, 128),
+            "chunks": (64, 128, 128),
+            "truncate": {
+                "weight_dataset": "vis_weight",
+            },
         },
         "vis_weight": {
             "axes": ["freq", "stack", "ra"],
@@ -1074,7 +1174,8 @@ class SiderealStream(
             "distributed_axis": "freq",
             "compression": COMPRESSION,
             "compression_opts": COMPRESSION_OPTS,
-            "chunks": (64, 256, 128),
+            "chunks": (64, 128, 128),
+            "truncate": True,
         },
         "input_flags": {
             "axes": ["input", "ra"],
@@ -1097,7 +1198,8 @@ class SiderealStream(
             "distributed_axis": "freq",
             "compression": COMPRESSION,
             "compression_opts": COMPRESSION_OPTS,
-            "chunks": (3, 64, 256, 128),
+            "chunks": (3, 64, 128, 128),
+            "truncate": True,
         },
         "nsample": {
             "axes": ["freq", "stack", "ra"],
@@ -1107,7 +1209,7 @@ class SiderealStream(
             "distributed_axis": "freq",
             "compression": COMPRESSION,
             "compression_opts": COMPRESSION_OPTS,
-            "chunks": (64, 256, 128),
+            "chunks": (64, 128, 128),
         },
     }
 
@@ -1245,7 +1347,10 @@ class TimeStream(FreqContainer, VisContainer, TODContainer):
             "distributed_axis": "freq",
             "compression": COMPRESSION,
             "compression_opts": COMPRESSION_OPTS,
-            "chunks": (64, 256, 128),
+            "chunks": (64, 128, 128),
+            "truncate": {
+                "weight_dataset": "vis_weight",
+            },
         },
         "vis_weight": {
             "axes": ["freq", "stack", "time"],
@@ -1255,7 +1360,8 @@ class TimeStream(FreqContainer, VisContainer, TODContainer):
             "distributed_axis": "freq",
             "compression": COMPRESSION,
             "compression_opts": COMPRESSION_OPTS,
-            "chunks": (64, 256, 128),
+            "chunks": (64, 128, 128),
+            "truncate": True,
         },
         "input_flags": {
             "axes": ["input", "time"],
@@ -1441,7 +1547,10 @@ class TrackBeam(FreqContainer, SampleVarianceContainer):
             "distributed_axis": "freq",
             "compression": COMPRESSION,
             "compression_opts": COMPRESSION_OPTS,
-            "chunks": (128, 2, 128, 128),
+            "chunks": (64, 2, 64, 128),
+            "truncate": {
+                "weight_dataset": "weight",
+            },
         },
         "weight": {
             "axes": ["freq", "pol", "input", "pix"],
@@ -1451,7 +1560,8 @@ class TrackBeam(FreqContainer, SampleVarianceContainer):
             "distributed_axis": "freq",
             "compression": COMPRESSION,
             "compression_opts": COMPRESSION_OPTS,
-            "chunks": (128, 2, 128, 128),
+            "chunks": (64, 2, 64, 128),
+            "truncate": True,
         },
         "sample_variance": {
             "axes": ["component", "freq", "pol", "input", "pix"],
@@ -1461,7 +1571,8 @@ class TrackBeam(FreqContainer, SampleVarianceContainer):
             "distributed_axis": "freq",
             "compression": COMPRESSION,
             "compression_opts": COMPRESSION_OPTS,
-            "chunks": (3, 128, 2, 128, 128),
+            "chunks": (3, 64, 2, 64, 128),
+            "truncate": True,
         },
         "nsample": {
             "axes": ["freq", "pol", "input", "pix"],
@@ -1471,7 +1582,7 @@ class TrackBeam(FreqContainer, SampleVarianceContainer):
             "distributed_axis": "freq",
             "compression": COMPRESSION,
             "compression_opts": COMPRESSION_OPTS,
-            "chunks": (128, 2, 128, 128),
+            "chunks": (64, 2, 64, 128),
         },
     }
 
@@ -1661,6 +1772,12 @@ class VisGridStream(FreqContainer, SiderealContainer):
             "initialise": True,
             "distributed": True,
             "distributed_axis": "freq",
+            "chunks": (1, 64, 1, 64, 128),
+            "compression": COMPRESSION,
+            "compression_opts": COMPRESSION_OPTS,
+            "truncate": {
+                "weight_dataset": "weight",
+            },
         },
         "vis_weight": {
             "axes": ["pol", "freq", "ew", "ns", "ra"],
@@ -1668,12 +1785,19 @@ class VisGridStream(FreqContainer, SiderealContainer):
             "initialise": True,
             "distributed": True,
             "distributed_axis": "freq",
+            "chunks": (1, 64, 1, 64, 128),
+            "compression": COMPRESSION,
+            "compression_opts": COMPRESSION_OPTS,
+            "truncate": True,
         },
         "redundancy": {
             "axes": ["pol", "ew", "ns", "ra"],
             "dtype": np.int32,
             "initialise": True,
             "distributed": False,
+            "chunks": (1, 64, 1, 64, 128),
+            "compression": COMPRESSION,
+            "compression_opts": COMPRESSION_OPTS,
         },
     }
 
@@ -1796,6 +1920,12 @@ class RingMap(FreqContainer, SiderealContainer):
             "initialise": True,
             "distributed": True,
             "distributed_axis": "freq",
+            "chunks": (1, 1, 64, 128, 128),
+            "compression": COMPRESSION,
+            "compression_opts": COMPRESSION_OPTS,
+            "truncate": {
+                "weight_dataset": "weight",
+            },
         },
         "weight": {
             "axes": ["pol", "freq", "ra", "el"],
@@ -1803,6 +1933,10 @@ class RingMap(FreqContainer, SiderealContainer):
             "initialise": True,
             "distributed": True,
             "distributed_axis": "freq",
+            "chunks": (1, 64, 128, 128),
+            "compression": COMPRESSION,
+            "compression_opts": COMPRESSION_OPTS,
+            "truncate": True,
         },
         "dirty_beam": {
             "axes": ["beam", "pol", "freq", "ra", "el"],
@@ -1810,6 +1944,10 @@ class RingMap(FreqContainer, SiderealContainer):
             "initialise": False,
             "distributed": True,
             "distributed_axis": "freq",
+            "chunks": (1, 1, 64, 128, 128),
+            "compression": COMPRESSION,
+            "compression_opts": COMPRESSION_OPTS,
+            "truncate": True,
         },
         "rms": {
             "axes": ["pol", "freq", "ra"],
@@ -1817,6 +1955,10 @@ class RingMap(FreqContainer, SiderealContainer):
             "initialise": False,
             "distributed": True,
             "distributed_axis": "freq",
+            "chunks": (4, 512, 512),
+            "compression": COMPRESSION,
+            "compression_opts": COMPRESSION_OPTS,
+            "truncate": True,
         },
     }
 
@@ -1853,7 +1995,7 @@ class RingMapMask(FreqContainer, SiderealContainer):
     _dataset_spec = {
         "mask": {
             "axes": ["pol", "freq", "ra", "el"],
-            "dtype": np.bool,
+            "dtype": bool,
             "initialise": True,
             "distributed": True,
             "distributed_axis": "freq",
@@ -1943,11 +2085,17 @@ class GainData(FreqContainer, TODContainer):
             "distributed_axis": "freq",
         },
         "weight": {
-            "axes": ["freq", "time"],
+            "axes": ["freq", "input", "time"],
             "dtype": np.float64,
             "initialise": False,
             "distributed": True,
             "distributed_axis": "freq",
+        },
+        "update_id": {
+            "axes": ["time"],
+            "dtype": np.dtype("<U64"),
+            "initialise": False,
+            "distributed": False,
         },
     }
 
@@ -1959,6 +2107,13 @@ class GainData(FreqContainer, TODContainer):
     def weight(self):
         try:
             return self.datasets["weight"]
+        except KeyError:
+            return None
+
+    @property
+    def update_id(self):
+        try:
+            return self.datasets["update_id"]
         except KeyError:
             return None
 
@@ -1981,7 +2136,7 @@ class SiderealGainData(FreqContainer, SiderealContainer):
             "distributed_axis": "freq",
         },
         "weight": {
-            "axes": ["freq", "ra"],
+            "axes": ["freq", "input", "ra"],
             "dtype": np.float64,
             "initialise": False,
             "distributed": True,
@@ -2069,7 +2224,7 @@ class DelayCutoff(ContainerBase):
 
 
 class DelaySpectrum(ContainerBase):
-    """Container for a delay spectrum."""
+    """Container for a delay power spectrum."""
 
     _axes = ("baseline", "delay")
 
@@ -2461,7 +2616,7 @@ class FormedBeamMask(FreqContainer):
     _dataset_spec = {
         "mask": {
             "axes": ["object_id", "pol", "freq"],
-            "dtype": np.bool,
+            "dtype": bool,
             "initialise": True,
             "distributed": True,
             "distributed_axis": "freq",
@@ -2481,7 +2636,7 @@ class FormedBeamHAMask(FormedBeamMask):
     _dataset_spec = {
         "mask": {
             "axes": ["object_id", "pol", "freq", "ha"],
-            "dtype": np.bool,
+            "dtype": bool,
             "initialise": True,
             "distributed": True,
             "distributed_axis": "freq",
@@ -2531,3 +2686,64 @@ def empty_timestream(**kwargs):
     ts : TimeStream
     """
     return TimeStream(**kwargs)
+
+
+def copy_datasets_filter(
+    source: ContainerBase,
+    dest: ContainerBase,
+    axis: str,
+    selection: Union[np.ndarray, list, slice],
+    exclude_axes: List[str] = None,
+):
+    """Copy datasets while filtering a given axis.
+
+    Only datasets containing the axis to be filtered will be copied.
+
+    Parameters
+    ----------
+    source, dest
+        Source and destination containers.
+    axis
+        Name of the axis to filter.
+    selection
+        A filtering selection to be applied to the axis.
+    exclude_axes
+        An optional set of axes that if a dataset contains one means it will
+        not be copied.
+    """
+    exclude_axes_set = set(exclude_axes) if exclude_axes else set()
+
+    stack = [source]
+
+    while stack:
+
+        item = stack.pop()
+
+        if memh5.is_group(item):
+            stack += list(item.values())
+            continue
+
+        axes = list(item.attrs.get("axis", ()))
+
+        # Only copy if the axis we are filtering is present, and there are no
+        # excluded axes in the dataset
+        if not (axis in axes and exclude_axes_set.isdisjoint(axes)):
+            continue
+
+        if item.name not in dest:
+            dest.add_dataset(item.name)
+
+        dest_dset = dest[item.name]
+        axis_ind = axes.index(axis)
+
+        if isinstance(item, memh5.MemDatasetDistributed):
+
+            if item.distributed_axis == axis_ind:
+                raise RuntimeError(
+                    f"Cannot redistristribute dataset={item.name} along "
+                    f"axis={axis_ind} as it is distributed."
+                )
+            dest_dset.redistribute(item.distributed_axis)
+
+        sl = axis_ind * (slice(None),) + (selection,)
+        dest_dset[:] = item[sl]

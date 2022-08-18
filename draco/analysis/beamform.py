@@ -1199,7 +1199,16 @@ class HealpixBeamForm(task.SingleTask):
     Unless it has an explicit `epoch` attribute, the Healpix map is assumed to be in the
     same coordinate epoch as the catalog. If it does, the input catalog is assumed to be
     in ICRS and then is precessed to the CIRS coordinates in the epoch of the map.
+
+    Attributes
+    ----------
+    fwhm : float
+        Smooth the map with a Gaussian with the specified FWHM in degrees. If `None`
+        (default), leave at native map resolution. This will modify the input map in
+        place.
     """
+
+    fwhm = config.Property(proptype=float, default=None)
 
     def setup(self, hpmap: containers.Map):
         """Set the map to extract beams from at each catalog location.
@@ -1211,6 +1220,15 @@ class HealpixBeamForm(task.SingleTask):
         """
 
         self.map = hpmap
+        mv = self.map.map[:]
+        self.map.redistribute("freq")
+
+        self.log.info("Smoothing input Healpix map.")
+        for lfi, _ in mv.enumerate(axis=0):
+            for pi in range(mv.shape[1]):
+                mv[lfi, pi] = healpy.smoothing(
+                    mv[lfi, pi], fwhm=np.radians(self.fwhm), verbose=False
+                )
 
     def process(self, catalog: containers.SourceCatalog) -> containers.FormedBeam:
         """Extract sources from a ringmap.

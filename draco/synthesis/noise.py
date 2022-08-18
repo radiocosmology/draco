@@ -98,7 +98,7 @@ class GaussianNoiseDataset(task.SingleTask, random.RandomTask):
         else:
             dataset_name = self.dataset
 
-        if not dataset_name in data:
+        if dataset_name not in data:
             raise config.CaputConfigError(
                 f"Dataset '{dataset_name}' does not exist in container {type(data)}."
             )
@@ -240,7 +240,7 @@ class GaussianNoise(task.SingleTask, random.RandomTask):
         return data
 
 
-class SampleNoise(task.SingleTask):
+class SampleNoise(task.SingleTask, random.RandomTask):
     """Add properly distributed noise to a visibility dataset.
 
     This task draws properly (complex Wishart) distributed samples from an input

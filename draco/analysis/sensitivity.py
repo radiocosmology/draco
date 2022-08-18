@@ -188,7 +188,7 @@ class ComputeSystemSensitivity(task.SingleTask):
         auto_cnt = np.swapaxes(auto_cnt.reshape(-1, niff, ntime), 0, 1)
         num_feed = auto_cnt * bflag[:, auto_stack_id, :].astype(np.float32)
 
-        auto = data.vis[:, auto_stack_id, :].real
+        auto = data.vis[:, auto_stack_id, :].local_array.real
 
         # Construct the radiometric estimate of the noise by taking the sum
         # of the product of pairs of (possibly stacked) autocorrelations.
@@ -220,7 +220,7 @@ class ComputeSystemSensitivity(task.SingleTask):
         dnu = np.median(data.index_map["freq"]["width"]) * 1e6
 
         if ("flags" in data) and ("frac_lost" in data["flags"]):
-            frac_lost = data["flags"]["frac_lost"][:]
+            frac_lost = data["flags"]["frac_lost"][:].local_array
         else:
             frac_lost = np.zeros((1, 1), dtype=np.float32)
 

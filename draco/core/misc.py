@@ -132,7 +132,10 @@ class ApplyGain(task.SingleTask):
 
                     # Smooth weight array if it exists
                     if weight_arr is not None:
-                        weight_arr = ss.medfilt2d(weight_arr, kernel_size=[1, l])
+                        shp = weight_arr.shape
+                        weight_arr = ss.medfilt2d(
+                            weight_arr.reshape(-1, shp[-1]), kernel_size=[1, l]
+                        ).reshape(shp)
 
         else:
             raise RuntimeError("Format of `gain` argument is unknown.")
@@ -165,7 +168,7 @@ class ApplyGain(task.SingleTask):
             self.log.info("Applying gain to weight.")
             gweight = np.abs(gain_arr if self.inverse else inverse_gain_arr) ** 2
         else:
-            gweight = np.ones(gain_arr.shape, dtype=np.float64)
+            gweight = np.ones_like(gain_arr, dtype=np.float64)
 
         if weight_arr is not None:
             gweight *= (weight_arr[:] > 0.0).astype(np.float64)
