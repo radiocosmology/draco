@@ -2263,7 +2263,6 @@ class DelayTransform(ContainerBase):
         return self.datasets["spectrum"]
 
 
-
 class Powerspectrum2D(ContainerBase):
     """Container for a 2D cartesian power spectrum.
 
