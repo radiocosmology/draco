@@ -729,7 +729,7 @@ class DelaySpectrumWienerBase(task.SingleTask):
     The 'sample' axis is the average axis over which the average is taken to estimate the delay power spectrum.
     These constituent axes are included in the index map,  which are ['beam', 'pol', 'sample', 'el'], and their
     order is given by the `baseline_axes` attribute.
- 
+
     Attributes
     ----------
     dataset : str
@@ -754,7 +754,7 @@ class DelaySpectrumWienerBase(task.SingleTask):
 
         dps : DelaySpectrum container
              Delay power spectrum of the input data.
-  
+
         Returns
         -------
         delay_spectrum : DelayTransform
