@@ -931,7 +931,6 @@ def wiener_filter(delay_PS, data, N, Ni, window=True, fsel=None):
     -------
     y_spec : np.ndarray[nRA,ndelay]
             The 2D array containing the delay spectrum for each RA.
-
     """
 
     total_freq = N // 2 + 1
