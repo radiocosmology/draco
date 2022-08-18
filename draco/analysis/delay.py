@@ -732,7 +732,6 @@ class DelaySpectrumWienerBase(task.SingleTask):
 
     Attributes
     ----------
-
     dataset : str
         Calculate the delay spectrum of this dataset (e.g., "vis", "map", "beam").
     average_axis : str
