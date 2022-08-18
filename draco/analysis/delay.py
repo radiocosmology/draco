@@ -720,8 +720,8 @@ class DelaySpectrumEstimatorBase(task.SingleTask, random.RandomTask):
 
 class DelaySpectrumWienerBase(task.SingleTask):
     """Calculate the delay spectrum for each RA and DEC of any container with a frequency axis.
-
-    The spectrum is calculated by Wiener filtering method given the delay power spectrum 
+    
+    The spectrum is calculated by Wiener filtering method given the delay power spectrum
     at each DEC/baselines [https://arxiv.org/abs/2202.01242 see:- eqn A6].
 
     The delay spectrum output is indexed by  `baseline` and 'sample' axis. The baseline axis is the
@@ -907,25 +907,22 @@ def wiener_filter(delay_PS, data, N, Ni, window=True, fsel=None):
     at the `N` delay samples conjugate to the frequency spectrum of ``N/2 + 1`` channels.
     A subset of these channels can be specified using the `fsel` argument.
 
-
     Parameters
     ----------
-     delay_PS : np.ndarray[ndelay]
+    delay_PS : np.ndarray[ndelay]
               Delay power spectrum of the data.
-     data : np.ndarray[nRA, freq]
+    data : np.ndarray[nRA, freq]
           Data to estimate the delay spectrum of.
-
-     N : int
+    N : int
          The length of the output delay spectrum (ndelay). There are assumed to `N/2 + 1`
          total frequency channels.
-     Ni : np.ndarray[freq]
+    Ni : np.ndarray[freq]
          Inverse noise variance. Same shape as data.
-
     fsel : np.ndarray[freq], optional
          Indices of channels that we have data at. By default assume all channels.
-
     window : bool, optional
          Apply a Nuttall apodisation function. Default is True.
+         
     Returns
     -------
     y_spec : np.ndarray[nRA,ndelay]
