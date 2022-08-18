@@ -732,14 +732,33 @@ class DelaySpectrumWienerBase(task.SingleTask):
 
     Attributes
     ----------
+
     dataset : str
         Calculate the delay spectrum of this dataset (e.g., "vis", "map", "beam").
     average_axis : str
         Name of the axis to take the average over.
+
+    apply_window = config.Property(proptype=bool, default=True)
+
+    window = config.enum(
+        ["nuttall", "blackman_nuttall", "blackman_harris"], default="nuttall"
+    )
+
+    complex_timedomain : bool, optional
+        Whether to assume the original time samples that were channelized into a
+        frequency spectrum were purely real (False) or complex (True). If True,
+        `freq_zero`, `nfreq`, and `skip_nyquist` are ignored. Default: False.
+
     """
 
     dataset = config.Property(proptype=str, default="vis")
     average_axis = config.Property(proptype=str)
+    # complex_input = config.Property(proptype=bool, default=False)
+    apply_window = config.Property(proptype=bool, default=True)
+    window = config.enum(
+        ["nuttall", "blackman_nuttall", "blackman_harris"], default="nuttall"
+    )
+    complex_timedomain = config.Property(proptype=bool, default=False)
 
     def process(
         self, ss: FreqContainerType, dps: containers.DelaySpectrum
@@ -754,6 +773,7 @@ class DelaySpectrumWienerBase(task.SingleTask):
 
         dps : DelaySpectrum container
              Delay power spectrum of the input data.
+
 
         Returns
         -------
@@ -786,9 +806,14 @@ class DelaySpectrumWienerBase(task.SingleTask):
 
         self.freq_spacing = np.abs(np.diff(ss.freq[:])).min()
 
-        channel_ind = (np.abs(ss.freq[:] - self.freq_zero) / self.freq_spacing).astype(
-            np.int
-        )
+        if self.complex_timedomain:
+            self.nfreq = len(ss.freq)
+            channel_ind = np.arange(self.nfreq)
+        # ndelay = self.nfreq
+        else:
+            channel_ind = (
+                np.abs(ss.freq[:] - self.freq_zero) / self.freq_spacing
+            ).astype(np.int)
 
         # Assume each transformed frame was an even number of samples long
         delays = dps.index_map["delay"]  # in us
@@ -889,92 +914,14 @@ class DelaySpectrumWienerBase(task.SingleTask):
                 data,
                 ndelay,
                 weight,
-                window=True,
+                window=self.window if self.apply_window else None,
                 fsel=non_zero_channel,
+                complex_timedomain=self.complex_timedomain,
             )
             # FFT-shift along the last axis
             delay_spectrum.spectrum[bi] = np.fft.fftshift(y_spec, axes=1)
 
         return delay_spectrum
-
-
-def wiener_filter(delay_PS, data, N, Ni, window=True, fsel=None):
-    """Estimate the delay spectrum  by Wiener filter method.
-
-    This routine estimates the delay spectrum of the data,
-    using the delay power spectrum of the data, via Wiener filter method
-    at the `N` delay samples conjugate to the frequency spectrum of ``N/2 + 1`` channels.
-    A subset of these channels can be specified using the `fsel` argument.
-
-    Parameters
-    ----------
-    delay_PS : np.ndarray[ndelay]
-              Delay power spectrum of the data.
-    data : np.ndarray[nRA, freq]
-          Data to estimate the delay spectrum of.
-    N : int
-         The length of the output delay spectrum (ndelay). There are assumed to `N/2 + 1`
-         total frequency channels.
-    Ni : np.ndarray[freq]
-         Inverse noise variance. Same shape as data.
-    fsel : np.ndarray[freq], optional
-         Indices of channels that we have data at. By default assume all channels.
-    window : bool, optional
-         Apply a Nuttall apodisation function. Default is True.
-
-    Returns
-    -------
-    y_spec : np.ndarray[nRA,ndelay]
-            The 2D array containing the delay spectrum for each RA.
-    """
-
-    total_freq = N // 2 + 1
-
-    if fsel is None:
-        fsel = np.arange(total_freq)
-
-    # Construct the Fourier matrix
-    F = fourier_matrix_r2c(N, fsel)
-
-    # Construct a view of the data with alternating real and imaginary parts
-    data = data.astype(np.complex128, order="C").view(np.float64).T.copy()
-
-    # Window the frequency data
-    if window:
-
-        # Construct the window function
-        x = fsel * 1.0 / total_freq
-        w = window_generalised(x, window="nuttall")
-        w = np.repeat(w, 2)
-
-        # Apply to the projection matrix and the data
-        F *= w[:, np.newaxis]
-        data *= w[:, np.newaxis]
-
-    is_real_freq = (fsel == 0) | (fsel == N // 2)
-
-    # Construct the Noise inverse array for the real and imaginary parts (taking
-    # into account that the zero and Nyquist frequencies are strictly real)
-    Ni_r = np.zeros(2 * Ni.shape[0])
-    Ni_r[0::2] = np.where(is_real_freq, Ni, Ni / 2**0.5)
-    Ni_r[1::2] = np.where(is_real_freq, 0.0, Ni / 2**0.5)
-
-    # Create the Hermitian conjugate weighted by the noise (this is used multiple times)
-    FTNih = F.T * Ni_r[np.newaxis, :] ** 0.5
-    FTNiF = np.dot(FTNih, FTNih.T)
-
-    # Pre-whiten the data to save doing it repeatedly
-    data = data * Ni_r[:, np.newaxis] ** 0.5
-
-    # Solving the linear eqn
-    y = np.dot(FTNih, data)
-
-    Si = 1.0 / delay_PS
-    Ci = np.diag(Si) + FTNiF
-
-    y_spec = la.solve(Ci, y, sym_pos=True)
-
-    return y_spec.T
 
 
 def stokes_I(sstream, tel):
@@ -1428,6 +1375,115 @@ def delay_spectrum_gibbs(
         spec.append(S_samp)
 
     return spec
+
+
+def wiener_filter(
+    delay_PS, data, N, Ni, window="nuttall", fsel=None, complex_timedomain=False
+):
+    """Estimate the delay spectrum  by Wiener filter method.
+
+    This routine estimates the delay spectrum of the data via Wiener filter method
+    at the `N` delay samples conjugate to the frequency spectrum of ``N/2 + 1`` channels.
+    A subset of these channels can be specified using the `fsel` argument.
+
+    Parameters
+    ----------
+     delay_PS : np.ndarray[ndelay]
+              Delay power spectrum of the data.
+     data : np.ndarray[nRA, freq]
+          Data to estimate the delay spectrum of.
+
+     N : int
+         The length of the output delay spectrum (ndelay). There are assumed to `N/2 + 1`
+         total frequency channels.
+     Ni : np.ndarray[freq]
+         Inverse noise variance. Same shape as data.
+
+    fsel : np.ndarray[freq], optional
+         Indices of channels that we have data at. By default assume all channels.
+
+    window : one of {'nuttall', 'blackman_nuttall', 'blackman_harris', None}, optional
+        Apply an apodisation function. Default: 'nuttall'.
+
+    complex_timedomain : bool, optional
+        If True, assume input data arose from a complex timestream. If False, assume
+        input data arose from a real timestream, such that the first and last frequency
+        channels have purely real values. Default: False.
+
+    Returns
+    -------
+    y_spec : np.ndarray[nRA,ndelay]
+            The 2D array containing the delay spectrum for each RA.
+    """
+
+    # Total number of freqs
+    total_freq = N if complex_timedomain else N // 2 + 1
+
+    if fsel is None:
+        fsel = np.arange(total_freq)
+
+    # Construct the Fourier matrix
+    F = (
+        fourier_matrix_c2c(N, fsel)
+        if complex_timedomain
+        else fourier_matrix_r2c(N, fsel)
+    )
+
+    # Construct a view of the data with alternating real and imaginary parts
+    data = _complex_to_alternating_real(data).T.copy()
+
+    # Window the frequency data
+    if window is not None:
+
+        # Construct the window function
+        x = fsel * 1.0 / total_freq
+        w = window_generalised(x, window=window)
+        w = np.repeat(w, 2)
+
+        # Apply to the projection matrix and the data
+        F *= w[:, np.newaxis]
+        data *= w[:, np.newaxis]
+
+    if complex_timedomain:
+        is_real_freq = np.zeros_like(fsel).astype(bool)
+    else:
+        is_real_freq = (fsel == 0) | (fsel == N // 2)
+
+    # Construct the Noise inverse array for the real and imaginary parts (taking
+    # into account that the zero and Nyquist frequencies are strictly real)
+    Ni_r = np.zeros(2 * Ni.shape[0])
+    Ni_r[0::2] = np.where(is_real_freq, Ni, Ni / 2**0.5)
+    Ni_r[1::2] = np.where(is_real_freq, 0.0, Ni / 2**0.5)
+
+    # Create the Hermitian conjugate weighted by the noise (this is used multiple times)
+    FTNih = F.T.conj() * Ni_r[np.newaxis, :] ** 0.5
+    FTNiF = np.dot(FTNih, FTNih.T.conj())
+
+    # Pre-whiten the data to save doing it repeatedly
+    data = data * Ni_r[:, np.newaxis] ** 0.5
+
+    # Solving the linear eqn
+    y = np.dot(FTNih, data)
+
+    # Construct the Wiener covariance
+    if complex_timedomain:
+        # If delay spectrum is complex, extend delay_PS to correspond to the individual
+        # real and imaginary components of the delay spectrum, each of which have
+        # power spectrum equal to 0.5 times the power spectrum of the complex
+        # delay spectrum, if the statistics are circularly symmetric
+        S = 0.5 * np.repeat(delay_PS, 2)
+        Si = 1.0 / S
+    else:
+        Si = 1 / delay_PS
+
+    Ci = np.diag(Si) + FTNiF
+
+    y_spec = la.solve(Ci, y, sym_pos=True)
+
+    if complex_timedomain:
+        y_spec = _alternating_real_to_complex(y_spec.T)
+
+    return y_spec
 
 
 def null_delay_filter(freq, max_delay, mask, num_delay=200, tol=1e-8, window=True):
