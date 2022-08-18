@@ -720,7 +720,7 @@ class DelaySpectrumEstimatorBase(task.SingleTask, random.RandomTask):
 
 class DelaySpectrumWienerBase(task.SingleTask):
     """Calculate the delay spectrum for each RA and DEC of any container with a frequency axis.
- 
+
     The spectrum is calculated by Wiener filtering method given the delay power spectrum
     at each DEC/baselines [https://arxiv.org/abs/2202.01242 see:- eqn A6].
 
@@ -729,7 +729,7 @@ class DelaySpectrumWienerBase(task.SingleTask):
     The 'sample' axis is the average axis over which the average is taken to estimate the delay power spectrum.
     These constituent axes are included in the index map,  which are ['beam', 'pol', 'sample', 'el'], and their
     order is given by the `baseline_axes` attribute.
-    
+ 
     Attributes
     ----------
     dataset : str
@@ -754,7 +754,7 @@ class DelaySpectrumWienerBase(task.SingleTask):
 
         dps : DelaySpectrum container
              Delay power spectrum of the input data.
-        
+  
         Returns
         -------
         delay_spectrum : DelayTransform
@@ -900,7 +900,7 @@ class DelaySpectrumWienerBase(task.SingleTask):
 
 def wiener_filter(delay_PS, data, N, Ni, window=True, fsel=None):
     """Estimate the delay spectrum  by Wiener filter method.
-    
+
     This routine estimates the delay spectrum of the data,
     using the delay power spectrum of the data, via Wiener filter method
     at the `N` delay samples conjugate to the frequency spectrum of ``N/2 + 1`` channels.
