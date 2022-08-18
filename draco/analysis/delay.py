@@ -754,8 +754,7 @@ class DelaySpectrumWienerBase(task.SingleTask):
 
         dps : DelaySpectrum container
              Delay power spectrum of the input data.
-
-
+                          
         Returns
         -------
         delay_spectrum : DelayTransform
