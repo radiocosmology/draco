@@ -12,6 +12,7 @@ from cora.util import units
 from ..core import containers, task, io
 from ..util import random
 
+
 class ConvertRingmap(task.SingleTask):
     """Covert the  daily (CSD)  ringmap (output of ch_pipeline) to draco ringmap.
     The daily ringmap of ch_pipeline has rms axis instead of weight, so we
