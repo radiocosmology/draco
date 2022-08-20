@@ -12,6 +12,45 @@ from cora.util import units
 from ..core import containers, task, io
 from ..util import random
 
+class ConvertRingmap(task.SingleTask):
+    """Covert the  daily (CSD)  ringmap (output of ch_pipeline) to draco ringmap.
+    The daily ringmap of ch_pipeline has rms axis instead of weight, so we
+    are changing rms to weight and store it in a new draco ringmap container.
+    """
+
+    def process(self, rmap_in):
+        """converting daily ringmap to draco ringmap.
+
+        Parameters
+        ----------
+        rmap_in : ch_pipeline.core.containers.RingMap
+            input map to convert
+
+        Returns
+        -------
+        rmap_out : draco.core.containers.RingMap
+            converted ringmap.
+        """
+
+        rmap_in.redistribute("freq")
+
+        rmap_out = containers.RingMap(
+            axes_from=rmap_in,
+            attrs_from=rmap_in,
+            distributed=rmap_in.distributed,
+            comm=rmap_in.comm,
+        )
+
+        rmap_out.redistribute("freq")
+
+        rmap_out.map[:] = rmap_in.map[:]
+        rmap_out.weight[:] = tools.invert_no_zero(rmap_in.rms[:][..., np.newaxis] ** 2)
+
+        if "dirty_beam" in rmap_in.datasets:
+            rmap_out.add_dataset("dirty_beam")
+            rmap_out.dirty_beam[:] = rmap_in.dirty_beam[:]
+
+        return rmap_out
 
 class DelayFilter(task.SingleTask):
     """Remove delays less than a given threshold.
