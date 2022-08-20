@@ -53,6 +53,7 @@ class ConvertRingmap(task.SingleTask):
 
         return rmap_out
 
+
 class DelayFilter(task.SingleTask):
     """Remove delays less than a given threshold.
 
