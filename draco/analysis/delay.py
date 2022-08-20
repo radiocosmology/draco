@@ -10,7 +10,7 @@ from caput import mpiarray, config
 from cora.util import units
 
 from ..core import containers, task, io
-from ..util import random
+from ..util import random, tools
 
 
 class ConvertRingmap(task.SingleTask):
@@ -45,7 +45,7 @@ class ConvertRingmap(task.SingleTask):
         rmap_out.redistribute("freq")
 
         rmap_out.map[:] = rmap_in.map[:]
-        rmap_out.weight[:] = invert_no_zero(rmap_in.rms[:][..., np.newaxis] ** 2)
+        rmap_out.weight[:] = tools.invert_no_zero(rmap_in.rms[:][..., np.newaxis] ** 2)
 
         if "dirty_beam" in rmap_in.datasets:
             rmap_out.add_dataset("dirty_beam")
@@ -1319,19 +1319,3 @@ def _take_view(arr: np.ndarray, ind: int, axis: int) -> np.ndarray:
     # index
     sl = (slice(None),) * axis
     return arr[sl + (ind,)]
-
-
-def invert_no_zero(x):
-    """Return the reciprocal, but ignoring zeros.
-    Where `x != 0` return 1/x, or just return 0. Importantly this routine does
-    not produce a warning about zero division.
-    Parameters
-    ----------
-    x : np.ndarray
-    Returns
-    -------
-    r : np.ndarray
-        Return the reciprocal of x.
-    """
-    with np.errstate(divide="ignore", invalid="ignore"):
-        return np.where(x == 0, 0.0, 1.0 / x)
