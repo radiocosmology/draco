@@ -182,7 +182,6 @@ class CollateProducts(task.SingleTask):
         )
 
         bt_freq = ss.index_map["freq"][freq_ind]
-
         # Determine the input product map and conjugation.
         # If the input timestream is already stacked, then attempt to redefine
         # its representative products so that they contain only feeds that exist
@@ -226,13 +225,19 @@ class CollateProducts(task.SingleTask):
             **output_kwargs,
         )
 
+        # Check if frequencies are already ordered
+        no_redistribute = freq_ind == list(range(len(ss.freq[:])))
+
         # Add gain dataset.
         # if 'gain' in ss.datasets:
         #     sp.add_dataset('gain')
 
-        # Ensure all frequencies and products are on each node
-        ss.redistribute(["ra", "time"])
-        sp.redistribute(["ra", "time"])
+        # If frequencies are mapped across ranks, we have to redistribute so all
+        # frequencies and products are on each rank
+        raxis = "freq" if no_redistribute else ["ra", "time"]
+        self.log.info(f"Distributing across '{raxis}' axis")
+        ss.redistribute(raxis)
+        sp.redistribute(raxis)
 
         # Initialize datasets in output container
         sp.vis[:] = 0.0
@@ -257,20 +262,19 @@ class CollateProducts(task.SingleTask):
             if self.weight == "uniform":
                 nprod_in_stack = (nprod_in_stack > 0).astype(np.float32)
 
-        # Find the local times (necessary because nprod_in_stack is not distributed)
-        ntt = ss.vis.local_shape[-1]
-        stt = ss.vis.local_offset[-1]
-        ett = stt + ntt
-
         # Create counter to increment during the stacking.
         # This will be used to normalize at the end.
         counter = np.zeros_like(sp.weight[:])
 
-        # Dereference the global slices now, there's a hidden MPI call in the [:] operation.
+        # Dereference the global slices, there's a hidden MPI call in the [:] operation.
         spv = sp.vis[:]
         ssv = ss.vis[:]
         spw = sp.weight[:]
         ssw = ss.weight[:]
+
+        # Get the local frequency and time slice/mapping
+        freq_ind = slice(None) if no_redistribute else freq_ind
+        time_ind = slice(None) if no_redistribute else ssv.local_bounds
 
         # Iterate over products (stacked) in the sidereal stream
         for ss_pi, ((ii, ij), conj) in enumerate(zip(ss_prod, ss_conj)):
@@ -291,23 +295,27 @@ class CollateProducts(task.SingleTask):
 
             # Generate weight
             if self.weight == "inverse_variance":
-                wss = ssw[freq_ind, ss_pi]
+                wss = ssw.local_array[freq_ind, ss_pi]
 
             else:
-                wss = (ssw[freq_ind, ss_pi] > 0.0).astype(np.float32)
-                wss.local_array[:] *= nprod_in_stack[np.newaxis, ss_pi, stt:ett]
+                wss = (ssw.local_array[freq_ind, ss_pi] > 0.0).astype(np.float32)
+                wss[:] *= nprod_in_stack[np.newaxis, ss_pi, time_ind]
 
             # Accumulate visibilities, conjugating if required
             if feedconj == conj:
-                spv[:, sp_pi] += wss * ssv[freq_ind, ss_pi]
+                spv.local_array[:, sp_pi] += wss * ssv.local_array[freq_ind, ss_pi]
             else:
-                spv[:, sp_pi] += wss * ssv[freq_ind, ss_pi].conj()
+                spv.local_array[:, sp_pi] += (
+                    wss * ssv.local_array[freq_ind, ss_pi].conj()
+                )
 
             # Accumulate variances in quadrature.  Save in the weight dataset.
-            spw[:, sp_pi] += wss**2 * tools.invert_no_zero(ssw[freq_ind, ss_pi])
+            spw.local_array[:, sp_pi] += wss**2 * tools.invert_no_zero(
+                ssw.local_array[freq_ind, ss_pi]
+            )
 
             # Increment counter
-            counter[:, sp_pi] += wss
+            counter.local_array[:, sp_pi] += wss
 
         # Divide through by counter to get properly weighted visibility average
         sp.vis[:] *= tools.invert_no_zero(counter)
@@ -315,10 +323,11 @@ class CollateProducts(task.SingleTask):
 
         # Copy over any additional datasets that need to be frequency filtered
         containers.copy_datasets_filter(
-            ss, sp, "freq", freq_ind, ["input", "prod", "stack"]
+            ss, sp, "freq", freq_ind, ["input", "prod", "stack"], allow_distributed=True
         )
 
-        # Switch back to frequency distribution
+        # Switch back to frequency distribution. This will have minimal
+        # cost if we are already distributed in frequency
         ss.redistribute("freq")
         sp.redistribute("freq")
 
