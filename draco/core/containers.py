@@ -2673,6 +2673,7 @@ def copy_datasets_filter(
     axis: str,
     selection: Union[np.ndarray, list, slice],
     exclude_axes: List[str] = None,
+    allow_distributed: bool = False,
 ):
     """Copy datasets while filtering a given axis.
 
@@ -2717,7 +2718,7 @@ def copy_datasets_filter(
 
         if isinstance(item, memh5.MemDatasetDistributed):
 
-            if item.distributed_axis == axis_ind:
+            if (item.distributed_axis == axis_ind) and not allow_distributed:
                 raise RuntimeError(
                     f"Cannot redistristribute dataset={item.name} along "
                     f"axis={axis_ind} as it is distributed."
