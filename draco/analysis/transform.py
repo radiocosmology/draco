@@ -182,7 +182,6 @@ class CollateProducts(task.SingleTask):
         )
 
         bt_freq = ss.index_map["freq"][freq_ind]
-
         # Determine the input product map and conjugation.
         # If the input timestream is already stacked, then attempt to redefine
         # its representative products so that they contain only feeds that exist
@@ -230,9 +229,9 @@ class CollateProducts(task.SingleTask):
         # if 'gain' in ss.datasets:
         #     sp.add_dataset('gain')
 
-        # Ensure all frequencies and products are on each node
-        ss.redistribute(["ra", "time"])
-        sp.redistribute(["ra", "time"])
+        # Make sure we are distributed across frequency
+        ss.redistribute("freq")
+        sp.redistribute("freq")
 
         # Initialize datasets in output container
         sp.vis[:] = 0.0
@@ -257,57 +256,66 @@ class CollateProducts(task.SingleTask):
             if self.weight == "uniform":
                 nprod_in_stack = (nprod_in_stack > 0).astype(np.float32)
 
-        # Find the local times (necessary because nprod_in_stack is not distributed)
-        ntt = ss.vis.local_shape[-1]
-        stt = ss.vis.local_offset[-1]
-        ett = stt + ntt
-
         # Create counter to increment during the stacking.
         # This will be used to normalize at the end.
         counter = np.zeros_like(sp.weight[:])
-
         # Dereference the global slices now, there's a hidden MPI call in the [:] operation.
         spv = sp.vis[:]
         ssv = ss.vis[:]
         spw = sp.weight[:]
         ssw = ss.weight[:]
 
-        # Iterate over products (stacked) in the sidereal stream
-        for ss_pi, ((ii, ij), conj) in enumerate(zip(ss_prod, ss_conj)):
+        # Figure out mapping between the local frequencies
+        freq_ind_loc = tools.find_keys(
+            ss.freq[ssv.local_bounds],
+            self.telescope.frequencies[ssv.local_bounds],
+            require_match=True,
+        )
 
-            # Map the feed indices into ones for the Telescope class
-            bi, bj = input_ind[ii], input_ind[ij]
+        # Iterate over products (stacked) in the sidereal stream if frequencies exist
+        if freq_ind_loc:
+            for ss_pi, ((ii, ij), conj) in enumerate(zip(ss_prod, ss_conj)):
+                # Map the feed indices into ones for the Telescope class
+                bi, bj = input_ind[ii], input_ind[ij]
 
-            # If either feed is not in the telescope class, skip it.
-            if bi is None or bj is None:
-                continue
+                # If either feed is not in the telescope class, skip it.
+                if bi is None or bj is None:
+                    continue
 
-            sp_pi = self.telescope.feedmap[bi, bj]
-            feedconj = self.telescope.feedconj[bi, bj]
+                sp_pi = self.telescope.feedmap[bi, bj]
+                feedconj = self.telescope.feedconj[bi, bj]
 
-            # Skip if product index is not valid
-            if sp_pi < 0:
-                continue
+                # Skip if product index is not valid
+                if sp_pi < 0:
+                    continue
 
-            # Generate weight
-            if self.weight == "inverse_variance":
-                wss = ssw[freq_ind, ss_pi]
+                # Generate weight
+                if self.weight == "inverse_variance":
+                    wss = ssw.local_array[freq_ind_loc, ss_pi]
 
-            else:
-                wss = (ssw[freq_ind, ss_pi] > 0.0).astype(np.float32)
-                wss.local_array[:] *= nprod_in_stack[np.newaxis, ss_pi, stt:ett]
+                else:
+                    wss = (ssw.local_array[freq_ind_loc, ss_pi] > 0.0).astype(
+                        np.float32
+                    )
+                    wss[:] *= nprod_in_stack[np.newaxis, ss_pi, :]
 
-            # Accumulate visibilities, conjugating if required
-            if feedconj == conj:
-                spv[:, sp_pi] += wss * ssv[freq_ind, ss_pi]
-            else:
-                spv[:, sp_pi] += wss * ssv[freq_ind, ss_pi].conj()
+                # Accumulate visibilities, conjugating if required
+                if feedconj == conj:
+                    spv.local_array[:, sp_pi] += (
+                        wss * ssv.local_array[freq_ind_loc, ss_pi]
+                    )
+                else:
+                    spv.local_array[:, sp_pi] += (
+                        wss * ssv.local_array[freq_ind_loc, ss_pi].conj()
+                    )
 
-            # Accumulate variances in quadrature.  Save in the weight dataset.
-            spw[:, sp_pi] += wss**2 * tools.invert_no_zero(ssw[freq_ind, ss_pi])
+                # Accumulate variances in quadrature.  Save in the weight dataset.
+                spw.local_array[:, sp_pi] += wss**2 * tools.invert_no_zero(
+                    ssw.local_array[freq_ind_loc, ss_pi]
+                )
 
-            # Increment counter
-            counter[:, sp_pi] += wss
+                # Increment counter
+                counter.local_array[:, sp_pi] += wss
 
         # Divide through by counter to get properly weighted visibility average
         sp.vis[:] *= tools.invert_no_zero(counter)
@@ -315,12 +323,13 @@ class CollateProducts(task.SingleTask):
 
         # Copy over any additional datasets that need to be frequency filtered
         containers.copy_datasets_filter(
-            ss, sp, "freq", freq_ind, ["input", "prod", "stack"]
+            ss,
+            sp,
+            "freq",
+            freq_ind_loc,
+            ["input", "prod", "stack"],
+            allow_distributed=True,
         )
-
-        # Switch back to frequency distribution
-        ss.redistribute("freq")
-        sp.redistribute("freq")
 
         return sp
 
