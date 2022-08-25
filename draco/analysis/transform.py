@@ -265,57 +265,54 @@ class CollateProducts(task.SingleTask):
         spw = sp.weight[:]
         ssw = ss.weight[:]
 
-        # Figure out mapping between the local frequencies
-        freq_ind_loc = tools.find_keys(
-            ss.freq[ssv.local_bounds],
-            self.telescope.frequencies[ssv.local_bounds],
-            require_match=True,
-        )
+        # # Figure out mapping between the local frequencies
+        # freq_ind_loc = tools.find_keys(
+        #     ss.freq[ssv.local_bounds],
+        #     self.telescope.frequencies[ssv.local_bounds],
+        #     require_match=True,
+        # )
 
         # Iterate over products (stacked) in the sidereal stream if frequencies exist
-        if freq_ind_loc:
-            for ss_pi, ((ii, ij), conj) in enumerate(zip(ss_prod, ss_conj)):
-                # Map the feed indices into ones for the Telescope class
-                bi, bj = input_ind[ii], input_ind[ij]
+        for ss_pi, ((ii, ij), conj) in enumerate(zip(ss_prod, ss_conj)):
+            sswa = ssw[:, ss_pi].allgather()
+            ssva = ssv[:, ss_pi].allgather()
+            spwa = spw[:, ss_pi].allgather()
+            spva = spv[:, ss_pi].allgather()
 
-                # If either feed is not in the telescope class, skip it.
-                if bi is None or bj is None:
-                    continue
+            # Map the feed indices into ones for the Telescope class
+            bi, bj = input_ind[ii], input_ind[ij]
 
-                sp_pi = self.telescope.feedmap[bi, bj]
-                feedconj = self.telescope.feedconj[bi, bj]
+            # If either feed is not in the telescope class, skip it.
+            if bi is None or bj is None:
+                continue
 
-                # Skip if product index is not valid
-                if sp_pi < 0:
-                    continue
+            sp_pi = self.telescope.feedmap[bi, bj]
+            feedconj = self.telescope.feedconj[bi, bj]
 
-                # Generate weight
-                if self.weight == "inverse_variance":
-                    wss = ssw.local_array[freq_ind_loc, ss_pi]
+            # Skip if product index is not valid
+            if sp_pi < 0:
+                continue
 
-                else:
-                    wss = (ssw.local_array[freq_ind_loc, ss_pi] > 0.0).astype(
-                        np.float32
-                    )
-                    wss[:] *= nprod_in_stack[np.newaxis, ss_pi, :]
+            # Generate weight
+            if self.weight == "inverse_variance":
+                # wss = ssw.local_array[freq_ind, ss_pi]
+                wss = sswa[freq_ind, :]
 
-                # Accumulate visibilities, conjugating if required
-                if feedconj == conj:
-                    spv.local_array[:, sp_pi] += (
-                        wss * ssv.local_array[freq_ind_loc, ss_pi]
-                    )
-                else:
-                    spv.local_array[:, sp_pi] += (
-                        wss * ssv.local_array[freq_ind_loc, ss_pi].conj()
-                    )
+            else:
+                wss = (sswa[freq_ind, :] > 0.0).astype(np.float32)
+                wss[:] *= nprod_in_stack[np.newaxis, ss_pi, :]
 
-                # Accumulate variances in quadrature.  Save in the weight dataset.
-                spw.local_array[:, sp_pi] += wss**2 * tools.invert_no_zero(
-                    ssw.local_array[freq_ind_loc, ss_pi]
-                )
+            # Accumulate visibilities, conjugating if required
+            if feedconj == conj:
+                spva[:] += wss * ssva[freq_ind, :]
+            else:
+                spva[:] += wss * ssva[freq_ind, :].conj()
 
-                # Increment counter
-                counter.local_array[:, sp_pi] += wss
+            # Accumulate variances in quadrature.  Save in the weight dataset.
+            spwa[:] += wss**2 * tools.invert_no_zero(sswa[freq_ind, :])
+
+            # Increment counter
+            counter[:] += wss
 
         # Divide through by counter to get properly weighted visibility average
         sp.vis[:] *= tools.invert_no_zero(counter)
@@ -326,7 +323,7 @@ class CollateProducts(task.SingleTask):
             ss,
             sp,
             "freq",
-            freq_ind_loc,
+            freq_ind,
             ["input", "prod", "stack"],
             allow_distributed=True,
         )
