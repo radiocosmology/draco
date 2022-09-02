@@ -283,7 +283,6 @@ class LoadFITSCatalog(task.SingleTask):
         catalog : :class:`containers.SpectroscopicCatalog`
         """
 
-        from astropy.io import fits
         from . import containers
 
         # Exit this task if we have eaten all the file groups
@@ -311,16 +310,7 @@ class LoadFITSCatalog(task.SingleTask):
 
                 self.log.debug("Loading file %s", cfile)
 
-                # TODO: read out the weights from the catalogs
-                with fits.open(cfile, mode="readonly") as cat:
-                    pos = np.array([cat[1].data[col] for col in ["RA", "DEC", "Z"]])
-
-                # Apply any redshift selection to the objects
-                if self.z_range:
-                    zsel = (pos[2] >= self.z_range[0]) & (pos[2] <= self.z_range[1])
-                    pos = pos[:, zsel]
-
-                catalog_stack.append(pos)
+                catalog_stack.append(self._parse_file(cfile))
 
             # NOTE: this one is tricky, for some reason the concatenate in here
             # produces a non C contiguous array, so we need to ensure that otherwise
@@ -351,6 +341,79 @@ class LoadFITSCatalog(task.SingleTask):
         catalog.attrs["tag"] = group["tag"]
 
         return catalog
+
+    def _parse_file(self, cfile):
+
+        from astropy.io import fits
+
+        # TODO: read out the weights from the catalogs
+        with fits.open(cfile, mode="readonly") as cat:
+            pos = np.array([cat[1].data[col] for col in ["RA", "DEC", "Z"]])
+
+        # Apply any redshift selection to the objects
+        if self.z_range:
+            zsel = (pos[2] >= self.z_range[0]) & (pos[2] <= self.z_range[1])
+            pos = pos[:, zsel]
+
+        return pos
+
+
+class LoadFITSCatalogDLA(LoadFITSCatalog):
+    """Load DLA positions from an SDSS-style FITS source catalog.
+
+    Catalogs are given as one, or a list of `File Groups` (see
+    :mod:`draco.core.io`). Catalogs within the same group are combined together
+    before being passed on.
+
+    Attributes
+    ----------
+    catalogs : list or dict
+        A dictionary specifying a file group, or a list of them.
+    z_range : list, optional
+        Select only sources with a redshift within the given range.
+    freq_range : list, optional
+        Select only sources with a 21cm line freq within the given range. Overrides
+        `z_range`.
+    """
+
+    def _parse_file(self, cfile):
+
+        from astropy.io import fits
+
+        with fits.open(cfile, mode="readonly") as cat:
+            pos = np.array(
+                [cat[1].data[col] for col in ["RA", "DEC"]], dtype=np.float64
+            ).T
+            pos = np.ascontiguousarray(pos).view(
+                [("ra", np.float64), ("dec", np.float64)]
+            )
+            z = np.ascontiguousarray(cat[1].data["Z_DLA"][:])
+
+        # identify quasars with DLAs
+        has_dla = (z != -1).sum(axis=-1) > 0
+
+        # expand position array to cover redshift axis
+        pos = np.tile(pos[has_dla], (1, z.shape[1]))
+
+        # pick out cells with a DLA and collapse axes
+        is_dla = np.where(z[has_dla] != -1)
+        z = z[has_dla][is_dla]
+        pos = pos[is_dla]
+
+        # Apply any redshift selection to the objects
+        zsel = slice(None)
+        n = z.shape[0]
+        if self.z_range:
+            zsel = (z >= self.z_range[0]) & (z <= self.z_range[1])
+            n = np.sum(zsel)
+
+        # return an array with the expected shape
+        out = np.zeros((3, n), dtype=np.float64)
+        out[0, :] = pos["ra"][zsel]
+        out[1, :] = pos["dec"][zsel]
+        out[2, :] = z[zsel]
+
+        return out
 
 
 class LoadFITSDelta(task.SingleTask):
