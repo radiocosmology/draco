@@ -4,7 +4,7 @@ This includes data quality flagging on timestream data; sun excision on sidereal
 data; and pre-map making flagging on m-modes.
 """
 
-from typing import Union
+from typing import Union, overload
 import warnings
 import numpy as np
 import scipy.signal
@@ -957,30 +957,44 @@ class RFIMask(task.SingleTask):
         channel to be flagged.
     stack_ind : int
         Which stack to process to derive flags for the whole dataset.
-    destripe : bool, optional
-        Deprecated option to remove the striping.
     """
 
     sigma = config.Property(proptype=float, default=5.0)
     tv_fraction = config.Property(proptype=float, default=0.5)
     stack_ind = config.Property(proptype=int)
-    destripe = config.Property(proptype=bool, default=False)
 
-    def process(self, sstream):
+    @overload
+    def process(self, sstream: containers.SiderealStream) -> containers.SiderealRFIMask:
+        ...
+
+    @overload
+    def process(self, sstream: containers.TimeStream) -> containers.RFIMask:
+        ...
+
+    def process(
+        self, sstream: Union[containers.TimeStream, containers.SiderealStream]
+    ) -> Union[containers.RFIMask, containers.SiderealRFIMask]:
         """Apply a day time mask.
 
         Parameters
         ----------
-        sstream : containers.SiderealStream
-            Unmasked sidereal stack.
+        sstream
+            Unmasked sidereal or time stream visibility data.
 
         Returns
         -------
-        mstream : containers.SiderealStream
-            Masked sidereal stream.
+        mask
+            The derived RFI mask.
         """
 
-        sstream.redistribute("stack")
+        # Select the correct mask type depending on if we have sidereal data or not
+        output_type = (
+            containers.SiderealRFIMask
+            if "ra" in sstream.index_map
+            else containers.RFIMask
+        )
+
+        sstream.redistribute(["stack", "prod"])
 
         ssv = sstream.vis[:]
         ssw = sstream.weight[:]
@@ -995,7 +1009,8 @@ class RFIMask(task.SingleTask):
             "Rank %i has the requested index %i", rank_with_ind, self.stack_ind
         )
 
-        newmask = np.zeros((ssv.shape[0], ssv.shape[2]), dtype=np.bool)
+        mask_cont = output_type(copy_from=sstream)
+        mask = mask_cont.mask[:]
 
         # Get the rank with stack to create the new mask
         if sstream.comm.rank == rank_with_ind:
@@ -1020,25 +1035,17 @@ class RFIMask(task.SingleTask):
             )
 
             # Construct the new mask
-            newmask[:] = tvmask | (maddev > self.sigma)
+            mask[:] = tvmask | (maddev > self.sigma)
 
         # Broadcast the new flags to all ranks and then apply
-        sstream.comm.Bcast(newmask, root=rank_with_ind)
-        ssw[:] *= (~newmask)[:, np.newaxis, :]
+        sstream.comm.Bcast(mask, root=rank_with_ind)
 
         self.log.info(
             "Flagging %0.2f%% of data due to RFI."
-            % (100.0 * np.sum(newmask) / float(newmask.size))
+            % (100.0 * np.sum(mask) / float(mask.size))
         )
 
-        # Remove the time average of the data. Should probably do this elsewhere to be
-        # honest
-        if self.destripe:
-            self.log.info("Destriping the data. This option is deprecated.")
-            weight_cut = 1e-4 * ssw.mean()  # Ignore samples with small weights
-            ssv[:] = destripe(ssv, ssw > weight_cut)
-
-        return sstream
+        return mask_cont
 
 
 class ApplyRFIMask(task.SingleTask):
