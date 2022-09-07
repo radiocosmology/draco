@@ -254,7 +254,7 @@ class MaskBaselines(task.SingleTask):
         if self.missing_threshold is not None:
             # Get the total number of samples for each baseline accumulated onto each
             # rank
-            nsamp_local = (ss.weight[:] > 0).sum(axis=-1).sum(axis=0)
+            nsamp_local = (ss.weight[:].local_array > 0).sum(axis=-1).sum(axis=0)
             nsamp_tot = np.zeros_like(nsamp_local)
             self.comm.Allreduce(nsamp_local, nsamp_tot, op=MPI.SUM)
 
