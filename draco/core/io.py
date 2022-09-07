@@ -382,13 +382,13 @@ class BaseLoadFiles(task.SingleTask):
         """Resolve the selections."""
         self._sel = self._resolve_sel()
 
-    def _load_file(self, filename):
+    def _load_file(self, filename, extra_message=""):
         # Load the file into the relevant container
 
         if not os.path.exists(filename):
             raise RuntimeError(f"File does not exist: {filename}")
 
-        self.log.info(f"Loading file {filename}")
+        self.log.info(f"Loading file {filename} {extra_message}")
         self.log.debug(f"Reading with selections: {self._sel}")
 
         # If we are applying selections we need to dispatch the `from_file` via the
@@ -480,6 +480,8 @@ class LoadFilesFromParams(BaseLoadFiles):
 
     files = config.Property(proptype=_list_or_glob)
 
+    _file_ind = 0
+
     def process(self):
         """Load the given files in turn and pass on.
 
@@ -493,20 +495,24 @@ class LoadFilesFromParams(BaseLoadFiles):
 
         gc.collect()
 
-        if len(self.files) == 0:
+        if self._file_ind == len(self.files):
             raise pipeline.PipelineStopIteration
 
         # Fetch and remove the first item in the list
-        file_ = self.files.pop(0)
+        file_ = self.files[self._file_ind]
 
         # Load into a container
-        cont = self._load_file(file_)
+        nfiles_str = str(len(self.files))
+        message = f"[{self._file_ind + 1: {len(nfiles_str)}}/{nfiles_str}]"
+        cont = self._load_file(file_, extra_message=message)
 
         if "tag" not in cont.attrs:
             # Get the first part of the actual filename and use it as the tag
             tag = os.path.splitext(os.path.basename(file_))[0]
 
             cont.attrs["tag"] = tag
+
+        self._file_ind += 1
 
         return cont
 
