@@ -469,7 +469,7 @@ class PdfGeneratorWithSelectionFunction(PdfGeneratorBase):
         # first, sum over selfunc pixel values at each z (z_weights),
         # then sum these over all z (z_weights_sum).
         z_weights = selfunc_local.sum(axis=1)
-        z_weights_sum = self.comm.allreduce(z_weights.sum())
+        z_weights_sum = z_weights.sum().allreduce()
 
         # Normalize z_weights by grand total
         z_weights = mpiarray.MPIArray.wrap(z_weights / z_weights_sum, axis=0)
