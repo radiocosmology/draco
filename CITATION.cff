@@ -1,0 +1,61 @@
+cff-version: 1.2.0
+title: draco
+message: >-
+  If you use this software, please cite it using the
+  metadata from this file.
+type: software
+doi: "10.5281/zenodo.5828372"
+repository-code: "https://github.com/radiocosmology/draco"
+abstract: >-
+  A pipeline for the analysis and simulation of drift scan radio data. It is being used
+  as part of the analysis and simulation pipeline for CHIME though is (and will remain)
+  telescope agnostic.
+license: MIT
+authors:
+
+- given-names: "J. Richard"
+  family-names: "Shaw"
+  affiliation: "University of British Columbia"
+  orcid: "https://orcid.org/0000-0002-4543-4588"
+
+- given-names: "Rick"
+  family-names: "Nitsche"
+  affiliation: "University of British Columbia"
+
+- given-names: "Seth R."
+  family-names: "Siegel"
+  affiliation: "McGill University"
+  orcid: "https://orcid.org/0000-0003-2631-6217"
+
+- given-names: "Tristan"
+  family-names: "Pinsonneault-Marotte"
+  affiliation: "University of British Columbia"
+  orcid: "https://orcid.org/0000-0002-9516-3245"
+
+- given-names: "Mateus"
+  family-names: "Fandino"
+  affiliation: "Thompson Rivers University"
+  orcid: "https://orcid.org/0000-0002-6899-1176"
+
+- given-names: "Anja"
+  family-names: "Boskovic"
+  affiliation: "University of British Columbia"
+
+- given-names: "Liam"
+  family-names: "Gray"
+  affiliation: "University of British Columbia"
+  orcid: "https://orcid.org/0000-0003-3986-954X"
+
+- given-names: "Simon"
+  family-names: "Foreman"
+  affiliation: "Arizona State University"
+  orcid: "https://orcid.org/0000-0002-0190-2271"
+
+- given-names: "Juan Mena"
+  family-names: "Parra"
+  affiliation: "MIT"
+  orcid: "https://orcid.org/0000-0002-0772-9326"
+
+- given-names: "Carolin"
+  family-names: "Höfer"
+  affiliation: "University of British Columbia"
