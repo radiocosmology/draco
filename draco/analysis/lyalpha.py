@@ -250,7 +250,7 @@ class SelectField(task.SingleTask):
             ra, dec = formed["position"]["ra"], formed["position"]["dec"]
 
             # convert to spherical coords
-            phi, theta = ra, 0.5 * np.pi - dec
+            phi, theta = np.radians(ra), 0.5 * np.pi - np.radians(dec)
 
             # rotate to galactic
             gal = _cel2gal(np.array((theta, phi)).T)
