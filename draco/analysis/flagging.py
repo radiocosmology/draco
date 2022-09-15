@@ -199,6 +199,7 @@ class MaskBaselines(task.SingleTask):
     mask_short_ew = config.Property(proptype=float, default=None)
     mask_short_ns = config.Property(proptype=float, default=None)
 
+    weight_threshold = config.Property(proptype=float, default=None)
     missing_threshold = config.Property(proptype=float, default=None)
 
     zero_data = config.Property(proptype=bool, default=False)
@@ -233,23 +234,36 @@ class MaskBaselines(task.SingleTask):
         ss.redistribute("freq")
 
         baselines = self.telescope.baselines
+
+        # The masking array. True will *retain* a sample
         mask = np.ones_like(ss.weight[:], dtype=bool)
 
         if self.mask_long_ns is not None:
             long_ns_mask = np.abs(baselines[:, 1]) < self.mask_long_ns
-            mask *= long_ns_mask[np.newaxis, :, np.newaxis]
+            mask &= long_ns_mask[np.newaxis, :, np.newaxis]
 
         if self.mask_short is not None:
             short_mask = np.sum(baselines**2, axis=1) ** 0.5 > self.mask_short
-            mask *= short_mask[np.newaxis, :, np.newaxis]
+            mask &= short_mask[np.newaxis, :, np.newaxis]
 
         if self.mask_short_ew is not None:
             short_ew_mask = np.abs(baselines[:, 0]) > self.mask_short_ew
-            mask *= short_ew_mask[np.newaxis, :, np.newaxis]
+            mask &= short_ew_mask[np.newaxis, :, np.newaxis]
 
         if self.mask_short_ns is not None:
             short_ns_mask = np.abs(baselines[:, 1]) > self.mask_short_ns
-            mask *= short_ns_mask[np.newaxis, :, np.newaxis]
+            mask &= short_ns_mask[np.newaxis, :, np.newaxis]
+
+        if self.weight_threshold is not None:
+            # Get the sum of the weights over frequencies
+            weight_sum_local = ss.weight[:].local_array.sum(axis=0)
+            weight_sum_tot = np.zeros_like(weight_sum_local)
+            self.comm.Allreduce(weight_sum_local, weight_sum_tot, op=MPI.SUM)
+
+            # Retain only baselines with average weights larger than the threshold
+            mask &= weight_sum_tot[np.newaxis, :, :] > self.weight_threshold * len(
+                ss.freq
+            )
 
         if self.missing_threshold is not None:
             # Get the total number of samples for each baseline accumulated onto each
