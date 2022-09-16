@@ -236,23 +236,23 @@ class MaskBaselines(task.SingleTask):
         baselines = self.telescope.baselines
 
         # The masking array. True will *retain* a sample
-        mask = np.ones_like(ss.weight[:], dtype=bool)
+        mask = np.zeros_like(ss.weight[:], dtype=bool)
 
         if self.mask_long_ns is not None:
-            long_ns_mask = np.abs(baselines[:, 1]) < self.mask_long_ns
-            mask &= long_ns_mask[np.newaxis, :, np.newaxis]
+            long_ns_mask = np.abs(baselines[:, 1]) > self.mask_long_ns
+            mask |= long_ns_mask[np.newaxis, :, np.newaxis]
 
         if self.mask_short is not None:
-            short_mask = np.sum(baselines**2, axis=1) ** 0.5 > self.mask_short
-            mask &= short_mask[np.newaxis, :, np.newaxis]
+            short_mask = np.sum(baselines**2, axis=1) ** 0.5 < self.mask_short
+            mask |= short_mask[np.newaxis, :, np.newaxis]
 
         if self.mask_short_ew is not None:
-            short_ew_mask = np.abs(baselines[:, 0]) > self.mask_short_ew
-            mask &= short_ew_mask[np.newaxis, :, np.newaxis]
+            short_ew_mask = np.abs(baselines[:, 0]) < self.mask_short_ew
+            mask |= short_ew_mask[np.newaxis, :, np.newaxis]
 
         if self.mask_short_ns is not None:
-            short_ns_mask = np.abs(baselines[:, 1]) > self.mask_short_ns
-            mask &= short_ns_mask[np.newaxis, :, np.newaxis]
+            short_ns_mask = np.abs(baselines[:, 1]) < self.mask_short_ns
+            mask |= short_ns_mask[np.newaxis, :, np.newaxis]
 
         if self.weight_threshold is not None:
             # Get the sum of the weights over frequencies
@@ -261,7 +261,7 @@ class MaskBaselines(task.SingleTask):
             self.comm.Allreduce(weight_sum_local, weight_sum_tot, op=MPI.SUM)
 
             # Retain only baselines with average weights larger than the threshold
-            mask &= weight_sum_tot[np.newaxis, :, :] > self.weight_threshold * len(
+            mask |= weight_sum_tot[np.newaxis, :, :] < self.weight_threshold * len(
                 ss.freq
             )
 
@@ -274,9 +274,9 @@ class MaskBaselines(task.SingleTask):
 
             # Mask out baselines with more that `missing_threshold` samples missing
             baseline_missing_ratio = 1 - nsamp_tot / nsamp_tot.max()
-            mask &= (
+            mask |= (
                 baseline_missing_ratio[np.newaxis, :, np.newaxis]
-                < self.missing_threshold
+                > self.missing_threshold
             )
 
         if self.share == "all":
@@ -287,10 +287,15 @@ class MaskBaselines(task.SingleTask):
             ssc = ss.copy()
 
         # Apply the mask to the weight
-        ssc.weight[:] *= mask
+        np.multiply(
+            ssc.weight[:].local_array, 0.0, where=mask, out=ssc.weight[:].local_array
+        )
+
         # Apply the mask to the data
         if self.zero_data:
-            ssc.vis[:] *= mask
+            np.multiply(
+                ssc.vis[:].local_array, 0.0, where=mask, out=ssc.vis[:].local_array
+            )
 
         return ssc
 
