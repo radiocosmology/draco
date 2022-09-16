@@ -11,12 +11,16 @@ from ..util import _fast_tools
 
 
 def band_wiener(R, Ni, Si, y, bw):
-    """Calculate the Wiener filter assuming various bandedness properties.
+    r"""Calculate the Wiener filter assuming various bandedness properties.
 
     In particular this asserts that a particular element in the filtered
     output will only couple to the nearest `bw` elements. Equivalently, this
     is that the covariance matrix will be band diagonal. This allows us to use
     fast routines to generate the solution.
+
+    Note that the inverse noise estimate returned is :math:`\mathrm{diag}(\mathbf{R}^T
+    \mathbf{N}^{-1} \mathbf{R})` and not the full Bayesian estimate including a
+    contribution from the signal covariance.
 
     Parameters
     ----------
@@ -25,7 +29,8 @@ def band_wiener(R, Ni, Si, y, bw):
     Ni : np.ndarray[k, n]
         Inverse noise matrix. Noise assumed to be uncorrelated (i.e. diagonal matrix).
     Si : np.narray[m]
-        Inverse signal matrix. Signal model assumed to be uncorrelated (i.e. diagonal matrix).
+        Inverse signal matrix. Signal model assumed to be uncorrelated (i.e. diagonal
+        matrix).
     y : np.ndarray[k, n]
         Data to apply to.
     bw : int
@@ -70,12 +75,16 @@ def band_wiener(R, Ni, Si, y, bw):
         # Calculate the Wiener noise weighting (i.e. inverse covariance)
         Ci = _fast_tools._band_wiener_covariance(R, Ni_ki, start_ind, end_ind, bw)
 
+        # Set the noise estimate before adding in the signal contribution. This avoids
+        # the issue that the inverse-noise estimate becomes non-zero even when the data
+        # was entirely missing
+        nw[ki] = Ci[-1]
+
         # Add on the signal covariance part
         Ci[-1] += Si
 
         # Solve for the Wiener estimate
         xh[ki] = la.solveh_banded(Ci, xh[ki])
-        nw[ki] = Ci[-1]
 
     return xh, nw
 
