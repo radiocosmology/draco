@@ -214,6 +214,20 @@ class AccumulateList(task.MPILoggedTask):
         return items
 
 
+class MakeCopy(task.SingleTask):
+    """Make a copy of the passed container."""
+
+    def process(self, data):
+        """Return a copy of the given container.
+        Parameters
+        ----------
+        data : containers.ContainerBase
+            The container to copy.
+        """
+
+        return data.copy()
+
+
 class WaitUntil(task.MPILoggedTask):
     """Wait until the the requires before forwarding inputs.
 
