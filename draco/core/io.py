@@ -365,6 +365,9 @@ class BaseLoadFiles(task.SingleTask):
         Convert strings to unicode when loading.
     selections : dict, optional
         A dictionary of axis selections. See the section below for details.
+    redistribute : str, optional
+        An optional axis name to redistribute the container over after it has
+        been read.
 
     Selections
     ----------
@@ -393,6 +396,7 @@ class BaseLoadFiles(task.SingleTask):
     distributed = config.Property(proptype=bool, default=True)
     convert_strings = config.Property(proptype=bool, default=True)
     selections = config.Property(proptype=dict, default=None)
+    redistribute = config.Property(proptype=str, default=None)
 
     def setup(self):
         """Resolve the selections."""
@@ -430,6 +434,9 @@ class BaseLoadFiles(task.SingleTask):
             convert_dataset_strings=self.convert_strings,
             **self._sel,
         )
+
+        if self.redistribute is not None:
+            cont.redistribute(self.redistribute)
 
         return cont
 
