@@ -96,18 +96,35 @@ def _list_or_glob(files: Union[str, List[str]]) -> List[str]:
     """
     import glob
 
-    if isinstance(files, str):
-        if "*" not in files and not os.path.isfile(files):
-            raise ConfigError("File not found: %s" % files)
-        files = sorted(glob.glob(files))
-    elif isinstance(files, list):
+    # If the input was a list, process each element and return as a single flat list
+    if isinstance(files, list):
         parsed_files = []
         for f in files:
             parsed_files = parsed_files + _list_or_glob(f)
-        files = parsed_files
-    else:
-        raise ConfigError("Argument must be list or glob pattern, got %s" % repr(files))
-    return files
+        return parsed_files
+
+    # If it's a glob we need to expand the glob and then call again
+    if isinstance(files, str) and "*" in files:
+        return _list_or_glob(sorted(glob.glob(files)))
+
+    # We presume a string is an actual path...
+    if isinstance(files, str):
+
+        # Check that it exists and is a file (or dir if zarr format)
+        if files.endswith("zarr"):
+            if not os.path.isdir(files):
+                raise ConfigError(
+                    f"Expecting a zarr container, but directory not found: {files}"
+                )
+            return [files]
+        else:
+            if not os.path.isfile(files):
+                raise ConfigError("File not found: %s" % files)
+            return [files]
+
+    raise ConfigError(
+        "Argument must be list, glob pattern, or file path, got %s" % repr(files)
+    )
 
 
 def _list_of_filegroups(groups: Union[List[Dict], Dict]) -> List[Dict]:
