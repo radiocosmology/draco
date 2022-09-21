@@ -24,12 +24,11 @@ Several tasks accept groups of files as arguments. These are specified in the YA
 """
 import os.path
 
-import h5py
 import numpy as np
 from typing import Union, Dict, List
 from yaml import dump as yamldump
 
-from caput import pipeline, config, memh5, truncate
+from caput import pipeline, config, fileformats, memh5, truncate
 
 from cora.util import units
 
@@ -397,7 +396,7 @@ class BaseLoadFiles(task.SingleTask):
         # rank=0 and is then broadcast
         if self._sel:
             if self.comm.rank == 0:
-                with h5py.File(filename, "r") as fh:
+                with fileformats.guess_file_format(filename).open(filename, "r") as fh:
                     clspath = memh5.MemDiskGroup._detect_subclass_path(fh)
             else:
                 clspath = None
