@@ -1780,3 +1780,69 @@ class BlendStack(task.SingleTask):
             dset *= tools.invert_no_zero(weight)
 
         return data
+
+
+class ThresholdVisWeightBaseline(task.SingleTask):
+    """Set any weight less than the user specified threshold equal to zero.
+
+    Threshold is determined as `maximum(absolute_threshold,
+    relative_threshold * mean(weight))` and is evaluated per product/stack
+    entry. This cannot be represented as an RFI mask and so the results are
+    applied in place.
+
+    This is the same as the previous version of `ThresholdVisWeight`, prior to
+    `PR 185 <https://github.com/radiocosmology/draco/pull/185/>`_.
+
+    Parameters
+    ----------
+    absolute_threshold : float
+        Any weights with values less than this number will be set to zero.
+    relative_threshold : float
+        Any weights with values less than this number times the average weight
+        will be set to zero.
+    """
+
+    absolute_threshold = config.Property(proptype=float, default=1e-7)
+    relative_threshold = config.Property(proptype=float, default=0.0)
+
+    def process(self, timestream):
+        """Apply threshold to `weight` dataset.
+
+        Parameters
+        ----------
+        timestream : `.core.container` with `weight` attribute
+
+        Returns
+        -------
+        timestream : same as input timestream
+            The input container with modified weights.
+        """
+        from mpi4py import MPI
+
+        timestream.redistribute(["prod", "stack"])
+
+        weight = timestream.weight[:]
+
+        # Average over the frequency and time axes to get a per baseline
+        # average
+        mean_weight = weight.mean(axis=2).mean(axis=0)
+
+        # Figure out which entries to keep
+        threshold = np.maximum(
+            self.absolute_threshold, self.relative_threshold * mean_weight
+        )
+        keep = weight > threshold[np.newaxis, :, np.newaxis]
+        keep_sum = np.sum(keep)
+        keep_total = np.zeros_like(keep_sum)
+
+        timestream.comm.Allreduce(keep_sum, keep_total, op=MPI.SUM)
+        keep_frac = keep_total / float(np.prod(weight.global_shape))
+
+        self.log.info(
+            "%0.5f%% of data is below the weight threshold"
+            % (100.0 * (1.0 - keep_frac))
+        )
+
+        timestream.weight[:] = np.where(keep, weight, 0.0)
+
+        return timestream
