@@ -1648,10 +1648,19 @@ class BlendStack(task.SingleTask):
     match_median : bool, optional
         Estimate the median in the time/RA direction from the common samples and use
         this to match any quasi time-independent bias of the data (e.g. cross talk).
+    subtract : bool, optional
+        Rather than taking an average, instead subtract out the blending stack
+        from the input data in the common samples to calculate the difference
+        between them. The interpretation of `frac` is a scaling of the inverse
+        variance of the stack to an inverse variance of a prior on the
+        difference, e.g. a `frac = 1e-4` means that we expect the standard
+        deviation of the difference between the data and the stacked data to be
+        100x larger than the noise of the stacked data.
     """
 
     frac = config.Property(proptype=float, default=1e-4)
     match_median = config.Property(proptype=bool, default=True)
+    subtract = config.Property(proptype=bool, default=False)
 
     def setup(self, data_stack):
         """Set the stacked data.
@@ -1747,11 +1756,27 @@ class BlendStack(task.SingleTask):
         else:
             stack_offset = 0
 
-        # Perform a weighted average of the data
-        dset *= weight
-        dset += weight_stack * self.frac * (dset_stack + stack_offset)
-        weight += weight_stack * self.frac
+        if self.subtract:
+            # Subtract the base stack where data is present, otherwise give zeros
 
-        dset *= tools.invert_no_zero(weight)
+            dset -= dset_stack + stack_offset
+            dset *= (weight > 0).astype(np.float32)
+
+            # This sets the weights where weight == 0 to frac * weight_stack,
+            # otherwise weight is the sum of the variances. It's a bit obscure
+            # because it attempts to do the operations in place rather than
+            # building many temporaries
+            weight *= tools.invert_no_zero(weight + weight_stack)
+            weight += (weight == 0) * self.frac
+            weight *= weight_stack
+
+        else:
+
+            # Perform a weighted average of the data to fill in missing samples
+            dset *= weight
+            dset += weight_stack * self.frac * (dset_stack + stack_offset)
+            weight += weight_stack * self.frac
+
+            dset *= tools.invert_no_zero(weight)
 
         return data
