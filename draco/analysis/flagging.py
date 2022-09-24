@@ -11,7 +11,6 @@ from typing import Union, overload
 import warnings
 import numpy as np
 import scipy.signal
-from scipy.ndimage import median_filter
 
 from caput import config, weighted_median, mpiarray
 
@@ -678,50 +677,56 @@ class SmoothVisWeight(task.SingleTask):
 
     Attributes
     ----------
-    kernel_size : int
+    kernel_size : int, optional
         Size of the kernel for the median filter in time points.
         Default is 31, corresponding to ~5 minutes window for 10s cadence data.
-
+    mask_zeros : bool, optional
+        Mask out zero-weight entries when taking the moving weighted median.
     """
 
     # 31 time points correspond to ~ 5min in 10s cadence
     kernel_size = config.Property(proptype=int, default=31)
+    mask_zeros = config.Property(proptype=bool, default=False)
 
-    def process(self, data):
+    def process(self, data: containers.TimeStream) -> containers.TimeStream:
         """Smooth the weights with a median filter.
 
         Parameters
         ----------
-        data : :class:`andata.CorrData` or :class:`containers.TimeStream` object
+        data
             Data containing the weights to be smoothed
 
         Returns
         -------
-        data : Same object as data
+        data
             Data object containing the same data as the input, but with the
             weights substituted by the smoothed ones.
         """
-
-        # Ensure data is distributed in frequency:
+        # Ensure data is distributed in frequency,
+        # so a frequency loop will not be too large.
         data.redistribute("freq")
-        # Full slice reutrns an MPIArray
-        weight = data.weight[:]
-        # Data will be distributed in frequency.
-        # So a frequency loop will not be too large.
 
-        weight_local = weight.local_array
+        weight_local = data.weight[:].local_array
 
-        for lfi, gfi in weight.enumerate(axis=0):
-            # MPIArray takes the local index, returns a local np.ndarray
+        for i in range(weight_local.shape[0]):
             # Find values equal to zero to preserve them in final weights
-            zeromask = weight_local[lfi] == 0.0
-            # Median filter. Mode='nearest' to prevent steps close to
-            # the end from being washed
-            weight_local[lfi] = median_filter(
-                weight_local[lfi], size=(1, self.kernel_size), mode="nearest"
+            zeromask = weight_local[i] == 0.0
+
+            # moving_weighted_median wants float64-type weights
+            if self.mask_zeros:
+                mask = (weight_local[i] > 0.0).astype(np.float64)
+            else:
+                mask = np.ones_like(weight_local[i], dtype=np.float64)
+
+            weight_local[i] = weighted_median.moving_weighted_median(
+                data=weight_local[i],
+                weights=mask,
+                size=(1, self.kernel_size),
+                method="split",
             )
+
             # Ensure zero values are zero
-            weight_local[lfi][zeromask] = 0.0
+            weight_local[i][zeromask] = 0.0
 
         return data
 
