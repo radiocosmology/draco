@@ -571,6 +571,68 @@ def highpass_delay_filter(freq, tau_cut, flag, epsilon=1e-12):
     return pinv, index
 
 
+def bandpass_delay_filter(freq, tau_cuts, flag, tau_centers=None, epsilon=1e-12):
+    """Construct a high-pass delay filter.
+
+    The stop band will range from [tau_center-tau_cut, tau_center+tau_cut].
+
+    Parameters
+    ----------
+    freq : np.ndarray[nfreq,]
+        Frequency in MHz.
+    tau_cut : float or squence of float
+        The half width of the stop band in micro-seconds.
+    flag : np.ndarray[nfreq, ntime]
+        Boolean flag that indicates what frequencies are valid
+        as a function of time.
+    tau_center : float or squence of float, optional
+        Center of stop band in micro-seconds.
+    epsilon : float, optional
+        The stop-band rejection of the filter.  Defaults to 1e-12.
+
+    Returns
+    -------
+    pinv : np.ndarray[ntime_uniq, nfreq, nfreq]
+        High pass delay filter for each set of unique frequency flags.
+    index : list of length ntime_uniq
+        Maps the first axis of pinv to the original time axis.
+        Apply pinv[i] to the time samples at index[i].
+    """
+
+    ishp = flag.shape
+    nfreq = freq.size
+    assert ishp[0] == nfreq, "Flag axis=0 not equal to number freq"
+    assert len(ishp) == 2, f"Flag dimension is {len(ishp)}, not 2"
+
+    cov = np.eye(nfreq, dtype=np.float64)
+    freq_diffs = freq[:, np.newaxis] - freq[np.newaxis, :]
+
+    if tau_centers is not None:
+        ltcut = len(tau_cuts)
+        ltcent = len(tau_centers)
+        assert ltcut == ltcent, f"# tau_cuts {ltcut} != # tau_centers {ltcent}"
+        for tau_cut, tau_center in zip(tau_cuts, tau_centers):
+            cov += (
+                np.exp(-2j * np.pi * tau_center * freq_diffs * tau_cut)
+                * np.sinc(2.0 * tau_cut * freq_diffs)
+                / epsilon
+            )
+    else:
+        cov += np.sinc(2.0 * tau_cut * freq_diffs) / epsilon
+
+    uflag, uindex = np.unique(flag.reshape(nfreq, -1), return_inverse=True, axis=-1)
+    uflag = uflag.T
+    uflag = uflag[:, np.newaxis, :] & uflag[:, :, np.newaxis]
+    uflag = uflag.astype(np.float64)
+
+    ucov = uflag * cov[np.newaxis, :, :]
+
+    pinv = np.linalg.pinv(ucov, hermitian=True) * uflag
+    index = [np.flatnonzero(uindex == uu) for uu in range(pinv.shape[0])]
+
+    return pinv, index
+
+
 def bandpass_mmode_filter(ra, m_center, m_cut, flag, epsilon=1e-10):
     """Construct a bandpass m-mode filter.
 
