@@ -1287,7 +1287,7 @@ class SystemSensitivity(FreqContainer, TODContainer):
 
 
 class RFIMask(FreqContainer, TODContainer):
-    """A container for holding RFI mask.
+    """A container for holding an RFI mask for a timestream.
 
     The mask is `True` for contaminated samples that should be excluded, and
     `False` for clean samples.
@@ -1309,7 +1309,7 @@ class RFIMask(FreqContainer, TODContainer):
 
 
 class SiderealRFIMask(FreqContainer, SiderealContainer):
-    """A container for holding RFI mask.
+    """A container for holding an RFI mask for a sidereal stream..
 
     The mask is `True` for contaminated samples that should be excluded, and
     `False` for clean samples.
