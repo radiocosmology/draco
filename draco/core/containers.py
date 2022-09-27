@@ -1309,7 +1309,7 @@ class RFIMask(FreqContainer, TODContainer):
 
 
 class SiderealRFIMask(FreqContainer, SiderealContainer):
-    """A container for holding an RFI mask for a sidereal stream..
+    """A container for holding an RFI mask for a sidereal stream.
 
     The mask is `True` for contaminated samples that should be excluded, and
     `False` for clean samples.
@@ -1328,6 +1328,68 @@ class SiderealRFIMask(FreqContainer, SiderealContainer):
     @property
     def mask(self):
         return self.datasets["mask"]
+
+
+class BaselineMask(FreqContainer, TODContainer):
+    """A container for holding a baseline-dependent mask for a timestream.
+
+    The mask is `True` for contaminated samples that should be excluded, and
+    `False` for clean samples.
+
+    Unlike RFIMask, this is distributed by default.
+    """
+
+    _axes = ("stack",)
+
+    _dataset_spec = {
+        "mask": {
+            "axes": ["freq", "stack", "time"],
+            "dtype": bool,
+            "initialise": True,
+            "distributed": True,
+            "distributed_axis": "freq",
+        }
+    }
+
+    @property
+    def mask(self):
+        return self.datasets["mask"]
+
+    @property
+    def stack(self):
+        """The stack definition as an index (and conjugation) of a member product."""
+        return self.index_map["stack"]
+
+
+class SiderealBaselineMask(FreqContainer, SiderealContainer):
+    """A container for holding a baseline-dependent mask for a sidereal stream.
+
+    The mask is `True` for contaminated samples that should be excluded, and
+    `False` for clean samples.
+
+    Unlike SiderealRFIMask, this is distributed by default.
+    """
+
+    _axes = ("stack",)
+
+    _dataset_spec = {
+        "mask": {
+            "axes": ["freq", "stack", "ra"],
+            "dtype": bool,
+            "initialise": True,
+            "distributed": True,
+            "distributed_axis": "freq",
+        }
+    }
+
+    @property
+    def mask(self):
+        return self.datasets["mask"]
+
+    @property
+    def stack(self):
+        """The stack definition as an index (and conjugation) of a member product."""
+        return self.index_map["stack"]
 
 
 class TimeStream(FreqContainer, VisContainer, TODContainer):
