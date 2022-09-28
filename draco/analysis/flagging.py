@@ -1842,3 +1842,60 @@ class ThresholdVisWeightBaseline(task.SingleTask):
         mask_cont.mask[:] = mpiarray.MPIArray.wrap(local_mask, axis=1)
 
         return mask_cont
+
+
+class CollapseBaselineMask(task.SingleTask):
+    """Collapse a baseline-dependent mask along the baseline axis.
+
+    The output is a frequency/time mask that is True for any freq/time sample
+    for which any baseline is masked in the input mask.
+    """
+
+    def process(
+        self,
+        baseline_mask: Union[containers.BaselineMask, containers.SiderealBaselineMask],
+    ) -> Union[containers.RFIMask, containers.SiderealRFIMask]:
+        """Collapse input mask over baseline axis
+
+        Parameters
+        ----------
+        baseline_mask : `BaselineMask` or `SiderealBaselineMask`
+            Input baseline-dependent mask
+
+        Returns
+        -------
+        mask_cont : `RFIMask` or `SiderealRFIMask`
+            Output baseline-independent mask.
+        """
+        # Redistribute input mask along freq axis
+        baseline_mask.redistribute("freq")
+
+        # Make container for output mask. Remember that this will not be distributed.
+        if isinstance(baseline_mask, containers.BaselineMask):
+            mask_cont = containers.RFIMask(
+                axes_from=baseline_mask, attrs_from=baseline_mask
+            )
+        elif isinstance(baseline_mask, containers.SiderealBaselineMask):
+            mask_cont = containers.SiderealRFIMask(
+                axes_from=baseline_mask, attrs_from=baseline_mask
+            )
+
+        # Get local section of baseline-dependent mask
+        local_mask = baseline_mask.mask[:].local_array
+
+        # Collapse along stack axis
+        local_mask = np.any(local_mask, axis=1)
+
+        # Gather full mask on each rank
+        full_mask = mpiarray.MPIArray.wrap(local_mask, axis=0).allgather()
+
+        # Log the percent of freq/time samples masked
+        drop_frac = np.sum(full_mask) / np.prod(full_mask.shape)
+        self.log.info(
+            f"After baseline collapse: {100.0 * drop_frac:.1f}%% of data"
+            " is below the weight threshold"
+        )
+
+        mask_cont.mask[:] = full_mask
+
+        return mask_cont
