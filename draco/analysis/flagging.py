@@ -1783,66 +1783,144 @@ class BlendStack(task.SingleTask):
 
 
 class ThresholdVisWeightBaseline(task.SingleTask):
-    """Set any weight less than the user specified threshold equal to zero.
+    """Form a mask corresponding to weights that are below some threshold.
 
-    Threshold is determined as `maximum(absolute_threshold,
-    relative_threshold * mean(weight))` and is evaluated per product/stack
-    entry. This cannot be represented as an RFI mask and so the results are
-    applied in place.
+    The threshold is determined as `maximum(absolute_threshold,
+    relative_threshold * average(weight))` and is evaluated per product/stack
+    entry. The user can specify whether to use a mean or median as the average,
+    but note that the mean is much more likely to be biased by anomalously
+    high- or low-weight samples (both of which are present in raw CHIME data).
+    The user can also specify that weights below some threshold should not be
+    considered when taking the average and constructing the mask (the default
+    is to only ignore zero-weight samples).
 
-    This is the same as the previous version of `ThresholdVisWeight`, prior to
-    `PR 185 <https://github.com/radiocosmology/draco/pull/185/>`_.
+    The task outputs a BaselineMask or SiderealBaselineMask depending on the
+    input container.
 
     Parameters
     ----------
-    absolute_threshold : float
+    average_type : string, optional
+        Type of average to use ("median" or "mean"). Default: "median".
+    absolute_threshold : float, optional
         Any weights with values less than this number will be set to zero.
-    relative_threshold : float
+        Default: 1e-7.
+    relative_threshold : float, optional
         Any weights with values less than this number times the average weight
-        will be set to zero.
+        will be set to zero. Default: 1e-6.
+    ignore_absolute_threshold : float, optional
+        Any weights will values less than this number will be ignored when
+        taking averages and constructing the mask. Default: 0.0.
+    pols_to_flag : string, optional
+        Which polarizations to flag. "copol" only flags XX and YY baselines,
+        while "all" flags everything. Default: "all".
     """
 
+    average_type = config.enum(["median", "mean"], default="median")
     absolute_threshold = config.Property(proptype=float, default=1e-7)
-    relative_threshold = config.Property(proptype=float, default=0.0)
+    relative_threshold = config.Property(proptype=float, default=1e-6)
+    ignore_absolute_threshold = config.Property(proptype=float, default=0.0)
+    pols_to_flag = config.enum(["all", "copol"], default="all")
 
-    def process(self, timestream):
-        """Apply threshold to `weight` dataset.
+    def setup(self, telescope):
+        """Set the telescope model.
 
         Parameters
         ----------
-        timestream : `.core.container` with `weight` attribute
+        telescope : TransitTelescope
+        """
+
+        self.telescope = io.get_telescope(telescope)
+
+    def process(
+        self,
+        stream,
+    ) -> Union[containers.BaselineMask, containers.SiderealBaselineMask]:
+        """Construct mask and apply to input weights, if desired.
+
+        Parameters
+        ----------
+        stream : `.core.container` with `weight` attribute
+            Input container whose weights are used to construct the mask.
 
         Returns
         -------
-        timestream : same as input timestream
-            The input container with modified weights.
+        out : `BaselineMask` or `SiderealBaselineMask`
+            The output baseline-dependent mask.
         """
         from mpi4py import MPI
 
-        timestream.redistribute(["prod", "stack"])
+        # Only redistribute the weight dataset, because CorrData containers will have
+        # other parallel datasets without a stack axis
+        stream.weight.redistribute(axis=1)
 
-        weight = timestream.weight[:]
+        # Make the output container, depending on input type
+        if "ra" in stream.axes:
+            mask_cont = containers.SiderealBaselineMask(
+                axes_from=stream, attrs_from=stream
+            )
+        elif "time" in stream.axes:
+            mask_cont = containers.BaselineMask(axes_from=stream, attrs_from=stream)
+        else:
+            raise TypeError(
+                f"Task requires TimeStream, SiderealStream, or CorrData. Got {type(stream)}"
+            )
 
-        # Average over the frequency and time axes to get a per baseline
-        # average
-        mean_weight = weight.mean(axis=2).mean(axis=0)
+        # Redistribute output container along stack axis
+        mask_cont.redistribute("stack")
+
+        # Get local section of weights
+        local_weight = stream.weight[:].local_array
+
+        # For each baseline (axis=1), take average over non-ignored time/freq samples
+        average_func = np.ma.median if self.average_type == "median" else np.ma.mean
+        average_weight = average_func(
+            np.ma.array(
+                local_weight, mask=(local_weight <= self.ignore_absolute_threshold)
+            ),
+            axis=(0, 2),
+        ).data
 
         # Figure out which entries to keep
         threshold = np.maximum(
-            self.absolute_threshold, self.relative_threshold * mean_weight
+            self.absolute_threshold, self.relative_threshold * average_weight
         )
-        keep = weight > threshold[np.newaxis, :, np.newaxis]
-        keep_sum = np.sum(keep)
-        keep_total = np.zeros_like(keep_sum)
 
-        timestream.comm.Allreduce(keep_sum, keep_total, op=MPI.SUM)
-        keep_frac = keep_total / float(np.prod(weight.global_shape))
+        # Compute the mask, excluding samples that we want to ignore
+        local_mask = (local_weight < threshold[np.newaxis, :, np.newaxis]) & (
+            local_weight > self.ignore_absolute_threshold
+        )
+
+        # If only flagging co-pol baselines, make separate mask to select those,
+        # and multiply into low-weight mask
+        if self.pols_to_flag == "copol":
+
+            # Get local section of stack axis
+            local_stack = stream.stack[stream.weight[:].local_bounds]
+
+            # Get product map from input stream
+            prod = stream.prod[:]
+
+            # Get polarisation of each input for each element of local stack axis
+            pol_a = self.telescope.polarisation[prod[local_stack["prod"]]["input_a"]]
+            pol_b = self.telescope.polarisation[prod[local_stack["prod"]]["input_b"]]
+
+            # Make mask to select co-pol baselines
+            local_pol_mask = (pol_a == pol_b)[np.newaxis, :, np.newaxis]
+
+            # Apply pol mask to low-weight mask
+            local_mask *= local_pol_mask
+
+        # Compute the fraction of data that will be masked
+        local_mask_sum = np.sum(local_mask)
+        global_mask_total = np.zeros_like(local_mask_sum)
+        stream.comm.Allreduce(local_mask_sum, global_mask_total, op=MPI.SUM)
+        mask_frac = global_mask_total / float(np.prod(stream.weight.global_shape))
 
         self.log.info(
-            "%0.5f%% of data is below the weight threshold"
-            % (100.0 * (1.0 - keep_frac))
+            "%0.5f%% of data is below the weight threshold" % (100.0 * mask_frac)
         )
 
-        timestream.weight[:] = np.where(keep, weight, 0.0)
+        # Save mask to output container
+        mask_cont.mask[:] = mpiarray.MPIArray.wrap(local_mask, axis=1)
 
-        return timestream
+        return mask_cont
