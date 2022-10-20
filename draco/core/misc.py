@@ -5,6 +5,7 @@ appropriate module, or enough related tasks end up in here such that they can
 all be moved out into their own module.
 """
 
+import logging
 
 import numpy as np
 
@@ -12,6 +13,8 @@ from caput import config
 
 from ..core import task, containers
 from ..util import tools
+
+logger = logging.getLogger(__name__)
 
 
 class ApplyGain(task.SingleTask):
@@ -212,6 +215,58 @@ class AccumulateList(task.MPILoggedTask):
         del self._items
 
         return items
+
+
+class CheckMPIEnvironment(task.MPILoggedTask):
+    """Check that the current MPI environment can communicate
+    across all nodes.
+    """
+
+    timeout = config.Property(proptype=int, default=240)
+
+    def setup(self):
+        import time
+
+        comm = self.comm
+        n = 500000  # Corresponds to a 4 MB buffer
+        results = []
+
+        sends = np.arange(comm.size * n, dtype=np.float64).reshape(comm.size, n)
+        recvs = np.empty_like(sends)
+
+        # Send and receive across all ranks
+        for i in range(comm.size):
+            send = (comm.rank + i) % comm.size
+            recv = (comm.rank - i) % comm.size
+
+            results.append(comm.Irecv(recvs[recv, :], recv))
+            comm.Isend(sends[comm.rank, :], send)
+
+        start_time = time.time()
+
+        while time.time() - start_time < self.timeout:
+
+            success = all([r.get_status() for r in results])
+
+            if success:
+                logger.debug(f"Successful after{time.time() - start_time} seconds")
+                break
+
+            time.sleep(5)
+
+        if not success:
+            logger.critical(
+                f"MPI test failed to respond in {self.timeout} seconds. Aborting..."
+            )
+            comm.Abort()
+
+        if not (recvs == sends).all():
+            logger.critical("MPI test did not receive the correct data. Aborting...")
+            comm.Abort()
+
+        # This is needed to stop successful processes from finshing if any task
+        # has failed
+        comm.Barrier()
 
 
 class MakeCopy(task.SingleTask):
