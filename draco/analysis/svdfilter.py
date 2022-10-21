@@ -45,14 +45,9 @@ class SVDSpectrumEstimator(task.SingleTask):
         for mi, m in vis.enumerate(axis=0):
             self.log.debug("Calculating SVD spectrum of m=%i", m)
 
-            vis_m = (
-                vis[mi].view(np.ndarray).transpose((1, 0, 2)).reshape(vis.shape[2], -1)
-            )
+            vis_m = vis.local_array[mi].transpose((1, 0, 2)).reshape(vis.shape[2], -1)
             weight_m = (
-                weight[mi]
-                .view(np.ndarray)
-                .transpose((1, 0, 2))
-                .reshape(vis.shape[2], -1)
+                weight.local_array[mi].transpose((1, 0, 2)).reshape(vis.shape[2], -1)
             )
             mask_m = weight_m == 0.0
 
@@ -109,14 +104,9 @@ class SVDFilter(task.SingleTask):
         # Do a quick first pass calculation of all the singular values to get the max on this rank.
         for mi, m in vis.enumerate(axis=0):
 
-            vis_m = (
-                vis[mi].view(np.ndarray).transpose((1, 0, 2)).reshape(vis.shape[2], -1)
-            )
+            vis_m = vis.local_array[mi].transpose((1, 0, 2)).reshape(vis.shape[2], -1)
             weight_m = (
-                weight[mi]
-                .view(np.ndarray)
-                .transpose((1, 0, 2))
-                .reshape(vis.shape[2], -1)
+                weight.local_array[mi].transpose((1, 0, 2)).reshape(vis.shape[2], -1)
             )
             mask_m = weight_m == 0.0
 
@@ -135,14 +125,9 @@ class SVDFilter(task.SingleTask):
         # Loop over all m's and remove modes below the combined cut
         for mi, m in vis.enumerate(axis=0):
 
-            vis_m = (
-                vis[mi].view(np.ndarray).transpose((1, 0, 2)).reshape(vis.shape[2], -1)
-            )
+            vis_m = vis.local_array[mi].transpose((1, 0, 2)).reshape(vis.shape[2], -1)
             weight_m = (
-                weight[mi]
-                .view(np.ndarray)
-                .transpose((1, 0, 2))
-                .reshape(vis.shape[2], -1)
+                weight.local_array[mi].transpose((1, 0, 2)).reshape(vis.shape[2], -1)
             )
             mask_m = weight_m == 0.0
 
