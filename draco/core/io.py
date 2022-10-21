@@ -897,6 +897,8 @@ class ZipZarrContainers(task.SingleTask):
     containers = config.Property(proptype=list)
     remove = config.Property(proptype=bool, default=True)
 
+    _host_rank = None
+
     def setup(self, _=None):
         """Setup the task.
 
