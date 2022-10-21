@@ -521,7 +521,7 @@ class MModeTransform(task.SingleTask):
         # Generate the m-mode transform directly into the output container
         # NOTE: Need to zero fill as not every element gets set within _make_marray
         ma.vis[:] = 0.0
-        _make_marray(sstream.vis[:], ma.vis[:])
+        _make_marray(sstream.vis[:].local_array, ma.vis[:].local_array)
 
         # Assign the weights into the container
         ma.weight[:] = weight_sum[np.newaxis, np.newaxis, :, :]
