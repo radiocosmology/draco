@@ -624,7 +624,7 @@ class DelaySpectrumEstimatorBase(task.SingleTask, random.RandomTask):
         # Create a view of the dataset with the relevant axes at the back,
         # and all other axes compressed
         data_view = np.moveaxis(
-            ss.datasets[self.dataset][:].view(np.ndarray),
+            ss.datasets[self.dataset][:].local_array,
             [average_axis_pos, freq_axis_pos],
             [-2, -1],
         )
@@ -673,8 +673,8 @@ class DelaySpectrumEstimatorBase(task.SingleTask, random.RandomTask):
             self.log.debug(f"Delay transforming baseline {bi}/{nbase}")
 
             # Get the local selections
-            data = data_view[lbi].view(np.ndarray)
-            weight = weight_view[lbi].view(np.ndarray)
+            data = data_view.local_array[lbi]
+            weight = weight_view.local_array[lbi]
 
             # Mask out data with completely zero'd weights and generate time
             # averaged weights
