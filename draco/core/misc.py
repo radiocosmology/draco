@@ -5,16 +5,12 @@ appropriate module, or enough related tasks end up in here such that they can
 all be moved out into their own module.
 """
 
-import logging
-
 import numpy as np
 
 from caput import config
 
 from ..core import task, containers
 from ..util import tools
-
-logger = logging.getLogger(__name__)
 
 
 class ApplyGain(task.SingleTask):
@@ -218,9 +214,7 @@ class AccumulateList(task.MPILoggedTask):
 
 
 class CheckMPIEnvironment(task.MPILoggedTask):
-    """Check that the current MPI environment can communicate
-    across all nodes.
-    """
+    """Check that the current MPI environment can communicate across all nodes."""
 
     timeout = config.Property(proptype=int, default=240)
 
@@ -249,19 +243,21 @@ class CheckMPIEnvironment(task.MPILoggedTask):
             success = all([r.get_status() for r in results])
 
             if success:
-                logger.debug(f"Successful after{time.time() - start_time} seconds")
+                self.log.debug(
+                    f"Successful after {time.time() - start_time:.1f} seconds"
+                )
                 break
 
             time.sleep(5)
 
         if not success:
-            logger.critical(
+            self.log.critical(
                 f"MPI test failed to respond in {self.timeout} seconds. Aborting..."
             )
             comm.Abort()
 
         if not (recvs == sends).all():
-            logger.critical("MPI test did not receive the correct data. Aborting...")
+            self.log.critical("MPI test did not receive the correct data. Aborting...")
             comm.Abort()
 
         # This is needed to stop successful processes from finshing if any task
