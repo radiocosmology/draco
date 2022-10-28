@@ -439,7 +439,7 @@ class DelaySpectrumEstimator(task.SingleTask, random.RandomTask):
 
         initial_S = np.ones_like(delays) * 1e1
 
-        # Get the random Generator that we will use
+        # Initialize the random number generator we'll use
         rng = self.rng
 
         # Iterate over all baselines and use the Gibbs sampler to estimate the spectrum
@@ -667,6 +667,9 @@ class DelaySpectrumEstimatorBase(task.SingleTask, random.RandomTask):
 
         initial_S = np.ones_like(delays) * 1e1
 
+        # Initialize the random number generator we'll use
+        rng = self.rng
+
         # Iterate over all baselines and use the Gibbs sampler to estimate the spectrum
         for lbi, bi in delay_spec.spectrum[:].enumerate(axis=0):
 
@@ -706,7 +709,7 @@ class DelaySpectrumEstimatorBase(task.SingleTask, random.RandomTask):
                 window=self.window if self.apply_window else None,
                 fsel=non_zero_channel,
                 niter=self.nsamp,
-                rng=self.rng,
+                rng=rng,
                 complex_timedomain=self.complex_timedomain,
             )
 
