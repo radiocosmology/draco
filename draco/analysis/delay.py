@@ -362,6 +362,9 @@ class DelaySpectrumEstimator(task.SingleTask, random.RandomTask):
         Whether to assume the original time samples that were channelized into a
         frequency spectrum were purely real (False) or complex (True). If True,
         `freq_zero`, `nfreq`, and `skip_nyquist` are ignored. Default: False.
+    initial_amplitude : float, optional
+        The Gibbs sampler will be initialized with a flat power spectrum with
+        this amplitude. Default: 10.
     """
 
     nsamp = config.Property(proptype=int, default=20)
@@ -374,6 +377,7 @@ class DelaySpectrumEstimator(task.SingleTask, random.RandomTask):
         ["nuttall", "blackman_nuttall", "blackman_harris"], default="nuttall"
     )
     complex_timedomain = config.Property(proptype=bool, default=False)
+    initial_amplitude = config.Property(proptype=float, default=10.0)
 
     def setup(self, telescope):
         """Set the telescope needed to generate Stokes I.
@@ -437,7 +441,7 @@ class DelaySpectrumEstimator(task.SingleTask, random.RandomTask):
         delay_spec.redistribute("baseline")
         delay_spec.spectrum[:] = 0.0
 
-        initial_S = np.ones_like(delays) * 1e1
+        initial_S = np.ones_like(delays) * self.initial_amplitude
 
         # Initialize the random number generator we'll use
         rng = self.rng
@@ -535,6 +539,9 @@ class DelaySpectrumEstimatorBase(task.SingleTask, random.RandomTask):
         Whether to assume the original time samples that were channelized into a
         frequency spectrum were purely real (False) or complex (True). If True,
         `freq_zero`, `nfreq`, and `skip_nyquist` are ignored. Default: False.
+    initial_amplitude : float, optional
+        The Gibbs sampler will be initialized with a flat power spectrum with
+        this amplitude. Default: 10.
     """
 
     nsamp = config.Property(proptype=int, default=20)
@@ -549,6 +556,7 @@ class DelaySpectrumEstimatorBase(task.SingleTask, random.RandomTask):
     dataset = config.Property(proptype=str, default="vis")
     average_axis = config.Property(proptype=str)
     complex_timedomain = config.Property(proptype=bool, default=False)
+    initial_amplitude = config.Property(proptype=float, default=10.0)
 
     def setup(self, telescope: io.TelescopeConvertible):
         """Set the telescope needed to generate Stokes I.
@@ -665,7 +673,7 @@ class DelaySpectrumEstimatorBase(task.SingleTask, random.RandomTask):
             delay_spec.create_index_map(ax, ss.index_map[ax])
         delay_spec.attrs["baseline_axes"] = bl_axes
 
-        initial_S = np.ones_like(delays) * 1e1
+        initial_S = np.ones_like(delays) * self.initial_amplitude
 
         # Initialize the random number generator we'll use
         rng = self.rng
