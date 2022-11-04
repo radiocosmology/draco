@@ -416,6 +416,42 @@ class LoadFITSCatalogDLA(LoadFITSCatalog):
         return out
 
 
+class LoadFITSCatalogDLA2(LoadFITSCatalog):
+    """Load DLA positions from a FITS source catalog with an alternate structure.
+
+    This task is designed to load the catalog provided in arXiv:2107.09612,
+    which uses different column names than the SDSS DR16 catalog.
+
+    Catalogs are given as one, or a list of `File Groups` (see
+    :mod:`draco.core.io`). Catalogs within the same group are combined together
+    before being passed on.
+
+    Attributes
+    ----------
+    catalogs : list or dict
+        A dictionary specifying a file group, or a list of them.
+    z_range : list, optional
+        Select only sources with a redshift within the given range.
+    freq_range : list, optional
+        Select only sources with a 21cm line freq within the given range.
+        Overrides `z_range`.
+    """
+
+    def _parse_file(self, cfile):
+
+        from astropy.io import fits
+
+        with fits.open(cfile, mode="readonly") as cat:
+            pos = np.array([cat[1].data[col] for col in ["RA", "DEC", "Z_CNN"]])
+
+        # Apply any redshift selection to the objects
+        if self.z_range:
+            zsel = (pos[2] >= self.z_range[0]) & (pos[2] <= self.z_range[1])
+            pos = pos[:, zsel]
+
+        return pos
+
+
 class LoadFITSDelta(task.SingleTask):
     """Load eBOSS Lyman-alpha delta files in FITS format.
 
