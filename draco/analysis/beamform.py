@@ -1220,15 +1220,16 @@ class HealpixBeamForm(task.SingleTask):
         """
 
         self.map = hpmap
-        mv = self.map.map[:]
         self.map.redistribute("freq")
 
-        self.log.info("Smoothing input Healpix map.")
-        for lfi, _ in mv.enumerate(axis=0):
-            for pi in range(mv.shape[1]):
-                mv[lfi, pi] = healpy.smoothing(
-                    mv[lfi, pi], fwhm=np.radians(self.fwhm), verbose=False
-                )
+        if self.fwhm is not None:
+            mv = self.map.map[:]
+            self.log.info("Smoothing input Healpix map.")
+            for lfi, _ in mv.enumerate(axis=0):
+                for pi in range(mv.shape[1]):
+                    mv[lfi, pi] = healpy.smoothing(
+                        mv[lfi, pi], fwhm=np.radians(self.fwhm), verbose=False
+                    )
 
     def process(self, catalog: containers.SourceCatalog) -> containers.FormedBeam:
         """Extract sources from a ringmap.
