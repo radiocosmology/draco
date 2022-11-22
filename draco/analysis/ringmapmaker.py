@@ -1266,10 +1266,10 @@ class AliasFreeRebin(task.SingleTask):
 
             total_pb_array[:, :, i] = ave_pb
 
-        average_pb_array = np.mean(total_pb_array, axis=1)
+        #average_pb_array = np.mean(total_pb_array, axis=1)
 
         self.total_pb_array = total_pb_array
-        self.average_pb_array = average_pb_array
+        #self.average_pb_array = average_pb_array
         self.pb_freq = gb.freq
 
     def process(self, ss):
@@ -1304,7 +1304,6 @@ class AliasFreeRebin(task.SingleTask):
 
         # load a primary beam model
         total_pb_array = self.total_pb_array
-        average_pb_array = self.average_pb_array
         pb_freq = self.pb_freq
         assert (
             ss.freq == pb_freq
