@@ -1438,4 +1438,3 @@ class AliasFreeRebin(task.SingleTask):
                     sb_m[0, i, ri, m, :] = part_s_hat
 
         return sb
-
