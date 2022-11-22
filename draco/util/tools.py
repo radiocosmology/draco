@@ -6,7 +6,7 @@ Miscellaneous tasks should be placed in :py:mod:`draco.core.misc`.
 import numpy as np
 from numpy.lib.recfunctions import structured_to_unstructured
 
-from ._fast_tools import _calc_redundancy, _invert_no_zero
+from ._fast_tools import _calc_redundancy, _invert_no_zero, _corr_func
 
 
 def cmap(i, j, n):
@@ -581,3 +581,41 @@ def window_generalised(x, window="nuttall"):
     w = np.where((x >= 0) & (x <= 1), w, 0)
 
     return w
+
+
+def corr_func(A, B, N=0):
+    """Compute the correlation function of two arrays.
+
+    Parameters
+    ----------
+    A : np.ndarray
+        First array for the correlation. If it has two dimensions, the first will be
+        summed over at each separation bin.
+    B : np.ndarray
+        Second array for the correlation. Must have same shape as `A`.
+    N : int (optional)
+        The length of the correlation function to evaluate. Defaults to `2 * n - 1`
+        where `n` is the length of the input.
+
+    Returns
+    -------
+    out : np.ndarray
+        The correlation function of length `N`.
+    """
+
+    if A.shape != B.shape:
+        raise ValueError(f"Arrays have different shape: {A.shape} != {B.shape}.")
+
+    if len(A.shape) == 1:
+        A = A[np.newaxis, :]
+        B = B[np.newaxis, :]
+    elif len(A.shape) > 2:
+        raise ValueError(f"Array can have at most 2 dimensions ({len(A.shape) > 2}).")
+
+    if N == 0:
+        N = A.shape[1] * 2 - 1
+    out = np.zeros(N)
+
+    _corr_func(A, B, out)
+
+    return out

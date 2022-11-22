@@ -285,3 +285,30 @@ cpdef _invert_no_zero(real_or_complex [:] array, real_or_complex [:] out):
         for i in prange(n, nogil=True):
             cond = fabs(array[i]) < thresh
             out[i] = 0.0 if cond else 1.0 / array[i]
+
+@cython.wraparound(False)
+@cython.boundscheck(False)
+cdef double _mult_sum(double [:] a, double [:] b):
+    cdef Py_ssize_t k
+    cdef double o = 0.0
+    cdef Py_ssize_t N = a.size
+    for k in range(N):
+        o += a[k] * b[k]
+    return o
+
+@cython.wraparound(False)
+@cython.boundscheck(False)
+cpdef _corr_func(double [:, :] A, double [:, :] B, double [:] out):
+
+    cdef Py_ssize_t N = out.size
+    cdef Py_ssize_t n = N // 2 if N % 2 == 0 else (N - 1) // 2
+    cdef Py_ssize_t M = A.shape[1]
+    cdef Py_ssize_t i, j
+
+    # TODO: could be nice to parallelise this but would need separate buffers
+    #       for each thread
+    for i in range(A.shape[0]):
+        out[0] += _mult_sum(A[i, :], B[i, :])
+        for j in range(1, n):
+            out[N - j] += _mult_sum(A[i, :M - j], B[i, j:])
+            out[j] += _mult_sum(A[i, j:], B[i, :M - j])
