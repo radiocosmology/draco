@@ -36,12 +36,7 @@ from ..util import tools
 from ..core import containers
 from . import transform
 
-from scipy import (
-    linalg,
-)  # needed for WienerFilter module. Minori added this line on Nov 1.
-from caput import (
-    mpiarray,
-)  # needed for WienerFilter module. Minori added this line on Nov 7.
+from scipy import linalg
 
 
 class MakeVisGrid(task.SingleTask):
@@ -1203,10 +1198,6 @@ def find_grid_indices(baselines):
     return xind, yind, dx, dy
 
 
-# ==========================================================================
-# Minori added the lines below on Nov 1.
-
-
 class AliasFreeRebin(task.SingleTask):
     channel_bin = config.Property(proptype=int, default=1)
     alpha = config.Property(proptype=float, default=0.0)
@@ -1234,9 +1225,6 @@ class AliasFreeRebin(task.SingleTask):
             .allgather()
             .transpose(1, 0, 2)
         )
-        print(int(gb.beam.shape[-1] / 2), prim_beam_array[0, 0, 0:5])
-        print(gb.beam[0, 0, 0, 0:5, 682], gb.beam[:].shape)
-        # print(gb.beam.attrs["axis"])
 
         total_pb_array = np.zeros(
             (ringmap.pol.shape[0], len(gb.freq), ringmap.el.shape[0])
@@ -1253,23 +1241,19 @@ class AliasFreeRebin(task.SingleTask):
                 ), f"not correct, {gb.theta[close_el_ind]}, {el}, {gb.theta[close_el_ind+1]}"
                 start_el_ind = close_el_ind
                 end_el_ind = close_el_ind + 1
-                # ave_pb = (prim_beam_array[:,:,close_el_ind] + prim_beam_array[:,:,close_el_ind+1])/2
             elif el < gb.theta[close_el_ind]:
                 assert (gb.theta[close_el_ind - 1] < el) & (
                     el < gb.theta[close_el_ind]
                 ), f"not correct, {gb.theta[close_el_ind-1]}, {el}, {gb.theta[close_el_ind]}"
                 start_el_ind = close_el_ind - 1
                 end_el_ind = close_el_ind
-                # ave_pb = (prim_beam_array[:,:,close_el_ind-1] + prim_beam_array[:,:,close_el_ind])/2
             else:
                 assert (
                     gb.theta[close_el_ind] == el
                 ), f"not correct, {gb.theta[close_el_ind]}, {el}"
                 start_el_ind = close_el_ind
                 end_el_ind = close_el_ind
-                # ave_pb = prim_beam_array[:,:,close_el_ind]
 
-            # ave_pb = (prim_beam_array[:,:,start_el_ind] + prim_beam_array[:,:,end_el_ind])/2
             if start_el_ind != end_el_ind:
                 ave_pb = prim_beam_array[:, :, start_el_ind] + (
                     prim_beam_array[:, :, end_el_ind]
@@ -1280,7 +1264,6 @@ class AliasFreeRebin(task.SingleTask):
             else:
                 ave_pb = prim_beam_array[:, :, start_el_ind]
 
-            # print(f"{el:.3f}, {start_el_ind}, {end_el_ind}, {prim_beam_array[0,0,start_el_ind]:.3f}, {prim_beam_array[0,0,end_el_ind]:.3f}, {ave_pb[0,0]:.3f}")
             total_pb_array[:, :, i] = ave_pb
 
         average_pb_array = np.mean(total_pb_array, axis=1)
@@ -1351,23 +1334,19 @@ class AliasFreeRebin(task.SingleTask):
         sb.redistribute(["time", "ra"])
 
         el_values = ss.el
-        ra_values = ss.ra
 
         # stack dirty beam R @ N^{-1} @ d, and a part of noise inverse covariance matrix R.T @ N^{-1} @ R,
         # then sum them up.
         ss_m = ss.map[:]
         sb_m = sb.map[:]
 
-        # dirty_beam = np.zeros((len(ss.pol), len(sb.freq), ss.el.shape[0], ss.ra.shape[0]))
         dirty_beam = np.zeros(
             (len(ss.pol), len(sb.freq), sb_m.shape[-1], sb_m.shape[-2])
         )
-        # N_Rinv = np.zeros((len(ss.pol), len(sb.freq), ss.ra.shape[0], ss.el.shape[0], ss.el.shape[0]))
         N_Rinv = np.zeros(
             (len(ss.pol), len(sb.freq), sb_m.shape[-2], sb_m.shape[-1], sb_m.shape[-1])
         )
 
-        print(ss_m[0, 0, 0, :, :].shape, ss.weight[0, 0, :, :].shape)
         for i in range(len(ss.pol)):
             for k in range(len(ss.freq)):
                 ri = k // self.channel_bin
@@ -1387,7 +1366,7 @@ class AliasFreeRebin(task.SingleTask):
                     pb_array = total_pb_array[i, k] * pl_term
                 except IndexError:
                     raise RuntimeError(
-                        f"No primary beam model is available for lower frequencies than {gb.freq[k-1]} MHz."
+                        f"No primary beam model is available for lower frequencies than {pb_freq[-1]} MHz."
                     )
 
                 # a spatial separation between a real source and its aliasing in N-S direction
@@ -1414,7 +1393,7 @@ class AliasFreeRebin(task.SingleTask):
                     N_Rinv[i, ri, :, l, l] += (
                         pb_array[l] * real_noise_cov[:, l] * pb_array[l]
                     )
-                    if alias_pos_up != None:
+                    if alias_pos_up is not None:
                         dirty_beam[i, ri, l, :] += (
                             pb_array[l]
                             * real_noise_cov[:, alias_pos_up]
@@ -1429,7 +1408,7 @@ class AliasFreeRebin(task.SingleTask):
                             * real_noise_cov[:, alias_pos_up]
                             * pb_array[l]
                         )
-                    if alias_pos_down != None:
+                    if alias_pos_down is not None:
                         dirty_beam[i, ri, l, :] += (
                             pb_array[l]
                             * real_noise_cov[:, alias_pos_down]
@@ -1462,5 +1441,3 @@ class AliasFreeRebin(task.SingleTask):
 
         return sb
 
-
-# ==========================================================================
