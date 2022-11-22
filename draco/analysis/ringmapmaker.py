@@ -1266,10 +1266,10 @@ class AliasFreeRebin(task.SingleTask):
 
             total_pb_array[:, :, i] = ave_pb
 
-        #average_pb_array = np.mean(total_pb_array, axis=1)
+        # average_pb_array = np.mean(total_pb_array, axis=1)
 
         self.total_pb_array = total_pb_array
-        #self.average_pb_array = average_pb_array
+        # self.average_pb_array = average_pb_array
         self.pb_freq = gb.freq
 
     def process(self, ss):
@@ -1289,7 +1289,6 @@ class AliasFreeRebin(task.SingleTask):
 
         # the minimum separation between antenna feeds
         xind, yind, min_xsep, min_ysep = find_grid_indices(self.telescope.baselines)
-        # dmin = 0.3048 #FIXME
         dmin = min_ysep
 
         # define a signal inverse covariance matrix
