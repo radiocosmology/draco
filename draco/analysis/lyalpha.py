@@ -1,10 +1,11 @@
 import numpy as np
 
-from caput import config, pipeline
+from caput import config, pipeline, mpiarray
 from cora.util import units, coord
 
 from ..core import task, containers
 from ..analysis import transform
+from ..util import tools
 
 
 # Wavelengths of lyman-alpha and 21cm transitions
@@ -276,6 +277,160 @@ class SelectField(task.SingleTask):
         out["redshift"][:] = formed["redshift"][:][sel]
 
         return out
+
+
+class XCorrBase(task.SingleTask):
+    """Base task for performing cross-correlation between beamformed line of sight spectra."""
+
+    def process(self, bfA, bfB):
+        """Evaluate the cross-correlation function of two beamformed catalogues.
+
+        Parameters
+        ----------
+        bfA : FormedBeam
+            The first catalogue of beamformed data.
+        bfB : FormedBeam
+            The second catalogue of beamformed data.
+
+        Returns
+        -------
+        corr : FormedBeam
+            The cross-correlation function.
+        """
+
+        # redistribute so all frequencies are on every rank
+        bfA.redistribute("object_id")
+        bfB.redistribute("object_id")
+
+        # we might have only only polarisation for one of the datasets
+        if len(bfA.pol) > len(bfB.pol):
+            axes = bfA
+        else:
+            axes = bfB
+
+        # compute correlation function (returns on rank 0 only)
+        df, corr = self._compute_corr(bfA, bfB)
+
+        # create output container
+        out = containers.FormedBeam(
+            object_id=np.array([0]),
+            freq=df,
+            axes_from=axes,
+            attrs_from=bfA,
+            comm=axes.comm,
+        )
+        out.redistribute("object_id")
+        out.weight[:].local_array[:] = 0.0
+
+        # also copy remaining attrs
+        for key, val in bfB.attrs.items():
+            if key not in out.attrs:
+                out.attrs[key] = val
+
+        if corr is not None:
+            out.beam[0] = corr
+
+        return out
+
+
+class XCorrFFT(XCorrBase):
+    """Use the FFT to evaluate the cross power spectrum, then transform back to the correlation function."""
+
+    def _compute_corr(self, bfA, bfB):
+
+        # Fourier transform
+        bfA_fft = np.fft.fft(bfA.beam[:] * (bfA.weight[:] != 0), axis=-1)
+        bfB_fft = np.fft.fft(bfB.beam[:] * (bfB.weight[:] != 0), axis=-1)
+
+        # estimate PS
+        ps = np.sum(bfA_fft * bfB_fft.conj(), axis=0)
+        ps = mpiarray.MPIArray.wrap(
+            ps[np.newaxis, ...], axis=0, comm=self.comm
+        ).gather()
+
+        # transform back to correlation function
+        # first, still need to sum over all ranks
+        if self.comm.rank == 0:
+            ps = np.sum(ps, axis=0)
+            corr = np.fft.ifft(ps, axis=-1)
+        else:
+            corr = None
+
+        # calculate frequencey separation axis
+        N = bfA.beam.shape[-1]
+        df = (np.arange(N) - N // 2) * np.abs(bfA.freq[1] - bfA.freq[0])
+
+        if self.comm.rank == 0:
+            return df, np.fft.fftshift(corr.real, axes=1)
+        else:
+            return df, None
+
+
+class XCorrDirect(XCorrBase):
+    """Evaluate the cross-correlation function directly in 'real' space.
+
+    Attributes
+    ----------
+    N : int (optional)
+        The number of separation bins to compute the correlation function at,
+        centered around zero. Uses `2 * n - 1` by default, where `n` is the length
+        of the spectrum.
+
+    """
+
+    N = config.Property(proptype=int, default=0)
+
+    def _compute_corr(self, bfA, bfB):
+
+        npol = max(len(bfA.pol), len(bfB.pol))
+        N = bfA.beam.shape[-1] * 2 - 1 if self.N == 0 else self.N
+
+        # if one of the polarisation axes is length 1, expand it to match full axis
+        if len(bfA.pol) == 1 and npol != 1:
+            bA = np.tile(bfA.beam[:].local_array, (1, npol, 1))
+            bB = bfB.beam[:].local_array
+            wA = np.tile(bfA.weight[:].local_array, (1, npol, 1))
+            wB = bfB.weight[:].local_array
+        elif len(bfB.pol) == 1 and npol != 1:
+            bA = bfA.beam[:].local_array
+            bB = np.tile(bfB.beam[:].local_array, (1, npol, 1))
+            wA = bfA.weight[:].local_array
+            wB = np.tile(bfB.weight[:].local_array, (1, npol, 1))
+        else:
+            bA = bfA.beam[:].local_array
+            bB = bfB.beam[:].local_array
+            wA = bfA.weight[:].local_array
+            wB = bfB.weight[:].local_array
+
+        # evaluate the correlation function on the local array
+        corr = np.zeros((npol, N))
+        norm = np.zeros((npol, N))
+        for i in range(npol):
+            corr[i] = tools.corr_func(bA[:, i] * wA[:, i], bB[:, i] * wB[:, i], N)
+            norm[i] = tools.corr_func(wA[:, i], wB[:, i], N)
+        # second normalisation is to match FFT method given unit weights
+        norm2 = np.sum((wA * wB) != 0, axis=(0, 2))
+
+        # combine all ranks
+        corr = mpiarray.MPIArray.wrap(corr[np.newaxis, ...], axis=0, comm=self.comm)
+        corr = corr.gather()
+        norm = mpiarray.MPIArray.wrap(norm[np.newaxis, ...], axis=0, comm=self.comm)
+        norm = norm.gather()
+        norm2 = mpiarray.MPIArray.wrap(norm2[np.newaxis, :], axis=0, comm=self.comm)
+        norm2 = norm2.gather()
+        if self.comm.rank == 0:
+            corr = np.sum(corr, axis=0)
+            norm = np.sum(norm, axis=0)
+            corr *= tools.invert_no_zero(norm)
+            corr *= np.sum(norm2, axis=0)[:, np.newaxis]
+
+        # calculate frequencey separation axis
+        df = (np.arange(N) - N // 2) * np.abs(bfA.freq[1] - bfA.freq[0])
+
+        if self.comm.rank == 0:
+            return df, np.fft.fftshift(corr, axes=1)
+        else:
+            return df, None
 
 
 # Galactic coordinates rotation
