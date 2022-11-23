@@ -243,9 +243,6 @@ class CheckMPIEnvironment(task.MPILoggedTask):
             success = all([r.get_status() for r in results])
 
             if success:
-                self.log.debug(
-                    f"Successful after {time.time() - start_time:.1f} seconds"
-                )
                 break
 
             time.sleep(5)
@@ -260,9 +257,12 @@ class CheckMPIEnvironment(task.MPILoggedTask):
             self.log.critical("MPI test did not receive the correct data. Aborting...")
             comm.Abort()
 
-        # This is needed to stop successful processes from finshing if any task
-        # has failed
+        # Stop successful processes from finshing if any task has failed
         comm.Barrier()
+
+        self.log.debug(
+            f"MPI test successful after {time.time() - start_time:.1f} seconds"
+        )
 
 
 class MakeCopy(task.SingleTask):
