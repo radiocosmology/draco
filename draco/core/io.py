@@ -29,7 +29,7 @@ from typing import Union, Dict, List
 import numpy as np
 from yaml import dump as yamldump
 
-from caput import pipeline, config, fileformats, memh5, truncate, mpiutil
+from caput import pipeline, config, fileformats, memh5, truncate, mpiutil, mpiarray
 
 from cora.util import units
 
@@ -598,53 +598,23 @@ class LoadFITSDelta(task.SingleTask):
         # convert wavelength (A) to frequency (MHz)
         freq = units.c / lam * 1e4
 
-        # scatter the distributed datasets over frequency
-        def scatter_array(array, root=0, axis=0):
-            # split distributed axis
-            if self.comm.rank == root:
-                shape = array.shape
-                n = shape[axis]
-                dtype = array.dtype
-            else:
-                shape = None
-                n = None
-                dtype = None
-            shape = self.comm.bcast(shape, root=root)
-            dtype = self.comm.bcast(dtype, root=root)
-            mpitype = mpiutil.typemap(dtype)
-            n = self.comm.bcast(n, root=root)
-            n_all, s_all, e_all = mpiutil.split_all(n, comm=self.comm)
-            slices = []
-            for r in range(self.comm.size):
-                this_slice = [slice(None)] * len(shape)
-                this_slice[axis] = slice(s_all[r], e_all[r])
-                slices.append(tuple(this_slice))
-
-            # scatter array from source rank
-            if self.comm.rank == root:
-                local = array[slices[root]]
-                # send to each rank
-                sends = []
-                for r in range(self.comm.size):
-                    if r == root:
-                        continue
-                    to_send = array[slices[r]].flatten()
-                    sends.append(self.comm.Isend([to_send, mpitype], dest=r))
-                for req in sends:
-                    req.wait()
-            else:
-                local_shape = list(shape)
-                local_shape[axis] = n_all[self.comm.rank]
-                local = np.zeros(local_shape, dtype=dtype)
-                self.comm.Recv([local, mpitype], source=root)
-
-            self.comm.Barrier()
-
-            return local
+        # scatter arrays to all ranks
+        def scatter_array(array):
+            shape = array.shape if self.comm.rank == 0 else None
+            shape = self.comm.bcast(shape, root=0)
+            dt = array.dtype if self.comm.rank == 0 else None
+            dt = self.comm.bcast(dt, root=0)
+            array_ext = (
+                array[np.newaxis, ...]
+                if self.comm.rank == 0
+                else np.empty((0,) + shape, dtype=dt)
+            )
+            arr0 = mpiarray.MPIArray.wrap(array_ext, axis=0)
+            return arr0.redistribute(axis=1)[0]
 
         self.log.debug(f"(rank {self.comm.rank}) scattering arrays...")
-        delta_local = scatter_array(delta, root=0, axis=1)
-        weight_local = scatter_array(weight, root=0, axis=1)
+        delta_local = scatter_array(delta)
+        weight_local = scatter_array(weight)
         self.log.debug(f"(rank {self.comm.rank}) done scattering arrays.")
 
         # construct FormedBeam container
@@ -658,7 +628,7 @@ class LoadFITSDelta(task.SingleTask):
         deltas["redshift"]["z_error"] = 0
 
         # write to the distributed array
-        deltas.redistribute("freq")
+        deltas.redistribute("object_id")
         deltas["beam"][:] = delta_local[:, np.newaxis, :]
         deltas["weight"][:] = weight_local[:, np.newaxis, :]
 
