@@ -24,7 +24,8 @@ Several tasks accept groups of files as arguments. These are specified in the YA
 """
 import os.path
 import shutil
-from typing import Union, Dict, List
+import subprocess
+from typing import Union, Dict, List, Optional
 
 import numpy as np
 from yaml import dump as yamldump
@@ -803,8 +804,8 @@ class Truncate(task.SingleTask):
         `caput.pipeline.PipelineRuntimeError`
             If input data has mismatching dataset and weight array shapes.
         `config.CaputConfigError`
-             If the input data container has no preset values and `fixed_precision` or `variance_increase` are not set
-             in the config.
+             If the input data container has no preset values and `fixed_precision` or
+             `variance_increase` are not set in the config.
         """
 
         if self.ensure_chunked:
@@ -939,8 +940,6 @@ class ZipZarrContainers(task.SingleTask):
         """
 
         if self._host_rank is not None:
-            import subprocess
-
             # Get the set of containers this rank is responsible for compressing
             my_containers = self.containers[self._host_rank :: self._num_hosts]
 
@@ -971,6 +970,129 @@ class ZipZarrContainers(task.SingleTask):
         self.comm.Barrier()
 
         raise pipeline.PipelineStopIteration
+
+
+class ZarrZipHandle:
+    """A handle for keeping track of background Zarr-zipping job."""
+
+    def __init__(self, filename: str, handle: Optional[subprocess.Popen]):
+        self.filename = filename
+        self.handle = handle
+
+
+class SaveZarrZip(ZipZarrContainers):
+    """Save a container as a .zarr.zip file.
+
+    This task saves the output first as a .zarr container, and then starts a background
+    job to start turning it into a zip file. It returns a handle to this job. All these
+    handles should be fed into a `WaitZarrZip` task to ensure the pipeline run does not
+    terminate before they are complete.
+
+    This accepts most parameters that a standard task would for saving, including
+    compression parameter overrides.
+    """
+
+    # This keeps track of the global number of operations run such that we can dispatch
+    # the background jobs to different ranks
+    _operation_counter = 0
+
+    def setup(self):
+        """Check the parameters and determine the ranks to use."""
+
+        if not self.output_name.endswith(".zarr.zip"):
+            raise ConfigError("File output name must end in `.zarr.zip`.")
+
+        # Trim off the .zip suffix and fix the file format
+        self.output_name = self.output_name[:-4]
+        self.output_format = fileformats.Zarr
+        self.save = True
+
+        # Call the baseclass to determine which ranks will do the work
+        super().setup()
+
+    # Override next as we don't want the usual mechanism
+    def next(self, container: memh5.BasicCont) -> ZarrZipHandle:
+        """Take a container and save it out as a .zarr.zip file.
+
+        Parameters
+        ----------
+        container
+            Container to save out.
+
+        Returns
+        -------
+        handle
+            A handle to use to determine if the job has successfully completed. This
+            should be given to the `WaitZarrZip` task.
+        """
+
+        outfile = self._save_output(container)
+        dest_file = outfile + ".zip"
+        self.comm.Barrier()
+
+        bg_process = None
+
+        host_rank_to_use = self._operation_counter % self._num_hosts
+
+        if self._host_rank == host_rank_to_use:
+            self.log.info(f"Starting background job to zip {outfile}")
+
+            # Run 7z to zip up the file
+            dest_file = outfile + ".zip"
+            src_dir = outfile + "/."
+            command = f"{self._path_7z} a -tzip -mx=0 {dest_file} {src_dir}"
+
+            # If we are to remove the file get the background job to do it immediately
+            # after zipping succeeds
+            if self.remove:
+                command += f" && rm -r {outfile}"
+
+            bg_process = subprocess.Popen(
+                command, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE
+            )
+
+        # Increment the global operations counter
+        self.__class__._operation_counter += 1
+
+        return ZarrZipHandle(dest_file, bg_process)
+
+
+class WaitZarrZip(task.MPILoggedTask):
+    """Collect Zarr-zipping jobs and wait for them to complete."""
+
+    _handles: Optional[List[ZarrZipHandle]] = None
+
+    def next(self, handle: ZarrZipHandle):
+        """Receive the handles to wait on.
+
+        Parameters
+        ----------
+        handle
+            The handle to wait on.
+        """
+
+        if self._handles is None:
+            self._handles = []
+
+        self._handles.append(handle)
+
+    def finish(self):
+        """Wait for all Zarr zipping jobs to complete."""
+
+        for h in self._handles:
+            self.log.debug(f"Waiting on job processing {h.filename}")
+
+            if h.handle is not None:
+                returncode = h.handle.wait()
+
+                if returncode != 0 or not os.path.exists(h.filename):
+                    self.log.debug("Error occurred while zipping. Debug logs follow...")
+                    self.log.debug(f"stdout={h.handle.stdout}")
+                    self.log.debug(f"stderr={h.handle.stderr}")
+                    raise RuntimeError(f"Error occurred while zipping {h.filename}.")
+
+            self.comm.Barrier()
+            self.log.info(f"Processing job for {h.filename} successful.")
 
 
 class SaveModuleVersions(task.SingleTask):

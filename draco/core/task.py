@@ -3,6 +3,7 @@
 import os
 import logging
 from inspect import getfullargspec
+from typing import Optional
 
 import numpy as np
 
@@ -429,7 +430,8 @@ class SingleTask(MPILoggedTask, pipeline.BasicContMixin):
 
         return output
 
-    def _save_output(self, output):
+    def _save_output(self, output: memh5.MemDiskGroup) -> Optional[str]:
+        """Save the output and return the file path if it was saved."""
         if output is None:
             return
 
@@ -495,6 +497,7 @@ class SingleTask(MPILoggedTask, pipeline.BasicContMixin):
                 output,
                 file_format=self.output_format,
             )
+            return outfile
 
     def _nan_process_output(self, output):
         # Process the output to check for NaN's
