@@ -1348,7 +1348,7 @@ class AliasFreeRebin(task.SingleTask):
         for i in range(len(ss.pol)):
             for k in range(len(ss.freq)):
                 ri = k // self.channel_bin
-                data = ss_m[0, i, k, :, :]  # daily ringmap, not stacked one
+                data = np.asarray(ss_m[0, i, k, :, :])  # daily ringmap, not stacked one
 
                 freq = ss.freq[k]
                 center_freq = sb.freq[ri]
@@ -1356,7 +1356,7 @@ class AliasFreeRebin(task.SingleTask):
                 # include power-law term in R matrix
                 pl_term = (freq / center_freq) ** (-1.0 * self.alpha)
 
-                real_noise_cov = ss.weight[i, k, :, :]
+                real_noise_cov = np.asarray(ss.weight[i, k, :, :])
 
                 # raise RuntimeError if the primary beam model in the input frequency is unavailable.
                 # or just break this loop?
