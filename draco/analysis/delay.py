@@ -1055,8 +1055,8 @@ def delay_spectrum_gibbs(
     # frequency spectrum (taking into account that the zero and Nyquist frequencies are
     # strictly real if the delay spectrum is assumed to be real)
     Ni_r = np.zeros(2 * Ni.shape[0])
-    Ni_r[0::2] = np.where(is_real_freq, Ni, Ni / 2**0.5)
-    Ni_r[1::2] = np.where(is_real_freq, 0.0, Ni / 2**0.5)
+    Ni_r[0::2] = np.where(is_real_freq, Ni, Ni * 2)
+    Ni_r[1::2] = np.where(is_real_freq, 0.0, Ni * 2)
 
     # Create the transpose of the Fourier matrix weighted by the noise
     # (this is used multiple times)
