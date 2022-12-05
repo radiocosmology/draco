@@ -5,7 +5,7 @@ from cora.util import units, coord
 
 from ..core import task, containers
 from ..analysis import transform
-from ..util import tools
+from ..util import tools, random
 
 
 # Wavelengths of lyman-alpha and 21cm transitions
@@ -431,6 +431,76 @@ class XCorrDirect(XCorrBase):
             return df, np.fft.fftshift(corr, axes=1)
         else:
             return df, None
+
+
+class PermuteSpectra(task.SingleTask):
+    """Generate a set of catalogues where the positions of the spectra have been randomly permuted from those of the initial catalogue.
+
+    Attributes
+    ----------
+    N : int
+        The number of permutations to generate.
+    seed : int
+        The seed for the RNG. If not set it will be generated and recorded in the logs.
+    """
+
+    N = config.Property(proptype=int, default=0)
+    seed = config.Property(proptype=int, default=None)
+
+    def setup(self, cat):
+        """Stash the original catalog and generate a RNG.
+
+        Parameters
+        ----------
+        cat : containers.FormedBeam
+            The initial catalogue to permute.
+        """
+
+        if self.N == 0:
+            raise config.CaputConfigError(
+                "The number of permutations (`N`) must be set to a non-zero value."
+            )
+
+        # get a random generator
+        # note that I am not using RandomTask because I want a common RNG on all ranks
+        if self.seed is None:
+            # Use seed sequence to generate a random seed
+            seed = np.random.SeedSequence().entropy
+            self._seed = self.comm.bcast(seed, root=0)
+        else:
+            self._seed = self.seed
+        self.rng = np.random.Generator(random._default_bitgen(self._seed))
+        self.log.info(f"Using random seed: {self._seed}")
+
+        # original catalogue, distributed over frequency so we can permute the objects
+        cat.redistribute("freq")
+        self.cat = cat
+
+        # counter for generated permutations
+        self._iter = 0
+
+    def process(self):
+        """Generate the next randomly permuted catalogue."""
+
+        # check if we are done
+        if self._iter == self.N:
+            raise pipeline.PipelineStopIteration
+        self._iter += 1
+
+        # generate a new randomly permuted catalogue
+        self.log.debug(f"Generating permuted catalogue {self._iter}/{self.N}.")
+        new_cat = self.cat.copy()
+        ind = self.rng.permutation(len(self.cat.id))
+        new_cat.beam[:].local_array[:] = self.cat.beam[:].local_array[ind]
+        new_cat.weight[:].local_array[:] = self.cat.weight[:].local_array[ind]
+        new_cat["redshift"][:] = self.cat["redshift"][ind]
+
+        # record the seed and iteration in case this is useful
+        new_cat.attrs["permutation_seed"] = f"{self._seed}"
+        new_cat.attrs["permutation_iter"] = self._iter - 1
+        new_cat.attrs["tag"] = f"perm{self._iter - 1}"
+
+        return new_cat
 
 
 # Galactic coordinates rotation
