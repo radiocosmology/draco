@@ -7,7 +7,7 @@ all be moved out into their own module.
 
 import numpy as np
 
-from caput import config
+from caput import config, pipeline
 
 from ..core import task, containers
 from ..util import tools
@@ -277,6 +277,39 @@ class MakeCopy(task.SingleTask):
         """
 
         return data.copy()
+
+
+class Repeat(task.SingleTask):
+    """Repeatedly output the same container for a number of iterations.
+
+    Attributes
+    ----------
+    N : int
+        The number of times to produce an output.
+    """
+
+    N = config.Property(proptype=int, default=0)
+
+    def setup(self, data):
+
+        if self.N == 0:
+            raise config.CaputConfigError(
+                "The number of permutations (`N`) must be set to a non-zero value."
+            )
+        self._iter = 0
+
+        self.data = data
+
+    def process(self):
+
+        # check if we are done
+        if self._iter == self.N:
+            raise pipeline.PipelineStopIteration
+        self._iter += 1
+
+        self.log.debug(f"Producing output {self._iter}/{self.N}")
+
+        return self.data
 
 
 class WaitUntil(task.MPILoggedTask):
