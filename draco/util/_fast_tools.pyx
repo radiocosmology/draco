@@ -23,13 +23,11 @@ cpdef _band_wiener_covariance(double [:, ::1] Rn, double [::1] Ni,
 
     cdef double [:, ::1] Ci = np.zeros((bw+1, Rn.shape[0]), dtype=np.float64)
 
-    cdef int N, M
     cdef int alpha, beta, betap, j, alpha_start, si, ei
 
     cdef double t
 
-    N = Rn.shape[0]
-    M = Rn.shape[1]
+    cdef int N = Rn.shape[0]
 
     # Loop over the band array indices to generate each one (opposite
     # order for faster parallelisation)
@@ -44,7 +42,7 @@ cpdef _band_wiener_covariance(double [:, ::1] Rn, double [::1] Ni,
         for alpha in range(alpha_start, bw+1):
             betap = alpha + beta - bw
             t = 0.0
-            for j in range(si, ei + 1):
+            for j in range(si, ei):
                 t = t + Rn[betap, j] * Rn[beta, j] * Ni[j]
             Ci[alpha, beta] = t
 
