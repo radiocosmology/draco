@@ -213,6 +213,88 @@ class AccumulateList(task.MPILoggedTask):
         return items
 
 
+class Concatenate(task.SingleTask):
+    """Accumulate containers passed as input and concatenate them when the task finishes.
+
+    Attributes
+    ----------
+    axis : str
+        The axis to concatenate along. Must occur on all datasets.
+    """
+
+    axis = config.Property(proptype=str, default=None)
+
+    def setup(self):
+        """Create the list to accumulate into."""
+
+        self._items = []
+
+    def process(self, cont):
+        """Append next container to the list.
+
+        Parameters
+        ----------
+        cont : containers.ContainerBase
+            The next container to append.
+        """
+
+        self._items.append(cont)
+
+    def process_finish(self):
+        """Concatenate along the specified axis and return a new container.
+
+        Returns
+        -------
+        new_cont : containers.ContainerBase
+            The concatenation of the all the input containers.
+        """
+
+        # create new container with expanded concatenation axis
+        concat_ax = np.concatenate([i.index_map[self.axis][:] for i in self._items])
+        new_cont = self._items[0].__class__(
+            axes_from=self._items[0],
+            attrs_from=self._items[0],
+            distributed=self._items[0].distributed,
+            comm=self.comm,
+            **{self.axis: concat_ax}
+        )
+
+        # concatenate each dataset that has this axis
+        for ds in new_cont.datasets:
+
+            # check the concatenation axis exists
+            ds_axes = new_cont.dataset_spec[ds]["axes"]
+            if self.axis not in ds_axes:
+                raise ValueError(f"Dataset {ds} does not have a {self.axis} axis to concatenate.")
+
+            ax_ind = ds_axes.index(self.axis)
+
+            # not distributed case
+            if not new_cont.dataset_spec[ds]["distributed"]:
+                new_cont[ds][:] = np.concatenate([i[ds][:] for i in self._items], axis=ax_ind)
+                continue
+
+            # check if we need to redistribute
+            if (ax_ind == new_cont[ds].distributed_axis) or (ax_ind == self._items[0][ds].distributed_axis):
+                dist_axis = (ax_ind + 1) % len(ds_axes)
+                self.log.debug(f"Redistributing along axis {dist_axis}")
+                new_cont[ds].redistribute(dist_axis)
+                for i in self._items:
+                    i[ds].redistribute(dist_axis)
+
+            # concatenate and copy data into new container
+            new_cont[ds][:].local_array[:] = np.concatenate(
+                    [i[ds][:].local_array for i in self._items],
+                axis=ax_ind
+            )
+
+        # Remove the internal reference to the items so they don't hang around after the task
+        # finishes
+        del self._items
+
+        return new_cont
+
+
 class CheckMPIEnvironment(task.MPILoggedTask):
     """Check that the current MPI environment can communicate across all nodes."""
 
