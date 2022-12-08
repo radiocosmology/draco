@@ -29,7 +29,7 @@ from typing import Union, Dict, List
 import numpy as np
 from yaml import dump as yamldump
 
-from caput import pipeline, config, fileformats, memh5, truncate
+from caput import pipeline, config, fileformats, memh5, truncate, mpiutil, mpiarray
 
 from cora.util import units
 
@@ -283,7 +283,6 @@ class LoadFITSCatalog(task.SingleTask):
         catalog : :class:`containers.SpectroscopicCatalog`
         """
 
-        from astropy.io import fits
         from . import containers
 
         # Exit this task if we have eaten all the file groups
@@ -311,16 +310,7 @@ class LoadFITSCatalog(task.SingleTask):
 
                 self.log.debug("Loading file %s", cfile)
 
-                # TODO: read out the weights from the catalogs
-                with fits.open(cfile, mode="readonly") as cat:
-                    pos = np.array([cat[1].data[col] for col in ["RA", "DEC", "Z"]])
-
-                # Apply any redshift selection to the objects
-                if self.z_range:
-                    zsel = (pos[2] >= self.z_range[0]) & (pos[2] <= self.z_range[1])
-                    pos = pos[:, zsel]
-
-                catalog_stack.append(pos)
+                catalog_stack.append(self._parse_file(cfile))
 
             # NOTE: this one is tricky, for some reason the concatenate in here
             # produces a non C contiguous array, so we need to ensure that otherwise
@@ -351,6 +341,301 @@ class LoadFITSCatalog(task.SingleTask):
         catalog.attrs["tag"] = group["tag"]
 
         return catalog
+
+    def _parse_file(self, cfile):
+
+        from astropy.io import fits
+
+        # TODO: read out the weights from the catalogs
+        with fits.open(cfile, mode="readonly") as cat:
+            pos = np.array([cat[1].data[col] for col in ["RA", "DEC", "Z"]])
+
+        # Apply any redshift selection to the objects
+        if self.z_range:
+            zsel = (pos[2] >= self.z_range[0]) & (pos[2] <= self.z_range[1])
+            pos = pos[:, zsel]
+
+        return pos
+
+
+class LoadFITSCatalogDLA(LoadFITSCatalog):
+    """Load DLA positions from an SDSS-style FITS source catalog.
+
+    Catalogs are given as one, or a list of `File Groups` (see
+    :mod:`draco.core.io`). Catalogs within the same group are combined together
+    before being passed on.
+
+    Attributes
+    ----------
+    catalogs : list or dict
+        A dictionary specifying a file group, or a list of them.
+    z_range : list, optional
+        Select only sources with a redshift within the given range.
+    freq_range : list, optional
+        Select only sources with a 21cm line freq within the given range. Overrides
+        `z_range`.
+    """
+
+    def _parse_file(self, cfile):
+
+        from astropy.io import fits
+
+        with fits.open(cfile, mode="readonly") as cat:
+            pos = np.array(
+                [cat[1].data[col] for col in ["RA", "DEC"]], dtype=np.float64
+            ).T
+            pos = np.ascontiguousarray(pos).view(
+                [("ra", np.float64), ("dec", np.float64)]
+            )
+            z = cat[1].data["Z_DLA"][:]
+
+        # identify quasars with DLAs
+        has_dla = (z != -1).sum(axis=-1) > 0
+
+        # expand position array to cover redshift axis
+        pos = np.tile(pos[has_dla], (1, z.shape[1]))
+
+        # pick out cells with a DLA and collapse axes
+        is_dla = np.where(z[has_dla] != -1)
+        z = z[has_dla][is_dla]
+        pos = pos[is_dla]
+
+        # Apply any redshift selection to the objects
+        zsel = slice(None)
+        n = z.shape[0]
+        if self.z_range:
+            zsel = (z >= self.z_range[0]) & (z <= self.z_range[1])
+            n = np.sum(zsel)
+
+        # return an array with the expected shape
+        out = np.zeros((3, n), dtype=np.float64)
+        out[0, :] = pos["ra"][zsel]
+        out[1, :] = pos["dec"][zsel]
+        out[2, :] = z[zsel]
+
+        return out
+
+
+class LoadFITSCatalogDLA2(LoadFITSCatalog):
+    """Load DLA positions from a FITS source catalog with an alternate structure.
+
+    This task is designed to load the catalog provided in arXiv:2107.09612,
+    which uses different column names than the SDSS DR16 catalog.
+
+    Catalogs are given as one, or a list of `File Groups` (see
+    :mod:`draco.core.io`). Catalogs within the same group are combined together
+    before being passed on.
+
+    Attributes
+    ----------
+    catalogs : list or dict
+        A dictionary specifying a file group, or a list of them.
+    z_range : list, optional
+        Select only sources with a redshift within the given range.
+    freq_range : list, optional
+        Select only sources with a 21cm line freq within the given range.
+        Overrides `z_range`.
+    """
+
+    def _parse_file(self, cfile):
+
+        from astropy.io import fits
+
+        with fits.open(cfile, mode="readonly") as cat:
+            pos = np.array([cat[1].data[col] for col in ["RA", "DEC", "Z_CNN"]])
+
+        # Apply any redshift selection to the objects
+        if self.z_range:
+            zsel = (pos[2] >= self.z_range[0]) & (pos[2] <= self.z_range[1])
+            pos = pos[:, zsel]
+
+        return pos
+
+
+class LoadFITSDelta(task.SingleTask):
+    """Load eBOSS Lyman-alpha delta files in FITS format.
+
+    See https://data.sdss.org/datamodel/files/EBOSS_LYA/DELTA_LYAB/delta.html
+    for data format specification.
+
+    Attributes
+    ----------
+    delta_files : list or dict
+        A dictionary specifying a file group, or a list of them.
+    """
+
+    delta_files = config.Property(proptype=_list_of_filegroups)
+
+    def process(self):
+        """Load the files into a single output container.
+
+        Loads spectra from all files and combines them into a single container
+        with a common frequency axis.
+
+        Returns
+        -------
+        spectra : :class:`containers.FormedBeam`
+        """
+
+        from astropy.io import fits
+        from . import containers
+        from time import time
+
+        # Exit this task if we have eaten all the file groups
+        if len(self.delta_files) == 0:
+            raise pipeline.PipelineStopIteration
+
+        group = self.delta_files.pop(0)
+
+        if self.comm.rank == 0:
+
+            # lists to read spectra into
+            delta = []
+            weight = []
+            pos = []
+            z = []
+            loglam = []
+            obj_id = []
+
+            for fname in group["files"]:
+
+                # read FITS file
+                with fits.open(fname, mode="readonly") as fh:
+                    # read all data into memory
+                    t0 = time()
+                    self.log.debug(f"(rank {self.comm.rank}) reading {fname}...")
+                    fh.readall()
+                    self.log.debug(f"in memory ({time() - t0} s)")
+
+                    # prepare arrays to copy into
+                    n_rec = len(fh) - 1
+                    this_pos = np.zeros((n_rec, 2), dtype=np.float64)
+                    this_z = np.zeros(n_rec, dtype=np.float64)
+                    this_id = np.zeros(n_rec, dtype=np.int32)
+
+                    # loop through HDUs and read
+                    for i, rec in enumerate(fh[1:]):
+                        this_pos[i] = tuple([rec.header[c] for c in ["RA", "DEC"]])
+                        this_z[i] = rec.header["Z"]
+                        this_id[i] = rec.header["THING_ID"]
+                        delta.append(np.ascontiguousarray(rec.data["DELTA"]))
+                        weight.append(np.ascontiguousarray(rec.data["WEIGHT"]))
+                        loglam.append(np.ascontiguousarray(rec.data["LOGLAM"]))
+
+                    pos.append(this_pos)
+                    z.append(this_z)
+                    obj_id.append(this_id)
+
+                    self.log.debug(f"{fname} done ({time() - t0} s)")
+
+            # these have a single value per object
+            pos = np.concatenate(pos, axis=0)
+            z = np.concatenate(z)
+            obj_id = np.concatenate(obj_id)
+
+            # create common wavelength axis
+            loglam_all = np.concatenate(loglam)
+            llam_max = loglam_all.max()
+            llam_min = loglam_all.min()
+            dllam = np.min(np.abs(np.diff(loglam[0])))
+            # N.B. all spectra must share a common resolution
+            for ll in loglam:
+                this_dllam = np.min(np.abs(np.diff(ll)))
+                if np.abs(dllam - this_dllam) / dllam > 1e-3:
+                    self.log.warn("Not all spectra use same gridding.")
+            nlam = int(np.round((llam_max - llam_min) / dllam)) + 1
+            lam = np.power(10, llam_min + np.arange(nlam) * dllam)
+
+            # sort data into a single array
+            delta_common = np.zeros((len(delta), nlam), dtype=delta[0].dtype)
+            weight_common = np.zeros((len(weight), nlam), dtype=weight[0].dtype)
+            t0 = time()
+            for i in range(len(delta)):
+                ind = np.argmin(
+                    np.abs(np.power(10, loglam[i])[:, np.newaxis] - lam), axis=1
+                )
+                delta_common[i, ind] = delta[i]
+                weight_common[i, ind] = weight[i]
+            self.log.debug(f"Done sorting spectra. ({time() - t0:.1f} s)")
+            delta = delta_common
+            weight = weight_common
+
+            # weights are inverse variance estimate with a redshift-dependent bias correction
+            # (eq. 7 in du Mas des Bourboux et al)
+
+            # can't just concatenate because lam axis is different
+            num_objects = len(pos)
+            num_pix = len(lam)
+
+            self.log.debug("rank 0 done reading files")
+            self.log.debug(f"delta shape {delta.shape}")
+
+        else:
+            num_objects = None
+            num_pix = None
+            delta = None
+            weight = None
+
+        self.comm.Barrier()
+
+        # Broadcast the size of the catalog to all ranks
+        num_objects = self.comm.bcast(num_objects, root=0)
+        num_pix = self.comm.bcast(num_pix, root=0)
+        self.log.debug(f"Reading spectra for {num_objects} objects.")
+
+        # broadcast the axes
+        if self.comm.rank != 0:
+            pos = np.zeros((num_objects, 2), dtype=np.float64)
+            z = np.zeros(num_objects, dtype=np.float64)
+            lam = np.zeros(num_pix, dtype=np.float64)
+            obj_id = np.zeros(num_objects, dtype=np.int32)
+        self.comm.Bcast(pos, root=0)
+        self.comm.Bcast(z, root=0)
+        self.comm.Bcast(lam, root=0)
+        self.comm.Bcast(obj_id, root=0)
+        self.log.debug(f"(rank {self.comm.rank}) got axes.")
+
+        # convert wavelength (A) to frequency (MHz)
+        freq = units.c / lam * 1e4
+
+        # scatter arrays to all ranks
+        def scatter_array(array):
+            shape = array.shape if self.comm.rank == 0 else None
+            shape = self.comm.bcast(shape, root=0)
+            dt = array.dtype if self.comm.rank == 0 else None
+            dt = self.comm.bcast(dt, root=0)
+            array_ext = (
+                array[np.newaxis, ...]
+                if self.comm.rank == 0
+                else np.empty((0,) + shape, dtype=dt)
+            )
+            arr0 = mpiarray.MPIArray.wrap(array_ext, axis=0)
+            return arr0.redistribute(axis=1)[0]
+
+        self.log.debug(f"(rank {self.comm.rank}) scattering arrays...")
+        delta_local = scatter_array(delta)
+        weight_local = scatter_array(weight)
+        self.log.debug(f"(rank {self.comm.rank}) done scattering arrays.")
+
+        # construct FormedBeam container
+        deltas = containers.FormedBeam(
+            freq=freq, object_id=obj_id, pol=np.array(["0"]), comm=self.comm
+        )
+        # DELTA files use radians
+        deltas["position"]["ra"] = np.degrees(pos[:, 0])
+        deltas["position"]["dec"] = np.degrees(pos[:, 1])
+        deltas["redshift"]["z"] = z
+        deltas["redshift"]["z_error"] = 0
+
+        # write to the distributed array
+        deltas.redistribute("object_id")
+        deltas["beam"][:] = delta_local[:, np.newaxis, :]
+        deltas["weight"][:] = weight_local[:, np.newaxis, :]
+
+        # assign tag
+        deltas.attrs["tag"] = group["tag"]
+
+        return deltas
 
 
 class BaseLoadFiles(task.SingleTask):
