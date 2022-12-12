@@ -1372,18 +1372,12 @@ class AliasFreeRebin(task.SingleTask):
                 space = 2.99792458e2 / freq / dmin
 
                 for l in range(ss_m.shape[-1]):
-                    if el_values[l] + space < 1:
-                        alias_pos_up = np.argmin(
-                            np.abs(el_values - (el_values[l] + space))
-                        )
+                    el = el_values[l]
+                    up = el + space
+                    if up < 1:
+                        alias_pos_up = np.argmin(np.abs(el_values - up))
                     else:
                         alias_pos_up = None
-                    if el_values[l] - space > -1:
-                        alias_pos_down = np.argmin(
-                            np.abs(el_values - (el_values[l] - space))
-                        )
-                    else:
-                        alias_pos_down = None
 
                     dirty_beam[i, ri, l, :] += (
                         pb_array[l] * real_noise_cov[:, l] * data[:, l]
@@ -1397,33 +1391,29 @@ class AliasFreeRebin(task.SingleTask):
                             * real_noise_cov[:, alias_pos_up]
                             * data[:, alias_pos_up]
                         )
+                        dirty_beam[i, ri, alias_pos_up, :] += (
+                            pb_array[alias_pos_up]
+                            * real_noise_cov[:, alias_pos_up]
+                            * data[:, l]
+                        )
+
                         N_Rinv[i, ri, :, l, l] += (
                             pb_array[l] * real_noise_cov[:, alias_pos_up] * pb_array[l]
                         )
                         N_Rinv[i, ri, :, alias_pos_up, l] += (
-                            pb_array[alias_pos_up] * real_noise_cov[:, l] * pb_array[l]
-                            + pb_array[alias_pos_up]
+                            pb_array[alias_pos_up]
+                            * (real_noise_cov[:, l] + real_noise_cov[:, alias_pos_up])
+                            * pb_array[l]
+                        )
+                        N_Rinv[i, ri, :, l, alias_pos_up] += (
+                            pb_array[l]
+                            * (real_noise_cov[:, alias_pos_up] + real_noise_cov[:, l])
+                            * pb_array[alias_pos_up]
+                        )
+                        N_Rinv[i, ri, :, alias_pos_up, alias_pos_up] += (
+                            pb_array[alias_pos_up]
                             * real_noise_cov[:, alias_pos_up]
-                            * pb_array[l]
-                        )
-                    if alias_pos_down is not None:
-                        dirty_beam[i, ri, l, :] += (
-                            pb_array[l]
-                            * real_noise_cov[:, alias_pos_down]
-                            * data[:, alias_pos_down]
-                        )
-                        N_Rinv[i, ri, :, l, l] += (
-                            pb_array[l]
-                            * real_noise_cov[:, alias_pos_down]
-                            * pb_array[l]
-                        )
-                        N_Rinv[i, ri, :, alias_pos_down, l] += (
-                            pb_array[alias_pos_down]
-                            * real_noise_cov[:, l]
-                            * pb_array[l]
-                            + pb_array[alias_pos_down]
-                            * real_noise_cov[:, alias_pos_down]
-                            * pb_array[l]
+                            * pb_array[alias_pos_up]
                         )
 
             # apply Wiener filter per RA
