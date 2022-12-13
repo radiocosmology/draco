@@ -279,6 +279,20 @@ class MakeCopy(task.SingleTask):
         return data.copy()
 
 
+class MaskXNOR(task.SingleTask):
+    """XNOR of an RFI mask.
+
+    Only keeps values where the masks are different.
+    Useful for comparing the effcets of different masks.
+    """
+
+    def process(self, mask1, mask2):
+        cont = containers.RFIMask(copy_from=mask1)
+        cont.mask[:] = ~(mask1.mask[:] ^ mask2.mask[:])
+
+        return cont
+
+
 class WaitUntil(task.MPILoggedTask):
     """Wait until the the requires before forwarding inputs.
 
