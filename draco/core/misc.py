@@ -265,6 +265,16 @@ class CheckMPIEnvironment(task.MPILoggedTask):
         )
 
 
+class InvertMask(task.SingleTask):
+    """Invert a mask."""
+
+    def process(self, cont):
+        new_cont = containers.RFIMask(copy_from=cont)
+        new_cont.mask[:] = ~cont.mask[:]
+
+        return new_cont
+
+
 class MakeCopy(task.SingleTask):
     """Make a copy of the passed container."""
 
