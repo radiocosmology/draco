@@ -1168,6 +1168,64 @@ def _alternating_real_to_complex(array):
     return array.astype(np.float64, order="C").view(np.complex128)
 
 
+def _compute_delay_spectrum_inputs(data, N, Ni, fsel, window, complex_timedomain):
+    """Compute quantities needed for Gibbs sampling and/or Wiener filtering.
+
+    These quantities are needed by both :func:`delay_spectrum_gibbs` and
+    :func:`wiener_filter`, so we compute them in this separate routine.
+    """
+
+    total_freq = N if complex_timedomain else N // 2 + 1
+
+    if fsel is None:
+        fsel = np.arange(total_freq)
+
+    # Construct the Fourier matrix
+    F = (
+        fourier_matrix_c2c(N, fsel)
+        if complex_timedomain
+        else fourier_matrix_r2c(N, fsel)
+    )
+
+    # Construct a view of the data with alternating real and imaginary parts
+    data = _complex_to_alternating_real(data).T.copy()
+
+    # Window the frequency data
+    if window is not None:
+
+        # Construct the window function
+        x = fsel * 1.0 / total_freq
+        w = window_generalised(x, window=window)
+        w = np.repeat(w, 2)
+
+        # Apply to the projection matrix and the data
+        F *= w[:, np.newaxis]
+        data *= w[:, np.newaxis]
+
+    if complex_timedomain:
+        is_real_freq = np.zeros_like(fsel).astype(bool)
+    else:
+        is_real_freq = (fsel == 0) | (fsel == N // 2)
+
+    # Construct the Noise inverse array for the real and imaginary parts of the
+    # frequency spectrum (taking into account that the zero and Nyquist frequencies are
+    # strictly real if the delay spectrum is assumed to be real)
+    Ni_r = np.zeros(2 * Ni.shape[0])
+    Ni_r[0::2] = np.where(is_real_freq, Ni, Ni / 2**0.5)
+    Ni_r[1::2] = np.where(is_real_freq, 0.0, Ni / 2**0.5)
+
+    # Create the transpose of the Fourier matrix weighted by the noise
+    # (this is used multiple times)
+    FTNih = F.T * Ni_r[np.newaxis, :] ** 0.5
+    FTNiF = np.dot(FTNih, FTNih.T)
+
+    # Pre-whiten the data to save doing it repeatedly
+    data = data * Ni_r[:, np.newaxis] ** 0.5
+
+    # Return data and inverse-noise-weighted Fourier matrices
+    return data, FTNih, FTNiF
+
+
 def delay_spectrum_gibbs(
     data,
     N,
@@ -1222,51 +1280,11 @@ def delay_spectrum_gibbs(
 
     spec = []
 
-    total_freq = N if complex_timedomain else N // 2 + 1
-
-    if fsel is None:
-        fsel = np.arange(total_freq)
-
-    # Construct the Fourier matrix
-    F = (
-        fourier_matrix_c2c(N, fsel)
-        if complex_timedomain
-        else fourier_matrix_r2c(N, fsel)
+    # Pre-whiten and apply frequency window to data, and compute F^dagger N^{-1/2}
+    # and F^dagger N^{-1} F
+    data, FTNih, FTNiF = _compute_delay_spectrum_inputs(
+        data, N, Ni, fsel, window, complex_timedomain
     )
-
-    # Construct a view of the data with alternating real and imaginary parts
-    data = _complex_to_alternating_real(data).T.copy()
-
-    # Window the frequency data
-    if window is not None:
-        # Construct the window function
-        x = fsel * 1.0 / total_freq
-        w = window_generalised(x, window=window)
-        w = np.repeat(w, 2)
-
-        # Apply to the projection matrix and the data
-        F *= w[:, np.newaxis]
-        data *= w[:, np.newaxis]
-
-    if complex_timedomain:
-        is_real_freq = np.zeros_like(fsel).astype(bool)
-    else:
-        is_real_freq = (fsel == 0) | (fsel == N // 2)
-
-    # Construct the Noise inverse array for the real and imaginary parts of the
-    # frequency spectrum (taking into account that the zero and Nyquist frequencies are
-    # strictly real if the delay spectrum is assumed to be real)
-    Ni_r = np.zeros(2 * Ni.shape[0])
-    Ni_r[0::2] = np.where(is_real_freq, Ni, Ni / 2**0.5)
-    Ni_r[1::2] = np.where(is_real_freq, 0.0, Ni / 2**0.5)
-
-    # Create the transpose of the Fourier matrix weighted by the noise
-    # (this is used multiple times)
-    FTNih = F.T * Ni_r[np.newaxis, :]**0.5
-    FTNiF = np.dot(FTNih, FTNih.T)
-
-    # Pre-whiten the data to save doing it repeatedly
-    data = data * Ni_r[:, np.newaxis] ** 0.5
 
     # Set the initial guess for the delay power spectrum.
     S_samp = initial_S
@@ -1331,7 +1349,7 @@ def delay_spectrum_gibbs(
 
         # Perform the solve step (rather than explicitly using the inverse)
         y = data + w2 - np.dot(R, w1)
-        Ci = np.identity(len(Ni_r)) + np.dot(R, Rt)
+        Ci = np.identity(2 * Ni.shape[0]) + np.dot(R, Rt)
         x = la.solve(Ci, y, sym_pos=True)
 
         s = Sh[:, np.newaxis] * (np.dot(Rt, x) + w1)
@@ -1408,54 +1426,11 @@ def wiener_filter(
     y_spec : np.ndarray[nsample, ndelay]
         Delay spectrum for each element of the `sample` axis.
     """
-
-    # Total number of freqs
-    total_freq = N if complex_timedomain else N // 2 + 1
-
-    if fsel is None:
-        fsel = np.arange(total_freq)
-
-    # Construct the Fourier matrix
-    F = (
-        fourier_matrix_c2c(N, fsel)
-        if complex_timedomain
-        else fourier_matrix_r2c(N, fsel)
+    # Pre-whiten and apply frequency window to data, and compute F^dagger N^{-1/2}
+    # and F^dagger N^{-1} F
+    data, FTNih, FTNiF = _compute_delay_spectrum_inputs(
+        data, N, Ni, fsel, window, complex_timedomain
     )
-
-    # Construct a view of the data with alternating real and imaginary parts
-    data = _complex_to_alternating_real(data).T.copy()
-
-    # Window the frequency data
-    if window is not None:
-
-        # Construct the window function
-        x = fsel * 1.0 / total_freq
-        w = window_generalised(x, window=window)
-        w = np.repeat(w, 2)
-
-        # Apply to the projection matrix and the data
-        F *= w[:, np.newaxis]
-        data *= w[:, np.newaxis]
-
-    if complex_timedomain:
-        is_real_freq = np.zeros_like(fsel).astype(bool)
-    else:
-        is_real_freq = (fsel == 0) | (fsel == N // 2)
-
-    # Construct the Noise inverse array for the real and imaginary parts of the
-    # frequency spectrum (taking into account that the zero and Nyquist frequencies are
-    # strictly real if the delay spectrum is assumed to be real)
-    Ni_r = np.zeros(2 * Ni.shape[0])
-    Ni_r[0::2] = np.where(is_real_freq, Ni, Ni / 2**0.5)
-    Ni_r[1::2] = np.where(is_real_freq, 0.0, Ni / 2**0.5)
-
-    # Create the transpose of the Fourier matrix weighted by the noise
-    # (this is used multiple times)
-    FTNih = F.T.conj() * Ni_r[np.newaxis, :] ** 0.5
-    FTNiF = np.dot(FTNih, FTNih.T.conj())
-
-    # Pre-whiten the data to save doing it repeatedly
-    data = data * Ni_r[:, np.newaxis] ** 0.5
 
     # Apply F^dagger N^{-1/2} to input frequency spectrum
     y = np.dot(FTNih, data)
