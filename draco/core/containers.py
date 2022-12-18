@@ -2340,10 +2340,18 @@ class DelaySpectrum(ContainerBase):
         }
     }
 
+    def __init__(self, weight_boost=1.0, *args, **kwargs):
+        super(DelaySpectrum, self).__init__(*args, **kwargs)
+        self.attrs["weight_boost"] = weight_boost
+
     @property
     def spectrum(self):
         """Get the spectrum dataset."""
         return self.datasets["spectrum"]
+
+    @property
+    def weight_boost(self):
+        return self.attrs["weight_boost"]
 
 
 class DelayTransform(ContainerBase):
@@ -2368,9 +2376,17 @@ class DelayTransform(ContainerBase):
         }
     }
 
+    def __init__(self, weight_boost=1.0, *args, **kwargs):
+        super(DelayTransform, self).__init__(*args, **kwargs)
+        self.attrs["weight_boost"] = weight_boost
+
     @property
     def spectrum(self):
         return self.datasets["spectrum"]
+
+    @property
+    def weight_boost(self):
+        return self.attrs["weight_boost"]
 
 
 class Powerspectrum2D(ContainerBase):
