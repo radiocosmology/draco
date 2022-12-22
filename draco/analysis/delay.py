@@ -1359,15 +1359,16 @@ def wiener_filter(
         S = 0.5 * np.repeat(delay_PS, 2)
         Si = 1.0 / S
     else:
-        Si = 1 / delay_PS
+        Si = 1.0 / delay_PS
 
     Ci = np.diag(Si) + FTNiF
 
-    # Solve the linear equation for the Wiener-filtered spectrum
-    y_spec = la.solve(Ci, y, sym_pos=True)
+    # Solve the linear equation for the Wiener-filtered spectrum, and transpose to
+    # [average_axis, delay]
+    y_spec = la.solve(Ci, y, sym_pos=True).T
 
     if complex_timedomain:
-        y_spec = _alternating_real_to_complex(y_spec.T)
+        y_spec = _alternating_real_to_complex(y_spec)
 
     return y_spec
 
