@@ -1153,10 +1153,14 @@ class MixData(task.SingleTask):
     weight_coeff : list
         Coefficient to be applied to each input containers weights to generate the
         output.
+    invert_weights : bool
+        Invert the weights before combining them, and return the inverse of the total.
+        The coefficients are applied to the inverted weights. Default is False.
     """
 
     data_coeff = config.list_type(type_=float)
     weight_coeff = config.list_type(type_=float)
+    invert_weights = config.Property(proptype=bool, default=False)
 
     mixed_data = None
 
@@ -1220,7 +1224,14 @@ class MixData(task.SingleTask):
 
         # Mix in the data and weights
         mixed_dset[:] += self.data_coeff[self._data_ind] * data_dset[:]
-        self.mixed_data.weight[:] += self.weight_coeff[self._data_ind] * data.weight[:]
+        if self.invert_weights:
+            self.mixed_data.weight[:] += self.weight_coeff[
+                self._data_ind
+            ] * tools.invert_no_zero(data.weight[:])
+        else:
+            self.mixed_data.weight[:] += (
+                self.weight_coeff[self._data_ind] * data.weight[:]
+            )
 
         self._data_ind += 1
 
@@ -1243,5 +1254,8 @@ class MixData(task.SingleTask):
         # the object can be eventually deleted
         data = self.mixed_data
         self.mixed_data = None
+
+        if self.invert_weights:
+            data.weight[:] = tools.invert_no_zero(data.weight[:])
 
         return data
