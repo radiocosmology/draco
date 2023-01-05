@@ -342,10 +342,19 @@ class XCorrFFT(XCorrBase):
         bfA_fft = np.fft.fft(bfA.beam[:] * (bfA.weight[:] != 0), axis=-1)
         bfB_fft = np.fft.fft(bfB.beam[:] * (bfB.weight[:] != 0), axis=-1)
 
+        # Normalise by number of samples in zero-lag bin to ensure consistency with
+        # direct method
+        norm = np.sum(
+            (bfA.weight[:].local_array * bfB.weight[:].local_array) != 0, axis=(0, 2)
+        )
+
         # estimate PS
         ps = np.sum(bfA_fft * bfB_fft.conj(), axis=0)
         ps = mpiarray.MPIArray.wrap(
             ps[np.newaxis, ...], axis=0, comm=self.comm
+        ).gather()
+        norm = mpiarray.MPIArray.wrap(
+            norm[np.newaxis, :], axis=0, comm=self.comm
         ).gather()
 
         # transform back to correlation function
@@ -353,10 +362,11 @@ class XCorrFFT(XCorrBase):
         if self.comm.rank == 0:
             ps = np.sum(ps, axis=0)
             corr = np.fft.ifft(ps, axis=-1)
+            corr *= tools.invert_no_zero(np.sum(norm, axis=0))[:, np.newaxis]
         else:
             corr = None
 
-        # calculate frequencey separation axis
+        # calculate frequency separation axis
         N = bfA.beam.shape[-1]
         df = (np.arange(N) - N // 2) * np.abs(bfA.freq[1] - bfA.freq[0])
 
@@ -408,21 +418,16 @@ class XCorrDirect(XCorrBase):
         for i in range(npol):
             corr[i] = tools.corr_func(bA[:, i] * wA[:, i], bB[:, i] * wB[:, i], N)
             norm[i] = tools.corr_func(wA[:, i], wB[:, i], N)
-        # second normalisation is to match FFT method given unit weights
-        norm2 = np.sum((wA * wB) != 0, axis=(0, 2))
 
         # combine all ranks
         corr = mpiarray.MPIArray.wrap(corr[np.newaxis, ...], axis=0, comm=self.comm)
         corr = corr.gather()
         norm = mpiarray.MPIArray.wrap(norm[np.newaxis, ...], axis=0, comm=self.comm)
         norm = norm.gather()
-        norm2 = mpiarray.MPIArray.wrap(norm2[np.newaxis, :], axis=0, comm=self.comm)
-        norm2 = norm2.gather()
         if self.comm.rank == 0:
             corr = np.sum(corr, axis=0)
             norm = np.sum(norm, axis=0)
             corr *= tools.invert_no_zero(norm)
-            corr *= np.sum(norm2, axis=0)[:, np.newaxis]
 
         # calculate frequencey separation axis
         df = (np.arange(N) - N // 2) * np.abs(bfA.freq[1] - bfA.freq[0])
