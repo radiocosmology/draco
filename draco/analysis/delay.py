@@ -10,7 +10,7 @@ from caput import mpiarray, config
 from cora.util import units
 
 from ..core import containers, task, io
-from ..util import random
+from ..util import random, tools
 
 
 class DelayFilter(task.SingleTask):
@@ -356,12 +356,20 @@ class DelaySpectrumEstimator(task.SingleTask, random.RandomTask):
         default to align with the output of CASPER PFBs.
     apply_window : bool, optional
         Whether to apply apodisation to frequency axis. Default: True.
-    window : one of {'nuttall', 'blackman_nuttall', 'blackman_harris'}, optional
+    window : window available in :func:`draco.util.tools.window_generalised()`, optional
         Apodisation to perform on frequency axis. Default: 'nuttall'.
     complex_timedomain : bool, optional
         Whether to assume the original time samples that were channelized into a
         frequency spectrum were purely real (False) or complex (True). If True,
         `freq_zero`, `nfreq`, and `skip_nyquist` are ignored. Default: False.
+    initial_amplitude : float, optional
+        The Gibbs sampler will be initialized with a flat power spectrum with
+        this amplitude. Default: 10.
+    weight_boost : float, optional
+        Multiply weights in the input container by this factor. This causes the Gibbs
+        sampler to assume the noise power in the data is `weight_boost` times lower,
+        which is useful if you want the "true" noise to be included in the power
+        spectrum measured by the Gibbs sampler. Default: 1.0.
     """
 
     nsamp = config.Property(proptype=int, default=20)
@@ -371,9 +379,21 @@ class DelaySpectrumEstimator(task.SingleTask, random.RandomTask):
     skip_nyquist = config.Property(proptype=bool, default=True)
     apply_window = config.Property(proptype=bool, default=True)
     window = config.enum(
-        ["nuttall", "blackman_nuttall", "blackman_harris"], default="nuttall"
+        [
+            "uniform",
+            "hann",
+            "hanning",
+            "hamming",
+            "blackman",
+            "nuttall",
+            "blackman_nuttall",
+            "blackman_harris",
+        ],
+        default="nuttall",
     )
     complex_timedomain = config.Property(proptype=bool, default=False)
+    initial_amplitude = config.Property(proptype=float, default=10.0)
+    weight_boost = config.Property(proptype=float, default=1.0)
 
     def setup(self, telescope):
         """Set the telescope needed to generate Stokes I.
@@ -432,14 +452,17 @@ class DelaySpectrumEstimator(task.SingleTask, random.RandomTask):
 
         # Initialise the spectrum container
         delay_spec = containers.DelaySpectrum(
-            baseline=baselines, delay=delays, attrs_from=ss
+            baseline=baselines,
+            delay=delays,
+            attrs_from=ss,
+            weight_boost=self.weight_boost,
         )
         delay_spec.redistribute("baseline")
         delay_spec.spectrum[:] = 0.0
 
-        initial_S = np.ones_like(delays) * 1e1
+        initial_S = np.ones_like(delays) * self.initial_amplitude
 
-        # Get the random Generator that we will use
+        # Initialize the random number generator we'll use
         rng = self.rng
 
         # Iterate over all baselines and use the Gibbs sampler to estimate the spectrum
@@ -472,6 +495,9 @@ class DelaySpectrumEstimator(task.SingleTask, random.RandomTask):
             data = data[:, non_zero]
             weight = weight[non_zero]
             non_zero_channel = channel_ind[non_zero]
+
+            # Increase the weights by a specified amount
+            weight *= self.weight_boost
 
             spec = delay_spectrum_gibbs(
                 data,
@@ -529,12 +555,20 @@ class DelaySpectrumEstimatorBase(task.SingleTask, random.RandomTask):
         Name of the axis to take the average over.
     apply_window : bool, optional
         Whether to apply apodisation to frequency axis. Default: True.
-    window : one of {'nuttall', 'blackman_nuttall', 'blackman_harris', optional
+    window : window available in :func:`draco.util.tools.window_generalised()`, optional
         Apodisation to perform on frequency axis. Default: 'nuttall'.
     complex_timedomain : bool, optional
         Whether to assume the original time samples that were channelized into a
         frequency spectrum were purely real (False) or complex (True). If True,
         `freq_zero`, `nfreq`, and `skip_nyquist` are ignored. Default: False.
+    initial_amplitude : float, optional
+        The Gibbs sampler will be initialized with a flat power spectrum with
+        this amplitude. Default: 10.
+    weight_boost : float, optional
+        Multiply weights in the input container by this factor. This causes the Gibbs
+        sampler to assume the noise power in the data is `weight_boost` times lower,
+        which is useful if you want the "true" noise to be included in the power
+        spectrum measured by the Gibbs sampler. Default: 1.0.
     """
 
     nsamp = config.Property(proptype=int, default=20)
@@ -544,11 +578,23 @@ class DelaySpectrumEstimatorBase(task.SingleTask, random.RandomTask):
     skip_nyquist = config.Property(proptype=bool, default=True)
     apply_window = config.Property(proptype=bool, default=True)
     window = config.enum(
-        ["nuttall", "blackman_nuttall", "blackman_harris"], default="nuttall"
+        [
+            "uniform",
+            "hann",
+            "hanning",
+            "hamming",
+            "blackman",
+            "nuttall",
+            "blackman_nuttall",
+            "blackman_harris",
+        ],
+        default="nuttall",
     )
     dataset = config.Property(proptype=str, default="vis")
     average_axis = config.Property(proptype=str)
     complex_timedomain = config.Property(proptype=bool, default=False)
+    initial_amplitude = config.Property(proptype=float, default=10.0)
+    weight_boost = config.Property(proptype=float, default=1.0)
 
     def setup(self, telescope: io.TelescopeConvertible):
         """Set the telescope needed to generate Stokes I.
@@ -624,7 +670,7 @@ class DelaySpectrumEstimatorBase(task.SingleTask, random.RandomTask):
         # Create a view of the dataset with the relevant axes at the back,
         # and all other axes compressed
         data_view = np.moveaxis(
-            ss.datasets[self.dataset][:].view(np.ndarray),
+            ss.datasets[self.dataset][:].local_array,
             [average_axis_pos, freq_axis_pos],
             [-2, -1],
         )
@@ -652,7 +698,7 @@ class DelaySpectrumEstimatorBase(task.SingleTask, random.RandomTask):
 
         # Initialise the spectrum container
         delay_spec = containers.DelaySpectrum(
-            baseline=nbase, delay=delays, attrs_from=ss
+            baseline=nbase, delay=delays, attrs_from=ss, weight_boost=self.weight_boost
         )
         delay_spec.redistribute("baseline")
         delay_spec.spectrum[:] = 0.0
@@ -665,7 +711,10 @@ class DelaySpectrumEstimatorBase(task.SingleTask, random.RandomTask):
             delay_spec.create_index_map(ax, ss.index_map[ax])
         delay_spec.attrs["baseline_axes"] = bl_axes
 
-        initial_S = np.ones_like(delays) * 1e1
+        initial_S = np.ones_like(delays) * self.initial_amplitude
+
+        # Initialize the random number generator we'll use
+        rng = self.rng
 
         # Iterate over all baselines and use the Gibbs sampler to estimate the spectrum
         for lbi, bi in delay_spec.spectrum[:].enumerate(axis=0):
@@ -673,8 +722,8 @@ class DelaySpectrumEstimatorBase(task.SingleTask, random.RandomTask):
             self.log.debug(f"Delay transforming baseline {bi}/{nbase}")
 
             # Get the local selections
-            data = data_view[lbi].view(np.ndarray)
-            weight = weight_view[lbi].view(np.ndarray)
+            data = data_view.local_array[lbi]
+            weight = weight_view.local_array[lbi]
 
             # Mask out data with completely zero'd weights and generate time
             # averaged weights
@@ -698,6 +747,9 @@ class DelaySpectrumEstimatorBase(task.SingleTask, random.RandomTask):
             weight = weight[non_zero]
             non_zero_channel = channel_ind[non_zero]
 
+            # Increase the weights by a specified amount
+            weight *= self.weight_boost
+
             spec = delay_spectrum_gibbs(
                 data,
                 ndelay,
@@ -706,7 +758,7 @@ class DelaySpectrumEstimatorBase(task.SingleTask, random.RandomTask):
                 window=self.window if self.apply_window else None,
                 fsel=non_zero_channel,
                 niter=self.nsamp,
-                rng=self.rng,
+                rng=rng,
                 complex_timedomain=self.complex_timedomain,
             )
 
@@ -719,16 +771,18 @@ class DelaySpectrumEstimatorBase(task.SingleTask, random.RandomTask):
 
 
 class DelaySpectrumWienerBase(task.SingleTask):
-    """Calculate the delay spectrum for each RA and DEC of any container with a frequency axis.
+    """Calculate the delay spectrum of any container with a frequency axis.
 
     The spectrum is calculated by Wiener filtering method given the delay power spectrum
     at each DEC/baselines [https://arxiv.org/abs/2202.01242 see:- eqn A6].
 
-    The delay spectrum output is indexed by  `baseline` and 'sample' axis. The baseline axis is the
-    composite axis of all the axis (DEC, pol and beam axes) in the container except the 'sample' and frequency axis.
-    The 'sample' axis is the average axis over which the average is taken to estimate the delay power spectrum.
-    These constituent axes are included in the index map,  which are ['beam', 'pol', 'sample', 'el'], and their
-    order is given by the `baseline_axes` attribute.
+    The delay spectrum output is indexed by  `baseline` and 'sample' axis.
+    The baseline axis is the composite axis of all the axes in the container
+    except the frequency  and 'sample' axes. The 'sample' axis is the average
+    axis over which the average is taken to estimate the delay power spectrum.
+    These constituent axes are included in the index map, which are
+    ['beam', 'pol', 'sample', 'el'], and their order is given by the `baseline_axes`
+    attribute.
 
     Attributes
     ----------
@@ -737,13 +791,10 @@ class DelaySpectrumWienerBase(task.SingleTask):
         Calculate the delay spectrum of this dataset (e.g., "vis", "map", "beam").
     average_axis : str
         Name of the axis to take the average over.
-
-    apply_window = config.Property(proptype=bool, default=True)
-
-    window = config.enum(
-        ["nuttall", "blackman_nuttall", "blackman_harris"], default="nuttall"
-    )
-
+    apply_window : bool, optional
+        Whether to apply apodisation to frequency axis. Default: True.
+    window : window available in :func:`draco.util.tools.window_generalised()`, optional
+        Apodisation to perform on frequency axis. Default: 'nuttall'.
     complex_timedomain : bool, optional
         Whether to assume the original time samples that were channelized into a
         frequency spectrum were purely real (False) or complex (True). If True,
@@ -753,24 +804,32 @@ class DelaySpectrumWienerBase(task.SingleTask):
 
     dataset = config.Property(proptype=str, default="vis")
     average_axis = config.Property(proptype=str)
-    # complex_input = config.Property(proptype=bool, default=False)
     apply_window = config.Property(proptype=bool, default=True)
     window = config.enum(
-        ["nuttall", "blackman_nuttall", "blackman_harris"], default="nuttall"
+        [
+            "uniform",
+            "hann",
+            "hanning",
+            "hamming",
+            "blackman",
+            "nuttall",
+            "blackman_nuttall",
+            "blackman_harris",
+        ],
+        default="nuttall",
     )
     complex_timedomain = config.Property(proptype=bool, default=False)
 
     def process(
         self, ss: FreqContainerType, dps: containers.DelaySpectrum
     ) -> containers.DelayTransform:
-        """Estimate the delay spectrum.
+        """Estimate the delay transform.
 
         Parameters
         ----------
         ss
-            Data to transform. Must have a frequency axis and the "RA" axis over which the average was taken to generate
-            delay power spectrum for each baseline/DEC.
-
+            Data to transform. Must have a frequency axis and one other axis
+            over which the average was taken to generate delay power spectrum.
         dps : DelaySpectrum container
              Delay power spectrum of the input data.
 
@@ -784,6 +843,9 @@ class DelaySpectrumWienerBase(task.SingleTask):
 
         # Read the delay power spectrum from the container
         delay_ps = dps.spectrum[:]
+
+        # Read the weight boost factor from the input DelaySpectrum container
+        self.weight_boost = dps.attrs["weight_boost"]
 
         if self.dataset not in ss.datasets:
             raise ValueError(
@@ -809,7 +871,6 @@ class DelaySpectrumWienerBase(task.SingleTask):
         if self.complex_timedomain:
             self.nfreq = len(ss.freq)
             channel_ind = np.arange(self.nfreq)
-        # ndelay = self.nfreq
         else:
             channel_ind = (
                 np.abs(ss.freq[:] - self.freq_zero) / self.freq_spacing
@@ -906,6 +967,9 @@ class DelaySpectrumWienerBase(task.SingleTask):
             weight = weight[non_zero]
             non_zero_channel = channel_ind[non_zero]
 
+            # Increase the weights by a specified amount
+            weight *= self.weight_boost
+
             # Pass the delay power spectrum for each baseline/DEC to Wiener filter below.
             # The delay power spectrum has been fftshifted in the
             # DelaySpectrumEstimatorBase class, so need to do another fftshift.
@@ -988,37 +1052,6 @@ def stokes_I(sstream, tel):
     vis_weight = vis_weight.redistribute(axis=0)
 
     return vis_I, vis_weight, ubase
-
-
-def window_generalised(x, window="nuttall"):
-    """A generalised high-order window at arbitrary locations.
-
-    Parameters
-    ----------
-    x : np.ndarray[n]
-        Location to evaluate at. Must be in the range 0 to 1.
-    window : one of {'nuttall', 'blackman_nuttall', 'blackman_harris'}
-        Type of window function to return.
-
-    Returns
-    -------
-    w : np.ndarray[n]
-        Window function.
-    """
-
-    a_table = {
-        "nuttall": np.array([0.355768, -0.487396, 0.144232, -0.012604]),
-        "blackman_nuttall": np.array([0.3635819, -0.4891775, 0.1365995, -0.0106411]),
-        "blackman_harris": np.array([0.35875, -0.48829, 0.14128, -0.01168]),
-    }
-
-    a = a_table[window]
-
-    t = 2 * np.pi * np.arange(4)[:, np.newaxis] * x[np.newaxis, :]
-
-    w = (a[:, np.newaxis] * np.cos(t)).sum(axis=0)
-
-    return w
 
 
 def fourier_matrix_r2c(N, fsel=None):
@@ -1200,8 +1233,8 @@ def delay_spectrum_gibbs(
         Inverse noise variance.
     initial_S : np.ndarray[delay]
         The initial delay power spectrum guess.
-    window : one of {'nuttall', 'blackman_nuttall', 'blackman_harris', None}, optional
-        Apply an apodisation function. Default: 'nuttall'.
+    window : window available in :func:`draco.util.tools.window_generalised()`, optional
+        Apodisation to perform on frequency axis. Default: 'nuttall'.
     fsel : np.ndarray[freq], optional
         Indices of channels that we have data at. By default assume all channels.
     niter : int, optional
@@ -1245,7 +1278,7 @@ def delay_spectrum_gibbs(
 
         # Construct the window function
         x = fsel * 1.0 / total_freq
-        w = window_generalised(x, window=window)
+        w = tools.window_generalised(x, window=window)
         w = np.repeat(w, 2)
 
         # Apply to the projection matrix and the data
@@ -1261,8 +1294,8 @@ def delay_spectrum_gibbs(
     # frequency spectrum (taking into account that the zero and Nyquist frequencies are
     # strictly real if the delay spectrum is assumed to be real)
     Ni_r = np.zeros(2 * Ni.shape[0])
-    Ni_r[0::2] = np.where(is_real_freq, Ni, Ni / 2**0.5)
-    Ni_r[1::2] = np.where(is_real_freq, 0.0, Ni / 2**0.5)
+    Ni_r[0::2] = np.where(is_real_freq, Ni, Ni * 2)
+    Ni_r[1::2] = np.where(is_real_freq, 0.0, Ni * 2)
 
     # Create the transpose of the Fourier matrix weighted by the noise
     # (this is used multiple times)
@@ -1392,20 +1425,16 @@ def wiener_filter(
               Delay power spectrum of the data.
      data : np.ndarray[nRA, freq]
           Data to estimate the delay spectrum of.
-
      N : int
          The length of the output delay spectrum (ndelay). There are assumed to `N/2 + 1`
          total frequency channels.
      Ni : np.ndarray[freq]
          Inverse noise variance. Same shape as data.
-
-    fsel : np.ndarray[freq], optional
+     fsel : np.ndarray[freq], optional
          Indices of channels that we have data at. By default assume all channels.
-
-    window : one of {'nuttall', 'blackman_nuttall', 'blackman_harris', None}, optional
-        Apply an apodisation function. Default: 'nuttall'.
-
-    complex_timedomain : bool, optional
+     window : window available in :func:`draco.util.tools.window_generalised()`, optional
+        Apodisation to perform on frequency axis. Default: 'nuttall'.
+     complex_timedomain : bool, optional
         If True, assume input data arose from a complex timestream. If False, assume
         input data arose from a real timestream, such that the first and last frequency
         channels have purely real values. Default: False.
@@ -1437,7 +1466,7 @@ def wiener_filter(
 
         # Construct the window function
         x = fsel * 1.0 / total_freq
-        w = window_generalised(x, window=window)
+        w = tools.window_generalised(x, window=window)
         w = np.repeat(w, 2)
 
         # Apply to the projection matrix and the data
@@ -1449,11 +1478,12 @@ def wiener_filter(
     else:
         is_real_freq = (fsel == 0) | (fsel == N // 2)
 
-    # Construct the Noise inverse array for the real and imaginary parts (taking
-    # into account that the zero and Nyquist frequencies are strictly real)
+    # Construct the Noise inverse array for the real and imaginary parts of the
+    # frequency spectrum (taking into account that the zero and Nyquist frequencies are
+    # strictly real if the delay spectrum is assumed to be real)
     Ni_r = np.zeros(2 * Ni.shape[0])
-    Ni_r[0::2] = np.where(is_real_freq, Ni, Ni / 2**0.5)
-    Ni_r[1::2] = np.where(is_real_freq, 0.0, Ni / 2**0.5)
+    Ni_r[0::2] = np.where(is_real_freq, Ni, Ni / 2)
+    Ni_r[1::2] = np.where(is_real_freq, 0.0, Ni / 2)
 
     # Create the Hermitian conjugate weighted by the noise (this is used multiple times)
     FTNih = F.T.conj() * Ni_r[np.newaxis, :] ** 0.5
@@ -1478,10 +1508,10 @@ def wiener_filter(
 
     Ci = np.diag(Si) + FTNiF
 
-    y_spec = la.solve(Ci, y, sym_pos=True)
+    y_spec = la.solve(Ci, y, sym_pos=True).T
 
     if complex_timedomain:
-        y_spec = _alternating_real_to_complex(y_spec.T)
+        y_spec = _alternating_real_to_complex(y_spec)
 
     return y_spec
 
@@ -1512,7 +1542,7 @@ def null_delay_filter(freq, max_delay, mask, num_delay=200, tol=1e-8, window=Tru
 
     # Construct the window function
     x = (freq - freq.min()) / freq.ptp()
-    w = window_generalised(x, window="nuttall")
+    w = tools.window_generalised(x, window="nuttall")
 
     delay = np.linspace(-max_delay, max_delay, num_delay)
 
