@@ -1504,7 +1504,7 @@ def wiener_filter(
         S = 0.5 * np.repeat(delay_PS, 2)
         Si = 1.0 / S
     else:
-        Si = 1 / delay_PS
+        Si = 1.0 / delay_PS
 
     Ci = np.diag(Si) + FTNiF
 
