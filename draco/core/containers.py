@@ -2241,12 +2241,12 @@ class DelaySpectrum(ContainerBase):
     @property
     def spectrum(self):
         return self.datasets["spectrum"]
-    
+   
     @property
     def weight_boost(self):
         return self.attrs["weight_boost"]
 
-
+ 
 class DelayTransform(ContainerBase):
     """Container for a delay spectrum."""
 
