@@ -827,7 +827,7 @@ class DelaySpectrumWienerBase(task.SingleTask):
         delay_ps = dps.spectrum[:]
 
         # Read the weight boost factor from the input DelaySpectrum container
-        #self.weight_boost = dps.attrs["weight_boost"]
+        # self.weight_boost = dps.attrs["weight_boost"]
 
         if self.dataset not in ss.datasets:
             raise ValueError(
@@ -920,7 +920,7 @@ class DelaySpectrumWienerBase(task.SingleTask):
         for lbi, bi in delay_spectrum.spectrum[:].enumerate(axis=0):
 
             self.log.debug(
-                f"Estimating the Delay spectrum of each baseline {bi}/{nbase} using Wiener filter"
+               f"Estimating the Delay spectrum of each baseline {bi}/{nbase} using Wiener filter"
             )
 
             # Get the local selections
@@ -950,7 +950,7 @@ class DelaySpectrumWienerBase(task.SingleTask):
             non_zero_channel = channel_ind[non_zero]
 
             # Increase the weights by a specified amount
-            #weight *= self.weight_boost
+            # weight *= self.weight_boost
 
             # Pass the delay power spectrum for each baseline/DEC to Wiener filter below.
             # The delay power spectrum has been fftshifted in the
