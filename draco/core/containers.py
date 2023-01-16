@@ -1287,7 +1287,7 @@ class SystemSensitivity(FreqContainer, TODContainer):
 
 
 class RFIMask(FreqContainer, TODContainer):
-    """A container for holding RFI mask.
+    """A container for holding an RFI mask for a timestream.
 
     The mask is `True` for contaminated samples that should be excluded, and
     `False` for clean samples.
@@ -1309,7 +1309,7 @@ class RFIMask(FreqContainer, TODContainer):
 
 
 class SiderealRFIMask(FreqContainer, SiderealContainer):
-    """A container for holding RFI mask.
+    """A container for holding an RFI mask for a sidereal stream.
 
     The mask is `True` for contaminated samples that should be excluded, and
     `False` for clean samples.
@@ -1328,6 +1328,68 @@ class SiderealRFIMask(FreqContainer, SiderealContainer):
     @property
     def mask(self):
         return self.datasets["mask"]
+
+
+class BaselineMask(FreqContainer, TODContainer):
+    """A container for holding a baseline-dependent mask for a timestream.
+
+    The mask is `True` for contaminated samples that should be excluded, and
+    `False` for clean samples.
+
+    Unlike RFIMask, this is distributed by default.
+    """
+
+    _axes = ("stack",)
+
+    _dataset_spec = {
+        "mask": {
+            "axes": ["freq", "stack", "time"],
+            "dtype": bool,
+            "initialise": True,
+            "distributed": True,
+            "distributed_axis": "freq",
+        }
+    }
+
+    @property
+    def mask(self):
+        return self.datasets["mask"]
+
+    @property
+    def stack(self):
+        """The stack definition as an index (and conjugation) of a member product."""
+        return self.index_map["stack"]
+
+
+class SiderealBaselineMask(FreqContainer, SiderealContainer):
+    """A container for holding a baseline-dependent mask for a sidereal stream.
+
+    The mask is `True` for contaminated samples that should be excluded, and
+    `False` for clean samples.
+
+    Unlike SiderealRFIMask, this is distributed by default.
+    """
+
+    _axes = ("stack",)
+
+    _dataset_spec = {
+        "mask": {
+            "axes": ["freq", "stack", "ra"],
+            "dtype": bool,
+            "initialise": True,
+            "distributed": True,
+            "distributed_axis": "freq",
+        }
+    }
+
+    @property
+    def mask(self):
+        return self.datasets["mask"]
+
+    @property
+    def stack(self):
+        """The stack definition as an index (and conjugation) of a member product."""
+        return self.index_map["stack"]
 
 
 class TimeStream(FreqContainer, VisContainer, TODContainer):
@@ -2238,15 +2300,19 @@ class DelaySpectrum(ContainerBase):
         }
     }
 
+    def __init__(self, weight_boost=1.0, *args, **kwargs):
+        super(DelaySpectrum, self).__init__(*args, **kwargs)
+        self.attrs["weight_boost"] = weight_boost
+
     @property
     def spectrum(self):
         return self.datasets["spectrum"]
-   
+
     @property
     def weight_boost(self):
         return self.attrs["weight_boost"]
 
- 
+
 class DelayTransform(ContainerBase):
     """Container for a delay spectrum."""
 
@@ -2262,9 +2328,17 @@ class DelayTransform(ContainerBase):
         }
     }
 
+    def __init__(self, weight_boost=1.0, *args, **kwargs):
+        super(DelayTransform, self).__init__(*args, **kwargs)
+        self.attrs["weight_boost"] = weight_boost
+
     @property
     def spectrum(self):
         return self.datasets["spectrum"]
+
+    @property
+    def weight_boost(self):
+        return self.attrs["weight_boost"]
 
 
 class Powerspectrum2D(ContainerBase):
@@ -2697,6 +2771,7 @@ def copy_datasets_filter(
     axis: str,
     selection: Union[np.ndarray, list, slice],
     exclude_axes: List[str] = None,
+    allow_distributed: bool = False,
 ):
     """Copy datasets while filtering a given axis.
 
@@ -2713,6 +2788,10 @@ def copy_datasets_filter(
     exclude_axes
         An optional set of axes that if a dataset contains one means it will
         not be copied.
+    allow_distributed, optional
+        Allow the filtered axis to be the distributed axis. This is ONLY
+        valid if filtering is occuring on the local rank only, and mainly
+        exists for compatibility
     """
     exclude_axes_set = set(exclude_axes) if exclude_axes else set()
 
@@ -2741,7 +2820,7 @@ def copy_datasets_filter(
 
         if isinstance(item, memh5.MemDatasetDistributed):
 
-            if item.distributed_axis == axis_ind:
+            if (item.distributed_axis == axis_ind) and not allow_distributed:
                 raise RuntimeError(
                     f"Cannot redistristribute dataset={item.name} along "
                     f"axis={axis_ind} as it is distributed."
