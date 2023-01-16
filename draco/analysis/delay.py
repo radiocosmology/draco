@@ -919,7 +919,9 @@ class DelaySpectrumWienerBase(task.SingleTask):
 
         for lbi, bi in delay_spectrum.spectrum[:].enumerate(axis=0):
 
-            self.log.debug(f"Estimating the Delay spectrum of each baseline {bi}/{nbase} using Wiener filter"
+            self.log.debug(
+                f"Estimating the delay spectrum of each baseline {bi}/{nbase} using "
+                "Wiener filter"
             )
 
             # Get the local selections
