@@ -365,6 +365,11 @@ class DelaySpectrumEstimator(task.SingleTask, random.RandomTask):
     initial_amplitude : float, optional
         The Gibbs sampler will be initialized with a flat power spectrum with
         this amplitude. Default: 10.
+    weight_boost : float, optional
+         Multiply weights in the input container by this factor. This causes the Gibbs
+         sampler to assume the noise power in the data is `weight_boost` times lower,
+         which is useful if you want the "true" noise to be included in the power
+         spectrum measured by the Gibbs sampler. Default: 1.0.        
     """
 
     nsamp = config.Property(proptype=int, default=20)
@@ -388,7 +393,8 @@ class DelaySpectrumEstimator(task.SingleTask, random.RandomTask):
     )
     complex_timedomain = config.Property(proptype=bool, default=False)
     initial_amplitude = config.Property(proptype=float, default=10.0)
-
+    weight_boost = config.Property(proptype=float, default=1.0)
+    
     def setup(self, telescope):
         """Set the telescope needed to generate Stokes I.
 
@@ -490,6 +496,9 @@ class DelaySpectrumEstimator(task.SingleTask, random.RandomTask):
             weight = weight[non_zero]
             non_zero_channel = channel_ind[non_zero]
 
+            # Increase the weights by a specified amount
+            weight *= self.weight_boost
+          
             spec = delay_spectrum_gibbs(
                 data,
                 ndelay,
@@ -555,6 +564,11 @@ class DelaySpectrumEstimatorBase(task.SingleTask, random.RandomTask):
     initial_amplitude : float, optional
         The Gibbs sampler will be initialized with a flat power spectrum with
         this amplitude. Default: 10.
+    weight_boost : float, optional
+         Multiply weights in the input container by this factor. This causes the Gibbs
+         sampler to assume the noise power in the data is `weight_boost` times lower,
+         which is useful if you want the "true" noise to be included in the power
+         spectrum measured by the Gibbs sampler. Default: 1.0.        
     """
 
     nsamp = config.Property(proptype=int, default=20)
@@ -580,7 +594,8 @@ class DelaySpectrumEstimatorBase(task.SingleTask, random.RandomTask):
     average_axis = config.Property(proptype=str)
     complex_timedomain = config.Property(proptype=bool, default=False)
     initial_amplitude = config.Property(proptype=float, default=10.0)
-
+    weight_boost = config.Property(proptype=float, default=1.0)
+    
     def setup(self, telescope: io.TelescopeConvertible):
         """Set the telescope needed to generate Stokes I.
 
@@ -731,7 +746,10 @@ class DelaySpectrumEstimatorBase(task.SingleTask, random.RandomTask):
             data = data[:, non_zero]
             weight = weight[non_zero]
             non_zero_channel = channel_ind[non_zero]
-
+        
+            # Increase the weights by a specified amount
+            weight *= self.weight_boost
+          
             spec = delay_spectrum_gibbs(
                 data,
                 ndelay,
@@ -781,7 +799,11 @@ class DelaySpectrumWienerBase(task.SingleTask):
         Whether to assume the original time samples that were channelized into a
         frequency spectrum were purely real (False) or complex (True). If True,
         `freq_zero`, `nfreq`, and `skip_nyquist` are ignored. Default: False.
-
+    weight_boost : float, optional
+         Multiply weights in the input container by this factor. This causes the Gibbs
+         sampler to assume the noise power in the data is `weight_boost` times lower,
+         which is useful if you want the "true" noise to be included in the power
+         spectrum measured by the Gibbs sampler. Default: 1.0.
     """
 
     dataset = config.Property(proptype=str, default="vis")
@@ -801,7 +823,8 @@ class DelaySpectrumWienerBase(task.SingleTask):
         default="nuttall",
     )
     complex_timedomain = config.Property(proptype=bool, default=False)
-
+    weight_boost = config.Property(proptype=float, default=1.0)
+    
     def process(
         self, ss: FreqContainerType, dps: containers.DelaySpectrum
     ) -> containers.DelayTransform:
@@ -901,6 +924,7 @@ class DelaySpectrumWienerBase(task.SingleTask):
             sample=ss.index_map[self.average_axis],
             delay=delays,
             attrs_from=ss,
+            weight_boost=self.weight_boost
         )
         delay_spectrum.redistribute("baseline")
         delay_spectrum.spectrum[:] = 0.0
@@ -951,7 +975,7 @@ class DelaySpectrumWienerBase(task.SingleTask):
             non_zero_channel = channel_ind[non_zero]
 
             # Increase the weights by a specified amount
-            # weight *= self.weight_boost
+            weight *= self.weight_boost
 
             # Pass the delay power spectrum for each baseline/DEC to Wiener filter below.
             # The delay power spectrum has been fftshifted in the
