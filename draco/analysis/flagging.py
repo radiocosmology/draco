@@ -2,6 +2,9 @@
 
 This includes data quality flagging on timestream data; sun excision on sidereal
 data; and pre-map making flagging on m-modes.
+
+The convention for flagging/masking is `True` for contaminated samples that should
+be excluded and `False` for clean samples.
 """
 
 from typing import Union, overload
@@ -100,8 +103,8 @@ class DayMask(task.SingleTask):
         return sstream
 
 
-class MaskData(task.SingleTask):
-    """Mask out data ahead of map making.
+class MaskMModeData(task.SingleTask):
+    """Mask out mmode data ahead of map making.
 
     Attributes
     ----------
@@ -1263,10 +1266,11 @@ class RFIMask(task.SingleTask):
         return mask_cont
 
 
-class ApplyRFIMask(task.SingleTask):
-    """Apply an RFIMask to the data.
+class ApplyTimeFreqMask(task.SingleTask):
+    """Apply a time-frequency mask to the data.
 
-    Mask out all inputs at times and frequencies contaminated by RFI.
+    Typically this is used to ask out all inputs at times and
+    frequencies contaminated by RFI.
 
     This task may produce output with shared datasets. Be warned that
     this can produce unexpected outputs if not properly taken into
@@ -1284,7 +1288,7 @@ class ApplyRFIMask(task.SingleTask):
     share = config.enum(["none", "vis", "map", "all"], default="all")
 
     def process(self, tstream, rfimask):
-        """Flag out RFI by zeroing the weights.
+        """Apply the mask by zeroing the weights.
 
         Parameters
         ----------
@@ -1362,7 +1366,7 @@ class ApplyRFIMask(task.SingleTask):
 
 
 class MaskFreq(task.SingleTask):
-    """Apply a mask to the frequency axis.
+    """Make a mask for certain frequencies.
 
     Attributes
     ----------
@@ -1389,7 +1393,7 @@ class MaskFreq(task.SingleTask):
     def process(
         self, data: Union[containers.VisContainer, containers.RingMap]
     ) -> Union[containers.RFIMask, containers.SiderealRFIMask]:
-        """Apply the mask to the data.
+        """Make the mask.
 
         Parameters
         ----------
@@ -1398,8 +1402,8 @@ class MaskFreq(task.SingleTask):
 
         Returns
         -------
-        data_masked
-            The mask marking bad data.
+        mask_cont
+            Frequency mask container
         """
 
         data.redistribute("freq")
@@ -1655,6 +1659,11 @@ class BlendStack(task.SingleTask):
             dset *= tools.invert_no_zero(weight)
 
         return data
+
+
+# This is here for compatibility
+ApplyRFIMask = ApplyTimeFreqMask
+MaskData = MaskMModeData
 
 
 def medfilt(x, mask, size, *args):
