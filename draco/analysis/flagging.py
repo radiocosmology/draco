@@ -577,6 +577,60 @@ class RadiometerWeight(task.SingleTask):
         return stream
 
 
+class SanitizeWeights(task.SingleTask):
+    """Flags weights outside of a valid range.
+
+    Flags any weights above a max threshold and below a minimum threshold.
+    Baseline dependent, so only some baselines may be flagged.
+
+    Attributes
+    ----------
+    max_thresh : float
+        largest value to keep
+    min_thresh : float
+        smallest value to keep
+    """
+
+    max_thresh = config.Property(proptype=np.float32, default=1e10)
+    min_thresh = config.Property(proptype=np.float32, default=1e-10)
+
+    def setup(self):
+        """Check the max and min values.
+
+        Raises
+        ------
+        ValueError
+            if min_thresh is larger than max_thresh
+        """
+        if self.min_thresh >= self.max_thresh:
+            raise ValueError("Minimum threshold is larger than maximum threshold.")
+
+    def process(self, data):
+        """Mask any weights outside of the threshold range.
+
+        Parameters
+        ----------
+        data : :class:`andata.CorrData` or :class:`containers.VisContainer` object
+            Data containing the weights to be flagged
+
+        Returns
+        -------
+        data : same object as data
+            Data object with high/low weights masked in-place
+
+        """
+
+        # Ensure data is distributed in frequency
+        data.redistribute("freq")
+
+        weight = data.weight[:].local_array
+
+        weight[weight > self.max_thresh] = 0.0
+        weight[weight < self.min_thresh] = 0.0
+
+        return data
+
+
 class SmoothVisWeight(task.SingleTask):
     """Smooth the visibility weights with a median filter.
 
