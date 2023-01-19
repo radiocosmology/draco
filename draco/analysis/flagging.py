@@ -416,6 +416,47 @@ class FindBeamformedOutliers(task.SingleTask):
         return out
 
 
+class MaskBadGains(task.SingleTask):
+    """Get a mask of regions with bad gain.
+
+    Assumes that bad gains are set to 1.
+    """
+
+    threshold = config.Property(proptype=float, default=1.0)
+    threshold_tol = config.Property(proptype=float, default=1e-5)
+
+    def process(self, data):
+        """Generate a time-freq mask.
+
+        Parameters
+        ----------
+        data : :class:`andata.Corrdata` or :class:`container.ContainerBase` with a `gain` dataset
+            Data containing the gains to be flagged. Must have a `gain` dataset.
+
+        Returns
+        -------
+        mask : RFIMask container
+            Time-freq mask
+        """
+
+        # Ensure data is distributed in frequency
+        data.redistribute("freq")
+
+        # Boolean mask where gains are bad across all baselines.
+        mask = np.all(
+            data.gain[:] <= self.threshold + self.threshold_tol, axis=1
+        ).allgather()
+
+        # Log the percent of data masked
+        drop_frac = 100.0 * mask.sum() / mask.size
+        self.log.info(f"Flagging {drop_frac:.2f}% of data due to bad gains.")
+
+        mask_cont = containers.RFIMask(axes_from=data)
+        mask_cont.mask[:] = mask
+
+        return mask_cont
+
+
 class MaskBeamformedOutliers(task.SingleTask):
     """Mask beamformed visibilities that deviate from our expectation for noise.
 
@@ -595,7 +636,7 @@ class SanitizeWeights(task.SingleTask):
     min_thresh = config.Property(proptype=np.float32, default=1e-10)
 
     def setup(self):
-        """Check the max and min values.
+        """Validate the max and min values.
 
         Raises
         ------
@@ -617,7 +658,6 @@ class SanitizeWeights(task.SingleTask):
         -------
         data : same object as data
             Data object with high/low weights masked in-place
-
         """
 
         # Ensure data is distributed in frequency
