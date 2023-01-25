@@ -203,7 +203,7 @@ class CollateProducts(task.SingleTask):
 
         else:
             ss_prod = ss.prod
-            ss_conj = np.zeros(ss_prod.size, dtype=np.bool)
+            ss_conj = np.zeros(ss_prod.size, dtype=bool)
 
         # Add the time-like axis to the kwargs
         output_kwargs = (

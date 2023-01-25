@@ -360,7 +360,7 @@ def redefine_stack_index_map(telescope, inputs, prod, stack, reverse_stack):
     stack_new : np.ndarray[nstack,] of dtype=('prod', 'conjugate')
         The updated `stack` index map, where each element is an index to a product
         consisting of a pair of unmasked inputs.
-    stack_flag : np.ndarray[nstack,] of dtype=np.bool
+    stack_flag : np.ndarray[nstack,] of dtype=bool
         Boolean flag that is True if this element of the stack index map is now valid,
         and False if none of the baselines that were stacked contained unmasked inputs.
     """
@@ -370,7 +370,7 @@ def redefine_stack_index_map(telescope, inputs, prod, stack, reverse_stack):
 
     # Create a copy of the stack axis
     stack_new = stack.copy()
-    stack_flag = np.zeros(stack_new.size, dtype=np.bool)
+    stack_flag = np.zeros(stack_new.size, dtype=bool)
 
     # Loop over the stacked baselines
     for sind, (ii, jj) in enumerate(prod[stack["prod"]]):

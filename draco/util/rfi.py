@@ -66,7 +66,7 @@ def sumthreshold_py(
         ## X-axis
 
         data[flag] = 0.0
-        count = (~flag).astype(np.float)
+        count = (~flag).astype(np.float64)
 
         # Convolution of the data
         dconv = convolve1d(
@@ -87,7 +87,7 @@ def sumthreshold_py(
         ## Y-axis
 
         data[flag] = 0.0
-        count = (~flag).astype(np.float)
+        count = (~flag).astype(np.float64)
         # Convolution of the data
         dconv = convolve1d(
             data, weights=np.ones(m, dtype=float), origin=-centre, axis=0
@@ -138,9 +138,9 @@ def sir1d(basemask, eta=0.2):
         type as basemask.
     """
     n = basemask.size
-    psi = basemask.astype(np.float) - 1.0 + eta
+    psi = basemask.astype(np.float64) - 1.0 + eta
 
-    M = np.zeros(n + 1, dtype=np.float)
+    M = np.zeros(n + 1, dtype=np.float64)
     M[1:] = np.cumsum(psi)
 
     MP = np.minimum.accumulate(M)[:-1]
@@ -180,7 +180,7 @@ def sir(basemask, eta=0.2, only_freq=False, only_time=False):
 
     nfreq, nprod, ntime = basemask.shape
 
-    newmask = basemask.astype(np.bool).copy()
+    newmask = basemask.astype(bool).copy()
 
     for pp in range(nprod):
 
