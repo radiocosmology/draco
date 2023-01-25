@@ -465,7 +465,7 @@ class SiderealRegridderCubic(SiderealRegridder):
             fvar = tools.invert_no_zero(fweight)
 
             # Interpolate the visibilities and propagate the weights
-            finterp_flag = np.ones(shp[1:], dtype=np.bool)
+            finterp_flag = np.ones(shp[1:], dtype=bool)
             finterp_var = np.zeros(shp[1:], dtype=weight.dtype)
 
             for ii, cc in zip(index, coeff):

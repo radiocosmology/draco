@@ -138,8 +138,8 @@ class SourceStack(task.SingleTask):
             fw = formed_beam.weight[:, pp].view(np.ndarray)
 
             # Source stack array.
-            source_stack = np.zeros(self.nstack, dtype=np.float)
-            source_weight = np.zeros(self.nstack, dtype=np.float)
+            source_stack = np.zeros(self.nstack, dtype=np.float64)
+            source_weight = np.zeros(self.nstack, dtype=np.float64)
 
             count = 0  # Source counter
             # For each source in the range of this process

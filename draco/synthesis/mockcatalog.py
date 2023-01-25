@@ -656,7 +656,7 @@ class MockCatalogGenerator(task.SingleTask, random.RandomTask):
         # Send number of sources per redshift to local sections on each rank.
         # Need to pass tuples. For some reason lists don't work.
         # source_numbers has shape (self.ls)
-        source_numbers = np.zeros(self.ls, dtype=np.int)
+        source_numbers = np.zeros(self.ls, dtype=np.int64)
         self.comm.Scatterv(
             [
                 global_source_numbers,

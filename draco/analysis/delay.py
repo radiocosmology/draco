@@ -421,7 +421,7 @@ class DelaySpectrumEstimator(task.SingleTask, random.RandomTask):
         else:
             channel_ind = (
                 np.abs(ss.freq[:] - self.freq_zero) / self.freq_spacing
-            ).astype(np.int)
+            ).astype(np.int64)
             if self.nfreq is None:
                 self.nfreq = channel_ind[-1] + 1
 
@@ -611,7 +611,7 @@ class DelaySpectrumEstimatorBase(task.SingleTask, random.RandomTask):
         else:
             channel_ind = (
                 np.abs(ss.freq[:] - self.freq_zero) / self.freq_spacing
-            ).astype(np.int)
+            ).astype(np.int64)
             if self.nfreq is None:
                 self.nfreq = channel_ind[-1] + 1
 

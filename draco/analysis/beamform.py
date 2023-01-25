@@ -158,7 +158,7 @@ class BeamFormBase(task.SingleTask):
             # Container to hold the formed beams
             formed_beam = containers.FormedBeamHA(
                 freq=self.freq,
-                ha=np.arange(self.nha, dtype=np.int),
+                ha=np.arange(self.nha, dtype=np.int64),
                 object_id=self.source_cat.index_map["object_id"],
                 pol=np.array(self.return_pol),
                 distributed=True,
@@ -1038,12 +1038,12 @@ class RingMapBeamForm(task.SingleTask):
         # NOTE: that we need to take into account that sources might be less than 360
         # deg, but still closer to ind=0
         max_ra_ind = len(self.ringmap.ra) - 1
-        ra_ind = (np.rint(src_ra / dra) % max_ra_ind).astype(np.int)
+        ra_ind = (np.rint(src_ra / dra) % max_ra_ind).astype(np.int64)
 
         # Get the indices for the ZA direction
         za_ind = np.rint(
             (np.sin(np.radians(src_dec - self.telescope.latitude)) - za_min) / dza
-        ).astype(np.int)
+        ).astype(np.int64)
 
         return ra_ind, za_ind
 

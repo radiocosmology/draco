@@ -56,7 +56,7 @@ class ComputeSystemSensitivity(task.SingleTask):
         # Extract the input flags.  If container has a gain dataset,
         # then also check for the default gain 1.0 + 0.0j as this indicates
         # that an input was masked for a particular time and frequency.
-        inpflg = data.input_flags[:].view(np.ndarray).astype(np.bool)
+        inpflg = data.input_flags[:].view(np.ndarray).astype(bool)
         niff = 1
 
         if "gain" in data.datasets:
@@ -130,7 +130,7 @@ class ComputeSystemSensitivity(task.SingleTask):
                 ew_position[prodstack["input_a"]] != ew_position[prodstack["input_b"]]
             )
         else:
-            baseline_flag = np.ones(prodstack.size, dtype=np.bool)
+            baseline_flag = np.ones(prodstack.size, dtype=bool)
 
         pol_uniq = [bp for bp in np.unique(baseline_pol) if "N" not in bp]
         pol_index = [

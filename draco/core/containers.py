@@ -608,7 +608,7 @@ class TableBase(ContainerBase):
             }
             'quasar_mask': {
                 'columns': [
-                    ['mask', np.bool]
+                    ['mask', bool]
                 ],
                 'axis': 'quasar_id'
             }

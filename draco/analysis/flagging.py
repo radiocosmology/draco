@@ -798,11 +798,11 @@ class RFISensitivityMask(task.SingleTask):
         static_flag = ~self._static_rfi_mask_hook(freq)
 
         madmask = mpiarray.MPIArray(
-            (npol, nfreq, len(sensitivity.time)), axis=0, dtype=np.bool
+            (npol, nfreq, len(sensitivity.time)), axis=0, dtype=bool
         )
         madmask[:] = False
         stmask = mpiarray.MPIArray(
-            (npol, nfreq, len(sensitivity.time)), axis=0, dtype=np.bool
+            (npol, nfreq, len(sensitivity.time)), axis=0, dtype=bool
         )
         stmask[:] = False
 
@@ -906,7 +906,7 @@ class RFISensitivityMask(task.SingleTask):
             Mixing array as a function of time. If `True` that sample will be
             filled from the MAD, if `False` use the SumThreshold algorithm.
         """
-        return np.ones_like(times, dtype=np.bool)
+        return np.ones_like(times, dtype=bool)
 
     def _static_rfi_mask_hook(self, freq):
         """Override this function to apply a static RFI mask to the data.
@@ -921,7 +921,7 @@ class RFISensitivityMask(task.SingleTask):
         mask : np.ndarray[nfreq]
             Mask array. True will include a frequency channel, False masks it out.
         """
-        return np.ones_like(freq, dtype=np.bool)
+        return np.ones_like(freq, dtype=bool)
 
     def _apply_sir(self, mask, baseflag, eta=0.2):
         """Expand the mask with SIR."""
@@ -1268,7 +1268,7 @@ class MaskFreq(task.SingleTask):
     def _bad_freq_mask(self, nfreq: int) -> np.ndarray:
         # Parse the bad frequency list to create a per frequency mask
 
-        mask = np.zeros(nfreq, dtype=np.bool)
+        mask = np.zeros(nfreq, dtype=bool)
 
         for s in self.bad_freq_ind:
 

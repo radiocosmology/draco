@@ -1186,7 +1186,7 @@ def find_grid_indices(baselines):
     def _get_inds(s):
         s_abs = np.abs(s)
         d = s_abs[s_abs > 1e-4].min()
-        return np.rint(s / d).astype(np.int), d
+        return np.rint(s / d).astype(np.int64), d
 
     xh, yh = find_basis(baselines)
 
