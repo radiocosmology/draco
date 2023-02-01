@@ -211,13 +211,6 @@ class CollateProducts(task.SingleTask):
             ss_prod = ss.prod
             ss_conj = np.zeros(ss_prod.size, dtype=bool)
 
-        # Add the time-like axis to the kwargs
-        output_kwargs = (
-            {"ra": ss.ra[:]}
-            if isinstance(ss, containers.SiderealStream)
-            else {"time": ss.time[:]}
-        )
-
         # Create output container
         sp = ss.__class__(
             freq=bt_freq,
@@ -228,7 +221,6 @@ class CollateProducts(task.SingleTask):
             copy_from=ss,
             distributed=True,
             comm=ss.comm,
-            **output_kwargs,
         )
 
         # Check if frequencies are already ordered
