@@ -258,7 +258,6 @@ class RandomGains(BaseGains):
     _prev_phase = None
 
     def _generate_amp(self, time):
-
         # Generate the correlation function
         cf_amp = self._corr_func(self.corr_length_amp, self.sigma_amp)
         ninput = self.ninput_local
@@ -279,7 +278,6 @@ class RandomGains(BaseGains):
         return gain_amp
 
     def _generate_phase(self, time):
-
         # Generate the correlation function
         cf_phase = self._corr_func(self.corr_length_phase, self.sigma_phase)
         ninput = self.ninput_local
@@ -437,7 +435,6 @@ class GainStacker(task.SingleTask):
 
 
 def _ensure_list(x):
-
     if hasattr(x, "__iter__"):
         y = [xx for xx in x]
     else:

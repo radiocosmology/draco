@@ -9,7 +9,6 @@ pytestmark = pytest.mark.mpi
 
 @pytest.fixture
 def ss_container():
-
     # This is implicitly distributed, so works correctly under MPI
     ss = containers.SiderealStream(
         stack=5, input=3, ra=16, freq=np.linspace(800.0, 750.0, 5)
@@ -22,7 +21,6 @@ def ss_container():
 
 
 def test_attrs_from(ss_container):
-
     ts = containers.TimeStream(time=10, axes_from=ss_container, attrs_from=ss_container)
 
     # Check that the attributes have been copied over properly
@@ -39,7 +37,6 @@ def test_attrs_from(ss_container):
 
 
 def test_copy(ss_container):
-
     ss_container.vis[:] = np.arange(16)
     ss_container.weight[:] = np.arange(16)
 

@@ -68,7 +68,6 @@ def band_wiener(R, Ni, Si, y, bw):
 
     # Iterate through and solve noise
     for ki in range(k):
-
         # Upcast noise weights to float type
         Ni_ki = Ni[ki].astype(np.float64)
 

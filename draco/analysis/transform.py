@@ -64,7 +64,6 @@ class FrequencyRebin(task.SingleTask):
 
         # Rebin the arrays, do this with a loop to save memory
         for fi in range(len(ss.freq)):
-
             # Calculate rebinned index
             ri = fi // self.channel_bin
 
@@ -187,7 +186,6 @@ class CollateProducts(task.SingleTask):
         # its representative products so that they contain only feeds that exist
         # and are not masked in the telescope instance.
         if ss.is_stacked:
-
             stack_new, stack_flag = tools.redefine_stack_index_map(
                 self.telescope, ss.input, ss.prod, ss.stack, ss.reverse_map["stack"]
             )
@@ -251,7 +249,6 @@ class CollateProducts(task.SingleTask):
 
         # Infer number of products that went into each stack
         if self.weight != "inverse_variance":
-
             ssi = ss.input_flags[:]
             ssp = ss.index_map["prod"][:]
             sss = ss.reverse_map["stack"]["stack"][:]
@@ -278,7 +275,6 @@ class CollateProducts(task.SingleTask):
 
         # Iterate over products (stacked) in the sidereal stream
         for ss_pi, ((ii, ij), conj) in enumerate(zip(ss_prod, ss_conj)):
-
             # Map the feed indices into ones for the Telescope class
             bi, bj = input_ind[ii], input_ind[ij]
 
@@ -528,7 +524,6 @@ class MModeTransform(task.SingleTask):
 
         # Divide out the m-mode sinc-suppression caused by the rectangular integration window
         if self.remove_integration_window:
-
             m = np.arange(mmax + 1)
             w = np.sinc(m / nra)
             inv_w = tools.invert_no_zero(w)
@@ -647,7 +642,6 @@ class MModeInverseTransform(task.SingleTask):
 
         # Apply the m-mode sinc-suppression caused by the rectangular integration window
         if self.apply_integration_window:
-
             m = np.arange(mmodes.mmax + 1)
             w = np.sinc(m / nra)
             inv_w = tools.invert_no_zero(w)
@@ -836,7 +830,6 @@ class Regridder(task.SingleTask):
         return new_data
 
     def _regrid(self, vis_data, weight, times):
-
         # Create a regular grid, padded at either end to supress interpolation issues
         pad = 5 * self.lanczos_width
         interp_grid = (
@@ -965,7 +958,6 @@ class SelectPol(task.SingleTask):
         YY_ind = list(polcont.index_map["pol"]).index("YY")
 
         for name, dset in polcont.datasets.items():
-
             if "pol" not in dset.attrs["axis"]:
                 outcont.datasets[name][:] = dset[:]
             else:

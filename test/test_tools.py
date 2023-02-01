@@ -22,7 +22,6 @@ random_complex_array = rng.standard_normal(
     "a", [random_complex_array, random_float_array, random_double_array]
 )
 def test_invert_no_zero(a):
-
     zero_ind = ((0, 10, 12), (56, 34, 78))
     good_ind = np.ones(a.shape, dtype=bool)
     good_ind[zero_ind] = False
@@ -46,7 +45,6 @@ def test_invert_no_zero(a):
 
 
 def test_invert_no_zero_mpiarray():
-
     comm = MPI.COMM_WORLD
     comm.Barrier()
 
@@ -65,7 +63,6 @@ def test_invert_no_zero_mpiarray():
 
 
 def test_invert_no_zero_noncontiguous():
-
     a = np.arange(100, dtype=np.float64).reshape(10, 10)
 
     res = np.ones((10, 10), dtype=np.float64)

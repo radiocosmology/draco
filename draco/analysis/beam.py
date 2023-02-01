@@ -248,13 +248,11 @@ class CreateBeamStreamFromTelescope(CreateBeamStream):
         # Loop over local frequencies and polarisations and evaluate the beam
         # by calling the telescopes beam method.
         for ff, freq in enumerate(local_freq_index):
-
             if not local_freq_flag[ff]:
                 weight[ff] = 0.0
                 continue
 
             for pp, pol in enumerate(pol_pairs):
-
                 bii = self.telescope.beam(map_pol_to_feed[pol[0]], freq, angpos)
 
                 if pol[0] != pol[1]:

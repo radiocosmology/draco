@@ -93,7 +93,6 @@ class DayenuDelayFilter(task.SingleTask):
 
         # Loop over products
         for bb, bcut in enumerate(cutoff):
-
             t0 = time.time()
 
             # Flag frequencies and times with zero weight
@@ -144,7 +143,6 @@ class DayenuDelayFilter(task.SingleTask):
         return stream
 
     def _get_cut(self, prod):
-
         baselines = (
             self.telescope.feedpositions[prod["input_a"], :]
             - self.telescope.feedpositions[prod["input_b"], :]
@@ -204,7 +202,6 @@ class DayenuDelayFilterMap(task.SingleTask):
         """Create the function used to determine the delay cutoff."""
 
         if self.filename is not None:
-
             fcut = containers.DelayCutoff.from_file(self.filename, distributed=False)
             kind = fcut.attrs.get("kind", "linear")
 
@@ -215,7 +212,6 @@ class DayenuDelayFilterMap(task.SingleTask):
 
             self._cut_interpolator = {}
             for pp, pol in enumerate(fcut.pol):
-
                 self._cut_interpolator[pol] = scipy.interpolate.interp1d(
                     fcut.el,
                     fcut.cutoff[pp],
@@ -270,13 +266,11 @@ class DayenuDelayFilterMap(task.SingleTask):
 
         # Loop over beam and polarisation
         for ind in np.ndindex(*lshp):
-
             wind = ind[1:]
 
             kwargs = {ax: ringmap.index_map[ax][ii] for ax, ii in zip(axes, ind)}
 
             for ee, el in enumerate(els):
-
                 t0 = time.time()
 
                 slc = ind + (slice(None), slice(None), ee)
@@ -319,12 +313,10 @@ class DayenuDelayFilterMap(task.SingleTask):
 
                 # Apply the filter
                 if self.single_mask:
-
                     rm[slc] = np.matmul(NF[0], erm)
                     weight[wslc] = tools.invert_no_zero(np.matmul(NF[0] ** 2, evar))
 
                     if self.atten_threshold > 0.0:
-
                         diag = np.diag(NF[0])
                         med_diag = np.median(diag[diag > 0.0])
 
@@ -333,7 +325,6 @@ class DayenuDelayFilterMap(task.SingleTask):
                         weight[wslc] *= flag_low[:, np.newaxis].astype(np.float32)
 
                 else:
-
                     for ii, rr in enumerate(index):
                         rm[ind][:, rr, ee] = np.matmul(NF[ii], erm[:, rr])
                         weight[wind][:, rr, ee] = tools.invert_no_zero(
@@ -341,7 +332,6 @@ class DayenuDelayFilterMap(task.SingleTask):
                         )
 
                         if self.atten_threshold > 0.0:
-
                             diag = np.diag(NF[ii])
                             med_diag = np.median(diag[diag > 0.0])
 
@@ -449,7 +439,6 @@ class DayenuMFilter(task.SingleTask):
 
         # Loop over frequencies
         for ff, nu in enumerate(freq):
-
             t0 = time.time()
 
             # The next several lines determine the mask as a function of time
@@ -488,7 +477,6 @@ class DayenuMFilter(task.SingleTask):
 
             # Loop over E-W baselines
             for uu, ub in enumerate(uniqb):
-
                 iub = np.flatnonzero(indexb == uu)
 
                 visfb = np.ascontiguousarray(vis[ff, iub])
@@ -512,7 +500,6 @@ class DayenuMFilter(task.SingleTask):
         return stream
 
     def _get_cut(self, freq, xsep):
-
         lmbda = units.c / (freq * 1e6)
         u = xsep / lmbda
         m = instantaneous_m(

@@ -63,7 +63,6 @@ def _list_of_filelists(files: Union[List[str], List[List[str]]]) -> List[List[st
     f2 = []
 
     for filelist in files:
-
         if isinstance(filelist, str):
             if "*" not in filelist and not os.path.isfile(filelist):
                 raise ConfigError("File not found: %s" % filelist)
@@ -110,7 +109,6 @@ def _list_or_glob(files: Union[str, List[str]]) -> List[str]:
 
     # We presume a string is an actual path...
     if isinstance(files, str):
-
         # Check that it exists and is a file (or dir if zarr format)
         if files.endswith(".zarr"):
             if not os.path.isdir(files):
@@ -156,7 +154,6 @@ def _list_of_filegroups(groups: Union[List[Dict], Dict]) -> List[Dict]:
     # Iterate over groups, set the tag if needed, and process the file list
     # through glob
     for gi, group in enumerate(groups):
-
         try:
             files = group["files"]
         except KeyError:
@@ -220,7 +217,6 @@ class LoadMaps(task.MPILoggedTask):
         # Iterate over all the files in the group, load them into a Map
         # container and add them all together
         for mfile in group["files"]:
-
             self.log.debug("Loading file %s", mfile)
 
             current_map = containers.Map.from_file(mfile, distributed=True)
@@ -233,7 +229,6 @@ class LoadMaps(task.MPILoggedTask):
             # Otherwise, check that the new map has consistent frequencies,
             # nside and pol and stack up.
             else:
-
                 if (current_map.freq != map_stack.freq).all():
                     raise RuntimeError("Maps do not have consistent frequencies.")
 
@@ -308,7 +303,6 @@ class LoadFITSCatalog(task.SingleTask):
             # container and add them all together
             catalog_stack = []
             for cfile in group["files"]:
-
                 self.log.debug("Loading file %s", cfile)
 
                 # TODO: read out the weights from the catalogs
@@ -451,7 +445,6 @@ class BaseLoadFiles(task.SingleTask):
         # To enforce the precedence of range vs index selections, we rely on the fact
         # that a sort will place the axis_range keys after axis_index keys
         for k in sorted(self.selections or []):
-
             # Parse the key to get the axis name and type, accounting for the fact the
             # axis name may contain an underscore
             *axis, type_ = k.split("_")
@@ -633,7 +626,6 @@ class Print(pipeline.TaskBase):
     """Stupid module which just prints whatever it gets. Good for debugging."""
 
     def next(self, input_):
-
         print(input_)
 
         return input_
@@ -953,7 +945,6 @@ class ZipZarrContainers(task.SingleTask):
             my_containers = self.containers[self._host_rank :: self._num_hosts]
 
             for container in my_containers:
-
                 self.log.info(f"Zipping {container}")
 
                 if not container.endswith(".zarr") or not os.path.isdir(container):
