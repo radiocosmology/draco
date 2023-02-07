@@ -2184,6 +2184,83 @@ class GainData(FreqContainer, TODContainer):
         return self.index_map["input"]
 
 
+class VisCrosstalkGain(FreqContainer, SiderealContainer):
+    """Joint visibility gain and crosstalk estimates."""
+
+    _axes = ("pol", "stack")
+
+    _dataset_spec = {
+        "gain": {
+            "axes": ["freq", "stack", "ra"],
+            "dtype": np.complex64,
+            "initialise": True,
+            "distributed": True,
+            "distributed_axis": "freq",
+        },
+        "gain_weight": {
+            "axes": ["freq", "stack", "ra"],
+            "dtype": np.float32,
+            "initialise": True,
+            "distributed": True,
+            "distributed_axis": "freq",
+        },
+        "crosstalk": {
+            "axes": ["freq", "stack", "ra"],
+            "dtype": np.complex64,
+            "initialise": True,
+            "distributed": True,
+            "distributed_axis": "freq",
+        },
+        "crosstalk_weight": {
+            "axes": ["freq", "stack", "ra"],
+            "dtype": np.float32,
+            "initialise": True,
+            "distributed": True,
+            "distributed_axis": "freq",
+        },
+    }
+
+
+class VisCrosstalkGainGrid(FreqContainer, SiderealContainer):
+    """Joint visibility gain and crosstalk estimates.
+
+    These estimates have been transformed into the visibility grid order.
+    """
+
+    _axes = ("pol", "ew", "ns")
+
+    _dataset_spec = {
+        "gain": {
+            "axes": ["pol", "freq", "ew", "ns", "ra"],
+            "dtype": np.complex64,
+            "initialise": True,
+            "distributed": True,
+            "distributed_axis": "freq",
+        },
+        "gain_weight": {
+            "axes": ["pol", "freq", "ew", "ns", "ra"],
+            "dtype": np.float32,
+            "initialise": True,
+            "distributed": True,
+            "distributed_axis": "freq",
+        },
+        "crosstalk": {
+            "axes": ["pol", "freq", "ew", "ns", "ra"],
+            "dtype": np.complex64,
+            "initialise": True,
+            "distributed": True,
+            "distributed_axis": "freq",
+        },
+        "crosstalk_weight": {
+            "axes": ["pol", "freq", "ew", "ns", "ra"],
+            "dtype": np.float32,
+            "initialise": True,
+            "distributed": True,
+            "distributed_axis": "freq",
+        },
+    }
+
+
 class SiderealGainData(FreqContainer, SiderealContainer):
     """Parallel container for holding sidereal gain data."""
 
