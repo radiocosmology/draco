@@ -133,7 +133,6 @@ class SourceStack(task.SingleTask):
 
         # Loop over polarisations
         for pp, pstr in enumerate(pol):
-
             fb = formed_beam.beam[:, pp].view(np.ndarray)
             fw = formed_beam.weight[:, pp].view(np.ndarray)
 
@@ -144,7 +143,6 @@ class SourceStack(task.SingleTask):
             count = 0  # Source counter
             # For each source in the range of this process
             for lq in range(lshape):
-
                 if not source_mask[lq]:
                     # Source not in the data redshift range
                     continue
@@ -229,7 +227,6 @@ class RandomSubset(task.SingleTask, RandomTask):
         # If the catalog is distributed, then we need to make sure that it
         # is distributed over an axis other than the object_id axis.
         if catalog.distributed:
-
             axis_size = {
                 key: len(val)
                 for key, val in catalog.index_map.items()
@@ -310,7 +307,6 @@ class RandomSubset(task.SingleTask, RandomTask):
         # Loop over all datasets and if they have an object_id axis, select the
         # relevant objects along that axis
         for name, dset in self.catalog.datasets.items():
-
             if dset.attrs["axis"][0] == "object_id":
                 new_catalog.datasets[name][:] = dset[:][ind]
             else:
@@ -375,7 +371,6 @@ class GroupSourceStacks(task.SingleTask):
         )
 
         if (len(self.stack) % self.ngroup) == 0:
-
             out = self._reset()
             return out
 
@@ -441,11 +436,9 @@ class GroupSourceStacks(task.SingleTask):
 
         # Loop over mock stacks and save to output container
         for name, odset in out.datasets.items():
-
             mock_count = 0
 
             for ss, stack in enumerate(self.stack):
-
                 dset = stack.datasets[name]
                 if dset.attrs["axis"][0] == "mock":
                     data = dset[:]

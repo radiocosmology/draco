@@ -298,7 +298,6 @@ class RandomTask(task.MPILoggedTask):
         """
 
         if self._rng is None:
-
             # Generate a new base seed for all MPI ranks
             if self.seed is None:
                 # Use seed sequence to generate a random seed

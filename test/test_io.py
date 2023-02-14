@@ -11,7 +11,6 @@ pytestmark = pytest.mark.mpi
 
 @pytest.fixture
 def mpi_tmp_path(tmp_path_factory):
-
     dirname = None
     if mpiutil.rank0:
         dirname = str(tmp_path_factory.mktemp("mpi"))
@@ -22,7 +21,6 @@ def mpi_tmp_path(tmp_path_factory):
 
 @pytest.fixture
 def ss_container():
-
     # This is implicitly distributed, so works correctly under MPI
     ss = containers.SiderealStream(
         stack=5, input=3, ra=16, freq=np.linspace(800.0, 750.0, 5)
@@ -42,7 +40,6 @@ def ss_container():
 
 
 def test_LoadBasicCont_simple(ss_container, mpi_tmp_path):
-
     fname = str(mpi_tmp_path / "ss.h5")
     ss_container.save(fname)
 
@@ -67,7 +64,6 @@ def test_LoadBasicCont_simple(ss_container, mpi_tmp_path):
 
 
 def test_LoadBasicCont_selection(ss_container, mpi_tmp_path):
-
     fname = str(mpi_tmp_path / "ss.h5")
     ss_container.save(fname)
 

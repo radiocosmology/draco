@@ -92,7 +92,6 @@ class DelayFilter(task.SingleTask):
         baselines = tel.feedpositions[ia] - tel.feedpositions[ib]
 
         for lbi, bi in ss.vis[:].enumerate(axis=1):
-
             # Select the baseline length to use
             baseline = baselines[bi]
             if self.telescope_orientation == "NS":
@@ -277,7 +276,6 @@ class DelayFilterBase(task.SingleTask):
         )
 
         for lbi, bi in ss.datasets[dset][:].enumerate(axis=dist_axis_pos):
-
             # Extract the part of the array that we are processing, and
             # transpose/reshape to make a 2D array with frequency as axis=0
             vis_local = _take_view(ssv, lbi, dist_axis_pos)
@@ -448,7 +446,6 @@ class DelaySpectrumEstimator(task.SingleTask, random.RandomTask):
 
         # Iterate over all baselines and use the Gibbs sampler to estimate the spectrum
         for lbi, bi in delay_spec.spectrum[:].enumerate(axis=0):
-
             self.log.debug("Delay transforming baseline %i/%i", bi, len(baselines))
 
             # Get the local selections
@@ -680,7 +677,6 @@ class DelaySpectrumEstimatorBase(task.SingleTask, random.RandomTask):
 
         # Iterate over all baselines and use the Gibbs sampler to estimate the spectrum
         for lbi, bi in delay_spec.spectrum[:].enumerate(axis=0):
-
             self.log.debug(f"Delay transforming baseline {bi}/{nbase}")
 
             # Get the local selections
@@ -772,7 +768,6 @@ def stokes_I(sstream, tel):
     # Cache beamclass as it's regenerated every call
     beamclass = tel.beamclass[:]
     for ii, ui in enumerate(uinv):
-
         # Skip if not all polarisations were included
         if ucount[ui] < 4:
             continue
@@ -1047,7 +1042,6 @@ def delay_spectrum_gibbs(
 
     # Window the frequency data
     if window is not None:
-
         # Construct the window function
         x = fsel * 1.0 / total_freq
         w = window_generalised(x, window=window)
@@ -1173,7 +1167,6 @@ def delay_spectrum_gibbs(
     # Perform the Gibbs sampling iteration for a given number of loops and
     # return the power spectrum output of them.
     for ii in range(niter):
-
         d_samp = _draw_signal_sample(S_samp)
         S_samp = _draw_ps_sample(d_samp)
 

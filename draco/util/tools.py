@@ -209,7 +209,6 @@ def apply_gain(vis, gain, axis=1, out=None, prod_map=None):
 
     # Iterate over input pairs and set gains
     for pp in range(nprod):
-
         # Determine the inputs.
         ii, ij = prod_map[pp]
 
@@ -374,13 +373,11 @@ def redefine_stack_index_map(telescope, inputs, prod, stack, reverse_stack):
 
     # Loop over the stacked baselines
     for sind, (ii, jj) in enumerate(prod[stack["prod"]]):
-
         bi, bj = tel_index[ii], tel_index[jj]
 
         # Check that the represenative pair of inputs are present
         # in the telescope instance and not masked.
         if (bi is None) or (bj is None) or not telescope.feedmask[bi, bj]:
-
             # Find alternative pairs of inputs using the reverse map
             this_stack = np.flatnonzero(reverse_stack["stack"] == sind)
 

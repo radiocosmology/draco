@@ -111,7 +111,6 @@ class BeamFormBase(task.SingleTask):
         # Ensure that if we are using variable time tracking,
         # then we are also collapsing over hour angle.
         if self.variable_timetrack:
-
             if self.collapse_ha:
                 self.log.info(
                     "Tracking source for declination dependent amount of time "
@@ -197,7 +196,6 @@ class BeamFormBase(task.SingleTask):
 
         # For each source, beamform and populate container.
         for src in range(self.nsource):
-
             if src % 1000 == 0:
                 self.log.info(f"Source {src}/{self.nsource}")
 
@@ -269,7 +267,6 @@ class BeamFormBase(task.SingleTask):
 
             # Loop over polarisations
             for pol, pol_str in enumerate(self.process_pol):
-
                 primary_beam = self._beamfunc(pol_str, dec, ha_array)
 
                 # Fringestop and sum over products
@@ -452,7 +449,6 @@ class BeamFormBase(task.SingleTask):
         # Find the index of the local frequencies in
         # the frequency axis of the telescope instance
         if not self.no_beam_model:
-
             self.freq_local_telescope_index = np.array(
                 [
                     np.argmin(np.abs(nu - self.telescope.frequencies))
@@ -492,7 +488,6 @@ class BeamFormBase(task.SingleTask):
         primary_beam = np.zeros((nfreq, ha.size), dtype=np.float64)
 
         for ff, freq in enumerate(self.freq_local_telescope_index):
-
             bii = self.telescope.beam(self.map_pol_feed[pol[0]], freq, angpos)
 
             if pol[0] != pol[1]:

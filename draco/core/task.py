@@ -28,7 +28,6 @@ class MPILogFilter(logging.Filter):
     def __init__(
         self, add_mpi_info=True, level_rank0=logging.INFO, level_all=logging.WARN
     ):
-
         from mpi4py import MPI
 
         self.add_mpi_info = add_mpi_info
@@ -39,7 +38,6 @@ class MPILogFilter(logging.Filter):
         self.comm = MPI.COMM_WORLD
 
     def filter(self, record):
-
         # Add MPI info if desired
         try:
             record.mpi_rank
@@ -101,7 +99,6 @@ class SetMPILogging(pipeline.TaskBase):
     level_all = config.Property(proptype=_log_level, default=logging.WARN)
 
     def __init__(self):
-
         from mpi4py import MPI
         import math
 
@@ -133,7 +130,6 @@ class LoggedTask(pipeline.TaskBase):
     log_level = config.Property(proptype=_log_level, default=None)
 
     def __init__(self):
-
         # Get the logger for this task
         self._log = logging.getLogger(
             "%s.%s" % (self.__module__, self.__class__.__name__)
@@ -157,7 +153,6 @@ class MPITask(pipeline.TaskBase):
     comm = None
 
     def __init__(self):
-
         from mpi4py import MPI
 
         # Set default communicator
@@ -176,7 +171,6 @@ class _AddRankLogAdapter(logging.LoggerAdapter):
     calling_obj = None
 
     def process(self, msg, kwargs):
-
         if "extra" not in kwargs:
             kwargs["extra"] = {}
 
@@ -190,7 +184,6 @@ class MPILoggedTask(MPITask, LoggedTask):
     """A task base that has MPI aware logging."""
 
     def __init__(self):
-
         # Initialise the base classes
         MPITask.__init__(self)
         LoggedTask.__init__(self)
@@ -411,7 +404,6 @@ class SingleTask(MPILoggedTask, pipeline.BasicContMixin):
         return output
 
     def _process_output(self, output):
-
         if not isinstance(output, memh5.MemDiskGroup):
             raise pipeline.PipelineRuntimeError(
                 f"Task must output a valid memh5 container; given {type(output)}"
@@ -481,7 +473,6 @@ class SingleTask(MPILoggedTask, pipeline.BasicContMixin):
 
         # Routine to write output if needed.
         if self.save:
-
             # add metadata to output
             metadata = {"versions": self.versions, "config": self.pipeline_config}
             for key, value in metadata.items():
@@ -518,7 +509,6 @@ class SingleTask(MPILoggedTask, pipeline.BasicContMixin):
             nan_found = self._nan_check_walk(output)
 
             if nan_found and self.nan_dump:
-
                 # Construct the filename
                 tag = output.attrs["tag"] if "tag" in output.attrs else self._count
                 outfile = "nandump_" + self.__class__.__name__ + "_" + str(tag) + ".h5"
@@ -571,7 +561,6 @@ class SingleTask(MPILoggedTask, pipeline.BasicContMixin):
 
             # Check the dataset for non-finite numbers
             if isinstance(n, memh5.MemDataset):
-
                 # Try to test for NaN's and infs. This will fail for compound datatypes...
                 # casting to ndarray, bc MPI ranks may fall out of sync, if a nan or inf are found
                 arr = n[:].view(np.ndarray)
@@ -705,12 +694,10 @@ def group_tasks(*tasks):
     """
 
     class TaskGroup(*tasks):
-
         # TODO: figure out how to make the setup work at the moment it just picks the first in MRO
         # def setup(self, x): pass
 
         def process(self, x):
-
             for t in tasks:
                 self.log.debug("Calling process for subtask %s", t.__name__)
                 x = t.process(self, x)

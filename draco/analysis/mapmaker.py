@@ -77,7 +77,6 @@ class BaseMapMaker(task.SingleTask):
 
         # Loop over all m's and solve from m-mode visibilities to alms.
         for mi, m in m_array.enumerate(axis=0):
-
             self.log.debug(
                 "Processing m=%i (local %i/%i)", m, mi + 1, m_array.local_shape[0]
             )
@@ -156,7 +155,6 @@ class DirtyMapMaker(BaseMapMaker):
     """
 
     def _solve_m(self, m, f, v, Ni):
-
         bt = self.beamtransfer
 
         # Massage the arrays into shape
@@ -188,7 +186,6 @@ class MaximumLikelihoodMapMaker(BaseMapMaker):
     """
 
     def _solve_m(self, m, f, v, Ni):
-
         bt = self.beamtransfer
 
         # Massage the arrays into shape
@@ -241,7 +238,6 @@ class WienerMapMaker(BaseMapMaker):
     bt_cache = None
 
     def _solve_m(self, m, f, v, Ni):
-
         import scipy.linalg as la
 
         bt = self.beamtransfer

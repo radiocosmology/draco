@@ -36,10 +36,8 @@ class ReceiverTemperature(task.SingleTask):
     recv_temp = config.Property(proptype=float, default=0.0)
 
     def process(self, data):
-
         # Iterate over the products to find the auto-correlations and add the noise into them
         for pi, prod in enumerate(data.prodstack):
-
             # Great an auto!
             if prod[0] == prod[1]:
                 data.vis[:, pi] += self.recv_temp
@@ -224,7 +222,6 @@ class GaussianNoise(task.SingleTask, random.RandomTask):
 
             # Iterate over the products to find the auto-correlations and add the noise
             for pi, prod in enumerate(data.prodstack):
-
                 # Auto: multiply by sqrt(2) because auto has twice the variance
                 if prod[0] == prod[1]:
                     visdata[:, pi].real += np.sqrt(2) * noise[:, pi].real
@@ -300,7 +297,6 @@ class SampleNoise(task.SingleTask, random.RandomTask):
 
         # Iterate over frequencies
         for lfi, fi in vis_data.enumerate(0):
-
             # Get the frequency interval
             df = data_exp.index_map["freq"]["width"][fi] * 1e6
 
@@ -309,7 +305,6 @@ class SampleNoise(task.SingleTask, random.RandomTask):
 
             # Iterate over time
             for lti, ti in vis_data.enumerate(2):
-
                 # Unpack visibilites into full matrix
                 vis_utv = vis_data[lfi, :, lti].view(np.ndarray).copy()
                 vis_mat = np.zeros((nfeed, nfeed), dtype=vis_utv.dtype)
