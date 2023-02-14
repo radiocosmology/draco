@@ -194,19 +194,27 @@ class ContainerBase(memh5.BasicCont):
 
             # Check if axis is specified in initialiser
             if axis in kwargs:
-                # If axis is an integer, turn into an arange as a default definition
-                if isinstance(kwargs[axis], int):
-                    axis_map = np.arange(kwargs[axis])
-                else:
-                    axis_map = kwargs[axis]
+                axis_map = kwargs[axis]
+                copy_axis_attrs = False
 
-            # If not set in the arguments copy from another object if set
-            elif axes_from is not None and axis in axes_from.index_map:
-                axis_map = axes_from.index_map[axis]
+                # If axis is an integer, turn into an arange as a default definition
+                if isinstance(axis_map, int):
+                    axis_map = np.arange(axis_map)
+
+                # Ensure that we intend to change the axis_map. This returns
+                # None if the kwarg axis map is rejected
+                axis_map = self._sanitize_axis_map(axis, axis_map, axes_from)
+
+            # If no valid map provided in arguments copy from another object if set
+            if axis_map is None and axes_from is not None:
+                axis_map = axes_from.index_map.get(axis, None)
+                copy_axis_attrs = True
 
             # Set the index_map[axis] if we have a definition, otherwise throw an error
             if axis_map is not None:
                 self.create_index_map(axis, axis_map)
+                if copy_axis_attrs:
+                    memh5.copyattrs(axes_from.index_attrs[axis], self.index_attrs[axis])
             else:
                 raise RuntimeError(f"No definition of axis {axis} supplied.")
 
@@ -434,13 +442,76 @@ class ContainerBase(memh5.BasicCont):
         axes = set(self._class_axes())
 
         # Add in any axes found on the instance (this is needed to support the table
-        # classes where
-        # the axes get added at run time)
+        # classes where the axes get added at run time)
         axes |= set(self.__dict__.get("_axes", []))
 
         # This must be the same order on all ranks, so we need to explicitly sort to
         # get around the hash randomization
         return tuple(sorted(axes))
+
+    def _sanitize_axis_map(self, axis, axis_map, axes_from):
+        """Ensure that a non-index_map axis definition makes sense.
+
+        If an axis has been provided as both a keyword argument and
+        in the "axes_from" container, make sure that we don't actually
+        want the axis from the "axes_from" index_map and the copied
+        axis spec modifier.
+
+        Parameters
+        ----------
+        axis : str
+            axis to check
+        axis_map : np.ndarray
+            axis definition given in kwargs
+        axes_from : `memh5.BasicCont`
+            container we're copying axes from
+
+        Returns
+        -------
+        axis_map : np.ndarray
+            correct axis map for the situation
+        """
+        # Did we get this property from the same parent?
+        # If we've inherited this axis attribute from the same class
+        # as the source, we probably want to inherit the axis from
+        # the index_map since the modifications to the underlying axis
+        # made by the attribute will exist for the new container as well
+        for c in inspect.getmro(type(self)):
+            # We've found the highest priority parent with this attr.
+            # We don't care about any other parents with this attr since
+            # those will have been overwritten by this one.
+            if axis in c.__dict__:
+                # Check if the source also has this parent
+                for k in inspect.getmro(type(axes_from)):
+                    # This isn't a very nice way to check this, but even if the
+                    # classes are from the same module, they may have been imported
+                    # via different paths, and python class comparison will fail
+                    if (k.__module__ == c.__module__) and (
+                        k.__qualname__ == c.__qualname__
+                    ):
+                        # We have the same parent, so we have to check
+                        # if the attr we're looking for gives us the
+                        # axis_map we got as an argument
+                        from_attr = getattr(axes_from, axis)
+
+                        # Call the attr if needed
+                        if callable(from_attr):
+                            from_attr = from_attr()
+
+                        # Check if this is produces the axis map that
+                        # we got. If it does, check to make sure we can get the index_map
+                        # from the source container.
+                        if np.array_equal(np.asarray(axis_map), np.asarray(from_attr)):
+                            if axis in axes_from.index_map:
+                                return None
+
+                        # Not a match
+                        break
+                else:
+                    # Not a match
+                    break
+
+        return axis_map
 
     @classmethod
     def _make_selections(cls, sel_args):
@@ -681,11 +752,17 @@ class TODContainer(ContainerBase, tod.TOData):
         seconds for the *centre* of each time sample.
         """
         try:
-            return self.index_map["time"][:]["ctime"]
+            time = self.index_map["time"][:]["ctime"]
         # Need to check for both types as different numpy versions return
         # different exceptions.
         except (IndexError, ValueError):
-            return self.index_map["time"][:]
+            time = self.index_map["time"][:]
+
+        # This method should always return the time centres, so a shift is applied
+        # based on the time index_map entry alignment
+        alignment = self.index_attrs["time"].get("alignment", 0)
+
+        return time + alignment * (abs(np.median(np.diff(time))) / 2)
 
 
 class VisContainer(ContainerBase):
