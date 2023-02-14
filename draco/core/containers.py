@@ -145,7 +145,7 @@ class ContainerBase(memh5.BasicCont):
       in the `axes` entry.
     """
 
-    _axes = ()
+    _axes = {}
 
     _dataset_spec = {}
 
@@ -189,6 +189,10 @@ class ContainerBase(memh5.BasicCont):
         if has_data_group:
             return
 
+        # Resolve tuple axes into a dict
+        if type(self._axes) is tuple:
+            self._axes = {k: {} for k in self._axes}
+
         # Create axis entries
         for axis in self.axes:
             axis_map = None
@@ -204,6 +208,14 @@ class ContainerBase(memh5.BasicCont):
             # If not set in the arguments copy from another object if set
             elif axes_from is not None and axis in axes_from.index_map:
                 axis_map = axes_from.index_map[axis]
+                # Update axis spec for this specific axis if any spec is defined
+                # Note that this modifies the `_axes` attribute of this instance,
+                # overwriting the axis definition from a parent container
+
+                # If the source container doesn't have an axes
+                # dict then no spec can be supplied
+                if axis in axes_from._axes and issubclass(dict, type(axes_from._axes)):
+                    self._axes[axis] = axes_from._axes[axis]
 
             # Set the index_map[axis] if we have a definition, otherwise throw an error
             if axis_map is not None:
@@ -423,10 +435,11 @@ class ContainerBase(memh5.BasicCont):
         # which get added to a temporary dict. We go over the reversed MRO so
         # that the `tdict.update` overrides tables in base classes.
         for c in inspect.getmro(cls)[::-1]:
-            try:
-                axes |= set(c._axes)
-            except AttributeError:
-                pass
+            # Include check for _axes attribute type
+            if hasattr(c, "_axes"):
+                # _axes could be defined as either a dict or a tuple. Casting a
+                # dict to a tuple returns a tuple of keys, which is what we want
+                axes |= set(tuple(c._axes))
 
         # This must be the same order on all ranks, so we need to explicitly sort to get around the
         # hash randomization
@@ -438,13 +451,32 @@ class ContainerBase(memh5.BasicCont):
         axes = set(self._class_axes())
 
         # Add in any axes found on the instance (this is needed to support the table
-        # classes where
-        # the axes get added at run time)
-        axes |= set(self.__dict__.get("_axes", []))
+        # classes where the axes get added at run time)
+        axes |= set(tuple(self.__dict__.get("_axes", [])))
 
         # This must be the same order on all ranks, so we need to explicitly sort to
         # get around the hash randomization
         return tuple(sorted(axes))
+
+    @property
+    def axes_spec(self) -> dict:
+        """Return a spec dictionary for fully resolved axes."""
+
+        adict = {}
+
+        def ensure_dict(x):
+            return x if issubclass(dict, type(x)) else {k: {} for k in x}
+
+        # Iterate over the MRO in the same way as dataset_spec
+        for cls in inspect.getmro(self.__class__)[::-1]:
+            if hasattr(cls, "_axes"):
+                adict.update(ensure_dict(cls._axes))
+
+        # Add any _axes found on the instance
+        adict.update(ensure_dict(self.__dict__.get("_axes", {})))
+
+        # Ensure that the dataset_spec is the same order on all ranks
+        return {k: adict[k] for k in sorted(adict)}
 
     @classmethod
     def _make_selections(cls, sel_args):
@@ -681,7 +713,7 @@ class TODContainer(ContainerBase, tod.TOData):
     instance.
     """
 
-    _axes = ("time",)
+    _axes = {"time": {"index_alignment": "centre"}}
 
     @property
     def time(self):
@@ -691,11 +723,23 @@ class TODContainer(ContainerBase, tod.TOData):
         seconds for the *centre* of each time sample.
         """
         try:
-            return self.index_map["time"][:]["ctime"]
+            time = self.index_map["time"][:]["ctime"]
         # Need to check for both types as different numpy versions return
         # different exceptions.
         except (IndexError, ValueError):
-            return self.index_map["time"][:]
+            time = self.index_map["time"][:]
+
+        # This method should always return the time centres, so a shift is applied
+        # based on the time index_map entry alignment
+        if self.axes_spec["time"]["index_alignment"] == "left":
+            # index is left-aligned so shift forward a half sample
+            return time + (abs(np.median(np.diff(time))) / 2)
+
+        if self.axes_spec["time"]["index_alignment"] == "right":
+            # index is right-aligned so shift back a half sample
+            return time - (abs(np.median(np.diff(time))) / 2)
+
+        return time
 
 
 class VisContainer(ContainerBase):
