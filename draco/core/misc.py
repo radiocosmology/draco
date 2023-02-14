@@ -59,7 +59,6 @@ class ApplyGain(task.SingleTask):
             )
 
         if isinstance(gain, containers.StaticGainData):
-
             # Extract gain array and add in a time axis
             gain_arr = gain.gain[:][..., np.newaxis]
 
@@ -77,7 +76,6 @@ class ApplyGain(task.SingleTask):
                 containers.CommonModeSiderealGainData,
             ),
         ):
-
             # Extract gain array
             gain_arr = gain.gain[:]
 
@@ -91,7 +89,6 @@ class ApplyGain(task.SingleTask):
                 gain,
                 (containers.SiderealGainData, containers.CommonModeSiderealGainData),
             ):
-
                 # Check that we are defined at the same RA samples
                 if (gain.ra != tstream.ra).any():
                     raise RuntimeError(
@@ -204,7 +201,6 @@ class AccumulateList(task.MPILoggedTask):
         self._items.append(input_)
 
     def finish(self):
-
         # Remove the internal reference to the items so they don't hang around after the task
         # finishes
         items = self._items
@@ -239,7 +235,6 @@ class CheckMPIEnvironment(task.MPILoggedTask):
         start_time = time.time()
 
         while time.time() - start_time < self.timeout:
-
             success = all([r.get_status() for r in results])
 
             if success:

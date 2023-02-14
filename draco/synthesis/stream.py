@@ -325,7 +325,6 @@ class MakeTimeStream(task.SingleTask):
         return tstream
 
     def _next_time_axis(self):
-
         # Calculate the integration time
         if self.integration_time is not None:
             int_time = self.integration_time

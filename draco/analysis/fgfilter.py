@@ -82,7 +82,6 @@ class SVDModeProject(_ProjectFilterBase):
 
         # Iterate over local m's, project mode and save to disk.
         for lm, mi in mmodes.vis[:].enumerate(axis=0):
-
             tm = mmodes.vis[mi].transpose((1, 0, 2)).reshape(tel.nfreq, 2 * tel.npairs)
             svdm = bt.project_vector_telescope_to_svd(mi, tm)
 
@@ -128,7 +127,6 @@ class SVDModeProject(_ProjectFilterBase):
 
         # Iterate over local m's, project mode and save to disk.
         for lm, mi in mmodes.vis[:].enumerate(axis=0):
-
             svdm = svdmodes.vis[mi]
             tm = bt.project_vector_svd_to_telescope(mi, svdm)
 
@@ -190,7 +188,6 @@ class KLModeProject(_ProjectFilterBase):
 
         # Iterate over local m's and project mode into KL basis
         for lm, mi in svdmodes.vis[:].enumerate(axis=0):
-
             sm = svdmodes.vis[mi][: svdmodes.nmode[mi]]
             klm = kl.project_vector_svd_to_kl(mi, sm, threshold=self.threshold)
 
@@ -227,7 +224,6 @@ class KLModeProject(_ProjectFilterBase):
 
         # Iterate over local m's and project mode into KL basis
         for lm, mi in klmodes.vis[:].enumerate(axis=0):
-
             klm = klmodes.vis[mi][: klmodes.nmode[mi]]
             sm = kl.project_vector_kl_to_svd(mi, klm, threshold=self.threshold)
 

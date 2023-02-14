@@ -153,7 +153,6 @@ class ContainerBase(memh5.BasicCont):
     convert_dataset_strings = True
 
     def __init__(self, *args, **kwargs):
-
         # Arguments for pulling in definitions from other containers
         copy_from = kwargs.pop("copy_from", None)
         axes_from = kwargs.pop("axes_from", copy_from)
@@ -192,12 +191,10 @@ class ContainerBase(memh5.BasicCont):
 
         # Create axis entries
         for axis in self.axes:
-
             axis_map = None
 
             # Check if axis is specified in initialiser
             if axis in kwargs:
-
                 # If axis is an integer, turn into an arange as a default definition
                 if isinstance(kwargs[axis], int):
                     axis_map = np.arange(kwargs[axis])
@@ -222,7 +219,6 @@ class ContainerBase(memh5.BasicCont):
 
         # Copy over datasets that have compatible axes
         if dsets_from is not None:
-
             # Get the list of axes names that have been overriden
             changed_axes = {ax for ax in self.axes if ax in kwargs}
 
@@ -247,7 +243,6 @@ class ContainerBase(memh5.BasicCont):
 
         # Copy over attributes
         if attrs_from is not None:
-
             # Copy attributes from container root
             memh5.copyattrs(attrs_from.attrs, self.attrs)
 
@@ -405,7 +400,6 @@ class ContainerBase(memh5.BasicCont):
         # which get added to a temporary dict. We go over the reversed MRO so
         # that the `tdict.update` overrides tables in base classes.`
         for cls in inspect.getmro(self.__class__)[::-1]:
-
             try:
                 # NOTE: this is a little ugly as the following line will drop
                 # down to base classes if dataset_spec isn't present, and thus
@@ -429,7 +423,6 @@ class ContainerBase(memh5.BasicCont):
         # which get added to a temporary dict. We go over the reversed MRO so
         # that the `tdict.update` overrides tables in base classes.
         for c in inspect.getmro(cls)[::-1]:
-
             try:
                 axes |= set(c._axes)
             except AttributeError:
@@ -531,7 +524,6 @@ class ContainerBase(memh5.BasicCont):
         # Loop over datasets that exist in the source and either add a view of
         # the source dataset, or perform a full copy
         for name, data in self.datasets.items():
-
             if shared and name in shared:
                 # TODO: find a way to do this that doesn't depend on the
                 # internal implementation of BasicCont and MemGroup
@@ -618,7 +610,6 @@ class TableBase(ContainerBase):
     _table_spec = {}
 
     def __init__(self, *args, **kwargs):
-
         # Get the dataset specifiction for this class (not any base classes), or
         # an empty dictionary if it does not exist. Do the same for the axes entry..
         dspec = self.__class__.__dict__.get("_dataset_spec", {})
@@ -627,7 +618,6 @@ class TableBase(ContainerBase):
         # Iterate over all table_spec entries and construct dataset specifications for
         # them.
         for name, spec in self.table_spec.items():
-
             # Get the specifieid axis or if not present create a unique one for
             # this table entry
             axis = spec.get("axis", name + "_index")
@@ -675,7 +665,6 @@ class TableBase(ContainerBase):
         tdict = {}
 
         for cls in inspect.getmro(self.__class__)[::-1]:
-
             try:
                 tdict.update(cls._table_spec)
             except AttributeError:
@@ -860,7 +849,6 @@ class SampleVarianceContainer(ContainerBase):
     _axes = ("component",)
 
     def __init__(self, *args, **kwargs):
-
         # Set component axis to default real-imaginary basis if not already provided
         if "component" not in kwargs:
             kwargs["component"] = np.array(
@@ -1012,7 +1000,6 @@ class SiderealContainer(ContainerBase):
     _axes = ("ra",)
 
     def __init__(self, ra=None, *args, **kwargs):
-
         # Allow the passing of a number of samples for the RA axis
         if ra is not None:
             if isinstance(ra, int):
@@ -1049,7 +1036,6 @@ class MContainer(ContainerBase):
     def __init__(
         self, mmax: Optional[int] = None, oddra: Optional[bool] = None, *args, **kwargs
     ):
-
         # Set up axes from passed arguments
         if mmax is not None:
             kwargs["m"] = mmax + 1
@@ -1088,7 +1074,6 @@ class HealpixContainer(ContainerBase):
     _axes = ("pixel",)
 
     def __init__(self, nside=None, *args, **kwargs):
-
         # Set up axes from passed arguments
         if nside is not None:
             kwargs["pixel"] = 12 * nside**2
@@ -1128,7 +1113,6 @@ class Map(FreqContainer, HealpixContainer):
     }
 
     def __init__(self, polarisation=True, *args, **kwargs):
-
         # Set up axes from passed arguments
         kwargs["pol"] = (
             np.array(["I", "Q", "U", "V"]) if polarisation else np.array(["I"])
@@ -1486,7 +1470,6 @@ class GridBeam(FreqContainer):
     }
 
     def __init__(self, coords="celestial", *args, **kwargs):
-
         super(GridBeam, self).__init__(*args, **kwargs)
         self.attrs["coords"] = coords
 
@@ -1657,7 +1640,6 @@ class TrackBeam(FreqContainer, SampleVarianceContainer):
         *args,
         **kwargs,
     ):
-
         if theta is not None and phi is not None:
             if len(theta) != len(phi):
                 raise RuntimeError(
@@ -2347,7 +2329,6 @@ class Powerspectrum2D(ContainerBase):
     }
 
     def __init__(self, kperp_edges=None, kpar_edges=None, *args, **kwargs):
-
         # Construct the kperp axis from the bin edges
         if kperp_edges is not None:
             centre = 0.5 * (kperp_edges[1:] + kperp_edges[:-1])
@@ -2762,7 +2743,6 @@ def copy_datasets_filter(
     stack = [source]
 
     while stack:
-
         item = stack.pop()
 
         if memh5.is_group(item):
@@ -2783,7 +2763,6 @@ def copy_datasets_filter(
         axis_ind = axes.index(axis)
 
         if isinstance(item, memh5.MemDatasetDistributed):
-
             if (item.distributed_axis == axis_ind) and not allow_distributed:
                 raise RuntimeError(
                     f"Cannot redistristribute dataset={item.name} along "

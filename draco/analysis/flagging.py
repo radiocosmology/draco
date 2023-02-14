@@ -486,7 +486,6 @@ class MaskBeamformedWeights(task.SingleTask):
         med_weight = np.zeros(npol, dtype=np.float32)
 
         for pp in range(npol):
-
             wlocal = data.weight[:, pp]
             wglobal = np.zeros(wlocal.global_shape, dtype=wlocal.dtype)
 
@@ -616,7 +615,6 @@ class SmoothVisWeight(task.SingleTask):
         weight_local = weight.local_array
 
         for lfi, gfi in weight.enumerate(axis=0):
-
             # MPIArray takes the local index, returns a local np.ndarray
             # Find values equal to zero to preserve them in final weights
             zeromask = weight_local[lfi] == 0.0
@@ -728,7 +726,7 @@ class ThresholdVisWeightBaseline(task.SingleTask):
         Any weights with values less than this number times the average weight
         will be set to zero. Default: 1e-6.
     ignore_absolute_threshold : float, optional
-        Any weights will values less than this number will be ignored when
+        Any weights with values less than this number will be ignored when
         taking averages and constructing the mask. Default: 0.0.
     pols_to_flag : string, optional
         Which polarizations to flag. "copol" only flags XX and YY baselines,
@@ -755,7 +753,7 @@ class ThresholdVisWeightBaseline(task.SingleTask):
         self,
         stream,
     ) -> Union[containers.BaselineMask, containers.SiderealBaselineMask]:
-        """Construct mask and apply to input weights, if desired.
+        """Construct baseline-dependent mask.
 
         Parameters
         ----------
@@ -813,7 +811,6 @@ class ThresholdVisWeightBaseline(task.SingleTask):
         # If only flagging co-pol baselines, make separate mask to select those,
         # and multiply into low-weight mask
         if self.pols_to_flag == "copol":
-
             # Get local section of stack axis
             local_stack = stream.stack[stream.weight[:].local_bounds]
 
@@ -1008,7 +1005,6 @@ class RFISensitivityMask(task.SingleTask):
         stmask[:] = False
 
         for li, ii in madmask.enumerate(axis=0):
-
             # Only process this polarisation if we should be including it,
             # otherwise skip and let it be implicitly set to False (i.e. not
             # masked)
@@ -1234,7 +1230,6 @@ class RFIMask(task.SingleTask):
 
         # Get the rank with stack to create the new mask
         if sstream.comm.rank == rank_with_ind:
-
             # Cut out the right section
             wf = ssv.local_array[:, self.stack_ind - lstart]
             ww = ssw.local_array[:, self.stack_ind - lstart]
@@ -1472,7 +1467,6 @@ class MaskFreq(task.SingleTask):
         mask = np.zeros(nfreq, dtype=bool)
 
         for s in self.bad_freq_ind:
-
             if isinstance(s, int):
                 if s < nfreq:
                     mask[s] = True
@@ -1600,7 +1594,6 @@ class BlendStack(task.SingleTask):
 
         # Find the median offset between the stack and the daily data
         if self.match_median:
-
             # Find the parts of the both the stack and the daily data that are both
             # measured
             mask = (
@@ -1654,7 +1647,6 @@ class BlendStack(task.SingleTask):
             weight *= weight_stack
 
         else:
-
             # Perform a weighted average of the data to fill in missing samples
             dset *= weight
             dset += weight_stack * self.frac * (dset_stack + stack_offset)
@@ -1821,7 +1813,6 @@ def tv_channels_flag(x, freq, sigma=5, f=0.5, debug=False):
     freq_end = freq + 0.5 * df
 
     for i in range(67):
-
         # Find all frequencies that lie wholly or partially within the TV channel
         fs = tvstart_freq + i * tvwidth_freq
         fe = fs + tvwidth_freq
