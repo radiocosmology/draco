@@ -803,7 +803,8 @@ class VisContainer(ContainerBase):
             kwargs["stack"] = stack
 
         # Call initializer from `ContainerBase`
-        super(VisContainer, self).__init__(*args, **kwargs)
+        # super(VisContainer, self).__init__(*args, **kwargs)
+        super().__init__(*args, **kwargs)
 
         reverse_map_stack = None
         # Create reverse map
