@@ -182,16 +182,18 @@ class ContainerBase(memh5.BasicCont):
         # Run base initialiser, and exit early if data_group was provided
         super().__init__(data_group=data_group, distributed=dist, comm=comm)
 
+        # Copy over any axis specs defined from the source container.
+        # These should be defined on the class rather than the instance.
+        # This will resolve our _axes attribute into a dict and modify
+        # it if there are any specs to copy over
+        self._copy_axes_spec(axes_from)
+
         # If data_group was provided we need to exit early to behave like
         # memh5.MemDiskGroup would have. In this case we're probably trying to
         # create a bare container, or a shallow clone, so don't initialise any
         # datasets. This behaviour is needed to support tod.concatenate
         if has_data_group:
             return
-
-        # Resolve tuple axes into a dict
-        if type(self._axes) is tuple:
-            self._axes = {k: {} for k in self._axes}
 
         # Create axis entries
         for axis in self.axes:
@@ -208,14 +210,6 @@ class ContainerBase(memh5.BasicCont):
             # If not set in the arguments copy from another object if set
             elif axes_from is not None and axis in axes_from.index_map:
                 axis_map = axes_from.index_map[axis]
-                # Update axis spec for this specific axis if any spec is defined
-                # Note that this modifies the `_axes` attribute of this instance,
-                # overwriting the axis definition from a parent container
-
-                # If the source container doesn't have an axes
-                # dict then no spec can be supplied
-                if axis in axes_from._axes and issubclass(dict, type(axes_from._axes)):
-                    self._axes[axis] = axes_from._axes[axis]
 
             # Set the index_map[axis] if we have a definition, otherwise throw an error
             if axis_map is not None:
@@ -477,6 +471,34 @@ class ContainerBase(memh5.BasicCont):
 
         # Ensure that the dataset_spec is the same order on all ranks
         return {k: adict[k] for k in sorted(adict)}
+
+    def _copy_axes_spec(self, axes_from):
+        """Update the spec for axes in `axes_from`.
+
+        Update axis spec for this specific axis if any spec is defined
+        Note that this modifies the `_axes` attribute of this instance,
+        overwriting the axis definition from a parent container.
+
+        Parameters
+        ----------
+        axes_from : :class:`memh5.BasicCont` or subclass
+            container to copy axis specs from
+        """
+        # Resolve tuple axes into a dict
+        if type(self._axes) is tuple:
+            self._axes = {k: {} for k in self._axes}
+
+        if not hasattr(axes_from, "_axes"):
+            # No _axes property in source container
+            return
+
+        if not issubclass(dict, type(axes_from._axes)):
+            # axes_from doesn't set any specs
+            return
+
+        # Copy over the axis specs
+        for axis in set(self.axes) & set(axes_from._axes):
+            self._axes[axis] = axes_from._axes[axis]
 
     @classmethod
     def _make_selections(cls, sel_args):
