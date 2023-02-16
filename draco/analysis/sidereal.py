@@ -143,13 +143,29 @@ class SiderealGrouper(task.SingleTask):
         self.log.info("Constructing LSD:%i [%i files]", lsd, len(self._timestream_list))
 
         # Construct the combined timestream
-        ts = tod.concatenate(self._timestream_list)
+        ts = concatenate_tod(self._timestream_list)
 
         # Add attributes for the LSD and a tag for labelling saved files
         ts.attrs["tag"] = "lsd_%i" % lsd
         ts.attrs["lsd"] = lsd
 
         return ts
+
+
+def concatenate_tod(data_list, *args, **kwargs):
+    """Concatenate time-ordered data and copy axis specs.
+
+    This is defined to handle some behaviour specific to draco
+    containers. See `caput.tod.concatenate` documentation for more.
+    """
+    # Concatenate the timestreams
+    ts = tod.concatenate(data_list, *args, **kwargs)
+
+    # Copy over axis specs
+    if hasattr(ts, "axes_spec"):
+        ts._copy_axes_spec(data_list[0])
+
+    return ts
 
 
 class SiderealRegridder(Regridder):
