@@ -551,7 +551,7 @@ class ContainerBase(memh5.BasicCont):
                         # Check if this is produces the axis map that
                         # we got. If it does, we should inherit the
                         # axis from the index_map
-                        if np.array_equal(axis_map, from_attr):
+                        if np.array_equal(np.asarray(axis_map), np.asarray(from_attr)):
                             return axes_from.index_map.get(axis, axis_map)
 
                         # Not a match
