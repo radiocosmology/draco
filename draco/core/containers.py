@@ -207,6 +207,10 @@ class ContainerBase(memh5.BasicCont):
                 else:
                     axis_map = kwargs[axis]
 
+                # Ensure that the axis definition is consistent with the axis spec
+                # or that we intend to change the axis definition from the source.
+                axis_map = self._sanitize_axis_map(axis, axis_map, axes_from)
+
             # If not set in the arguments copy from another object if set
             elif axes_from is not None and axis in axes_from.index_map:
                 axis_map = axes_from.index_map[axis]
@@ -500,10 +504,67 @@ class ContainerBase(memh5.BasicCont):
         for axis in set(self.axes) & set(axes_from._axes):
             self._axes[axis] = axes_from._axes[axis]
 
+    def _sanitize_axis_map(self, axis, axis_map, axes_from):
+        """Ensure that a non-index_map axis definition makes sense.
+
+        If an axis has been provided as both a keyword argument and
+        in the "axes_from" container, make sure that we don't actually
+        want the axis from the "axes_from" index_map and the copied
+        axis spec modifier.
+
+        Parameters
+        ----------
+        axis : str
+            axis to check
+        axis_map : np.ndarray
+            axis definition given in kwargs
+        axes_from : `memh5.BasicCont`
+            container we're copying axes from
+
+        Returns
+        -------
+        axis_map : np.ndarray
+            correct axis map for the situation
+        """
+        # Did we get this property from the same parent?
+        # If we've inherited this axis attribute from the same class
+        # as the source, we probably want to inherit the axis from
+        # the index_map since the modifications to the underlying axis
+        # made by the attribute will exist for the new container as well
+        for c in inspect.getmro(type(self)):
+            # We've found the highest priority parent with this attr.
+            # We don't care about any other parents with this attr since
+            # those will have been overwritten by this one.
+            if axis in c.__dict__:
+                # Check if the source also has this parent
+                for k in inspect.getmro(type(axes_from)):
+                    if k is c:
+                        # We have the same parent, so we have to check
+                        # if the attr we're looking for gives us the
+                        # axis_map we got as an argument
+                        from_attr = getattr(axes_from, axis)
+
+                        # Call the attr if needed
+                        if callable(from_attr):
+                            from_attr = from_attr()
+
+                        # Check if this is produces the axis map that
+                        # we got. If it does, we should inherit the
+                        # axis from the index_map
+                        if np.array_equal(axis_map, from_attr):
+                            return axes_from.index_map.get(axis, axis_map)
+
+                        # Not a match
+                        break
+                else:
+                    # Not a match
+                    break
+
+        return axis_map
+
     @classmethod
     def _make_selections(cls, sel_args):
-        """
-        Match down-selection arguments to axes of datasets.
+        """Match down-selection arguments to axes of datasets.
 
         Parses sel_* argument and returns dict mapping dataset names to selections.
 
