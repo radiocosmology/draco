@@ -1464,6 +1464,101 @@ class ApplyTimeFreqMask(task.SingleTask):
         return tsc
 
 
+class ApplyBaselineMask(task.SingleTask):
+    """Apply a distributed mask that varies across baselines.
+
+    No broadcasting is done, so the data and mask should have the same
+    axes. This shouldn't be used for non-distributed time-freq masks.
+
+    This task may produce output with shared datasets. Be warned that
+    this can produce unexpected outputs if not properly taken into
+    account.
+
+    Attributes
+    ----------
+    share : {"all", "none", "vis", "map"}
+        Which datasets should we share with the input. If "none" we create a
+        full copy of the data, if "vis" or "map" we create a copy only of the modified
+        weight dataset and the unmodified vis dataset is shared, if "all" we
+        modify in place and return the input container.
+    """
+
+    share = config.enum(["none", "vis", "map", "all"], default="all")
+
+    @overload
+    def process(
+        self, data: containers.TimeStream, mask: containers.BaselineMask
+    ) -> containers.TimeStream:
+        ...
+
+    @overload
+    def process(
+        self, data: containers.SiderealStream, mask: containers.SiderealBaselineMask
+    ) -> containers.SiderealStream:
+        ...
+
+    def process(self, data, mask):
+        """Flag data by zeroing the weights.
+
+        Parameters
+        ----------
+        data
+            Data to apply mask to. Must have a stack axis
+        mask
+            A baseline-dependent mask
+
+        Returns
+        -------
+        data
+            The masked data. Masking is done in place.
+        """
+
+        if isinstance(mask, containers.BaselineMask):
+            if not hasattr(data, "time"):
+                raise TypeError(f"Expected a timestream-like type. Got {type(data)}.")
+
+            if not (data.time.shape == mask.time.shape) and np.allclose(
+                data.time, mask.time
+            ):
+                raise ValueError("timestream and mask have different time axes.")
+
+        elif isinstance(mask, containers.SiderealBaselineMask):
+            if not hasattr(data, "ra"):
+                raise TypeError(
+                    f"Expected a sidereal stream like type. Got {type(data)}."
+                )
+
+            if not (data.ra.shape == mask.ra.shape) and np.allclose(data.ra, mask.ra):
+                raise ValueError("sidereal stream and mask have different RA axes.")
+
+        else:
+            raise TypeError(
+                f"Require a BaselineMask or SiderealBaselineMask. Got {type(mask)}."
+            )
+
+        # Validate remaining axes
+        if not np.array_equal(data.stack, mask.stack):
+            raise ValueError("data and mask have different baseline axes.")
+
+        if not (data.freq.shape == mask.freq.shape) and np.allclose(
+            data.freq, mask.freq
+        ):
+            raise ValueError("data and mask have different freq axes.")
+
+        if self.share == "all":
+            tsc = data
+        elif self.share == "vis":
+            tsc = data.copy(shared=("vis",))
+        elif self.share == "map":
+            tsc = data.copy(shared=("map",))
+        else:
+            tsc = data.copy()
+
+        tsc.weight[:] *= (~mask.mask[:]).astype(np.float32)
+
+        return tsc
+
+
 class MaskFreq(task.SingleTask):
     """Make a mask for certain frequencies.
 
