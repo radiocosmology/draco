@@ -47,7 +47,7 @@ setup(
     packages=find_packages(),
     ext_modules=cythonize([fast_ext, trunc_ext]),
     install_requires=requires,
-    python_requires=">=3.6",
+    python_requires=">=3.8",
     author="Richard Shaw",
     author_email="richard@phas.ubc.ca",
     description="Analysis and simulation tools for driftscan radio interferometers.",
