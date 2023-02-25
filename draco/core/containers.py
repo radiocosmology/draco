@@ -744,26 +744,6 @@ class TODContainer(ContainerBase, tod.TOData):
 
     _axes = ("time",)
 
-    @property
-    def time(self):
-        """The actual times associated with each entry of the time axis.
-
-        By convention this property should return the floating point UTC UNIX time in
-        seconds for the *centre* of each time sample.
-        """
-        try:
-            time = self.index_map["time"][:]["ctime"]
-        # Need to check for both types as different numpy versions return
-        # different exceptions.
-        except (IndexError, ValueError):
-            time = self.index_map["time"][:]
-
-        # This method should always return the time centres, so a shift is applied
-        # based on the time index_map entry alignment
-        alignment = self.index_attrs["time"].get("alignment", 0)
-
-        return time + alignment * (abs(np.median(np.diff(time))) / 2)
-
 
 class VisContainer(ContainerBase):
     """A base container for holding a visibility dataset.
