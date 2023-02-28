@@ -16,6 +16,7 @@ def ss_container():
     ss.attrs["test_attr1"] = "hello"
     ss.vis.attrs["test_attr2"] = "hello2"
     ss.weight.attrs["test_attr3"] = "hello3"
+    ss.index_attrs["freq"]["alignment"] = 1
 
     return ss
 
@@ -28,6 +29,7 @@ def test_attrs_from(ss_container):
     assert ts.attrs["test_attr1"] == "hello"
     assert ts.vis.attrs["test_attr2"] == "hello2"
     assert ts.weight.attrs["test_attr3"] == "hello3"
+    assert ts.index_attrs["freq"]["alignment"] == 1
 
     # Check that the axis attributes on the datasets did not get overwritten
     assert len(ts.vis.attrs) == 2
@@ -50,6 +52,7 @@ def test_copy(ss_container):
     assert ss_copy.attrs["test_attr1"] == "hello"
     assert ss_copy.vis.attrs["test_attr2"] == "hello2"
     assert ss_copy.weight.attrs["test_attr3"] == "hello3"
+    assert ss_copy.index_attrs["freq"]["alignment"] == 1
 
     # Check the chunking parameters
     assert ss_copy.vis.chunks == ss_container.vis.chunks
