@@ -42,7 +42,7 @@ class BaseGains(task.SingleTask):
 
         time = data.time
 
-        gain_data = containers.GainData(time=time, axes_from=data, comm=data.comm)
+        gain_data = containers.GainData(axes_from=data, comm=data.comm)
         gain_data.redistribute("input")
 
         # Save some useful attributes
