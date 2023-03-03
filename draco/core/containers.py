@@ -2716,7 +2716,6 @@ def copy_datasets_filter(
     axis: str,
     selection: Union[np.ndarray, list, slice],
     exclude_axes: List[str] = None,
-    allow_distributed: bool = False,
 ):
     """Copy datasets while filtering a given axis.
 
@@ -2763,12 +2762,29 @@ def copy_datasets_filter(
         axis_ind = axes.index(axis)
 
         if isinstance(item, memh5.MemDatasetDistributed):
-            if (item.distributed_axis == axis_ind) and not allow_distributed:
-                raise RuntimeError(
-                    f"Cannot redistristribute dataset={item.name} along "
-                    f"axis={axis_ind} as it is distributed."
-                )
-            dest_dset.redistribute(item.distributed_axis)
+            # We have to be careful when copying along the distributed axis
+            if item.distributed_axis == axis_ind:
+                # Check if we are making any sort of selection, which we can't do
+                # along the distributed axis
+                if selection != slice(None) or list(selection) != list(
+                    range(item[:].shape[axis_ind])
+                ):
+                    raise RuntimeError(
+                        f"Cannot apply a selection to dataset=`{item.name}` along "
+                        f"axis={axis_ind} as this is the distributed axis."
+                    )
+            if isinstance(dest_dset, memh5.MemDatasetDistributed):
+                # Make sure both are distributed along the same axis
+                dest_dset.redistribute(item.distributed_axis)
+            else:
+                # We're trying to move a complete distributed dataset into
+                # a common one. I'm not sure if this should be allowed or not...
+                if dest_dset[:].shape != item[:].global_shape:
+                    raise RuntimeError(
+                        f"Cannot filter distributed dataset with local shape {item[:].global_shape} "
+                        f"to common dataset with shape {dest_dset[:].shape}."
+                    )
+                item = item[:].allgather()
 
         sl = axis_ind * (slice(None),) + (selection,)
         dest_dset[:] = item[sl]
