@@ -855,7 +855,7 @@ class DelaySpectrumWienerEstimator(DelayGeneralContainerBase):
             # to the Wiener filtering routine.The delay power spectrum has been
             # fftshifted in the DelaySpectrumEstimatorBase task, so need to do another
             # fftshift.
-            y_spec = wiener_filter(
+            y_spec = delay_spectrum_wiener_filter(
                 np.fft.fftshift(delay_ps[lbi, :]),
                 data,
                 self.ndelay,
@@ -1088,7 +1088,7 @@ def _compute_delay_spectrum_inputs(data, N, Ni, fsel, window, complex_timedomain
     """Compute quantities needed for Gibbs sampling and/or Wiener filtering.
 
     These quantities are needed by both :func:`delay_spectrum_gibbs` and
-    :func:`wiener_filter`, so we compute them in this separate routine.
+    :func:`delay_spectrum_wiener_filter`, so we compute them in this separate routine.
     """
 
     total_freq = N if complex_timedomain else N // 2 + 1
@@ -1305,7 +1305,7 @@ def delay_spectrum_gibbs(
     return spec
 
 
-def wiener_filter(
+def delay_spectrum_wiener_filter(
     delay_PS, data, N, Ni, window="nuttall", fsel=None, complex_timedomain=False
 ):
     """Estimate the delay spectrum from an input frequency spectrum by Wiener filtering.
