@@ -564,7 +564,7 @@ class DelayGibbsSamplerBase(DelayTransformBase, random.RandomTask):
             # Increase the weights by a specified amount
             weight *= self.weight_boost
 
-            spec = delay_spectrum_gibbs(
+            spec = delay_power_spectrum_gibbs(
                 data,
                 self.ndelay,
                 weight,
@@ -1087,7 +1087,7 @@ def _alternating_real_to_complex(array):
 def _compute_delay_spectrum_inputs(data, N, Ni, fsel, window, complex_timedomain):
     """Compute quantities needed for Gibbs sampling and/or Wiener filtering.
 
-    These quantities are needed by both :func:`delay_spectrum_gibbs` and
+    These quantities are needed by both :func:`delay_power_spectrum_gibbs` and
     :func:`delay_spectrum_wiener_filter`, so we compute them in this separate routine.
     """
 
@@ -1141,7 +1141,7 @@ def _compute_delay_spectrum_inputs(data, N, Ni, fsel, window, complex_timedomain
     return data, FTNih, FTNiF
 
 
-def delay_spectrum_gibbs(
+def delay_power_spectrum_gibbs(
     data,
     N,
     Ni,
@@ -1303,6 +1303,10 @@ def delay_spectrum_gibbs(
         spec.append(S_samp)
 
     return spec
+
+
+# Alias delay_spectrum_gibbs to delay_power_spectrum_gibbs, for backwards compatibility
+delay_spectrum_gibbs = delay_power_spectrum_gibbs
 
 
 def delay_spectrum_wiener_filter(
