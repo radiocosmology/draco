@@ -592,8 +592,14 @@ class SingleTask(MPILoggedTask, pipeline.BasicContMixin):
                 for item in n.values():
                     stack.append(item)
 
-        # All ranks need to know if any rank found a NaN/Inf
-        found = self.comm.allreduce(found, op=MPI.MAX)
+        self.comm.Barrier()
+
+        if found:
+            # All ranks need to know if any rank found a NaN/Inf. We don't
+            # have to share across ranks if nothing was found
+            found = self.comm.allreduce(found, op=MPI.MAX)
+
+        self.comm.Barrier()
 
         return found
 
