@@ -576,28 +576,26 @@ class SingleTask(MPILoggedTask, pipeline.BasicContMixin):
                 # casting to ndarray, bc MPI ranks may fall out of sync, if a nan or inf are found
                 arr = n[:].view(np.ndarray)
                 try:
-                    total_nan = np.isnan(arr).sum()
-                    total_inf = np.isinf(arr).sum()
+                    all_finite = np.isfinite(arr).all()
                 except TypeError:
                     continue
 
-                if total_nan > 0:
-                    self.log.info(
-                        "NaN's found in dataset %s [%i of %i elements]",
-                        n.name,
-                        total_nan,
-                        arr.size,
-                    )
-                    found = True
+                if not all_finite:
+                    nans = np.isnan(arr).sum()
+                    if nans > 0:
+                        self.log.info(
+                            f"NaN's found in dataset {n.name} [{nans} of {arr.size} elements]"
+                        )
+                        found = True
+                        break
 
-                if total_inf > 0:
-                    self.log.info(
-                        "Inf's found in dataset %s [%i of %i elements]",
-                        n.name,
-                        total_inf,
-                        arr.size,
-                    )
-                    found = True
+                    infs = np.isinf(arr).sum()
+                    if infs > 0:
+                        self.log.info(
+                            f"Inf's found in dataset {n.name} [{infs} of {arr.size} elements]"
+                        )
+                        found = True
+                        break
 
             elif isinstance(n, (memh5.MemGroup, memh5.MemDiskGroup)):
                 for item in n.values():
