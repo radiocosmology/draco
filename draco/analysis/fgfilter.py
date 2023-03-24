@@ -32,7 +32,6 @@ class _ProjectFilterBase(task.SingleTask):
         -------
         output : memh5.BasicCont
         """
-
         if self.mode == "forward":
             return self._forward(inp)
 

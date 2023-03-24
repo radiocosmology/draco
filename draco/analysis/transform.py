@@ -2,7 +2,7 @@
 
 This includes grouping frequencies and products to performing the m-mode transform.
 """
-from typing import Optional, Union
+from typing import Optional, Union, overload
 
 import numpy as np
 from numpy.lib.recfunctions import structured_to_unstructured
@@ -38,7 +38,6 @@ class FrequencyRebin(task.SingleTask):
         sb : containers.SiderealStream or containers.TimeStream
             Rebinned data. Type should match the input.
         """
-
         if "freq" not in ss.index_map:
             raise RuntimeError("Data does not have a frequency axis.")
 
@@ -116,8 +115,8 @@ class CollateProducts(task.SingleTask):
         Parameters
         ----------
         tel : TransitTelescope
+            Telescope object to use
         """
-
         if self.weight not in ["natural", "uniform", "inverse_variance"]:
             KeyError("Do not recognize weight = %s" % self.weight)
 
@@ -152,16 +151,25 @@ class CollateProducts(task.SingleTask):
         )
         self.bt_rev["conjugate"] = np.where(feedmask, self.telescope.feedconj[triu], 0)
 
+    @overload
+    def process(self, ss: containers.SiderealStream) -> containers.SiderealStream:
+        ...
+
+    @overload
+    def process(self, ss: containers.TimeStream) -> containers.TimeStream:
+        ...
+
     def process(self, ss):
         """Select and reorder the products.
 
         Parameters
         ----------
-        ss : SiderealStream
+        ss
+            Data with products
 
         Returns
         -------
-        sp : SiderealStream
+        sp
             Dataset containing only the required products.
         """
         # For each input in the file, find the corresponding index in the telescope instance
@@ -368,7 +376,6 @@ class SelectFreq(task.SingleTask):
         newdata : containers.ContainerBase
             New container with trimmed frequencies.
         """
-
         # Set up frequency selection.
         freq_map = data.index_map["freq"]
 
@@ -480,7 +487,6 @@ class MModeTransform(task.SingleTask):
         -------
         mmodes : containers.MModes
         """
-
         contmap = {
             containers.SiderealStream: containers.MModes,
             containers.HybridVisStream: containers.HybridVisMModes,
@@ -545,7 +551,6 @@ def _make_marray(ts, mmodes=None, mmax=None, dtype=None):
 
     It can also write the m-mode output directly into a passed `mmodes` array.
     """
-
     if dtype is None:
         dtype = np.complex64
 
@@ -791,7 +796,6 @@ class Regridder(task.SingleTask):
         new_data : containers.TODContainer
             The regularly gridded interpolated timestream.
         """
-
         # Redistribute if needed
         data.redistribute("freq")
 
@@ -904,7 +908,6 @@ class ShiftRA(task.SingleTask):
         sscont
             The shifted container.
         """
-
         if not isinstance(sscont, containers.SiderealContainer):
             raise TypeError(
                 f"Expected a SiderealContainer, got {type(sscont)} instead."
@@ -976,7 +979,6 @@ class SelectPol(task.SingleTask):
         selectedpolcont : same as polcont
             A new container with the selected polarisation.
         """
-
         polcont.redistribute("freq")
 
         if "pol" not in polcont.axes:
@@ -1096,7 +1098,6 @@ class TransformJanskyToKelvin(task.SingleTask):
             Visibilities with the conversion applied. This may be the same as the input
             container if `share == "all"`.
         """
-
         import scipy.constants as c
 
         sstream.redistribute("freq")
@@ -1191,7 +1192,6 @@ class MixData(task.SingleTask):
 
     def setup(self):
         """Check the lists have the same length."""
-
         if len(self.data_coeff) != len(self.weight_coeff):
             raise config.CaputConfigError(
                 "data and weight coefficient lists must be the same length"
@@ -1261,7 +1261,6 @@ class MixData(task.SingleTask):
         mixed_data
             The mixed data.
         """
-
         if self._data_ind != len(self.data_coeff):
             raise RuntimeError(
                 "Did not receive enough inputs. "

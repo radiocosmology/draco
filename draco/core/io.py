@@ -41,7 +41,7 @@ from ..util.exception import ConfigError
 
 
 def _list_of_filelists(files: Union[List[str], List[List[str]]]) -> List[List[str]]:
-    """Take in a list of lists/glob patterns of filenames
+    """Take in a list of lists/glob patterns of filenames.
 
     Parameters
     ----------
@@ -79,7 +79,7 @@ def _list_of_filelists(files: Union[List[str], List[List[str]]]) -> List[List[st
 
 
 def _list_or_glob(files: Union[str, List[str]]) -> List[str]:
-    """Take in a list of lists/glob patterns of filenames
+    """Take in a list of lists/glob patterns of filenames.
 
     Parameters
     ----------
@@ -128,7 +128,7 @@ def _list_or_glob(files: Union[str, List[str]]) -> List[str]:
 
 
 def _list_of_filegroups(groups: Union[List[Dict], Dict]) -> List[Dict]:
-    """Process a file group/groups
+    """Process a file group/groups.
 
     Parameters
     ----------
@@ -204,7 +204,6 @@ class LoadMaps(task.MPILoggedTask):
         -------
         map : :class:`containers.Map`
         """
-
         from . import containers
 
         # Exit this task if we have eaten all the file groups
@@ -278,7 +277,6 @@ class LoadFITSCatalog(task.SingleTask):
         -------
         catalog : :class:`containers.SpectroscopicCatalog`
         """
-
         from astropy.io import fits
         from . import containers
 
@@ -540,8 +538,9 @@ LoadBasicCont = LoadFilesFromParams
 
 
 class FindFiles(pipeline.TaskBase):
-    """Take a glob or list of files specified as a parameter in the
-    configuration file and pass on to other tasks.
+    """Take a glob or list of files and pass on to other tasks.
+
+    Files are specified as a parameter in the configuration file.
 
     Parameters
     ----------
@@ -572,8 +571,8 @@ class LoadFiles(LoadFilesFromParams):
         Parameters
         ----------
         files : list
+            Files to load
         """
-
         # Call the baseclass setup to resolve any selections
         super().setup()
 
@@ -609,7 +608,6 @@ class Save(pipeline.TaskBase):
         data : mpidataset.MPIDataset
             Data to write out.
         """
-
         if "tag" not in data.attrs:
             tag = self.count
             self.count += 1
@@ -627,6 +625,7 @@ class Print(pipeline.TaskBase):
     """Stupid module which just prints whatever it gets. Good for debugging."""
 
     def next(self, input_):
+        """Print the input."""
         print(input_)
 
         return input_
@@ -655,7 +654,6 @@ class LoadBeamTransfer(pipeline.TaskBase):
         feed_info : list, optional
             Optional list providing additional information about each feed.
         """
-
         import os
 
         from drift.core import beamtransfer
@@ -693,7 +691,6 @@ class LoadProductManager(pipeline.TaskBase):
         manager : ProductManager
             Object describing the telescope.
         """
-
         import os
 
         from drift.core import manager
@@ -741,8 +738,7 @@ class Truncate(task.SingleTask):
     }
 
     def _get_params(self, container, dset):
-        """
-        Load truncation parameters for a dataset from config or container defaults.
+        """Load truncation parameters for a dataset from config or container defaults.
 
         Parameters
         ----------
@@ -807,7 +803,6 @@ class Truncate(task.SingleTask):
              If the input data container has no preset values and `fixed_precision` or
              `variance_increase` are not set in the config.
         """
-
         if self.ensure_chunked:
             data._ensure_chunked()
 
@@ -938,7 +933,6 @@ class ZipZarrContainers(task.SingleTask):
 
         Only the lowest rank on each node will participate.
         """
-
         if self._host_rank is not None:
             # Get the set of containers this rank is responsible for compressing
             my_containers = self.containers[self._host_rank :: self._num_hosts]
@@ -998,7 +992,6 @@ class SaveZarrZip(ZipZarrContainers):
 
     def setup(self):
         """Check the parameters and determine the ranks to use."""
-
         if not self.output_name.endswith(".zarr.zip"):
             raise ConfigError("File output name must end in `.zarr.zip`.")
 
@@ -1025,7 +1018,6 @@ class SaveZarrZip(ZipZarrContainers):
             A handle to use to determine if the job has successfully completed. This
             should be given to the `WaitZarrZip` task.
         """
-
         outfile = self._save_output(container)
         dest_file = outfile + ".zip"
         self.comm.Barrier()
@@ -1070,7 +1062,6 @@ class WaitZarrZip(task.MPILoggedTask):
         handle
             The handle to wait on.
         """
-
         if self._handles is None:
             self._handles = []
 
@@ -1078,7 +1069,6 @@ class WaitZarrZip(task.MPILoggedTask):
 
     def finish(self):
         """Wait for all Zarr zipping jobs to complete."""
-
         for h in self._handles:
             self.log.debug(f"Waiting on job processing {h.filename}")
 
@@ -1113,7 +1103,6 @@ class SaveModuleVersions(task.SingleTask):
 
     def setup(self):
         """Save module versions."""
-
         fname = "{}_versions.yml".format(self.root)
         f = open(fname, "w")
         f.write(yamldump(self.versions))
@@ -1142,7 +1131,6 @@ class SaveConfig(task.SingleTask):
 
     def setup(self):
         """Save module versions."""
-
         fname = "{}_config.yml".format(self.root)
         f = open(fname, "w")
         f.write(yamldump(self.pipeline_config))
@@ -1161,8 +1149,9 @@ TelescopeConvertible = Union[BeamTransferConvertible, telescope.TransitTelescope
 
 
 def get_telescope(obj):
-    """Return a telescope object out of the input (either `ProductManager`,
-    `BeamTransfer` or `TransitTelescope`).
+    """Return a telescope object out of the input.
+
+    Either `ProductManager`, `BeamTransfer`, or `TransitTelescope`.
     """
     try:
         return get_beamtransfer(obj).telescope
@@ -1174,8 +1163,9 @@ def get_telescope(obj):
 
 
 def get_beamtransfer(obj):
-    """Return a BeamTransfer object out of the input (either `ProductManager`,
-    `BeamTransfer`).
+    """Return a BeamTransfer object out of the input.
+
+    Either `ProductManager` or `BeamTransfer`.
     """
     if isinstance(obj, beamtransfer.BeamTransfer):
         return obj

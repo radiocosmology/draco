@@ -1,4 +1,4 @@
-"""draco test utils"""
+"""draco test utils."""
 
 from draco.core.task import SingleTask
 from caput import pipeline, config
@@ -27,7 +27,6 @@ class DummyTask(SingleTask):
         cont : subclass of `memh5.BasicCont`
             Empty data stream.
         """
-
         if self.total_len == 0:
             raise pipeline.PipelineStopIteration
 

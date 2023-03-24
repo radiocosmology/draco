@@ -64,7 +64,9 @@ def find_key(key_list, key):
     Parameters
     ----------
     key_list : iterable
+        Iterable containing keys to search
     key : object to be searched
+        Keys to search for
 
     Returns
     -------
@@ -87,7 +89,9 @@ def find_keys(key_list, keys, require_match=False):
     Parameters
     ----------
     key_list : iterable
+        Iterable of keys to search
     keys : iterable
+        Keys to search for
     require_match : bool
         Require that `key_list` contain every element of `keys`,
         and if not, raise ValueError.
@@ -123,7 +127,9 @@ def find_inputs(input_index, inputs, require_match=False):
     Parameters
     ----------
     input_index : np.ndarray
+        Inputs to search
     inputs : np.ndarray
+        Inputs to find
     require_match : bool
         Require that `input_index` contain every element of `inputs`,
         and if not, raise ValueError.
@@ -156,8 +162,7 @@ def find_inputs(input_index, inputs, require_match=False):
 
 
 def apply_gain(vis, gain, axis=1, out=None, prod_map=None):
-    """Apply per input gains to a set of visibilities packed in upper
-    triangular format.
+    """Apply per input gains to a set of visibilities packed in upper triangular format.
 
     This allows us to apply the gains while minimising the intermediate
     products created.
@@ -183,7 +188,6 @@ def apply_gain(vis, gain, axis=1, out=None, prod_map=None):
     out : np.ndarray
         Visibility array with gains applied. Same shape as :obj:`vis`.
     """
-
     nprod = vis.shape[axis]
     ninput = gain.shape[axis]
 
@@ -222,33 +226,6 @@ def apply_gain(vis, gain, axis=1, out=None, prod_map=None):
     return out
 
 
-def invert_no_zero(*args, **kwargs):
-    """Return the reciprocal, but ignoring zeros.
-
-    Where `x != 0` return 1/x, or just return 0. Importantly this routine does
-    not produce a warning about zero division.
-
-    Parameters
-    ----------
-    x : np.ndarray
-    out : np.ndarray
-
-    Returns
-    -------
-    r : np.ndarray
-        Return the reciprocal of x. Where possible the output has the same memory layout
-        as the input, if this cannot be preserved the output is C-contiguous.
-    """
-    from caput import tools
-    import warnings
-
-    warnings.warn(
-        "Function invert_no_zero is deprecated - use 'caput.tools.invert_no_zero'",
-        category=DeprecationWarning,
-    )
-    return tools.invert_no_zero(*args, **kwargs)
-
-
 def extract_diagonal(utmat, axis=1):
     """Extract the diagonal elements of an upper triangular array.
 
@@ -264,7 +241,6 @@ def extract_diagonal(utmat, axis=1):
     diag : np.ndarray[..., ninput, ...]
         Diagonal of the array.
     """
-
     # Estimate nside from the array shape
     nside = int((2 * utmat.shape[axis]) ** 0.5)
 
@@ -292,9 +268,9 @@ def extract_diagonal(utmat, axis=1):
 
 
 def calculate_redundancy(input_flags, prod_map, stack_index, nstack):
-    """Calculates the number of redundant baselines that were stacked
-    to form each unique baseline, accounting for the fact that some fraction
-    of the inputs are flagged as bad at any given time.
+    """Calculates the number of redundant baselines that were stacked to form each unique baseline.
+
+    Accounts for the fact that some fraction of the inputs are flagged as bad at any given time.
 
     Parameters
     ----------
@@ -320,7 +296,6 @@ def calculate_redundancy(input_flags, prod_map, stack_index, nstack):
     redundancy : np.ndarray[nstack, ntime]
         Array indicating the total number of redundant baselines
         with good inputs that were stacked into each unique baseline.
-
     """
     ninput, ntime = input_flags.shape
     redundancy = np.zeros((nstack, ntime), dtype=np.float32)
@@ -397,8 +372,7 @@ def redefine_stack_index_map(telescope, inputs, prod, stack, reverse_stack):
 
 
 def polarization_map(index_map, telescope, exclude_autos=True):
-    """Map the visibilities corresponding to entries in
-    pol = ['XX', 'XY', 'YX', 'YY'].
+    """Map the visibilities corresponding to entries in pol = ['XX', 'XY', 'YX', 'YY'].
 
     Parameters
     ----------
@@ -415,7 +389,6 @@ def polarization_map(index_map, telescope, exclude_autos=True):
     polmap : array of int
         Array of size `nstack`. Each entry is the index to the
         corresponding polarization in pol = ['XX', 'XY', 'YX', 'YY']
-
     """
     # Old versions of telescope object don't have the `stack_type`
     # attribute. Assume those are of type `redundant`.
@@ -543,7 +516,6 @@ def window_generalised(x, window="nuttall"):
     w : np.ndarray[n]
         Window function.
     """
-
     a_table = {
         "uniform": np.array([1, 0, 0, 0]),
         "hann": np.array([0.5, -0.5, 0, 0]),

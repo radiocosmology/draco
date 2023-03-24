@@ -198,11 +198,14 @@ class AccumulateList(task.MPILoggedTask):
         self._items = []
 
     def next(self, input_):
+        """Append an input to the list of inputs."""
         self._items.append(input_)
 
     def finish(self):
-        # Remove the internal reference to the items so they don't hang around after the task
-        # finishes
+        """Remove the internal reference.
+
+        Prevents the items from hanging around after the task finishes.
+        """
         items = self._items
         del self._items
 
@@ -215,6 +218,12 @@ class CheckMPIEnvironment(task.MPILoggedTask):
     timeout = config.Property(proptype=int, default=240)
 
     def setup(self):
+        """Send random messages between all ranks.
+
+        Tests to ensure that all messages are received within a specified amount
+        of time, and that the messages received are the same as those sent (i.e.
+        nothing was corrupted).
+        """
         import time
 
         comm = self.comm
@@ -265,12 +274,12 @@ class MakeCopy(task.SingleTask):
 
     def process(self, data):
         """Return a copy of the given container.
+
         Parameters
         ----------
         data : containers.ContainerBase
             The container to copy.
         """
-
         return data.copy()
 
 

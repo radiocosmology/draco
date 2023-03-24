@@ -1,4 +1,4 @@
-"""Sensitivity Analysis Tasks"""
+"""Sensitivity Analysis Tasks."""
 
 import numpy as np
 
@@ -28,6 +28,7 @@ class ComputeSystemSensitivity(task.SingleTask):
         Parameters
         ----------
         telescope : TransitTelescope
+            Telescope object to use
         """
         self.telescope = io.get_telescope(telescope)
 

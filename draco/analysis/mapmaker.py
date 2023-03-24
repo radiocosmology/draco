@@ -29,7 +29,6 @@ class BaseMapMaker(task.SingleTask):
             Beam transfer manager object (or ProductManager) containing all the
             pre-generated beam transfer matrices.
         """
-
         self.beamtransfer = io.get_beamtransfer(bt)
 
     def process(self, mmodes):
@@ -38,12 +37,12 @@ class BaseMapMaker(task.SingleTask):
         Parameters
         ----------
         mmodes : containers.MModes
+            Data to map
 
         Returns
         -------
         map : containers.Map
         """
-
         from cora.util import hputil
 
         # Fetch various properties
@@ -145,7 +144,6 @@ class DirtyMapMaker(BaseMapMaker):
 
     Notes
     -----
-
     The dirty map is produced by generating a set of :math:`a_{lm}` coefficients
     using
 
@@ -176,7 +174,6 @@ class MaximumLikelihoodMapMaker(BaseMapMaker):
 
     Notes
     -----
-
     The dirty map is produced by generating a set of :math:`a_{lm}` coefficients
     using
 
@@ -208,8 +205,10 @@ class MaximumLikelihoodMapMaker(BaseMapMaker):
 
 
 class WienerMapMaker(BaseMapMaker):
-    r"""Generate a Wiener filtered map assuming that the signal is a Gaussian
-    random field described by a power-law power spectum.
+    r"""Generate a Wiener filtered map.
+
+    Assumes that the signal is a Gaussian random field described by
+    a power-law power spectum.
 
     Attributes
     ----------
@@ -220,7 +219,6 @@ class WienerMapMaker(BaseMapMaker):
 
     Notes
     -----
-
     The Wiener map is produced by generating a set of :math:`a_{lm}` coefficients
     using
 
@@ -290,9 +288,10 @@ class WienerMapMaker(BaseMapMaker):
 
 
 def pinv_svd(M, acond=1e-4, rcond=1e-3):
-    # Generate the pseudo-inverse from an svd
-    # Not really clear why I'm not just using la.pinv2 instead,
+    """Generate the pseudo-inverse from an svd.
 
+    Not really clear why I'm not just using la.pinv2 instead
+    """
     import scipy.linalg as la
 
     u, sig, vh = la.svd(M, full_matrices=False)

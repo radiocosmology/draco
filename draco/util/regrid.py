@@ -43,7 +43,6 @@ def band_wiener(R, Ni, Si, y, bw):
     nw : np.ndarray[k, m]
         Estimate of variance of each element.
     """
-
     Ni = np.atleast_2d(Ni)
     y = np.atleast_2d(y)
 
@@ -102,7 +101,6 @@ def lanczos_kernel(x, a):
     -------
     kernel : np.ndarray
     """
-
     return np.where(np.abs(x) < a, np.sinc(x) * np.sinc(x / a), np.zeros_like(x))
 
 
@@ -157,7 +155,6 @@ def lanczos_inverse_matrix(x, y, a=5, cond=1e-1):
     matrix : np.ndarray[m, n]
         Lanczos regridding matrix. Apply to data with `np.dot(matrix, data)`.
     """
-
     lz_forward = lanczos_forward_matrix(x, y, a)
     lz_inverse = la.pinv(lz_forward, rcond=cond)
 

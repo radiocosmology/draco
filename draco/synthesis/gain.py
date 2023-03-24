@@ -504,8 +504,9 @@ def gaussian_realisation(x, corrfunc, n, rcond=1e-12):
 
 
 def _realisation(C, n, rcond):
-    """Create a realisation of the given covariance matrix. Regularise by
-    throwing away small eigenvalues.
+    """Create a realisation of the given covariance matrix.
+
+    Regularise by throwing away small eigenvalues.
     """
     import scipy.linalg as la
 
