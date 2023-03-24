@@ -29,6 +29,7 @@ def sumthreshold_py(
     remove_median : bool, optional
         Subtract the median of the full 2D dataset. Default is True.
     correct_for_missing : bool, optional
+        Correct for missing counts
 
     Returns
     -------

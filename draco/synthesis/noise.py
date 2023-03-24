@@ -36,7 +36,7 @@ class ReceiverTemperature(task.SingleTask):
     recv_temp = config.Property(proptype=float, default=0.0)
 
     def process(self, data):
-        # Iterate over the products to find the auto-correlations and add the noise into them
+        """Iterate over the products to find the auto-correlations and add the noise into them."""
         for pi, prod in enumerate(data.prodstack):
             # Great an auto!
             if prod[0] == prod[1]:
@@ -46,8 +46,7 @@ class ReceiverTemperature(task.SingleTask):
 
 
 class GaussianNoiseDataset(task.SingleTask, random.RandomTask):
-    """Generates a Gaussian distributed noise dataset using the
-    the noise estimates of an existing dataset.
+    """Generates a Gaussian distributed noise dataset using the noise estimates of an existing dataset.
 
     Attributes
     ----------
@@ -60,8 +59,7 @@ class GaussianNoiseDataset(task.SingleTask, random.RandomTask):
     dataset = config.Property(proptype=str, default=None)
 
     def process(self, data):
-        """Generates a Gaussian distributed noise dataset,
-        given the provided dataset's visibility weights
+        """Generates a Gaussian distributed noise dataset given the provided dataset's visibility weights.
 
         Parameters
         ----------
@@ -182,7 +180,6 @@ class GaussianNoise(task.SingleTask, random.RandomTask):
         data_noise : same as parameter `data`
             The sampled (i.e. noisy) visibility dataset.
         """
-
         data.redistribute("freq")
 
         visdata = data.vis[:]
@@ -276,7 +273,6 @@ class SampleNoise(task.SingleTask, random.RandomTask):
         data_samp : same as parameter `data_exp`
             The sampled (i.e. noisy) visibility dataset.
         """
-
         from caput.time import STELLAR_S
         from ..util import _fast_tools
 

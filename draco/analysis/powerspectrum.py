@@ -32,6 +32,7 @@ class QuadraticPSEstimation(task.SingleTask):
         Parameters
         ----------
         manager : ProductManager
+            Manager object to use
         """
         self.manager = manager
 
@@ -41,12 +42,12 @@ class QuadraticPSEstimation(task.SingleTask):
         Parameters
         ----------
         klmodes : containers.KLModes
+            KLModes for which to estimate the power spectrum
 
         Returns
         -------
         ps : containers.PowerSpectrum
         """
-
         import scipy.linalg as la
 
         if not isinstance(klmodes, containers.KLModes):

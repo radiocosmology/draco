@@ -39,7 +39,7 @@ class MPILogFilter(logging.Filter):
         self.comm = MPI.COMM_WORLD
 
     def filter(self, record):
-        # Add MPI info if desired
+        """Add MPI info if desired."""
         try:
             record.mpi_rank
         except AttributeError:
@@ -69,7 +69,6 @@ def _log_level(x):
     -------
     level : int
     """
-
     level_dict = {
         "DEBUG": logging.DEBUG,
         "INFO": logging.INFO,
@@ -147,8 +146,9 @@ class LoggedTask(pipeline.TaskBase):
 
 
 class MPITask(pipeline.TaskBase):
-    """Base class for MPI using tasks. Just ensures that the task gets a `comm`
-    attribute.
+    """Base class for MPI using tasks.
+
+    Just ensures that the task gets a `comm` attribute.
     """
 
     comm = None
@@ -335,7 +335,6 @@ class SingleTask(MPILoggedTask, pipeline.BasicContMixin):
 
     def next(self, *input):
         """Should not need to override. Implement `process` instead."""
-
         self.log.info("Starting next for task %s" % self.__class__.__name__)
 
         self.comm.Barrier()
@@ -385,7 +384,6 @@ class SingleTask(MPILoggedTask, pipeline.BasicContMixin):
 
     def finish(self):
         """Should not need to override. Implement `process_finish` instead."""
-
         class_name = self.__class__.__name__
 
         self.log.info(f"Starting finish for task {class_name}")
@@ -622,6 +620,7 @@ class ReturnLastInputOnFinish(SingleTask):
         Parameters
         ----------
         x : object
+            Object to cache
         """
         self.x = x
 
@@ -651,6 +650,7 @@ class ReturnFirstInputOnFinish(SingleTask):
         Parameters
         ----------
         x : object
+            Object to cache
         """
         if self.x is None:
             self.x = x

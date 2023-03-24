@@ -1,5 +1,4 @@
-"""
-Distributed containers for holding various types of analysis data.
+"""Distributed containers for holding various types of analysis data.
 
 Containers
 ==========
@@ -390,10 +389,7 @@ class ContainerBase(memh5.BasicCont):
 
     @property
     def dataset_spec(self):
-        """Return a copy of the fully resolved dataset specifiction as a
-        dictionary.
-        """
-
+        """Return a copy of the fully resolved dataset specifiction as a dictionary."""
         ddict = {}
 
         # Iterate over the reversed MRO and look for _table_spec attributes
@@ -448,8 +444,7 @@ class ContainerBase(memh5.BasicCont):
 
     @classmethod
     def _make_selections(cls, sel_args):
-        """
-        Match down-selection arguments to axes of datasets.
+        """Match down-selection arguments to axes of datasets.
 
         Parses sel_* argument and returns dict mapping dataset names to selections.
 
@@ -643,10 +638,7 @@ class TableBase(ContainerBase):
         super(TableBase, self).__init__(*args, **kwargs)
 
     def _create_dtype(self, columns):
-        """Take a dictionary of columns and turn into the
-        appropriate compound data type.
-        """
-
+        """Take a dictionary of columns and turn into the appropriate compound data type."""
         dt = []
         for ci, (name, dtype) in enumerate(columns):
             if not isinstance(name, str):
@@ -657,9 +649,7 @@ class TableBase(ContainerBase):
 
     @property
     def table_spec(self):
-        """Return a copy of the fully resolved table specifiction as a
-        dictionary.
-        """
+        """Return a copy of the fully resolved table specifiction as a dictionary."""
         import inspect
 
         tdict = {}
@@ -860,6 +850,7 @@ class SampleVarianceContainer(ContainerBase):
 
     @property
     def component(self):
+        """Get the component axis."""
         return self.index_map["component"]
 
     @property
@@ -930,6 +921,7 @@ class SampleVarianceContainer(ContainerBase):
 
     @property
     def nsample(self):
+        """Get the nsample dataset if it exists."""
         if "nsample" in self.datasets:
             return self.datasets["nsample"]
         else:
@@ -1082,6 +1074,7 @@ class HealpixContainer(ContainerBase):
 
     @property
     def nside(self):
+        """Get the nside of the map."""
         return int((len(self.index_map["pixel"]) // 12) ** 0.5)
 
 
@@ -1122,6 +1115,7 @@ class Map(FreqContainer, HealpixContainer):
 
     @property
     def map(self):
+        """Get the map dataset."""
         return self.datasets["map"]
 
 
@@ -1199,14 +1193,17 @@ class SiderealStream(
 
     @property
     def gain(self):
+        """Get the gain dataset."""
         return self.datasets["gain"]
 
     @property
     def input_flags(self):
+        """Get the input_flags dataset."""
         return self.datasets["input_flags"]
 
     @property
     def _mean(self):
+        """Get the vis dataset."""
         return self.datasets["vis"]
 
 
@@ -1251,22 +1248,27 @@ class SystemSensitivity(FreqContainer, TODContainer):
 
     @property
     def measured(self):
+        """Get the measured noise dataset."""
         return self.datasets["measured"]
 
     @property
     def radiometer(self):
+        """Get the radiometer estimate dataset."""
         return self.datasets["radiometer"]
 
     @property
     def weight(self):
+        """Get the weight dataset."""
         return self.datasets["weight"]
 
     @property
     def frac_lost(self):
+        """Get the frac_lost dataset."""
         return self.datasets["frac_lost"]
 
     @property
     def pol(self):
+        """Get the pol axis."""
         return self.index_map["pol"]
 
 
@@ -1289,6 +1291,7 @@ class RFIMask(FreqContainer, TODContainer):
 
     @property
     def mask(self):
+        """Get the mask dataset."""
         return self.datasets["mask"]
 
 
@@ -1311,6 +1314,7 @@ class SiderealRFIMask(FreqContainer, SiderealContainer):
 
     @property
     def mask(self):
+        """Get the mask dataset."""
         return self.datasets["mask"]
 
 
@@ -1337,6 +1341,7 @@ class BaselineMask(FreqContainer, TODContainer):
 
     @property
     def mask(self):
+        """Get the mask dataset."""
         return self.datasets["mask"]
 
     @property
@@ -1368,6 +1373,7 @@ class SiderealBaselineMask(FreqContainer, SiderealContainer):
 
     @property
     def mask(self):
+        """Get the mask dataset."""
         return self.datasets["mask"]
 
     @property
@@ -1426,10 +1432,12 @@ class TimeStream(FreqContainer, VisContainer, TODContainer):
 
     @property
     def gain(self):
+        """Get the gain dataset."""
         return self.datasets["gain"]
 
     @property
     def input_flags(self):
+        """Get the input_flags dataset."""
         return self.datasets["input_flags"]
 
 
@@ -1475,38 +1483,47 @@ class GridBeam(FreqContainer):
 
     @property
     def beam(self):
+        """Get the beam dataset."""
         return self.datasets["beam"]
 
     @property
     def weight(self):
+        """Get the weight dataset."""
         return self.datasets["weight"]
 
     @property
     def quality(self):
+        """Get the quality dataset."""
         return self.datasets["quality"]
 
     @property
     def gain(self):
+        """Get the gain dataset."""
         return self.datasets["gain"]
 
     @property
     def coords(self):
+        """Get the coordinates attribute."""
         return self.attrs["coords"]
 
     @property
     def pol(self):
+        """Get the pol axis."""
         return self.index_map["pol"]
 
     @property
     def input(self):
+        """Get the input axis."""
         return self.index_map["input"]
 
     @property
     def theta(self):
+        """Get the theta axis."""
         return self.index_map["theta"]
 
     @property
     def phi(self):
+        """Get the phi axis."""
         return self.index_map["phi"]
 
 
@@ -1547,30 +1564,37 @@ class HEALPixBeam(FreqContainer, HealpixContainer):
 
     @property
     def beam(self):
+        """Get the beam dataset."""
         return self.datasets["beam"]
 
     @property
     def weight(self):
+        """Get the weight dataset."""
         return self.datasets["weight"]
 
     @property
     def ordering(self):
+        """Get the ordering attribute."""
         return self.attrs["ordering"]
 
     @property
     def coords(self):
+        """Get the coordinate attribute."""
         return self.attrs["coords"]
 
     @property
     def pol(self):
+        """Get the pol axis."""
         return self.index_map["pol"]
 
     @property
     def input(self):
+        """Get the input axis."""
         return self.index_map["input"]
 
     @property
     def nside(self):
+        """Get the nsides of the map."""
         return int(np.sqrt(len(self.index_map["pixel"]) / 12))
 
 
@@ -1663,38 +1687,47 @@ class TrackBeam(FreqContainer, SampleVarianceContainer):
 
     @property
     def beam(self):
+        """Get the beam dataset."""
         return self.datasets["beam"]
 
     @property
     def weight(self):
+        """Get the weight dataset."""
         return self.datasets["weight"]
 
     @property
     def gain(self):
+        """Get the gain dataset."""
         return self.datasets["gain"]
 
     @property
     def coords(self):
+        """Get the coordinates attribute."""
         return self.attrs["coords"]
 
     @property
     def track_type(self):
+        """Get the track type attribute."""
         return self.attrs["track_type"]
 
     @property
     def pol(self):
+        """Get the pol axis."""
         return self.index_map["pol"]
 
     @property
     def input(self):
+        """Get the input axis."""
         return self.index_map["input"]
 
     @property
     def pix(self):
+        """Get the pix axis."""
         return self.index_map["pix"]
 
     @property
     def _mean(self):
+        """Get the beam dataset."""
         return self.datasets["beam"]
 
 
@@ -1734,13 +1767,6 @@ class SVDModes(MContainer):
     ----------
     mmax : integer, optional
         Largest m to be held.
-
-    Attributes
-    ----------
-    vis : mpidataset.MPIArray
-        Visibility array.
-    weight : mpidataset.MPIArray
-        Array of weights for each point.
     """
 
     _axes = ("mode",)
@@ -1771,14 +1797,17 @@ class SVDModes(MContainer):
 
     @property
     def vis(self):
+        """Get the visibility dataset."""
         return self.datasets["vis"]
 
     @property
     def nmode(self):
+        """Get the nmode dataset."""
         return self.datasets["nmode"]
 
     @property
     def weight(self):
+        """Get the weight dataset."""
         return self.datasets["vis_weight"]
 
 
@@ -1789,13 +1818,6 @@ class KLModes(SVDModes):
     ----------
     mmax : integer, optional
         Largest m to be held.
-
-    Attributes
-    ----------
-    vis : mpidataset.MPIArray
-        Visibility array.
-    weight : mpidataset.MPIArray
-        Array of weights for each point.
     """
 
     pass
@@ -1847,14 +1869,17 @@ class VisGridStream(FreqContainer, SiderealContainer):
 
     @property
     def vis(self):
+        """Get the vis dataset."""
         return self.datasets["vis"]
 
     @property
     def weight(self):
+        """Get the weight dataset."""
         return self.datasets["vis_weight"]
 
     @property
     def redundancy(self):
+        """Get the redundancy dataset."""
         return self.datasets["redundancy"]
 
 
@@ -1893,15 +1918,17 @@ class HybridVisStream(FreqContainer, SiderealContainer):
 
     @property
     def vis(self):
+        """Get the vis dataset."""
         return self.datasets["vis"]
 
     @property
     def weight(self):
+        """Get the weight dataset."""
         return self.datasets["vis_weight"]
 
     @property
     def dirty_beam(self):
-        """This isn't useful at this stage, but it's needed to propagate onward."""
+        """Not useful at this stage, but it's needed to propagate onward."""
         return self.datasets["dirty_beam"]
 
 
@@ -1933,10 +1960,15 @@ class HybridVisMModes(FreqContainer, MContainer):
 
     @property
     def vis(self):
+        """Get the vis dataset."""
         return self.datasets["vis"]
 
     @property
     def weight(self):
+        """Get the weight dataset.
+
+        The actual dataset entry is `vis_weight`.
+        """
         return self.datasets["vis_weight"]
 
 
@@ -2008,26 +2040,32 @@ class RingMap(FreqContainer, SiderealContainer):
 
     @property
     def pol(self):
+        """Get the pol axis."""
         return self.index_map["pol"]
 
     @property
     def el(self):
+        """Get the el axis."""
         return self.index_map["el"]
 
     @property
     def map(self):
+        """Get the map dataset."""
         return self.datasets["map"]
 
     @property
     def rms(self):
+        """Get the rms dataset."""
         return self.datasets["rms"]
 
     @property
     def weight(self):
+        """Get the weight dataset."""
         return self.datasets["weight"]
 
     @property
     def dirty_beam(self):
+        """Get the dirty beam dataset."""
         return self.datasets["dirty_beam"]
 
 
@@ -2048,6 +2086,7 @@ class RingMapMask(FreqContainer, SiderealContainer):
 
     @property
     def mask(self):
+        """Get the mask dataset."""
         return self.datasets["mask"]
 
 
@@ -2073,10 +2112,12 @@ class CommonModeGainData(FreqContainer, TODContainer):
 
     @property
     def gain(self):
+        """Get the gain dataset."""
         return self.datasets["gain"]
 
     @property
     def weight(self):
+        """Get the weight dataset if it exists."""
         try:
             return self.datasets["weight"]
         except KeyError:
@@ -2105,10 +2146,12 @@ class CommonModeSiderealGainData(FreqContainer, SiderealContainer):
 
     @property
     def gain(self):
+        """Get the gain dataset."""
         return self.datasets["gain"]
 
     @property
     def weight(self):
+        """Get the weight dataset if it exists."""
         try:
             return self.datasets["weight"]
         except KeyError:
@@ -2145,10 +2188,12 @@ class GainData(FreqContainer, TODContainer):
 
     @property
     def gain(self):
+        """Get the gain dataset."""
         return self.datasets["gain"]
 
     @property
     def weight(self):
+        """Get the weight dataset if it exists."""
         try:
             return self.datasets["weight"]
         except KeyError:
@@ -2156,6 +2201,7 @@ class GainData(FreqContainer, TODContainer):
 
     @property
     def update_id(self):
+        """Get the update id dataset if it exists."""
         try:
             return self.datasets["update_id"]
         except KeyError:
@@ -2163,6 +2209,7 @@ class GainData(FreqContainer, TODContainer):
 
     @property
     def input(self):
+        """Get the input axis."""
         return self.index_map["input"]
 
 
@@ -2190,10 +2237,12 @@ class SiderealGainData(FreqContainer, SiderealContainer):
 
     @property
     def gain(self):
+        """Get the gain dataset."""
         return self.datasets["gain"]
 
     @property
     def weight(self):
+        """Get the weight dataset if it exists."""
         try:
             return self.datasets["weight"]
         except KeyError:
@@ -2201,6 +2250,7 @@ class SiderealGainData(FreqContainer, SiderealContainer):
 
     @property
     def input(self):
+        """Get the input axis."""
         return self.index_map["input"]
 
 
@@ -2228,14 +2278,17 @@ class StaticGainData(FreqContainer):
 
     @property
     def gain(self):
+        """Get the gain dataset."""
         return self.datasets["gain"]
 
     @property
     def weight(self):
+        """Get the weight dataset."""
         return self.datasets["weight"]
 
     @property
     def input(self):
+        """Get the input axis."""
         return self.index_map["input"]
 
 
@@ -2256,14 +2309,17 @@ class DelayCutoff(ContainerBase):
 
     @property
     def cutoff(self):
+        """Get the cutoff dataset."""
         return self.datasets["cutoff"]
 
     @property
     def pol(self):
+        """Get the pol axis."""
         return self.index_map["pol"]
 
     @property
     def el(self):
+        """Get the el axis."""
         return self.index_map["el"]
 
 
@@ -2284,6 +2340,7 @@ class DelaySpectrum(ContainerBase):
 
     @property
     def spectrum(self):
+        """Get the spectrum dataset."""
         return self.datasets["spectrum"]
 
 
@@ -2351,10 +2408,12 @@ class Powerspectrum2D(ContainerBase):
 
     @property
     def powerspectrum(self):
+        """Get the powerspectrum dataset."""
         return self.datasets["powerspectrum"]
 
     @property
     def C_inv(self):
+        """Get the C inverse dataset."""
         return self.datasets["C_inv"]
 
 
@@ -2375,6 +2434,7 @@ class SVDSpectrum(ContainerBase):
 
     @property
     def spectrum(self):
+        """Get the spectrum dataset."""
         return self.datasets["spectrum"]
 
 
@@ -2403,10 +2463,12 @@ class FrequencyStack(FreqContainer):
 
     @property
     def stack(self):
+        """Get the stack dataset."""
         return self.datasets["stack"]
 
     @property
     def weight(self):
+        """Get the weight dataset."""
         return self.datasets["weight"]
 
 
@@ -2432,6 +2494,7 @@ class FrequencyStackByPol(FrequencyStack):
 
     @property
     def pol(self):
+        """Get the pol axis."""
         return self.index_map["pol"]
 
 
@@ -2505,10 +2568,12 @@ class Stack3D(FreqContainer):
 
     @property
     def stack(self):
+        """Get the stack dataset."""
         return self.datasets["stack"]
 
     @property
     def weight(self):
+        """Get the weight dataset."""
         return self.datasets["weight"]
 
 
@@ -2575,29 +2640,34 @@ class FormedBeam(FreqContainer):
 
     @property
     def beam(self):
+        """Get the beam dataset."""
         return self.datasets["beam"]
 
     @property
     def weight(self):
+        """Get the weight dataset."""
         return self.datasets["weight"]
 
     @property
     def frequency(self):
-        # TODO: is this necessary
+        """Get the frequency axis."""
         return self.index_map["freq"]
 
     @property
     def id(self):
+        """Get the object id axis."""
         return self.index_map["object_id"]
 
     @property
     def pol(self):
+        """Get the pol axis."""
         return self.index_map["pol"]
 
 
 class FormedBeamHA(FormedBeam):
     """Container for formed beams.
-    These have not been collapsed in the hour angle (HA) axis
+
+    These have not been collapsed in the hour angle (HA) axis.
     """
 
     _axes = ("ha",)
@@ -2627,6 +2697,7 @@ class FormedBeamHA(FormedBeam):
 
     @property
     def ha(self):
+        """Get the hour angle dataset."""
         return self.datasets["object_ha"]
 
 
@@ -2647,6 +2718,7 @@ class FormedBeamMask(FreqContainer):
 
     @property
     def mask(self):
+        """Get the mask dataset."""
         return self.datasets["mask"]
 
 
@@ -2683,7 +2755,6 @@ def empty_like(obj, **kwargs):
     newobj : container.ContainerBase
         New data container.
     """
-
     if isinstance(obj, ContainerBase):
         return obj.__class__(axes_from=obj, attrs_from=obj, **kwargs)
     else:

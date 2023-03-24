@@ -24,7 +24,6 @@ def default_rng():
     -------
     rng : np.random.Generator
     """
-
     global _rng
 
     if _rng is None:
@@ -34,8 +33,7 @@ def default_rng():
 
 
 def complex_normal(size=None, loc=0.0, scale=1.0, dtype=None, rng=None, out=None):
-    """
-    Get a set of complex normal variables.
+    """Get a set of complex normal variables.
 
     By default generate standard complex normal variables.
 
@@ -61,7 +59,6 @@ def complex_normal(size=None, loc=0.0, scale=1.0, dtype=None, rng=None, out=None
     out : np.ndarray[shape]
         Complex gaussian variates.
     """
-
     # Validate/set size argument
     if size is None and out is None:
         size = (1,)
@@ -115,8 +112,7 @@ def complex_normal(size=None, loc=0.0, scale=1.0, dtype=None, rng=None, out=None
 
 
 def standard_complex_normal(shape, dtype=None, rng=None):
-    """
-    Get a set of standard complex normal variables.
+    """Get a set of standard complex normal variables.
 
     Parameters
     ----------
@@ -151,7 +147,6 @@ def standard_complex_wishart(m, n, rng=None):
     -------
     B : np.ndarray[m, m]
     """
-
     if rng is None:
         rng = default_rng()
 
@@ -175,7 +170,7 @@ def complex_wishart(C, n, rng=None):
 
     Parameters
     ----------
-    C_exp : np.ndarray[:, :]
+    C : np.ndarray[:, :]
         Expected covaraince matrix.
     n : integer
         Number of measurements the covariance matrix is estimated from.
@@ -187,7 +182,6 @@ def complex_wishart(C, n, rng=None):
     C_samp : np.ndarray
         Sample covariance matrix.
     """
-
     import scipy.linalg as la
 
     # Find Cholesky of C
@@ -296,7 +290,6 @@ class RandomTask(task.MPILoggedTask):
             A deterministically seeded random number generator suitable for use in
             MPI jobs.
         """
-
         if self._rng is None:
             # Generate a new base seed for all MPI ranks
             if self.seed is None:

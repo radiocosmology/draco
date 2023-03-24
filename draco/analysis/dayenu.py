@@ -54,6 +54,7 @@ class DayenuDelayFilter(task.SingleTask):
         Parameters
         ----------
         telescope : TransitTelescope
+            The telescope object to use
         """
         self.telescope = io.get_telescope(telescope)
 
@@ -200,7 +201,6 @@ class DayenuDelayFilterMap(task.SingleTask):
 
     def setup(self):
         """Create the function used to determine the delay cutoff."""
-
         if self.filename is not None:
             fcut = containers.DelayCutoff.from_file(self.filename, distributed=False)
             kind = fcut.attrs.get("kind", "linear")
@@ -347,7 +347,6 @@ class DayenuDelayFilterMap(task.SingleTask):
 
     def _get_cut(self, el, pol=None, **kwargs):
         """Return the delay cutoff in micro-seconds."""
-
         if self._cut_interpolator is None:
             return self.tauw
 
@@ -390,6 +389,7 @@ class DayenuMFilter(task.SingleTask):
         Parameters
         ----------
         telescope : TransitTelescope
+            The telescope object to use
         """
         self.telescope = io.get_telescope(telescope)
 
@@ -534,7 +534,6 @@ def highpass_delay_filter(freq, tau_cut, flag, epsilon=1e-12):
         Maps the first axis of pinv to the original time axis.
         Apply pinv[i] to the time samples at index[i].
     """
-
     ishp = flag.shape
     nfreq = freq.size
     assert ishp[0] == nfreq
@@ -586,7 +585,6 @@ def bandpass_mmode_filter(ra, m_center, m_cut, flag, epsilon=1e-10):
         Maps the first axis of pinv to the original flag array.
         Apply pinv[i] to the sub-array at index[i].
     """
-
     ishp = flag.shape
     nra = ra.size
     assert ishp[-1] == nra
@@ -646,7 +644,6 @@ def lowpass_mmode_filter(ra, m_cut, flag, epsilon=1e-10):
         Maps the first axis of pinv to the original flag array.
         Apply pinv[i] to the sub-array at index[i].
     """
-
     ishp = flag.shape
     nra = ra.size
     assert ishp[-1] == nra
@@ -700,7 +697,6 @@ def highpass_mmode_filter(ra, m_cut, flag, epsilon=1e-10):
         Maps the first axis of pinv to the original flag array.
         Apply pinv[i] to the sub-array at index[i].
     """
-
     ishp = flag.shape
     nra = ra.size
     assert ishp[-1] == nra
@@ -749,7 +745,6 @@ def instantaneous_m(ha, lat, dec, u, v, w=0.0):
         The fringe-rate of the requested location on the sky
         as measured by the requested baseline.
     """
-
     deriv = u * (-1 * np.cos(dec) * np.cos(ha))
     deriv += v * (np.sin(lat) * np.cos(dec) * np.sin(ha))
     deriv += w * (-1 * np.cos(lat) * np.cos(dec) * np.sin(ha))

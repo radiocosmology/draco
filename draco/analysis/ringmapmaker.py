@@ -1,7 +1,4 @@
-"""
-======================================================
-Map making tasks (:mod:`~draco.analysis.ringmapmaker`)
-======================================================
+"""Map making tasks (:mod:`~draco.analysis.ringmapmaker`).
 
 .. currentmodule:: draco.analysis.ringmapmaker
 
@@ -50,6 +47,7 @@ class MakeVisGrid(task.SingleTask):
         Parameters
         ----------
         tel : TransitTelescope
+            Telescope object to use
         """
         self.telescope = io.get_telescope(tel)
 
@@ -65,7 +63,6 @@ class MakeVisGrid(task.SingleTask):
         -------
         rm : containers.RingMap
         """
-
         # Convert prodstack into a type that can be easily compared against
         # `uniquepairs`
         ps_sstream = structured_to_unstructured(sstream.prodstack, dtype=np.int16)
@@ -199,14 +196,13 @@ class BeamformNS(task.SingleTask):
 
         Parameters
         ----------
-        sstream : VisGridStream
+        gstream : VisGridStream
             The input stream.
 
         Returns
         -------
         bf : HybridVisStream
         """
-
         # Redistribute over frequency
         gstream.redistribute("freq")
 
@@ -330,7 +326,6 @@ class BeamformEW(task.SingleTask):
         -------
         rm : RingMap
         """
-
         # Redistribute over frequency
         hstream.redistribute("freq")
 
@@ -511,7 +506,6 @@ class DeconvolveHybridMBase(task.SingleTask):
         ringmap
             The deconvolved ring map.
         """
-
         # Validate that the visibilites and beams match
         if not np.array_equal(hybrid_vis_m.freq, hybrid_beam_m.freq):
             raise ValueError("Frequencies do not match for beam and visibilities.")
@@ -687,7 +681,6 @@ class DeconvolveHybridMBase(task.SingleTask):
             This will influence the shape of the synthesized beam in
             the EW direction.
         """
-
         msg = "independent" if self.window_scaled else "dependent"
         self.log.info(
             f"Applying a frequency {msg} {self.window_type} window "
@@ -816,10 +809,9 @@ class DeconvolveAnalyticalBeam(DeconvolveHybridMBase):
 
         Parameters
         ----------
-        manager
+        telescope
             The telescope object to use.
         """
-
         self.telescope = io.get_telescope(telescope)
 
     def process(
@@ -838,7 +830,6 @@ class DeconvolveAnalyticalBeam(DeconvolveHybridMBase):
         ringmap
             The deconvolved ring map.
         """
-
         # Prepare the external beam m-modes and save to class attribute
         hybrid_beam_m = self._get_beam_mmodes(hybrid_vis_m)
 
@@ -1069,7 +1060,6 @@ class RADependentWeights(task.SingleTask):
             The input ringmap container with the `weight` dataset scaled
             by an RA dependent factor determined from hybrid_vis.
         """
-
         # Determine how the EW baselines were averaged in the ringmap maker
         exclude_intracyl = ringmap.attrs.get("exclude_intracyl", None)
         weight_scheme = ringmap.attrs.get("weight_ew", None)
@@ -1134,7 +1124,6 @@ def find_basis(baselines):
     xhat, yhat : np.ndarray[2]
         Unit vectors pointing in the mostly X and mostly Y directions of the grid.
     """
-
     # Find the shortest baseline, this should give one of the axes
     bl = np.abs(baselines)
     bl[bl == 0] = 1e30

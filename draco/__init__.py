@@ -1,5 +1,4 @@
-"""
-draco
+"""draco.
 
 Submodules
 ==========

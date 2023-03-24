@@ -58,7 +58,6 @@ class DayMask(task.SingleTask):
         mstream : containers.SiderealStream
             Masked sidereal stream.
         """
-
         sstream.redistribute("freq")
 
         ra_shift = (sstream.ra[:] - self.start) % 360.0
@@ -132,10 +131,12 @@ class MaskMModeData(task.SingleTask):
         Parameters
         ----------
         mmodes : containers.MModes
+            Mmode container to mask
 
         Returns
         -------
         mmodes : containers.MModes
+            Same object as input with masking applied
         """
         mmodes.redistribute("freq")
 
@@ -214,8 +215,8 @@ class MaskBaselines(task.SingleTask):
         Parameters
         ----------
         telescope : TransitTelescope
+            The telescope object to use
         """
-
         self.telescope = io.get_telescope(telescope)
 
         if self.zero_data and self.share == "vis":
@@ -336,7 +337,6 @@ class FindBeamformedOutliers(task.SingleTask):
             Container with a boolean mask where True indicates
             outlier beamformed visibilities.
         """
-
         class_dict = {
             containers.FormedBeam: ("beam", containers.FormedBeamMask),
             containers.FormedBeamHA: ("beam", containers.FormedBeamHAMask),
@@ -437,7 +437,6 @@ class MaskBadGains(task.SingleTask):
         mask : RFIMask container
             Time-freq mask
         """
-
         # Ensure data is distributed in frequency
         data.redistribute("freq")
 
@@ -520,7 +519,6 @@ class MaskBeamformedWeights(task.SingleTask):
             The input container with the weight dataset set to zero
             if the weights exceed the threshold.
         """
-
         from caput import mpiutil
 
         data.redistribute("object_id")
@@ -554,7 +552,7 @@ class MaskBeamformedWeights(task.SingleTask):
 
 
 class RadiometerWeight(task.SingleTask):
-    """Update vis_weight according to the radiometer equation:
+    r"""Update vis_weight according to the radiometer equation.
 
     .. math::
 
@@ -565,7 +563,6 @@ class RadiometerWeight(task.SingleTask):
     replace : bool, optional
         Replace any existing weights (default). If `False` then we multiply the
         existing weights by the radiometer values.
-
     """
 
     replace = config.Property(proptype=bool, default=True)
@@ -579,10 +576,9 @@ class RadiometerWeight(task.SingleTask):
             Data to be weighted. This is done in place.
 
         Returns
-        --------
+        -------
         stream : SiderealStream or TimeStream
         """
-
         from caput.time import STELLAR_S
 
         # Redistribute over the frequency direction
@@ -658,7 +654,6 @@ class SanitizeWeights(task.SingleTask):
         data : same object as data
             Data object with high/low weights masked in-place
         """
-
         # Ensure data is distributed in frequency
         data.redistribute("freq")
 
@@ -754,7 +749,8 @@ class ThresholdVisWeightFrequency(task.SingleTask):
 
         Parameters
         ----------
-        timestream : `.core.container` with `weight` attribute
+        stream : `.core.container` with `weight` attribute
+            Container to mask
 
         Returns
         -------
@@ -847,8 +843,8 @@ class ThresholdVisWeightBaseline(task.SingleTask):
         Parameters
         ----------
         telescope : TransitTelescope
+            The telescope object to use
         """
-
         self.telescope = io.get_telescope(telescope)
 
     def process(
@@ -956,7 +952,7 @@ class CollapseBaselineMask(task.SingleTask):
         self,
         baseline_mask: Union[containers.BaselineMask, containers.SiderealBaselineMask],
     ) -> Union[containers.RFIMask, containers.SiderealRFIMask]:
-        """Collapse input mask over baseline axis
+        """Collapse input mask over baseline axis.
 
         Parameters
         ----------
@@ -1188,8 +1184,7 @@ class RFISensitivityMask(task.SingleTask):
         return rfimask
 
     def _combine_st_mad_hook(self, times):
-        """Override this function to add a custom blending mask between the
-        SumThreshold and MAD flagged data.
+        """Override to add a custom blending mask between the SumThreshold and MAD flagged data.
 
         This is useful to use the MAD algorithm around bright source
         transits, where the SumThreshold begins to remove real signal.
@@ -1224,7 +1219,6 @@ class RFISensitivityMask(task.SingleTask):
 
     def _apply_sir(self, mask, baseflag, eta=0.2):
         """Expand the mask with SIR."""
-
         # Remove baseflag from mask and run SIR
         nobaseflag = np.copy(mask)
         nobaseflag[baseflag] = False
@@ -1304,7 +1298,6 @@ class RFIMask(task.SingleTask):
         mask
             The derived RFI mask.
         """
-
         # Select the correct mask type depending on if we have sidereal data or not
         output_type = (
             containers.SiderealRFIMask
@@ -1403,7 +1396,6 @@ class ApplyTimeFreqMask(task.SingleTask):
         tstream : timestream or sidereal stream
             The masked timestream. Note that the masking is done in place.
         """
-
         if isinstance(rfimask, containers.RFIMask):
             if not hasattr(tstream, "time"):
                 raise TypeError(
@@ -1512,7 +1504,6 @@ class ApplyBaselineMask(task.SingleTask):
         data
             The masked data. Masking is done in place.
         """
-
         if isinstance(mask, containers.BaselineMask):
             if not hasattr(data, "time"):
                 raise TypeError(f"Expected a timestream-like type. Got {type(data)}.")
@@ -1599,7 +1590,6 @@ class MaskFreq(task.SingleTask):
         mask_cont
             Frequency mask container
         """
-
         data.redistribute("freq")
 
         maskcls = (
@@ -1742,7 +1732,8 @@ class BlendStack(task.SingleTask):
 
         Parameters
         ----------
-        stack : VisContainer
+        data_stack : VisContainer
+            Data stack to blend
         """
         self.data_stack = data_stack
 
@@ -1760,7 +1751,6 @@ class BlendStack(task.SingleTask):
             The modified data. This is the same object as the input, and it has been
             modified in place.
         """
-
         if type(self.data_stack) != type(data):
             raise TypeError(
                 f"type(data) (={type(data)}) must match"
@@ -1875,13 +1865,14 @@ def medfilt(x, mask, size, *args):
         Mask of data to filter out.
     size : tuple
         Size of the window in each dimension.
+    args : optional
+        Additional arguments to pass to the moving weighted median
 
     Returns
     -------
     y : np.ndarray
         The masked data. Data within the mask is undefined.
     """
-
     if np.iscomplexobj(x):
         return medfilt(x.real, mask, size) + 1.0j * medfilt(x.imag, mask, size)
 
@@ -1907,6 +1898,8 @@ def mad(x, mask, base_size=(11, 3), mad_size=(21, 21), debug=False, sigma=True):
     mad_size : tuple
         Size of the window to use in (freq, time) when
         estimating the MAD.
+    debug : bool, optional
+        If True, return deviation and mad arrays as well
     sigma : bool, optional
         Rescale the output into units of Gaussian sigmas.
 
@@ -1916,7 +1909,6 @@ def mad(x, mask, base_size=(11, 3), mad_size=(21, 21), debug=False, sigma=True):
         Size of deviation at each point in MAD units. This output may contain
         NaN's for regions of missing data.
     """
-
     xs = medfilt(x, mask, size=base_size)
     dev = np.abs(x - xs)
 
@@ -2003,7 +1995,6 @@ def tv_channels_flag(x, freq, sigma=5, f=0.5, debug=False):
     mask : np.ndarray[bool]
         Mask of the input data.
     """
-
     p_false = sigma_to_p(sigma)
     frac = np.ones_like(x, dtype=np.float32)
 
@@ -2082,7 +2073,6 @@ def destripe(x, w, axis=1):
     y : np.ndarray
         Destriped array.
     """
-
     # Calculate the average along the axis
     stripe = complex_med(np.where(w, x, np.nan), axis=axis)
     stripe = np.nan_to_num(stripe)

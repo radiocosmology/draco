@@ -53,7 +53,7 @@ class SiderealGrouper(task.SingleTask):
 
         Parameters
         ----------
-        observer : :class:`~caput.time.Observer`
+        manager : :class:`~caput.time.Observer`
             An Observer object holding the geographic location of the telescope.
             Note that :class:`~drift.core.TransitTelescope` instances are also
             Observers.
@@ -75,7 +75,6 @@ class SiderealGrouper(task.SingleTask):
             Returns the timestream of each sidereal day when we have received
             the last file, otherwise returns :obj:`None`.
         """
-
         # This is the start and the end of the LSDs of the file only if padding
         # is chosen to be 0 (default). If padding is set to some value then 'lsd_start'
         # will actually correspond to the start of of the requested time frame (incl
@@ -179,7 +178,7 @@ class SiderealRegridder(Regridder):
 
         Parameters
         ----------
-        observer : :class:`~caput.time.Observer`
+        manager : :class:`~caput.time.Observer`
             An Observer object holding the geographic location of the telescope.
             Note that :class:`~drift.core.TransitTelescope` instances are also
             Observers.
@@ -690,7 +689,6 @@ class SiderealStackerMatch(task.SingleTask):
         sdata : containers.SiderealStream
             Individual sidereal day to stack up.
         """
-
         sdata.redistribute("freq")
 
         if self.stack is None:
@@ -766,7 +764,6 @@ class SiderealStackerMatch(task.SingleTask):
         stack : containers.SiderealStream
             Stack of sidereal days.
         """
-
         self.stack.attrs["tag"] = self.tag
 
         Va = np.array(self.Vm).transpose(1, 2, 0)

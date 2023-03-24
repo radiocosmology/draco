@@ -1,4 +1,4 @@
-"""Source Stack Analysis Tasks"""
+"""Source Stack Analysis Tasks."""
 
 import numpy as np
 from mpi4py import MPI
@@ -223,7 +223,6 @@ class RandomSubset(task.SingleTask, RandomTask):
         catalog : containers.SourceCatalog or containers.FormedBeam
             The mock catalog to draw from.
         """
-
         # If the catalog is distributed, then we need to make sure that it
         # is distributed over an axis other than the object_id axis.
         if catalog.distributed:
@@ -267,7 +266,6 @@ class RandomSubset(task.SingleTask, RandomTask):
             A catalog of the same type as the input catalog, with a random set of
             objects.
         """
-
         if self.catalog_ind >= self.number:
             raise pipeline.PipelineStopIteration
 
@@ -331,7 +329,6 @@ class GroupSourceStacks(task.SingleTask):
 
     def setup(self):
         """Create a list to be populated by the process method."""
-
         self.stack = []
         self.nmock = 0
         self.counter = 0
@@ -359,7 +356,6 @@ class GroupSourceStacks(task.SingleTask):
         out : containers.MockFrequencyStack, containers.MockFrequencyStackByPol
             The previous `ngroup` FrequencyStacks accumulated into a single container.
         """
-
         self.stack.append(stack)
         if "mock" in stack.index_map:
             self.nmock += stack.index_map["mock"].size
@@ -382,7 +378,6 @@ class GroupSourceStacks(task.SingleTask):
         out : containers.MockFrequencyStack, containers.MockFrequencyStackByPol
             The remaining frequency stacks accumulated into a single container.
         """
-
         if len(self.stack) > 0:
             out = self._reset()
             return out
@@ -392,7 +387,6 @@ class GroupSourceStacks(task.SingleTask):
 
         Then, empty the list, reset the stack counter, and increment the group counter.
         """
-
         self.log.info(
             "We have accumulated %d mock realizations.  Saving to file. [group %03d]"
             % (self.nmock, self.counter)
