@@ -201,22 +201,20 @@ class ContainerBase(memh5.BasicCont):
                 if isinstance(axis_map, int):
                     axis_map = np.arange(axis_map)
 
-                # Ensure that we intend to change the axis_map. This returns
-                # None if the kwarg axis map is rejected
-                axis_map = self._sanitize_axis_map(axis, axis_map, axes_from)
-
             # If no valid map provided in arguments copy from another object if set
-            if axis_map is None and axes_from is not None:
+            elif axes_from is not None:
                 axis_map = axes_from.index_map.get(axis, None)
                 copy_axis_attrs = True
 
             # Set the index_map[axis] if we have a definition, otherwise throw an error
-            if axis_map is not None:
-                self.create_index_map(axis, axis_map)
-                if copy_axis_attrs:
-                    memh5.copyattrs(axes_from.index_attrs[axis], self.index_attrs[axis])
-            else:
+            if axis_map is None:
                 raise RuntimeError(f"No definition of axis {axis} supplied.")
+
+            self.create_index_map(axis, axis_map)
+
+            if copy_axis_attrs:
+                # Copy over axis attributes if we're copying the axis from another dataset
+                memh5.copyattrs(axes_from.index_attrs[axis], self.index_attrs[axis])
 
         # Iterate over datasets and initialise any that specify it
         if not skip_datasets:
@@ -448,70 +446,6 @@ class ContainerBase(memh5.BasicCont):
         # This must be the same order on all ranks, so we need to explicitly sort to
         # get around the hash randomization
         return tuple(sorted(axes))
-
-    def _sanitize_axis_map(self, axis, axis_map, axes_from):
-        """Ensure that a non-index_map axis definition makes sense.
-
-        If an axis has been provided as both a keyword argument and
-        in the "axes_from" container, make sure that we don't actually
-        want the axis from the "axes_from" index_map and the copied
-        axis spec modifier.
-
-        Parameters
-        ----------
-        axis : str
-            axis to check
-        axis_map : np.ndarray
-            axis definition given in kwargs
-        axes_from : `memh5.BasicCont`
-            container we're copying axes from
-
-        Returns
-        -------
-        axis_map : np.ndarray
-            correct axis map for the situation
-        """
-        # Did we get this property from the same parent?
-        # If we've inherited this axis attribute from the same class
-        # as the source, we probably want to inherit the axis from
-        # the index_map since the modifications to the underlying axis
-        # made by the attribute will exist for the new container as well
-        for c in inspect.getmro(type(self)):
-            # We've found the highest priority parent with this attr.
-            # We don't care about any other parents with this attr since
-            # those will have been overwritten by this one.
-            if axis in c.__dict__:
-                # Check if the source also has this parent
-                for k in inspect.getmro(type(axes_from)):
-                    # This isn't a very nice way to check this, but even if the
-                    # classes are from the same module, they may have been imported
-                    # via different paths, and python class comparison will fail
-                    if (k.__module__ == c.__module__) and (
-                        k.__qualname__ == c.__qualname__
-                    ):
-                        # We have the same parent, so we have to check
-                        # if the attr we're looking for gives us the
-                        # axis_map we got as an argument
-                        from_attr = getattr(axes_from, axis)
-
-                        # Call the attr if needed
-                        if callable(from_attr):
-                            from_attr = from_attr()
-
-                        # Check if this is produces the axis map that
-                        # we got. If it does, check to make sure we can get the index_map
-                        # from the source container.
-                        if np.array_equal(np.asarray(axis_map), np.asarray(from_attr)):
-                            if axis in axes_from.index_map:
-                                return None
-
-                        # Not a match
-                        break
-                else:
-                    # Not a match
-                    break
-
-        return axis_map
 
     @classmethod
     def _make_selections(cls, sel_args):
