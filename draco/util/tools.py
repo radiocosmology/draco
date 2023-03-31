@@ -8,6 +8,9 @@ from numpy.lib.recfunctions import structured_to_unstructured
 
 from ._fast_tools import _calc_redundancy
 
+# Keep this here for compatibility
+from caput.tools import invert_no_zero  # noqa: F401
+
 
 def cmap(i, j, n):
     """Given a pair of feed indices, return the pair index.
