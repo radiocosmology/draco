@@ -558,16 +558,6 @@ class DelaySpectrumEstimatorBase(task.SingleTask, random.RandomTask):
     complex_timedomain = config.Property(proptype=bool, default=False)
     initial_amplitude = config.Property(proptype=float, default=10.0)
 
-    def setup(self, telescope: io.TelescopeConvertible):
-        """Set the telescope needed to generate Stokes I.
-
-        Parameters
-        ----------
-        telescope : TransitTelescope
-            The telescope object to use
-        """
-        self.telescope = io.get_telescope(telescope)
-
     def process(self, ss: FreqContainerType) -> containers.DelaySpectrum:
         """Estimate the delay spectrum.
 
