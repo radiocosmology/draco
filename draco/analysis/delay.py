@@ -1,12 +1,12 @@
 """Delay space spectrum estimation and filtering."""
 
-import typing
+from typing import List, Tuple, Optional, TypeVar
 
 import numpy as np
 from numpy.lib.recfunctions import structured_to_unstructured
 import scipy.linalg as la
 
-from caput import mpiarray, config
+from caput import mpiarray, config, memh5
 from cora.util import units
 
 from ..core import containers, task, io
@@ -139,7 +139,7 @@ class DelayFilter(task.SingleTask):
 
 
 # A specific subclass of a FreqContainer
-FreqContainerType = typing.TypeVar("FreqContainerType", bound=containers.FreqContainer)
+FreqContainerType = TypeVar("FreqContainerType", bound=containers.FreqContainer)
 
 
 class DelayFilterBase(task.SingleTask):
@@ -615,47 +615,22 @@ class DelaySpectrumEstimatorBase(task.SingleTask, random.RandomTask):
         # Compute delays corresponding to output delay power spectrum
         delays = np.fft.fftshift(np.fft.fftfreq(ndelay, d=self.freq_spacing))  # in us
 
-        # Find the relevant axis positions
-        data_axes = ss.datasets[self.dataset].attrs["axis"]
-        freq_axis_pos = list(data_axes).index("freq")
-        average_axis_pos = list(data_axes).index(self.average_axis)
-
-        # Create a view of the dataset with the relevant axes at the back,
-        # and all other axes compressed
-        data_view = np.moveaxis(
-            ss.datasets[self.dataset][:].local_array,
-            [average_axis_pos, freq_axis_pos],
-            [-2, -1],
+        data_view, bl_axes = flatten_axes(
+            ss.datasets[self.dataset], [self.average_axis, "freq"]
         )
-        data_view = data_view.reshape(-1, data_view.shape[-2], data_view.shape[-1])
-        data_view = mpiarray.MPIArray.wrap(data_view, axis=2, comm=ss.comm)
-        nbase = int(np.prod(data_view.shape[:-2]))
-        data_view = data_view.redistribute(axis=0)
-
-        # ... do the same for the weights, but we also need to make the weights full
-        # size
-        weight_full = np.zeros(
-            ss.datasets[self.dataset][:].shape, dtype=ss.weight.dtype
+        weight_view, _ = flatten_axes(
+            ss.weight,
+            [self.average_axis, "freq"],
+            match_dset=ss.datasets[self.dataset],
         )
-        weight_full[:] = match_axes(ss.datasets[self.dataset], ss.weight)
-        weight_view = np.moveaxis(
-            weight_full, [average_axis_pos, freq_axis_pos], [-2, -1]
-        )
-        weight_view = weight_view.reshape(
-            -1, weight_view.shape[-2], weight_view.shape[-1]
-        )
-        weight_view = mpiarray.MPIArray.wrap(weight_view, axis=2, comm=ss.comm)
-        weight_view = weight_view.redistribute(axis=0)
-
-        # Use the "baselines" axis to generically represent all the other axes
 
         # Initialise the spectrum container
+        nbase = data_view.global_shape[0]
         delay_spec = containers.DelaySpectrum(
             baseline=nbase, delay=delays, attrs_from=ss
         )
         delay_spec.redistribute("baseline")
         delay_spec.spectrum[:] = 0.0
-        bl_axes = [da for da in data_axes if da not in [self.average_axis, "freq"]]
 
         # Copy the index maps for all the flattened axes into the output container, and
         # write out their order into an attribute so we can reconstruct this easily
@@ -1245,6 +1220,74 @@ def match_axes(dset1, dset2):
     bcast_slice = tuple(slice(None) if ax in axes2 else np.newaxis for ax in axes1)
 
     return dset2[:][bcast_slice]
+
+
+def flatten_axes(
+    dset: memh5.MemDatasetDistributed,
+    axes_to_keep: List[str],
+    match_dset: Optional[memh5.MemDatasetDistributed] = None,
+) -> Tuple[mpiarray.MPIArray, List[str]]:
+    """Move the specified axes of the dataset to the back, and flatten all others.
+
+    Optionally this will add length-1 axes to match the axes of another dataset.
+
+    Parameters
+    ----------
+    dset
+        The dataset to reshape.
+    axes_to_keep
+        The names of the axes to keep.
+    match_dset
+        An optional dataset to match the shape of.
+
+    Returns
+    -------
+    flat_array
+        The MPIArray representing the re-arranged dataset. Distributed along the
+        flattened axis.
+    flat_axes
+        The names of the flattened axes from slowest to fastest varying.
+    """
+
+    # Find the relevant axis positions
+    data_axes = list(dset.attrs["axis"])
+
+    # Check that the requested datasets actually exist
+    for axis in axes_to_keep:
+        if axis not in data_axes:
+            raise ValueError(f"Specified {axis=} not present in dataset.")
+
+    # If specified, add extra axes to match the shape of the given dataset
+    if match_dset and tuple(dset.attrs["axis"]) != tuple(match_dset.attrs["axis"]):
+        dset_full = np.empty_like(match_dset[:])
+        dset_full[:] = match_axes(match_dset, dset)
+
+    axes_ind = [data_axes.index(axis) for axis in axes_to_keep]
+
+    # Get an MPIArray and make sure it is distributed along one of the preserved axes
+    data_array = dset[:]
+    if data_array.axis not in axes_ind:
+        data_array = data_array.redistribute(axes_ind[0])
+
+    # Create a view of the dataset with the relevant axes at the back,
+    # and all others moved to the front (retaining their relative order)
+    other_axes = [ax for ax in range(len(data_axes)) if ax not in axes_ind]
+    data_array = data_array.transpose(other_axes + axes_ind)
+
+    # Get the explicit shape of the axes that will remain, but set the distributed one
+    # to None (as will be needed for MPIArray.reshape)
+    remaining_shape = list(data_array.shape)
+    remaining_shape[data_array.axis] = None
+    new_ax_len = np.prod(remaining_shape[: -len(axes_ind)])
+    remaining_shape = remaining_shape[-len(axes_ind) :]
+
+    # Reshape the MPIArray, and redistribute over the flattened axis
+    data_array = data_array.reshape((new_ax_len,) + tuple(remaining_shape))
+    data_array = data_array.redistribute(axis=0)
+
+    other_axes_names = [data_axes[ax] for ax in other_axes]
+
+    return data_array, other_axes_names
 
 
 def _move_front(arr: np.ndarray, axis: int, shape: tuple) -> np.ndarray:
