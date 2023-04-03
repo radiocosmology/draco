@@ -6,3 +6,4 @@ mpi4py
 numpy>=1.17
 scipy>=0.10
 skyfield
+pywavelets
