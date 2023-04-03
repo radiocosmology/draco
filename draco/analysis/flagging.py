@@ -627,8 +627,8 @@ class SanitizeWeights(task.SingleTask):
         smallest value to keep
     """
 
-    max_thresh = config.Property(proptype=np.float32, default=1e10)
-    min_thresh = config.Property(proptype=np.float32, default=1e-10)
+    max_thresh = config.Property(proptype=np.float32, default=1e30)
+    min_thresh = config.Property(proptype=np.float32, default=1e-30)
 
     def setup(self):
         """Validate the max and min values.
