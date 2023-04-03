@@ -2408,6 +2408,32 @@ class DelayTransform(ContainerBase):
         return self.attrs["freq"]
 
 
+class WaveletSpectrum(ContainerBase):
+    """Container for a wavelet power spectrum."""
+
+    _axes = ("baseline", "freq", "delay")
+
+    _dataset_spec = {
+        "spectrum": {
+            "axes": ["baseline", "delay", "freq"],
+            "dtype": np.float64,
+            "initialise": True,
+            "distributed": True,
+            "distributed_axis": "baseline",
+        }
+    }
+
+    @property
+    def spectrum(self):
+        """The wavelet spectrum."""
+        return self.datasets["spectrum"]
+
+    @property
+    def weight(self):
+        """The weights for the spectrum."""
+        return self.datasets["weight"]
+
+
 class Powerspectrum2D(ContainerBase):
     """Container for a 2D cartesian power spectrum.
 
