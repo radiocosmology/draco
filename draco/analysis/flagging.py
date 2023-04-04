@@ -445,10 +445,6 @@ class MaskBadGains(task.SingleTask):
             data.gain[:] <= self.threshold + self.threshold_tol, axis=1
         ).allgather()
 
-        # Log the percent of data masked
-        drop_frac = 100.0 * mask.sum() / mask.size
-        self.log.info(f"Flagging {drop_frac:.2f}% of data due to bad gains.")
-
         mask_cont = containers.RFIMask(axes_from=data)
         mask_cont.mask[:] = mask
 
