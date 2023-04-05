@@ -1,14 +1,15 @@
 """Wavelet power spectrum estimation."""
+import os
 
 import numpy as np
-import scipy.linalg as la
 import pywt
-
-from caput import config
+import scipy.fft as fft
+import scipy.linalg as la
+from caput import config, mpiutil
 
 from ..core import containers, task
-from .delay import flatten_axes
 from ..util import _fast_tools
+from .delay import flatten_axes
 
 
 class WaveletSpectrumEstimator(task.SingleTask):
@@ -22,6 +23,7 @@ class WaveletSpectrumEstimator(task.SingleTask):
     average_axis = config.Property(proptype=str)
     ndelay = config.Property(proptype=int, default=128)
     wavelet = config.Property(proptype=str, default="morl")
+    chunks = config.Property(proptype=int, default=4)
 
     def process(
         self,
@@ -45,6 +47,7 @@ class WaveletSpectrumEstimator(task.SingleTask):
             The wavelet spectrum. The non-frequency and averaging axes have been
             collapsed into `baseline`.
         """
+        workers = int(os.environ.get("OMP_NUM_THREADS", 1))
 
         dset_view, bl_axes = flatten_axes(
             data[self.dataset], [self.average_axis, "freq"]
@@ -78,6 +81,7 @@ class WaveletSpectrumEstimator(task.SingleTask):
         wspec.redistribute("baseline")
         dspec.redistribute("baseline")
         ws = wspec.spectrum[:].local_array
+        ww = wspec.weight[:].local_array
         ds = dspec.spectrum[:].local_array
 
         # Construct the freq<->delay mapping Fourier matrix
@@ -89,12 +93,16 @@ class WaveletSpectrumEstimator(task.SingleTask):
         )
 
         for ii in range(dset_view.shape[0]):
+            self.log.info(f"Transforming baseline {ii} of {dset_view.shape[0]}")
             d = dset_view.local_array[ii]
             w = weight_view.local_array[ii]
 
-            # Construct an averaged frequency mask
+            # Construct an averaged frequency mask and use it to set the output
+            # weights
             Ni = w.mean(axis=0)
+            ww[ii] = Ni
 
+            # Construct a Wiener filter to in-fill the data
             D = ds[ii]
             Df = (F * D[np.newaxis, :]) @ F.T.conj()
             iDf = la.inv(Df)
@@ -109,16 +117,20 @@ class WaveletSpectrumEstimator(task.SingleTask):
                 overwrite_b=True,
             ).T
 
-            wd, s = pywt.cwt(
-                d_infill,
-                scales=wv_scales,
-                wavelet=self.wavelet,
-                axis=-1,
-                sampling_period=df,
-                method="fft",
-            )
+            # Doing the cwt and calculating the variance can eat a bunch of
+            # memory. Break it up into chunks to try and control this
+            for _, s, e in mpiutil.split_m(wv_scales.shape[0], self.chunks).T:
+                with fft.set_workers(workers):
+                    wd, _ = pywt.cwt(
+                        d_infill,
+                        scales=wv_scales[s:e],
+                        wavelet=self.wavelet,
+                        axis=-1,
+                        sampling_period=df,
+                        method="fft",
+                    )
 
-            ws[ii] = wd.var(axis=1)
-            _fast_tools._fast_var(wd, ws[ii])
+                # Calculate and set the variance
+                _fast_tools._fast_var(wd, ws[ii, s:e])
 
         return wspec
