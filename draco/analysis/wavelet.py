@@ -8,6 +8,7 @@ from caput import config
 
 from ..core import containers, task
 from .delay import flatten_axes
+from ..util import _fast_tools
 
 
 class WaveletSpectrumEstimator(task.SingleTask):
@@ -118,5 +119,6 @@ class WaveletSpectrumEstimator(task.SingleTask):
             )
 
             ws[ii] = wd.var(axis=1)
+            _fast_tools._fast_var(wd, ws[ii])
 
         return wspec
