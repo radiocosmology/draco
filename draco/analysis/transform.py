@@ -981,15 +981,20 @@ class SelectPol(task.SingleTask):
         YY_ind = list(polcont.index_map["pol"]).index("YY")
 
         for name, dset in polcont.datasets.items():
+            out_dset = outcont.datasets[name]
             if "pol" not in dset.attrs["axis"]:
-                outcont.datasets[name][:] = dset[:]
+                out_dset[:] = dset[:]
             else:
                 pol_axis_pos = list(dset.attrs["axis"]).index("pol")
 
                 sl = tuple([slice(None)] * pol_axis_pos)
-                outcont.datasets[name][sl + (0,)] = dset[sl + (XX_ind,)]
-                outcont.datasets[name][sl + (0,)] += dset[sl + (YY_ind,)]
-                outcont.datasets[name][:] *= 0.5
+                out_dset[sl + (0,)] = dset[sl + (XX_ind,)]
+                out_dset[sl + (0,)] += dset[sl + (YY_ind,)]
+
+                if np.issubdtype(out_dset.dtype, np.integer):
+                    out_dset[:] //= 2
+                else:
+                    out_dset[:] *= 0.5
 
         return outcont
 
