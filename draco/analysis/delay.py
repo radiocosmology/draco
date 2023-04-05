@@ -1248,7 +1248,6 @@ def flatten_axes(
     flat_axes
         The names of the flattened axes from slowest to fastest varying.
     """
-
     # Find the relevant axis positions
     data_axes = list(dset.attrs["axis"])
 

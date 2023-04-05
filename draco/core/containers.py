@@ -2346,7 +2346,14 @@ class WaveletSpectrum(ContainerBase):
             "initialise": True,
             "distributed": True,
             "distributed_axis": "baseline",
-        }
+        },
+        "weight": {
+            "axes": ["baseline", "freq"],
+            "dtype": np.float64,
+            "initialise": True,
+            "distributed": True,
+            "distributed_axis": "baseline",
+        },
     }
 
     @property
