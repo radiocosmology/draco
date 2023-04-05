@@ -1,15 +1,24 @@
 """A few miscellaneous Cython routines to speed up critical operations."""
 
 from cython.parallel import prange, parallel
+from cython.view cimport array as cvarray
 cimport cython
 
 import numpy as np
 cimport numpy as np
 
 from libc.stdint cimport int16_t, int32_t
+from libc.stdlib cimport malloc, free
 from libc.math cimport sin
 from libc.math cimport cos
 from libc.math cimport fabs
+
+ctypedef double complex complex128
+ctypedef float complex complex64
+
+cdef extern from "complex.h" nogil:
+    double creal(complex128)
+    double cimag(complex128)
 
 cdef inline int int_max(int a, int b) nogil: return a if a >= b else b
 
@@ -260,3 +269,70 @@ ctypedef fused real_or_complex:
     double complex
     float
     float complex
+
+
+@cython.wraparound(False)
+@cython.boundscheck(False)
+@cython.cdivision(True)
+cpdef _fast_var(
+    real_or_complex[:, :, ::1] arr,
+    double[:, ::1] out
+):
+    """Fast parallel variance evaluation.
+
+    This is specialised to dim=3 arrays with the variance taken along axis=1. This
+    implementation uses the Youngs and Cramer single pass algorithm.
+
+    Parameters
+    ----------
+    arr
+        The array to take the variance of.
+    out
+        The array to write the variance into.
+    """
+    cdef int N1, N2, N3
+    cdef int ii, jj, kk
+    cdef real_or_complex t
+    cdef double t2
+    cdef real_or_complex* T
+    cdef int size = sizeof(T)
+
+    N1 = arr.shape[0]
+    N2 = arr.shape[1]
+    N3 = arr.shape[2]
+
+    if arr.shape[0] != out.shape[0] or arr.shape[2] != out.shape[1]:
+        raise ValueError("Input and output array shapes incompatible.")
+
+    with nogil, parallel():
+
+        T = <real_or_complex*>malloc(N3 * sizeof(real_or_complex))
+
+        for ii in prange(N1):
+
+            for kk in range(N3):
+                out[ii, kk] = 0.0
+                T[kk] = arr[ii, 0, kk]
+
+            for jj in range(1, N2):
+                for kk in range(N3):
+                    t = arr[ii, jj, kk]
+                    T[kk] += t
+                    t = (jj + 1) * t - T[kk]
+                    if (
+                        (real_or_complex is cython.doublecomplex) or
+                        (real_or_complex is cython.floatcomplex)
+                    ):
+                        t2 = creal(t)**2 + cimag(t)**2
+                    else:
+                        t2 = t * t
+                    out[ii, kk] += t2 / (jj * (jj + 1))
+
+
+            for kk in range(N3):
+                out[ii, kk] /= N2
+
+        free(T)
+
+
+
