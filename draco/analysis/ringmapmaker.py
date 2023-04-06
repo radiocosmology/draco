@@ -36,7 +36,16 @@ class MakeVisGrid(task.SingleTask):
 
     This will fill out the visibilities in the half plane `x >= 0` where x is the EW
     baseline separation.
+
+    Attributes
+    ----------
+    centered : bool
+        If set, place the zero NS separation at the center of the y-axis with
+        the baselines given in ascending order. Otherwise the zero separation
+        is at position zero, and the baselines are in FFT order.
     """
+
+    centered = config.Property(proptype=bool, default=False)
 
     def setup(self, tel):
         """Set the Telescope instance to use.
@@ -88,9 +97,16 @@ class MakeVisGrid(task.SingleTask):
 
         # Define several variables describing the baseline configuration.
         nx = np.abs(xind).max() + 1
-        ny = 2 * np.abs(yind).max() + 1
+        max_yind = np.abs(yind).max()
+        ny = 2 * max_yind + 1
         vis_pos_x = np.arange(nx) * min_xsep
-        vis_pos_y = np.fft.fftfreq(ny, d=(1.0 / (ny * min_ysep)))
+
+        if self.centered:
+            vis_pos_y = np.arange(-max_yind, max_yind + 1) * min_ysep
+            ns_offset = max_yind
+        else:
+            vis_pos_y = np.fft.fftfreq(ny, d=(1.0 / (ny * min_ysep)))
+            ns_offset = 0
 
         # Extract the right ascension to initialise the new container with (or
         # calculate from timestamp)
@@ -135,15 +151,15 @@ class MakeVisGrid(task.SingleTask):
         # Unpack visibilities into new array
         for vis_ind, (p_ind, x_ind, y_ind) in enumerate(zip(pind, xind, yind)):
             # Different behavior for intracylinder and intercylinder baselines.
-            gsv[p_ind, :, x_ind, y_ind, :] = ssv[:, vis_ind]
-            gsw[p_ind, :, x_ind, y_ind, :] = ssw[:, vis_ind]
-            gsr[p_ind, x_ind, y_ind, :] = redundancy[vis_ind]
+            gsv[p_ind, :, x_ind, ns_offset + y_ind, :] = ssv[:, vis_ind]
+            gsw[p_ind, :, x_ind, ns_offset + y_ind, :] = ssw[:, vis_ind]
+            gsr[p_ind, x_ind, ns_offset - y_ind, :] = redundancy[vis_ind]
 
             if x_ind == 0:
                 pc_ind = pconjmap[p_ind]
-                gsv[pc_ind, :, x_ind, -y_ind, :] = ssv[:, vis_ind].conj()
-                gsw[pc_ind, :, x_ind, -y_ind, :] = ssw[:, vis_ind]
-                gsr[pc_ind, x_ind, -y_ind, :] = redundancy[vis_ind]
+                gsv[pc_ind, :, x_ind, ns_offset - y_ind, :] = ssv[:, vis_ind].conj()
+                gsw[pc_ind, :, x_ind, ns_offset - y_ind, :] = ssw[:, vis_ind]
+                gsr[pc_ind, x_ind, ns_offset - y_ind, :] = redundancy[vis_ind]
 
         return grid
 
