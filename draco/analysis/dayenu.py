@@ -40,6 +40,11 @@ class DayenuDelayFilter(task.SingleTask):
         frequencies where the weights are nonzero for all times.
         Otherwise will construct a filter for all unique single-time
         frequency masks (can be significantly slower).  Default is True.
+    atten_threshold : float
+        Mask any frequency where the diagonal element of the filter
+        is less than this fraction of the median value over all
+        unmasked frequencies.  Default is 0.0 (i.e., do not mask
+        frequencies with low attenuation).
     """
 
     za_cut = config.Property(proptype=float, default=1.0)
@@ -47,6 +52,7 @@ class DayenuDelayFilter(task.SingleTask):
     epsilon = config.Property(proptype=float, default=1e-12)
     tauw = config.Property(proptype=float, default=0.100)
     single_mask = config.Property(proptype=bool, default=True)
+    atten_threshold = config.Property(proptype=float, default=0.0)
 
     def setup(self, telescope):
         """Set the telescope needed to obtain baselines.
@@ -58,6 +64,12 @@ class DayenuDelayFilter(task.SingleTask):
         self.telescope = io.get_telescope(telescope)
 
         self.log.info("Instrumental delay cut set to %0.3f micro-sec." % self.tauw)
+
+        if self.atten_threshold > 0.0:
+            self.log.info(
+                "Flagging frequencies with attenuation less "
+                f"than {self.atten_threshold:0.2f} of median attenuation."
+            )
 
     def process(self, stream):
         """Filter out delays from a SiderealStream or TimeStream.
@@ -131,6 +143,16 @@ class DayenuDelayFilter(task.SingleTask):
             if self.single_mask:
                 vis[:, bb] = np.matmul(NF[0], bvis)
                 weight[:, bb] = tools.invert_no_zero(np.matmul(NF[0] ** 2, bvar))
+
+                if self.atten_threshold > 0.0:
+
+                    diag = np.diag(NF[0])
+                    med_diag = np.median(diag[diag > 0.0])
+
+                    flag_low = diag > (self.atten_threshold * med_diag)
+
+                    weight[:, bb] *= flag_low[:, np.newaxis].astype(np.float32)
+
             else:
                 self.log.debug("There are %d unique masks/filters." % len(index))
                 for ii, ind in enumerate(index):
@@ -138,6 +160,17 @@ class DayenuDelayFilter(task.SingleTask):
                     weight[:, bb, ind] = tools.invert_no_zero(
                         np.matmul(NF[ii] ** 2, bvar[:, ind])
                     )
+
+                    if self.atten_threshold > 0.0:
+
+                        diag = np.diag(NF[ii])
+                        med_diag = np.median(diag[diag > 0.0])
+
+                        flag_low = diag > (self.atten_threshold * med_diag)
+
+                        weight[:, bb, ind] *= flag_low[:, np.newaxis, np.newaxis].astype(
+                            np.float32
+                        )
 
             self.log.debug(f"Took {time.time() - t0:0.3f} seconds in total.")
 
