@@ -1156,11 +1156,15 @@ class MixData(task.SingleTask):
     invert_weights : bool
         Invert the weights before combining them, and return the inverse of the total.
         The coefficients are applied to the inverted weights. Default is False.
+    mask_missing : bool
+        Set the weights of the output data to zero wherever at least one of the inputs
+        had zero weight. Default is False.
     """
 
     data_coeff = config.list_type(type_=float)
     weight_coeff = config.list_type(type_=float)
     invert_weights = config.Property(proptype=bool, default=False)
+    mask_missing = config.Property(proptype=bool, default=False)
 
     mixed_data = None
 
@@ -1203,6 +1207,11 @@ class MixData(task.SingleTask):
             _get_dset(self.mixed_data)[:] = 0.0
             self.mixed_data.weight[:] = 0.0
 
+            # initialise mask
+            if self.mask_missing:
+                # makes a mpiarray of bool
+                self._final_mask = self.mixed_data.weight[:] == 0.0
+
         # Validate the types are the same
         if type(self.mixed_data) != type(data):
             raise TypeError(
@@ -1233,6 +1242,10 @@ class MixData(task.SingleTask):
                 self.weight_coeff[self._data_ind] * data.weight[:]
             )
 
+        # Mask samples that include zero weights
+        if self.mask_missing:
+            self._final_mask &= data.weight[:] != 0.0
+
         self._data_ind += 1
 
     def process_finish(self) -> Union[containers.SiderealStream, containers.RingMap]:
@@ -1257,5 +1270,8 @@ class MixData(task.SingleTask):
 
         if self.invert_weights:
             data.weight[:] = tools.invert_no_zero(data.weight[:])
+
+        if self.mask_missing:
+            data.weight[:] *= self._final_mask.astype(float)
 
         return data
