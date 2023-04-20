@@ -1087,7 +1087,7 @@ class RFISensitivityMask(task.SingleTask):
         npol = len(sensitivity.pol)
         nfreq = len(freq)
 
-        static_flag = ~self._static_rfi_mask_hook(freq)
+        static_flag = ~self._static_rfi_mask_hook(freq, sensitivity.time[0])
 
         madmask = mpiarray.MPIArray(
             (npol, nfreq, len(sensitivity.time)), axis=0, dtype=bool
@@ -1198,13 +1198,15 @@ class RFISensitivityMask(task.SingleTask):
         """
         return np.ones_like(times, dtype=bool)
 
-    def _static_rfi_mask_hook(self, freq):
+    def _static_rfi_mask_hook(self, freq, timestamp=None):
         """Override this function to apply a static RFI mask to the data.
 
         Parameters
         ----------
         freq : np.ndarray[nfreq]
             1D array of frequencies in the data (in MHz).
+        timestamp : float or np.ndarray[ntimes]
+            timestamps to use when determining the static mask for this datatset
 
         Returns
         -------
