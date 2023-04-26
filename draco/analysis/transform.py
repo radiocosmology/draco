@@ -2,11 +2,12 @@
 
 This includes grouping frequencies and products to performing the m-mode transform.
 """
-from typing import Optional, Union, overload
+from typing import Optional, Union, Tuple, overload
 
 import numpy as np
 from numpy.lib.recfunctions import structured_to_unstructured
 from caput import mpiarray, config
+from caput.tools import invert_no_zero
 
 from ..core import containers, task, io
 from ..util import tools
@@ -1256,3 +1257,214 @@ class MixData(task.SingleTask):
         self.mixed_data = None
 
         return data
+
+
+class Downselect(io.SelectionsMixin, task.SingleTask):
+    """Apply axis selections to a container.
+
+    Apply slice or `np.take` operations across multiple axes of a container.
+    The selections are applied to every dataset.
+
+    If a dataset is distributed, there must be at least one axis not included
+    in the selections.
+    """
+
+    def process(self, data: containers.ContainerBase) -> containers.ContainerBase:
+        """Apply downselections to the container.
+
+        Parameters
+        ----------
+        data
+            Container to process
+
+        Returns
+        -------
+        out
+            Container of same type as the input with specific axis selections.
+            Any datasets not included in the selections will not be initialized.
+        """
+        # Re-format selections to only use axis name
+        for ax_sel in list(self._sel):
+            ax = ax_sel.replace("_sel", "")
+            self._sel[ax] = self._sel.pop(ax_sel)
+
+        # Figure out the axes for the new container and
+        # Apply the downselections to each axis index_map
+        output_axes = {
+            ax: mpiarray._apply_sel(data.index_map[ax], sel, 0)
+            for ax, sel in self._sel.items()
+        }
+        # Create the output container without initializing any datasets.
+        out = data.__class__(
+            axes_from=data, attrs_from=data, skip_datasets=True, **output_axes
+        )
+        containers.copy_datasets_filter(data, out, selection=self._sel)
+
+        return out
+
+
+class ReduceBase(task.SingleTask):
+    """Apply a weighted reduction operation across specific axes.
+
+    This is non-functional without overriding the `reduction` method.
+
+    There must be at least one axis not included in the reduction.
+
+    Attributes
+    ----------
+    axes : list
+        Axis names to apply the reduction to
+    dataset : str
+        Dataset name to reduce.
+    weighting : str
+        Which type of weighting to use, if applicable. Options are "none",
+        "masked", or "weighted"
+    """
+
+    axes = config.Property(proptype=list)
+    dataset = config.Property(proptype=str)
+    weighting = config.enum(["none", "masked", "weighted"], default="none")
+
+    _op = None
+
+    def process(self, data: containers.ContainerBase) -> containers.ContainerBase:
+        """Downselect and apply the reduction operation to the data.
+
+        Parameters
+        ----------
+        data
+            Dataset to process.
+
+        Returns
+        -------
+        out
+            Dataset of same type as input with axes reduced. Any datasets
+            which are not included in the reduction list will not be initialized,
+            other than weights.
+        """
+        out = self._make_output_container(data)
+        out.add_dataset(self.dataset)
+
+        # Get the dataset
+        ds = data.datasets[self.dataset]
+        original_ax_id = ds.distributed_axis
+
+        # Get the axis indices to apply the operation over
+        ds_axes = list(ds.attrs["axis"])
+
+        # Get the new axis to distribute over
+        if ds_axes[original_ax_id] not in self.axes:
+            new_ax_id = original_ax_id
+        else:
+            ax_priority = [
+                x for _, x in sorted(zip(ds.shape, ds_axes)) if x not in self.axes
+            ]
+            if not ax_priority:
+                raise ValueError(
+                    "Could not find a valid axis to redistribute. At least one "
+                    "axis must be omitted from filtering."
+                )
+            # Get the longest axis
+            new_ax_id = ds_axes.index(ax_priority[-1])
+
+        new_ax_name = ds_axes[new_ax_id]
+
+        # Redistribute the dataset to the target axis
+        ds.redistribute(new_ax_id)
+        # Redistribute the output container (group) to the target axis
+        # Since this is a container, distribute based on axis name
+        # rather than index
+        out.redistribute(new_ax_name)
+
+        # Get the weights
+        if hasattr(data, "weight"):
+            weight = data.weight[:]
+            # The weights should be distributed over the same axis as the array,
+            # even if they don't share all the same axes
+            new_weight_ax = list(data.weight.attrs["axis"]).index(new_ax_name)
+            weight = weight.redistribute(new_weight_ax)
+        else:
+            self.log.info("No weights available. Using equal weighting.")
+            weight = np.ones(ds.local_shape, ds.dtype)
+
+        # Apply the reduction, ensuring that the weights have the correct dimension
+        weight = np.broadcast_to(weight, ds.local_shape, subok=False)
+        apply_over = tuple([ds_axes.index(ax) for ax in self.axes if ax in ds_axes])
+
+        reduced, reduced_weight = self.reduction(
+            ds[:].local_array[:], weight, apply_over
+        )
+
+        # Add the reduced data and redistribute the container back to the
+        # original axis
+        out[self.dataset][:] = reduced[:]
+
+        if hasattr(out, "weight"):
+            out.weight[:] = reduced_weight[:]
+
+        # Redistribute bcak to the original axis, again using the axis name
+        out.redistribute(ds_axes[original_ax_id])
+
+        return out
+
+    def _make_output_container(
+        self, data: containers.ContainerBase
+    ) -> containers.ContainerBase:
+        """Create the output container."""
+        # For a collapsed axis, the meaning of the index map will depend on
+        # the reduction being done, and can be meaningless. The first value
+        # of the relevant index map is chosen as the default to provide
+        # some meaning to the index map regardless of the reduction operation
+        # or reduction axis involved
+        output_axes = {ax: np.array([data.index_map[ax][0]]) for ax in self.axes}
+
+        # Create the output container without initializing any datasets.
+        # Add some extra metadata about which axes were reduced and which
+        # datasets are meaningful
+        out = data.__class__(
+            axes_from=data, attrs_from=data, skip_datasets=True, **output_axes
+        )
+        out.attrs["reduced"] = True
+        out.attrs["reduction_axes"] = np.array(self.axes)
+        out.attrs["reduced_dataset"] = self.dataset
+        out.attrs["reduction_op"] = self._op
+
+        # Initialize the weight dataset
+        if "weight" in data.datasets:
+            out.add_dataset("weight")
+        elif "vis_weight" in data.datasets:
+            out.add_dataset("vis_weight")
+
+        return out
+
+    def reduction(
+        self, arr: np.ndarray, weight: np.ndarray, axis: tuple
+    ) -> Tuple[np.ndarray, np.ndarray]:
+        """Overwrite to implement the reductino operation."""
+        raise NotImplementedError
+
+
+class ReduceVar(ReduceBase):
+    """Take the weighted variance of a container."""
+
+    _op = "variance"
+
+    def reduction(self, arr, weight, axis):
+        """Apply a weighted variance."""
+        if self.weighting == "none":
+            v = np.var(arr, axis=axis, keepdims=True)
+
+            return v, np.ones_like(v)
+
+        if self.weighting == "masked":
+            weight = (weight > 0).astype(weight.dtype)
+
+        # Calculate the inverted sum of the weights. This is used
+        # more than once
+        ws = invert_no_zero(np.sum(weight, axis=axis, keepdims=True))
+        # Get the weighted mean
+        mu = np.sum(weight * arr, axis=axis, keepdims=True) * ws
+        # Get the weighted variance
+        v = np.sum(weight * (arr - mu) ** 2, axis=axis, keepdims=True) * ws
+
+        return v, np.ones_like(v)
