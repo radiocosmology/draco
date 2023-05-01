@@ -380,6 +380,18 @@ class BeamFormBase(task.SingleTask):
 
         return formed_beam
 
+    def process_finish(self):
+        """Clear lists holding copies of data.
+
+        These lists will persist beyond this task being done, so
+        the data stored there will continue to use memory.
+        """
+        for attr in ["vis", "visweight", "bvec", "sumweight"]:
+            try:
+                delattr(self, attr)
+            except AttributeError:
+                pass
+
     def _ha_array(self, ra, source_ra_index, source_ra, ha_side, is_sstream=True):
         """Hour angle for each RA/time bin to be processed.
 
