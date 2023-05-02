@@ -319,7 +319,7 @@ class CollateProducts(task.SingleTask):
 
         # Copy over any additional datasets that need to be frequency filtered
         containers.copy_datasets_filter(
-            ss, sp, "freq", freq_ind, ["input", "prod", "stack"], allow_distributed=True
+            ss, sp, "freq", freq_ind, ["input", "prod", "stack"]
         )
 
         # Switch back to frequency distribution. This will have minimal
