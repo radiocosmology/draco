@@ -56,12 +56,11 @@ their own custom container types.
 - :py:meth:`empty_like`
 - :py:meth:`empty_timestream`
 """
-
 import inspect
 from typing import List, Optional, Union
 
 import numpy as np
-from caput import memh5, tod
+from caput import memh5, mpiarray, tod
 
 from ..util import tools
 
@@ -2775,10 +2774,9 @@ def empty_timestream(**kwargs):
 def copy_datasets_filter(
     source: ContainerBase,
     dest: ContainerBase,
-    axis: str,
-    selection: Union[np.ndarray, list, slice],
+    axis: Union[str, list, tuple] = [],
+    selection: Union[np.ndarray, list, slice, dict] = {},
     exclude_axes: List[str] = None,
-    allow_distributed: bool = False,
 ):
     """Copy datasets while filtering a given axis.
 
@@ -2786,21 +2784,50 @@ def copy_datasets_filter(
 
     Parameters
     ----------
-    source, dest
-        Source and destination containers.
+    source
+        Source container
+    dest
+        Destination container. The axes in this container should reflect the
+        selections being made to the source.
     axis
-        Name of the axis to filter.
+        Name of the axes to filter. These must match the axes in `selection`,
+        unless selection is a single item. This is partially here for legacy
+        reasons, as the selections can be fully specified by `selection`
     selection
-        A filtering selection to be applied to the axis.
+        A filtering selection to be applied to each axis.
     exclude_axes
         An optional set of axes that if a dataset contains one means it will
         not be copied.
-    allow_distributed, optional
-        Allow the filtered axis to be the distributed axis. This is ONLY
-        valid if filtering is occuring on the local rank only, and mainly
-        exists for compatibility
     """
     exclude_axes_set = set(exclude_axes) if exclude_axes else set()
+    if type(axis) is str:
+        axis = [axis]
+    axis = set(axis)
+
+    # Resolve the selections and axes, removing any that aren't needed
+    if not isinstance(selection, dict):
+        # Assume we just want to apply this selection to all listed axes
+        selection = {ax: selection for ax in axis}
+
+    if not axis:
+        axis = set(selection.keys())
+    # Make sure that all axis keys are present in selection
+    elif not all(ax in selection for ax in axis):
+        raise ValueError(
+            f"Mismatch between axis and selection. Got {axis} "
+            f"but selections for {list(selection.keys())}."
+        )
+
+    # Try to clean up selections
+    for ax in list(selection):
+        sel = selection[ax]
+        # Remove any unnecessary slices
+        if sel == slice(None):
+            del selection[ax]
+        # Convert any indexed selections to slices where possible
+        elif type(sel) in {list, tuple, np.ndarray}:
+            if list(sel) == list(range(sel[0], sel[-1])):
+                selection[ax] = slice(sel[0], sel[-1])
 
     stack = [source]
 
@@ -2811,26 +2838,63 @@ def copy_datasets_filter(
             stack += list(item.values())
             continue
 
-        axes = list(item.attrs.get("axis", ()))
+        item_axes = list(item.attrs.get("axis", ()))
 
-        # Only copy if the axis we are filtering is present, and there are no
-        # excluded axes in the dataset
-        if not (axis in axes and exclude_axes_set.isdisjoint(axes)):
+        # Only copy if at least one of the axes we are filtering
+        # are present, and there are no excluded axes in the dataset
+        if not (
+            axis.intersection(item_axes) and exclude_axes_set.isdisjoint(item_axes)
+        ):
             continue
 
         if item.name not in dest:
             dest.add_dataset(item.name)
 
         dest_dset = dest[item.name]
-        axis_ind = axes.index(axis)
 
+        # Make sure that both datasets are distributed to the same axis
         if isinstance(item, memh5.MemDatasetDistributed):
-            if (item.distributed_axis == axis_ind) and not allow_distributed:
-                raise RuntimeError(
-                    f"Cannot redistristribute dataset={item.name} along "
-                    f"axis={axis_ind} as it is distributed."
+            if not isinstance(dest_dset, memh5.MemDatasetDistributed):
+                raise ValueError(
+                    "Cannot filter a distributed dataset into a non-distributed "
+                    "dataset using this method."
                 )
-            dest_dset.redistribute(item.distributed_axis)
 
-        sl = axis_ind * (slice(None),) + (selection,)
-        dest_dset[:] = item[sl]
+            # Choose the best possible axis to distribute over. Try
+            # to avoid redistributing if possible
+            original_ax_id = item.distributed_axis
+            # If no selections are being made or the slection is not over the
+            # current axis, so no need to redistribute
+            if not selection or item_axes[original_ax_id] not in selection:
+                new_ax_id = original_ax_id
+            else:
+                # Find the largest axis available
+                ax_priority = [
+                    x for _, x in sorted(zip(item.shape, item_axes)) if x not in axis
+                ]
+                if not ax_priority:
+                    raise ValueError(
+                        "Could not find a valid axis to redistribute. At least one "
+                        "axis must be omitted from filtering."
+                    )
+                new_ax_id = item_axes.index(ax_priority[-1])
+
+            # Make sure both datasets are distributed to the same axis.
+            item.redistribute(new_ax_id)
+            dest_dset.redistribute(new_ax_id)
+
+        # Apply the selections
+        arr = item[:].view(np.ndarray)
+
+        for ax, sel in selection.items():
+            try:
+                ax_ind = item_axes.index(ax)
+            except ValueError:
+                continue
+            arr = mpiarray._apply_sel(arr, sel, ax_ind)
+
+        dest_dset[:] = arr[:]
+
+        if isinstance(dest_dset, memh5.MemDatasetDistributed):
+            # Redistribute back to the original axis
+            dest_dset.redistribute(original_ax_id)
