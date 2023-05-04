@@ -226,14 +226,10 @@ class CollateProducts(task.SingleTask):
         # Check if frequencies are already ordered
         no_redistribute = freq_ind == list(range(len(ss.freq[:])))
 
-        # Add gain dataset.
-        # if 'gain' in ss.datasets:
-        #     sp.add_dataset('gain')
-
         # If frequencies are mapped across ranks, we have to redistribute so all
         # frequencies and products are on each rank
         raxis = "freq" if no_redistribute else ["ra", "time"]
-        self.log.info(f"Distributing across '{raxis}' axis")
+        self.log.debug(f"Distributing across '{raxis}' axis")
         ss.redistribute(raxis)
         sp.redistribute(raxis)
 
@@ -241,11 +237,6 @@ class CollateProducts(task.SingleTask):
         sp.vis[:] = 0.0
         sp.weight[:] = 0.0
         sp.input_flags[:] = ss.input_flags[rev_input_ind, :]
-
-        # The gain transfer below fails when distributed over multiple nodes,
-        # have to debug.
-        # if 'gain' in ss.datasets:
-        #     sp.gain[:] = ss.gain[freq_ind][:, rev_input_ind, :]
 
         # Infer number of products that went into each stack
         if self.weight != "inverse_variance":
