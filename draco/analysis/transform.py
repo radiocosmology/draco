@@ -2,16 +2,15 @@
 
 This includes grouping frequencies and products to performing the m-mode transform.
 """
-from typing import Optional, Union, Tuple, overload
+from typing import Optional, Tuple, Union, overload
 
 import numpy as np
-from numpy.lib.recfunctions import structured_to_unstructured
-from caput import mpiarray, config
+from caput import config, mpiarray
 from caput.tools import invert_no_zero
+from numpy.lib.recfunctions import structured_to_unstructured
 
-from ..core import containers, task, io
-from ..util import tools
-from ..util import regrid
+from ..core import containers, io, task
+from ..util import regrid, tools
 
 
 class FrequencyRebin(task.SingleTask):
@@ -366,12 +365,10 @@ class SelectFreq(task.SingleTask):
         # Construct the frequency channel selection
         if self.freq_physical:
             newindex = sorted(
-                set(
-                    [
-                        np.argmin(np.abs(freq_map["centre"] - freq))
-                        for freq in self.freq_physical
-                    ]
-                )
+                {
+                    np.argmin(np.abs(freq_map["centre"] - freq))
+                    for freq in self.freq_physical
+                }
             )
 
         elif self.channel_range and (len(self.channel_range) <= 3):
@@ -685,9 +682,7 @@ class SiderealMModeResample(task.group_tasks(MModeTransform, MModeInverseTransfo
 def _make_ssarray(mmodes, n=None):
     # Construct an array of sidereal time streams from m-modes
     marray = _unpack_marray(mmodes, n=n)
-    ssarray = np.fft.ifft(marray * marray.shape[-1], axis=-1)
-
-    return ssarray
+    return np.fft.ifft(marray * marray.shape[-1], axis=-1)
 
 
 def _unpack_marray(mmodes, n=None):
@@ -709,7 +704,7 @@ def _unpack_marray(mmodes, n=None):
         mmax_minus = np.amin(((ntimes - 1) // 2, mmax_minus))
 
     # Create array to contain mmodes
-    marray = np.zeros(shape + (ntimes,), dtype=np.complex128)
+    marray = np.zeros((*shape, ntimes), dtype=np.complex128)
     # Add the DC bin
     marray[..., 0] = mmodes[0, 0]
     # Add all m-modes up to mmax_minus
@@ -987,8 +982,8 @@ class SelectPol(task.SingleTask):
                 pol_axis_pos = list(dset.attrs["axis"]).index("pol")
 
                 sl = tuple([slice(None)] * pol_axis_pos)
-                outcont.datasets[name][sl + (0,)] = dset[sl + (XX_ind,)]
-                outcont.datasets[name][sl + (0,)] += dset[sl + (YY_ind,)]
+                outcont.datasets[name][(*sl, 0)] = dset[(*sl, XX_ind)]
+                outcont.datasets[name][(*sl, 0)] += dset[(*sl, YY_ind)]
                 outcont.datasets[name][:] *= 0.5
 
         return outcont
@@ -1196,8 +1191,11 @@ class MixData(task.SingleTask):
             # Helpful routine to get the data dset depending on the type
             if isinstance(data, containers.SiderealStream):
                 return data.vis
-            elif isinstance(data, containers.RingMap):
+
+            if isinstance(data, containers.RingMap):
                 return data.map
+
+            return None
 
         if self._data_ind >= len(self.data_coeff):
             raise RuntimeError(

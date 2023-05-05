@@ -2,9 +2,9 @@
 
 
 import numpy as np
-
 from caput import config
-from ..core import task, containers
+
+from ..core import containers, task
 
 
 class QuadraticPSEstimation(task.SingleTask):

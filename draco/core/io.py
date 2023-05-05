@@ -25,19 +25,16 @@ Several tasks accept groups of files as arguments. These are specified in the YA
 import os.path
 import shutil
 import subprocess
-from typing import Union, Dict, List, Optional
+from typing import Dict, List, Optional, Union
 
 import numpy as np
+from caput import config, fileformats, memh5, pipeline, truncate
+from cora.util import units
+from drift.core import beamtransfer, manager, telescope
 from yaml import dump as yamldump
 
-from caput import pipeline, config, fileformats, memh5, truncate
-
-from cora.util import units
-
-from drift.core import telescope, manager, beamtransfer
-
-from . import task
 from ..util.exception import ConfigError
+from . import task
 
 
 def _list_of_filelists(files: Union[List[str], List[List[str]]]) -> List[List[str]]:
@@ -116,11 +113,11 @@ def _list_or_glob(files: Union[str, List[str]]) -> List[str]:
                 raise ConfigError(
                     f"Expected a zarr directory store, but directory not found: {files}"
                 )
-            return [files]
         else:
             if not os.path.isfile(files):
                 raise ConfigError("File not found: %s" % files)
-            return [files]
+
+        return [files]
 
     raise ConfigError(
         "Argument must be list, glob pattern, or file path, got %s" % repr(files)
@@ -160,9 +157,7 @@ def _list_of_filegroups(groups: Union[List[Dict], Dict]) -> List[Dict]:
         except KeyError:
             raise ConfigError("File group is missing key 'files'.")
         except TypeError:
-            raise ConfigError(
-                "Expected type dict in file groups (got {}).".format(type(group))
-            )
+            raise ConfigError(f"Expected type dict in file groups (got {type(group)}).")
 
         if "tag" not in group:
             group["tag"] = "group_%i" % gi
@@ -278,6 +273,7 @@ class LoadFITSCatalog(task.SingleTask):
         catalog : :class:`containers.SpectroscopicCatalog`
         """
         from astropy.io import fits
+
         from . import containers
 
         # Exit this task if we have eaten all the file groups
@@ -623,7 +619,7 @@ class Save(pipeline.TaskBase):
         else:
             tag = data.attrs["tag"]
 
-        fname = "%s_%s.h5" % (self.root, str(tag))
+        fname = f"{self.root}_{tag!s}.h5"
 
         data.to_hdf5(fname)
 
@@ -708,9 +704,7 @@ class LoadProductManager(pipeline.TaskBase):
             raise RuntimeError("Products do not exist.")
 
         # Load ProductManager and Timestream
-        pm = manager.ProductManager.from_config(self.product_directory)
-
-        return pm
+        return manager.ProductManager.from_config(self.product_directory)
 
 
 class Truncate(task.SingleTask):
@@ -1112,7 +1106,7 @@ class SaveModuleVersions(task.SingleTask):
 
     def setup(self):
         """Save module versions."""
-        fname = "{}_versions.yml".format(self.root)
+        fname = f"{self.root}_versions.yml"
         f = open(fname, "w")
         f.write(yamldump(self.versions))
         f.close()
@@ -1140,7 +1134,7 @@ class SaveConfig(task.SingleTask):
 
     def setup(self):
         """Save module versions."""
-        fname = "{}_config.yml".format(self.root)
+        fname = f"{self.root}_config.yml"
         f = open(fname, "w")
         f.write(yamldump(self.pipeline_config))
         f.close()

@@ -6,10 +6,9 @@ all be moved out into their own module.
 """
 
 import numpy as np
-
 from caput import config
 
-from ..core import task, containers
+from ..core import containers, task
 from ..util import tools
 
 
@@ -194,7 +193,7 @@ class AccumulateList(task.MPILoggedTask):
     """Accumulate the inputs into a list and return when the task *finishes*."""
 
     def __init__(self):
-        super(AccumulateList, self).__init__()
+        super().__init__()
         self._items = []
 
     def next(self, input_):
@@ -244,7 +243,7 @@ class CheckMPIEnvironment(task.MPILoggedTask):
         start_time = time.time()
 
         while time.time() - start_time < self.timeout:
-            success = all([r.get_status() for r in results])
+            success = all(r.get_status() for r in results)
 
             if success:
                 break

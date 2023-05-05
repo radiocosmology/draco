@@ -7,11 +7,10 @@ import time
 
 import numpy as np
 import scipy.interpolate
-
 from caput import config
 from cora.util import units
 
-from ..core import task, io, containers
+from ..core import containers, io, task
 from ..util import tools
 
 
@@ -302,7 +301,7 @@ class DayenuDelayFilterMap(task.SingleTask):
             for ee, el in enumerate(els):
                 t0 = time.time()
 
-                slc = ind + (slice(None), slice(None), ee)
+                slc = (*ind, slice(None), slice(None), ee)
                 wslc = slc[1:]
 
                 # Flag frequencies and times with zero weight
@@ -379,13 +378,12 @@ class DayenuDelayFilterMap(task.SingleTask):
         if self._cut_interpolator is None:
             return self.tauw
 
-        elif pol in self._cut_interpolator:
+        if pol in self._cut_interpolator:
             return self._cut_interpolator[pol](el)
 
-        else:
-            # The file does not contain this polarisation (likely XY or YX).
-            # Use the maximum value over the polarisations that we do have.
-            return np.max([func(el) for func in self._cut_interpolator.values()])
+        # The file does not contain this polarisation (likely XY or YX).
+        # Use the maximum value over the polarisations that we do have.
+        return np.max([func(el) for func in self._cut_interpolator.values()])
 
 
 class DayenuMFilter(task.SingleTask):
@@ -524,18 +522,16 @@ class DayenuMFilter(task.SingleTask):
                         * mixer.conj()
                     )
 
-            self.log.debug("Took %0.2f seconds." % (time.time() - t0,))
+            self.log.debug(f"Took {time.time() - t0:0.2f} seconds.")
 
         return stream
 
     def _get_cut(self, freq, xsep):
         lmbda = units.c / (freq * 1e6)
         u = xsep / lmbda
-        m = instantaneous_m(
+        return instantaneous_m(
             0.0, np.radians(self.telescope.latitude), np.radians(self.dec), u, 0.0
         )
-
-        return m
 
 
 def highpass_delay_filter(freq, tau_cut, flag, epsilon=1e-12):

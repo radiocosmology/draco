@@ -1,20 +1,23 @@
 """Beamform visibilities to the location of known sources."""
 
 from typing import Tuple
+
 import healpy
 import numpy as np
 import scipy.interpolate
-from skyfield.api import Star, Angle
-
 from caput import config
 from caput import time as ctime
-
 from cora.util import units
+from skyfield.api import Angle, Star
 
-from ..core import task, containers, io
+from ..core import containers, io, task
 from ..util._fast_tools import beamform
-from ..util.tools import baseline_vector, polarization_map, invert_no_zero
-from ..util.tools import calculate_redundancy
+from ..util.tools import (
+    baseline_vector,
+    calculate_redundancy,
+    invert_no_zero,
+    polarization_map,
+)
 
 # Constants
 NU21 = units.nu21
@@ -676,7 +679,7 @@ class BeamForm(BeamFormBase):
             Catalog of points to beamform at.
 
         """
-        super(BeamForm, self).setup(manager)
+        super().setup(manager)
         self.catalog = source_cat
 
     def process(self, data):
@@ -700,7 +703,7 @@ class BeamForm(BeamFormBase):
             return None
 
         # Call generic process method.
-        return super(BeamForm, self).process()
+        return super().process()
 
 
 class BeamFormCat(BeamFormBase):
@@ -718,7 +721,7 @@ class BeamFormCat(BeamFormBase):
             Data to beamform on.
 
         """
-        super(BeamFormCat, self).setup(manager)
+        super().setup(manager)
 
         # Process and make available various data
         self._process_data(data)
@@ -742,7 +745,7 @@ class BeamFormCat(BeamFormBase):
             return None
 
         # Call generic process method.
-        return super(BeamFormCat, self).process()
+        return super().process()
 
 
 class BeamFormExternalBase(BeamFormBase):

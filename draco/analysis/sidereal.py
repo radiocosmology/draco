@@ -12,13 +12,12 @@ into  :class:`SiderealGrouper`, then feeding that into
 
 import numpy as np
 import scipy.linalg as la
-
 from caput import config, mpiarray, tod
 from cora.util import units
 
-from .transform import Regridder
-from ..core import task, containers, io
+from ..core import containers, io, task
 from ..util import tools
+from .transform import Regridder
 
 
 class SiderealGrouper(task.SingleTask):
@@ -43,7 +42,7 @@ class SiderealGrouper(task.SingleTask):
     min_day_length = config.Property(proptype=float, default=0.10)
 
     def __init__(self):
-        super(SiderealGrouper, self).__init__()
+        super().__init__()
 
         self._timestream_list = []
         self._current_lsd = None
@@ -110,8 +109,8 @@ class SiderealGrouper(task.SingleTask):
             self._current_lsd = lsd_end
 
             return tstream_all
-        else:
-            return None
+
+        return None
 
     def process_finish(self):
         """Return the final sidereal day.
@@ -273,11 +272,9 @@ class SiderealRegridder(Regridder):
 
         # Construct a complex sinusoid whose frequency
         # is equal to each baselines fringe rate
-        phase = mask * np.exp(
+        return mask * np.exp(
             -1.0j * omega[:, :, np.newaxis] * dphi[np.newaxis, np.newaxis, :]
         )
-
-        return phase
 
 
 def _search_nearest(x, xeval):
@@ -286,13 +283,11 @@ def _search_nearest(x, xeval):
     index_previous = np.maximum(0, index_next - 1)
     index_next = np.minimum(x.size - 1, index_next)
 
-    index = np.where(
+    return np.where(
         np.abs(xeval - x[index_previous]) < np.abs(xeval - x[index_next]),
         index_previous,
         index_next,
     )
-
-    return index
 
 
 class SiderealRegridderNearest(SiderealRegridder):
@@ -811,7 +806,7 @@ class SiderealStackerMatch(task.SingleTask):
 
 def _ensure_list(x):
     if hasattr(x, "__iter__"):
-        y = [xx for xx in x]
+        y = list(x)
     else:
         y = [x]
 

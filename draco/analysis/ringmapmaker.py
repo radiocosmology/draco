@@ -21,16 +21,13 @@ Tasks
     RADependentWeights
 """
 import numpy as np
-from numpy.lib.recfunctions import structured_to_unstructured
 import scipy.constants
-from mpi4py import MPI
-
 from caput import config
+from mpi4py import MPI
+from numpy.lib.recfunctions import structured_to_unstructured
 
-from ..core import task
-from ..core import io
+from ..core import containers, io, task
 from ..util import tools
-from ..core import containers
 from . import transform
 
 
@@ -946,11 +943,9 @@ class TikhonovRingMapMaker(DeconvolveHybridMBase):
         if self.exclude_intracyl:
             weight_ew[..., 0, :] = 0.0
 
-        weight_ew = weight_ew * tools.invert_no_zero(
+        return weight_ew * tools.invert_no_zero(
             np.sum(weight_ew, axis=-2, keepdims=True)
         )
-
-        return weight_ew
 
     def _get_regularisation(self, *args):
         return self.inv_SN

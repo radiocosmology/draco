@@ -467,7 +467,7 @@ class ContainerBase(memh5.BasicCont):
         # Check if all those axes exist
         for axis in sel_args.keys():
             if axis not in cls._class_axes():
-                raise RuntimeError("No '{}' axis found to select from.".format(axis))
+                raise RuntimeError(f"No '{axis}' axis found to select from.")
 
         # Build selections dict
         selections = {}
@@ -639,7 +639,7 @@ class TableBase(ContainerBase):
         self._dataset_spec = dspec
         self._axes = axes
 
-        super(TableBase, self).__init__(*args, **kwargs)
+        super().__init__(*args, **kwargs)
 
     def _create_dtype(self, columns):
         """Take a dictionary of columns and turn into the appropriate compound data type."""
@@ -739,7 +739,7 @@ class VisContainer(ContainerBase):
             kwargs["stack"] = stack
 
         # Call initializer from `ContainerBase`
-        super(VisContainer, self).__init__(*args, **kwargs)
+        super().__init__(*args, **kwargs)
 
         reverse_map_stack = None
         # Create reverse map
@@ -836,7 +836,7 @@ class SampleVarianceContainer(ContainerBase):
                 dtype=[("component_a", "<U8"), ("component_b", "<U8")],
             )
 
-        super(SampleVarianceContainer, self).__init__(*args, **kwargs)
+        super().__init__(*args, **kwargs)
 
     @property
     def component(self):
@@ -858,8 +858,8 @@ class SampleVarianceContainer(ContainerBase):
         """
         if "sample_variance" in self.datasets:
             return self.datasets["sample_variance"]
-        else:
-            raise KeyError("Dataset 'sample_variance' not initialised.")
+
+        raise KeyError("Dataset 'sample_variance' not initialised.")
 
     @property
     def sample_variance_iq(self):
@@ -914,8 +914,8 @@ class SampleVarianceContainer(ContainerBase):
         """Get the nsample dataset if it exists."""
         if "nsample" in self.datasets:
             return self.datasets["nsample"]
-        else:
-            raise KeyError("Dataset 'nsample' not initialised.")
+
+        raise KeyError("Dataset 'nsample' not initialised.")
 
     @property
     def sample_weight(self):
@@ -1468,7 +1468,7 @@ class GridBeam(FreqContainer):
     }
 
     def __init__(self, coords="celestial", *args, **kwargs):
-        super(GridBeam, self).__init__(*args, **kwargs)
+        super().__init__(*args, **kwargs)
         self.attrs["coords"] = coords
 
     @property
@@ -1548,7 +1548,7 @@ class HEALPixBeam(FreqContainer, HealpixContainer):
     }
 
     def __init__(self, coords="unknown", ordering="unknown", *args, **kwargs):
-        super(HEALPixBeam, self).__init__(*args, **kwargs)
+        super().__init__(*args, **kwargs)
         self.attrs["coords"] = coords
         self.attrs["ordering"] = ordering
 
@@ -1658,19 +1658,19 @@ class TrackBeam(FreqContainer, SampleVarianceContainer):
             if len(theta) != len(phi):
                 raise RuntimeError(
                     "theta and phi axes must have same length: "
-                    "({:d} != {:d})".format(len(theta), len(phi))
+                    f"({len(theta)} != {len(phi)})"
                 )
-            else:
-                pix = np.zeros(
-                    len(theta), dtype=[("theta", np.float32), ("phi", np.float32)]
-                )
-                pix["theta"] = theta
-                pix["phi"] = phi
-                kwargs["pix"] = pix
+
+            pix = np.zeros(
+                len(theta), dtype=[("theta", np.float32), ("phi", np.float32)]
+            )
+            pix["theta"] = theta
+            pix["phi"] = phi
+            kwargs["pix"] = pix
         elif (theta is None) != (phi is None):
             raise RuntimeError("Both theta and phi coordinates must be specified.")
 
-        super(TrackBeam, self).__init__(*args, **kwargs)
+        super().__init__(*args, **kwargs)
 
         self.attrs["coords"] = coords
         self.attrs["track_type"] = track_type
@@ -2340,7 +2340,7 @@ class DelaySpectrum(ContainerBase):
     }
 
     def __init__(self, weight_boost=1.0, *args, **kwargs):
-        super(DelaySpectrum, self).__init__(*args, **kwargs)
+        super().__init__(*args, **kwargs)
         self.attrs["weight_boost"] = weight_boost
 
     @property
@@ -2385,7 +2385,7 @@ class DelayTransform(ContainerBase):
     }
 
     def __init__(self, weight_boost=1.0, *args, **kwargs):
-        super(DelayTransform, self).__init__(*args, **kwargs)
+        super().__init__(*args, **kwargs)
         self.attrs["weight_boost"] = weight_boost
 
     @property
@@ -2468,7 +2468,7 @@ class Powerspectrum2D(ContainerBase):
                 [centre, width], names=["centre", "width"]
             ).view(np.ndarray)
 
-        super(Powerspectrum2D, self).__init__(*args, **kwargs)
+        super().__init__(*args, **kwargs)
 
     @property
     def powerspectrum(self):
@@ -2821,10 +2821,10 @@ def empty_like(obj, **kwargs):
     """
     if isinstance(obj, ContainerBase):
         return obj.__class__(axes_from=obj, attrs_from=obj, **kwargs)
-    else:
-        raise RuntimeError(
-            "I don't know how to deal with data type %s" % obj.__class__.__name__
-        )
+
+    raise RuntimeError(
+        f"I don't know how to deal with data type {obj.__class__.__name__}"
+    )
 
 
 def empty_timestream(**kwargs):
@@ -2850,7 +2850,7 @@ def copy_datasets_filter(
     dest: ContainerBase,
     axis: Union[str, list, tuple] = [],
     selection: Union[np.ndarray, list, slice, dict] = {},
-    exclude_axes: List[str] = None,
+    exclude_axes: Optional[List[str]] = None,
 ):
     """Copy datasets while filtering a given axis.
 

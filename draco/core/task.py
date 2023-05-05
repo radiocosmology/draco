@@ -1,13 +1,12 @@
 """An improved base task implementing easy (and explicit) saving of outputs."""
 
-import os
 import logging
+import os
 from inspect import getfullargspec
 from typing import Optional
 
 import numpy as np
-
-from caput import fileformats, config, memh5, pipeline
+from caput import config, fileformats, memh5, pipeline
 
 
 class MPILogFilter(logging.Filter):
@@ -80,10 +79,11 @@ def _log_level(x):
 
     if isinstance(x, int):
         return x
-    elif isinstance(x, str) and x in level_dict:
+
+    if isinstance(x, str) and x in level_dict:
         return level_dict[x.upper()]
-    else:
-        raise ValueError("Logging level %s not understood" % repr(x))
+
+    raise ValueError("Logging level %s not understood" % repr(x))
 
 
 class SetMPILogging(pipeline.TaskBase):
@@ -99,8 +99,9 @@ class SetMPILogging(pipeline.TaskBase):
     level_all = config.Property(proptype=_log_level, default=logging.WARN)
 
     def __init__(self):
-        from mpi4py import MPI
         import math
+
+        from mpi4py import MPI
 
         logging.captureWarnings(True)
 
@@ -131,9 +132,7 @@ class LoggedTask(pipeline.TaskBase):
 
     def __init__(self):
         # Get the logger for this task
-        self._log = logging.getLogger(
-            "%s.%s" % (self.__module__, self.__class__.__name__)
-        )
+        self._log = logging.getLogger(f"{self.__module__}.{self.__class__.__name__}")
 
         # Set the log level for this task if specified
         if self.log_level is not None:
@@ -315,7 +314,7 @@ class SingleTask(MPILoggedTask, pipeline.BasicContMixin):
     _no_input = False
 
     def __init__(self):
-        super(SingleTask, self).__init__()
+        super().__init__()
 
         # Inspect the `process` method to see how many arguments it takes.
         pro_argspec = getfullargspec(self.process)
@@ -367,7 +366,7 @@ class SingleTask(MPILoggedTask, pipeline.BasicContMixin):
 
         # Return immediately if output is None to skip writing phase.
         if output is None:
-            return
+            return None
 
         # Insert the input tags into the output container
         output.attrs["input_tags"] = input_tags
@@ -390,7 +389,7 @@ class SingleTask(MPILoggedTask, pipeline.BasicContMixin):
 
         if not hasattr(self, "process_finish"):
             self.log.info(f"No finish for task {class_name}")
-            return
+            return None
 
         output = self.process_finish()
 
@@ -434,7 +433,7 @@ class SingleTask(MPILoggedTask, pipeline.BasicContMixin):
     def _save_output(self, output: memh5.MemDiskGroup) -> Optional[str]:
         """Save the output and return the file path if it was saved."""
         if output is None:
-            return
+            return None
 
         # Parse compression/chunks options
         def walk_dset_tree(grp, root=""):
@@ -504,6 +503,8 @@ class SingleTask(MPILoggedTask, pipeline.BasicContMixin):
                 file_format=self.output_format,
             )
             return outfile
+
+        return None
 
     def _nan_process_output(self, output):
         # Process the output to check for NaN's
@@ -600,9 +601,7 @@ class SingleTask(MPILoggedTask, pipeline.BasicContMixin):
                     stack.append(item)
 
         # All ranks need to know if any rank found a NaN/Inf
-        found = self.comm.allreduce(found, op=MPI.MAX)
-
-        return found
+        return self.comm.allreduce(found, op=MPI.MAX)
 
 
 class ReturnLastInputOnFinish(SingleTask):
@@ -682,8 +681,6 @@ class Delete(SingleTask):
         self.log.info("Deleting %s" % type(x))
         del x
         gc.collect()
-
-        return None
 
 
 def group_tasks(*tasks):
