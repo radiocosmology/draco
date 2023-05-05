@@ -7,11 +7,10 @@ a set of time stream files with :class:`MakeTimeStream`.
 """
 
 import numpy as np
-
+from caput import config, mpiarray, mpiutil, pipeline
 from cora.util import hputil
-from caput import mpiutil, pipeline, config, mpiarray
 
-from ..core import containers, task, io
+from ..core import containers, io, task
 
 
 class SimulateSidereal(task.SingleTask):

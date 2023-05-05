@@ -4,12 +4,12 @@ Miscellaneous tasks should be placed in :py:mod:`draco.core.misc`.
 """
 
 import numpy as np
-from numpy.lib.recfunctions import structured_to_unstructured
-
-from ._fast_tools import _calc_redundancy
 
 # Keep this here for compatibility
 from caput.tools import invert_no_zero  # noqa: F401
+from numpy.lib.recfunctions import structured_to_unstructured
+
+from ._fast_tools import _calc_redundancy
 
 
 def cmap(i, j, n):
@@ -29,8 +29,8 @@ def cmap(i, j, n):
     """
     if i <= j:
         return (n * (n + 1) // 2) - ((n - i) * (n - i + 1) // 2) + (j - i)
-    else:
-        return cmap(j, i, n)
+
+    return cmap(j, i, n)
 
 
 def icmap(ix, n):
@@ -115,10 +115,10 @@ def find_keys(key_list, keys, require_match=False):
         dct = {kk: ii for ii, kk in enumerate(key_list)}
         index = [dct.get(key) for key in keys]
 
-    if require_match and any([ind is None for ind in index]):
+    if require_match and any(ind is None for ind in index):
         raise ValueError("Could not find all of the keys.")
-    else:
-        return index
+
+    return index
 
 
 def find_inputs(input_index, inputs, require_match=False):
@@ -220,11 +220,11 @@ def apply_gain(vis, gain, axis=1, out=None, prod_map=None):
         ii, ij = prod_map[pp]
 
         # Fetch the gains
-        gi = gain[gain_vis_slice + (ii,)]
-        gj = gain[gain_vis_slice + (ij,)].conj()
+        gi = gain[(*gain_vis_slice, ii)]
+        gj = gain[(*gain_vis_slice, ij)].conj()
 
         # Apply the gains and save into the output array.
-        out[gain_vis_slice + (pp,)] = vis[gain_vis_slice + (pp,)] * gi * gj
+        out[(*gain_vis_slice, pp)] = vis[(*gain_vis_slice, pp)] * gi * gj
 
     return out
 
@@ -264,10 +264,8 @@ def extract_diagonal(utmat, axis=1):
     slice1 = (np.s_[:],) * (len(utmat.shape) - axis - 1)
 
     # Extract wanted elements with a giant slice
-    sl = slice0 + (diag_ind,) + slice1
-    diag_array = utmat[sl]
-
-    return diag_array
+    sl = (*slice0, diag_ind, *slice1)
+    return utmat[sl]
 
 
 def calculate_redundancy(input_flags, prod_map, stack_index, nstack):
@@ -535,6 +533,4 @@ def window_generalised(x, window="nuttall"):
     t = 2 * np.pi * np.arange(4)[:, np.newaxis] * x[np.newaxis, :]
 
     w = (a[:, np.newaxis] * np.cos(t)).sum(axis=0)
-    w = np.where((x >= 0) & (x <= 1), w, 0)
-
-    return w
+    return np.where((x >= 0) & (x <= 1), w, 0)

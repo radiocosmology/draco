@@ -16,12 +16,9 @@ Tasks
 
 import numpy as np
 import scipy.constants
-
 from caput import interferometry
 
-from ..core import task
-from ..core import io
-from ..core import containers
+from ..core import containers, io, task
 from ..util import tools
 
 
@@ -41,8 +38,8 @@ class CreateBeamStream(task.SingleTask):
         self.telescope = io.get_telescope(telescope)
 
         self.log.info(
-            "Using telescope at latitude %0.4f deg with rotation angle %0.4f deg."
-            % (self.telescope.latitude, self.telescope.rotation_angle)
+            f"Using telescope at latitude {self.telescope.latitude:.4f} "
+            f"deg with rotation angle {self.telescope.rotation_angle:.4f} deg."
         )
 
     def process(self, data, beam):

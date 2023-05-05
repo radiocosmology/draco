@@ -3,13 +3,12 @@
 import typing
 
 import numpy as np
-from numpy.lib.recfunctions import structured_to_unstructured
 import scipy.linalg as la
-
-from caput import mpiarray, config
+from caput import config, mpiarray
 from cora.util import units
+from numpy.lib.recfunctions import structured_to_unstructured
 
-from ..core import containers, task, io
+from ..core import containers, io, task
 from ..util import random, tools
 
 
@@ -430,9 +429,7 @@ class DelayTransformBase(task.SingleTask):
 
         # Evaluate frequency->delay transform. (self._evaluate take the empty output
         # container, fills it, and returns it)
-        out_cont = self._evaluate(data_view, weight_view, out_cont)
-
-        return out_cont
+        return self._evaluate(data_view, weight_view, out_cont)
 
     def _process_data(self, ss):
         """Get relevant views of data and weights, and create output container.
@@ -1268,8 +1265,7 @@ def delay_power_spectrum_gibbs(
         Ci = np.identity(2 * Ni.shape[0]) + np.dot(R, Rt)
         x = la.solve(Ci, y, sym_pos=True)
 
-        s = Sh[:, np.newaxis] * (np.dot(Rt, x) + w1)
-        return s
+        return Sh[:, np.newaxis] * (np.dot(Rt, x) + w1)
 
     def _draw_ps_sample(d):
         # Draw a random delay power spectrum sample assuming the signal is Gaussian and
@@ -1285,9 +1281,7 @@ def delay_power_spectrum_gibbs(
         df = d.shape[1]
         chi2 = rng.chisquare(df, size=d.shape[0])
 
-        S_samp = S_hat * df / chi2
-
-        return S_samp
+        return S_hat * df / chi2
 
     # Select the method to use for the signal sample based on how many frequencies
     # versus delays there are
@@ -1483,4 +1477,4 @@ def _take_view(arr: np.ndarray, ind: int, axis: int) -> np.ndarray:
     # Like np.take but returns a view (instead of a copy), but only supports a scalar
     # index
     sl = (slice(None),) * axis
-    return arr[sl + (ind,)]
+    return arr[(*sl, ind)]

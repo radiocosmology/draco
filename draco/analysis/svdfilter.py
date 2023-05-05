@@ -2,10 +2,9 @@
 
 import numpy as np
 import scipy.linalg as la
-
 from caput import config
 
-from draco.core import task, containers
+from draco.core import containers, task
 
 
 class SVDSpectrumEstimator(task.SingleTask):

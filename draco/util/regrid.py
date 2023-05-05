@@ -131,9 +131,7 @@ def lanczos_forward_matrix(x, y, a=5, periodic=False):
         n = len(x)
         sep = np.where(np.abs(sep) > n // 2, n - np.abs(sep), sep)
 
-    lz_forward = lanczos_kernel(sep, a)
-
-    return lz_forward
+    return lanczos_kernel(sep, a)
 
 
 def lanczos_inverse_matrix(x, y, a=5, cond=1e-1):
@@ -156,6 +154,4 @@ def lanczos_inverse_matrix(x, y, a=5, cond=1e-1):
         Lanczos regridding matrix. Apply to data with `np.dot(matrix, data)`.
     """
     lz_forward = lanczos_forward_matrix(x, y, a)
-    lz_inverse = la.pinv(lz_forward, rcond=cond)
-
-    return lz_inverse
+    return la.pinv(lz_forward, rcond=cond)

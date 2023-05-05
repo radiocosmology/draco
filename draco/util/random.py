@@ -1,13 +1,12 @@
 """Utilities for drawing random numbers."""
 
 import contextlib
-
-import numpy as np
 import zlib
 
+import numpy as np
 from caput import config
-from ..core import task
 
+from ..core import task
 
 _rng = None
 _default_bitgen = np.random.SFC64
@@ -223,6 +222,7 @@ def mpi_random_seed(seed, extra=0, gen=None):
         If we are setting the RandomGen bit_generator, it will be returned.
     """
     import warnings
+
     from caput import mpiutil
 
     warnings.warn(
@@ -306,7 +306,7 @@ class RandomTask(task.MPILoggedTask):
             # hash.
             # NOTE: the slightly odd (rank + 1) is to ensure that even rank=0 mixes in
             # the class seed
-            cls_name = "%s.%s" % (self.__module__, self.__class__.__name__)
+            cls_name = f"{self.__module__}.{self.__class__.__name__}"
             cls_seed = zlib.adler32(cls_name.encode())
             new_seed = seed + (self.comm.rank + 1) * cls_seed
 

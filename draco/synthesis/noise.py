@@ -10,12 +10,11 @@ using the variance of the noise estimate in the existing data.
 """
 
 import numpy as np
-
 from caput import config
 from caput.time import STELLAR_S
 
-from ..core import task, containers, io
-from ..util import tools, random
+from ..core import containers, io, task
+from ..util import random, tools
 
 
 class ReceiverTemperature(task.SingleTask):
@@ -274,6 +273,7 @@ class SampleNoise(task.SingleTask, random.RandomTask):
             The sampled (i.e. noisy) visibility dataset.
         """
         from caput.time import STELLAR_S
+
         from ..util import _fast_tools
 
         data_exp.redistribute("freq")
