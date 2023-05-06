@@ -148,6 +148,9 @@ class SiderealGrouper(task.SingleTask):
         ts.attrs["tag"] = "lsd_%i" % lsd
         ts.attrs["lsd"] = lsd
 
+        # Clear the timestream list since these days have already been processed
+        self._timestream_list = []
+
         return ts
 
 
