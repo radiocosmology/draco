@@ -2335,14 +2335,17 @@ class DelaySpectrum(ContainerBase):
 
     @property
     def spectrum(self):
+        """Get the spectrum dataset."""
         return self.datasets["spectrum"]
 
     @property
     def weight_boost(self):
+        """Get the weight boost attributes"""
         return self.attrs["weight_boost"]
 
     @property
     def freq(self):
+        """Get the frequency axis"""
         return self.index_map["freq"]
 
 
@@ -2372,14 +2375,17 @@ class DelayTransform(ContainerBase):
 
     @property
     def spectrum(self):
+        """Get the spectrum dataset."""
         return self.datasets["spectrum"]
 
     @property
     def weight_boost(self):
+        """Get the weight boost attributes"""
         return self.attrs["weight_boost"]
 
     @property
     def freq(self):
+        """Get the frequency axis"""
         return self.index_map["freq"]
 
 
@@ -2400,6 +2406,7 @@ class SpatialDelayCube(ContainerBase):
 
     @property
     def data_tau_uv(self):
+        """Get the spatial data cube"""
         return self.datasets["data_tau_uv"]
 
     @property
@@ -2465,6 +2472,7 @@ class Powerspec3D(ContainerBase):
 
     @property
     def ps3D(self):
+        """Get the 3D power spectrum"""
         return self.datasets["ps3D"]
 
     @property
@@ -2522,7 +2530,7 @@ class Powerspec2D(ContainerBase):
 
     @property
     def ps2D(self):
-        """Get the powerspectrum dataset."""
+        """Get the 2D powerspectrum dataset."""
         return self.datasets["ps2D"]
 
     @property
@@ -2584,7 +2592,7 @@ class Powerspec1D(ContainerBase):
 
     @property
     def ps1D(self):
-        """Get the power spectrum dataset."""
+        """Get the 1D power spectrum dataset."""
         return self.datasets["ps1D"]
 
     @property
