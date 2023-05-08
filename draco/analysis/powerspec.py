@@ -1,10 +1,12 @@
+"""Power spectrum estimation from ringmap."""
+
 import numpy as np
 from astropy import constants as const
 import scipy.signal.windows as windows
 from astropy.cosmology import Planck15, default_cosmology
 from astropy import units as un
 
-from draco.core import containers, task, io
+from draco.core import containers, task
 from caput import mpiarray, config
 from draco.analysis.delay import match_axes
 
@@ -356,11 +358,26 @@ class CrossPowerSpectrum3D(task.SingleTask):
 
 
 class AutoPowerSpectrum3D(CrossPowerSpectrum3D):
+    """Estimate the 3D auto power spectrum of a data cube.
+    """
+    
     def process(self, data):
-
+        
+        """Estimate auto power spectrum.
+    
+        Parameters
+        ----------
+        data : containers.SpatialTransform
+           The  data cube in fourier domain.
+       
+        Returns
+        -------
+        auto_ps : containers.Powerspectrum3D
+           The 3D auto power spectum.        
+        """
         ps = super().process(data, data)
         return ps
-
+ 
 
 class CylindricalPowerSpectrum2D(task.SingleTask):
     """Estimate the cylindrically averaged 2D power spectrum.
@@ -571,13 +588,13 @@ def sza2dec(sza):
 
     Parameters
     -----------
-    el: np.ndarray[nel]
+    sza: np.ndarray[el]
          sin(zenith angle) or el.
 
-    returns
+    Returns
     -------
     dec: np.ndarray[nel]
-         declination in degree
+         declination in degree.
     """
     return _LAT_LON["chime"][0] + np.degrees(np.arcsin(sza))
 
@@ -610,8 +627,7 @@ def get_fourier_modes(ra, dec, delays, redshift):
     """
     nra = ra.size
     ndec = dec.size
-    ntau = delays.size
-
+    
     # Mean resolution in RA and DEC and convert that to radian
     res_ra_radian = np.deg2rad(np.mean(np.diff(ra)))
     res_dec_radian = np.deg2rad(np.mean(np.diff(dec)))
@@ -867,7 +883,6 @@ def get_2d_ps(ps_cube, w, kperp_bins, uu, vv, redshift):
 
     # Define empty list to store the binned 2D PS
     ps_2D = []
-    ps_2D_err = []
     ps_2D_w = []
 
     # Now bin in 2D ##
@@ -943,9 +958,7 @@ def get_3d_ps(
 
     ps_3D = []
     ps_3D_err = []
-    n_eff = []
     k1D = []
-    variance = []
 
     # bins
     if logbins_3D:
@@ -969,18 +982,12 @@ def get_3d_ps(
             p_err = np.sqrt(2 * np.sum(w_b**2 * p**2) / np.sum(w_b) ** 2)
             k_mean_b = nanaverage(ks[indices == i], w_b)
             k1D.append(k_mean_b)
-            var = 1 / np.sum(w_b)
-
             ps_3D.append(p)
             ps_3D_err.append(p_err)
-            n_eff.append(np.sum(w_b) ** 2 / np.sum(w_b**2))
-            variance.append(var)
 
     k1D = np.array(k1D)
-    n_eff = np.array(n_eff)
     ps_3D = np.array(ps_3D)
     ps_3D_err = np.array(ps_3D_err)
-    var_norm = np.array(var)
 
     # replacing any nan with 0
     k1D[np.isnan(k1D)] = 0.0
@@ -1007,7 +1014,6 @@ def delay_to_kpara(delay, z, cosmo=None):
     -------
     kparr : Astropy Quantity units equivalent to wavenumber
         The spatial fluctuation scale parallel to the line of sight probed by the input delay (eta).
-
     """
     if cosmo is None:
         cosmo = default_cosmology.get()
@@ -1033,7 +1039,6 @@ def kpara_to_delay(kpara, z, cosmo=None):
     -------
     delay : Astropy Quantity units equivalent to time
         The inteferometric delay which probes the spatial scale given by kparr.
-
     """
     if cosmo is None:
         cosmo = default_cosmology.get()
@@ -1060,7 +1065,6 @@ def kperp_to_u(kperp, z, cosmo=None):
     u : float
         The baseline separation of two interferometric antennas in units of
         wavelength which probes the spatial scale given by kperp
-
     """
     if cosmo is None:
         cosmo = default_cosmology.get()
@@ -1084,7 +1088,6 @@ def u_to_kperp(u, z, cosmo=None):
     -------
     kperp : Astropy Quantity units equivalent to wavenumber
         The spatial fluctuation scale perpendicular to the line of sight probed by the baseline length u.
-
     """
     if cosmo is None:
         cosmo = default_cosmology.get()
