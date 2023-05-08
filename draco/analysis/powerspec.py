@@ -362,12 +362,12 @@ class AutoPowerSpectrum3D(CrossPowerSpectrum3D):
     
     def process(self, data):
         """Estimate auto power spectrum.
-    
+
         Parameters
         ----------
         data : containers.SpatialTransform
            The  data cube in fourier domain.
-       
+  
         Returns
         -------
         auto_ps : containers.Powerspectrum3D
@@ -582,17 +582,17 @@ class SphericalPowerSpectrum1D(task.SingleTask):
 
 
 def sza2dec(sza):
-    """Convert el to declination.
+    """Convert sza to declination.
 
     Parameters
     -----------
     sza: np.ndarray[el]
-         sin(zenith angle) or el.
+      sin(zenith angle) or el.
 
     Returns
     -------
     dec: np.ndarray[nel]
-         declination in degree.
+      declination in degree.
     """
     return _LAT_LON["chime"][0] + np.degrees(np.arcsin(sza))
 
@@ -610,6 +610,7 @@ def get_fourier_modes(ra, dec, delays, redshift):
       The delay axis in second unit.
     redshift : float
       redshift at the centre of the band.
+      
     Returns
     -------
     kx : np.array[nra]
@@ -765,9 +766,7 @@ def jy_per_beam_to_kelvin(freq, beam_area=None):
 
 
 def get_ps(data_cube_1, data_cube_2, vol_norm_factor):
-    """Estimate the cross power spectrum of two data cubes,
-    and normalize it. If a single data cube is
-    provided, then estimate the auto-correlation.
+    """Estimate the cross power spectrum of two data cubes.
 
     The data cubes are complex. This will estimate the cross-correlation
     of two complex data cubes and return the real part of that.
@@ -781,7 +780,7 @@ def get_ps(data_cube_1, data_cube_2, vol_norm_factor):
     vol_norm_factor : float
       power spectrum normalization factor in [Mpc^3]
 
-    Return
+    Returns
     ------
     ps_cube_real: np.ndarray[pol,delay,kx,ky]
        The real part of the power spectrum
@@ -896,6 +895,20 @@ def get_2d_ps(ps_cube, w, kperp_bins, uu, vv, redshift):
 
 
 def nanaverage(d, w, axis=None):
+    """Estimate the nanaverage data using the weight.
+    
+    Parameters
+    ---------_
+    d : np.ndarray
+     The data to average
+    w : np.ndarray
+     The weight to use during averaging.
+     
+    Returns
+    -------
+    d_avg : np.ndarray
+     The weighted average.
+    """ 
     return np.nansum(d * w, axis=axis) / np.nansum(w, axis=axis)
 
 
