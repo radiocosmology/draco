@@ -268,14 +268,14 @@ class CrossPowerSpectrum3D(task.SingleTask):
 
         Parameters
         ----------
-        data_1 : containers.SpatialTransform
+        data_1 : containers.SpatialDelayCube
           The 1st data cube in fourier domain.
-        data_2 : containers.SpatialTransform
+        data_2 : containers.SpatialDelayCube
           The 2nd data cube in fourier domain.
 
         Returns
         -------
-        cross_ps : containers.Powerspectrum3D
+        cross_ps : containers.Powerspec3D
            The 3D cross power spectum.
         """
         # Validate the shapes of two data cubes match
@@ -316,9 +316,7 @@ class CrossPowerSpectrum3D(task.SingleTask):
         factor = jy_per_beam_to_kelvin(freq, omega_psf_sr)
 
         # Dereference the required datasets and
-        # covert the data cubes from Jy/beam to Kelvin unit
         vis_cube_1 = data_1.data_tau_uv[:].local_array
-
         vis_cube_2 = data_2.data_tau_uv[:].local_array
 
         # Compute power spectrum normalization factor
@@ -365,12 +363,12 @@ class AutoPowerSpectrum3D(CrossPowerSpectrum3D):
 
         Parameters
         ----------
-        data : containers.SpatialTransform
+        data : containers.SpatialDelayCube
            The  data cube in fourier domain.
 
         Returns
         -------
-        auto_ps : containers.Powerspectrum3D
+        auto_ps : containers.Powerspec3D
            The 3D auto power spectum.
         """
         ps = super().process(data, data)
