@@ -358,11 +358,9 @@ class CrossPowerSpectrum3D(task.SingleTask):
 
 
 class AutoPowerSpectrum3D(CrossPowerSpectrum3D):
-    """Estimate the 3D auto power spectrum of a data cube.
-    """
+    """Estimate the 3D auto power spectrum of a data cube."""
     
     def process(self, data):
-        
         """Estimate auto power spectrum.
     
         Parameters
@@ -842,22 +840,22 @@ def reshape_data_cube(data_cube, u, v, bl_min, bl_max):
 def get_2d_ps(ps_cube, w, kperp_bins, uu, vv, redshift):
     """Estimate the cylindrically averaged 2D power spectrum.
 
-     Parameters
-     ----------
-     ps_cube : np.ndarray[nvis]
-       The power spectrum array to average in cylindrical bins.
-     w : np.ndarray[nvis]
-       The weight to be used in averaging.
+    Parameters
+    ----------
+    ps_cube : np.ndarray[nvis]
+      The power spectrum array to average in cylindrical bins.
+    w : np.ndarray[nvis]
+      The weight to be used in averaging.
        If None, then use unit unifrom weight.
-     kperp_bins : float
-       The kperp values of each bin, at which the power spectrum will be
+    kperp_bins : float
+      The kperp values of each bin, at which the power spectrum will be
        calculated. Unit: Mpc^-1
-     uu : np.ndarray[u]
+    uu : np.ndarray[u]
       The flatten u-coordinate in wavelength.
-     vv : np.ndarray[v]
-       The flatten v-coordinate in wavelength.
-     redshift : float
-       The redshift corresponding to the band center.
+    vv : np.ndarray[v]
+      The flatten v-coordinate in wavelength.
+    redshift : float
+      The redshift corresponding to the band center.
 
     Returns
     -------
@@ -922,7 +920,7 @@ def get_3d_ps(
      The k_parallel array, only the positive half.
     signal_window :  np.ndarray[kpar,kperp]
       The signal window mask.
-    Nbins_3d : int
+    Nbins_3D : int
       The number of 3D bins
     weight_cube :  np.ndarray[kpar,kperp]
       The weight array to use during spherical averaging.
