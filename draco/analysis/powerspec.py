@@ -256,8 +256,8 @@ class CrossPowerSpectrum3D(task.SingleTask):
     """Estimate the 3D cross power spectrum of two data cubes .
 
     This estimates the 3D cross power spectrum of two data cubes by taking
-    real part of correlation two complex data cubes and normalize that
-    be the volume of the data cube in Mpc^3. The unit of the power spectrum
+    real part of correlation between two complex data cubes and normalize that
+    by the volume of the data cube in Mpc^3. The unit of the power spectrum
     is K^2Mpc^3.
 
     """
