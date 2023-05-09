@@ -295,6 +295,9 @@ class CrossPowerSpectrum3D(task.SingleTask):
         data_2.redistribute("delay")
 
         # Extract required data axes
+        delay = data_1.index_map["delay"]
+        kx = data_1.index_map["kx"]
+        ky = data_1.index_map["ky"]
         pol = data_1.index_map["pol"]
         el = data_1.index_map["el"]
         ra = data_1.index_map["sample"]
@@ -326,7 +329,7 @@ class CrossPowerSpectrum3D(task.SingleTask):
 
         # Initialise the 3D power spectrum container
         ps_cube = containers.Powerspec3D(
-            pol=np.array(co_pol), axes_from=data_1, attrs_from=data_1
+            pol=np.array(co_pol), delay=delay,kx=kx,ky=ky,attrs_from=data_1
         )
         ps_cube.redistribute("delay")
         ps_cube.ps3D[:] = 0.0
