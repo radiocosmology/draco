@@ -112,7 +112,6 @@ class DelayTransformMapFFT(task.SingleTask):
             sample=rm.index_map["ra"],
             delay=self.delays,
             attrs_from=rm,
-            weight_boost=1.0,
         )
         delay_spectrum.redistribute("baseline")
         delay_spectrum.spectrum[:] = 0.0
