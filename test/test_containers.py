@@ -81,3 +81,63 @@ def test_copy(ss_container):
 
     assert ss_copy.vis.local_shape == ss_container.vis.local_shape
     assert ss_copy.weight.local_shape == current_shape
+
+
+def test_copy_filter(ss_container):
+    """Test copying datasets between container while filtering an axis.
+
+    This test should ensure that slices and selections can be appplied to
+    various axes properly, that arguments can be passed correctly, and that
+    the function fails as expected when bad arguments are provided.
+    """
+    new = containers.SiderealStream(axes_from=ss_container, attrs_from=ss_container)
+
+    # Test some selections which should work
+    for sel in (slice(None), slice(0, 16, 1), list(range(16)), slice(0, 30)):
+        # These should all pass
+        containers.copy_datasets_filter(ss_container, new, "ra", {"ra": sel})
+
+    # No selections
+    containers.copy_datasets_filter(ss_container, new, [], {})
+
+    # Force redistribution and downselection
+    new = containers.SiderealStream(
+        axes_from=ss_container, attrs_from=ss_container, ra=5
+    )
+
+    new.redistribute("stack")
+    ss_container.redistribute("ra")
+    containers.copy_datasets_filter(ss_container, new, ("ra",), {"ra": slice(0, 5)})
+
+    new.redistribute("freq")
+    ss_container.redistribute("ra")
+    containers.copy_datasets_filter(ss_container, new, ["ra"], {"ra": [0, 3, 4, 6, 9]})
+
+    # This should faily due to a mismatch in axis and selection arguments
+    with pytest.raises(ValueError):
+        containers.copy_datasets_filter(
+            ss_container, new, ["freq"], {"ra": slice(None)}
+        )
+
+    # Some multi-axis selections
+    new = containers.SiderealStream(
+        axes_from=ss_container, attrs_from=ss_container, ra=2, freq=2
+    )
+
+    # This should pass since there is an axis available for redistribution
+    containers.copy_datasets_filter(
+        ss_container,
+        new,
+        selection={"ra": [0, 2], "freq": [0, 4]},
+    )
+
+    new = containers.SiderealStream(
+        axes_from=ss_container, attrs_from=ss_container, ra=2, freq=2, stack=2
+    )
+    # This should fail since there is no axis available to redistribute
+    with pytest.raises(ValueError):
+        containers.copy_datasets_filter(
+            ss_container,
+            new,
+            selection={"ra": [0, 2], "freq": [0, 4], "stack": [0, 2]},
+        )
