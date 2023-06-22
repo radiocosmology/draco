@@ -346,22 +346,13 @@ class LoadFITSCatalog(task.SingleTask):
         return catalog
 
 
-class BaseLoadFiles(task.SingleTask):
-    """Base class for loading containers from a file on disk.
-
-    Provides the capability to make selections along axes.
+class SelectionsMixin:
+    """Mixin for parsing axis selections, typically from a yaml config.
 
     Attributes
     ----------
-    distributed : bool, optional
-        Whether the file should be loaded distributed across ranks.
-    convert_strings : bool, optional
-        Convert strings to unicode when loading.
     selections : dict, optional
-        A dictionary of axis selections. See the section below for details.
-    redistribute : str, optional
-        An optional axis name to redistribute the container over after it has
-        been read.
+        A dictionary of axis selections. See below for details.
 
     Selections
     ----------
@@ -387,52 +378,11 @@ class BaseLoadFiles(task.SingleTask):
             stack_range: [1, 14]  # Will override the selection above
     """
 
-    distributed = config.Property(proptype=bool, default=True)
-    convert_strings = config.Property(proptype=bool, default=True)
     selections = config.Property(proptype=dict, default=None)
-    redistribute = config.Property(proptype=str, default=None)
 
     def setup(self):
         """Resolve the selections."""
         self._sel = self._resolve_sel()
-
-    def _load_file(self, filename, extra_message=""):
-        # Load the file into the relevant container
-
-        if not os.path.exists(filename):
-            raise RuntimeError(f"File does not exist: {filename}")
-
-        self.log.info(f"Loading file {filename} {extra_message}")
-        self.log.debug(f"Reading with selections: {self._sel}")
-
-        # If we are applying selections we need to dispatch the `from_file` via the
-        # correct subclass, rather than relying on the internal detection of the
-        # subclass. To minimise the number of files being opened this is only done on
-        # rank=0 and is then broadcast
-        if self._sel:
-            if self.comm.rank == 0:
-                with fileformats.guess_file_format(filename).open(filename, "r") as fh:
-                    clspath = memh5.MemDiskGroup._detect_subclass_path(fh)
-            else:
-                clspath = None
-            clspath = self.comm.bcast(clspath, root=0)
-            new_cls = memh5.MemDiskGroup._resolve_subclass(clspath)
-        else:
-            new_cls = memh5.BasicCont
-
-        cont = new_cls.from_file(
-            filename,
-            distributed=self.distributed,
-            comm=self.comm,
-            convert_attribute_strings=self.convert_strings,
-            convert_dataset_strings=self.convert_strings,
-            **self._sel,
-        )
-
-        if self.redistribute is not None:
-            cont.redistribute(self.redistribute)
-
-        return cont
 
     def _resolve_sel(self):
         # Turn the selection parameters into actual selectable types
@@ -483,6 +433,65 @@ class BaseLoadFiles(task.SingleTask):
                 raise ValueError(f"All elements of index spec must be ints. Got {x}")
 
         return list(x)
+
+
+class BaseLoadFiles(SelectionsMixin, task.SingleTask):
+    """Base class for loading containers from a file on disk.
+
+    Provides the capability to make selections along axes.
+
+    Attributes
+    ----------
+    distributed : bool, optional
+        Whether the file should be loaded distributed across ranks.
+    convert_strings : bool, optional
+        Convert strings to unicode when loading.
+    redistribute : str, optional
+        An optional axis name to redistribute the container over after it has
+        been read.
+    """
+
+    distributed = config.Property(proptype=bool, default=True)
+    convert_strings = config.Property(proptype=bool, default=True)
+    redistribute = config.Property(proptype=str, default=None)
+
+    def _load_file(self, filename, extra_message=""):
+        # Load the file into the relevant container
+
+        if not os.path.exists(filename):
+            raise RuntimeError(f"File does not exist: {filename}")
+
+        self.log.info(f"Loading file {filename} {extra_message}")
+        self.log.debug(f"Reading with selections: {self._sel}")
+
+        # If we are applying selections we need to dispatch the `from_file` via the
+        # correct subclass, rather than relying on the internal detection of the
+        # subclass. To minimise the number of files being opened this is only done on
+        # rank=0 and is then broadcast
+        if self._sel:
+            if self.comm.rank == 0:
+                with fileformats.guess_file_format(filename).open(filename, "r") as fh:
+                    clspath = memh5.MemDiskGroup._detect_subclass_path(fh)
+            else:
+                clspath = None
+            clspath = self.comm.bcast(clspath, root=0)
+            new_cls = memh5.MemDiskGroup._resolve_subclass(clspath)
+        else:
+            new_cls = memh5.BasicCont
+
+        cont = new_cls.from_file(
+            filename,
+            distributed=self.distributed,
+            comm=self.comm,
+            convert_attribute_strings=self.convert_strings,
+            convert_dataset_strings=self.convert_strings,
+            **self._sel,
+        )
+
+        if self.redistribute is not None:
+            cont.redistribute(self.redistribute)
+
+        return cont
 
 
 class LoadFilesFromParams(BaseLoadFiles):
