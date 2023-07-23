@@ -693,6 +693,48 @@ class DelaySpectrumEstimatorBase(task.SingleTask, random.RandomTask):
 
         return delay_spec
 
+    def _get_views(
+        self, container: FreqContainerType
+    ) -> tuple[mpiarray.MPIArray, mpiarray.MPIArray, list[str]]:
+        """Generate views of the containers data and weights."""
+
+        # Find the relevant axis positions
+        data_axes = container.datasets[self.dataset].attrs["axis"]
+        freq_axis_pos = list(data_axes).index("freq")
+        average_axis_pos = list(data_axes).index(self.average_axis)
+
+        # Create a view of the dataset with the relevant axes at the back,
+        # and all other axes compressed
+        data_view = np.moveaxis(
+            container.datasets[self.dataset][:].local_array,
+            [average_axis_pos, freq_axis_pos],
+            [-2, -1],
+        )
+        data_view = data_view.reshape(-1, data_view.shape[-2], data_view.shape[-1])
+        data_view = mpiarray.MPIArray.wrap(data_view, axis=2, comm=container.comm)
+        data_view = data_view.redistribute(axis=0)
+
+        # ... do the same for the weights, but we also need to make the weights full
+        # size
+        weight_full = np.zeros(
+            container.datasets[self.dataset][:].shape, dtype=container.weight.dtype
+        )
+        weight_full[:] = match_axes(container.datasets[self.dataset], container.weight)
+        weight_view = np.moveaxis(
+            weight_full, [average_axis_pos, freq_axis_pos], [-2, -1]
+        )
+        weight_view = weight_view.reshape(
+            -1, weight_view.shape[-2], weight_view.shape[-1]
+        )
+        weight_view = mpiarray.MPIArray.wrap(weight_view, axis=2, comm=container.comm)
+        weight_view = weight_view.redistribute(axis=0)
+
+        return data_view, weight_view, data_axes
+
+
+
+
+
 
 def stokes_I(sstream, tel):
     """Extract instrumental Stokes I from a time/sidereal stream.
