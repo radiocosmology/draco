@@ -10,7 +10,7 @@ from caput import mpiarray, config, memh5
 from cora.util import units
 
 from ..core import containers, task, io
-from ..util import random
+from ..util import random, tools
 
 
 class DelayFilter(task.SingleTask):
@@ -758,36 +758,6 @@ def stokes_I(sstream, tel):
     return vis_I, vis_weight, ubase
 
 
-def window_generalised(x, window="nuttall"):
-    """A generalised high-order window at arbitrary locations.
-
-    Parameters
-    ----------
-    x : np.ndarray[n]
-        Location to evaluate at. Must be in the range 0 to 1.
-    window : one of {'nuttall', 'blackman_nuttall', 'blackman_harris'}
-        Type of window function to return.
-
-    Returns
-    -------
-    w : np.ndarray[n]
-        Window function.
-    """
-    a_table = {
-        "nuttall": np.array([0.355768, -0.487396, 0.144232, -0.012604]),
-        "blackman_nuttall": np.array([0.3635819, -0.4891775, 0.1365995, -0.0106411]),
-        "blackman_harris": np.array([0.35875, -0.48829, 0.14128, -0.01168]),
-    }
-
-    a = a_table[window]
-
-    t = 2 * np.pi * np.arange(4)[:, np.newaxis] * x[np.newaxis, :]
-
-    w = (a[:, np.newaxis] * np.cos(t)).sum(axis=0)
-
-    return w
-
-
 def fourier_matrix_r2c(N, fsel=None):
     """Generate a Fourier matrix to represent a real to complex FFT.
 
@@ -1033,7 +1003,7 @@ def delay_spectrum_gibbs(
     if window is not None:
         # Construct the window function
         x = fsel * 1.0 / total_freq
-        w = window_generalised(x, window=window)
+        w = tools.window_generalised(x, window=window)
         w = np.repeat(w, 2)
 
         # Apply to the projection matrix and the data
@@ -1384,7 +1354,7 @@ def null_delay_filter(freq, max_delay, mask, num_delay=200, tol=1e-8, window=Tru
     """
     # Construct the window function
     x = (freq - freq.min()) / freq.ptp()
-    w = window_generalised(x, window="nuttall")
+    w = tools.window_generalised(x, window="nuttall")
 
     delay = np.linspace(-max_delay, max_delay, num_delay)
 
