@@ -703,8 +703,11 @@ class SiderealStackerMatch(task.SingleTask):
             self.stack.weight[:] = 0.0
 
             self.count = 0
-            self.Ni_s = np.zeros(
-                (sdata.weight.local_shape[0], sdata.weight.local_shape[2])
+            self.Ni_s = mpiarray.zeros(
+                (sdata.weight.shape[0], sdata.weight.shape[2]),
+                axis=0,
+                comm=sdata.comm,
+                dtype=np.float64,
             )
             self.Vm = []
             self.lsd_list = []
@@ -772,14 +775,14 @@ class SiderealStackerMatch(task.SingleTask):
         Va = np.array(self.Vm).transpose(1, 2, 0)
 
         # Dereference for efficiency to avoid MPI calls in the loop
-        sv = self.stack.vis[:]
-        sw = self.stack.weight[:]
+        sv = self.stack.vis[:].local_array
+        sw = self.stack.weight[:].local_array
 
         # Loop over all frequencies to do the deconvolution. The loop is done because
         # of the difficulty mapping the operations we would want to do into what numpy
         # allows
         for lfi in range(self.stack.vis[:].local_shape[0]):
-            Ni_s = self.Ni_s[lfi]
+            Ni_s = self.Ni_s.local_array[lfi]
             N_s = tools.invert_no_zero(Ni_s)
             V = Va[lfi] * N_s[:, np.newaxis]
 
@@ -797,11 +800,8 @@ class SiderealStackerMatch(task.SingleTask):
 
         # Remove the full day median to set a well defined normalisation, otherwise the
         # mean is undefined
-        stack_median = (
-            np.median(sv.view(np.ndarray).real, axis=2)
-            + np.median(sv.view(np.ndarray).imag, axis=2) * 1.0j
-        )
-        sv[:] -= stack_median[:, :, np.newaxis]
+        stack_median = np.median(sv.real, axis=2) + np.median(sv.imag, axis=2) * 1.0j
+        sv -= stack_median[:, :, np.newaxis]
 
         # Set the full LSD list
         self.stack.attrs["lsd"] = np.array(self.lsd_list)
