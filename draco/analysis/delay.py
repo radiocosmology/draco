@@ -1107,7 +1107,7 @@ def delay_spectrum_gibbs(
         # then doing a matrix solve
         y = np.dot(FTNih, data + w2) + Si[:, np.newaxis] ** 0.5 * w1
 
-        return la.solve(Ci, y, sym_pos=True)
+        return la.solve(Ci, y, assume_a="pos")
 
     def _draw_signal_sample_t(S):
         # This method is fastest if the number of delays is larger than the number of
@@ -1136,7 +1136,7 @@ def delay_spectrum_gibbs(
         # Perform the solve step (rather than explicitly using the inverse)
         y = data + w2 - np.dot(R, w1)
         Ci = np.identity(len(Ni_r)) + np.dot(R, Rt)
-        x = la.solve(Ci, y, sym_pos=True)
+        x = la.solve(Ci, y, assume_a="pos")
 
         s = Sh[:, np.newaxis] * (np.dot(Rt, x) + w1)
         return s

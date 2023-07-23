@@ -272,12 +272,12 @@ class WienerMapMaker(BaseMapMaker):
                 bth, bmt
             )  # Construct the inverse covariance
             a_dirty = np.dot(bth, vt)  # Find the dirty map
-            a_wiener = la.solve(Ci, a_dirty, sym_pos=True)  # Solve to find C vt
+            a_wiener = la.solve(Ci, a_dirty, assume_a="pos")  # Solve to find C vt
 
         # If not it's better to rearrange using the results for blockwise matrix inversion
         else:
             pCi = np.identity(bt.ntel) + np.dot(bmt * S_diag[np.newaxis, :], bth)
-            v_int = la.solve(pCi, vt, sym_pos=True)
+            v_int = la.solve(pCi, vt, assume_a="pos")
             a_wiener = S_diag * np.dot(bth, v_int)
 
         # Copy the solution into a correctly shaped array output
