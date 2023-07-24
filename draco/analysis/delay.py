@@ -1,6 +1,7 @@
 """Delay space spectrum estimation and filtering."""
 
-from typing import List, Tuple, Optional, TypeVar
+from typing import List, Tuple, TypeVar, Optional, overload
+import warnings
 
 import numpy as np
 from numpy.lib.recfunctions import structured_to_unstructured
@@ -555,53 +556,91 @@ class DelaySpectrumEstimatorBase(task.SingleTask, random.RandomTask):
     )
     dataset = config.Property(proptype=str, default="vis")
     average_axis = config.Property(proptype=str)
-    complex_timedomain = config.Property(proptype=bool, default=False)
+    complex_timedomain = config.Property(proptype=bool, default=True)
     initial_amplitude = config.Property(proptype=float, default=10.0)
 
-    def process(self, ss: FreqContainerType) -> containers.DelaySpectrum:
+    @overload
+    def process(self, dataset: FreqContainerType) -> containers.DelaySpectrum:
+        ...
+
+    @overload
+    def process(
+        self, datasets: list[FreqContainerType]
+    ) -> containers.DelayCrossSpectrum:
+        ...
+
+    def process(self, datasets):
         """Estimate the delay spectrum.
 
         Parameters
         ----------
-        ss
-            Data to transform. Must have a frequency axis and one other axis to
-            average over.
+        datasets
+            Dataset(s) to transform. A single dataset will have its delay power spectrum
+            estimated, a list of datasets will have all a full cross power spectrum
+            estimation. Each must have a frequency axis and one other axis to average
+            over.
 
         Returns
         -------
-        dspec : DelaySpectrum
+        dspec
         """
-        ss.redistribute("freq")
-
-        if self.dataset not in ss.datasets:
-            raise ValueError(
-                f"Specified dataset to delay transform ({self.dataset}) not in "
-                f"container of type {type(ss)}."
+        if not self.complex_timedomain:
+            warnings.warn(
+                (
+                    "On reflection the real timedomain approach didn't make much sense,"
+                    " so it is deprecated to set complex_timedomain=False."
+                ),
+                DeprecationWarning,
             )
 
-        if (
-            self.average_axis not in ss.axes
-            or self.average_axis not in ss.datasets[self.dataset].attrs["axis"]
-        ):
-            raise ValueError(
-                f"Specified axis to average over ({self.average_axis}) not in "
-                f"container of type {type(ss)}."
+        if not isinstance(datasets, list):
+            datasets = [datasets]
+            cross = False
+        else:
+            # cross = len(datasets) > 1
+            cross = True
+
+        ssref = datasets[0]
+        ndata = len(datasets)
+
+        for ss in datasets:
+            if self.dataset not in ss.datasets:
+                raise ValueError(
+                    f"Specified dataset to delay transform ({self.dataset}) not in "
+                    f"container of type {type(ss)}."
+                )
+
+            if (
+                self.average_axis not in ss.axes
+                or self.average_axis not in ss.datasets[self.dataset].attrs["axis"]
+            ):
+                raise ValueError(
+                    f"Specified axis to average over ({self.average_axis}) not in "
+                    f"container of type {type(ss)}."
+                )
+
+            if not np.all(ss.freq[:] == ssref.freq[:]):
+                raise ValueError("All datasets must have the same frequency axis.")
+
+        if cross and not self.complex_timedomain:
+            raise RuntimeError(
+                "Only complex_timedomain=True is supported for cross spectra."
             )
 
         # ==== Figure out the frequency structure and delay values ====
         if self.freq_zero is None:
-            self.freq_zero = ss.freq[0]
+            self.freq_zero = ssref.freq[0]
 
         if self.freq_spacing is None:
-            self.freq_spacing = np.abs(np.diff(ss.freq[:])).min()
+            self.freq_spacing = np.abs(np.diff(ssref.freq[:])).min()
 
         if self.complex_timedomain:
-            self.nfreq = len(ss.freq)
+            self.nfreq = len(ssref.freq)
             channel_ind = np.arange(self.nfreq)
             ndelay = self.nfreq
         else:
             channel_ind = (
-                np.abs(ss.freq[:] - self.freq_zero) / self.freq_spacing
+                np.abs(ssref.freq[:] - self.freq_zero) / self.freq_spacing
             ).astype(np.int64)
             if self.nfreq is None:
                 self.nfreq = channel_ind[-1] + 1
@@ -615,42 +654,62 @@ class DelaySpectrumEstimatorBase(task.SingleTask, random.RandomTask):
         # Compute delays corresponding to output delay power spectrum
         delays = np.fft.fftshift(np.fft.fftfreq(ndelay, d=self.freq_spacing))  # in us
 
-        data_view, bl_axes = flatten_axes(
-            ss.datasets[self.dataset], [self.average_axis, "freq"]
-        )
-        weight_view, _ = flatten_axes(
-            ss.weight,
-            [self.average_axis, "freq"],
-            match_dset=ss.datasets[self.dataset],
-        )
+        # Get appropriately ordered and shaped views of the data and weights arrays
+        data_weight_views = []
+        for data in datasets:
+            data_view, data_axes = flatten_axes(
+                data.datasets[self.dataset], [self.average_axis, "freq"]
+            )
+            weight_view, _ = flatten_axes(
+                data.weight,
+                [self.average_axis, "freq"],
+                match_dset=ss.datasets[self.dataset],
+            )
+            data_weight_views.append((data_view, weight_view))
+
+        nbase = data_view.global_shape[0]
 
         # Initialise the spectrum container
-        nbase = data_view.global_shape[0]
-        delay_spec = containers.DelaySpectrum(
-            baseline=nbase, delay=delays, attrs_from=ss
-        )
+        # We use the "baselines" axis to generically represent all the other axes
+        if cross:
+            delay_spec = containers.DelayCrossSpectrum(
+                dataset=ndata,
+                baseline=nbase,
+                delay=delays,
+                attrs_from=ssref,
+            )
+        else:
+            delay_spec = containers.DelaySpectrum(
+                baseline=nbase,
+                delay=delays,
+                attrs_from=ssref,
+            )
         delay_spec.redistribute("baseline")
         delay_spec.spectrum[:] = 0.0
 
         # Copy the index maps for all the flattened axes into the output container, and
         # write out their order into an attribute so we can reconstruct this easily
         # when loading in the spectrum
-        for ax in bl_axes:
+        for ax in data_axes:
             delay_spec.create_index_map(ax, ss.index_map[ax])
-        delay_spec.attrs["baseline_axes"] = bl_axes
+        delay_spec.attrs["baseline_axes"] = data_axes
 
-        initial_S = np.ones_like(delays) * self.initial_amplitude
+        initial_S = (
+            np.identity(ndata)[:, :, np.newaxis]
+            * np.ones_like(delays)
+            * self.initial_amplitude
+        )
 
         # Initialize the random number generator we'll use
         rng = self.rng
 
         # Iterate over all baselines and use the Gibbs sampler to estimate the spectrum
-        for lbi, bi in delay_spec.spectrum[:].enumerate(axis=0):
+        for lbi, bi in delay_spec.spectrum[:].enumerate(axis=-2):
             self.log.debug(f"Delay transforming baseline {bi}/{nbase}")
 
-            # Get the local selections
-            data = data_view.local_array[lbi]
-            weight = weight_view.local_array[lbi]
+            # Get the local selections for all datasets and combine into a single array
+            data = np.array([d.local_array[lbi] for d, _ in data_weight_views])
+            weight = np.array([w.local_array[lbi] for _, w in data_weight_views])
 
             # Mask out data with completely zero'd weights and generate time
             # averaged weights
@@ -658,38 +717,50 @@ class DelaySpectrumEstimatorBase(task.SingleTask, random.RandomTask):
                 1e-4 * weight.mean()
             )  # Use approx threshold to ignore small weights
             data = data * (weight > weight_cut)
-            weight = np.mean(weight, axis=0)
+            weight = np.mean(weight, axis=1)
 
             if (data == 0.0).all():
                 continue
 
             # If there are no non-zero weighted entries skip
-            non_zero = weight > 0
+            non_zero = (weight > 0).all(axis=0)
             if not non_zero.any():
                 continue
 
             # Remove any frequency channel which is entirely zero, this is just to
             # reduce the computational cost, it should make no difference to the result
-            data = data[:, non_zero]
-            weight = weight[non_zero]
+            data = data[..., non_zero]
+            weight = weight[..., non_zero]
             non_zero_channel = channel_ind[non_zero]
 
-            spec = delay_spectrum_gibbs(
-                data,
-                ndelay,
-                weight,
-                initial_S,
-                window=self.window if self.apply_window else None,
-                fsel=non_zero_channel,
-                niter=self.nsamp,
-                rng=rng,
-                complex_timedomain=self.complex_timedomain,
-            )
+            if cross:
+                spec = delay_spectrum_gibbs_cross(
+                    data,
+                    ndelay,
+                    weight,
+                    initial_S,
+                    window=self.window if self.apply_window else None,
+                    fsel=non_zero_channel,
+                    niter=self.nsamp,
+                    rng=rng,
+                )
+            else:
+                spec = delay_spectrum_gibbs(
+                    data[0],
+                    ndelay,
+                    weight[0],
+                    initial_S[0, 0],
+                    window=self.window if self.apply_window else None,
+                    fsel=non_zero_channel,
+                    niter=self.nsamp,
+                    rng=rng,
+                    complex_timedomain=self.complex_timedomain,
+                )
 
             # Take an average over the last half of the delay spectrum samples
             # (presuming that removes the burn-in)
             spec_av = np.median(spec[-(self.nsamp // 2) :], axis=0)
-            delay_spec.spectrum[bi] = np.fft.fftshift(spec_av)
+            delay_spec.spectrum[..., bi, :] = np.fft.fftshift(spec_av)
 
         return delay_spec
 
@@ -697,7 +768,6 @@ class DelaySpectrumEstimatorBase(task.SingleTask, random.RandomTask):
         self, container: FreqContainerType
     ) -> tuple[mpiarray.MPIArray, mpiarray.MPIArray, list[str]]:
         """Generate views of the containers data and weights."""
-
         # Find the relevant axis positions
         data_axes = container.datasets[self.dataset].attrs["axis"]
         freq_axis_pos = list(data_axes).index("freq")
@@ -730,10 +800,6 @@ class DelaySpectrumEstimatorBase(task.SingleTask, random.RandomTask):
         weight_view = weight_view.redistribute(axis=0)
 
         return data_view, weight_view, data_axes
-
-
-
-
 
 
 def stokes_I(sstream, tel):
