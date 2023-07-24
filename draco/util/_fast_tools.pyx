@@ -75,7 +75,7 @@ def _unpack_product_array_fast(cython.numeric[::1] utv, cython.numeric[:, ::1] m
             fi = feeds[i]
             fj = feeds[j]
 
-            pi = (nfeed * (nfeed+1) / 2) - ((nfeed-fi) * (nfeed-fi + 1) / 2) + (fj - fi)
+            pi = (nfeed * (nfeed+1) // 2) - ((nfeed-fi) * (nfeed-fi + 1) // 2) + (fj - fi)
 
             mat[i, j] = utv[pi]
 
@@ -84,7 +84,7 @@ def _unpack_product_array_fast(cython.numeric[::1] utv, cython.numeric[:, ::1] m
             fi = feeds[j]
             fj = feeds[i]
 
-            pi = (nfeed * (nfeed+1) / 2) - ((nfeed-fi) * (nfeed-fi + 1) / 2) + (fj - fi)
+            pi = (nfeed * (nfeed+1) // 2) - ((nfeed-fi) * (nfeed-fi + 1) // 2) + (fj - fi)
 
             mat[i, j] = utv[pi].conjugate()
 
