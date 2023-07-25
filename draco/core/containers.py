@@ -608,7 +608,7 @@ class TableBase(ContainerBase):
             }
             'quasar_mask': {
                 'columns': [
-                    ['mask', np.bool]
+                    ['mask', bool]
                 ],
                 'axis': 'quasar_id'
             }
@@ -2184,6 +2184,186 @@ class GainData(FreqContainer, TODContainer):
         return self.index_map["input"]
 
 
+class VisCrosstalkGain(FreqContainer, SiderealContainer):
+    """Joint visibility gain and crosstalk estimates."""
+
+    _axes = ("pol", "stack")
+
+    _dataset_spec = {
+        "gain": {
+            "axes": ["freq", "stack", "ra"],
+            "dtype": np.complex64,
+            "initialise": True,
+            "distributed": True,
+            "distributed_axis": "freq",
+        },
+        "gain_weight": {
+            "axes": ["freq", "stack", "ra"],
+            "dtype": np.float32,
+            "initialise": True,
+            "distributed": True,
+            "distributed_axis": "freq",
+        },
+        "crosstalk": {
+            "axes": ["freq", "stack", "ra"],
+            "dtype": np.complex64,
+            "initialise": True,
+            "distributed": True,
+            "distributed_axis": "freq",
+        },
+        "crosstalk_weight": {
+            "axes": ["freq", "stack", "ra"],
+            "dtype": np.float32,
+            "initialise": True,
+            "distributed": True,
+            "distributed_axis": "freq",
+        },
+    }
+
+class VisFocalCrosstalkGain(FreqContainer, SiderealContainer):
+    """Joint visibility gain, crosstalk and foal expansion estimates."""
+
+    _axes = ("pol", "stack")
+
+    _dataset_spec = {
+        "gain": {
+            "axes": ["freq", "stack", "ra"],
+            "dtype": np.complex64,
+            "initialise": True,
+            "distributed": True,
+            "distributed_axis": "freq",
+        },
+        "gain_weight": {
+            "axes": ["freq", "stack", "ra"],
+            "dtype": np.float32,
+            "initialise": True,
+            "distributed": True,
+            "distributed_axis": "freq",
+        },
+        "crosstalk": {
+            "axes": ["freq", "stack", "ra"],
+            "dtype": np.complex64,
+            "initialise": True,
+            "distributed": True,
+            "distributed_axis": "freq",
+        },
+        "crosstalk_weight": {
+            "axes": ["freq", "stack", "ra"],
+            "dtype": np.float32,
+            "initialise": True,
+            "distributed": True,
+            "distributed_axis": "freq",
+        },        
+        "focalexpansion": {
+            "axes": ["freq", "stack", "ra"],
+            "dtype": np.complex64,
+            "initialise": True,
+            "distributed": True,
+            "distributed_axis": "freq",
+        },
+        "focalexpansion_weight": {
+            "axes": ["freq", "stack", "ra"],
+            "dtype": np.float32,
+            "initialise": True,
+            "distributed": True,
+            "distributed_axis": "freq",
+        },
+    }
+
+class VisCrosstalkGainGrid(FreqContainer, SiderealContainer):
+    """Joint visibility gain and crosstalk estimates.
+
+    These estimates have been transformed into the visibility grid order.
+    """
+
+    _axes = ("pol", "ew", "ns")
+
+    _dataset_spec = {
+        "gain": {
+            "axes": ["pol", "freq", "ew", "ns", "ra"],
+            "dtype": np.complex64,
+            "initialise": True,
+            "distributed": True,
+            "distributed_axis": "freq",
+        },
+        "gain_weight": {
+            "axes": ["pol", "freq", "ew", "ns", "ra"],
+            "dtype": np.float32,
+            "initialise": True,
+            "distributed": True,
+            "distributed_axis": "freq",
+        },
+        "crosstalk": {
+            "axes": ["pol", "freq", "ew", "ns", "ra"],
+            "dtype": np.complex64,
+            "initialise": True,
+            "distributed": True,
+            "distributed_axis": "freq",
+        },
+        "crosstalk_weight": {
+            "axes": ["pol", "freq", "ew", "ns", "ra"],
+            "dtype": np.float32,
+            "initialise": True,
+            "distributed": True,
+            "distributed_axis": "freq",
+        },
+    }
+
+
+class VisFocalCrosstalkGainGrid(FreqContainer, SiderealContainer):
+    """Joint visibility gain, crosstalk and focal expansion estimates.
+
+    These estimates have been transformed into the visibility grid order.
+    """
+
+    _axes = ("pol", "ew", "ns")
+
+    _dataset_spec = {
+        "gain": {
+            "axes": ["pol", "freq", "ew", "ns", "ra"],
+            "dtype": np.complex64,
+            "initialise": True,
+            "distributed": True,
+            "distributed_axis": "freq",
+        },
+        "gain_weight": {
+            "axes": ["pol", "freq", "ew", "ns", "ra"],
+            "dtype": np.float32,
+            "initialise": True,
+            "distributed": True,
+            "distributed_axis": "freq",
+        },
+        "crosstalk": {
+            "axes": ["pol", "freq", "ew", "ns", "ra"],
+            "dtype": np.complex64,
+            "initialise": True,
+            "distributed": True,
+            "distributed_axis": "freq",
+        },
+        "crosstalk_weight": {
+            "axes": ["pol", "freq", "ew", "ns", "ra"],
+            "dtype": np.float32,
+            "initialise": True,
+            "distributed": True,
+            "distributed_axis": "freq",
+        },
+        "focalexpansion": {
+            "axes": ["pol", "freq", "ew", "ns", "ra"],
+            "dtype": np.complex64,
+            "initialise": True,
+            "distributed": True,
+            "distributed_axis": "freq",
+        },
+        "focalexpansion_weight": {
+            "axes": ["pol", "freq", "ew", "ns", "ra"],
+            "dtype": np.float32,
+            "initialise": True,
+            "distributed": True,
+            "distributed_axis": "freq",
+        },
+    }
+    
+    
 class SiderealGainData(FreqContainer, SiderealContainer):
     """Parallel container for holding sidereal gain data."""
 
