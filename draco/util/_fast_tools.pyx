@@ -18,7 +18,7 @@ ctypedef float complex complex64
 
 cdef extern from "complex.h" nogil:
     #complex64 conj(complex64)
-    #complex128 conj(complex128)
+    complex128 conj(complex128)
     double creal(complex128)
     double cimag(complex128)
 
@@ -336,4 +336,142 @@ cpdef _fast_var(
         free(T)
 
 
+@cython.wraparound(False)
+@cython.boundscheck(False)
+@cython.cdivision(True)
+cpdef _fast_cov(
+    real_or_complex[:, ::1] arr,
+    real_or_complex[:, ::1] out,
+    bint bias = False,
+):
+    """Fast parallel covariance evaluation.
 
+    This is specialised to dim=2 arrays with samples along the last axis, and the
+    variables along the first.
+
+    Parameters
+    ----------
+    arr
+        The array to take the covariance of.
+    out
+        The array to write the covariance into.
+    bias
+        If False (default) normalise by N - 1. Otherwise by N.
+    """
+
+    cdef int nd = arr.shape[0]
+    cdef int nsamp = arr.shape[1]
+
+    cdef int ii, jj, kk, iijj
+
+    cdef int norm = nsamp if bias else nsamp - 1
+
+    cdef real_or_complex ti, tj
+
+    if out.shape[0] != nd or out.shape[1] != nd:
+        raise ValueError(f"Out array does not have the required shape ({nd}, {nd}).")
+
+    cdef real_or_complex* means = <real_or_complex*>malloc(sizeof(real_or_complex) * nd)
+    cdef real_or_complex* tarr = <real_or_complex*>malloc(sizeof(real_or_complex) * nd)
+
+    #for ii in prange(nd, nogil=True):
+    #for ii in range(nd):
+    #    for jj in range(nsamp):
+    #        means[ii] += arr[ii, jj]
+#
+    #for ii in range(nd):
+    #    means[ii] /= nsamp
+#
+    ##for iijj in prange(nd * nd, nogil=True):
+    #for iijj in range(nd * nd):
+#
+    #    ii = iijj // nd
+    #    jj = iijj % nd
+#
+    #    out[ii, jj] = 0
+#
+    #    for kk in range(nsamp):
+#
+    #        ti = arr[ii, kk] - means[ii]
+    #        tj = arr[jj, kk] - means[jj]
+#
+    #        if (
+    #            (real_or_complex is cython.doublecomplex) or
+    #            (real_or_complex is cython.floatcomplex)
+    #        ):
+    #            out[ii, jj] += ti * conj(tj)
+    #        else:
+    #            out[ii, jj] += ti * tj;
+#
+    #    out[ii, jj] /= norm
+
+    for ii in range(nd):
+        for jj in range(nsamp):
+            means[ii] += arr[ii, jj]
+
+    for ii in range(nd):
+        means[ii] /= nsamp
+
+    for ii in range(nd):
+        for jj in range(nd):
+            out[ii, jj] = 0.0
+
+    #for iijj in prange(nd * nd, nogil=True):
+    for kk in range(nsamp):
+
+        for ii in range(nd):
+            tarr[ii] = arr[ii, kk] - means[ii]
+
+        for ii in range(nd):
+            for jj in range(nd):
+
+                if (
+                    (real_or_complex is cython.doublecomplex) or
+                    (real_or_complex is cython.floatcomplex)
+                ):
+                    out[ii, jj] += tarr[ii] * conj(tarr[jj])
+                else:
+                    out[ii, jj] += tarr[ii] * tarr[jj];
+
+    for ii in range(nd):
+        for jj in range(nd):
+            out[ii, jj] /= norm
+
+    free(means)
+    free(tarr)
+
+@cython.wraparound(False)
+@cython.boundscheck(False)
+@cython.cdivision(True)
+cpdef _mean_sub(
+    real_or_complex[:, ::1] arr,
+):
+    """In-place subtraction of the mean along the last axis.
+
+    Parameters
+    ----------
+    arr
+        The array to subtract the mean of.
+    """
+
+    cdef int nd = arr.shape[0]
+    cdef int nsamp = arr.shape[1]
+
+    cdef int ii, jj
+
+    cdef real_or_complex* means = <real_or_complex*>malloc(sizeof(real_or_complex) * nd)
+
+    #for ii in prange(nd, nogil=True):
+    with nogil:
+        for ii in range(nd):
+            for jj in prange(nsamp):
+                means[ii] += arr[ii, jj]
+
+        for ii in range(nd):
+            means[ii] /= nsamp
+
+        for ii in range(nd):
+            for jj in prange(nsamp):
+                arr[ii, jj] -= means[ii]
+
+    free(means)
