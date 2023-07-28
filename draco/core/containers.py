@@ -2353,6 +2353,11 @@ class DelaySpectrum(ContainerBase):
     def weight_boost(self):
         return self.attrs["weight_boost"]
 
+    @property
+    def freq(self):
+        """Get the frequency axis of the input data."""
+        return self.attrs["freq"]
+
 
 class DelayTransform(ContainerBase):
     """Container for a delay spectrum.
@@ -2387,6 +2392,11 @@ class DelayTransform(ContainerBase):
     @property
     def weight_boost(self):
         return self.attrs["weight_boost"]
+
+    @property
+    def freq(self):
+        """Get the frequency axis of the input data."""
+        return self.attrs["freq"]
 
 
 class Powerspectrum2D(ContainerBase):

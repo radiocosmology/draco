@@ -424,6 +424,10 @@ class DelayTransformBase(task.SingleTask):
         # doing. Also get empty container for output (DelayTransform or DelaySpectrum)
         data_view, weight_view, out_cont = self._process_data(ss)
 
+        # Save the frequency axis of the input data as an attribute in the output
+        # container
+        out_cont.attrs["freq"] = ss.freq
+
         # Evaluate frequency->delay transform. (self._evaluate take the empty output
         # container, fills it, and returns it)
         out_cont = self._evaluate(data_view, weight_view, out_cont)
