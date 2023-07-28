@@ -35,7 +35,7 @@ def default_rng():
     return _rng
 
 
-def complex_normal(size=None, loc=0.0, scale=1.0, dtype=None, rng=None, out=None):
+def complex_normal(loc=0.0, scale=1.0, size=None, dtype=None, rng=None, out=None):
     """Get a set of complex normal variables.
 
     By default generate standard complex normal variables.
@@ -131,7 +131,7 @@ def standard_complex_normal(shape, dtype=None, rng=None):
     out : np.ndarray[shape]
         Complex gaussian variates.
     """
-    return complex_normal(shape, dtype=dtype, rng=rng)
+    return complex_normal(size=shape, dtype=dtype, rng=rng)
 
 
 def standard_complex_wishart(m, n, rng=None):
@@ -292,7 +292,7 @@ class MultithreadedRNG(np.random.Generator):
         "integers": (2, np.int64, True, False),
         "uniform": (2, np.float64, False, False),
         "normal": (2, np.float64, False, False),
-        "standard_normal": (2, np.float64, True, True),
+        "standard_normal": (0, np.float64, True, True),
         "poisson": (1, np.float64, False, False),
         "power": (1, np.float64, False, False),
     }
@@ -386,8 +386,11 @@ class MultithreadedRNG(np.random.Generator):
             else:
                 dtype = defdtype
 
+            # Trim any excess positional arguments
+            args = args[:nparam]
+
             # Check that all the parameters are scalar
-            all_scalar = all(np.isscalar(arg) for arg in args[:nparam])
+            all_scalar = all(np.isscalar(arg) for arg in args)
 
             # Check that any remaining kwargs (assumed to be parameters are also scalar)
             all_scalar &= all(np.isscalar(arg) for arg in kwargs.values())
