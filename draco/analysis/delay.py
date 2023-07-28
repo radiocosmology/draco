@@ -526,7 +526,6 @@ class DelayGibbsSamplerBase(DelayTransformBase, random.RandomTask):
         out_cont : `contaiers.DelayTransform` or `containers.DelaySpectrum`
             Output delay spectrum or delay power spectrum.
         """
-
         nbase = out_cont.spectrum.global_shape[0]
 
         # Set initial conditions for delay power spectrum
@@ -629,7 +628,6 @@ class DelayGeneralContainerBase(DelayTransformBase):
         out_cont : `containers.DelayTransform` or `containers.DelaySpectrum`
             Container for output delay spectrum or power spectrum.
         """
-
         if self.dataset not in ss.datasets:
             raise ValueError(
                 f"Specified dataset to delay transform ({self.dataset}) not in "
@@ -718,6 +716,7 @@ class DelayPowerSpectrumStokesIEstimator(DelayGibbsSamplerBase):
         Parameters
         ----------
         telescope : TransitTelescope
+            Telescope object we'll use for baseline and polarization information.
         """
         self.telescope = io.get_telescope(telescope)
 
@@ -738,7 +737,6 @@ class DelayPowerSpectrumStokesIEstimator(DelayGibbsSamplerBase):
         out_cont : `containers.DelayTransform` or `containers.DelaySpectrum`
             Container for output delay spectrum or power spectrum.
         """
-
         tel = self.telescope
 
         # Construct the Stokes I vis, and transpose from [baseline, freq, ra] to
@@ -792,6 +790,7 @@ class DelaySpectrumWienerEstimator(DelayGeneralContainerBase):
         Parameters
         ----------
         dps : `containers.DelaySpectrum`
+            Delay power spectrum for signal part of Wiener filter.
         """
         self.dps = dps
 
@@ -812,7 +811,6 @@ class DelaySpectrumWienerEstimator(DelayGeneralContainerBase):
         out_cont : `containers.DelaySpectrum`
             Output delay spectrum.
         """
-
         nbase = out_cont.spectrum.global_shape[0]
 
         # Read the delay power spectrum to use as the signal covariance
@@ -1094,7 +1092,6 @@ def _compute_delay_spectrum_inputs(data, N, Ni, fsel, window, complex_timedomain
     These quantities are needed by both :func:`delay_power_spectrum_gibbs` and
     :func:`delay_spectrum_wiener_filter`, so we compute them in this separate routine.
     """
-
     total_freq = N if complex_timedomain else N // 2 + 1
 
     if fsel is None:

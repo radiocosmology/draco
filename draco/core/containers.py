@@ -2318,7 +2318,6 @@ class DelaySpectrum(ContainerBase):
 
     Notes
     -----
-
     A note about definitions: for a dataset with a frequency axis, the corresponding
     delay spectrum is the result of Fourier transforming in frequency, while the delay
     power spectrum is obtained by taking the squared magnitude of each element of the
@@ -2351,6 +2350,11 @@ class DelaySpectrum(ContainerBase):
 
     @property
     def weight_boost(self):
+        """Get the weight boost factor.
+
+        If set, this factor was used to set the assumed noise when computing the
+        spectrum.
+        """
         return self.attrs["weight_boost"]
 
     @property
@@ -2364,7 +2368,6 @@ class DelayTransform(ContainerBase):
 
     Notes
     -----
-
     See the docstring for :py:class:`~draco.core.containers.DelaySpectrum` for a
     description of the difference between `DelayTransform` and `DelaySpectrum`.
     """
@@ -2387,10 +2390,16 @@ class DelayTransform(ContainerBase):
 
     @property
     def spectrum(self):
+        """Get the spectrum dataset."""
         return self.datasets["spectrum"]
 
     @property
     def weight_boost(self):
+        """Get the weight boost factor.
+
+        If set, this factor was used to set the assumed noise when computing the
+        spectrum.
+        """
         return self.attrs["weight_boost"]
 
     @property
