@@ -1294,29 +1294,29 @@ def delay_spectrum_gibbs_cross(
 
     spec = []
 
-    total_freq = N
+    nd, nsamp, Nf = data.shape
 
     if fsel is None:
-        fsel = np.arange(total_freq)
+        fsel = np.arange(Nf)
+    elif len(fsel) != Nf:
+        raise ValueError(
+            "Length of frequency selection must match frequencies passed. "
+            f"{len(fsel)} != {data.shape[-1]}"
+        )
 
     # Construct the Fourier matrix
     F = fourier_matrix(N, fsel)
 
-    nd = data.shape[0]
     if nd == 0:
         raise ValueError("Need at least one set of data")
 
     # We want the sample axis to be last
     data = data.transpose(0, 2, 1)
 
-    # Check the data shape
-    nsamp = data.shape[2]
-    assert N == data.shape[1]
-
     # Window the frequency data
     if window is not None:
         # Construct the window function
-        x = fsel * 1.0 / total_freq
+        x = fsel * 1.0 / N
         w = tools.window_generalised(x, window=window)
 
         # Apply to the projection matrix and the data
