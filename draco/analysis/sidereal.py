@@ -11,11 +11,11 @@ into  :class:`SiderealGrouper`, then feeding that into
 
 import numpy as np
 import scipy.linalg as la
-from caput import config, mpiarray, tod
+from caput import config, mpiarray, tod, weighted_median
 from cora.util import units
 
 from ..core import containers, io, task
-from ..util import tools
+from ..util import tools, regrid
 from .transform import Regridder
 
 
@@ -152,8 +152,196 @@ class SiderealGrouper(task.SingleTask):
         return ts
 
 
+class SiderealDirtyRegridder(Regridder):
+    """Take a factorized sidereal day and put it on a regular grid.
+
+    Output container includes a dirty estimate of visibilities on a regular
+    grid and an estimate of the inverse convolution matrix Ci based on a limited
+    number of modes over baselines.
+    """
+
+    def setup(self, manager):
+        """Set the local observers position.
+
+        Parameters
+        ----------
+        manager : :class:`~caput.time.Observer`
+            An Observer object holding the geographic location of the telescope.
+            Note that :class:`~drift.core.TransitTelescope` instances are also
+            Observers.
+        """
+        # Need an Observer object holding the geographic location of the telescope.
+        self.observer = io.get_telescope(manager)
+        self.pad = 5 * self.lanczos_width
+
+    def process(
+        self, data: containers.FactorizedTimeStream
+    ) -> containers.SiderealDirtyStream:
+        """Make a dirty projection of the sidereal day.
+
+        Parameters
+        ----------
+        data
+            Timestream data with factorized weights. Weights can be factorized
+            using `draco.analysis.transform.FactorizeWeights`.
+
+        Returns
+        -------
+        sdata
+            Sidereal stream with dirty `vis` projection and factorized
+            inverse signal covariance matrix
+        """
+        self.log.info(f"Making dirty grid LSD:{data.attrs['lsd']}")
+
+        # Redistribute if needed
+        data.redistribute("freq")
+
+        # Convert data timestamps into LSD deltas (relative to the LSD of this day)
+        timestamp_lsd = self.observer.unix_to_lsd(data.time) - data.attrs["lsd"]
+
+        # Get view of data
+        Ni = data.weight[:].local_array
+        modes = data.modes[:].local_array
+        vis_data = data.vis[:].local_array
+
+        xh, Ci = self._regrid(vis_data, Ni, modes, timestamp_lsd)
+
+        # This will be padded so we have to extend the RA axis accordingly
+        new_samples = self.samples + 2 * self.pad
+        ra_delta = (((new_samples / self.samples)) * 360 - 360) / 2
+        ra = np.linspace(-ra_delta, 360 + ra_delta, new_samples, endpoint=False)
+
+        # Make the new container
+        sdata = containers.SiderealDirtyStream(
+            axes_from=data,
+            ra=ra,
+            bandwidth=2 * self.lanczos_width,
+        )
+        sdata.redistribute("freq")
+
+        sdata.vis[:].local_array[:] = xh
+        sdata.signal_cov[:].local_array[:] = Ci
+        sdata.modes[:].local_array[:] = modes
+
+        sdata.attrs["lsd"] = data.attrs["lsd"]
+        sdata.attrs["tag"] = f"lsd_{data.attrs['lsd']}"
+        # Store this so it can be removed later on
+        sdata.attrs["pad"] = self.pad
+
+        return sdata
+
+    def _regrid(self, vis_data, weight, modes, times):
+        """Project the visibility data onto a regular grid in RA."""
+        # Create a regular grid, padded at either end to supress interpolation issues
+        interp_grid = (
+            np.arange(-self.pad, self.samples + self.pad, dtype=np.float64)
+            / self.samples
+        )
+
+        # Construct regridding matrix for reverse problem
+        lzf = regrid.lanczos_forward_matrix(
+            interp_grid, times, self.lanczos_width
+        ).T.copy()
+
+        # Make the signal covariance matrix before reshaping since the
+        # stack axis will be reduced
+        Ci = regrid.wiener_covariance(lzf, weight, 2 * self.lanczos_width - 1)
+        # Store the final shape of the data and flatten across
+        # frequency and baselines
+        shape_ = (*vis_data.shape[:-1], interp_grid.shape[0])
+        # Reconstruct and flatten the weights
+        weight = (modes[:, :, np.newaxis] @ weight[:, np.newaxis]).reshape(
+            -1, weight.shape[-1]
+        )
+        # Make the dirty projection into signal space
+        vis_data = vis_data.reshape(-1, vis_data.shape[-1])
+        xh = regrid.wiener_projection(lzf, vis_data, weight).reshape(shape_)
+
+        return xh, Ci
+
+
+class SiderealGridDeconvolve(task.SingleTask):
+    """Deconvolve a single dirty sidereal day.
+
+    Attributes
+    ----------
+    snr_cov: float
+        Ratio of signal covariance to noise covariance (used for Wiener filter).
+    """
+
+    snr_cov = config.Property(proptype=float, default=1e-8)
+
+    def process(
+        self, data: containers.SiderealDirtyStream
+    ) -> containers.SiderealStream:
+        """Deconvolve a dirty sidereal day.
+
+        Parameters
+        ----------
+        data
+            Dirty sidereal data to deconvolve
+
+        Returns
+        -------
+        sdata
+            Deconvolved sidereal day with padding removed.
+        """
+        self.log.info(f"Deconvolving dirty grid LSD:{data.attrs['lsd']}")
+
+        # Redistribute if needed
+        data.redistribute("freq")
+
+        Ci = data.signal_cov[:].local_array
+        xh = data.vis[:].local_array
+        modes = data.modes[:].local_array
+
+        pad = data.attrs["pad"]
+
+        # Deconvolve the visibilities
+        xh, nr, samples = self._deconvolve(xh, Ci, modes, pad)
+
+        sdata = containers.SiderealStream(axes_from=data, ra=samples)
+        sdata.redistribute("freq")
+
+        # Save out the deconvolved visibilities and noise realization
+        sdata.vis[:] = xh
+        sdata.weight[:] = nr
+
+        sdata.attrs["lsd"] = data.attrs["lsd"]
+        sdata.attrs["tag"] = f"lsd_{data.attrs['lsd']}"
+
+        return sdata
+
+    def _deconvolve(self, xh, Ci, modes, pad):
+        """Deconvolve the data."""
+        nbaseline = xh.shape[1]
+        # Get number of RA samples and target shape without padding
+        samples = xh.shape[-1] - 2 * pad
+        shape_ = xh.shape[:-1] + (samples,)
+        # Flatten over frequencies and baselines
+        xh = xh.reshape(-1, xh.shape[-1])
+        modes = modes.reshape(-1)
+        nw = np.zeros_like(xh, dtype=np.float32)
+
+        # Iterate over frequency-baseline pairs
+        for ki in range(xh.shape[0]):
+            # Get the reconstruction of Ci for this frequency-baseline
+            Ci_ki = Ci[ki // nbaseline] * modes[ki]
+            # Set the weights and remove the signal contribution
+            nw[ki] = Ci_ki[-1]
+            Ci_ki[-1] += self.snr_cov
+            # Solve
+            xh[ki] = la.solveh_banded(Ci_ki, xh[ki])
+
+        # Remove padding and reshape
+        xh = xh[:, pad:-pad].reshape(shape_)
+        nw = nw[:, pad:-pad].reshape(shape_)
+
+        return xh, nw, samples
+
+
 class SiderealRegridder(Regridder):
-    """Take a sidereal days worth of data, and put onto a regular grid.
+    """Take a sidereal days worth of data and put it onto a regular grid.
 
     Uses a maximum-likelihood inverse of a Lanczos interpolation to do the
     regridding. This gives a reasonably local regridding, that is pretty well
@@ -200,14 +388,11 @@ class SiderealRegridder(Regridder):
         sdata : containers.SiderealStream
             The regularly gridded sidereal timestream.
         """
-        self.log.info("Regridding LSD:%i", data.attrs["lsd"])
+        self.log.info(f"Regridding LSD:{data.attrs['lsd']}")
 
-        # Redistribute if needed too
+        # Redistribute if needed
         data.redistribute("freq")
-
-        sfreq = data.vis.local_offset[0]
-        efreq = sfreq + data.vis.local_shape[0]
-        freq = data.freq[sfreq:efreq]
+        freq = data.freq[data.vis[:].local_bounds]
 
         # Convert data timestamps into LSDs
         timestamp_lsd = self.observer.unix_to_lsd(data.time)
@@ -217,8 +402,8 @@ class SiderealRegridder(Regridder):
         self.end = self.start + 1
 
         # Get view of data
-        weight = data.weight[:].view(np.ndarray)
-        vis_data = data.vis[:].view(np.ndarray)
+        weight = data.weight[:].local_array
+        vis_data = data.vis[:].local_array
 
         # Mix down
         if self.down_mix:
@@ -243,10 +428,11 @@ class SiderealRegridder(Regridder):
         # This could probably be optimised out with a little work.
         sdata = containers.SiderealStream(axes_from=data, ra=self.samples)
         sdata.redistribute("freq")
+
         sdata.vis[:] = sts
         sdata.weight[:] = ni
         sdata.attrs["lsd"] = self.start
-        sdata.attrs["tag"] = "lsd_%i" % self.start
+        sdata.attrs["tag"] = f"lsd_{self.start}"
 
         return sdata
 
@@ -798,7 +984,158 @@ class SiderealStackerMatch(task.SingleTask):
         # Set the full LSD list
         self.stack.attrs["lsd"] = np.array(self.lsd_list)
 
+        # Delete a couple of large attributes
+        del self.Vm
+        del self.Ni_s
+
         return self.stack
+
+
+class SiderealStackerDeconvolve(SiderealGridDeconvolve):
+    """Stack up a set of dirty sidereal days and deconvolve the final product.
+
+    Attributes
+    ----------
+    tag : str (default: "stack")
+        The tag to give the stack.
+    subtract_median : bool
+        Subtract the median of the final visibilities in RA.
+    """
+
+    tag = config.Property(proptype=str, default="stack")
+    subtract_median = config.Property(proptype=bool, default=True)
+
+    stack = None
+
+    def process(self, data: containers.SiderealDirtyStream):
+        """Stack up the dirty sidereal days and noise matrices.
+
+        Parameters
+        ----------
+        data
+            Individual sidereal day to add to stack.
+        """
+        data.redistribute("freq")
+
+        xh = data.vis[:].local_array
+        Ci = data.signal_cov[:].local_array
+        modes = data.modes[:].local_array
+
+        if self.stack is None:
+            # Accumulate stuff here. Assume that all stacked days have
+            # the same padding
+            self.xh = np.zeros_like(xh)
+            self.Ci = []
+            self.modes = []
+            self.pad = data.attrs["pad"]
+            # Make the correct RA axis since input is padded
+            samples = xh.shape[-1] - 2 * self.pad
+            ra = np.linspace(0, 360, samples, endpoint=False)
+            # Don't initialize any datasets for now to save memory
+            self.stack = containers.SiderealStream(
+                axes_from=data, ra=ra, attrs_from=data, skip_datasets=True
+            )
+            self.lsd_list = []
+
+        # Accumulate the weighted visibilities
+        self.xh += xh
+        # Accumulate the signal covariance matrix and modes
+        # We need all of these
+        self.Ci.append(Ci)
+        self.modes.append(modes)
+        # Get the LSD/CSD label if available
+        if "lsd" in data.attrs:
+            input_lsd = data.attrs["lsd"]
+        else:
+            input_lsd = data.attrs.get("csd", -1)
+        self.lsd_list += _ensure_list(input_lsd)
+
+    def process_finish(self) -> containers.SiderealStream:
+        """Deconvolve and return the final stacked sidereal stream.
+
+        Returns
+        -------
+        stack
+            Deconvolved stack of sidereal days.
+        """
+        # Log how much data is missing, excluding bands that are entirely
+        # masked due to persistent RFI
+        zeros = mpiarray.MPIArray.wrap(self.xh[:] == 0, axis=0, comm=self.stack.comm)
+        zeros.local_array[:] &= ~np.all(zeros.local_array, axis=-1)[..., np.newaxis]
+        n_zeros = zeros.sum().allreduce()
+        self.log.info(
+            f"{100 * n_zeros / np.prod(zeros.global_shape):.3f}% of samples missing."
+        )
+
+        xh, nw = self._deconvolve(self.xh, self.Ci, self.modes, self.pad)
+
+        # Delete some large items to save memory
+        del self.xh
+        del self.Ci
+        del self.modes
+
+        if self.subtract_median:
+            # Subtract the stack median over RA
+            mask = (nw != 0).astype(np.float32)
+            # Use a weighted median to ignore partially filled bands
+            xh_h = (
+                weighted_median.weighted_median(np.ascontiguousarray(xh.real), mask)
+                + weighted_median.weighted_median(np.ascontiguousarray(xh.imag), mask)
+                * 1.0j
+            )
+            # Subtract the median
+            xh -= xh_h[:, :, np.newaxis]
+            # Make sure that zeros are still zeros
+            xh *= mask
+
+        # Initialize the datasets now
+        self.stack.add_dataset("vis")
+        self.stack.add_dataset("vis_weight")
+        self.stack.add_dataset("input_flags")
+        self.stack.redistribute("freq")
+
+        self.stack.vis[:].local_array[:] = xh
+        self.stack.weight[:].local_array[:] = nw
+        self.stack.input_flags[:] = 0.0
+
+        self.stack.attrs["lsd"] = np.array(self.lsd_list)
+        self.stack.attrs["tag"] = self.tag
+
+        return self.stack
+
+    def _deconvolve(self, xh, Ci, modes, pad):
+        """Deconvolve the dirty visibilities.
+
+        Reconstructs each Ci matrix on a per frequency-baseline basis
+        to save memory.
+        """
+        # Stack over the last axis
+        Ci = np.stack(Ci, axis=-1)
+        modes = np.stack(modes, axis=-1)
+
+        nbaseline = xh.shape[1]
+        samples = xh.shape[-1] - 2 * pad
+        shape_ = xh.shape[:-1] + (samples,)
+
+        # Flatten over frequencies and baselines
+        xh = xh.reshape(-1, xh.shape[-1])
+        modes = modes.reshape(-1, modes.shape[-1])
+        nw = np.zeros_like(xh, dtype=np.float32)
+
+        for ki in range(xh.shape[0]):
+            # Reconstruct Ci over modes and sum over the stack (last) axis,
+            # which can be quickly implemented with `matmul`
+            Ci_ki = np.matmul(Ci[ki // nbaseline], modes[ki])
+            # Save out the noise projection and add the signal component
+            nw[ki] = Ci_ki[-1]
+            Ci_ki[-1] += self.snr_cov
+
+            xh[ki] = la.solveh_banded(Ci_ki, xh[ki])
+
+        xh = xh[:, pad:-pad].reshape(shape_)
+        nw = nw[:, pad:-pad].reshape(shape_)
+
+        return xh, nw
 
 
 def _ensure_list(x):
