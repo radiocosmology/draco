@@ -1114,8 +1114,8 @@ class RFISensitivityMask(task.SingleTask):
             # Remove median at each frequency, if asked.
             if self.remove_median:
                 for ff in range(nfreq):
-                    radiometer[ff, li] -= np.median(
-                        radiometer[ff, li][~origflag[ff]].view(np.ndarray)
+                    radiometer[:].local_array[ff, li] -= np.median(
+                        radiometer[:].local_array[ff, li][~origflag[ff]]
                     )
 
             # Combine weights with static flag
@@ -1123,7 +1123,7 @@ class RFISensitivityMask(task.SingleTask):
 
             # Obtain MAD and TV masks
             this_madmask, tvmask = self._mad_tv_mask(
-                radiometer[:, li], start_flag, freq
+                radiometer[:].local_array[:, li], start_flag, freq
             )
 
             # combine MAD and TV masks
@@ -1133,8 +1133,8 @@ class RFISensitivityMask(task.SingleTask):
             start_flag = start_flag | tvmask
 
             # Determine initial threshold
-            med = np.median(radiometer[:, li][~start_flag].view(np.ndarray))
-            mad = np.median(abs(radiometer[:, li][~start_flag].view(np.ndarray) - med))
+            med = np.median(radiometer[:].local_array[:, li][~start_flag])
+            mad = np.median(abs(radiometer[:].local_array[:, li][~start_flag] - med))
             threshold1 = (
                 mad
                 * MAD_TO_RMS
@@ -1144,7 +1144,7 @@ class RFISensitivityMask(task.SingleTask):
 
             # SumThreshold mask
             stmask[li] = rfi.sumthreshold(
-                radiometer[:, li],
+                radiometer[:].local_array[:, li],
                 self.max_m,
                 start_flag=start_flag,
                 threshold1=threshold1,
