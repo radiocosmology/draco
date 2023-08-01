@@ -447,10 +447,14 @@ class PermuteSpectra(task.SingleTask):
         The number of permutations to generate.
     seed : int
         The seed for the RNG. If not set it will be generated and recorded in the logs.
+    rotation_scale : list of float
+        The scale of the gaussian distribution from which to draw random angles of rotation,
+        one around the polar axis, then the RA=0 axis (in degrees).
     """
 
     N = config.Property(proptype=int, default=0)
     seed = config.Property(proptype=int, default=None)
+    rotation_scale = config.list_type(float, length=2, default=[0.0, 0.0])
 
     def setup(self, cat):
         """Stash the original catalog and generate a RNG.
@@ -481,6 +485,14 @@ class PermuteSpectra(task.SingleTask):
         cat.redistribute("freq")
         self.cat = cat
 
+        # make a copy of the angular positions in polar coordinates
+        self._pos = np.radians(
+            cat["position"]
+            .view(cat["position"]["ra"].dtype)
+            .reshape((cat["position"].size, 2))
+        )
+        self._pos[:, 1] = 0.5 * np.pi - self._pos[:, 1]
+
         # counter for generated permutations
         self._iter = 0
 
@@ -499,6 +511,22 @@ class PermuteSpectra(task.SingleTask):
         new_cat.beam[:].local_array[:] = self.cat.beam[:].local_array[ind]
         new_cat.weight[:].local_array[:] = self.cat.weight[:].local_array[ind]
         new_cat["redshift"][:] = self.cat["redshift"][ind]
+
+        # rotate the coordinates
+        if self.rotation_scale != [0.0, 0.0]:
+            delta_ra = np.radians(self.rng.normal(scale=self.rotation_scale[0]))
+            sra, cra = np.sin(delta_ra), np.cos(delta_ra)
+            delta_dec = np.radians(self.rng.normal(scale=self.rotation_scale[1]))
+            sdec, cdec = np.sin(delta_dec), np.cos(delta_dec)
+            R = np.dot(
+                np.array([[1, 0, 0], [0, cdec, -sdec], [0, sdec, cdec]]),
+                np.array([[cra, -sra, 0], [sra, cra, 0], [0, 0, 1]]),
+            )
+            new_coord = coord.cart_to_sph(
+                np.matmul(R, coord.sph_to_cart(self._pos)[..., np.newaxis])[..., 0]
+            )[:, 1:]
+            new_cat["position"]["ra"] = np.degrees(new_coord[:, 0])
+            new_cat["position"]["dec"] = np.degrees(0.5 * np.pi - new_coord[:, 1])
 
         # record the seed and iteration in case this is useful
         new_cat.attrs["permutation_seed"] = f"{self._seed}"
