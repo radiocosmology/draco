@@ -1726,7 +1726,6 @@ class BlendStack(task.SingleTask):
 
     def setup(self, data_stack):
         """Set the stacked data.
-
         Parameters
         ----------
         data_stack : VisContainer
@@ -1754,65 +1753,59 @@ class BlendStack(task.SingleTask):
                 f"type(data_stack) (={type(self.type)}"
             )
 
-        # Try and get both the stack and the incoming data to have the same
-        # distribution
-        self.data_stack.redistribute(["freq", "time", "ra"])
-        data.redistribute(["freq", "time", "ra"])
-
-        if isinstance(data, containers.SiderealStream):
-            dset_stack = self.data_stack.vis[:]
-            dset = data.vis[:]
-        else:
+        if not isinstance(data, containers.SiderealStream):
             raise TypeError(
                 "Only SiderealStream's are currently supported. "
                 f"Got type(data) = {type(data)}"
             )
 
+        # Try to get both the stack and the incoming data to have the same
+        # distribution
+        self.data_stack.redistribute(["freq", "time", "ra"])
+        data.redistribute(["freq", "time", "ra"])
+
+        if self.data_stack.vis.distributed_axis != data.vis.distributed_axis:
+            raise ValueError("Could not get a matching axis distribution.")
+
+        dset_stack = self.data_stack.vis[:].local_array[:]
+        dset = data.vis[:].local_array[:]
+
+        weight_stack = self.data_stack.weight[:].local_array[:]
+        weight = data.weight[:].local_array[:]
+
+        # Now these should be the same shape. If not, something went wrong
         if dset_stack.shape != dset.shape:
             raise ValueError(
                 f"Size of data ({dset.shape}) must match "
                 f"data_stack ({dset_stack.shape})"
             )
 
-        weight_stack = self.data_stack.weight[:]
-        weight = data.weight[:]
-
         # Find the median offset between the stack and the daily data
         if self.match_median:
             # Find the parts of the both the stack and the daily data that are both
             # measured
-            mask = (
-                ((weight[:] > 0) & (weight_stack[:] > 0))
-                .astype(np.float32)
-                .view(np.ndarray)
-            )
+            mask = ((weight > 0) & (weight_stack > 0)).astype(np.float32)
 
-            # ... get the median of the stack in this common subset
+            # Get the median of the stack in this common subset
             stack_med_real = weighted_median.weighted_median(
-                dset_stack.real.view(np.ndarray).copy(), mask
+                np.ascontiguousarray(dset_stack.real), mask
             )
             stack_med_imag = weighted_median.weighted_median(
-                dset_stack.imag.view(np.ndarray).copy(), mask
+                np.ascontiguousarray(dset_stack.imag), mask
             )
-
-            # ... get the median of the data in the common subset
+            # Get the median of the data in the common subset
             data_med_real = weighted_median.weighted_median(
-                dset.real.view(np.ndarray).copy(), mask
+                np.ascontiguousarray(dset.real), mask
             )
             data_med_imag = weighted_median.weighted_median(
-                dset.imag.view(np.ndarray).copy(), mask
+                np.ascontiguousarray(dset.imag), mask
             )
 
-            # ... construct an offset to match the medians in the time/RA direction
+            # Construct an offset to match the medians in the time/RA direction
             stack_offset = (
                 (data_med_real - stack_med_real)
                 + 1.0j * (data_med_imag - stack_med_imag)
             )[..., np.newaxis]
-            stack_offset = mpiarray.MPIArray.wrap(
-                stack_offset,
-                axis=dset_stack.axis,
-                comm=dset_stack.comm,
-            )
 
         else:
             stack_offset = 0
