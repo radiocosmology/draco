@@ -1221,6 +1221,81 @@ class SiderealStream(
         raise KeyError("Dataset 'effective_ra' not initialised.")
 
 
+class SiderealDirtyStream(FreqContainer, VisContainer, SiderealContainer):
+    """A container for holding a dirty visibility dataset in sidereal time.
+
+    Weights are not stored by defualt. They can be reconstructed by doing
+    `modes @ noise_cov[:, :, -1]`.
+    """
+
+    _axes = ("bandwidth",)
+
+    _dataset_spec: ClassVar = {
+        "vis": {
+            "axes": ["freq", "stack", "ra"],
+            "dtype": np.complex64,
+            "initialise": True,
+            "distributed": True,
+            "distributed_axis": "freq",
+            "compression": COMPRESSION,
+            "compression_opts": COMPRESSION_OPTS,
+            "chunks": (64, 128, 128),
+            "truncate": True,
+        },
+        "mask": {
+            "axes": ["freq", "ra"],
+            "dtype": bool,
+            "initialise": False,
+            "distributed": True,
+            "distributed_axis": "freq",
+        },
+        "noise_cov": {
+            "axes": ["freq", "bandwidth", "ra"],
+            "dtype": np.float64,
+            "initialise": True,
+            "distributed": True,
+            "distributed_axis": "freq",
+            "truncate": False,
+        },
+        "modes": {
+            "axes": ["freq", "stack"],
+            "dtype": np.float64,
+            "initialise": True,
+            "distributed": True,
+            "distributed_axis": "freq",
+            "truncate": False,
+        },
+    }
+
+    @property
+    def noise_cov(self):
+        """Get the signal covariance dataset."""
+        return self.datasets["noise_cov"]
+
+    @property
+    def modes(self):
+        """Get the modes dataset."""
+        return self.datasets["modes"]
+
+    @property
+    def mask(self):
+        """Get the mask dataset."""
+        return self.datasets["mask"]
+
+    @property
+    def weight(self):
+        """Get the reconstructed weight dataset."""
+        weight = (
+            self.modes[:].local_array[:, :, np.newaxis]
+            @ self.noise_cov[:].local_array[:, -1][:, np.newaxis]
+        ).astype(np.float32)
+
+        if self.distributed:
+            weight = mpiarray.MPIArray.wrap(weight, axis=0, comm=self.comm)
+
+        return weight
+
+
 class SystemSensitivity(FreqContainer, TODContainer):
     """A container for holding the total system sensitivity.
 
@@ -1505,7 +1580,66 @@ class TimeStream(FreqContainer, VisContainer, TODContainer):
         return self.datasets["input_flags"]
 
 
-class GridBeam(FreqContainer, DataWeightContainer):
+class FactorizedTimeStream(TimeStream):
+    """TimeStream with the weights factorized.
+
+    Weights are split into a projection dataset and a modes dataset.
+    """
+
+    _dataset_spec: ClassVar = {
+        "vis": {
+            "axes": ["freq", "stack", "time"],
+            "dtype": np.complex64,
+            "initialise": True,
+            "distributed": True,
+            "distributed_axis": "freq",
+            "compression": COMPRESSION,
+            "compression_opts": COMPRESSION_OPTS,
+            "chunks": (64, 128, 128),
+            "truncate": True,
+        },
+        "vis_weight": {
+            "axes": ["freq", "time"],
+            "dtype": np.float64,
+            "initialise": True,
+            "distributed": True,
+            "distributed_axis": "freq",
+            "truncate": False,
+        },
+        "modes": {
+            "axes": ["freq", "stack"],
+            "dtype": np.float64,
+            "initialise": True,
+            "distributed": True,
+            "distributed_axis": "freq",
+            "truncate": False,
+        },
+    }
+
+    @property
+    def modes(self):
+        """Get the modes dataset."""
+        return self.datasets["modes"]
+
+    @property
+    def full_weight(self):
+        """Get the full reconstructed dataset weights.
+
+        This dataset will _never_ be a distributed array, because
+        this is a convenience method for reconstructing the weights.
+        """
+        weight = (
+            self.modes[:].local_array[:, :, np.newaxis]
+            @ self.weight[:].local_array[:, np.newaxis]
+        ).astype(np.float32)
+
+        if self.distributed:
+            weight = mpiarray.MPIArray.wrap(weight, axis=0, comm=self.comm)
+
+        return weight
+
+
+class GridBeam(FreqContainer):
     """Generic container for representing a 2D beam on a rectangular grid."""
 
     _axes = ("pol", "input", "theta", "phi")
