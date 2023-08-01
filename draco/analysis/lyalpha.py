@@ -185,11 +185,9 @@ class TruncateRedshift(task.SingleTask):
 
 
 class SpectralRegridder(transform.Regridder):
-
     zero_weight_thresh = config.Property(proptype=float, default=3.0)
 
     def process(self, formed):
-
         # convert observed to equivalent CHIME frequency
         lya_freq = formed.freq[:] * LAM_LYA / LAM_21
 
@@ -337,7 +335,6 @@ class XCorrFFT(XCorrBase):
     """Use the FFT to evaluate the cross power spectrum, then transform back to the correlation function."""
 
     def _compute_corr(self, bfA, bfB):
-
         # Fourier transform
         bfA_fft = np.fft.fft(bfA.beam[:] * (bfA.weight[:] != 0), axis=-1)
         bfB_fft = np.fft.fft(bfB.beam[:] * (bfB.weight[:] != 0), axis=-1)
@@ -391,7 +388,6 @@ class XCorrDirect(XCorrBase):
     N = config.Property(proptype=int, default=0)
 
     def _compute_corr(self, bfA, bfB):
-
         npol = max(len(bfA.pol), len(bfB.pol))
         N = bfA.beam.shape[-1] * 2 - 1 if self.N == 0 else self.N
 
