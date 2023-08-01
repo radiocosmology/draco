@@ -7,15 +7,17 @@ The convention for flagging/masking is `True` for contaminated samples that shou
 be excluded and `False` for clean samples.
 """
 
-import warnings
 from typing import Union, overload
-
 import numpy as np
 import scipy.signal
-from caput import config, mpiarray, weighted_median
+from scipy import stats
 
-from ..core import containers, io, task
-from ..util import rfi, tools
+from caput import config, weighted_median, mpiarray
+from caput.tools import invert_no_zero
+
+from ..core import task, containers, io
+from ..util import tools
+from ..util import rfi
 
 
 class DayMask(task.SingleTask):
@@ -729,22 +731,27 @@ class ThresholdVisWeightFrequency(task.SingleTask):
 
     Parameters
     ----------
+    apply_window : bool
+        If True, use a rolling window when getting the average over the
+        time-like axis. Otherwise, use the average over the entire axis.
+        Default it False.
     absolute_threshold : float
         Any weights with values less than this number will be set to zero.
-    relative_threshold : float
+    relative_frac : float
         Any weights with values less than this number times the average weight
         will be set to zero.
     """
 
-    absolute_threshold = config.Property(proptype=float, default=1e-7)
-    relative_threshold = config.Property(proptype=float, default=0.9)
+    apply_window = config.Property(proptype=bool, default=False)
+    absolute_threshold = config.Property(proptype=float, default=1e-8)
+    relative_frac = config.Property(proptype=float, default=0.2)
 
-    def process(self, stream):
+    def process(self, data):
         """Make a baseline-independent mask.
 
         Parameters
         ----------
-        stream : `.core.container` with `weight` attribute
+        data : `.core.container` with `weight` attribute
             Container to mask
 
         Returns
@@ -752,45 +759,50 @@ class ThresholdVisWeightFrequency(task.SingleTask):
         out : RFIMask container
             RFIMask container with mask set
         """
-        stream.redistribute("freq")
+        data.redistribute("freq")
 
         # Make the output container depending on what 'stream' is
-        if "ra" in stream.axes:
-            mask_cont = containers.SiderealRFIMask(axes_from=stream, attrs_from=stream)
-        elif "time" in stream.axes:
-            mask_cont = containers.RFIMask(axes_from=stream, attrs_from=stream)
+        if "ra" in data.axes:
+            mask_cont = containers.SiderealRFIMask(axes_from=data, attrs_from=data)
+        elif "time" in data.axes:
+            mask_cont = containers.RFIMask(axes_from=data, attrs_from=data)
         else:
-            raise TypeError(f"Require Timestream or SiderealStream. Got {type(stream)}")
+            raise TypeError(f"Require Timestream or SiderealStream. Got {type(data)}")
 
-        weight = stream.weight[:].local_array
-        # Average over the baselines (stack) axis
-        mean_baseline = np.mean(weight, axis=1, keepdims=True)
-        # Cut out any values below fixed threhold. Return a np.ndarray
-        threshold = np.where(
-            mean_baseline > self.absolute_threshold, mean_baseline, np.nan
+        # Average over baselines
+        w_hat = np.mean(data.weight[:].local_array[:], axis=1)
+        # Log the data flagged before masking
+        self.log.info(
+            f"{(1 - np.mean(w_hat)) * 100:.0f}% of data flagged before masking."
         )
-        # Average across the time (ra) axis to get per-frequency thresholds,
-        # ignoring any nans. np.nanmean will give a warning if an entire band is
-        # nan, which we expect to happen in some cases.
-        with warnings.catch_warnings():
-            warnings.filterwarnings(action="ignore", message="Mean of empty slice")
-            threshold = np.nanmean(threshold, axis=2, keepdims=True)
+        # Average over time-like axis to get per-frequency thresholds,
+        # only including points in the mean if above the absolute threshold
+        view_ = self._rolling_view(w_hat) if self.apply_window else w_hat
+
+        threshold = np.ma.mean(
+            np.ma.masked_array(view_, mask=view_ > self.absolute_threshold), axis=-1
+        ).data[:, np.newaxis]
+
         # Create a 2D baseline-independent mask.
-        mask = ~(
-            mean_baseline
-            > np.fmax(threshold * self.relative_threshold, self.absolute_threshold)
-        )[:, 0, :]
+        mask = w_hat < np.fmax(threshold * self.relative_frac, self.absolute_threshold)
+
         # Collect all parts of the mask. Method .allgather() returns a np.ndarray
         mask = mpiarray.MPIArray.wrap(mask, axis=0).allgather()
         # Log the percent of data masked
-        drop_frac = np.sum(mask) / np.prod(mask.shape)
         self.log.info(
-            "%0.5f%% of data is below the weight threshold" % (100.0 * (drop_frac))
+            f"{np.mean(mask) * 100:.2f}% of data is below the weight threshold"
         )
 
         mask_cont.mask[:] = mask
 
         return mask_cont
+
+    def _rolling_view(self, mask):
+        """Get a rolling mean in RA."""
+        window = int(mask.shape[-1] // 4 + 1)
+        pad = int(window // 2)
+        padded_mask = np.pad(mask, ((0, 0), (pad, pad)))
+        return np.lib.stride_tricks.sliding_window_view(padded_mask, window, axis=-1)
 
 
 class ThresholdVisWeightBaseline(task.SingleTask):
@@ -1081,9 +1093,7 @@ class RFISensitivityMask(task.SingleTask):
         sensitivity.redistribute("pol")
 
         # Divide sensitivity to get a radiometer test
-        radiometer = sensitivity.measured[:] * tools.invert_no_zero(
-            sensitivity.radiometer[:]
-        )
+        radiometer = sensitivity.measured[:] * invert_no_zero(sensitivity.radiometer[:])
         radiometer = mpiarray.MPIArray.wrap(radiometer, axis=1)
 
         freq = sensitivity.freq
@@ -1820,7 +1830,7 @@ class BlendStack(task.SingleTask):
             # otherwise weight is the sum of the variances. It's a bit obscure
             # because it attempts to do the operations in place rather than
             # building many temporaries
-            weight *= tools.invert_no_zero(weight + weight_stack)
+            weight *= invert_no_zero(weight + weight_stack)
             weight += (weight == 0) * self.frac
             weight *= weight_stack
 
@@ -1830,7 +1840,7 @@ class BlendStack(task.SingleTask):
             dset += weight_stack * self.frac * (dset_stack + stack_offset)
             weight += weight_stack * self.frac
 
-            dset *= tools.invert_no_zero(weight)
+            dset *= invert_no_zero(weight)
 
         return data
 
