@@ -31,9 +31,8 @@ def band_wiener(R, Ni, Si, y, bw):
         Transfer matrix for the Wiener filter.
     Ni : np.ndarray[k, n]
         Inverse noise matrix. Noise assumed to be uncorrelated (i.e. diagonal matrix).
-    Si : np.narray[m]
-        Inverse signal matrix. Signal model assumed to be uncorrelated (i.e. diagonal
-        matrix).
+    Si : np.ndarray[k, m] | float
+        Inverse signal variance. Signal assumed to be uncorrelated (i.e. diagonal matrix).
     y : np.ndarray[k, n]
         Data to apply to.
     bw : int
@@ -41,50 +40,138 @@ def band_wiener(R, Ni, Si, y, bw):
 
     Returns
     -------
-    xhat : np.ndarray[k, m]
-        Filtered data.
+    xh : np.ndarray[k, m]
+        Filtered signal
     nw : np.ndarray[k, m]
-        Estimate of variance of each element.
+        Estimate of inverse noise variance of each element
     """
-    Ni = np.atleast_2d(Ni)
+    # Project the signal through the inverse transfer matrix
+    xh = wiener_projection(R, y, Ni)
+
+    # Deconvolve the projected signal and noise
+    return wiener_deconvolve(R, Ni, Si, xh, bw)
+
+
+def wiener_projection(R, y, Ni=None):
+    r"""Calculate the dirty estimate of a signal given the transfer matrix and inverse noise.
+
+    :math:`\mathbf{R}^{T} \mathbf{N}^{-1} \mathbf{y}`
+
+    Parameters
+    ----------
+    R : np.ndarray[m, n]
+        Transfer matrix
+    Ni : np.ndarray[k, n]
+        Inverse noise matrix
+    y : np.ndarray[k, n]
+        Measured signal/data
+
+    Returns
+    -------
+    xhat : np.ndarray[k, m]
+        Dirty estimate of the signal y
+    """
     y = np.atleast_2d(y)
 
-    k = Ni.shape[0]
-    m = R.shape[0]
+    # Multiply by noise weights inplace to reduce
+    # memory usage (destroys original)
+    if Ni is not None:
+        y *= np.atleast_2d(Ni)
 
-    # Initialise arrays
-    xh = np.zeros((k, m), dtype=y.dtype)
-    nw = np.zeros((k, m), dtype=np.float32)
+    return y @ R.T.astype(y.real.dtype)
 
-    # Multiply by noise weights inplace to reduce memory usage (destroys original)
-    y *= Ni
 
-    # Calculate dirty estimate (and output straight into xh)
-    R_s = R.astype(np.float32)
-    np.dot(y, R_s.T, out=xh)
+def wiener_noise_covariance(R, Ni, bw):
+    """Make the band wiener noise covariance matrix.
+
+    This is a large matrix so unless it is explicitly needed in its
+    entirety, use `wiener_deconvolve` to solve the deconvolution
+    without generating the entire matrix.
+
+    Parameters
+    ----------
+    R : np.ndarray[m, n]
+        Transfer matrix for the Wiener filter.
+    Ni : np.ndarray[..., n]
+        Inverse noise matrix. Noise assumed to be uncorrelated (i.e. diagonal matrix)
+    bw : int
+        Bandwidth, i.e. how many elements couple together.
+
+    Returns
+    -------
+    Ci : np.ndarray[..., bw, m]
+        Signal covariance matrix for each PCA mode
+    """
+    Ni = np.atleast_2d(Ni)
+    shape_ = Ni.shape
+    Ni = Ni.reshape(-1, Ni.shape[-1])
+    Ci = np.zeros((Ni.shape[0], bw + 1, R.shape[0]), dtype=np.float64)
 
     # Calculate the start and end indices of the summation
-    start_ind = (R != 0).argmax(axis=-1).astype(np.int32)
-    end_ind = R.shape[-1] - (R[..., ::-1] != 0).argmax(axis=-1)
-    end_ind = np.where((R == 0).all(axis=-1), 0, end_ind).astype(np.int32)
+    start_ind, end_ind = _get_band_inds(R)
 
-    # Iterate through and solve noise
-    for ki in range(k):
+    for ki in range(Ni.shape[0]):
+        Ni_ki = Ni[ki].astype(np.float64)
+        # Calculate the Wiener noise weighting (i.e. inverse covariance)
+        # for each frequency and mode
+        Ci[ki] = _fast_tools._band_wiener_covariance(R, Ni_ki, start_ind, end_ind, bw)
+
+    return Ci.reshape((*shape_[:-1], *Ci.shape[-2:]))
+
+
+def wiener_deconvolve(R, Ni, Si, xh, bw):
+    r"""Solve for a filtered signal given a dirty estimate, transfer matrix, and noise.
+
+    Solve :math:`\mathbf{C}^{-1} \mathbf{\hat{v}} = \mathbf{w}`,
+    where `w` is the dirty estimate of the signal.
+
+    Parameters
+    ----------
+    R : np.ndarray[m, n]
+        Transfer matrix for the Wiener filter.
+    Ni : np.ndarray[k, n]
+        Inverse noise matrix. Noise assumed to be uncorrelated (i.e. diagonal matrix).
+    Si : np.narray[k, m]
+        Inverse signal matrix. Signal model assumed to be uncorrelated (i.e. diagonal
+        matrix).
+    xh : np.ndarray[k, m]
+        Dirty signal estimate. The deconvolved signal is saved to this array and will
+        overwrite it
+    bw : int
+        Bandwidth, i.e. how many elements couple together.
+
+    Returns
+    -------
+    xh : np.ndarray[k, m]
+        Filtered data.
+    nw : np.ndarray[k, m]
+        Noise realization
+    """
+    Ni = np.atleast_2d(Ni)
+    xh = np.atleast_2d(xh)
+
+    # If Si is given as a fixed value, add correct dimension
+    # and broadcast to the correct shape
+    Si = np.atleast_2d(Si)
+    Si = np.broadcast_to(Si, xh.shape)
+
+    # Make the output noise array
+    nw = np.zeros_like(xh, dtype=np.float32)
+
+    # Calculate the start and end indices of the summation
+    start_ind, end_ind = _get_band_inds(R)
+
+    # Iterate through the frequency-baseline axis and solve noise
+    for ki in range(Ni.shape[0]):
         # Upcast noise weights to float type
         Ni_ki = Ni[ki].astype(np.float64)
-
         # Calculate the Wiener noise weighting (i.e. inverse covariance)
         Ci = _fast_tools._band_wiener_covariance(R, Ni_ki, start_ind, end_ind, bw)
-
-        # Set the noise estimate before adding in the signal contribution. This avoids
-        # the issue that the inverse-noise estimate becomes non-zero even when the data
-        # was entirely missing
+        # Get the noise estimate as well
         nw[ki] = Ci[-1]
+        # Add on the signal covariance and solve
+        Ci[-1] += Si[ki]
 
-        # Add on the signal covariance part
-        Ci[-1] += Si
-
-        # Solve for the Wiener estimate
         xh[ki] = la.solveh_banded(Ci, xh[ki])
 
     return xh, nw
@@ -104,7 +191,7 @@ def lanczos_kernel(x, a):
     -------
     kernel : np.ndarray
     """
-    return np.where(np.abs(x) < a, np.sinc(x) * np.sinc(x / a), np.zeros_like(x))
+    return np.where(np.abs(x) < a, np.sinc(x) * np.sinc(x / a), 0.0)
 
 
 def lanczos_forward_matrix(x, y, a=5, periodic=False):
@@ -351,3 +438,25 @@ def taylor_coeff(
         ss.csr_array((W[:, i].ravel(), ind.ravel(), indptr), shape=(nx, nx))
         for i in range(M)
     ]
+
+
+def _get_band_inds(R: np.ndarray) -> tuple:
+    """Get the indices of the band edge for a band diagonal matrix.
+
+    Parameters
+    ----------
+    R
+        Band diagonal matrix
+
+    Returns
+    -------
+    start_ind : np.ndarray[int]
+        left indices of the band
+    end_ind : np.ndarray[int]
+        right indices of the band
+    """
+    start_ind = (R != 0).argmax(axis=-1).astype(np.int32)
+    end_ind = R.shape[-1] - (R[..., ::-1] != 0).argmax(axis=-1)
+    end_ind = np.where((R == 0).all(axis=-1), 0, end_ind).astype(np.int32)
+
+    return start_ind, end_ind
