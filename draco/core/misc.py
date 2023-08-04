@@ -310,3 +310,56 @@ class PassOn(task.MPILoggedTask):
     def next(self, input_):
         """Immediately forward any input."""
         return input_
+
+
+class DebugInfo(task.MPILoggedTask, task.SetMPILogging):
+    """Output some useful debug info."""
+
+    def __init__(self):
+        import logging
+
+        # Set the default log levels to something reasonable for debugging
+        self.level_rank0 = logging.DEBUG
+        self.level_all = logging.INFO
+        task.SetMPILogging.__init__(self)
+        task.MPILoggedTask.__init__(self)
+
+        ip = self._get_external_ip()
+
+        self.log.info(f"External IP is {ip}")
+
+        if self.comm.rank == 0:
+            versions = self._get_package_versions()
+
+            for name, version in versions:
+                self.log.info(f"Package: {name:40s} version={version}")
+
+    def _get_external_ip(self) -> str:
+        # Reference here:
+        # https://community.cloudflare.com/t/can-1-1-1-1-be-used-to-find-out-ones-public-ip-address/14971/6
+
+        # Setup a resolver to point to Cloudflare
+        import dns.resolver
+
+        r = dns.resolver.Resolver()
+        r.nameservers = ["1.1.1.1"]
+
+        # Get IP from cloudflare chaosnet TXT record, and parse the response
+        res = r.resolve("whoami.cloudflare", "TXT", "CH", tcp=True, lifetime=15)
+
+        return str(res[0]).replace('"', "")
+
+    def _get_package_versions(self) -> list[tuple[str, str]]:
+        import json
+        import subprocess
+
+        p = subprocess.run(["pip", "list", "--format", "json"], stdout=subprocess.PIPE)
+
+        package_info = json.loads(p.stdout)
+
+        package_list = []
+
+        for p in package_info:
+            package_list.append((p["name"], p["version"]))
+
+        return package_list
