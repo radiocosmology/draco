@@ -7,7 +7,7 @@ from typing import Optional, Union, overload
 
 import numpy as np
 import scipy.linalg as la
-from caput import config, mpiarray, pipeline
+from caput import config, mpiarray, pipeline, weighted_median
 from caput.tools import invert_no_zero
 from numpy.lib.recfunctions import structured_to_unstructured
 
@@ -785,6 +785,79 @@ def _unpack_marray(mmodes, n=None):
         marray[..., mmax_plus] = mmodes[mmax_plus, 0]
 
     return marray
+
+
+class FactorizeWeights(task.SingleTask):
+    """Factorize weights into a (freq, ra) array and a (freq, baseline) array."""
+
+    def process(self, data: containers.TimeStream) -> containers.FactorizedTimeStream:
+        """Break the weights into a freq-time projection and freq-baseline modes.
+
+        Parameters
+        ----------
+        data
+            timestream data
+
+        Returns
+        -------
+        out
+            timestream data with factorized weights
+        """
+        out = containers.FactorizedTimeStream(axes_from=data, attrs_from=data)
+        out.redistribute("freq")
+
+        weight = data.weight[:].local_array
+        # Factorize into the mean across baselines times a single multiplier
+        # for each baseline-freq pair
+        for ki in range(weight.shape[0]):
+            # Use float64 to maintain numerical stability
+            w_ki = weight[ki].astype(np.float64)
+            # Mean across baselines
+            Ni = np.mean(w_ki, axis=0)
+            # Ratio of each baseline to the mean
+            ratio = w_ki * invert_no_zero(Ni)[np.newaxis]
+            mask = (ratio != 0).astype(ratio.dtype)
+            # Median of the ratios over RA. There should be fairly minimal
+            # variation across RA. Since this ignores masked values, better
+            # masking will produce better results
+            modes = weighted_median.weighted_median(ratio, mask)
+
+            out.weight[:].local_array[ki] = Ni
+            out.modes[:].local_array[ki] = modes
+
+        # Add the visibilities
+        out.vis[:] = data.vis[:]
+
+        return out
+
+
+class ReconstructFactorizedWeights(task.SingleTask):
+    """Reconstruct complete weights from a factorized form.
+
+    The factorized weights have shape (freq, nmodes, time-like).
+    The modes have shape (freq, baselines, nmodes).
+    """
+
+    def process(self, data: containers.FactorizedTimeStream) -> containers.TimeStream:
+        """Reconstruct the weights.
+
+        Parameters
+        ----------
+        data
+            factorized timestream data
+
+        Returns
+        -------
+        out
+            timestream data with the weights reconstructed
+        """
+        out = containers.TimeStream(axes_from=data, attrs_from=data)
+        out.redistribute("freq")
+
+        out.vis[:] = data.vis[:]
+        out.weight[:] = data.full_weight[:]
+
+        return out
 
 
 class Regridder(task.SingleTask):
