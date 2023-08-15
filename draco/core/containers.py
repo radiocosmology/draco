@@ -709,7 +709,22 @@ class DataWeightContainer(ContainerBase):
         return self[self._weight_dset_name]
 
 
-class VisContainer(DataWeightContainer):
+class VisBase(DataWeightContainer):
+    """A very basic class for visibility data.
+
+    For better support for input/prod/stack structured data use `VisContainer`.
+    """
+
+    _data_dset_name = "vis"
+    _weight_dset_name = "vis_weight"
+
+    @property
+    def vis(self):
+        """The visibility like dataset."""
+        return self.datasets["vis"]
+
+
+class VisContainer(VisBase):
     """A base container for holding a visibility dataset.
 
     This works like a :class:`ContainerBase` container, with the
@@ -733,9 +748,6 @@ class VisContainer(DataWeightContainer):
     """
 
     _axes = ("input", "prod", "stack")
-
-    _data_dset_name = "vis"
-    _weight_dset_name = "vis_weight"
 
     def __init__(self, *args, **kwargs):
         # Resolve product map
@@ -792,11 +804,6 @@ class VisContainer(DataWeightContainer):
         # classes that actually need a reverse stack
         if reverse_map_stack is not None:
             self.create_reverse_map("stack", reverse_map_stack)
-
-    @property
-    def vis(self):
-        """The visibility like dataset."""
-        return self.datasets["vis"]
 
     @property
     def input(self):
@@ -1779,7 +1786,7 @@ class MModes(FreqContainer, VisContainer, MContainer):
     }
 
 
-class SVDModes(MContainer):
+class SVDModes(MContainer, VisBase):
     """Parallel container for holding SVD m-mode data.
 
     Parameters
@@ -1815,19 +1822,9 @@ class SVDModes(MContainer):
     }
 
     @property
-    def vis(self):
-        """Get the visibility dataset."""
-        return self.datasets["vis"]
-
-    @property
     def nmode(self):
         """Get the nmode dataset."""
         return self.datasets["nmode"]
-
-    @property
-    def weight(self):
-        """Get the weight dataset."""
-        return self.datasets["vis_weight"]
 
 
 class KLModes(SVDModes):
@@ -1842,7 +1839,7 @@ class KLModes(SVDModes):
     pass
 
 
-class VisGridStream(FreqContainer, SiderealContainer):
+class VisGridStream(FreqContainer, SiderealContainer, VisBase):
     """Visibilities gridded into a 2D array.
 
     Only makes sense for an array which is a cartesian grid.
@@ -1887,17 +1884,12 @@ class VisGridStream(FreqContainer, SiderealContainer):
     }
 
     @property
-    def vis(self):
-        """Get the vis dataset."""
-        return self.datasets["vis"]
-
-    @property
     def redundancy(self):
         """Get the redundancy dataset."""
         return self.datasets["redundancy"]
 
 
-class HybridVisStream(FreqContainer, SiderealContainer):
+class HybridVisStream(FreqContainer, SiderealContainer, VisBase):
     """Visibilities beamformed only in the NS direction.
 
     This container has visibilities beam formed only in the NS direction to give a
@@ -1931,17 +1923,12 @@ class HybridVisStream(FreqContainer, SiderealContainer):
     }
 
     @property
-    def vis(self):
-        """Get the vis dataset."""
-        return self.datasets["vis"]
-
-    @property
     def dirty_beam(self):
         """Not useful at this stage, but it's needed to propagate onward."""
         return self.datasets["dirty_beam"]
 
 
-class HybridVisMModes(FreqContainer, MContainer):
+class HybridVisMModes(FreqContainer, MContainer, VisBase):
     """Visibilities beamformed in the NS direction and m-mode transformed in RA.
 
     This container has visibilities beam formed only in the NS direction to give a
@@ -1966,11 +1953,6 @@ class HybridVisMModes(FreqContainer, MContainer):
             "distributed_axis": "freq",
         },
     }
-
-    @property
-    def vis(self):
-        """Get the vis dataset."""
-        return self.datasets["vis"]
 
 
 class RingMap(FreqContainer, SiderealContainer, DataWeightContainer):
