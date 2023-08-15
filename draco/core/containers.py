@@ -678,7 +678,38 @@ class TODContainer(ContainerBase, tod.TOData):
     _axes = ("time",)
 
 
-class VisContainer(ContainerBase):
+class DataWeightContainer(ContainerBase):
+    """A base class for containers with generic data/weight datasets.
+
+    This is meant such that tasks can operate generically over containers with this
+    common structure. The data and weight datasets are expected to have the same size,
+    though this isn't checked. Subclasses must define `_data_dset_name` and
+    `_weight_dset_name`.
+    """
+
+    _data_dset_name = None
+    _weight_dset_name = None
+
+    @property
+    def data(self) -> memh5.MemDataset:
+        """The main dataset."""
+        if not self._data_dset_name:
+            raise RuntimeError(f"Type {type(self)} has not defined `_data_dset_name`.")
+
+        return self[self._data_dset_name]
+
+    @property
+    def weight(self) -> memh5.MemDataset:
+        """The weights for each data point."""
+        if not self._weight_dset_name:
+            raise RuntimeError(
+                f"Type {type(self)} has not defined `_weight_dset_name`."
+            )
+
+        return self[self._weight_dset_name]
+
+
+class VisContainer(DataWeightContainer):
     """A base container for holding a visibility dataset.
 
     This works like a :class:`ContainerBase` container, with the
@@ -702,6 +733,9 @@ class VisContainer(ContainerBase):
     """
 
     _axes = ("input", "prod", "stack")
+
+    _data_dset_name = "vis"
+    _weight_dset_name = "vis_weight"
 
     def __init__(self, *args, **kwargs):
         # Resolve product map
@@ -763,11 +797,6 @@ class VisContainer(ContainerBase):
     def vis(self):
         """The visibility like dataset."""
         return self.datasets["vis"]
-
-    @property
-    def weight(self):
-        """The visibility weights."""
-        return self.datasets["vis_weight"]
 
     @property
     def input(self):
@@ -1863,11 +1892,6 @@ class VisGridStream(FreqContainer, SiderealContainer):
         return self.datasets["vis"]
 
     @property
-    def weight(self):
-        """Get the weight dataset."""
-        return self.datasets["vis_weight"]
-
-    @property
     def redundancy(self):
         """Get the redundancy dataset."""
         return self.datasets["redundancy"]
@@ -1912,11 +1936,6 @@ class HybridVisStream(FreqContainer, SiderealContainer):
         return self.datasets["vis"]
 
     @property
-    def weight(self):
-        """Get the weight dataset."""
-        return self.datasets["vis_weight"]
-
-    @property
     def dirty_beam(self):
         """Not useful at this stage, but it's needed to propagate onward."""
         return self.datasets["dirty_beam"]
@@ -1953,16 +1972,8 @@ class HybridVisMModes(FreqContainer, MContainer):
         """Get the vis dataset."""
         return self.datasets["vis"]
 
-    @property
-    def weight(self):
-        """Get the weight dataset.
 
-        The actual dataset entry is `vis_weight`.
-        """
-        return self.datasets["vis_weight"]
-
-
-class RingMap(FreqContainer, SiderealContainer):
+class RingMap(FreqContainer, SiderealContainer, DataWeightContainer):
     """Container for holding multifrequency ring maps.
 
     The maps are packed in format `[freq, pol, ra, EW beam, el]` where
@@ -2028,6 +2039,9 @@ class RingMap(FreqContainer, SiderealContainer):
         },
     }
 
+    _data_dset_name = "map"
+    _weight_dset_name = "weight"
+
     @property
     def pol(self):
         """Get the pol axis."""
@@ -2047,11 +2061,6 @@ class RingMap(FreqContainer, SiderealContainer):
     def rms(self):
         """Get the rms dataset."""
         return self.datasets["rms"]
-
-    @property
-    def weight(self):
-        """Get the weight dataset."""
-        return self.datasets["weight"]
 
     @property
     def dirty_beam(self):
