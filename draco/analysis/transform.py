@@ -1471,3 +1471,114 @@ class ReduceVar(ReduceBase):
         v = np.sum(weight * (arr - mu) ** 2, axis=axis, keepdims=True) * ws
 
         return v, np.ones_like(v)
+
+
+class HPFTimeStream(task.SingleTask):
+    """High pass filter a timestream.
+
+    This is done by solving for a low-pass filtered version of the timestream and then
+    subtracting it from the original.
+
+    Parameters
+    ----------
+    tau
+        Timescale in seconds to filter out fluctuations below.
+    pad
+        Implicitly pad the timestream with this many multiples of tau worth of zeros.
+        This is used to mitigate edge effects. The default is 2.
+    window
+        Use a Blackman window when determining the low-pass filtered timestream. When
+        applied this approximately doubles the length of the timescale, which is only
+        crudely corrected for.
+    prior
+        This should be approximately the size of the large scale fluctuations that we
+        will use as a regulariser.
+    """
+
+    tau = config.Property(proptype=float)
+    pad = config.Property(proptype=float, default=2)
+    window = config.Property(proptype=bool, default=True)
+
+    prior = config.Property(proptype=float, default=1e2)
+
+    def process(self, tstream: containers.TODContainer) -> containers.TODContainer:
+        """High pass filter a time stream.
+
+        Parameters
+        ----------
+        tstream
+            A TOD container that also implements DataWeightContainer.
+
+        Returns
+        -------
+        filtered_tstream
+            The high-pass filtered time stream.
+        """
+        if not isinstance(tstream, containers.DataWeightContainer):
+            # NOTE: no python intersection type so need to do this for now
+            raise TypeError("Need a DataWeightContainers")
+
+        if "time" != tstream.data.attrs["axis"][-1]:
+            raise TypeError("'time' is not the last axis of the dataset.")
+
+        if tstream.data.shape != tstream.weight.shape:
+            raise ValueError("Data and weights must have the same shape.")
+
+        # Distribute over the first axis
+        tstream.redistribute(tstream.data.attrs["axis"][0])
+
+        tau = 2 * self.tau if self.window else self.tau
+
+        dt = np.diff(tstream.time)
+        if not np.allclose(dt, dt[0], atol=1e-4):
+            self.log.warn(
+                "Samples are not regularly spaced. This might not work super well."
+            )
+
+        total_T = tstream.time[-1] - tstream.time[0] + 2 * tau
+
+        # Calculate the nearest integer multiple of modes based on the total length and
+        # the timescale
+        nmodes = int(np.ceil(total_T / tau))
+
+        # Calculate the conjugate fourier frequencies to use, we don't need to be in the
+        # canonical order as we're going to calculate this exactly via matrices
+        t_freq = np.arange(-nmodes, nmodes) / total_T
+
+        F = np.exp(2.0j * np.pi * tstream.time[:, np.newaxis] * t_freq[np.newaxis, :])
+
+        if self.window:
+            F *= np.blackman(2 * nmodes)[np.newaxis, :]
+
+        Fh = F.T.conj().copy()
+
+        dflat = tstream.data[:].view(np.ndarray).reshape(-1, len(tstream.time))
+        wflat = tstream.weight[:].view(np.ndarray).reshape(-1, len(tstream.time))
+
+        Si = np.identity(2 * nmodes) * self.prior**-2
+
+        for ii in range(dflat.shape[0]):
+
+            d, w = dflat[ii], wflat[ii]
+
+            wsum = w.sum()
+            if wsum == 0:
+                continue
+
+            m = np.sum(d * w) / wsum
+
+            # dirty = Fh @ ((d - m) * w)
+            # Ci = Fh @ (w[:, np.newaxis] * F)
+            d -= m
+            dirty = np.dot(Fh, (d * w))
+            Ci = np.dot(Fh, w[:, np.newaxis] * F)
+            Ci += Si
+
+            f_lpf = la.solve(Ci, dirty, assume_a="pos")
+
+            # As we know the result will be real, split up the matrix multiplication to
+            # guarantee this
+            t_lpf = np.dot(F.real, f_lpf.real) - np.dot(F.imag, f_lpf.imag)
+            d -= t_lpf
+
+        return tstream
