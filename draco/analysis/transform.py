@@ -5,6 +5,7 @@ This includes grouping frequencies and products to performing the m-mode transfo
 from typing import Optional, Tuple, Union, overload
 
 import numpy as np
+import scipy.linalg as la
 from caput import config, mpiarray
 from caput.tools import invert_no_zero
 from numpy.lib.recfunctions import structured_to_unstructured
@@ -1558,7 +1559,6 @@ class HPFTimeStream(task.SingleTask):
         Si = np.identity(2 * nmodes) * self.prior**-2
 
         for ii in range(dflat.shape[0]):
-
             d, w = dflat[ii], wflat[ii]
 
             wsum = w.sum()
