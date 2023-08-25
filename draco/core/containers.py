@@ -2874,7 +2874,7 @@ def copy_datasets_filter(
         not be copied.
     """
     exclude_axes_set = set(exclude_axes) if exclude_axes else set()
-    if type(axis) is str:
+    if isinstance(axis, str):
         axis = [axis]
     axis = set(axis)
 

@@ -775,9 +775,9 @@ class Truncate(task.SingleTask):
 
         # Parse config parameters
         params = self.default_params.copy()
-        if type(given_params) is dict:
+        if isinstance(given_params, dict):
             params.update(given_params)
-        elif type(given_params) is float:
+        elif isinstance(given_params, float):
             params["fixed_precision"] = given_params
         elif not given_params:
             self.log.debug(f"Not truncating dataset '{dset}' in {container}.")

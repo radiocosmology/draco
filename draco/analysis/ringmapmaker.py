@@ -1125,7 +1125,7 @@ def find_basis(baselines):
         Unit vectors pointing in the mostly X and mostly Y directions of the grid.
     """
     # Find the shortest baseline, this should give one of the axes
-    bl = np.abs(baselines)
+    bl = np.sum(baselines**2, axis=1)
     bl[bl == 0] = 1e30
     ind = np.argmin(bl)
 
