@@ -1273,6 +1273,17 @@ class SiderealDirtyStream(FreqContainer, VisContainer, SiderealContainer):
             "chunks": (64, 128, 128),
             "truncate": True,
         },
+        "vis_weight": {
+            "axes": ["freq", "stack", "ra"],
+            "dtype": np.float32,
+            "initialise": False,
+            "distributed": True,
+            "distributed_axis": "freq",
+            "compression": COMPRESSION,
+            "compression_opts": COMPRESSION_OPTS,
+            "chunks": (64, 128, 128),
+            "truncate": True,
+        },
         "signal_cov": {
             "axes": ["freq", "bandwidth", "ra"],
             "dtype": np.float64,
