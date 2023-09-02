@@ -15,7 +15,7 @@ from caput import config, mpiarray, tod, weighted_median
 from cora.util import units
 
 from ..core import containers, io, task
-from ..util import tools, regrid
+from ..util import regrid, tools
 from .transform import Regridder
 
 
@@ -204,11 +204,11 @@ class SiderealDirtyRegridder(Regridder):
         modes = data.modes[:].local_array
         vis_data = data.vis[:].local_array
 
-        xh, Ci = self._regrid(vis_data, Ni, modes, timestamp_lsd)
+        xh, Ci, nw = self._regrid(vis_data, Ni, modes, timestamp_lsd)
 
         # This will be padded so we have to extend the RA axis accordingly
         new_samples = self.samples + 2 * self.pad
-        ra_delta = (((new_samples / self.samples)) * 360 - 360) / 2
+        ra_delta = ((new_samples / self.samples) * 360 - 360) / 2
         ra = np.linspace(-ra_delta, 360 + ra_delta, new_samples, endpoint=False)
 
         # Make the new container
@@ -217,11 +217,13 @@ class SiderealDirtyRegridder(Regridder):
             ra=ra,
             bandwidth=2 * self.lanczos_width,
         )
+        sdata.add_dataset("vis_weight")
         sdata.redistribute("freq")
 
         sdata.vis[:].local_array[:] = xh
         sdata.signal_cov[:].local_array[:] = Ci
         sdata.modes[:].local_array[:] = modes
+        sdata.weight[:].local_array[:] = nw
 
         sdata.attrs["lsd"] = data.attrs["lsd"]
         sdata.attrs["tag"] = f"lsd_{data.attrs['lsd']}"
@@ -256,8 +258,22 @@ class SiderealDirtyRegridder(Regridder):
         # Make the dirty projection into signal space
         vis_data = vis_data.reshape(-1, vis_data.shape[-1])
         xh = regrid.wiener_projection(lzf, vis_data, weight).reshape(shape_)
+        nw = (modes[:, :, np.newaxis] @ Ci[:, -1][:, np.newaxis]).reshape(shape_)
 
-        return xh, Ci
+        return xh, Ci, nw
+
+
+class RemoveDirtyWeights(task.SingleTask):
+    """Remove weights dataset from a dirty stream."""
+
+    def process(self, data: containers.SiderealDirtyStream):
+        """Remove the weights."""
+        out = containers.SiderealDirtyStream(attrs_from=data, axes_from=data)
+        out.vis[:] = data.vis[:]
+        out.signal_cov[:] = data.signal_cov[:]
+        out.modes[:] = data.modes[:]
+
+        return out
 
 
 class SiderealGridDeconvolve(task.SingleTask):
@@ -1140,7 +1156,7 @@ class SiderealStackerDeconvolve(SiderealGridDeconvolve):
 
 def _ensure_list(x):
     if hasattr(x, "__iter__"):
-        y = list(x)
+        y = [xx for xx in x]  # noqa: C416
     else:
         y = [x]
 
