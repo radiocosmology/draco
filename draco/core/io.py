@@ -102,7 +102,7 @@ def _list_or_glob(files: Union[str, List[str]]) -> List[str]:
         return parsed_files
 
     # If it's a glob we need to expand the glob and then call again
-    if isinstance(files, str) and "*" in files:
+    if isinstance(files, str) and any(c in files for c in "*?["):
         return _list_or_glob(sorted(glob.glob(files)))
 
     # We presume a string is an actual path...
