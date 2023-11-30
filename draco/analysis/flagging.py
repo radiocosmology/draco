@@ -933,6 +933,10 @@ class ThresholdVisWeightBaseline(task.SingleTask):
         # Save mask to output container
         mask_cont.mask[:] = mpiarray.MPIArray.wrap(local_mask, axis=1)
 
+        # Distribute back across frequency
+        mask_cont.redistribute("freq")
+        stream.redistribute("freq")
+
         return mask_cont
 
 
