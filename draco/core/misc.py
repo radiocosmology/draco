@@ -298,3 +298,15 @@ class WaitUntil(task.MPILoggedTask):
     def next(self, input_):
         """Immediately forward any input."""
         return input_
+
+
+class PassOn(task.MPILoggedTask):
+    """Unconditionally forward a tasks input.
+
+    While this seems like a pointless no-op it's useful for connecting tasks in complex
+    topologies.
+    """
+
+    def next(self, input_):
+        """Immediately forward any input."""
+        return input_
