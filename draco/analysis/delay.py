@@ -520,7 +520,7 @@ class DelayGibbsSamplerBase(DelayTransformBase, random.RandomTask):
 
         Returns
         -------
-        out_cont : `contaiers.DelayTransform` or `containers.DelaySpectrum`
+        out_cont : `containers.DelayTransform` or `containers.DelaySpectrum`
             Output delay spectrum or delay power spectrum.
         """
         nbase = out_cont.spectrum.global_shape[0]
@@ -1239,7 +1239,7 @@ def delay_power_spectrum_gibbs(
         # then doing a matrix solve
         y = np.dot(FTNih, data + w2) + Si[:, np.newaxis] ** 0.5 * w1
 
-        return la.solve(Ci, y, sym_pos=True)
+        return la.solve(Ci, y, assume_a="pos")
 
     def _draw_signal_sample_t(S):
         # This method is fastest if the number of delays is larger than the number of
@@ -1268,7 +1268,7 @@ def delay_power_spectrum_gibbs(
         # Perform the solve step (rather than explicitly using the inverse)
         y = data + w2 - np.dot(R, w1)
         Ci = np.identity(2 * Ni.shape[0]) + np.dot(R, Rt)
-        x = la.solve(Ci, y, sym_pos=True)
+        x = la.solve(Ci, y, assume_a="pos")
 
         return Sh[:, np.newaxis] * (np.dot(Rt, x) + w1)
 
@@ -1564,7 +1564,7 @@ def delay_spectrum_wiener_filter(
 
     # Solve the linear equation for the Wiener-filtered spectrum, and transpose to
     # [average_axis, delay]
-    y_spec = la.solve(Ci, y, sym_pos=True).T
+    y_spec = la.solve(Ci, y, assume_a="pos").T
 
     if complex_timedomain:
         y_spec = _alternating_real_to_complex(y_spec)
