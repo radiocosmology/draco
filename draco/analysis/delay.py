@@ -697,13 +697,15 @@ class DelayGeneralContainerBase(DelayTransformBase):
 
     Attributes
     ----------
-    dataset : str
-        Calculate the delay spectrum of this dataset (e.g., "vis", "map", "beam").
+    dataset : str, optional
+        Calculate the delay spectrum of this dataset (e.g., "vis", "map", "beam"). If
+        not set, assume the input is a `DataWeightContainer` and use the main data
+        dataset.
     average_axis : str
         Name of the axis to take the average over.
     """
 
-    dataset = config.Property(proptype=str, default="vis")
+    dataset = config.Property(proptype=str, default=None)
     average_axis = config.Property(proptype=str)
 
     def _process_data(self, ss):
@@ -711,8 +713,8 @@ class DelayGeneralContainerBase(DelayTransformBase):
 
         Parameters
         ----------
-        ss : `containers.FreqContainer`
-            Data to transform. Must have a frequency axis.
+        ss : `FreqContainer` and `DataWeightContainer` subclass.
+            Data to transform. Must have a frequency axis, and a weight dataset.
 
         Returns
         -------
@@ -724,15 +726,19 @@ class DelayGeneralContainerBase(DelayTransformBase):
         out_cont : `containers.DelayTransform` or `containers.DelaySpectrum`
             Container for output delay spectrum or power spectrum.
         """
-        if self.dataset not in ss.datasets:
-            raise ValueError(
-                f"Specified dataset to delay transform ({self.dataset}) not in "
-                f"container of type {type(ss)}."
-            )
+        if self.dataset is not None:
+            if self.dataset not in ss.datasets:
+                raise ValueError(
+                    f"Specified dataset to delay transform ({self.dataset}) not in "
+                    f"container of type {type(ss)}."
+                )
+            data_dset = ss[self.dataset]
+        else:
+            data_dset = ss.data
 
         if (
             self.average_axis not in ss.axes
-            or self.average_axis not in ss.datasets[self.dataset].attrs["axis"]
+            or self.average_axis not in data_dset.attrs["axis"]
         ):
             raise ValueError(
                 f"Specified axis to average over ({self.average_axis}) not in "
@@ -740,13 +746,9 @@ class DelayGeneralContainerBase(DelayTransformBase):
             )
 
         # Find the relevant axis positions
-        data_view, bl_axes = flatten_axes(
-            ss.datasets[self.dataset], [self.average_axis, "freq"]
-        )
+        data_view, bl_axes = flatten_axes(data_dset, [self.average_axis, "freq"])
         weight_view, _ = flatten_axes(
-            ss.weight,
-            [self.average_axis, "freq"],
-            match_dset=ss.datasets[self.dataset],
+            ss.weight, [self.average_axis, "freq"], match_dset=data_dset
         )
 
         return data_view, weight_view, bl_axes
