@@ -554,6 +554,7 @@ class DelayGibbsSamplerBase(DelayTransformBase, random.RandomTask):
     nsamp = config.Property(proptype=int, default=20)
     initial_amplitude = config.Property(proptype=float, default=10.0)
     weight_boost = config.Property(proptype=float, default=1.0)
+    save_samples = config.Property(proptype=bool, default=False)
 
     def _create_output(
         self,
@@ -580,6 +581,7 @@ class DelayGibbsSamplerBase(DelayTransformBase, random.RandomTask):
         delay_spec = containers.DelaySpectrum(
             baseline=bl,
             delay=delays,
+            sample=self.nsamp,
             attrs_from=ss,
         )
 
@@ -593,6 +595,9 @@ class DelayGibbsSamplerBase(DelayTransformBase, random.RandomTask):
             for ax in coord_axes:
                 delay_spec.create_index_map(ax, ss.index_map[ax])
             delay_spec.attrs["baseline_axes"] = coord_axes
+
+        if self.save_samples:
+            delay_spec.add_dataset("spectrum_samples")
 
         return delay_spec
 
@@ -675,6 +680,9 @@ class DelayGibbsSamplerBase(DelayTransformBase, random.RandomTask):
             # (presuming that removes the burn-in)
             spec_av = np.median(spec[-(self.nsamp // 2) :], axis=0)
             out_cont.spectrum[bi] = np.fft.fftshift(spec_av)
+
+            if self.save_samples:
+                out_cont.datasets["spectrum_samples"][:, bi] = spec
 
         return out_cont
 
