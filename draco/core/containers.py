@@ -2298,7 +2298,7 @@ class DelaySpectrum(DelayContainer):
     container.
     """
 
-    _axes = ("baseline",)
+    _axes = ("baseline", "sample")
 
     _dataset_spec = {
         "spectrum": {
@@ -2307,11 +2307,18 @@ class DelaySpectrum(DelayContainer):
             "initialise": True,
             "distributed": True,
             "distributed_axis": "baseline",
-        }
+        },
+        "spectrum_samples": {
+            "axes": ["sample", "baseline", "delay"],
+            "dtype": np.float64,
+            "initialise": False,
+            "distributed": True,
+            "distributed_axis": "baseline",
+        },
     }
 
-    def __init__(self, weight_boost=1.0, *args, **kwargs):
-        super().__init__(*args, **kwargs)
+    def __init__(self, *args, weight_boost=1.0, sample=1, **kwargs):
+        super().__init__(*args, sample=sample, **kwargs)
         self.attrs["weight_boost"] = weight_boost
 
     @property
