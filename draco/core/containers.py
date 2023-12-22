@@ -2075,7 +2075,34 @@ class RingMapMask(FreqContainer, SiderealContainer):
         return self.datasets["mask"]
 
 
-class CommonModeGainData(FreqContainer, TODContainer):
+class GainDataBase(DataWeightContainer):
+    """A container interface for gain-like data.
+
+    To support the previous behaviour of gain type data the weight dataset is optional,
+    and returns None if it is not present.
+    """
+
+    _data_dset_name = "gain"
+    _weight_dset_name = "weight"
+
+    @property
+    def gain(self) -> memh5.MemDataset:
+        """Get the gain dataset."""
+        return self.datasets["gain"]
+
+    @property
+    def weight(self) -> Optional[memh5.MemDataset]:
+        """The weights for each data point.
+
+        Returns None is no weight dataset exists.
+        """
+        try:
+            return super().weight
+        except KeyError:
+            return None
+
+
+class CommonModeGainData(FreqContainer, TODContainer, GainDataBase):
     """Parallel container for holding gain data common to all inputs."""
 
     _dataset_spec = {
@@ -2095,21 +2122,8 @@ class CommonModeGainData(FreqContainer, TODContainer):
         },
     }
 
-    @property
-    def gain(self):
-        """Get the gain dataset."""
-        return self.datasets["gain"]
 
-    @property
-    def weight(self):
-        """Get the weight dataset if it exists."""
-        try:
-            return self.datasets["weight"]
-        except KeyError:
-            return None
-
-
-class CommonModeSiderealGainData(FreqContainer, SiderealContainer):
+class CommonModeSiderealGainData(FreqContainer, SiderealContainer, GainDataBase):
     """Parallel container for holding sidereal gain data common to all inputs."""
 
     _dataset_spec = {
@@ -2129,21 +2143,8 @@ class CommonModeSiderealGainData(FreqContainer, SiderealContainer):
         },
     }
 
-    @property
-    def gain(self):
-        """Get the gain dataset."""
-        return self.datasets["gain"]
 
-    @property
-    def weight(self):
-        """Get the weight dataset if it exists."""
-        try:
-            return self.datasets["weight"]
-        except KeyError:
-            return None
-
-
-class GainData(FreqContainer, TODContainer):
+class GainData(FreqContainer, TODContainer, GainDataBase):
     """Parallel container for holding gain data."""
 
     _axes = ("input",)
@@ -2172,19 +2173,6 @@ class GainData(FreqContainer, TODContainer):
     }
 
     @property
-    def gain(self):
-        """Get the gain dataset."""
-        return self.datasets["gain"]
-
-    @property
-    def weight(self):
-        """Get the weight dataset if it exists."""
-        try:
-            return self.datasets["weight"]
-        except KeyError:
-            return None
-
-    @property
     def update_id(self):
         """Get the update id dataset if it exists."""
         try:
@@ -2198,7 +2186,7 @@ class GainData(FreqContainer, TODContainer):
         return self.index_map["input"]
 
 
-class SiderealGainData(FreqContainer, SiderealContainer):
+class SiderealGainData(FreqContainer, SiderealContainer, GainDataBase):
     """Parallel container for holding sidereal gain data."""
 
     _axes = ("input",)
@@ -2221,25 +2209,12 @@ class SiderealGainData(FreqContainer, SiderealContainer):
     }
 
     @property
-    def gain(self):
-        """Get the gain dataset."""
-        return self.datasets["gain"]
-
-    @property
-    def weight(self):
-        """Get the weight dataset if it exists."""
-        try:
-            return self.datasets["weight"]
-        except KeyError:
-            return None
-
-    @property
     def input(self):
         """Get the input axis."""
         return self.index_map["input"]
 
 
-class StaticGainData(FreqContainer, DataWeightContainer):
+class StaticGainData(FreqContainer, GainDataBase):
     """Parallel container for holding static gain data (i.e. non time varying)."""
 
     _axes = ("input",)
@@ -2260,14 +2235,6 @@ class StaticGainData(FreqContainer, DataWeightContainer):
             "distributed_axis": "freq",
         },
     }
-
-    _data_dset_name = "gain"
-    _weight_dset_name = "weight"
-
-    @property
-    def gain(self):
-        """Get the gain dataset."""
-        return self.datasets["gain"]
 
     @property
     def input(self):
