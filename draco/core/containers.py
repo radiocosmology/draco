@@ -2273,7 +2273,18 @@ class DelayCutoff(ContainerBase):
         return self.index_map["el"]
 
 
-class DelaySpectrum(ContainerBase):
+class DelayContainer(ContainerBase):
+    """A container with a delay axis."""
+
+    _axes = ("delay",)
+
+    @property
+    def delay(self) -> np.ndarray:
+        """The delay axis in microseconds."""
+        return self.index_map["delay"]
+
+
+class DelaySpectrum(DelayContainer):
     """Container for a delay power spectrum.
 
     Notes
@@ -2287,7 +2298,7 @@ class DelaySpectrum(ContainerBase):
     container.
     """
 
-    _axes = ("baseline", "delay")
+    _axes = ("baseline",)
 
     _dataset_spec = {
         "spectrum": {
@@ -2323,7 +2334,7 @@ class DelaySpectrum(ContainerBase):
         return self.attrs["freq"]
 
 
-class DelayTransform(ContainerBase):
+class DelayTransform(DelayContainer):
     """Container for a delay spectrum.
 
     Notes
@@ -2332,7 +2343,7 @@ class DelayTransform(ContainerBase):
     description of the difference between `DelayTransform` and `DelaySpectrum`.
     """
 
-    _axes = ("baseline", "sample", "delay")
+    _axes = ("baseline", "sample")
 
     _dataset_spec = {
         "spectrum": {
@@ -2368,10 +2379,10 @@ class DelayTransform(ContainerBase):
         return self.attrs["freq"]
 
 
-class WaveletSpectrum(FreqContainer, DataWeightContainer):
+class WaveletSpectrum(FreqContainer, DelayContainer, DataWeightContainer):
     """Container for a wavelet power spectrum."""
 
-    _axes = ("baseline", "freq", "delay")
+    _axes = ("baseline",)
 
     _dataset_spec = {
         "spectrum": {
