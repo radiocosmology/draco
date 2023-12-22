@@ -687,16 +687,21 @@ class DataWeightContainer(ContainerBase):
     `_weight_dset_name`.
     """
 
-    _data_dset_name = None
-    _weight_dset_name = None
+    _data_dset_name: Optional[str] = None
+    _weight_dset_name: Optional[str] = None
 
     @property
     def data(self) -> memh5.MemDataset:
         """The main dataset."""
-        if not self._data_dset_name:
+        if self._data_dset_name is None:
             raise RuntimeError(f"Type {type(self)} has not defined `_data_dset_name`.")
 
-        return self[self._data_dset_name]
+        dset = self[self._data_dset_name]
+
+        if not isinstance(dset, memh5.MemDataset):
+            raise TypeError(f"/{self._data_dset_name} is not a dataset")
+
+        return dset
 
     @property
     def weight(self) -> memh5.MemDataset:
@@ -706,7 +711,12 @@ class DataWeightContainer(ContainerBase):
                 f"Type {type(self)} has not defined `_weight_dset_name`."
             )
 
-        return self[self._weight_dset_name]
+        dset = self[self._weight_dset_name]
+
+        if not isinstance(dset, memh5.MemDataset):
+            raise TypeError(f"/{self._weight_dset_name} is not a dataset")
+
+        return dset
 
 
 class VisBase(DataWeightContainer):
@@ -881,7 +891,7 @@ class SampleVarianceContainer(ContainerBase):
 
     @property
     def sample_variance(self):
-        """Convience access to the sample variance dataset.
+        """Convenience access to the sample variance dataset.
 
         Returns
         -------
@@ -1105,7 +1115,7 @@ class HealpixContainer(ContainerBase):
 
 
 class Map(FreqContainer, HealpixContainer):
-    """Container for holding multifrequency sky maps.
+    """Container for holding multi-frequency sky maps.
 
     The maps are packed in format `[freq, pol, pixel]` where the polarisations
     are Stokes I, Q, U and V, and the pixel dimension stores a Healpix map.
@@ -1467,7 +1477,7 @@ class TimeStream(FreqContainer, VisContainer, TODContainer):
         return self.datasets["input_flags"]
 
 
-class GridBeam(FreqContainer):
+class GridBeam(FreqContainer, DataWeightContainer):
     """Generic container for representing a 2D beam on a rectangular grid."""
 
     _axes = ("pol", "input", "theta", "phi")
@@ -1503,6 +1513,9 @@ class GridBeam(FreqContainer):
         },
     }
 
+    _data_dset_name = "beam"
+    _weight_dset_name = "weight"
+
     def __init__(self, coords="celestial", *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.attrs["coords"] = coords
@@ -1511,11 +1524,6 @@ class GridBeam(FreqContainer):
     def beam(self):
         """Get the beam dataset."""
         return self.datasets["beam"]
-
-    @property
-    def weight(self):
-        """Get the weight dataset."""
-        return self.datasets["weight"]
 
     @property
     def quality(self):
@@ -1553,7 +1561,7 @@ class GridBeam(FreqContainer):
         return self.index_map["phi"]
 
 
-class HEALPixBeam(FreqContainer, HealpixContainer):
+class HEALPixBeam(FreqContainer, HealpixContainer, DataWeightContainer):
     """Container for representing the spherical 2-d beam in a HEALPix grid.
 
     Parameters
@@ -1583,6 +1591,9 @@ class HEALPixBeam(FreqContainer, HealpixContainer):
         },
     }
 
+    _data_dset_name = "beam"
+    _weight_dset_name = "weight"
+
     def __init__(self, coords="unknown", ordering="unknown", *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.attrs["coords"] = coords
@@ -1592,11 +1603,6 @@ class HEALPixBeam(FreqContainer, HealpixContainer):
     def beam(self):
         """Get the beam dataset."""
         return self.datasets["beam"]
-
-    @property
-    def weight(self):
-        """Get the weight dataset."""
-        return self.datasets["weight"]
 
     @property
     def ordering(self):
@@ -1624,7 +1630,7 @@ class HEALPixBeam(FreqContainer, HealpixContainer):
         return int(np.sqrt(len(self.index_map["pixel"]) / 12))
 
 
-class TrackBeam(FreqContainer, SampleVarianceContainer):
+class TrackBeam(FreqContainer, SampleVarianceContainer, DataWeightContainer):
     """Container for a sequence of beam samples at arbitrary locations on the sphere.
 
     The axis of the beam samples is 'pix', defined by the numpy.dtype
@@ -1681,6 +1687,9 @@ class TrackBeam(FreqContainer, SampleVarianceContainer):
         },
     }
 
+    _data_dset_name = "beam"
+    _weight_dset_name = "weight"
+
     def __init__(
         self,
         theta=None,
@@ -1715,11 +1724,6 @@ class TrackBeam(FreqContainer, SampleVarianceContainer):
     def beam(self):
         """Get the beam dataset."""
         return self.datasets["beam"]
-
-    @property
-    def weight(self):
-        """Get the weight dataset."""
-        return self.datasets["weight"]
 
     @property
     def gain(self):
@@ -2235,7 +2239,7 @@ class SiderealGainData(FreqContainer, SiderealContainer):
         return self.index_map["input"]
 
 
-class StaticGainData(FreqContainer):
+class StaticGainData(FreqContainer, DataWeightContainer):
     """Parallel container for holding static gain data (i.e. non time varying)."""
 
     _axes = ("input",)
@@ -2257,15 +2261,13 @@ class StaticGainData(FreqContainer):
         },
     }
 
+    _data_dset_name = "gain"
+    _weight_dset_name = "weight"
+
     @property
     def gain(self):
         """Get the gain dataset."""
         return self.datasets["gain"]
-
-    @property
-    def weight(self):
-        """Get the weight dataset."""
-        return self.datasets["weight"]
 
     @property
     def input(self):
@@ -2399,7 +2401,7 @@ class DelayTransform(ContainerBase):
         return self.attrs["freq"]
 
 
-class WaveletSpectrum(ContainerBase):
+class WaveletSpectrum(FreqContainer, DataWeightContainer):
     """Container for a wavelet power spectrum."""
 
     _axes = ("baseline", "freq", "delay")
@@ -2420,16 +2422,13 @@ class WaveletSpectrum(ContainerBase):
             "distributed_axis": "baseline",
         },
     }
+    _data_dset_name = "spectrum"
+    _weight_dset_name = "weight"
 
     @property
     def spectrum(self):
         """The wavelet spectrum."""
         return self.datasets["spectrum"]
-
-    @property
-    def weight(self):
-        """The weights for the spectrum."""
-        return self.datasets["weight"]
 
 
 class DelayCrossSpectrum(DelaySpectrum):
@@ -2547,7 +2546,7 @@ class SVDSpectrum(ContainerBase):
         return self.datasets["spectrum"]
 
 
-class FrequencyStack(FreqContainer):
+class FrequencyStack(FreqContainer, DataWeightContainer):
     """Container for a frequency stack.
 
     In general used to hold the product of `draco.analysis.SourceStack`
@@ -2570,15 +2569,13 @@ class FrequencyStack(FreqContainer):
         },
     }
 
+    _data_dset_name = "stack"
+    _weight_dset_name = "weight"
+
     @property
     def stack(self):
         """Get the stack dataset."""
         return self.datasets["stack"]
-
-    @property
-    def weight(self):
-        """Get the weight dataset."""
-        return self.datasets["weight"]
 
 
 class FrequencyStackByPol(FrequencyStack):
@@ -2655,7 +2652,7 @@ class MockFrequencyStackByPol(FrequencyStackByPol):
     }
 
 
-class Stack3D(FreqContainer):
+class Stack3D(FreqContainer, DataWeightContainer):
     """Container for a 3D frequency stack."""
 
     _axes = ("pol", "delta_ra", "delta_dec")
@@ -2675,15 +2672,13 @@ class Stack3D(FreqContainer):
         },
     }
 
+    _data_dset_name = "stack"
+    _weight_dset_name = "weight"
+
     @property
     def stack(self):
         """Get the stack dataset."""
         return self.datasets["stack"]
-
-    @property
-    def weight(self):
-        """Get the weight dataset."""
-        return self.datasets["weight"]
 
 
 class SourceCatalog(TableBase):
@@ -2713,7 +2708,7 @@ class SpectroscopicCatalog(SourceCatalog):
     }
 
 
-class FormedBeam(FreqContainer):
+class FormedBeam(FreqContainer, DataWeightContainer):
     """Container for formed beams."""
 
     _axes = ("object_id", "pol")
@@ -2747,15 +2742,13 @@ class FormedBeam(FreqContainer):
         },
     }
 
+    _data_dset_name = "beam"
+    _weight_dset_name = "weight"
+
     @property
     def beam(self):
         """Get the beam dataset."""
         return self.datasets["beam"]
-
-    @property
-    def weight(self):
-        """Get the weight dataset."""
-        return self.datasets["weight"]
 
     @property
     def frequency(self):
