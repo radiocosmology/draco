@@ -398,9 +398,7 @@ class DelayTransformBase(task.SingleTask):
         out_cont : `containers.DelayTransform` or `containers.DelaySpectrum`
             Output delay spectrum or delay power spectrum.
         """
-        ss.redistribute("freq")
-
-        delays, channel_ind = self._calculate_delays(ss.freq[:])
+        delays, channel_ind = self._calculate_delays(ss)
 
         # Get views of data and weights appropriate for the type of processing we're
         # doing.
@@ -408,10 +406,6 @@ class DelayTransformBase(task.SingleTask):
 
         # Create the right output container
         out_cont = self._create_output(ss, delays, coord_axes)
-
-        # Save the frequency axis of the input data as an attribute in the output
-        # container
-        out_cont.attrs["freq"] = ss.freq
 
         # Evaluate frequency->delay transform. (self._evaluate take the empty output
         # container, fills it, and returns it)
@@ -492,13 +486,15 @@ class DelayTransformBase(task.SingleTask):
         """
         raise NotImplementedError()
 
-    def _calculate_delays(self, freq: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+    def _calculate_delays(
+        self, ss: Union[FreqContainer, list[FreqContainer]]
+    ) -> tuple[np.ndarray, np.ndarray]:
         """Calculate the grid of delays.
 
         Parameters
         ----------
-        freq
-            The frequencies in the data.
+        ss
+            A FreqContainer to determine the delays from.
 
         Returns
         -------
@@ -507,6 +503,13 @@ class DelayTransformBase(task.SingleTask):
         channel_ind
             The effective channel indices of the data.
         """
+        if isinstance(ss, FreqContainer):
+            freq = ss.freq
+        elif len(ss) > 0:
+            freq = ss[0].freq
+        else:
+            raise TypeError("Could not find a frequency axis in the input.")
+
         freq_zero = freq[0] if self.freq_zero is None else self.freq_zero
 
         freq_spacing = self.freq_spacing
@@ -653,6 +656,10 @@ class DelayGibbsSamplerBase(DelayTransformBase, random.RandomTask):
         if self.save_samples:
             delay_spec.add_dataset("spectrum_samples")
 
+        # Save the frequency axis of the input data as an attribute in the output
+        # container
+        delay_spec.attrs["freq"] = ss.freq
+
         return delay_spec
 
     def _evaluate(self, data_view, weight_view, out_cont, delays, channel_ind):
@@ -761,6 +768,8 @@ class DelayGeneralContainerBase(DelayTransformBase):
         out_cont : `containers.DelayTransform` or `containers.DelaySpectrum`
             Container for output delay spectrum or power spectrum.
         """
+        ss.redistribute("freq")
+
         if self.dataset is not None:
             if self.dataset not in ss.datasets:
                 raise ValueError(
@@ -819,6 +828,8 @@ class DelayPowerSpectrumStokesIEstimator(DelayGibbsSamplerBase):
         out_cont : `containers.DelayTransform` or `containers.DelaySpectrum`
             Container for output delay spectrum or power spectrum.
         """
+        ss.redistribute("freq")
+
         tel = self.telescope
 
         # Construct the Stokes I vis, and transpose from [baseline, freq, ra] to
@@ -877,6 +888,10 @@ class DelaySpectrumWienerEstimator(DelayGeneralContainerBase):
         for ax in coord_axes:
             delay_spec.create_index_map(ax, ss.index_map[ax])
         delay_spec.attrs["baseline_axes"] = coord_axes
+
+        # Save the frequency axis of the input data as an attribute in the output
+        # container
+        delay_spec.attrs["freq"] = ss.freq
 
         return delay_spec
 
