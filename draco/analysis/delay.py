@@ -536,6 +536,60 @@ class DelayTransformBase(task.SingleTask):
 
         return delays, channel_ind
 
+    # NOTE: this not obviously the right level for this, but it's the only baseclass in
+    # common to where it's used
+    def _cut_data(
+        self, data: np.ndarray, weight: np.ndarray, channel_ind: np.ndarray
+    ) -> Optional[tuple[np.ndarray, np.ndarray, np.ndarray]]:
+        """Apply cuts on the data and weights and returned modified versions.
+
+        Parameters
+        ----------
+        data
+            An n-d array of the data. Frequency is the last axis, and the average axis
+            the second last.
+        weight
+            A n-d array of the weights. Axes the same as the data.
+        channel_ind
+            The indices of the frequency channels.
+
+        Returns
+        -------
+        new_data
+            The new data with cuts applied and all-zero channels removed.
+        new_weight
+            The new weights with cuts applied and averaged over the `average_axis` (i.e
+            second last).
+        new_channel_ind
+            The indices of the remaining channels after cuts.
+        """
+        # Mask out data with completely zero'd weights and generate time
+        # averaged weights
+        weight_cut = (
+            1e-4 * weight.mean()
+        )  # Use approx threshold to ignore small weights
+        data = data * (weight > weight_cut)
+        weight = np.mean(weight, axis=-2)
+
+        if (data == 0.0).all():
+            return None
+
+        # If there are no non-zero weighted entries skip
+        non_zero = (weight > 0).reshape(-1, weight.shape[-1]).all(axis=0)
+        if not non_zero.any():
+            return None
+
+        # Remove any frequency channel which is entirely zero, this is just to
+        # reduce the computational cost, it should make no difference to the result
+        data = data[..., non_zero]
+        weight = weight[..., non_zero]
+        non_zero_channel = channel_ind[non_zero]
+
+        # Increase the weights by a specified amount
+        weight *= self.weight_boost
+
+        return data, weight, non_zero_channel
+
 
 class DelayGibbsSamplerBase(DelayTransformBase, random.RandomTask):
     """Base class for delay power spectrum estimation via Gibbs sampling (non-functional).
@@ -639,30 +693,11 @@ class DelayGibbsSamplerBase(DelayTransformBase, random.RandomTask):
             data = data_view.local_array[lbi]
             weight = weight_view.local_array[lbi]
 
-            # Mask out data with completely zero'd weights and generate time
-            # averaged weights
-            weight_cut = (
-                1e-4 * weight.mean()
-            )  # Use approx threshold to ignore small weights
-            data = data * (weight > weight_cut)
-            weight = np.mean(weight, axis=0)
-
-            if (data == 0.0).all():
+            # Apply the cuts to the data
+            t = self._cut_data(data, weight, channel_ind)
+            if t is None:
                 continue
-
-            # If there are no non-zero weighted entries skip
-            non_zero = weight > 0
-            if not non_zero.any():
-                continue
-
-            # Remove any frequency channel which is entirely zero, this is just to
-            # reduce the computational cost, it should make no difference to the result
-            data = data[:, non_zero]
-            weight = weight[non_zero]
-            non_zero_channel = channel_ind[non_zero]
-
-            # Increase the weights by a specified amount
-            weight *= self.weight_boost
+            data, weight, non_zero_channel = t
 
             spec = delay_power_spectrum_gibbs(
                 data,
@@ -884,30 +919,11 @@ class DelaySpectrumWienerEstimator(DelayGeneralContainerBase):
             data = data_view.local_array[lbi]
             weight = weight_view.local_array[lbi]
 
-            # Mask out data with completely zero'd weights and generate time
-            # averaged weights
-            weight_cut = (
-                1e-4 * weight.mean()
-            )  # Use approx threshold to ignore small weights
-            data = data * (weight > weight_cut)
-            weight = np.mean(weight, axis=0)
-
-            if (data == 0.0).all():
+            # Apply the cuts to the data
+            t = self._cut_data(data, weight, channel_ind)
+            if t is None:
                 continue
-
-            # If there are no non-zero weighted entries skip
-            non_zero = weight > 0
-            if not non_zero.any():
-                continue
-
-            # Remove any frequency channel which is entirely zero, this is just to
-            # reduce the computational cost, it should make no difference to the result
-            data = data[:, non_zero]
-            weight = weight[non_zero]
-            non_zero_channel = channel_ind[non_zero]
-
-            # Increase the weights by a specified amount
-            weight *= self.weight_boost
+            data, weight, non_zero_channel = t
 
             # Pass the delay power spectrum and frequency spectrum for each "baseline"
             # to the Wiener filtering routine.The delay power spectrum has been
