@@ -357,6 +357,11 @@ class DelayTransformBase(task.SingleTask):
         Whether to assume the original time samples that were channelized into a
         frequency spectrum were purely real (False) or complex (True). If True,
         `freq_zero`, `nfreq`, and `skip_nyquist` are ignored. Default: False.
+    weight_boost : float, optional
+        Multiply weights in the input container by this factor. This causes the task to
+        assume the noise power in the data is `weight_boost` times lower, which is
+        useful if you want the "true" noise to not be downweighted by the Wiener filter,
+        or have it included in the Gibbs sampler. Default: 1.0.
     """
 
     freq_zero = config.Property(proptype=float, default=None)
@@ -378,6 +383,7 @@ class DelayTransformBase(task.SingleTask):
         default="nuttall",
     )
     complex_timedomain = config.Property(proptype=bool, default=False)
+    weight_boost = config.Property(proptype=float, default=1.0)
 
     def process(self, ss):
         """Estimate the delay spectrum or power spectrum.
@@ -544,16 +550,10 @@ class DelayGibbsSamplerBase(DelayTransformBase, random.RandomTask):
     initial_amplitude : float, optional
         The Gibbs sampler will be initialized with a flat power spectrum with
         this amplitude. Default: 10.
-    weight_boost : float, optional
-         Multiply weights in the input container by this factor. This causes the Gibbs
-         sampler to assume the noise power in the data is `weight_boost` times lower,
-         which is useful if you want the "true" noise to be included in the power
-         spectrum measured by the Gibbs sampler. Default: 1.0.
     """
 
     nsamp = config.Property(proptype=int, default=20)
     initial_amplitude = config.Property(proptype=float, default=10.0)
-    weight_boost = config.Property(proptype=float, default=1.0)
     save_samples = config.Property(proptype=bool, default=False)
 
     def _create_output(
@@ -808,17 +808,7 @@ class DelaySpectrumWienerEstimator(DelayGeneralContainerBase):
     spectrum, assuming an input model for the delay power spectrum of the signal and
     that the noise power is described by the weights of the input container. See
     https://arxiv.org/abs/2202.01242, Eq. A6 for details.
-
-    Attributes
-    ----------
-    weight_boost : float, optional
-         Multiply weights in the input container by this factor. This causes the Wiener
-         filter to assume the noise power in the data is `weight_boost` times lower,
-         which is useful if you want the "true" noise to not be downweighted by the
-         Wiener filter. Default: 1.0.
     """
-
-    weight_boost = config.Property(proptype=float, default=1.0)
 
     def setup(self, dps: containers.DelaySpectrum):
         """Set the delay power spectrum to use as the signal covariance.
