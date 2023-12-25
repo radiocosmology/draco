@@ -2428,7 +2428,14 @@ class DelayCrossSpectrum(DelaySpectrum):
             "initialise": True,
             "distributed": True,
             "distributed_axis": "baseline",
-        }
+        },
+        "spectrum_samples": {
+            "axes": ["sample", "dataset", "dataset", "baseline", "delay"],
+            "dtype": np.float64,
+            "initialise": False,
+            "distributed": True,
+            "distributed_axis": "baseline",
+        },
     }
 
     @property
