@@ -392,15 +392,15 @@ class ContainerBase(memh5.BasicCont):
                 out[name] = value
         return memh5.ro_dict(out)
 
-    @property
-    def dataset_spec(self):
-        """Return a copy of the fully resolved dataset specifiction as a dictionary."""
+    @classmethod
+    def _class_dataset_spec(cls):
+        """Get the inherited set of dataset spec entries."""
         ddict = {}
 
-        # Iterate over the reversed MRO and look for _table_spec attributes
+        # Iterate over the reversed MRO and look for _dataset_spec attributes
         # which get added to a temporary dict. We go over the reversed MRO so
-        # that the `tdict.update` overrides tables in base classes.`
-        for cls in inspect.getmro(self.__class__)[::-1]:
+        # that the `ddict.update` overrides datasets in base classes.`
+        for cls in inspect.getmro(cls)[::-1]:
             try:
                 # NOTE: this is a little ugly as the following line will drop
                 # down to base classes if dataset_spec isn't present, and thus
@@ -408,6 +408,14 @@ class ContainerBase(memh5.BasicCont):
                 ddict.update(cls._dataset_spec)
             except AttributeError:
                 pass
+
+        # Ensure that the dataset_spec is the same order on all ranks
+        return {k: ddict[k] for k in sorted(ddict)}
+
+    @property
+    def dataset_spec(self):
+        """Return a copy of the fully resolved dataset specifiction as a dictionary."""
+        ddict = self.__class__._class_dataset_spec()
 
         # Add in any _dataset_spec found on the instance
         ddict.update(self.__dict__.get("_dataset_spec", {}))
