@@ -757,13 +757,12 @@ class Truncate(task.SingleTask):
         """
         # Check if dataset should get truncated at all
         if (self.dataset is None) or (dset not in self.dataset):
-            if dset not in container._dataset_spec or not container._dataset_spec[
-                dset
-            ].get("truncate", False):
+            cdspec = container._class_dataset_spec()
+            if dset not in cdspec or not cdspec[dset].get("truncate", False):
                 self.log.debug(f"Not truncating dataset '{dset}' in {container}.")
                 return None
             # Use the dataset spec if nothing specified in config
-            given_params = container._dataset_spec[dset].get("truncate", False)
+            given_params = cdspec[dset].get("truncate", False)
         else:
             given_params = self.dataset[dset]
 
@@ -809,13 +808,15 @@ class Truncate(task.SingleTask):
         if self.ensure_chunked:
             data._ensure_chunked()
 
-        for dset in data._dataset_spec:
+        for dset in data.dataset_spec:
             # get truncation parameters from config or container defaults
             specs = self._get_params(type(data), dset)
 
             if (specs is None) or (dset not in data):
                 # Don't truncate this dataset
                 continue
+
+            self.log.debug(f"Truncating {dset}")
 
             old_shape = data[dset][:].shape
             # np.ndarray.reshape must be used with ndarrays
