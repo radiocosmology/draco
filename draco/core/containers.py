@@ -58,7 +58,7 @@ their own custom container types.
 """
 
 import inspect
-from typing import List, Optional, Union
+from typing import ClassVar, List, Optional, Union
 
 import numpy as np
 from caput import memh5, mpiarray, tod
@@ -146,7 +146,7 @@ class ContainerBase(memh5.BasicCont):
 
     _axes = ()
 
-    _dataset_spec = {}
+    _dataset_spec: ClassVar = {}
 
     convert_attribute_strings = True
     convert_dataset_strings = True
@@ -615,7 +615,7 @@ class TableBase(ContainerBase):
         }
     """
 
-    _table_spec = {}
+    _table_spec: ClassVar = {}
 
     def __init__(self, *args, **kwargs):
         # Get the dataset specifiction for this class (not any base classes), or
@@ -1140,7 +1140,7 @@ class Map(FreqContainer, HealpixContainer):
 
     _axes = ("pol",)
 
-    _dataset_spec = {
+    _dataset_spec: ClassVar = {
         "map": {
             "axes": ["freq", "pol", "pixel"],
             "dtype": np.float64,
@@ -1175,7 +1175,7 @@ class SiderealStream(
         The number of points to divide the RA axis up into.
     """
 
-    _dataset_spec = {
+    _dataset_spec: ClassVar = {
         "vis": {
             "axes": ["freq", "stack", "ra"],
             "dtype": np.complex64,
@@ -1264,7 +1264,7 @@ class SystemSensitivity(FreqContainer, TODContainer):
 
     _axes = ("pol",)
 
-    _dataset_spec = {
+    _dataset_spec: ClassVar = {
         "measured": {
             "axes": ["freq", "pol", "time"],
             "dtype": np.float32,
@@ -1324,7 +1324,7 @@ class RFIMask(FreqContainer, TODContainer):
     `False` for clean samples.
     """
 
-    _dataset_spec = {
+    _dataset_spec: ClassVar = {
         "mask": {
             "axes": ["freq", "time"],
             "dtype": bool,
@@ -1347,7 +1347,7 @@ class SiderealRFIMask(FreqContainer, SiderealContainer):
     `False` for clean samples.
     """
 
-    _dataset_spec = {
+    _dataset_spec: ClassVar = {
         "mask": {
             "axes": ["freq", "ra"],
             "dtype": bool,
@@ -1374,7 +1374,7 @@ class BaselineMask(FreqContainer, TODContainer):
 
     _axes = ("stack",)
 
-    _dataset_spec = {
+    _dataset_spec: ClassVar = {
         "mask": {
             "axes": ["freq", "stack", "time"],
             "dtype": bool,
@@ -1406,7 +1406,7 @@ class SiderealBaselineMask(FreqContainer, SiderealContainer):
 
     _axes = ("stack",)
 
-    _dataset_spec = {
+    _dataset_spec: ClassVar = {
         "mask": {
             "axes": ["freq", "stack", "ra"],
             "dtype": bool,
@@ -1435,7 +1435,7 @@ class TimeStream(FreqContainer, VisContainer, TODContainer):
     interchangably in most cases.
     """
 
-    _dataset_spec = {
+    _dataset_spec: ClassVar = {
         "vis": {
             "axes": ["freq", "stack", "time"],
             "dtype": np.complex64,
@@ -1491,7 +1491,7 @@ class GridBeam(FreqContainer, DataWeightContainer):
 
     _axes = ("pol", "input", "theta", "phi")
 
-    _dataset_spec = {
+    _dataset_spec: ClassVar = {
         "beam": {
             "axes": ["freq", "pol", "input", "theta", "phi"],
             "dtype": np.complex64,
@@ -1583,7 +1583,7 @@ class HEALPixBeam(FreqContainer, HealpixContainer, DataWeightContainer):
 
     _axes = ("pol", "input")
 
-    _dataset_spec = {
+    _dataset_spec: ClassVar = {
         "beam": {
             "axes": ["freq", "pol", "input", "pixel"],
             "dtype": [("Et", np.complex64), ("Ep", np.complex64)],
@@ -1648,7 +1648,7 @@ class TrackBeam(FreqContainer, SampleVarianceContainer, DataWeightContainer):
 
     _axes = ("pol", "input", "pix")
 
-    _dataset_spec = {
+    _dataset_spec: ClassVar = {
         "beam": {
             "axes": ["freq", "pol", "input", "pix"],
             "dtype": np.complex64,
@@ -1781,7 +1781,7 @@ class MModes(FreqContainer, VisContainer, MContainer):
         Array of weights for each point.
     """
 
-    _dataset_spec = {
+    _dataset_spec: ClassVar = {
         "vis": {
             "axes": ["m", "msign", "freq", "stack"],
             "dtype": np.complex128,
@@ -1810,7 +1810,7 @@ class SVDModes(MContainer, VisBase):
 
     _axes = ("mode",)
 
-    _dataset_spec = {
+    _dataset_spec: ClassVar = {
         "vis": {
             "axes": ["m", "mode"],
             "dtype": np.complex128,
@@ -1860,7 +1860,7 @@ class VisGridStream(FreqContainer, SiderealContainer, VisBase):
 
     _axes = ("pol", "ew", "ns")
 
-    _dataset_spec = {
+    _dataset_spec: ClassVar = {
         "vis": {
             "axes": ["pol", "freq", "ew", "ns", "ra"],
             "dtype": np.complex64,
@@ -1911,7 +1911,7 @@ class HybridVisStream(FreqContainer, SiderealContainer, VisBase):
 
     _axes = ("pol", "ew", "el")
 
-    _dataset_spec = {
+    _dataset_spec: ClassVar = {
         "vis": {
             "axes": ["pol", "freq", "ew", "el", "ra"],
             "dtype": np.complex64,
@@ -1950,7 +1950,7 @@ class HybridVisMModes(FreqContainer, MContainer, VisBase):
 
     _axes = ("pol", "ew", "el")
 
-    _dataset_spec = {
+    _dataset_spec: ClassVar = {
         "vis": {
             "axes": ["m", "msign", "pol", "freq", "ew", "el"],
             "dtype": np.complex64,
@@ -1985,7 +1985,7 @@ class RingMap(FreqContainer, SiderealContainer, DataWeightContainer):
 
     _axes = ("pol", "beam", "el")
 
-    _dataset_spec = {
+    _dataset_spec: ClassVar = {
         "map": {
             "axes": ["beam", "pol", "freq", "ra", "el"],
             "dtype": np.float64,
@@ -2068,7 +2068,7 @@ class RingMapMask(FreqContainer, SiderealContainer):
 
     _axes = ("pol", "el")
 
-    _dataset_spec = {
+    _dataset_spec: ClassVar = {
         "mask": {
             "axes": ["pol", "freq", "ra", "el"],
             "dtype": bool,
@@ -2114,7 +2114,7 @@ class GainDataBase(DataWeightContainer):
 class CommonModeGainData(FreqContainer, TODContainer, GainDataBase):
     """Parallel container for holding gain data common to all inputs."""
 
-    _dataset_spec = {
+    _dataset_spec: ClassVar = {
         "gain": {
             "axes": ["freq", "time"],
             "dtype": np.complex128,
@@ -2135,7 +2135,7 @@ class CommonModeGainData(FreqContainer, TODContainer, GainDataBase):
 class CommonModeSiderealGainData(FreqContainer, SiderealContainer, GainDataBase):
     """Parallel container for holding sidereal gain data common to all inputs."""
 
-    _dataset_spec = {
+    _dataset_spec: ClassVar = {
         "gain": {
             "axes": ["freq", "ra"],
             "dtype": np.complex128,
@@ -2158,7 +2158,7 @@ class GainData(FreqContainer, TODContainer, GainDataBase):
 
     _axes = ("input",)
 
-    _dataset_spec = {
+    _dataset_spec: ClassVar = {
         "gain": {
             "axes": ["freq", "input", "time"],
             "dtype": np.complex128,
@@ -2200,7 +2200,7 @@ class SiderealGainData(FreqContainer, SiderealContainer, GainDataBase):
 
     _axes = ("input",)
 
-    _dataset_spec = {
+    _dataset_spec: ClassVar = {
         "gain": {
             "axes": ["freq", "input", "ra"],
             "dtype": np.complex128,
@@ -2228,7 +2228,7 @@ class StaticGainData(FreqContainer, GainDataBase):
 
     _axes = ("input",)
 
-    _dataset_spec = {
+    _dataset_spec: ClassVar = {
         "gain": {
             "axes": ["freq", "input"],
             "dtype": np.complex128,
@@ -2256,7 +2256,7 @@ class DelayCutoff(ContainerBase):
 
     _axes = ("pol", "el")
 
-    _dataset_spec = {
+    _dataset_spec: ClassVar = {
         "cutoff": {
             "axes": ["pol", "el"],
             "dtype": np.float64,
@@ -2309,7 +2309,7 @@ class DelaySpectrum(DelayContainer):
 
     _axes = ("baseline", "sample")
 
-    _dataset_spec = {
+    _dataset_spec: ClassVar = {
         "spectrum": {
             "axes": ["baseline", "delay"],
             "dtype": np.float64,
@@ -2361,7 +2361,7 @@ class DelayTransform(DelayContainer):
 
     _axes = ("baseline", "sample")
 
-    _dataset_spec = {
+    _dataset_spec: ClassVar = {
         "spectrum": {
             "axes": ["baseline", "sample", "delay"],
             "dtype": np.complex128,
@@ -2400,7 +2400,7 @@ class WaveletSpectrum(FreqContainer, DelayContainer, DataWeightContainer):
 
     _axes = ("baseline",)
 
-    _dataset_spec = {
+    _dataset_spec: ClassVar = {
         "spectrum": {
             "axes": ["baseline", "delay", "freq"],
             "dtype": np.float64,
@@ -2430,7 +2430,7 @@ class DelayCrossSpectrum(DelaySpectrum):
 
     _axes = ("dataset",)
 
-    _dataset_spec = {
+    _dataset_spec: ClassVar = {
         "spectrum": {
             "axes": ["dataset", "dataset", "baseline", "delay"],
             "dtype": np.float64,
@@ -2479,7 +2479,7 @@ class Powerspectrum2D(ContainerBase):
 
     _axes = ("kperp", "kpar")
 
-    _dataset_spec = {
+    _dataset_spec: ClassVar = {
         "powerspectrum": {
             "axes": ["kperp", "kpar"],
             "dtype": np.float64,
@@ -2531,7 +2531,7 @@ class SVDSpectrum(ContainerBase):
 
     _axes = ("m", "singularvalue")
 
-    _dataset_spec = {
+    _dataset_spec: ClassVar = {
         "spectrum": {
             "axes": ["m", "singularvalue"],
             "dtype": np.float64,
@@ -2555,7 +2555,7 @@ class FrequencyStack(FreqContainer, DataWeightContainer):
     of sources of interest.
     """
 
-    _dataset_spec = {
+    _dataset_spec: ClassVar = {
         "stack": {
             "axes": ["freq"],
             "dtype": np.float64,
@@ -2584,7 +2584,7 @@ class FrequencyStackByPol(FrequencyStack):
 
     _axes = ("pol",)
 
-    _dataset_spec = {
+    _dataset_spec: ClassVar = {
         "stack": {
             "axes": ["pol", "freq"],
             "dtype": np.float64,
@@ -2613,7 +2613,7 @@ class MockFrequencyStack(FrequencyStack):
 
     _axes = ("mock",)
 
-    _dataset_spec = {
+    _dataset_spec: ClassVar = {
         "stack": {
             "axes": ["mock", "freq"],
             "dtype": np.float64,
@@ -2637,7 +2637,7 @@ class MockFrequencyStackByPol(FrequencyStackByPol):
 
     _axes = ("mock",)
 
-    _dataset_spec = {
+    _dataset_spec: ClassVar = {
         "stack": {
             "axes": ["mock", "pol", "freq"],
             "dtype": np.float64,
@@ -2658,7 +2658,7 @@ class Stack3D(FreqContainer, DataWeightContainer):
 
     _axes = ("pol", "delta_ra", "delta_dec")
 
-    _dataset_spec = {
+    _dataset_spec: ClassVar = {
         "stack": {
             "axes": ["pol", "delta_ra", "delta_dec", "freq"],
             "dtype": np.float64,
@@ -2690,7 +2690,7 @@ class SourceCatalog(TableBase):
     The `ra` and `dec` coordinates should be ICRS.
     """
 
-    _table_spec = {
+    _table_spec: ClassVar = {
         "position": {
             "columns": [["ra", np.float64], ["dec", np.float64]],
             "axis": "object_id",
@@ -2701,7 +2701,7 @@ class SourceCatalog(TableBase):
 class SpectroscopicCatalog(SourceCatalog):
     """A container for spectroscopic catalogs."""
 
-    _table_spec = {
+    _table_spec: ClassVar = {
         "redshift": {
             "columns": [["z", np.float64], ["z_error", np.float64]],
             "axis": "object_id",
@@ -2714,7 +2714,7 @@ class FormedBeam(FreqContainer, DataWeightContainer):
 
     _axes = ("object_id", "pol")
 
-    _dataset_spec = {
+    _dataset_spec: ClassVar = {
         "beam": {
             "axes": ["object_id", "pol", "freq"],
             "dtype": np.float64,
@@ -2775,7 +2775,7 @@ class FormedBeamHA(FormedBeam):
 
     _axes = ("ha",)
 
-    _dataset_spec = {
+    _dataset_spec: ClassVar = {
         "beam": {
             "axes": ["object_id", "pol", "freq", "ha"],
             "dtype": np.float64,
@@ -2809,7 +2809,7 @@ class FormedBeamMask(FreqContainer):
 
     _axes = ("object_id", "pol")
 
-    _dataset_spec = {
+    _dataset_spec: ClassVar = {
         "mask": {
             "axes": ["object_id", "pol", "freq"],
             "dtype": bool,
@@ -2830,7 +2830,7 @@ class FormedBeamHAMask(FormedBeamMask):
 
     _axes = ("ha",)
 
-    _dataset_spec = {
+    _dataset_spec: ClassVar = {
         "mask": {
             "axes": ["object_id", "pol", "freq", "ha"],
             "dtype": bool,

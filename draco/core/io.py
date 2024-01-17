@@ -26,7 +26,7 @@ Several tasks accept groups of files as arguments. These are specified in the YA
 import os.path
 import shutil
 import subprocess
-from typing import Dict, List, Optional, Union
+from typing import ClassVar, Dict, List, Optional, Union
 
 import numpy as np
 from caput import config, fileformats, memh5, pipeline, truncate
@@ -735,7 +735,7 @@ class Truncate(task.SingleTask):
     dataset = config.Property(proptype=dict, default=None)
     ensure_chunked = config.Property(proptype=bool, default=True)
 
-    default_params = {
+    default_params: ClassVar = {
         "weight_dataset": None,
         "fixed_precision": 1e-4,
         "variance_increase": 1e-3,
