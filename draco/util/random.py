@@ -4,7 +4,7 @@ import concurrent.futures
 import contextlib
 import os
 import zlib
-from typing import Callable, Optional
+from typing import Callable, ClassVar, Optional
 
 import numpy as np
 from caput import config
@@ -287,7 +287,7 @@ class MultithreadedRNG(np.random.Generator):
     # method name, number of initial parameter arguments, default data type, if there is
     # a dtype argument, and if there is an out argument. See `_build_method` for
     # details.
-    PARALLEL_METHODS = {
+    PARALLEL_METHODS: ClassVar = {
         "random": (0, np.float64, True, True),
         "integers": (2, np.int64, True, False),
         "uniform": (2, np.float64, False, False),
