@@ -480,7 +480,7 @@ class ContainerBase(memh5.BasicCont):
 
         # Build selections dict
         selections = {}
-        for name, dataset in cls._dataset_spec.items():
+        for name, dataset in cls._class_dataset_spec().items():
             ds_axes = dataset["axes"]
             sel = []
             ds_relevant = False
