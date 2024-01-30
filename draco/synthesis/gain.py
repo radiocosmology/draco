@@ -1,6 +1,5 @@
 """Tasks for generating random gain fluctuations in the data and stacking them."""
 
-
 import numpy as np
 from caput import config, mpiarray, pipeline
 

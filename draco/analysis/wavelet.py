@@ -1,4 +1,5 @@
 """Wavelet power spectrum estimation."""
+
 import os
 
 import numpy as np

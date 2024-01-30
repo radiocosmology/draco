@@ -9,7 +9,6 @@ into  :class:`SiderealGrouper`, then feeding that into
 :class:`SiderealStacker` if you want to combine the different days.
 """
 
-
 import numpy as np
 import scipy.linalg as la
 from caput import config, mpiarray, tod
@@ -629,9 +628,7 @@ class SiderealStacker(task.SingleTask):
         # number of samples squared and then invert to finalize stack.weight.
         if self.weight == "uniform":
             norm = self.stack.nsample[:].astype(np.float32)
-            self.stack.weight[:] = (
-                tools.invert_no_zero(self.stack.weight[:]) * norm**2
-            )
+            self.stack.weight[:] = tools.invert_no_zero(self.stack.weight[:]) * norm**2
 
         # We need to normalize the sample variance by the sum of coefficients.
         # Can be found in the stack.nsample dataset for uniform case
