@@ -1,6 +1,5 @@
 """Tasks for foreground filtering data."""
 
-
 import numpy as np
 from caput import config
 

@@ -1,6 +1,5 @@
 """Power spectrum estimation code."""
 
-
 import numpy as np
 from caput import config
 

@@ -1275,12 +1275,12 @@ class RFIMask(task.SingleTask):
     stack_ind = config.Property(proptype=int)
 
     @overload
-    def process(self, sstream: containers.SiderealStream) -> containers.SiderealRFIMask:
-        ...
+    def process(
+        self, sstream: containers.SiderealStream
+    ) -> containers.SiderealRFIMask: ...
 
     @overload
-    def process(self, sstream: containers.TimeStream) -> containers.RFIMask:
-        ...
+    def process(self, sstream: containers.TimeStream) -> containers.RFIMask: ...
 
     def process(
         self, sstream: Union[containers.TimeStream, containers.SiderealStream]
@@ -1479,14 +1479,12 @@ class ApplyBaselineMask(task.SingleTask):
     @overload
     def process(
         self, data: containers.TimeStream, mask: containers.BaselineMask
-    ) -> containers.TimeStream:
-        ...
+    ) -> containers.TimeStream: ...
 
     @overload
     def process(
         self, data: containers.SiderealStream, mask: containers.SiderealBaselineMask
-    ) -> containers.SiderealStream:
-        ...
+    ) -> containers.SiderealStream: ...
 
     def process(self, data, mask):
         """Flag data by zeroing the weights.

@@ -2,6 +2,7 @@
 
 This includes grouping frequencies and products to performing the m-mode transform.
 """
+
 from typing import Optional, Tuple, Union, overload
 
 import numpy as np
@@ -126,9 +127,11 @@ class CollateProducts(task.SingleTask):
         # Precalculate the stack properties
         self.bt_stack = np.array(
             [
-                (tools.cmap(upp[0], upp[1], self.telescope.nfeed), 0)
-                if upp[0] <= upp[1]
-                else (tools.cmap(upp[1], upp[0], self.telescope.nfeed), 1)
+                (
+                    (tools.cmap(upp[0], upp[1], self.telescope.nfeed), 0)
+                    if upp[0] <= upp[1]
+                    else (tools.cmap(upp[1], upp[0], self.telescope.nfeed), 1)
+                )
                 for upp in self.telescope.uniquepairs
             ],
             dtype=[("prod", "<u4"), ("conjugate", "u1")],
@@ -153,12 +156,10 @@ class CollateProducts(task.SingleTask):
         self.bt_rev["conjugate"] = np.where(feedmask, self.telescope.feedconj[triu], 0)
 
     @overload
-    def process(self, ss: containers.SiderealStream) -> containers.SiderealStream:
-        ...
+    def process(self, ss: containers.SiderealStream) -> containers.SiderealStream: ...
 
     @overload
-    def process(self, ss: containers.TimeStream) -> containers.TimeStream:
-        ...
+    def process(self, ss: containers.TimeStream) -> containers.TimeStream: ...
 
     def process(self, ss):
         """Select and reorder the products.
