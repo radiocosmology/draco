@@ -4,6 +4,7 @@ from typing import List, Optional, Tuple, TypeVar, Union
 
 import numpy as np
 import scipy.linalg as la
+from scipy.optimize import minimize, OptimizeResult
 from caput import config, memh5, mpiarray
 from cora.util import units
 from numpy.lib.recfunctions import structured_to_unstructured
