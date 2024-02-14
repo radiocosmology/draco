@@ -4,6 +4,7 @@ from typing import List, Optional, Tuple, TypeVar, Union
 
 import numpy as np
 import scipy.linalg as la
+from scipy.optimize import minimize, OptimizeResult
 from caput import config, memh5, mpiarray
 from cora.util import units
 from numpy.lib.recfunctions import structured_to_unstructured
@@ -1859,6 +1860,218 @@ def delay_spectrum_wiener_filter(
         y_spec = _alternating_real_to_complex(y_spec)
 
     return y_spec
+
+
+class ComputeLogLikeGradients:
+    """Compute the likelihood and gradients for delay PS estimation.
+
+    This class efficiently computes the *negative* likelihood, as well as its gradient
+    and hessian. It will precompute and cache relevant quantities such that all of these
+    can be calculated per iteration without recomputing. It is designed to be used with
+    `scipy.optimize.minimize`.
+
+    The parameters used for this are the log of the delay power spectrum samples.
+
+    Parameters
+    ----------
+    X
+        The covariance matrix of the data.
+    MF
+        The masked Fourier matrix which maps from delay space to frequency space and
+        applies zero to any masked channels.
+    N
+        The noise covariance matrix.
+    fsel
+        An optional array selection to apply to limit the frequencies used in the
+        estimation. If not supplied, any frequencies entirely masked within `MF` are
+        skipped.
+    subtract_noise
+        Subtract the expected noise bias from the power spectrum.
+    """
+
+    def __init__(
+        self,
+        X: np.ndarray,
+        MF: np.ndarray,
+        N: np.ndarray,
+        fsel: np.ndarray | slice | list | None = None,
+        subtract_noise: bool = False,
+    ) -> None:
+        if fsel is None:
+            fsel = (MF != 0).any(axis=1)
+
+        self.X = X[fsel][:, fsel]
+        self.MF = MF[fsel]
+        self.N = N[fsel][:, fsel]
+
+        if subtract_noise:
+            self.X = self.X - self.N
+
+    # Store the location we are calculating for.
+    _s_a: np.ndarray | None = None
+
+    def _precompute(self, s_a: np.ndarray) -> bool:
+        """Pre-compute useful matrices for the given value.
+
+        Returns True is a recomputation was done, otherwise False.
+        """
+
+        if np.all(s_a == self._s_a):
+            return False
+
+        S = np.exp(s_a)
+        dS = S
+
+        self._C = (self.MF * S[np.newaxis, :]) @ self.MF.T.conj() + self.N
+        self._XC = self.X - self._C
+
+        self._Ch = la.cholesky(self._C, lower=False)
+
+        self._U = dS[np.newaxis, :] ** 0.5 * self.MF
+        self._Ut = la.cho_solve((self._Ch, False), self._U)
+        self._XC_Ut = self._XC @ self._Ut
+
+        self._W = self._U
+        self._Wt = self._Ut
+        self._XC_Wt = self._XC_Ut
+
+        self._s_a = s_a
+
+        return True
+
+    def loglike(self, s_a: np.ndarray) -> float:
+        """Calculate the negative log-likelihood."""
+        self._precompute(s_a)
+
+        CiX = la.cho_solve((self._Ch, False), self.X)
+
+        lndet = 2 * np.log(np.diagonal(self._Ch)).sum().real
+
+        ll = lndet + np.diagonal(CiX).sum().real
+        return ll
+
+    def gradient(self, s_a: np.ndarray) -> np.ndarray:
+        """Calculate the gradient of the negative log-likelihood."""
+        self._precompute(s_a)
+
+        return -(self._Ut.conj() * self._XC_Ut).sum(axis=0).real
+
+    def hessian(self, s_a: np.ndarray) -> np.ndarray:
+        """Calculate the Hessian of the negative log-likelihood."""
+        self._precompute(s_a)
+
+        Ua_Utb = self._U.T.conj() @ self._Ut
+
+        Uta_dX_Utb = self._Ut.T.conj() @ self._XC_Ut
+
+        Fab = Ua_Utb * Ua_Utb.T.conj()
+
+        H = (Fab + 2 * Uta_dX_Utb * Ua_Utb.T).real
+
+        t = -(self._Wt.conj() * self._XC_Wt).sum(axis=0).real
+        H += np.diag(t.real)
+
+        return H
+
+
+def delay_power_spectrum_maxlike(
+    data,
+    N,
+    Ni,
+    initial_S: np.ndarray | None = None,
+    window: str = "nuttall",
+    fsel: np.ndarray | None = None,
+    maxiter: int = 30,
+    tol: float = 1e-3,
+):
+    """Estimate the delay power spectrum with a maximum-likelihood estimator.
+
+    This routine uses `scipy.optimize.minimize` to find the maximum likelihood power
+    spectrum.
+
+    Parameters
+    ----------
+    data : np.ndarray[:, freq]
+        Data to estimate the delay spectrum of.
+    N : int
+        The length of the output delay spectrum. There are assumed to be `N/2 + 1`
+        total frequency channels if assuming a real delay spectrum, or `N` channels
+        for a complex delay spectrum.
+    Ni : np.ndarray[freq]
+        Inverse noise variance.
+    initial_S : np.ndarray[delay]
+        The initial delay power spectrum guess.
+    window : one of {'nuttall', 'blackman_nuttall', 'blackman_harris', None}, optional
+        Apply an apodisation function. Default: 'nuttall'.
+    fsel : np.ndarray[freq], optional
+        Indices of channels that we have data at. By default assume all channels.
+    maxiter : int, optional
+        Maximum number of iterations to run of the solver.
+
+    Returns
+    -------
+    spec : list
+        List of spectrum samples.
+    success
+        Did the solve successfully converge.
+    """
+    nsamp, Nf = data.shape
+
+    if fsel is None:
+        fsel = np.arange(Nf)
+    elif len(fsel) != Nf:
+        raise ValueError(
+            "Length of frequency selection must match frequencies passed. "
+            f"{len(fsel)} != {data.shape[-1]}"
+        )
+
+    lsi = np.zeros(N) if initial_S is None else np.log(initial_S)
+
+    # Construct the Fourier matrix
+    F = fourier_matrix(N, fsel)
+
+    # Compute the covariance matrix of the data
+    # Window the frequency data if requested
+    if window is not None:
+        # Construct the window function
+        x = fsel * 1.0 / N
+        w = tools.window_generalised(x, window=window)
+
+        # Apply to the projection matrix and the data
+        F *= w[:, np.newaxis]
+        data = data * w[np.newaxis, :]
+
+    X = data.T @ data.conj()
+    X /= nsamp
+
+    # Construct the noise matrix from the diagonal of its inverse
+    Nm = np.diag(tools.invert_no_zero(Ni))
+
+    # Mask out any completely missing frequencies
+    F[Ni == 0] = 0.0
+
+    ll = ComputeLogLikeGradients(X, F, Nm)
+
+    samples = []
+
+    # This callback is for getting the intermediate samples such that we can access
+    # convergence of the solution
+    def _get_intermediate(intermediate_result: OptimizeResult):
+        samples.append(np.exp(intermediate_result.x))
+
+    res = minimize(
+        ll.loglike,
+        x0=lsi,
+        jac=ll.gradient,
+        hess=ll.hessian,
+        method="Newton-CG",
+        options={"maxiter": maxiter, "xtol": tol},
+        callback=_get_intermediate,
+    )
+
+    samples.append(np.exp(res.x))
+
+    return samples, res.success
 
 
 def null_delay_filter(freq, max_delay, mask, num_delay=200, tol=1e-8, window=True):
