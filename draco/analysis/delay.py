@@ -620,6 +620,7 @@ class DelayGibbsSamplerBase(DelayTransformBase, random.RandomTask):
     initial_amplitude = config.Property(proptype=float, default=10.0)
     save_samples = config.Property(proptype=bool, default=False)
     initial_sample_path = config.Property(proptype=str, default=None)
+    maxlike = config.Property(proptype=bool, default=False)
 
     def _create_output(
         self,
@@ -740,25 +741,47 @@ class DelayGibbsSamplerBase(DelayTransformBase, random.RandomTask):
                 continue
             data, weight, non_zero_channel = t
 
-            spec = delay_power_spectrum_gibbs(
-                data,
-                ndelay,
-                weight,
-                initial_S[lbi],
-                window=self.window if self.apply_window else None,
-                fsel=non_zero_channel,
-                niter=self.nsamp,
-                rng=rng,
-                complex_timedomain=self.complex_timedomain,
-            )
+            if self.maxlike:
+                spec, success = delay_power_spectrum_maxlike(
+                    data,
+                    ndelay,
+                    weight,
+                    initial_S[lbi],
+                    window=self.window if self.apply_window else None,
+                    fsel=non_zero_channel,
+                    maxiter=self.nsamp,
+                    tol=1e-3,
+                )
 
-            # Take an average over the last half of the delay spectrum samples
-            # (presuming that removes the burn-in)
-            spec_av = np.median(spec[-(self.nsamp // 2) :], axis=0)
-            out_cont.spectrum[bi] = np.fft.fftshift(spec_av)
+                # Take an average over the last half of the delay spectrum samples
+                # (presuming that removes the burn-in)
+                # spec_av = np.median(spec[-(self.nsamp // 2) :], axis=0)
+                out_cont.spectrum[bi] = np.fft.fftshift(spec[-1])
 
-            if self.save_samples:
-                out_cont.datasets["spectrum_samples"][:, bi] = spec
+                if self.save_samples:
+                    nsamp = len(spec)
+                    out_cont.datasets["spectrum_samples"][-nsamp:, bi] = np.array(spec)
+
+            else:
+                spec = delay_power_spectrum_gibbs(
+                    data,
+                    ndelay,
+                    weight,
+                    initial_S[lbi],
+                    window=self.window if self.apply_window else None,
+                    fsel=non_zero_channel,
+                    niter=self.nsamp,
+                    rng=rng,
+                    complex_timedomain=self.complex_timedomain,
+                )
+
+                # Take an average over the last half of the delay spectrum samples
+                # (presuming that removes the burn-in)
+                spec_av = np.median(spec[-(self.nsamp // 2) :], axis=0)
+                out_cont.spectrum[bi] = np.fft.fftshift(spec_av)
+
+                if self.save_samples:
+                    out_cont.datasets["spectrum_samples"][:, bi] = spec
 
         return out_cont
 
