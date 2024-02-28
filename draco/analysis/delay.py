@@ -4,7 +4,6 @@ from typing import List, Optional, Tuple, TypeVar, Union
 
 import numpy as np
 import scipy.linalg as la
-from scipy.optimize import minimize, OptimizeResult
 from caput import config, memh5, mpiarray
 from cora.util import units
 from numpy.lib.recfunctions import structured_to_unstructured
@@ -13,6 +12,7 @@ from draco.core.containers import ContainerBase, FreqContainer
 
 from ..core import containers, io, task
 from ..util import random, tools
+from .delayopt import delay_power_spectrum_maxpost
 
 
 class DelayFilter(task.SingleTask):
@@ -363,6 +363,19 @@ class DelayTransformBase(task.SingleTask):
         assume the noise power in the data is `weight_boost` times lower, which is
         useful if you want the "true" noise to not be downweighted by the Wiener filter,
         or have it included in the Gibbs sampler. Default: 1.0.
+    freq_frac
+        The threshold for the fraction of time samples present in a frequency for it
+        to be retained. Must be strictly greater than this value, so the default
+        value 0, retains any channel with at least one sample.
+    time_frac
+        The threshold for the fraction of frequency samples required to retain a
+        time sample. The default value (-1) means that all time samples are kept.
+    remove_mean
+        Subtract the mean in time of each frequency channel. This is done after time
+        samples are pruned by the `time_frac` threshold.
+    scale_freq
+        Scale each frequency by its standard deviation to flatten the fluctuations
+        across the band. Applied before any apodisation is done.
     """
 
     freq_zero = config.Property(proptype=float, default=None)
@@ -385,6 +398,12 @@ class DelayTransformBase(task.SingleTask):
     )
     complex_timedomain = config.Property(proptype=bool, default=False)
     weight_boost = config.Property(proptype=float, default=1.0)
+
+    freq_frac = config.Property(proptype=float, default=0.0)
+    time_frac = config.Property(proptype=float, default=-1.0)
+
+    remove_mean = config.Property(proptype=bool, default=False)
+    scale_freq = config.Property(proptype=bool, default=False)
 
     def process(self, ss):
         """Estimate the delay spectrum or power spectrum.
@@ -543,8 +562,8 @@ class DelayTransformBase(task.SingleTask):
     # NOTE: this not obviously the right level for this, but it's the only baseclass in
     # common to where it's used
     def _cut_data(
-        self, data: np.ndarray, weight: np.ndarray, channel_ind: np.ndarray
-    ) -> Optional[tuple[np.ndarray, np.ndarray, np.ndarray]]:
+        self, data: np.ndarray, weight: np.ndarray,
+    ) -> Optional[tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]]:
         """Apply cuts on the data and weights and returned modified versions.
 
         Parameters
@@ -554,8 +573,6 @@ class DelayTransformBase(task.SingleTask):
             the second last.
         weight
             A n-d array of the weights. Axes the same as the data.
-        channel_ind
-            The indices of the frequency channels.
 
         Returns
         -------
@@ -564,35 +581,53 @@ class DelayTransformBase(task.SingleTask):
         new_weight
             The new weights with cuts applied and averaged over the `average_axis` (i.e
             second last).
-        new_channel_ind
-            The indices of the remaining channels after cuts.
+        freq_sel
+            The selection of frequencies retained.
+        time_sel
+            The selection of times retained.
         """
+        ntime, nfreq = data.shape[-2:]
+        non_zero_time = (weight > 0).mean(axis=-1).reshape(-1, ntime).mean(axis=0) > self.time_frac
+        non_zero_freq = (weight > 0).mean(axis=-2).reshape(-1, nfreq).mean(axis=0) > self.freq_frac
+
+        # If there are no non-zero weighted entries skip
+        if not non_zero_freq.any():
+            return None
+
+        data = data[..., non_zero_time, :][..., non_zero_freq]
+        weight = weight[..., non_zero_time, :][..., non_zero_freq]
+
         # Mask out data with completely zero'd weights and generate time
         # averaged weights
-        weight_cut = (
-            1e-4 * weight.mean()
-        )  # Use approx threshold to ignore small weights
-        data = data * (weight > weight_cut)
-        weight = np.mean(weight, axis=-2)
+        # Use approx threshold to ignore small weights
+        weight_cut = 1e-4 * weight.mean()
+        wmask = weight > weight_cut
+        weight = weight * wmask
 
+        # Remove the mean from the data before estimating the spectrum
+        if self.remove_mean:
+            dmean = (data * weight).mean(axis=0) / weight.mean(axis=0)
+            data = data - dmean[np.newaxis, :]
+
+        data = data * wmask
+
+        # If there are no non-zero data entries skip
         if (data == 0.0).all():
             return None
 
-        # If there are no non-zero weighted entries skip
-        non_zero = (weight > 0).reshape(-1, weight.shape[-1]).all(axis=0)
-        if not non_zero.any():
-            return None
+        # Scale the frequencies by the typical fluctuation size, with a scaling to
+        # obtain constant total power
+        if self.scale_freq:
+            dscl = (
+                data.std(axis=-2)[..., np.newaxis, :] /
+                data.std(axis=(-1, -2))[..., np.newaxis, np.newaxis]
+            )
+            data = data * tools.invert_no_zero(dscl)
 
-        # Remove any frequency channel which is entirely zero, this is just to
-        # reduce the computational cost, it should make no difference to the result
-        data = data[..., non_zero]
-        weight = weight[..., non_zero]
-        non_zero_channel = channel_ind[non_zero]
-
-        # Increase the weights by a specified amount
+        weight = np.mean(weight, axis=-2)
         weight *= self.weight_boost
 
-        return data, weight, non_zero_channel
+        return data, weight, non_zero_freq, non_zero_time
 
 
 class DelayGibbsSamplerBase(DelayTransformBase, random.RandomTask):
@@ -620,7 +655,8 @@ class DelayGibbsSamplerBase(DelayTransformBase, random.RandomTask):
     initial_amplitude = config.Property(proptype=float, default=10.0)
     save_samples = config.Property(proptype=bool, default=False)
     initial_sample_path = config.Property(proptype=str, default=None)
-    maxlike = config.Property(proptype=bool, default=False)
+    maxpost = config.Property(proptype=bool, default=False)
+    maxpost_tol = config.Property(proptype=float, default=1e-3)
 
     def _create_output(
         self,
@@ -736,21 +772,21 @@ class DelayGibbsSamplerBase(DelayTransformBase, random.RandomTask):
             weight = weight_view.local_array[lbi]
 
             # Apply the cuts to the data
-            t = self._cut_data(data, weight, channel_ind)
+            t = self._cut_data(data, weight)
             if t is None:
                 continue
-            data, weight, non_zero_channel = t
+            data, weight, nzf, _ = t
 
-            if self.maxlike:
-                spec, success = delay_power_spectrum_maxlike(
+            if self.maxpost:
+                spec, success = delay_power_spectrum_maxpost(
                     data,
                     ndelay,
                     weight,
-                    initial_S[lbi],
+                    None,
                     window=self.window if self.apply_window else None,
-                    fsel=non_zero_channel,
+                    fsel=channel_ind[nzf],
                     maxiter=self.nsamp,
-                    tol=1e-3,
+                    tol=self.maxpost_tol,
                 )
 
                 # Take an average over the last half of the delay spectrum samples
@@ -769,7 +805,7 @@ class DelayGibbsSamplerBase(DelayTransformBase, random.RandomTask):
                     weight,
                     initial_S[lbi],
                     window=self.window if self.apply_window else None,
-                    fsel=non_zero_channel,
+                    fsel=channel_ind[nzf],
                     niter=self.nsamp,
                     rng=rng,
                     complex_timedomain=self.complex_timedomain,
@@ -992,10 +1028,10 @@ class DelaySpectrumWienerEstimator(DelayGeneralContainerBase):
             weight = weight_view.local_array[lbi]
 
             # Apply the cuts to the data
-            t = self._cut_data(data, weight, channel_ind)
+            t = self._cut_data(data, weight)
             if t is None:
                 continue
-            data, weight, non_zero_channel = t
+            data, weight, nzf, _ = t
 
             # Pass the delay power spectrum and frequency spectrum for each "baseline"
             # to the Wiener filtering routine.The delay power spectrum has been
@@ -1007,7 +1043,7 @@ class DelaySpectrumWienerEstimator(DelayGeneralContainerBase):
                 ndelay,
                 weight,
                 window=self.window if self.apply_window else None,
-                fsel=non_zero_channel,
+                fsel=channel_ind[nzf],
                 complex_timedomain=self.complex_timedomain,
             )
             # FFT-shift along the last axis
@@ -1138,10 +1174,10 @@ class DelayCrossPowerSpectrumEstimator(
             weight = np.array([w.local_array[lbi] for w in weight_view])
 
             # Apply the cuts to the data
-            t = self._cut_data(data, weight, channel_ind)
+            t = self._cut_data(data, weight)
             if t is None:
                 continue
-            data, weight, non_zero_channel = t
+            data, weight, nzf, _ = t
 
             spec = delay_spectrum_gibbs_cross(
                 data,
@@ -1149,7 +1185,7 @@ class DelayCrossPowerSpectrumEstimator(
                 weight,
                 initial_S[lbi],
                 window=self.window if self.apply_window else None,
-                fsel=non_zero_channel,
+                fsel=channel_ind[nzf],
                 niter=self.nsamp,
                 rng=rng,
             )
@@ -1918,6 +1954,8 @@ class ComputeLogLikeGradients:
         MF: np.ndarray,
         N: np.ndarray,
         fsel: np.ndarray | slice | list | None = None,
+        alpha: float = 0.0,
+        width: int = 5,
         subtract_noise: bool = False,
     ) -> None:
         if fsel is None:
@@ -1929,6 +1967,21 @@ class ComputeLogLikeGradients:
 
         if subtract_noise:
             self.X = self.X - self.N
+
+        self.alpha = alpha
+        nd = MF.shape[1]
+        W = np.zeros((nd, nd))
+        for i in range(nd):
+            for j in range(-(width - 1) // 2, (width + 1) // 2):
+                c = (i + j) % nd
+                W[i, c] = 1.0 / width
+        IW = np.identity(nd) - W
+        self.IW2 = IW.T @ IW
+        # ii = np.arange(nd)
+        # d = ((ii[:, np.newaxis] - ii[np.newaxis, :] + nd / 2) % nd) - nd / 2
+        # Cd = alpha**2 * np.exp(-0.5 * (d / width)**2)
+
+        # self.Cdi = la.pinv(Cd, rtol=1e-13)
 
     # Store the location we are calculating for.
     _s_a: np.ndarray | None = None
@@ -1971,13 +2024,19 @@ class ComputeLogLikeGradients:
         lndet = 2 * np.log(np.diagonal(self._Ch)).sum().real
 
         ll = lndet + np.diagonal(CiX).sum().real
+
+        ll += self.alpha * s_a @ self.IW2 @ s_a
+        #ll += (s_a @ (self.Cdi @ s_a)).real
         return ll
 
     def gradient(self, s_a: np.ndarray) -> np.ndarray:
         """Calculate the gradient of the negative log-likelihood."""
         self._precompute(s_a)
 
-        return -(self._Ut.conj() * self._XC_Ut).sum(axis=0).real
+        g = -(self._Ut.conj() * self._XC_Ut).sum(axis=0).real
+        g += self.alpha * self.IW2 @ s_a
+        #g += (self.Cdi @ s_a).real
+        return g
 
     def hessian(self, s_a: np.ndarray) -> np.ndarray:
         """Calculate the Hessian of the negative log-likelihood."""
@@ -1993,108 +2052,10 @@ class ComputeLogLikeGradients:
 
         t = -(self._Wt.conj() * self._XC_Wt).sum(axis=0).real
         H += np.diag(t.real)
+        H += self.alpha * self.IW2
+        #H += self.Cdi
 
         return H
-
-
-def delay_power_spectrum_maxlike(
-    data,
-    N,
-    Ni,
-    initial_S: np.ndarray | None = None,
-    window: str = "nuttall",
-    fsel: np.ndarray | None = None,
-    maxiter: int = 30,
-    tol: float = 1e-3,
-):
-    """Estimate the delay power spectrum with a maximum-likelihood estimator.
-
-    This routine uses `scipy.optimize.minimize` to find the maximum likelihood power
-    spectrum.
-
-    Parameters
-    ----------
-    data : np.ndarray[:, freq]
-        Data to estimate the delay spectrum of.
-    N : int
-        The length of the output delay spectrum. There are assumed to be `N/2 + 1`
-        total frequency channels if assuming a real delay spectrum, or `N` channels
-        for a complex delay spectrum.
-    Ni : np.ndarray[freq]
-        Inverse noise variance.
-    initial_S : np.ndarray[delay]
-        The initial delay power spectrum guess.
-    window : one of {'nuttall', 'blackman_nuttall', 'blackman_harris', None}, optional
-        Apply an apodisation function. Default: 'nuttall'.
-    fsel : np.ndarray[freq], optional
-        Indices of channels that we have data at. By default assume all channels.
-    maxiter : int, optional
-        Maximum number of iterations to run of the solver.
-
-    Returns
-    -------
-    spec : list
-        List of spectrum samples.
-    success
-        Did the solve successfully converge.
-    """
-    nsamp, Nf = data.shape
-
-    if fsel is None:
-        fsel = np.arange(Nf)
-    elif len(fsel) != Nf:
-        raise ValueError(
-            "Length of frequency selection must match frequencies passed. "
-            f"{len(fsel)} != {data.shape[-1]}"
-        )
-
-    lsi = np.zeros(N) if initial_S is None else np.log(initial_S)
-
-    # Construct the Fourier matrix
-    F = fourier_matrix(N, fsel)
-
-    # Compute the covariance matrix of the data
-    # Window the frequency data if requested
-    if window is not None:
-        # Construct the window function
-        x = fsel * 1.0 / N
-        w = tools.window_generalised(x, window=window)
-
-        # Apply to the projection matrix and the data
-        F *= w[:, np.newaxis]
-        data = data * w[np.newaxis, :]
-
-    X = data.T @ data.conj()
-    X /= nsamp
-
-    # Construct the noise matrix from the diagonal of its inverse
-    Nm = np.diag(tools.invert_no_zero(Ni))
-
-    # Mask out any completely missing frequencies
-    F[Ni == 0] = 0.0
-
-    ll = ComputeLogLikeGradients(X, F, Nm)
-
-    samples = []
-
-    # This callback is for getting the intermediate samples such that we can access
-    # convergence of the solution
-    def _get_intermediate(intermediate_result: OptimizeResult):
-        samples.append(np.exp(intermediate_result.x))
-
-    res = minimize(
-        ll.loglike,
-        x0=lsi,
-        jac=ll.gradient,
-        hess=ll.hessian,
-        method="Newton-CG",
-        options={"maxiter": maxiter, "xtol": tol},
-        callback=_get_intermediate,
-    )
-
-    samples.append(np.exp(res.x))
-
-    return samples, res.success
 
 
 def null_delay_filter(freq, max_delay, mask, num_delay=200, tol=1e-8, window=True):
