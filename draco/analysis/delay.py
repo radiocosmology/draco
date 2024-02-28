@@ -4,7 +4,6 @@ from typing import List, Optional, Tuple, TypeVar, Union
 
 import numpy as np
 import scipy.linalg as la
-from scipy.optimize import minimize, OptimizeResult
 from caput import config, memh5, mpiarray
 from cora.util import units
 from numpy.lib.recfunctions import structured_to_unstructured
@@ -13,6 +12,7 @@ from draco.core.containers import ContainerBase, FreqContainer
 
 from ..core import containers, io, task
 from ..util import random, tools
+from .delayopt import delay_power_spectrum_maxpost
 
 
 class DelayFilter(task.SingleTask):
@@ -363,6 +363,19 @@ class DelayTransformBase(task.SingleTask):
         assume the noise power in the data is `weight_boost` times lower, which is
         useful if you want the "true" noise to not be downweighted by the Wiener filter,
         or have it included in the Gibbs sampler. Default: 1.0.
+    freq_frac
+        The threshold for the fraction of time samples present in a frequency for it
+        to be retained. Must be strictly greater than this value, so the default
+        value 0, retains any channel with at least one sample.
+    time_frac
+        The threshold for the fraction of frequency samples required to retain a
+        time sample. The default value (-1) means that all time samples are kept.
+    remove_mean
+        Subtract the mean in time of each frequency channel. This is done after time
+        samples are pruned by the `time_frac` threshold.
+    scale_freq
+        Scale each frequency by its standard deviation to flatten the fluctuations
+        across the band. Applied before any apodisation is done.
     """
 
     freq_zero = config.Property(proptype=float, default=None)
@@ -385,6 +398,12 @@ class DelayTransformBase(task.SingleTask):
     )
     complex_timedomain = config.Property(proptype=bool, default=False)
     weight_boost = config.Property(proptype=float, default=1.0)
+
+    freq_frac = config.Property(proptype=float, default=0.0)
+    time_frac = config.Property(proptype=float, default=-1.0)
+
+    remove_mean = config.Property(proptype=bool, default=False)
+    scale_freq = config.Property(proptype=bool, default=False)
 
     def process(self, ss):
         """Estimate the delay spectrum or power spectrum.
@@ -543,8 +562,8 @@ class DelayTransformBase(task.SingleTask):
     # NOTE: this not obviously the right level for this, but it's the only baseclass in
     # common to where it's used
     def _cut_data(
-        self, data: np.ndarray, weight: np.ndarray, channel_ind: np.ndarray
-    ) -> Optional[tuple[np.ndarray, np.ndarray, np.ndarray]]:
+        self, data: np.ndarray, weight: np.ndarray,
+    ) -> Optional[tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]]:
         """Apply cuts on the data and weights and returned modified versions.
 
         Parameters
@@ -554,8 +573,6 @@ class DelayTransformBase(task.SingleTask):
             the second last.
         weight
             A n-d array of the weights. Axes the same as the data.
-        channel_ind
-            The indices of the frequency channels.
 
         Returns
         -------
@@ -564,35 +581,53 @@ class DelayTransformBase(task.SingleTask):
         new_weight
             The new weights with cuts applied and averaged over the `average_axis` (i.e
             second last).
-        new_channel_ind
-            The indices of the remaining channels after cuts.
+        freq_sel
+            The selection of frequencies retained.
+        time_sel
+            The selection of times retained.
         """
+        ntime, nfreq = data.shape[-2:]
+        non_zero_time = (weight > 0).mean(axis=-1).reshape(-1, ntime).mean(axis=0) > self.time_frac
+        non_zero_freq = (weight > 0).mean(axis=-2).reshape(-1, nfreq).mean(axis=0) > self.freq_frac
+
+        # If there are no non-zero weighted entries skip
+        if not non_zero_freq.any():
+            return None
+
+        data = data[..., non_zero_time, :][..., non_zero_freq]
+        weight = weight[..., non_zero_time, :][..., non_zero_freq]
+
         # Mask out data with completely zero'd weights and generate time
         # averaged weights
-        weight_cut = (
-            1e-4 * weight.mean()
-        )  # Use approx threshold to ignore small weights
-        data = data * (weight > weight_cut)
-        weight = np.mean(weight, axis=-2)
+        # Use approx threshold to ignore small weights
+        weight_cut = 1e-4 * weight.mean()
+        wmask = weight > weight_cut
+        weight = weight * wmask
 
+        # Remove the mean from the data before estimating the spectrum
+        if self.remove_mean:
+            dmean = (data * weight).mean(axis=0) / weight.mean(axis=0)
+            data = data - dmean[np.newaxis, :]
+
+        data = data * wmask
+
+        # If there are no non-zero data entries skip
         if (data == 0.0).all():
             return None
 
-        # If there are no non-zero weighted entries skip
-        non_zero = (weight > 0).reshape(-1, weight.shape[-1]).all(axis=0)
-        if not non_zero.any():
-            return None
+        # Scale the frequencies by the typical fluctuation size, with a scaling to
+        # obtain constant total power
+        if self.scale_freq:
+            dscl = (
+                data.std(axis=-2)[..., np.newaxis, :] /
+                data.std(axis=(-1, -2))[..., np.newaxis, np.newaxis]
+            )
+            data = data * tools.invert_no_zero(dscl)
 
-        # Remove any frequency channel which is entirely zero, this is just to
-        # reduce the computational cost, it should make no difference to the result
-        data = data[..., non_zero]
-        weight = weight[..., non_zero]
-        non_zero_channel = channel_ind[non_zero]
-
-        # Increase the weights by a specified amount
+        weight = np.mean(weight, axis=-2)
         weight *= self.weight_boost
 
-        return data, weight, non_zero_channel
+        return data, weight, non_zero_freq, non_zero_time
 
 
 class DelayGibbsSamplerBase(DelayTransformBase, random.RandomTask):
@@ -620,7 +655,8 @@ class DelayGibbsSamplerBase(DelayTransformBase, random.RandomTask):
     initial_amplitude = config.Property(proptype=float, default=10.0)
     save_samples = config.Property(proptype=bool, default=False)
     initial_sample_path = config.Property(proptype=str, default=None)
-    maxlike = config.Property(proptype=bool, default=False)
+    maxpost = config.Property(proptype=bool, default=False)
+    maxpost_tol = config.Property(proptype=float, default=1e-3)
 
     def _create_output(
         self,
@@ -736,21 +772,21 @@ class DelayGibbsSamplerBase(DelayTransformBase, random.RandomTask):
             weight = weight_view.local_array[lbi]
 
             # Apply the cuts to the data
-            t = self._cut_data(data, weight, channel_ind)
+            t = self._cut_data(data, weight)
             if t is None:
                 continue
-            data, weight, non_zero_channel = t
+            data, weight, nzf, _ = t
 
-            if self.maxlike:
-                spec, success = delay_power_spectrum_maxlike(
+            if self.maxpost:
+                spec, success = delay_power_spectrum_maxpost(
                     data,
                     ndelay,
                     weight,
-                    initial_S[lbi],
+                    None,
                     window=self.window if self.apply_window else None,
-                    fsel=non_zero_channel,
+                    fsel=channel_ind[nzf],
                     maxiter=self.nsamp,
-                    tol=1e-3,
+                    tol=self.maxpost_tol,
                 )
 
                 # Take an average over the last half of the delay spectrum samples
@@ -769,7 +805,7 @@ class DelayGibbsSamplerBase(DelayTransformBase, random.RandomTask):
                     weight,
                     initial_S[lbi],
                     window=self.window if self.apply_window else None,
-                    fsel=non_zero_channel,
+                    fsel=channel_ind[nzf],
                     niter=self.nsamp,
                     rng=rng,
                     complex_timedomain=self.complex_timedomain,
@@ -992,10 +1028,10 @@ class DelaySpectrumWienerEstimator(DelayGeneralContainerBase):
             weight = weight_view.local_array[lbi]
 
             # Apply the cuts to the data
-            t = self._cut_data(data, weight, channel_ind)
+            t = self._cut_data(data, weight)
             if t is None:
                 continue
-            data, weight, non_zero_channel = t
+            data, weight, nzf, _ = t
 
             # Pass the delay power spectrum and frequency spectrum for each "baseline"
             # to the Wiener filtering routine.The delay power spectrum has been
@@ -1007,7 +1043,7 @@ class DelaySpectrumWienerEstimator(DelayGeneralContainerBase):
                 ndelay,
                 weight,
                 window=self.window if self.apply_window else None,
-                fsel=non_zero_channel,
+                fsel=channel_ind[nzf],
                 complex_timedomain=self.complex_timedomain,
             )
             # FFT-shift along the last axis
@@ -1138,10 +1174,10 @@ class DelayCrossPowerSpectrumEstimator(
             weight = np.array([w.local_array[lbi] for w in weight_view])
 
             # Apply the cuts to the data
-            t = self._cut_data(data, weight, channel_ind)
+            t = self._cut_data(data, weight)
             if t is None:
                 continue
-            data, weight, non_zero_channel = t
+            data, weight, nzf, _ = t
 
             spec = delay_spectrum_gibbs_cross(
                 data,
@@ -1149,7 +1185,7 @@ class DelayCrossPowerSpectrumEstimator(
                 weight,
                 initial_S[lbi],
                 window=self.window if self.apply_window else None,
-                fsel=non_zero_channel,
+                fsel=channel_ind[nzf],
                 niter=self.nsamp,
                 rng=rng,
             )
