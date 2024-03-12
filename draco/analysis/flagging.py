@@ -13,13 +13,12 @@ from typing import Union, overload
 import numpy as np
 import scipy.signal
 from scipy import linalg as la
-from scipy.sparse import dia_array
 from skimage.filters import apply_hysteresis_threshold
 
 from caput import config, mpiarray, weighted_median
-from caput.tools import invert_no_zero
 from cora.util import units
 
+from ..analysis import delay
 from ..core import containers, io, task
 from ..util import rfi, tools
 
@@ -1003,6 +1002,302 @@ class CollapseBaselineMask(task.SingleTask):
         return mask_cont
 
 
+class RFIMModeMask(task.SingleTask):
+    """Apply high-pass and low-pass mmode filters to flag rfi.
+
+    Attributes
+    ----------
+    mad_base_size : list of int, optional
+        Median absolute deviations base window. Default is [1, 101].
+    mad_dev_size : list of int, optional
+        Median absolute deviation median deviation window.
+        Default is [1, 51].
+    sigma_high : float, optional
+        Median absolute deviations sigma threshold. Default is 8.0.
+    sigma_low : float, optional
+        Median absolute deviations low sigma threshold. A value above
+        this threshold is masked only if it is either larger than `sigma_high`
+        or it is larger than `sigma_low` AND connected to a region larger
+        than `sigma_high`. Default is 1.0.
+    frac_samples : float, optional
+        Fraction of flagged samples in map space above which the entire
+        time sample will be flagged. Default is 0.01.
+    st_max_m : int, optional
+        Maximum size of the SumThreshold window. Default is 8.0.
+    sigma_day : float, optional
+        Sigma threshold for the MAD mask applied to bright source transits
+        and daytime data, which is required to avoid masking out transits.
+        Generally this should be quite high, as the SumThreshold mask is
+        applied to the per-frequency median of the data in these regions,
+        and will catch most bright frequency bands. Default is 10.0.
+    """
+
+    mad_base_size = config.list_type(int, length=2, default=[1, 101])
+    mad_dev_size = config.list_type(int, length=2, default=[1, 51])
+    sigma_high = config.Property(proptype=float, default=8.0)
+    sigma_low = config.Property(proptype=float, default=1.0)
+    frac_samples = config.Property(proptype=float, default=0.01)
+
+    cyl_sep = config.Property(proptype=int, default=2)
+
+    st_max_m = config.Property(proptype=int, default=8)
+    sigma_day = config.Property(proptype=float, default=10.0)
+
+    def setup(self, telescope):
+        """Set up the baseline selections and ordering.
+
+        Parameters
+        ----------
+        telescope : TransitTelescope
+            The telescope object to use
+        """
+        self.telescope = io.get_telescope(telescope)
+
+    def process(self, stream):
+        """Make a mask from the data.
+
+        Parameters
+        ----------
+        stream : dcontainers.TimeStream | dcontainers.SiderealStream
+            Data to use when masking. Axes should be frequency, stack,
+            and time-like.
+
+        Returns
+        -------
+        mask : dcontainers.RFIMask | dcontainers.SiderealRFIMask
+            Time-frequency mask, where values marked `True` are flagged.
+        """
+        stream.redistribute("freq")
+
+        csd = stream.attrs.get("lsd", stream.attrs.get("csd"))
+
+        if csd is None:
+            raise ValueError(f"Dataset does not have a `csd` or `lsd` attribute.")
+
+        if "time" in stream.index_map:
+            times = stream.time
+        elif "ra" in stream.index_map:
+            times = self.telescope.lsd_to_unix(csd + stream.ra / 360.0)
+        else:
+            raise TypeError(
+                f"Expected data with `time` or `ra` axis. Got {type(stream)}."
+            )
+
+        ra = 2 * np.pi * (self.telescope.unix_to_lsd(times) - csd)
+        freq = stream.freq[stream.vis[:].local_bounds]
+
+        # Get stokes I and redistribute over frequency. Axes are rearranged
+        # in order (baseline, freq, time)
+        vis, weight, baselines = delay.stokes_I(stream, self.telescope)
+        vis = vis.redistribute(1).local_array
+        weight = weight.redistribute(1).local_array
+
+        # Get the initial mask
+        mask = np.all(weight == 0, axis=0)
+        mask |= self._static_rfi_mask_hook(freq, times[0])[:, np.newaxis]
+        self.log.debug(f"{100.0 * mask.mean():.2f}% of data initially flagged.")
+
+        # Mask rfi and get the mean power per polarisation for static sources
+        mask, power = self.mask_rfi(vis, mask, freq, baselines, ra)
+
+        # Gather the entire mask and power arrays
+        mask = mpiarray.MPIArray.wrap(mask, axis=0).allgather()
+        power = mpiarray.MPIArray.wrap(power, axis=0).allgather()
+
+        self.log.debug(
+            f"{100.0 * mask.mean():.2f}% of data flagged before channel flagging."
+        )
+        mask |= self.mask_channels(power, mask, times)
+        self.log.debug(f"{100.0 * mask.mean():.2f}% of data flagged.")
+
+        if "ra" in stream.index_map:
+            output = containers.SiderealRFIMask(axes_from=stream, attrs_from=stream)
+        else:
+            output = containers.RFIMask(axes_from=stream, attrs_from=stream)
+
+        output.mask[:] = mask
+
+        return output
+
+    def mask_rfi(self, vis, mask, freq, baselines, ra):
+        """Mask scattered rfi."""
+
+        # Get the per-frequency high-pass and low-pass cuts
+        hpf_cut = self._hpf_cut_hook(freq, baselines)
+        lpf_cut = self._lpf_cut_hook(freq, baselines)
+
+        # Select cylinders to include in static power estimation
+        bl_sel = baselines[:, 0] > self.cyl_sep * self.telescope.u_width
+        # Set up an array to store mean power from non-sky sources
+        power = np.zeros_like(mask, dtype=np.float64)
+
+        # Iterate over frequencies
+        for fsel in range(vis.shape[1]):
+            if np.all(mask[fsel]):
+                # Frequency is already masked
+                continue
+
+            vis_f = vis[:, fsel]
+            mask_f = mask[fsel]
+
+            # Apply a high-pass mmode filter. Scattered emission appears
+            # similar to an impulse function in time, so it's fourier transform
+            # extends to very high m
+            v_hpf = self.apply_filter(vis_f, ra, mask_f, hpf_cut[fsel], 0.5, "high")
+
+            # MAD filter flags scattered emission in pseudo-map space
+            map_hpf = abs(np.fft.fft(v_hpf, axis=0))
+            mad_mask = np.zeros_like(v_hpf, dtype=bool) | mask_f[np.newaxis]
+            mad_ = mad(map_hpf, mad_mask, self.mad_base_size, self.mad_dev_size)
+            # Hysteresis threshold mask flags anything above `sigma_high` or
+            # anything above `sigma_low` ONLY if it is connected to a region
+            # above `sigma_high`
+            mad_mask |= apply_hysteresis_threshold(
+                mad_, self.sigma_low, self.sigma_high
+            )
+            # Collapse over baselines
+            mean_flagged = np.mean(mad_mask, axis=0)
+
+            # Apply a low-pass fringe rate filter to calculate slowly
+            # varying power in the sky. Use a less agressive scattered
+            # emission flag to minimize artifacts
+            lpf_mask = mean_flagged > 0.5
+            v_lpf = self.apply_filter(vis_f, ra, lpf_mask, lpf_cut[fsel], 0.25, "low")
+
+            # Store the mean power over selected baselines
+            power[fsel] = np.mean(abs(v_lpf)[bl_sel], axis=0)
+            # Update the mask to flag all scattered emission
+            mask[fsel] |= mean_flagged > self.frac_samples
+
+        return mask, power
+
+    def mask_channels(self, power, mask, times):
+        """Mask slow-moving narrow-band RFI."""
+
+        # Find times where there are bright sources transiting
+        source_flag = self._source_flag_hook(times)
+
+        # Get a median over frequencies
+        med = weighted_median.weighted_median(power, (~mask).astype(power.dtype))
+        # Set power to median when bright sources are in the sky
+        p = power.copy()
+        p[:, source_flag] = med[:, np.newaxis]
+
+        # Subtract out a background, assuming that the type of
+        # rfi we're looking for is very localised in frequency
+        p_med = weighted_median.moving_weighted_median(
+            p, (~mask).astype(p.dtype), size=(11, 3)
+        )
+
+        # Mask bright data with bright sources removed
+        summask = rfi.sumthreshold(p - p_med, start_flag=mask, max_m=self.st_max_m)
+        summask |= rfi.sir((summask & ~mask)[:, np.newaxis])[:, 0]
+
+        # Try to flag an extra bright sources in the background
+        med = np.median(p_med[~summask])
+        dev = abs(p_med - med)
+        mad_ = 0.6745 * dev / np.median(dev[~summask])
+        summask |= mad_ > self.sigma_day
+
+        # Extra masking over bright sources
+        madmask = mad(power, summask) > self.sigma_day
+        summask[:, source_flag] |= madmask[:, source_flag]
+
+        return summask
+
+    @staticmethod
+    def apply_filter(vis, ra, mask, cut, apo_frac, type_):
+        """Apply a high-pass or low-pass cut in mmode space."""
+
+        # This is the exact number of modes below the cutoff
+        num_cut = int(2.0 * np.ptp(ra) * cut + 0.5)
+        # Make the filter projection matrix
+        proj = delay.null_delay_filter(
+            ra, cut, ~mask, num_cut, window=False, type_=type_
+        )
+        # Apply the filter. This has a flat cutoff, which will
+        # introduce power leakage due to fourier edge effects
+        vis = np.dot(vis, proj)
+        vis = np.fft.ifft(vis, axis=1)
+
+        # Create the apodisation window
+        win = np.zeros_like(ra)
+        win[num_cut // 2 : -num_cut // 2] = 1.0
+
+        if type_ == "low":
+            # Invert the window for a lowpass filter
+            win = 1.0 - win
+
+        # Apodization width
+        apo_n = int(apo_frac * num_cut)
+        win = tools.taper_mask(win, apo_n, outer=False)
+
+        # Apply the apodization window
+        return np.fft.fft(vis * win, axis=1)
+
+    def _hpf_cut_hook(self, freq, baselines):
+        """Get a high-pass fringe rate cut for each frequency."""
+
+        # Get local selection of telescope frequencies
+        fsel = np.where(np.isin(self.telescope.frequencies, freq))[0]
+        # Compensate for east-west beam FWHM. This is mostly needed
+        # for short baselines
+        fwhm = np.deg2rad(self.telescope.fwhm_ex)[fsel]
+        dec = np.deg2rad(self.telescope.latitude)
+        lambda_inv = freq[:, np.newaxis] * 1e6 / units.c
+
+        # Calculate the cut for each baseline and frequency
+        cut = np.maximum(
+            lambda_inv * baselines[:, 0] / np.cos(dec) + 1 / fwhm[:, np.newaxis],
+            lambda_inv * la.norm(baselines, axis=1),
+        )
+
+        return np.max(cut, axis=1)
+
+    def _lpf_cut_hook(self, freq, baselines):
+        """Get a low-pass fringe rate cut for each frequency."""
+        # 3 times a conservative estimate of the angular diameter of
+        # the sun, which should be the largest astronomical object
+        # on the sky. This strikes a reasonable balance between
+        # loss of localization and filtering transiting objects.
+        cut = 1 / np.deg2rad(1.8)
+
+        return np.ones(len(freq), dtype=np.float64) * cut
+
+    def _static_rfi_mask_hook(self, freq, timestamp=None):
+        """Override to mask entire frequency channels.
+
+        Parameters
+        ----------
+        freq : np.ndarray[nfreq]
+            1D array of frequencies in the data (in MHz).
+
+        timestamp : np.array[float]
+            Start observing time (in unix time)
+
+        Returns
+        -------
+        mask : np.ndarray[nfreq]
+            Mask array. True will mask a frequency channel.
+        """
+        return np.zeros_like(freq, dtype=bool)
+
+    def _source_flag_hook(self, times):
+        """Override to mask out bright point sources.
+
+        Parameters
+        ----------
+        times : np.ndarray[float]
+            Array of timestamps.
+
+        Returns
+        -------
+        mask : np.ndarray[float]
+            Mask array. True will mask out a time sample.
+        """
+        return np.zeros_like(times, dtype=bool)
+
+
 class RFISensitivityMask(task.SingleTask):
     """Slightly less crappy RFI masking.
 
@@ -1927,133 +2222,6 @@ def mad(x, mask, base_size=(11, 3), mad_size=(21, 21), debug=False, sigma=True):
     if debug:
         return r, dev, mad
     return r
-
-
-def arPLS_1d(y, mask=None, lambda_=1, end_frac=1e-2, max_iter=1000):
-    """Use arPLS to estimate a signal baseline.
-
-    Asymmetrically reweighted penalized least squares solve for a signal
-    baseline in the presence of high power outliers by heavily weighting
-    values below the signal and minimizing the weights of values above
-    the signal.
-
-    Reference:
-    https://www.sciencedirect.com/science/article/pii/S1090780706002266
-
-
-    Properties
-    ----------
-    y : np.ndarray
-        1D signal array
-    mask : np.ndarray, optional
-        1D boolean array of same length as `y`. Default is None.
-    lambda_ : float, optional
-        Scaling parameter used to control importance of smoothness vs.
-        fit. High lambda prioritizes smoothness of the baseline estimate.
-        Default is 1.
-    end_frac : float, optional
-        Convergeance ratio `norm(delta_w) / norm(w)`.
-    max_iter : int, optional
-        Maximum number of iterations to run, even if the convergance
-        criteria is not met.
-
-    Returns
-    -------
-    z : np.ndarray
-        Baseline estimate of the same shape as `y`
-    """
-    y = np.squeeze(y)
-    if y.ndim != 1:
-        raise ValueError(f"Expected 1D data array - got array with shape {y.shape}")
-
-    N = y.shape[0]
-
-    if mask is None:
-        mask = np.zeros(N, dtype=bool)
-    elif np.all(mask):
-        raise ValueError("Entire dataset is masked.")
-
-    mask = np.squeeze(mask)
-
-    if mask.ndim != 1:
-        raise ValueError(f"Expected 1D mask array - got array with shape {mask.shape}")
-
-    # Construct second-order difference matrix
-    D = np.array([[1, -2, 1]]).T.repeat(N - 1, axis=1)
-    D = dia_array((D, [-2, -1, 0]), shape=(N, N - 2))
-    Hp = lambda_ * D @ D.T
-
-    # Create the banded smoothness matrix and weights matrix
-    H = np.ones((3, N), dtype=np.float64)
-    W = np.zeros_like(H)
-
-    # Fill the lower banded matrix
-    for i in range(H.shape[0]):
-        H[i, : N - i] = Hp.diagonal(i)
-
-    # Initialize weights to one
-    W[0] = 1.0
-
-    for _ in range(max_iter):
-        # Ignore masked values
-        W[:, mask] = 0.0
-        # Extract the actual weights. W is a 3xN matrix to match
-        # the banded shape of H, all off-diagonal elements are zero
-        w = W[0]
-
-        z = la.solveh_banded(H + W, w * y, lower=True)
-
-        # Get the difference between the signal and the baseline estimate,
-        # and compute the meand a std where unmasked data is less than zero
-        d = y - z
-        dn = d[(d < 0) & ~mask]
-        m = np.mean(dn)
-        s = np.std(dn)
-
-        # Adjust weights based on the criteria discussed in the paper
-        # TODO: this throws a runtime warning for overflow in exp
-        wt = invert_no_zero((1 + np.exp(2 * (d - ((2 * s) - m)) * invert_no_zero(s))))
-
-        # Check for convergeance
-        if la.norm(w - wt) / la.norm(w) < end_frac:
-            break
-
-        # Update the weights
-        W[0] = wt
-
-    return z
-
-
-def taper_mask(mask, nwidth, outer=False):
-    """Taper a 2d mask along the last axis."""
-    mask = np.atleast_2d(mask)
-
-    width = 2 * nwidth - 1
-
-    taper = np.hanning(width)[np.newaxis]
-    taper /= np.sum(taper)
-
-    tapered_mask = np.zeros(
-        (mask.shape[0], mask.shape[-1] + 2 * width), dtype=np.float64
-    )
-    tapered_mask[:, width:-width] = mask.astype(np.float64)
-    # Extend the edges
-    tapered_mask[:, :width] = tapered_mask[:, width][:, np.newaxis]
-    tapered_mask[:, -width:] = tapered_mask[:, -width - 1][:, np.newaxis]
-
-    if outer:
-        tapered_mask = 1.0 - tapered_mask
-
-    # First convolution
-    tapered_mask = np.isclose(
-        scipy.signal.fftconvolve(tapered_mask, taper, axes=-1, mode="same"), 1.0
-    ).astype(np.float64)
-    tapered_mask = scipy.signal.fftconvolve(tapered_mask, taper, axes=-1, mode="same")
-
-    if outer:
-        tapered_mask = 1.0 - tapered_mask
-
-    return tapered_mask[:, width:-width]
 
 
 def inverse_binom_cdf_prob(k, N, F):
