@@ -211,7 +211,7 @@ class GaussianNoise(task.SingleTask, random.RandomTask):
 
         if self.add_noise:
             noise = random.complex_normal(
-                (nfreq, nprod, ntime),
+                size=(nfreq, nprod, ntime),
                 scale=std[np.newaxis, :, np.newaxis],
                 rng=self.rng,
             )
