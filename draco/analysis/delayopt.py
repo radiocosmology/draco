@@ -381,8 +381,8 @@ def delay_power_spectrum_maxpost(
 
     # This callback is for getting the intermediate samples such that we can access
     # convergence of the solution
-    def _get_intermediate(intermediate_result: OptimizeResult):
-        samples.append(np.exp(intermediate_result.x))
+    def _get_intermediate(xk):
+        samples.append(np.exp(xk))
 
     res = minimize(
         optfunc.value,
