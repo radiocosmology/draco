@@ -1,0 +1,336 @@
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" data-content_root="../">
+<head>
+  <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>draco.core.misc &mdash; draco 0+untagged.1.g2092275 documentation</title>
+      <link rel="stylesheet" type="text/css" href="../_static/pygments.css?v=80d5e7a1" />
+      <link rel="stylesheet" type="text/css" href="../_static/css/theme.css?v=19f00094" />
+
+  
+  <!--[if lt IE 9]>
+    <script src="../_static/js/html5shiv.min.js"></script>
+  <![endif]-->
+  
+        <script src="../_static/jquery.js?v=5d32c60e"></script>
+        <script src="../_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
+        <script src="../_static/documentation_options.js?v=7c366120"></script>
+        <script src="../_static/doctools.js?v=888ff710"></script>
+        <script src="../_static/sphinx_highlight.js?v=dc90522c"></script>
+    <script src="../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../genindex.html" />
+    <link rel="search" title="Search" href="../search.html" />
+    <link rel="next" title="draco.core.task" href="draco.core.task.html" />
+    <link rel="prev" title="draco.core.io" href="draco.core.io.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="../index.html" class="icon icon-home">
+            draco
+          </a>
+              <div class="version">
+                0+untagged.1.g2092275
+              </div>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <ul class="current">
+<li class="toctree-l1"><a class="reference internal" href="../tutorial.html">Tutorial</a></li>
+<li class="toctree-l1 current"><a class="reference internal" href="../reference.html">API Reference</a><ul class="current">
+<li class="toctree-l2 current"><a class="reference internal" href="../reference.html#submodules">Submodules</a><ul class="current">
+<li class="toctree-l3"><a class="reference internal" href="draco.analysis.html">draco.analysis</a></li>
+<li class="toctree-l3 current"><a class="reference internal" href="draco.core.html">draco.core</a><ul class="current">
+<li class="toctree-l4"><a class="reference internal" href="draco.core.containers.html">draco.core.containers</a></li>
+<li class="toctree-l4"><a class="reference internal" href="draco.core.io.html">draco.core.io</a></li>
+<li class="toctree-l4 current"><a class="current reference internal" href="#">draco.core.misc</a></li>
+<li class="toctree-l4"><a class="reference internal" href="draco.core.task.html">draco.core.task</a></li>
+</ul>
+</li>
+<li class="toctree-l3"><a class="reference internal" href="draco.synthesis.html">draco.synthesis</a></li>
+<li class="toctree-l3"><a class="reference internal" href="draco.util.html">draco.util</a></li>
+</ul>
+</li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="../dev.html">Development Guidelines</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../index.html">draco</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../index.html" class="icon icon-home" aria-label="Home"></a></li>
+          <li class="breadcrumb-item"><a href="../reference.html">API Reference</a></li>
+          <li class="breadcrumb-item"><a href="draco.core.html">draco.core</a></li>
+      <li class="breadcrumb-item active">draco.core.misc</li>
+      <li class="wy-breadcrumbs-aside">
+            <a href="../_sources/_autosummary/draco.core.misc.rst.txt" rel="nofollow"> View page source</a>
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <section id="module-draco.core.misc">
+<span id="draco-core-misc"></span><h1>draco.core.misc<a class="headerlink" href="#module-draco.core.misc" title="Link to this heading"></a></h1>
+<p>Miscellaneous pipeline tasks with no where better to go.</p>
+<p>Tasks should be proactively moved out of here when there is a thematically
+appropriate module, or enough related tasks end up in here such that they can
+all be moved out into their own module.</p>
+<p class="rubric">Classes</p>
+<table class="autosummary longtable docutils align-default">
+<tbody>
+<tr class="row-odd"><td><p><a class="reference internal" href="#draco.core.misc.AccumulateList" title="draco.core.misc.AccumulateList"><code class="xref py py-obj docutils literal notranslate"><span class="pre">AccumulateList</span></code></a>()</p></td>
+<td><p>Accumulate the inputs into a list and return when the task <em>finishes</em>.</p></td>
+</tr>
+<tr class="row-even"><td><p><a class="reference internal" href="#draco.core.misc.ApplyGain" title="draco.core.misc.ApplyGain"><code class="xref py py-obj docutils literal notranslate"><span class="pre">ApplyGain</span></code></a>()</p></td>
+<td><p>Apply a set of gains to a timestream or sidereal stack.</p></td>
+</tr>
+<tr class="row-odd"><td><p><a class="reference internal" href="#draco.core.misc.CheckMPIEnvironment" title="draco.core.misc.CheckMPIEnvironment"><code class="xref py py-obj docutils literal notranslate"><span class="pre">CheckMPIEnvironment</span></code></a>()</p></td>
+<td><p>Check that the current MPI environment can communicate across all nodes.</p></td>
+</tr>
+<tr class="row-even"><td><p><a class="reference internal" href="#draco.core.misc.MakeCopy" title="draco.core.misc.MakeCopy"><code class="xref py py-obj docutils literal notranslate"><span class="pre">MakeCopy</span></code></a>()</p></td>
+<td><p>Make a copy of the passed container.</p></td>
+</tr>
+<tr class="row-odd"><td><p><a class="reference internal" href="#draco.core.misc.PassOn" title="draco.core.misc.PassOn"><code class="xref py py-obj docutils literal notranslate"><span class="pre">PassOn</span></code></a>()</p></td>
+<td><p>Unconditionally forward a tasks input.</p></td>
+</tr>
+<tr class="row-even"><td><p><a class="reference internal" href="#draco.core.misc.WaitUntil" title="draco.core.misc.WaitUntil"><code class="xref py py-obj docutils literal notranslate"><span class="pre">WaitUntil</span></code></a>()</p></td>
+<td><p>Wait until the the requires before forwarding inputs.</p></td>
+</tr>
+</tbody>
+</table>
+<dl class="py class">
+<dt class="sig sig-object py" id="draco.core.misc.AccumulateList">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">draco.core.misc.</span></span><span class="sig-name descname"><span class="pre">AccumulateList</span></span><a class="reference internal" href="../_modules/draco/core/misc.html#AccumulateList"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#draco.core.misc.AccumulateList" title="Link to this definition"></a></dt>
+<dd><p>Bases: <a class="reference internal" href="draco.core.task.html#draco.core.task.MPILoggedTask" title="draco.core.task.MPILoggedTask"><code class="xref py py-class docutils literal notranslate"><span class="pre">MPILoggedTask</span></code></a></p>
+<p>Accumulate the inputs into a list and return when the task <em>finishes</em>.</p>
+<p>Initialize pipeline task.</p>
+<p>May be overridden with no arguments.  Will be called after any
+<cite>config.Property</cite> attributes are set and after ‘input’ and ‘requires’
+keys are set up.</p>
+<dl class="py method">
+<dt class="sig sig-object py" id="draco.core.misc.AccumulateList.finish">
+<span class="sig-name descname"><span class="pre">finish</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="../_modules/draco/core/misc.html#AccumulateList.finish"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#draco.core.misc.AccumulateList.finish" title="Link to this definition"></a></dt>
+<dd><p>Remove the internal reference.</p>
+<p>Prevents the items from hanging around after the task finishes.</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="draco.core.misc.AccumulateList.next">
+<span class="sig-name descname"><span class="pre">next</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">input_</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/draco/core/misc.html#AccumulateList.next"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#draco.core.misc.AccumulateList.next" title="Link to this definition"></a></dt>
+<dd><p>Append an input to the list of inputs.</p>
+</dd></dl>
+
+</dd></dl>
+
+<dl class="py class">
+<dt class="sig sig-object py" id="draco.core.misc.ApplyGain">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">draco.core.misc.</span></span><span class="sig-name descname"><span class="pre">ApplyGain</span></span><a class="reference internal" href="../_modules/draco/core/misc.html#ApplyGain"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#draco.core.misc.ApplyGain" title="Link to this definition"></a></dt>
+<dd><p>Bases: <a class="reference internal" href="draco.core.task.html#draco.core.task.SingleTask" title="draco.core.task.SingleTask"><code class="xref py py-class docutils literal notranslate"><span class="pre">SingleTask</span></code></a></p>
+<p>Apply a set of gains to a timestream or sidereal stack.</p>
+<dl class="py attribute">
+<dt class="sig sig-object py" id="draco.core.misc.ApplyGain.inverse">
+<span class="sig-name descname"><span class="pre">inverse</span></span><a class="headerlink" href="#draco.core.misc.ApplyGain.inverse" title="Link to this definition"></a></dt>
+<dd><p>Apply the gains directly, or their inverse.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>bool, optional</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="draco.core.misc.ApplyGain.update_weight">
+<span class="sig-name descname"><span class="pre">update_weight</span></span><a class="headerlink" href="#draco.core.misc.ApplyGain.update_weight" title="Link to this definition"></a></dt>
+<dd><p>Scale the weight array with the updated gains.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>bool, optional</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="draco.core.misc.ApplyGain.smoothing_length">
+<span class="sig-name descname"><span class="pre">smoothing_length</span></span><a class="headerlink" href="#draco.core.misc.ApplyGain.smoothing_length" title="Link to this definition"></a></dt>
+<dd><p>Smooth the gain timestream across the given number of seconds.
+Not supported (ignored) for Sidereal Streams.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>float, optional</p>
+</dd>
+</dl>
+</dd></dl>
+
+<p>Initialize pipeline task.</p>
+<p>May be overridden with no arguments.  Will be called after any
+<cite>config.Property</cite> attributes are set and after ‘input’ and ‘requires’
+keys are set up.</p>
+<dl class="py method">
+<dt class="sig sig-object py" id="draco.core.misc.ApplyGain.process">
+<span class="sig-name descname"><span class="pre">process</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">tstream</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">gain</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/draco/core/misc.html#ApplyGain.process"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#draco.core.misc.ApplyGain.process" title="Link to this definition"></a></dt>
+<dd><p>Apply gains to the given timestream.</p>
+<p>Smoothing the gains is not supported for SiderealStreams.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>tstream</strong> (<em>TimeStream like</em><em> or </em><a class="reference internal" href="draco.core.containers.html#draco.core.containers.SiderealStream" title="draco.core.containers.SiderealStream"><em>SiderealStream</em></a>) – Time stream to apply gains to. The gains are applied in place.</p></li>
+<li><p><strong>gain</strong> (<a class="reference internal" href="draco.core.containers.html#draco.core.containers.StaticGainData" title="draco.core.containers.StaticGainData"><em>StaticGainData</em></a><em>, </em><a class="reference internal" href="draco.core.containers.html#draco.core.containers.GainData" title="draco.core.containers.GainData"><em>GainData</em></a><em>, </em><a class="reference internal" href="draco.core.containers.html#draco.core.containers.SiderealGainData" title="draco.core.containers.SiderealGainData"><em>SiderealGainData</em></a><em>, </em><a class="reference internal" href="draco.core.containers.html#draco.core.containers.CommonModeGainData" title="draco.core.containers.CommonModeGainData"><em>CommonModeGainData</em></a>) – or CommonModeSiderealGainData. Gains to apply.</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p><strong>tstream</strong> – The timestream with the gains applied.</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p><a class="reference internal" href="draco.core.containers.html#draco.core.containers.TimeStream" title="draco.core.containers.TimeStream">TimeStream</a> or <a class="reference internal" href="draco.core.containers.html#draco.core.containers.SiderealStream" title="draco.core.containers.SiderealStream">SiderealStream</a></p>
+</dd>
+</dl>
+</dd></dl>
+
+</dd></dl>
+
+<dl class="py class">
+<dt class="sig sig-object py" id="draco.core.misc.CheckMPIEnvironment">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">draco.core.misc.</span></span><span class="sig-name descname"><span class="pre">CheckMPIEnvironment</span></span><a class="reference internal" href="../_modules/draco/core/misc.html#CheckMPIEnvironment"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#draco.core.misc.CheckMPIEnvironment" title="Link to this definition"></a></dt>
+<dd><p>Bases: <a class="reference internal" href="draco.core.task.html#draco.core.task.MPILoggedTask" title="draco.core.task.MPILoggedTask"><code class="xref py py-class docutils literal notranslate"><span class="pre">MPILoggedTask</span></code></a></p>
+<p>Check that the current MPI environment can communicate across all nodes.</p>
+<p>Initialize pipeline task.</p>
+<p>May be overridden with no arguments.  Will be called after any
+<cite>config.Property</cite> attributes are set and after ‘input’ and ‘requires’
+keys are set up.</p>
+<dl class="py method">
+<dt class="sig sig-object py" id="draco.core.misc.CheckMPIEnvironment.setup">
+<span class="sig-name descname"><span class="pre">setup</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="../_modules/draco/core/misc.html#CheckMPIEnvironment.setup"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#draco.core.misc.CheckMPIEnvironment.setup" title="Link to this definition"></a></dt>
+<dd><p>Send random messages between all ranks.</p>
+<p>Tests to ensure that all messages are received within a specified amount
+of time, and that the messages received are the same as those sent (i.e.
+nothing was corrupted).</p>
+</dd></dl>
+
+</dd></dl>
+
+<dl class="py class">
+<dt class="sig sig-object py" id="draco.core.misc.MakeCopy">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">draco.core.misc.</span></span><span class="sig-name descname"><span class="pre">MakeCopy</span></span><a class="reference internal" href="../_modules/draco/core/misc.html#MakeCopy"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#draco.core.misc.MakeCopy" title="Link to this definition"></a></dt>
+<dd><p>Bases: <a class="reference internal" href="draco.core.task.html#draco.core.task.SingleTask" title="draco.core.task.SingleTask"><code class="xref py py-class docutils literal notranslate"><span class="pre">SingleTask</span></code></a></p>
+<p>Make a copy of the passed container.</p>
+<p>Initialize pipeline task.</p>
+<p>May be overridden with no arguments.  Will be called after any
+<cite>config.Property</cite> attributes are set and after ‘input’ and ‘requires’
+keys are set up.</p>
+<dl class="py method">
+<dt class="sig sig-object py" id="draco.core.misc.MakeCopy.process">
+<span class="sig-name descname"><span class="pre">process</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">data</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/draco/core/misc.html#MakeCopy.process"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#draco.core.misc.MakeCopy.process" title="Link to this definition"></a></dt>
+<dd><p>Return a copy of the given container.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>data</strong> (<a class="reference internal" href="draco.core.containers.html#draco.core.containers.ContainerBase" title="draco.core.containers.ContainerBase"><em>containers.ContainerBase</em></a>) – The container to copy.</p>
+</dd>
+</dl>
+</dd></dl>
+
+</dd></dl>
+
+<dl class="py class">
+<dt class="sig sig-object py" id="draco.core.misc.PassOn">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">draco.core.misc.</span></span><span class="sig-name descname"><span class="pre">PassOn</span></span><a class="reference internal" href="../_modules/draco/core/misc.html#PassOn"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#draco.core.misc.PassOn" title="Link to this definition"></a></dt>
+<dd><p>Bases: <a class="reference internal" href="draco.core.task.html#draco.core.task.MPILoggedTask" title="draco.core.task.MPILoggedTask"><code class="xref py py-class docutils literal notranslate"><span class="pre">MPILoggedTask</span></code></a></p>
+<p>Unconditionally forward a tasks input.</p>
+<p>While this seems like a pointless no-op it’s useful for connecting tasks in complex
+topologies.</p>
+<p>Initialize pipeline task.</p>
+<p>May be overridden with no arguments.  Will be called after any
+<cite>config.Property</cite> attributes are set and after ‘input’ and ‘requires’
+keys are set up.</p>
+<dl class="py method">
+<dt class="sig sig-object py" id="draco.core.misc.PassOn.next">
+<span class="sig-name descname"><span class="pre">next</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">input_</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/draco/core/misc.html#PassOn.next"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#draco.core.misc.PassOn.next" title="Link to this definition"></a></dt>
+<dd><p>Immediately forward any input.</p>
+</dd></dl>
+
+</dd></dl>
+
+<dl class="py class">
+<dt class="sig sig-object py" id="draco.core.misc.WaitUntil">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">draco.core.misc.</span></span><span class="sig-name descname"><span class="pre">WaitUntil</span></span><a class="reference internal" href="../_modules/draco/core/misc.html#WaitUntil"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#draco.core.misc.WaitUntil" title="Link to this definition"></a></dt>
+<dd><p>Bases: <a class="reference internal" href="draco.core.task.html#draco.core.task.MPILoggedTask" title="draco.core.task.MPILoggedTask"><code class="xref py py-class docutils literal notranslate"><span class="pre">MPILoggedTask</span></code></a></p>
+<p>Wait until the the requires before forwarding inputs.</p>
+<p>This simple synchronization task will forward on whatever inputs it gets, however, it won’t do
+this until it receives any requirement to it’s setup method. This allows certain parts of the
+pipeline to be delayed until a piece of data further up has been generated.</p>
+<p>Initialize pipeline task.</p>
+<p>May be overridden with no arguments.  Will be called after any
+<cite>config.Property</cite> attributes are set and after ‘input’ and ‘requires’
+keys are set up.</p>
+<dl class="py method">
+<dt class="sig sig-object py" id="draco.core.misc.WaitUntil.next">
+<span class="sig-name descname"><span class="pre">next</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">input_</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/draco/core/misc.html#WaitUntil.next"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#draco.core.misc.WaitUntil.next" title="Link to this definition"></a></dt>
+<dd><p>Immediately forward any input.</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="draco.core.misc.WaitUntil.setup">
+<span class="sig-name descname"><span class="pre">setup</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">input_</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/draco/core/misc.html#WaitUntil.setup"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#draco.core.misc.WaitUntil.setup" title="Link to this definition"></a></dt>
+<dd><p>Accept, but don’t save any input.</p>
+</dd></dl>
+
+</dd></dl>
+
+</section>
+
+
+           </div>
+          </div>
+          <footer><div class="rst-footer-buttons" role="navigation" aria-label="Footer">
+        <a href="draco.core.io.html" class="btn btn-neutral float-left" title="draco.core.io" accesskey="p" rel="prev"><span class="fa fa-arrow-circle-left" aria-hidden="true"></span> Previous</a>
+        <a href="draco.core.task.html" class="btn btn-neutral float-right" title="draco.core.task" accesskey="n" rel="next">Next <span class="fa fa-arrow-circle-right" aria-hidden="true"></span></a>
+    </div>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2016, Richard Shaw.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>
