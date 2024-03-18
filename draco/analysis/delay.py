@@ -562,7 +562,9 @@ class DelayTransformBase(task.SingleTask):
     # NOTE: this not obviously the right level for this, but it's the only baseclass in
     # common to where it's used
     def _cut_data(
-        self, data: np.ndarray, weight: np.ndarray,
+        self,
+        data: np.ndarray,
+        weight: np.ndarray,
     ) -> Optional[tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]]:
         """Apply cuts on the data and weights and returned modified versions.
 
@@ -587,8 +589,12 @@ class DelayTransformBase(task.SingleTask):
             The selection of times retained.
         """
         ntime, nfreq = data.shape[-2:]
-        non_zero_time = (weight > 0).mean(axis=-1).reshape(-1, ntime).mean(axis=0) > self.time_frac
-        non_zero_freq = (weight > 0).mean(axis=-2).reshape(-1, nfreq).mean(axis=0) > self.freq_frac
+        non_zero_time = (weight > 0).mean(axis=-1).reshape(-1, ntime).mean(
+            axis=0
+        ) > self.time_frac
+        non_zero_freq = (weight > 0).mean(axis=-2).reshape(-1, nfreq).mean(
+            axis=0
+        ) > self.freq_frac
 
         # If there are no non-zero weighted entries skip
         if not non_zero_freq.any():
@@ -619,8 +625,8 @@ class DelayTransformBase(task.SingleTask):
         # obtain constant total power
         if self.scale_freq:
             dscl = (
-                data.std(axis=-2)[..., np.newaxis, :] /
-                data.std(axis=(-1, -2))[..., np.newaxis, np.newaxis]
+                data.std(axis=-2)[..., np.newaxis, :]
+                / data.std(axis=(-1, -2))[..., np.newaxis, np.newaxis]
             )
             data = data * tools.invert_no_zero(dscl)
 
@@ -2026,7 +2032,7 @@ class ComputeLogLikeGradients:
         ll = lndet + np.diagonal(CiX).sum().real
 
         ll += self.alpha * s_a @ self.IW2 @ s_a
-        #ll += (s_a @ (self.Cdi @ s_a)).real
+        # ll += (s_a @ (self.Cdi @ s_a)).real
         return ll
 
     def gradient(self, s_a: np.ndarray) -> np.ndarray:
@@ -2035,7 +2041,7 @@ class ComputeLogLikeGradients:
 
         g = -(self._Ut.conj() * self._XC_Ut).sum(axis=0).real
         g += self.alpha * self.IW2 @ s_a
-        #g += (self.Cdi @ s_a).real
+        # g += (self.Cdi @ s_a).real
         return g
 
     def hessian(self, s_a: np.ndarray) -> np.ndarray:
@@ -2053,7 +2059,7 @@ class ComputeLogLikeGradients:
         t = -(self._Wt.conj() * self._XC_Wt).sum(axis=0).real
         H += np.diag(t.real)
         H += self.alpha * self.IW2
-        #H += self.Cdi
+        # H += self.Cdi
 
         return H
 
