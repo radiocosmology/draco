@@ -333,6 +333,7 @@ def delay_power_spectrum_maxpost(
         Did the solve successfully converge.
     """
     from .delay import fourier_matrix
+
     nsamp, Nf = data.shape
 
     if fsel is None:
@@ -372,10 +373,14 @@ def delay_power_spectrum_maxpost(
     else:
         lsi = np.log(initial_S)
 
-    optfunc = AddFunctions([
-        LogLikePS(X, F, Nm, nsamp, exact_hessian=True),
-        GaussianProcessPrior(N, alpha=5, width=3.0, kernel="gaussian", a=5.0, reg=1e-8),
-    ])
+    optfunc = AddFunctions(
+        [
+            LogLikePS(X, F, Nm, nsamp, exact_hessian=True),
+            GaussianProcessPrior(
+                N, alpha=5, width=3.0, kernel="gaussian", a=5.0, reg=1e-8
+            ),
+        ]
+    )
 
     samples = []
 
@@ -396,4 +401,3 @@ def delay_power_spectrum_maxpost(
     # NOTE: the final sample in samples is already the final result
 
     return samples, res.success
-

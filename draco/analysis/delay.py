@@ -562,7 +562,9 @@ class DelayTransformBase(task.SingleTask):
     # NOTE: this not obviously the right level for this, but it's the only baseclass in
     # common to where it's used
     def _cut_data(
-        self, data: np.ndarray, weight: np.ndarray,
+        self,
+        data: np.ndarray,
+        weight: np.ndarray,
     ) -> Optional[tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]]:
         """Apply cuts on the data and weights and returned modified versions.
 
@@ -587,8 +589,12 @@ class DelayTransformBase(task.SingleTask):
             The selection of times retained.
         """
         ntime, nfreq = data.shape[-2:]
-        non_zero_time = (weight > 0).mean(axis=-1).reshape(-1, ntime).mean(axis=0) > self.time_frac
-        non_zero_freq = (weight > 0).mean(axis=-2).reshape(-1, nfreq).mean(axis=0) > self.freq_frac
+        non_zero_time = (weight > 0).mean(axis=-1).reshape(-1, ntime).mean(
+            axis=0
+        ) > self.time_frac
+        non_zero_freq = (weight > 0).mean(axis=-2).reshape(-1, nfreq).mean(
+            axis=0
+        ) > self.freq_frac
 
         # If there are no non-zero weighted entries skip
         if not non_zero_freq.any():
@@ -619,8 +625,8 @@ class DelayTransformBase(task.SingleTask):
         # obtain constant total power
         if self.scale_freq:
             dscl = (
-                data.std(axis=-2)[..., np.newaxis, :] /
-                data.std(axis=(-1, -2))[..., np.newaxis, np.newaxis]
+                data.std(axis=-2)[..., np.newaxis, :]
+                / data.std(axis=(-1, -2))[..., np.newaxis, np.newaxis]
             )
             data = data * tools.invert_no_zero(dscl)
 
@@ -796,6 +802,7 @@ class DelayGibbsSamplerBase(DelayTransformBase, random.RandomTask):
 
                 if self.save_samples:
                     nsamp = len(spec)
+                    out_cont.datasets["spectrum_samples"][:, bi] = 0.0
                     out_cont.datasets["spectrum_samples"][-nsamp:, bi] = np.array(spec)
 
             else:
@@ -1919,6 +1926,142 @@ def delay_spectrum_wiener_filter(
         y_spec = _alternating_real_to_complex(y_spec)
 
     return y_spec
+
+
+class ComputeLogLikeGradients:
+    """Compute the likelihood and gradients for delay PS estimation.
+
+    This class efficiently computes the *negative* likelihood, as well as its gradient
+    and hessian. It will precompute and cache relevant quantities such that all of these
+    can be calculated per iteration without recomputing. It is designed to be used with
+    `scipy.optimize.minimize`.
+
+    The parameters used for this are the log of the delay power spectrum samples.
+
+    Parameters
+    ----------
+    X
+        The covariance matrix of the data.
+    MF
+        The masked Fourier matrix which maps from delay space to frequency space and
+        applies zero to any masked channels.
+    N
+        The noise covariance matrix.
+    fsel
+        An optional array selection to apply to limit the frequencies used in the
+        estimation. If not supplied, any frequencies entirely masked within `MF` are
+        skipped.
+    subtract_noise
+        Subtract the expected noise bias from the power spectrum.
+    """
+
+    def __init__(
+        self,
+        X: np.ndarray,
+        MF: np.ndarray,
+        N: np.ndarray,
+        fsel: np.ndarray | slice | list | None = None,
+        alpha: float = 0.0,
+        width: int = 5,
+        subtract_noise: bool = False,
+    ) -> None:
+        if fsel is None:
+            fsel = (MF != 0).any(axis=1)
+
+        self.X = X[fsel][:, fsel]
+        self.MF = MF[fsel]
+        self.N = N[fsel][:, fsel]
+
+        if subtract_noise:
+            self.X = self.X - self.N
+
+        self.alpha = alpha
+        nd = MF.shape[1]
+        W = np.zeros((nd, nd))
+        for i in range(nd):
+            for j in range(-(width - 1) // 2, (width + 1) // 2):
+                c = (i + j) % nd
+                W[i, c] = 1.0 / width
+        IW = np.identity(nd) - W
+        self.IW2 = IW.T @ IW
+        # ii = np.arange(nd)
+        # d = ((ii[:, np.newaxis] - ii[np.newaxis, :] + nd / 2) % nd) - nd / 2
+        # Cd = alpha**2 * np.exp(-0.5 * (d / width)**2)
+
+        # self.Cdi = la.pinv(Cd, rtol=1e-13)
+
+    # Store the location we are calculating for.
+    _s_a: np.ndarray | None = None
+
+    def _precompute(self, s_a: np.ndarray) -> bool:
+        """Pre-compute useful matrices for the given value.
+
+        Returns True is a recomputation was done, otherwise False.
+        """
+        if np.all(s_a == self._s_a):
+            return False
+
+        S = np.exp(s_a)
+        dS = S
+
+        self._C = (self.MF * S[np.newaxis, :]) @ self.MF.T.conj() + self.N
+        self._XC = self.X - self._C
+
+        self._Ch = la.cholesky(self._C, lower=False)
+
+        self._U = dS[np.newaxis, :] ** 0.5 * self.MF
+        self._Ut = la.cho_solve((self._Ch, False), self._U)
+        self._XC_Ut = self._XC @ self._Ut
+
+        self._W = self._U
+        self._Wt = self._Ut
+        self._XC_Wt = self._XC_Ut
+
+        self._s_a = s_a
+
+        return True
+
+    def loglike(self, s_a: np.ndarray) -> float:
+        """Calculate the negative log-likelihood."""
+        self._precompute(s_a)
+
+        CiX = la.cho_solve((self._Ch, False), self.X)
+
+        lndet = 2 * np.log(np.diagonal(self._Ch)).sum().real
+
+        ll = lndet + np.diagonal(CiX).sum().real
+
+        ll += self.alpha * s_a @ self.IW2 @ s_a
+        # ll += (s_a @ (self.Cdi @ s_a)).real
+        return ll
+
+    def gradient(self, s_a: np.ndarray) -> np.ndarray:
+        """Calculate the gradient of the negative log-likelihood."""
+        self._precompute(s_a)
+
+        g = -(self._Ut.conj() * self._XC_Ut).sum(axis=0).real
+        g += self.alpha * self.IW2 @ s_a
+        # g += (self.Cdi @ s_a).real
+        return g
+
+    def hessian(self, s_a: np.ndarray) -> np.ndarray:
+        """Calculate the Hessian of the negative log-likelihood."""
+        self._precompute(s_a)
+
+        Ua_Utb = self._U.T.conj() @ self._Ut
+
+        Uta_dX_Utb = self._Ut.T.conj() @ self._XC_Ut
+
+        Fab = Ua_Utb * Ua_Utb.T.conj()
+
+        H = (Fab + 2 * Uta_dX_Utb * Ua_Utb.T).real
+
+        t = -(self._Wt.conj() * self._XC_Wt).sum(axis=0).real
+        H += np.diag(t.real)
+        H += self.alpha * self.IW2
+        # H += self.Cdi
+
+        return H
 
 
 def null_delay_filter(
