@@ -1861,7 +1861,16 @@ def delay_spectrum_wiener_filter(
     return y_spec
 
 
-def null_delay_filter(freq, max_delay, mask, num_delay=200, tol=1e-8, window=True):
+def null_delay_filter(
+    freq,
+    max_delay,
+    mask,
+    num_delay=200,
+    tol=1e-8,
+    window=True,
+    type_="high",
+    lapack_driver="gesvd",
+):
     """Take frequency data and null out any delays below some value.
 
     Parameters
@@ -1878,12 +1887,18 @@ def null_delay_filter(freq, max_delay, mask, num_delay=200, tol=1e-8, window=Tru
         Cut off value for singular values.
     window : bool, optional
         Apply a window function to the data while filtering.
+    type_ : str, optional
+        Whether to apply a high-pass or low-pass filter. Options are
+        `high` or `low`. Default is `high`.
 
     Returns
     -------
     filter : np.ndarray[freq, freq]
         The filter as a 2D matrix.
     """
+    if type_ not in {"high", "low"}:
+        raise ValueError(f"Filter type must be one of [high, low]. Got {type_}")
+
     # Construct the window function
     x = (freq - freq.min()) / freq.ptp()
     w = tools.window_generalised(x, window="nuttall")
@@ -1904,9 +1919,14 @@ def null_delay_filter(freq, max_delay, mask, num_delay=200, tol=1e-8, window=Tru
     # to be the fault of MKL (see https://github.com/scipy/scipy/issues/10032 and links
     # therein). This seems to be limited to the `gesdd` LAPACK routine, so we can get
     # around it by switching to `gesvd`.
-    u, sig, vh = la.svd(F, lapack_driver="gesvd")
+    u, sig, vh = la.svd(F, full_matrices=False, lapack_driver=lapack_driver)
     nmodes = np.sum(sig > tol * sig.max())
-    p = u[:, :nmodes]
+
+    # Select the modes to null out based on the filter type
+    if type_ == "high":
+        p = u[:, :nmodes]
+    elif type_ == "low":
+        p = u[:, nmodes:]
 
     # Construct a projection matrix for the filter
     proj = np.identity(len(freq)) - np.dot(p, p.T.conj())
