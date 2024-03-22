@@ -1072,7 +1072,7 @@ class RFIMModeMask(task.SingleTask):
         csd = stream.attrs.get("lsd", stream.attrs.get("csd"))
 
         if csd is None:
-            raise ValueError(f"Dataset does not have a `csd` or `lsd` attribute.")
+            raise ValueError("Dataset does not have a `csd` or `lsd` attribute.")
 
         if "time" in stream.index_map:
             times = stream.time
@@ -1092,22 +1092,26 @@ class RFIMModeMask(task.SingleTask):
         vis = vis.redistribute(1).local_array
         weight = weight.redistribute(1).local_array
 
-        # Get the initial mask
+        # Set up the initial mask
         mask = np.all(weight == 0, axis=0)
         mask |= self._static_rfi_mask_hook(freq, times[0])[:, np.newaxis]
         self.log.debug(f"{100.0 * mask.mean():.2f}% of data initially flagged.")
 
-        # Mask rfi and get the mean power per polarisation for static sources
-        mask, power = self.mask_rfi(vis, mask, freq, baselines, ra)
+        # Mask fast rfi and get the mean power for roughly static sources
+        # for each frequency independently
+        mask, power = self.mask_rfi_fast(vis, mask, freq, baselines, ra)
+        # Mask slow, bright rfi for each frequency independently
+        mask |= self.mask_rfi_slow(power, mask, times)
 
         # Gather the entire mask and power arrays
         mask = mpiarray.MPIArray.wrap(mask, axis=0).allgather()
         power = mpiarray.MPIArray.wrap(power, axis=0).allgather()
 
         self.log.debug(
-            f"{100.0 * mask.mean():.2f}% of data flagged before channel flagging."
+            f"{100.0 * mask.mean():.2f}% of data flagged before multi-channel flagging."
         )
-        mask |= self.mask_channels(power, mask, times)
+        # Mask slow rfi across frequencies
+        mask |= self.mask_multi_channel(power, mask, times)
         self.log.debug(f"{100.0 * mask.mean():.2f}% of data flagged.")
 
         if "ra" in stream.index_map:
@@ -1119,7 +1123,7 @@ class RFIMModeMask(task.SingleTask):
 
         return output
 
-    def mask_rfi(self, vis, mask, freq, baselines, ra):
+    def mask_rfi_fast(self, vis, mask, freq, baselines, ra):
         """Mask scattered rfi."""
 
         # Get the per-frequency high-pass and low-pass cuts
@@ -1143,7 +1147,7 @@ class RFIMModeMask(task.SingleTask):
             # Apply a high-pass mmode filter. Scattered emission appears
             # similar to an impulse function in time, so it's fourier transform
             # extends to very high m
-            v_hpf = self.apply_filter(vis_f, ra, mask_f, hpf_cut[fsel], 0.5, "high")
+            v_hpf = self.apply_m_filter(vis_f, ra, mask_f, hpf_cut[fsel])
 
             # MAD filter flags scattered emission in pseudo-map space
             map_hpf = abs(np.fft.fft(v_hpf, axis=0))
@@ -1162,7 +1166,7 @@ class RFIMModeMask(task.SingleTask):
             # varying power in the sky. Use a less agressive scattered
             # emission flag to minimize artifacts
             lpf_mask = mean_flagged > 0.5
-            v_lpf = self.apply_filter(vis_f, ra, lpf_mask, lpf_cut[fsel], 0.25, "low")
+            v_lpf = self.apply_m_filter(vis_f, ra, lpf_mask, lpf_cut[fsel], type_="low")
 
             # Store the mean power over selected baselines
             power[fsel] = np.mean(abs(v_lpf)[bl_sel], axis=0)
@@ -1171,7 +1175,27 @@ class RFIMModeMask(task.SingleTask):
 
         return mask, power
 
-    def mask_channels(self, power, mask, times):
+    def mask_rfi_slow(self, power, mask, times):
+        """Mask slow-moving per-frequency RFI."""
+
+        # Find times where there are bright sources transiting
+        source_flag = self._source_flag_hook(times)
+
+        # Remove extremely bright items per frequency by fitting a
+        # smooth baseline to the power in each freqeuncy
+        for fsel in range(power.shape[0]):
+            if np.all(mask[fsel]):
+                continue
+
+            pwr = power[fsel]
+            pwr = abs(pwr - tools.arPLS_1d(pwr, mask[fsel], 1e2))
+
+            madmask = (0.6745 * pwr / np.median(pwr)) > self.sigma_day
+            mask[fsel] |= madmask & ~source_flag
+
+        return mask
+
+    def mask_multi_channel(self, power, mask, times):
         """Mask slow-moving narrow-band RFI."""
 
         # Find times where there are bright sources transiting
@@ -1179,9 +1203,14 @@ class RFIMModeMask(task.SingleTask):
 
         # Get a median over frequencies
         med = weighted_median.weighted_median(power, (~mask).astype(power.dtype))
+        # Fit a baseline to the median spectrum to try to remove some
+        # variable frequency structure
+        # med_bl = tools.arPLS_1d(med, mask.all(axis=1), 1.0)
+
         # Set power to median when bright sources are in the sky
         p = power.copy()
         p[:, source_flag] = med[:, np.newaxis]
+        # p -= med_bl[:, np.newaxis]
 
         # Subtract out a background, assuming that the type of
         # rfi we're looking for is very localised in frequency
@@ -1193,32 +1222,27 @@ class RFIMModeMask(task.SingleTask):
         summask = rfi.sumthreshold(p - p_med, start_flag=mask, max_m=self.st_max_m)
         summask |= rfi.sir((summask & ~mask)[:, np.newaxis])[:, 0]
 
-        # Try to flag an extra bright sources in the background
-        med = np.median(p_med[~summask])
-        dev = abs(p_med - med)
-        mad_ = 0.6745 * dev / np.median(dev[~summask])
-        summask |= mad_ > self.sigma_day
-
         # Extra masking over bright sources
-        madmask = mad(power, summask) > self.sigma_day
-        summask[:, source_flag] |= madmask[:, source_flag]
+        mad_ = mad(power[:, source_flag], summask[:, source_flag])
+        summask[:, source_flag] |= mad_ > self.sigma_day
 
         return summask
 
     @staticmethod
-    def apply_filter(vis, ra, mask, cut, apo_frac, type_):
+    def apply_m_filter(vis, ra, mask, cut, apo_frac=0.5, type_="high"):
         """Apply a high-pass or low-pass cut in mmode space."""
 
-        # This is the exact number of modes below the cutoff
+        # Experimentally this should cover all the relevant modes
+        # num_cut = int(3.0 * np.ptp(ra) * cut + 0.5)
         num_cut = int(2.0 * np.ptp(ra) * cut + 0.5)
         # Make the filter projection matrix
         proj = delay.null_delay_filter(
-            ra, cut, ~mask, num_cut, window=False, type_=type_
+            ra, cut, ~mask, num_cut, window=False, type_=type_, lapack_driver="gesdd"
         )
         # Apply the filter. This has a flat cutoff, which will
         # introduce power leakage due to fourier edge effects
         vis = np.dot(vis, proj)
-        vis = np.fft.ifft(vis, axis=1)
+        mm = np.fft.ifft(vis, axis=1)
 
         # Create the apodisation window
         win = np.zeros_like(ra)
@@ -1233,7 +1257,7 @@ class RFIMModeMask(task.SingleTask):
         win = tools.taper_mask(win, apo_n, outer=False)
 
         # Apply the apodization window
-        return np.fft.fft(vis * win, axis=1)
+        return np.fft.fft(mm * win, axis=1)
 
     def _hpf_cut_hook(self, freq, baselines):
         """Get a high-pass fringe rate cut for each frequency."""
