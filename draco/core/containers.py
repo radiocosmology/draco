@@ -219,7 +219,7 @@ class ContainerBase(memh5.BasicCont):
         # Iterate over datasets and initialise any that specify it
         if not skip_datasets:
             for name, spec in self.dataset_spec.items():
-                if "initialise" in spec and spec["initialise"]:
+                if spec.get("initialise"):
                     self.add_dataset(name)
 
         # Copy over datasets that have compatible axes
