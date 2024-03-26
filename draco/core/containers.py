@@ -1252,6 +1252,67 @@ class SiderealStream(
         return self.datasets["vis"]
 
 
+class SiderealDirtyStream(FreqContainer, VisContainer, SiderealContainer):
+    """A container for holding a dirty visibility dataset in sidereal time.
+
+    Weights are not stored by defualt. They can be reconstructed by doing
+    `modes @ signal_cov[:, :, -1]`
+    """
+
+    _axes = ("bandwidth",)
+
+    _dataset_spec = {
+        "vis": {
+            "axes": ["freq", "stack", "ra"],
+            "dtype": np.complex64,
+            "initialise": True,
+            "distributed": True,
+            "distributed_axis": "freq",
+            "compression": COMPRESSION,
+            "compression_opts": COMPRESSION_OPTS,
+            "chunks": (64, 128, 128),
+            "truncate": True,
+        },
+        "vis_weight": {
+            "axes": ["freq", "stack", "ra"],
+            "dtype": np.float32,
+            "initialise": False,
+            "distributed": True,
+            "distributed_axis": "freq",
+            "compression": COMPRESSION,
+            "compression_opts": COMPRESSION_OPTS,
+            "chunks": (64, 128, 128),
+            "truncate": True,
+        },
+        "signal_cov": {
+            "axes": ["freq", "bandwidth", "ra"],
+            "dtype": np.float64,
+            "initialise": True,
+            "distributed": True,
+            "distributed_axis": "freq",
+            "truncate": False,
+        },
+        "modes": {
+            "axes": ["freq", "stack"],
+            "dtype": np.float64,
+            "initialise": True,
+            "distributed": True,
+            "distributed_axis": "freq",
+            "truncate": False,
+        },
+    }
+
+    @property
+    def signal_cov(self):
+        """Get the signal covariance dataset."""
+        return self.datasets["signal_cov"]
+
+    @property
+    def modes(self):
+        """Get the modes dataset."""
+        return self.datasets["modes"]
+
+
 class SystemSensitivity(FreqContainer, TODContainer):
     """A container for holding the total system sensitivity.
 
@@ -1486,7 +1547,49 @@ class TimeStream(FreqContainer, VisContainer, TODContainer):
         return self.datasets["input_flags"]
 
 
-class GridBeam(FreqContainer, DataWeightContainer):
+class FactorizedTimeStream(TimeStream):
+    """TimeStream with the weights factorized.
+
+    Weights are split into a projection dataset and a modes dataset.
+    """
+
+    _dataset_spec = {
+        "vis": {
+            "axes": ["freq", "stack", "time"],
+            "dtype": np.complex64,
+            "initialise": True,
+            "distributed": True,
+            "distributed_axis": "freq",
+            "compression": COMPRESSION,
+            "compression_opts": COMPRESSION_OPTS,
+            "chunks": (64, 128, 128),
+            "truncate": True,
+        },
+        "vis_weight": {
+            "axes": ["freq", "time"],
+            "dtype": np.float64,
+            "initialise": True,
+            "distributed": True,
+            "distributed_axis": "freq",
+            "truncate": False,
+        },
+        "modes": {
+            "axes": ["freq", "stack"],
+            "dtype": np.float64,
+            "initialise": True,
+            "distributed": True,
+            "distributed_axis": "freq",
+            "truncate": False,
+        },
+    }
+
+    @property
+    def modes(self):
+        """Get the modes dataset."""
+        return self.datasets["modes"]
+
+
+class GridBeam(FreqContainer):
     """Generic container for representing a 2D beam on a rectangular grid."""
 
     _axes = ("pol", "input", "theta", "phi")
