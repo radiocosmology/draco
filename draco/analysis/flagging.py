@@ -13,6 +13,7 @@ from typing import Union, overload
 import numpy as np
 import scipy.signal
 from scipy import linalg as la
+from scipy.interpolate import CubicSpline
 from skimage.filters import apply_hysteresis_threshold
 
 from caput import config, mpiarray, weighted_median
@@ -1232,31 +1233,28 @@ class RFIMModeMask(task.SingleTask):
     def apply_m_filter(vis, ra, mask, cut, apo_frac=0.5, type_="high"):
         """Apply a high-pass or low-pass cut in mmode space."""
 
-        # Experimentally this should cover all the relevant modes
-        # num_cut = int(3.0 * np.ptp(ra) * cut + 0.5)
-        num_cut = int(2.0 * np.ptp(ra) * cut + 0.5)
-        # Make the filter projection matrix
-        proj = delay.null_delay_filter(
-            ra, cut, ~mask, num_cut, window=False, type_=type_, lapack_driver="gesdd"
-        )
-        # Apply the filter. This has a flat cutoff, which will
-        # introduce power leakage due to fourier edge effects
-        vis = np.dot(vis, proj)
-        mm = np.fft.ifft(vis, axis=1)
+        # Select the mmode sample threshold
+        m_cut = int(2.0 * np.ptp(ra) * cut + 0.5)
+
+        # Interpolate missing data before taking FFT
+        s = np.arange(0, vis.shape[0])
+        vis = CubicSpline(s[~mask], vis[:, ~mask], axis=1)(s)
 
         # Create the apodisation window
         win = np.zeros_like(ra)
-        win[num_cut // 2 : -num_cut // 2] = 1.0
+        win[m_cut // 2 : -m_cut // 2] = 1.0
 
         if type_ == "low":
             # Invert the window for a lowpass filter
             win = 1.0 - win
 
         # Apodization width
-        apo_n = int(apo_frac * num_cut)
+        apo_n = int(apo_frac * m_cut)
         win = tools.taper_mask(win, apo_n, outer=False)
 
         # Apply the apodization window
+        mm = np.fft.ifft(vis, axis=1)
+
         return np.fft.fft(mm * win, axis=1)
 
     def _hpf_cut_hook(self, freq, baselines):
