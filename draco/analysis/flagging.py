@@ -1748,10 +1748,13 @@ class BlendStack(task.SingleTask):
             The modified data. This is the same object as the input, and it has been
             modified in place.
         """
-        if type(self.data_stack) != type(data):
+        if (
+            type(data) != containers.SiderealStreamRebin and
+            type(self.data_stack) != type(data)
+        ):
             raise TypeError(
                 f"type(data) (={type(data)}) must match"
-                f"type(data_stack) (={type(self.type)}"
+                f"type(data_stack) (={type(self.data_stack)}"
             )
 
         # Try and get both the stack and the incoming data to have the same

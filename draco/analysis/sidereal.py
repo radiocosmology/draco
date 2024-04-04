@@ -8,14 +8,13 @@ into  :class:`SiderealGrouper`, then feeding that into
 :class:`SiderealRegridder` to grid onto each sidereal day, and then into
 :class:`SiderealStacker` if you want to combine the different days.
 """
-
 import numpy as np
 import scipy.linalg as la
 from caput import config, mpiarray, tod
 from cora.util import units
 
 from ..core import containers, io, task
-from ..util import tools
+from ..util import tools, regrid
 from .transform import Regridder
 
 
@@ -477,6 +476,137 @@ class SiderealRegridderCubic(SiderealRegridder):
         return interp_grid, interp_vis, interp_weight
 
 
+class SiderealRebinner(SiderealRegridder):
+
+
+    def process(self, data):
+        """Rebin the sidereal day.
+
+        Parameters
+        ----------
+        data : containers.TimeStream
+            Timestream data for the day (must have a `LSD` attribute).
+
+        Returns
+        -------
+        sdata : containers.SiderealStream
+            The regularly gridded sidereal timestream.
+        """
+        import scipy.sparse as ss
+        self.log.info("Regridding LSD:%i", data.attrs["lsd"])
+
+        # Redistribute if needed too
+        data.redistribute("freq")
+
+        sfreq = data.vis.local_offset[0]
+        efreq = sfreq + data.vis.local_shape[0]
+        freq = data.freq[sfreq:efreq]
+
+        # Convert data timestamps into LSDs
+        timestamp_lsd = self.observer.unix_to_lsd(data.time)
+
+        # Fetch which LSD this is to set bounds
+        self.start = data.attrs["lsd"]
+        self.end = self.start + 1
+
+        # Create the output container
+        sdata = containers.SiderealStreamRebin(axes_from=data, ra=self.samples)
+        sdata.redistribute("freq")
+        sdata.attrs["lsd"] = self.start
+        sdata.attrs["tag"] = "lsd_%i" % self.start
+
+        # Get view of data
+        weight = data.weight[:].view(np.ndarray)
+        vis_data = data.vis[:].view(np.ndarray)
+
+        average_weight = weight.mean(axis=1)
+
+        width_t = np.median(np.abs(np.diff(timestamp_lsd)))
+
+        target_lsd = np.linspace(self.start, self.end, self.samples, endpoint=False)
+        R = self._rebin_matrix(timestamp_lsd, target_lsd, width_t=width_t)
+        Rt = ss.csr_array(R.T)
+
+        # Calculate the total weight for each sample (which we track), and the
+        # normalisation we need to apply
+        total_weight = sdata.datasets["rebin_weight"][:].local_array
+        total_weight[:] = average_weight @ Rt
+        norm = tools.invert_no_zero(total_weight)
+
+        # Calculate the effective RA of each output sample given what went in
+        effective_lsd = norm * ((timestamp_lsd[np.newaxis, :] * average_weight) @ Rt)
+        sdata.datasets["effective_ra"][:].local_array[:] = 360 * (effective_lsd - self.start)
+
+        ssv = sdata.vis[:].local_array
+        ssw = sdata.weight[:].local_array
+
+        for fi in range(vis_data.shape[0]):
+            w = average_weight[fi, np.newaxis]
+            n = norm[fi, np.newaxis]
+            ssv[fi] = n * ((vis_data[fi] * w) @ Rt)
+
+            regrid_var = (tools.invert_no_zero(weight[fi]) * w**2) @ Rt
+            ssw[fi] = tools.invert_no_zero(n**2 * regrid_var)
+
+        return sdata
+
+    def _rebin_matrix(
+        self, tra: np.ndarray, ra: np.ndarray, width_t: float = 0,
+    ) -> np.ndarray:
+        """Construct a matrix to rebin the samples.
+
+        Parameters
+        ----------
+        tra
+            The samples we have in the time stream.
+        ra
+            The target samples we want in the sidereal stream.
+        width_t
+            The width of a time sample. Set to zero to do a nearest bin assignment.
+
+        Returns
+        -------
+        R
+            A matrix to perform the rebinning.
+        """
+
+        R = np.zeros((ra.shape[0], tra.shape[0]))
+
+        inds = np.searchsorted(ra, tra)
+
+        # Estimate the typical width of an RA bin
+        width_ra = np.median(np.abs(np.diff(ra)))
+
+        lowest_ra = ra[0] - width_ra / 2
+        highest_ra = ra[-1] + width_ra / 2
+
+        # NOTE: this is a bit of a hack to avoid zero division by zeros, but should have
+        # the required effect of giving 1 if the time sample is inside a bin, and zero
+        # otherwise.
+        if width_t == 0:
+            width_t = 1e-10
+
+        # NOTE: this can probably be done more efficiently, but we typically only need
+        # to do this once per day
+        for ii, (jj, t) in enumerate(zip(inds, tra)):
+
+            lower_edge = (t - width_t / 2.0)
+            upper_edge = (t + width_t / 2.0)
+
+            # If we are in here we have weight to assign to the sample below
+            if upper_edge > lowest_ra and jj < len(ra):
+                ra_edge = ra[jj] - width_ra / 2
+                wh = np.clip((upper_edge - ra_edge) / width_t, 0.0, 1.0)
+                R[jj, ii] = wh
+
+            if lower_edge < highest_ra and jj > 0:
+                ra_edge = ra[jj - 1] + width_ra / 2
+                wl = np.clip((ra_edge - lower_edge) / width_t, 0.0, 1.0)
+                R[jj - 1, ii] = wl
+
+        return R
+
+
 class SiderealStacker(task.SingleTask):
     """Take in a set of sidereal days, and stack them up.
 
@@ -647,6 +777,48 @@ class SiderealStacker(task.SingleTask):
             )[np.newaxis, :]
 
         return self.stack
+
+
+class RebinGradientFix(task.SingleTask):
+
+    def setup(self, sstream_ref: containers.SiderealStream | None = None) -> None:
+        self.sstream_ref = sstream_ref
+
+    def process(
+        self, sstream: containers.SiderealStreamRebin
+    ) -> containers.SiderealStreamRebin:
+
+        if self.sstream_ref is None:
+            raise NotImplementedError("At the moment a ref stream must be given.")
+
+        if self.sstream_ref is not None:
+            self.sstream_ref.redistribute("freq")
+        sstream.redistribute("freq")
+
+        sv = sstream.vis[:].local_array
+        ssv = self.sstream_ref.vis[:].local_array
+        ssw = self.sstream_ref.weight[:].local_array
+
+        sra = self.sstream_ref.ra
+
+        ssra = sstream.datasets["effective_ra"][:].local_array
+
+        for fi in range(sv.shape[0]):
+
+            wm = ssw[fi].mean(axis=0)
+            era = ssra[fi]
+
+            gradient_filter = regrid.taylor_coeff(
+                sra, 1, 2, wm, 1e-4, period=360.0, xc=era
+            )[1]
+            delta_ra = era - sstream.ra
+
+            for vi in range(sv.shape[1]):
+                grad = gradient_filter @ ssv[fi, vi]
+
+                sv[fi, vi] -= grad * delta_ra
+
+        return sstream
 
 
 class SiderealStackerMatch(task.SingleTask):

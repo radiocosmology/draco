@@ -6,6 +6,8 @@ This is described in some detail in `doclib:173
 
 import numpy as np
 import scipy.linalg as la
+import scipy.sparse as ss
+
 
 from ..util import _fast_tools
 
@@ -155,3 +157,85 @@ def lanczos_inverse_matrix(x, y, a=5, cond=1e-1):
     """
     lz_forward = lanczos_forward_matrix(x, y, a)
     return la.pinv(lz_forward, rcond=cond)
+
+
+def taylor_coeff(
+    x: np.ndarray,
+    N: int,
+    M: int,
+    Ni: np.ndarray,
+    Si: float,
+    period: float | None = None,
+    xc: np.ndarray | None = None,
+) -> list[ss.csr_array]:
+    """Return a set of sparse matrices that estimates expansion coefficients.
+
+    Parameters
+    ----------
+    x
+        Positions of each element.
+    N
+        Number of positions each side to estimate from.
+    M
+        The number of terms in the expansion.
+    Ni
+        The weight for each position. The inverse noise variance if interpreted as a
+        Wiener filter.
+    Si
+        A regulariser. The inverse signal variance if interpreted as a Wiener filter.
+    period
+        If set, assume the axis is periodic with this period.
+    xc
+        An optional parameter giving the location to return the coefficients at. If not
+        set, just use the locations of each individual sample.
+
+
+    Returns
+    -------
+    matrices
+        A set of sparse matrices that will estimate the coefficents at each location.
+        Each matrix is for a different coefficient.
+    """
+    nx = x.shape[0]
+
+    ind = np.arange(nx)[:, np.newaxis] + np.arange(-N, N + 1)[np.newaxis, :]
+
+    xc = x if xc is None else xc
+
+    # If periodic then just wrap back around
+    if period is not None:
+        ind = ind % nx
+        xf = x[ind] - xc[:, np.newaxis]
+        x = ((x + period / 2) % period) - period / 2
+        Na = Ni[ind]
+
+    # If not then set the weights for out of bounds entries to zero
+    else:
+        mask = (ind < 0) | (ind >= nx)
+        ind = np.where(mask, 0, ind)
+        xf = x[ind] - x[:, np.newaxis]
+        Na = Ni[ind]
+        Na[mask] = 0.0
+
+    # Create the required matrices at each location
+    X = np.stack([xf**m for m in range(M)], axis=2)
+    XhNi = (X * Na[:, :, np.newaxis]).transpose(0, 2, 1)
+    XhNiX = XhNi @ X
+
+    # Calculate the covariance part of the filter
+    Ci = np.identity(M) * Si + XhNiX
+    C = np.zeros_like(Ci)
+    for i in range(nx):
+        C[i] = la.inv(Ci[i])
+
+    W = C @ XhNi
+
+    # Create the indptr array designating the start and end of the indices for each row
+    # in the csr_array
+    indptr = (2 * N + 1) * np.arange(nx + 1, dtype=int)
+    Wi = [
+        ss.csr_array((W[:, i].ravel(), ind.ravel(), indptr), shape=(nx, nx))
+        for i in range(M)
+    ]
+
+    return Wi
