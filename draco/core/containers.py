@@ -1252,6 +1252,44 @@ class SiderealStream(
         return self.datasets["vis"]
 
 
+class SiderealStreamRebin(SiderealStream):
+    """A SiderealStream that tracks the rebinning weights."""
+
+    _dataset_spec: ClassVar = {
+        "rebin_weight": {
+            "axes": ["freq", "ra"],
+            "dtype": np.float64,
+            "initialise": True,
+            "distributed": True,
+            "distributed_axis": "freq",
+        },
+        "effective_ra": {
+            "axes": ["freq", "ra"],
+            "dtype": np.float64,
+            "initialise": True,
+            "distributed": True,
+            "distributed_axis": "freq",
+        },
+        "nsample_ra": {
+            "axes": ["freq", "ra"],
+            "dtype": np.uint16,
+            "initialise": False,
+            "distributed": True,
+            "distributed_axis": "freq",
+        },
+    }
+
+    @property
+    def rebin_weight(self):
+        """Get the rebin_weight dataset."""
+        return self.datasets["rebin_weight"]
+
+    @property
+    def effective_ra(self):
+        """Get the effective_ra dataset."""
+        return self.datasets["effective_ra"]
+
+
 class SystemSensitivity(FreqContainer, TODContainer):
     """A container for holding the total system sensitivity.
 
