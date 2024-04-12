@@ -8,6 +8,7 @@ into  :class:`SiderealGrouper`, then feeding that into
 :class:`SiderealRegridder` to grid onto each sidereal day, and then into
 :class:`SiderealStacker` if you want to combine the different days.
 """
+
 import numpy as np
 import scipy.linalg as la
 from caput import config, mpiarray, tod
@@ -477,7 +478,7 @@ class SiderealRegridderCubic(SiderealRegridder):
 
 
 class SiderealRebinner(SiderealRegridder):
-
+    """Regrid onto the sidereal day using a nearest bin method."""
 
     def process(self, data):
         """Rebin the sidereal day.
@@ -493,14 +494,11 @@ class SiderealRebinner(SiderealRegridder):
             The regularly gridded sidereal timestream.
         """
         import scipy.sparse as ss
-        self.log.info("Regridding LSD:%i", data.attrs["lsd"])
+
+        self.log.info(f"Regridding LSD:{data.attrs['lsd']:.0f}")
 
         # Redistribute if needed too
         data.redistribute("freq")
-
-        sfreq = data.vis.local_offset[0]
-        efreq = sfreq + data.vis.local_shape[0]
-        freq = data.freq[sfreq:efreq]
 
         # Convert data timestamps into LSDs
         timestamp_lsd = self.observer.unix_to_lsd(data.time)
@@ -513,17 +511,19 @@ class SiderealRebinner(SiderealRegridder):
         sdata = containers.SiderealStreamRebin(axes_from=data, ra=self.samples)
         sdata.redistribute("freq")
         sdata.attrs["lsd"] = self.start
-        sdata.attrs["tag"] = "lsd_%i" % self.start
+        sdata.attrs["tag"] = f"lsd_{self.start:.0f}"
 
         # Get view of data
-        weight = data.weight[:].view(np.ndarray)
-        vis_data = data.vis[:].view(np.ndarray)
+        weight = data.weight[:].local_array
+        vis_data = data.vis[:].local_array
 
+        # Get the average weights over baselines
         average_weight = weight.mean(axis=1)
-
+        # Get the median time sample width
         width_t = np.median(np.abs(np.diff(timestamp_lsd)))
-
+        # Create the regular grid of RA samples
         target_lsd = np.linspace(self.start, self.end, self.samples, endpoint=False)
+
         R = self._rebin_matrix(timestamp_lsd, target_lsd, width_t=width_t)
         Rt = ss.csr_array(R.T)
 
@@ -535,7 +535,9 @@ class SiderealRebinner(SiderealRegridder):
 
         # Calculate the effective RA of each output sample given what went in
         effective_lsd = norm * ((timestamp_lsd[np.newaxis, :] * average_weight) @ Rt)
-        sdata.datasets["effective_ra"][:].local_array[:] = 360 * (effective_lsd - self.start)
+        sdata.datasets["effective_ra"][:].local_array[:] = 360 * (
+            effective_lsd - self.start
+        )
 
         ssv = sdata.vis[:].local_array
         ssw = sdata.weight[:].local_array
@@ -551,7 +553,10 @@ class SiderealRebinner(SiderealRegridder):
         return sdata
 
     def _rebin_matrix(
-        self, tra: np.ndarray, ra: np.ndarray, width_t: float = 0,
+        self,
+        tra: np.ndarray,
+        ra: np.ndarray,
+        width_t: float = 0,
     ) -> np.ndarray:
         """Construct a matrix to rebin the samples.
 
@@ -590,8 +595,8 @@ class SiderealRebinner(SiderealRegridder):
         # to do this once per day
         for ii, (jj, t) in enumerate(zip(inds, tra)):
 
-            lower_edge = (t - width_t / 2.0)
-            upper_edge = (t + width_t / 2.0)
+            lower_edge = t - width_t / 2.0
+            upper_edge = t + width_t / 2.0
 
             # If we are in here we have weight to assign to the sample below
             if upper_edge > lowest_ra and jj < len(ra):
