@@ -157,7 +157,7 @@ def find_inputs(input_index, inputs, require_match=False):
         )
 
     if field_to_match not in inputs.dtype.fields:
-        raise ValueError("`inputs` array does not have a `%s` field." % field_to_match)
+        raise ValueError(f"`inputs` array does not have a `{field_to_match!s}` field.")
 
     return find_keys(
         input_index[field_to_match], inputs[field_to_match], require_match=require_match

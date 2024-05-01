@@ -120,7 +120,7 @@ class CollateProducts(task.SingleTask):
             Telescope object to use
         """
         if self.weight not in ["natural", "uniform", "inverse_variance"]:
-            KeyError("Do not recognize weight = %s" % self.weight)
+            KeyError(f"Do not recognize weight = {self.weight!s}")
 
         self.telescope = io.get_telescope(tel)
 

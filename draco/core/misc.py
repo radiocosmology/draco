@@ -54,7 +54,7 @@ class ApplyGain(task.SingleTask):
             gain, (containers.CommonModeGainData, containers.CommonModeSiderealGainData)
         ):
             raise ValueError(
-                "Cannot apply input-dependent gains to stacked data: %s" % tstream
+                f"Cannot apply input-dependent gains to stacked data: {tstream!s}"
             )
 
         if isinstance(gain, containers.StaticGainData):

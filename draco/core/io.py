@@ -64,7 +64,7 @@ def _list_of_filelists(files: Union[List[str], List[List[str]]]) -> List[List[st
     for filelist in files:
         if isinstance(filelist, str):
             if "*" not in filelist and not os.path.isfile(filelist):
-                raise ConfigError("File not found: %s" % filelist)
+                raise ConfigError(f"File not found: {filelist!s}")
             filelist = glob.glob(filelist)
         elif isinstance(filelist, list):
             for i in range(len(filelist)):
@@ -116,12 +116,12 @@ def _list_or_glob(files: Union[str, List[str]]) -> List[str]:
                 )
         else:
             if not os.path.isfile(files):
-                raise ConfigError("File not found: %s" % files)
+                raise ConfigError(f"File not found: {files!s}")
 
         return [files]
 
     raise ConfigError(
-        "Argument must be list, glob pattern, or file path, got %s" % repr(files)
+        f"Argument must be list, glob pattern, or file path, got {files!r}"
     )
 
 
@@ -167,11 +167,11 @@ def _list_of_filegroups(groups: Union[List[Dict], Dict]) -> List[Dict]:
 
         for fname in files:
             if "*" not in fname and not os.path.isfile(fname):
-                raise ConfigError("File not found: %s" % fname)
+                raise ConfigError(f"File not found: {fname!s}")
             flist += glob.glob(fname)
 
         if not len(flist):
-            raise ConfigError("No files in group exist (%s)." % files)
+            raise ConfigError(f"No files in group exist ({files!s}).")
 
         group["files"] = flist
 
@@ -1164,7 +1164,7 @@ def get_telescope(obj):
         if isinstance(obj, telescope.TransitTelescope):
             return obj
 
-    raise RuntimeError("Could not get telescope instance out of %s" % repr(obj))
+    raise RuntimeError(f"Could not get telescope instance out of {obj!r}")
 
 
 def get_beamtransfer(obj):
@@ -1178,4 +1178,4 @@ def get_beamtransfer(obj):
     if isinstance(obj, manager.ProductManager):
         return obj.beamtransfer
 
-    raise RuntimeError("Could not get BeamTransfer instance out of %s" % repr(obj))
+    raise RuntimeError(f"Could not get BeamTransfer instance out of {obj!r}")

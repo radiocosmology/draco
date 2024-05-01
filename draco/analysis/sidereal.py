@@ -553,7 +553,7 @@ class SiderealStacker(task.SingleTask):
                 self.sum_coeff_sq = np.zeros_like(self.stack.weight[:].view(np.ndarray))
 
         # Accumulate
-        self.log.info("Adding to stack LSD(s): %s" % input_lsd)
+        self.log.info(f"Adding to stack LSD(s): {input_lsd!s}")
 
         self.lsd_list += input_lsd
 
