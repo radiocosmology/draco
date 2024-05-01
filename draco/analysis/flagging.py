@@ -859,12 +859,10 @@ class ThresholdVisWeightBaseline(task.SingleTask):
     @overload
     def process(
         self, stream: containers.SiderealContainer
-    ) -> containers.SiderealBaselineMask:
-        ...
+    ) -> containers.SiderealBaselineMask: ...
 
     @overload
-    def process(self, stream: containers.TimeStream) -> containers.BaselineMask:
-        ...
+    def process(self, stream: containers.TimeStream) -> containers.BaselineMask: ...
 
     def process(self, stream):
         """Construct baseline-dependent mask.
@@ -1009,14 +1007,12 @@ class CollapseBaselineMask(task.SingleTask):
     frac_flagged = config.Property(proptype=float, default=0.5)
 
     @overload
-    def process(self, baseline_mask: containers.BaselineMask) -> containers.RFIMask:
-        ...
+    def process(self, baseline_mask: containers.BaselineMask) -> containers.RFIMask: ...
 
     @overload
     def process(
         self, baseline_mask: containers.SiderealBaselineMask
-    ) -> containers.SiderealRFIMask:
-        ...
+    ) -> containers.SiderealRFIMask: ...
 
     def process(self, baseline_mask):
         """Collapse input mask over baseline axis.
