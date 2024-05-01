@@ -63,7 +63,7 @@ class DayenuDelayFilter(task.SingleTask):
         """
         self.telescope = io.get_telescope(telescope)
 
-        self.log.info("Instrumental delay cut set to %0.3f micro-sec." % self.tauw)
+        self.log.info(f"Instrumental delay cut set to {self.tauw:.3f} micro-sec.")
 
         if self.atten_threshold > 0.0:
             self.log.info(

@@ -83,7 +83,7 @@ def _log_level(x):
     if isinstance(x, str) and x in level_dict:
         return level_dict[x.upper()]
 
-    raise ValueError("Logging level %s not understood" % repr(x))
+    raise ValueError(f"Logging level {x!r} not understood")
 
 
 class SetMPILogging(pipeline.TaskBase):
@@ -334,7 +334,7 @@ class SingleTask(MPILoggedTask, pipeline.BasicContMixin):
 
     def next(self, *input):
         """Should not need to override. Implement `process` instead."""
-        self.log.info("Starting next for task %s" % self.__class__.__name__)
+        self.log.info(f"Starting next for task {self.__class__.__name__}")
 
         self.comm.Barrier()
 
@@ -376,7 +376,7 @@ class SingleTask(MPILoggedTask, pipeline.BasicContMixin):
         # Increment internal counter
         self._count = self._count + 1
 
-        self.log.info("Leaving next for task %s" % self.__class__.__name__)
+        self.log.info(f"Leaving next for task {self.__class__.__name__}")
 
         # Return the output for the next task
         return output
@@ -678,7 +678,7 @@ class Delete(SingleTask):
         """
         import gc
 
-        self.log.info("Deleting %s" % type(x))
+        self.log.info(f"Deleting {type(x)!s}")
         del x
         gc.collect()
 

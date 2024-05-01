@@ -52,7 +52,7 @@ class QuadraticPSEstimation(task.SingleTask):
         if not isinstance(klmodes, containers.KLModes):
             raise ValueError(
                 "Input container must be instance of "
-                "KLModes (received %s)" % klmodes.__class__
+                f"KLModes (received {klmodes.__class__!s})"
             )
 
         klmodes.redistribute("m")
