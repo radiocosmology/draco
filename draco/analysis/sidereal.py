@@ -578,6 +578,7 @@ class SiderealStacker(task.SingleTask):
     """
 
     stack = None
+    ra_correction = False
 
     tag = config.Property(proptype=str, default="stack")
     weight = config.enum(["uniform", "inverse_variance"], default="inverse_variance")
@@ -591,6 +592,13 @@ class SiderealStacker(task.SingleTask):
         sdata : containers.SiderealStream
             Individual sidereal day to add to stack.
         """
+        # Check that the input container is of the correct type
+        if (self.stack is not None) and not isinstance(sdata, type(self.stack)):
+            raise TypeError(
+                f"type(sdata) (={type(sdata)}) does not match "
+                f"type(stack) (={type(self.stack)})."
+            )
+
         sdata.redistribute("freq")
 
         # Get the LSD (or CSD) label out of the input's attributes.
@@ -608,6 +616,14 @@ class SiderealStacker(task.SingleTask):
         # container that will hold the stack.
         if self.stack is None:
             self.stack = containers.empty_like(sdata)
+
+            if "effective_ra" in self.stack.datasets:
+                if self.weight == "uniform":
+                    raise ValueError(
+                        "Uniform weighting is not currently supported with rebinned data."
+                    )
+
+                self.ra_correction = True
 
             # Add stack-specific datasets
             if "nsample" not in self.stack.datasets:
@@ -678,6 +694,21 @@ class SiderealStacker(task.SingleTask):
 
         # Update the mean.
         self.stack.vis[:] += delta_before * tools.invert_no_zero(sum_coeff)
+
+        if self.ra_correction:
+            # Repeat the above process for the `effective_ra` datasets
+            rebin_weight = sdata.datasets["rebin_weight"][:].local_array
+            sum_rebin_weight = self.stack.datasets["rebin_weight"][:].local_array
+
+            effective_ra = sdata.datasets["effective_ra"][:].local_array
+            sum_effective_ra = self.stack.datasets["effective_ra"][:].local_array
+
+            # Accumulate the inverse variances
+            sum_rebin_weight += rebin_weight
+
+            # Calculate the weighted difference between the new and existing bin centres
+            delta = rebin_weight * (effective_ra - sum_effective_ra)
+            sum_effective_ra[:] += delta * tools.invert_no_zero(sum_rebin_weight)
 
         # The calculations below are only required if the sample variance was requested
         if self.with_sample_variance:
