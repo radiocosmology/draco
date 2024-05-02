@@ -901,6 +901,7 @@ class SiderealStackerMatch(task.SingleTask):
 
     stack = None
     lsd_list = None
+    ra_correction = False
 
     tag = config.Property(proptype=str, default="stack")
 
@@ -914,6 +915,13 @@ class SiderealStackerMatch(task.SingleTask):
         sdata : containers.SiderealStream
             Individual sidereal day to stack up.
         """
+        # Check that the input container is of the correct type
+        if (self.stack is not None) and not isinstance(sdata, type(self.stack)):
+            raise TypeError(
+                f"type(sdata) (={type(sdata)}) does not match "
+                f"type(stack) (={type(self.stack)})."
+            )
+
         sdata.redistribute("freq")
 
         if self.stack is None:
@@ -923,6 +931,9 @@ class SiderealStackerMatch(task.SingleTask):
             self.stack.redistribute("freq")
             self.stack.vis[:] = 0.0
             self.stack.weight[:] = 0.0
+
+            if "effective_ra" in self.stack.datasets:
+                self.ra_correction = True
 
             self.count = 0
             self.Ni_s = mpiarray.zeros(
@@ -939,7 +950,10 @@ class SiderealStackerMatch(task.SingleTask):
 
         # Get an estimate of the noise inverse for each time and freq in the file.
         # Average over baselines as we don't have the memory
-        Ni_d = sdata.weight[:].mean(axis=1)
+        if self.ra_correction:
+            Ni_d = sdata.rebin_weight[:]
+        else:
+            Ni_d = sdata.weight[:].mean(axis=1)
 
         # Calculate the trace of the inverse noise covariance for each frequency
         tr_Ni = Ni_d.sum(axis=1)
@@ -970,6 +984,16 @@ class SiderealStackerMatch(task.SingleTask):
 
         # We need to keep the projection vector until the end
         self.Vm.append(v)
+
+        if self.ra_correction:
+            # Accumulate the total rebin weight
+            self.stack.rebin_weight[:] += Ni_d
+
+            # Track the effective ra bin centres
+            delta = Ni_d * (sdata.effective_ra[:] - self.stack.effective_ra[:])
+            self.stack.effective_ra[:] += delta * tools.invert_no_zero(
+                self.stack.rebin_weight[:]
+            )
 
         # Get the LSD label out of the data (resort to using a CSD if it's
         # present). If there's no label just use a place holder and stack
