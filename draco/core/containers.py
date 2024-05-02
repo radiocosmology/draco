@@ -1270,13 +1270,6 @@ class SiderealStreamRebin(SiderealStream):
             "distributed": True,
             "distributed_axis": "freq",
         },
-        "nsample_ra": {
-            "axes": ["freq", "ra"],
-            "dtype": np.uint16,
-            "initialise": False,
-            "distributed": True,
-            "distributed_axis": "freq",
-        },
     }
 
     @property
