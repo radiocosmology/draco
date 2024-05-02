@@ -851,6 +851,7 @@ class SiderealStackerMatch(task.SingleTask):
 
     stack = None
     lsd_list = None
+    ra_correction = False
 
     tag = config.Property(proptype=str, default="stack")
 
@@ -864,6 +865,13 @@ class SiderealStackerMatch(task.SingleTask):
         sdata : containers.SiderealStream
             Individual sidereal day to stack up.
         """
+        # Check that the input container is of the correct type
+        if (self.stack is not None) and not isinstance(sdata, type(self.stack)):
+            raise TypeError(
+                f"type(sdata) (={type(sdata)}) does not match "
+                f"type(stack) (={type(self.stack)})."
+            )
+
         sdata.redistribute("freq")
 
         if self.stack is None:
@@ -873,6 +881,9 @@ class SiderealStackerMatch(task.SingleTask):
             self.stack.redistribute("freq")
             self.stack.vis[:] = 0.0
             self.stack.weight[:] = 0.0
+
+            if "effective_ra" in self.stack.datasets:
+                self.ra_correction = True
 
             self.count = 0
             self.Ni_s = mpiarray.zeros(
@@ -920,6 +931,20 @@ class SiderealStackerMatch(task.SingleTask):
 
         # We need to keep the projection vector until the end
         self.Vm.append(v)
+
+        if self.ra_correction:
+            # Track the effective ra bin centres
+            rebin_weight = sdata.datasets["rebin_weight"][:].local_array
+            sum_rebin_weight = self.stack.datasets["rebin_weight"][:].local_array
+
+            effective_ra = sdata.datasets["effective_ra"][:].local_array
+            sum_effective_ra = self.stack.datasets["effective_ra"][:].local_array
+
+            # Accumulate the total rebin weight
+            sum_rebin_weight[:] += rebin_weight
+
+            delta = rebin_weight * (effective_ra - sum_effective_ra)
+            sum_effective_ra[:] += delta * tools.invert_no_zero(sum_rebin_weight)
 
         # Get the LSD label out of the data (resort to using a CSD if it's
         # present). If there's no label just use a place holder and stack
