@@ -9,8 +9,6 @@ into  :class:`SiderealGrouper`, then feeding that into
 :class:`SiderealStacker` if you want to combine the different days.
 """
 
-from typing import Union
-
 import numpy as np
 import scipy.linalg as la
 from caput import config, mpiarray, tod
@@ -748,7 +746,7 @@ class RebinGradientFix(task.SingleTask):
     create the gradient.
     """
 
-    def setup(self, sstream_ref: Union[containers.SiderealStream, None] = None) -> None:
+    def setup(self, sstream_ref: containers.SiderealStream) -> None:
         """Provide the dataset to use in the gradient calculation.
 
         This dataset must have complete sidereal coverage.
@@ -773,23 +771,12 @@ class RebinGradientFix(task.SingleTask):
         Returns
         -------
         sstream
-            Input sidereal day with gradient correction applied
+            Input sidereal day with gradient correction applied, if needed
         """
-        if self.sstream_ref is None:
-            raise NotImplementedError("At the moment a ref stream must be given.")
-
-        if self.sstream_ref is not None:
-            self.sstream_ref.redistribute("freq")
-        sstream.redistribute("freq")
-
-        sv = sstream.vis[:].local_array
-        ssv = self.sstream_ref.vis[:].local_array
-        ssw = self.sstream_ref.weight[:].local_array
-
-        sra = self.sstream_ref.ra
-
+        # Allows a normal sidereal stream to pass through this task.
+        # Helpful for creating generic configs
         try:
-            ssra = sstream.datasets["effective_ra"][:].local_array
+            sra = sstream.datasets["effective_ra"][:].local_array
         except KeyError:
             self.log.info(
                 f"Dataset of type ({type(sstream)}) does not have an effective "
@@ -797,18 +784,43 @@ class RebinGradientFix(task.SingleTask):
             )
             return sstream
 
-        for fi in range(sv.shape[0]):
+        self.sstream_ref.redistribute("freq")
+        sstream.redistribute("freq")
 
-            wm = ssw[fi].mean(axis=0)
-            era = ssra[fi]
+        try:
+            # If the reference dataset has an effective ra dataset, use this
+            # when calculating the gradient. This could be true if the reference
+            # and target datasets are the same
+            ref_ra = self.sstream_ref.datasets["effective_ra"][:].local_array
+        except KeyError:
+            # Use fixed ra, which should be regularly sampled
+            ref_ra = self.sstream_ref.ra
+
+        sv = sstream.vis[:].local_array
+
+        ref_sv = self.sstream_ref.vis[:].local_array
+        ref_sw = self.sstream_ref.weight[:].local_array
+
+        for fi in range(sv.shape[0]):
+            # Use mean weights over baselines
+            wm = ref_sw[fi].mean(axis=0)
+            # effective ra for this frequency
+            era = sra[fi]
+
+            if ref_ra.ndim > 1:
+                # Using effective ra in gradient calc
+                rra = ref_ra[fi]
+            else:
+                # Using fixed grid ra in gradient calc
+                rra = ref_ra
 
             gradient_filter = regrid.taylor_coeff(
-                sra, 1, 2, wm, 1e-4, period=360.0, xc=era
+                rra, 1, 2, wm, 1e-4, period=360.0, xc=era
             )[1]
             delta_ra = era - sstream.ra
 
             for vi in range(sv.shape[1]):
-                grad = gradient_filter @ ssv[fi, vi]
+                grad = gradient_filter @ ref_sv[fi, vi]
 
                 sv[fi, vi] -= grad * delta_ra
 
