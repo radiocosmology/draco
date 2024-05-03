@@ -618,11 +618,8 @@ class SiderealStacker(task.SingleTask):
             self.stack = containers.empty_like(sdata)
 
             if "effective_ra" in self.stack.datasets:
-                if self.weight == "uniform":
-                    raise ValueError(
-                        "Uniform weighting is not currently supported with rebinned data."
-                    )
-
+                # We will use this flag to indicate that we are
+                # dealing with a rebinned sidereal stream
                 self.ra_correction = True
 
             # Add stack-specific datasets
@@ -645,48 +642,57 @@ class SiderealStacker(task.SingleTask):
             # Keep track of the sum of squared weights
             # to perform Bessel's correction at the end.
             if self.with_sample_variance:
-                self.sum_coeff_sq = np.zeros_like(self.stack.weight[:].view(np.ndarray))
+                nfreq, nbaseline, nra = self.stack.weight[:].local_shape
+                shp = (nfreq, 1, nra) if self.ra_correction else (nfreq, nbaseline, nra)
+                self.sum_coeff_sq = np.zeros(shp, dtype=np.float32)
 
         # Accumulate
         self.log.info(f"Adding to stack LSD(s): {input_lsd!s}")
 
         self.lsd_list += input_lsd
 
+        # Extract weight dataset
+        weight = sdata.weight[:]
+
+        # Determine if the input sidereal stream is itself a stack over days
         if "nsample" in sdata.datasets:
             # The input sidereal stream is already a stack
             # over multiple sidereal days. Use the nsample
             # dataset as the weight for the uniform case.
+            is_stack = True
             count = sdata.nsample[:]
         else:
             # The input sidereal stream contains a single
             # sidereal day.  Use a boolean array that
             # indicates a non-zero weight dataset as
             # the weight for the uniform case.
-            dtype = self.stack.nsample.dtype
-            count = (sdata.weight[:] > 0.0).astype(dtype)
-
-        # Determine the weights to be used in the average.
-        if self.weight == "uniform":
-            coeff = count.astype(np.float32)
-            # Accumulate the variances in the stack.weight dataset.
-            self.stack.weight[:] += (coeff**2) * tools.invert_no_zero(sdata.weight[:])
-        else:
-            coeff = sdata.weight[:]
-            # We are using inverse variance weights.  In this case,
-            # we accumulate the inverse variances in the stack.weight
-            # dataset.  Do that directly to avoid an unneccessary
-            # division in the more general expression above.
-            self.stack.weight[:] += sdata.weight[:]
+            is_stack = False
+            count = (weight > 0.0).astype(self.stack.nsample.dtype)
 
         # Accumulate the total number of samples.
         self.stack.nsample[:] += count
 
-        # Below we will need to normalize by the current sum of coefficients.
-        # Can be found in the stack.nsample dataset for uniform case or
-        # the stack.weight dataset for inverse variance case.
-        if self.weight == "uniform":
-            sum_coeff = self.stack.nsample[:].astype(np.float32)
+        # Determine the weights to be used in the average.
+        if self.ra_correction:
+            avg_weight = sdata.rebin_weight[:]
+
+            if self.weight == "uniform" and not is_stack:
+                avg_weight = (avg_weight > 0.0).astype(np.float32)
+
+            self.stack.rebin_weight[:] += avg_weight
+            
+            coeff = avg_weight[:, np.newaxis, :]
+            self.stack.weight[:] += (coeff**2) * tools.invert_no_zero(weight)
+            sum_coeff = self.stack.rebin_weight[:][:, np.newaxis, :]
+            
+        elif self.weight == "uniform":
+            coeff = count.astype(np.float32)
+            self.stack.weight[:] += (coeff**2) * tools.invert_no_zero(weight)
+            sum_coeff = self.stack.nsample[:]
+                
         else:
+            coeff = weight
+            self.stack.weight[:] += weight
             sum_coeff = self.stack.weight[:]
 
         # Calculate weighted difference between the new data and the current mean.
@@ -695,20 +701,10 @@ class SiderealStacker(task.SingleTask):
         # Update the mean.
         self.stack.vis[:] += delta_before * tools.invert_no_zero(sum_coeff)
 
+        # Repeat the above process for the `effective_ra` datasets
         if self.ra_correction:
-            # Repeat the above process for the `effective_ra` datasets
-            rebin_weight = sdata.datasets["rebin_weight"][:].local_array
-            sum_rebin_weight = self.stack.datasets["rebin_weight"][:].local_array
-
-            effective_ra = sdata.datasets["effective_ra"][:].local_array
-            sum_effective_ra = self.stack.datasets["effective_ra"][:].local_array
-
-            # Accumulate the inverse variances
-            sum_rebin_weight += rebin_weight
-
-            # Calculate the weighted difference between the new and existing bin centres
-            delta = rebin_weight * (effective_ra - sum_effective_ra)
-            sum_effective_ra[:] += delta * tools.invert_no_zero(sum_rebin_weight)
+            delta_ra = avg_weight * (sdata.effective_ra[:] - self.stack.effective_ra[:])
+            self.stack.effective_ra[:] += delta_ra * tools.invert_no_zero(self.stack.rebin_weight[:])
 
         # The calculations below are only required if the sample variance was requested
         if self.with_sample_variance:
@@ -734,19 +730,32 @@ class SiderealStacker(task.SingleTask):
         self.stack.attrs["tag"] = self.tag
         self.stack.attrs["lsd"] = np.array(self.lsd_list)
 
-        # For uniform weighting, normalize the accumulated variances by the total
-        # number of samples squared and then invert to finalize stack.weight.
-        if self.weight == "uniform":
+        # Normalize the weight dataset
+        if self.ra_correction:
+            # For rebinned data, normalize the weighted variances by the
+            # sum of the weights squared
+            norm = self.stack.rebin_weight[:][:, np.newaxis, :]
+            self.stack.weight[:] = tools.invert_no_zero(self.stack.weight[:]) * norm**2
+            
+        elif self.weight == "uniform":
+            # For uniform weighting, normalize the accumulated variances by the total
+            # number of samples squared and then invert to finalize stack.weight.
             norm = self.stack.nsample[:].astype(np.float32)
             self.stack.weight[:] = tools.invert_no_zero(self.stack.weight[:]) * norm**2
+
+        else:
+            # For inverse variance weighting without rebinning,
+            # additional normalization is not required.
+            norm = None
 
         # We need to normalize the sample variance by the sum of coefficients.
         # Can be found in the stack.nsample dataset for uniform case
         # or the stack.weight dataset for inverse variance case.
         if self.with_sample_variance:
-            if self.weight != "uniform":
+            
+            if norm is None:
                 norm = self.stack.weight[:]
-
+            
             # Perform Bessel's correction.  In the case of
             # uniform  weighting, norm will be equal to nsample - 1.
             norm = norm - self.sum_coeff_sq * tools.invert_no_zero(norm)
