@@ -652,7 +652,10 @@ class SiderealStacker(task.SingleTask):
             if self.with_sample_variance:
                 nfreq, nbaseline, nra = self.stack.weight[:].local_shape
                 shp = (nfreq, 1, nra) if self.ra_correction else (nfreq, nbaseline, nra)
-                self.sum_coeff_sq = np.zeros(shp, dtype=np.float32)
+
+                self.sum_coeff_sq = mpiarray.zeros(
+                    shp, axis=0, comm=self.stack.comm, dtype=np.float32
+                )
 
         # Accumulate
         self.log.info(f"Adding to stack LSD(s): {input_lsd!s}")
