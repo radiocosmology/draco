@@ -909,7 +909,10 @@ class SiderealStackerMatch(task.SingleTask):
 
         # Get an estimate of the noise inverse for each time and freq in the file.
         # Average over baselines as we don't have the memory
-        Ni_d = sdata.weight[:].mean(axis=1)
+        if self.ra_correction:
+            Ni_d = sdata.rebin_weight[:]
+        else:
+            Ni_d = sdata.weight[:].mean(axis=1)
 
         # Calculate the trace of the inverse noise covariance for each frequency
         tr_Ni = Ni_d.sum(axis=1)
@@ -942,18 +945,12 @@ class SiderealStackerMatch(task.SingleTask):
         self.Vm.append(v)
 
         if self.ra_correction:
-            # Track the effective ra bin centres
-            rebin_weight = sdata.datasets["rebin_weight"][:].local_array
-            sum_rebin_weight = self.stack.datasets["rebin_weight"][:].local_array
-
-            effective_ra = sdata.datasets["effective_ra"][:].local_array
-            sum_effective_ra = self.stack.datasets["effective_ra"][:].local_array
-
             # Accumulate the total rebin weight
-            sum_rebin_weight[:] += rebin_weight
+            self.stack.rebin_weight[:] += Ni_d
 
-            delta = rebin_weight * (effective_ra - sum_effective_ra)
-            sum_effective_ra[:] += delta * tools.invert_no_zero(sum_rebin_weight)
+            # Track the effective ra bin centres
+            delta = Ni_d * (sdata.effective_ra[:] - self.stack.effective_ra[:])
+            self.stack.effective_ra[:] += delta * tools.invert_no_zero(self.stack.rebin_weight[:])
 
         # Get the LSD label out of the data (resort to using a CSD if it's
         # present). If there's no label just use a place holder and stack
