@@ -9,6 +9,8 @@ into  :class:`SiderealGrouper`, then feeding that into
 :class:`SiderealStacker` if you want to combine the different days.
 """
 
+from typing import Union
+
 import numpy as np
 import scipy.linalg as la
 from caput import config, mpiarray, tod
@@ -746,7 +748,7 @@ class RebinGradientFix(task.SingleTask):
     create the gradient.
     """
 
-    def setup(self, sstream_ref: containers.SiderealStream) -> None:
+    def setup(self, sstream_ref: Union[containers.SiderealStream, None] = None) -> None:
         """Provide the dataset to use in the gradient calculation.
 
         This dataset must have complete sidereal coverage.
@@ -783,6 +785,10 @@ class RebinGradientFix(task.SingleTask):
                 "ra dataset. No correction will be applied."
             )
             return sstream
+
+        # If the reference stream was never set, use the data stream
+        if self.sstream_ref is None:
+            self.sstream_ref = sstream
 
         self.sstream_ref.redistribute("freq")
         sstream.redistribute("freq")
