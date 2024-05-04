@@ -830,6 +830,10 @@ class RebinGradientFix(task.SingleTask):
 
                 sv[fi, vi] -= grad * delta_ra
 
+        # Since the correction has been applied, the new effective
+        # RA is the same as the true RA
+        sra[:] = sstream.ra[np.newaxis]
+
         return sstream
 
 
