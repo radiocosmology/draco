@@ -1452,6 +1452,11 @@ class ApplyTimeFreqMask(task.SingleTask):
             np.float32
         )
 
+        if "rebin_weight" in tsc.datasets:
+            tsc.rebin_weight[:].local_array[:] *= (~rfimask.mask[sf:ef]).astype(
+                np.float32
+            )
+
         return tsc
 
 
