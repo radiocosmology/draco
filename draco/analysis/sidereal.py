@@ -937,6 +937,8 @@ class SiderealStackerMatch(task.SingleTask):
 
             if "effective_ra" in self.stack.datasets:
                 self.ra_correction = True
+                self.stack.rebin_weight[:] = 0.0
+                self.stack.effective_ra[:] = 0.0
 
             self.count = 0
             self.Ni_s = mpiarray.zeros(
