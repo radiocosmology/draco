@@ -198,7 +198,7 @@ class ContainerBase(memh5.BasicCont):
                 copy_axis_attrs = False
 
                 # If axis is an integer, turn into an arange as a default definition
-                if isinstance(axis_map, int):
+                if isinstance(axis_map, (int, np.integer)):
                     axis_map = np.arange(axis_map)
 
             # If no valid map provided in arguments copy from another object if set
