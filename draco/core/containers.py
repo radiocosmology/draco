@@ -806,6 +806,11 @@ class VisContainer(VisBase):
         # Call initializer from `ContainerBase`
         super().__init__(*args, **kwargs)
 
+        # `axes_from` can be provided via the `copy_from` argument, so
+        # need to update kwargs to account
+        if ("axes_from" not in kwargs) and ("copy_from" in kwargs):
+            kwargs["axes_from"] = kwargs.pop("copy_from")
+
         reverse_map_stack = None
         # Create reverse map
         if "reverse_map_stack" in kwargs:
