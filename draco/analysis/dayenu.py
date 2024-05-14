@@ -7,6 +7,8 @@ import time
 
 import numpy as np
 import scipy.interpolate
+from mpi4py import MPI
+
 from caput import config
 from cora.util import units
 
@@ -227,10 +229,12 @@ class DayenuDelayFilterFixedCutoff(task.SingleTask):
         Parameters
         ----------
         stream : TimeStream or SiderealStream
+            Raw visibilities.
 
         Returns
         -------
         stream_filt : TimeStream or SiderealStream
+            Filtered visibilities.
         """
         # Distribute over products
         stream.redistribute(["ra", "time"])
@@ -252,8 +256,9 @@ class DayenuDelayFilterFixedCutoff(task.SingleTask):
 
         if np.all(baseline_mask):
             self.log.error("All data flaged as bad.")
-            return
-        elif np.any(baseline_mask) and not self.single_mask:
+            return None
+
+        if np.any(baseline_mask) and not self.single_mask:
             valid = np.flatnonzero(baseline_flag)
         else:
             valid = slice(None)

@@ -1487,7 +1487,6 @@ class ReduceChisq(ReduceBase):
 
     def reduction(self, arr, weight, axis):
         """Apply a chi-squared calculation."""
-
         # Get the total number of unmasked samples
         num = np.maximum(np.sum(weight > 0, axis=axis, keepdims=True) - 1, 0)
 

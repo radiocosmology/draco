@@ -1038,6 +1038,7 @@ class RFIMaskChisqHighDelay(task.SingleTask):
         Parameters
         ----------
         telescope : TransitTelescope
+            Telescope object used for time calculations.
         """
         self.telescope = None if telescope is None else io.get_telescope(telescope)
 
@@ -1055,7 +1056,6 @@ class RFIMaskChisqHighDelay(task.SingleTask):
         mask : dcontainers.RFIMask | dcontainers.SiderealRFIMask
             Time-frequency mask, where values marked `True` are flagged.
         """
-
         # Distribute over frequency
         stream.redistribute("freq")
         freq = stream.freq
@@ -1178,9 +1178,7 @@ class RFIMaskChisqHighDelay(task.SingleTask):
         mad = 1.48625 * weighted_median.weighted_median(abs_dev, med_w)
 
         # Flag outliers
-        mask = abs_dev > self.nsigma_1d
-
-        return mask
+        return abs_dev > (self.nsigma_1d * mad)
 
     def mask_2d(self, y, w):
         """Mask frequencies and times where the chi-squared deviates from local median.
@@ -1211,9 +1209,7 @@ class RFIMaskChisqHighDelay(task.SingleTask):
         dy = np.abs(y - med_y) * np.sqrt(w)
 
         # Flag times and frequencies that deviate by more than some threshold
-        mask = dy > self.nsigma_2d
-
-        return mask
+        return dy > self.nsigma_2d
 
     def _source_flag_hook(self, times, freq):
         """Override to mask bright point sources.
