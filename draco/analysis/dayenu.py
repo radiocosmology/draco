@@ -7,10 +7,9 @@ import time
 
 import numpy as np
 import scipy.interpolate
-from mpi4py import MPI
-
 from caput import config
 from cora.util import units
+from mpi4py import MPI
 
 from ..core import containers, io, task
 from ..util import tools
@@ -122,9 +121,7 @@ class DayenuDelayFilter(task.SingleTask):
             bvis = np.ascontiguousarray(vis[:, bb])
             bvar = tools.invert_no_zero(weight[:, bb])
 
-            self.log.debug(
-                "Filtering baseline %d of %d. [%0.3f micro-sec]" % (bb, nprod, bcut)
-            )
+            self.log.debug(f"Filter baseline {bb} of {nprod}. [{bcut:0.3f} micro-sec]")
 
             # Construct the filter
             try:
@@ -291,7 +288,7 @@ class DayenuDelayFilterFixedCutoff(task.SingleTask):
                 )
 
             except np.linalg.LinAlgError as exc:
-                self.log.error("Failed to converge while processing time {tt}: {exc}")
+                self.log.error(f"Failed to converge while processing time {tt}: {exc}")
                 weight[:, :, tt] = 0.0
                 continue
 
