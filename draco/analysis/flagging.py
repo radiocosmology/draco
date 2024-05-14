@@ -1022,7 +1022,7 @@ class RFIMaskChisqHighDelay(task.SingleTask):
         of freedom (i.e., number of baselines).
     """
 
-    reg_arpls = config.Property(proptype=float, default=100000.0)
+    reg_arpls = config.Property(proptype=float, default=1e5)
     nsigma_1d = config.Property(proptype=float, default=5.0)
 
     win_t = config.Property(proptype=int, default=601)
@@ -1170,7 +1170,7 @@ class RFIMaskChisqHighDelay(task.SingleTask):
         med_w = np.ascontiguousarray((~med_m).astype(np.float64))
 
         # Estimate a baseline
-        baseline = tools.arPLS_1d(med_y, mask=med_m, scale=self.reg_arpls)
+        baseline = tools.arPLS_1d(med_y, mask=med_m, lam=self.reg_arpls)
 
         # Subtract the baseline and estimate the noise
         abs_dev = np.abs(med_y - baseline)

@@ -130,9 +130,12 @@ class DayenuDelayFilter(task.SingleTask):
                 )
 
             except np.linalg.LinAlgError as exc:
+                pc_good = (100.0 * flag.mean(axis=0)).astype(int)
                 self.log.error(
-                    "Failed to converge while processing baseline "
-                    f"{bb} [{bcut:0.3f} micro-sec]: {exc}"
+                    f"Failed to converge while processing baseline {bb} "
+                    f"[{bcut:0.3f} micro-sec]\n"
+                    f"Percentage unmasked frequencies:  {pc_good}\n"
+                    f"Exception:  {exc}"
                 )
                 weight[:, bb] = 0.0
                 continue
@@ -252,7 +255,7 @@ class DayenuDelayFilterFixedCutoff(task.SingleTask):
         baseline_mask = ~baseline_flag
 
         if np.all(baseline_mask):
-            self.log.error("All data flaged as bad.")
+            self.log.error("All data flagged as bad.")
             return None
 
         if np.any(baseline_mask) and not self.single_mask:
@@ -288,7 +291,12 @@ class DayenuDelayFilterFixedCutoff(task.SingleTask):
                 )
 
             except np.linalg.LinAlgError as exc:
-                self.log.error(f"Failed to converge while processing time {tt}: {exc}")
+                pc_good = (100.0 * flag.mean(axis=0)).astype(int)
+                self.log.error(
+                    f"Failed to converge while processing time {tt}.\n"
+                    f"Percentage unmasked frequencies:  {pc_good}\n"
+                    f"Exception:  {exc}"
+                )
                 weight[:, :, tt] = 0.0
                 continue
 
@@ -472,9 +480,12 @@ class DayenuDelayFilterMap(task.SingleTask):
                     )
 
                 except np.linalg.LinAlgError as exc:
+                    pc_good = (100.0 * flag.mean(axis=0)).astype(int)
                     self.log.error(
-                        "Failed to converge while processing el "
-                        f"{el:0.3f} [{ecut:0.3f} micro-sec]: {exc}"
+                        f"Failed to converge while processing el {el:0.3f} "
+                        f"[{ecut:0.3f} micro-sec]\n"
+                        f"Percentage unmasked frequencies:  {pc_good}\n"
+                        f"Exception:  {exc}"
                     )
                     weight[wslc] = 0.0
                     continue
