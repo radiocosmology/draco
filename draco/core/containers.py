@@ -1239,6 +1239,17 @@ class SiderealStream(
             "compression_opts": COMPRESSION_OPTS,
             "chunks": (64, 128, 128),
         },
+        "effective_ra": {
+            "axes": ["freq", "stack", "ra"],
+            "dtype": np.float32,
+            "initialise": False,
+            "distributed": True,
+            "distributed_axis": "freq",
+            "compression": COMPRESSION,
+            "compression_opts": COMPRESSION_OPTS,
+            "chunks": (64, 128, 128),
+            "truncate": True,
+        },
     }
 
     @property
@@ -1255,6 +1266,14 @@ class SiderealStream(
     def _mean(self):
         """Get the vis dataset."""
         return self.datasets["vis"]
+
+    @property
+    def effective_ra(self):
+        """Get the effective_ra dataset if it exists, None otherwise."""
+        if "effective_ra" in self.datasets:
+            return self.datasets["effective_ra"]
+
+        raise KeyError("Dataset 'effective_ra' not initialised.")
 
 
 class SystemSensitivity(FreqContainer, TODContainer):
