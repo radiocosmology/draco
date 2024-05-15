@@ -9,13 +9,15 @@ into  :class:`SiderealGrouper`, then feeding that into
 :class:`SiderealStacker` if you want to combine the different days.
 """
 
+from typing import Union
+
 import numpy as np
 import scipy.linalg as la
 from caput import config, mpiarray, tod
 from cora.util import units
 
 from ..core import containers, io, task
-from ..util import tools
+from ..util import regrid, tools
 from .transform import Regridder
 
 
@@ -475,6 +477,98 @@ class SiderealRegridderCubic(SiderealRegridder):
         interp_weight[..., distant] = 0.0
 
         return interp_grid, interp_vis, interp_weight
+
+
+class SiderealRebinner(SiderealRegridder):
+    """Regrid a sidereal day of data using a binning method.
+
+    Assign a fraction of each time sample to the nearest RA bin based
+    on the propotion of the time bin that overlaps the RA bin.
+
+    Tracks the weighted effective centre of RA bin so that a centring
+    correction can be applied afterwards. A correction option is
+    implemented in `RebinGradientCorrection`.
+    """
+
+    def process(self, data):
+        """Rebin the sidereal day.
+
+        Parameters
+        ----------
+        data : containers.TimeStream
+            Timestream data for the day (must have a `LSD` attribute).
+
+        Returns
+        -------
+        sdata : containers.SiderealStream
+            The regularly gridded sidereal timestream.
+        """
+        import scipy.sparse as ss
+
+        self.log.info(f"Rebinning LSD:{data.attrs['lsd']:.0f}")
+
+        # Redistribute if needed too
+        data.redistribute("freq")
+
+        # Convert data timestamps into LSDs
+        timestamp_lsd = self.observer.unix_to_lsd(data.time)
+
+        # Fetch which LSD this is to set bounds
+        self.start = data.attrs["lsd"]
+        self.end = self.start + 1
+
+        # Create the output container
+        sdata = containers.SiderealStream(axes_from=data, ra=self.samples)
+        # Initialize the `effective_ra` dataset
+        sdata.add_dataset("effective_ra")
+        sdata.redistribute("freq")
+        sdata.attrs["lsd"] = self.start
+        sdata.attrs["tag"] = f"lsd_{self.start:.0f}"
+
+        # Get view of data
+        weight = data.weight[:].local_array
+        vis_data = data.vis[:].local_array
+
+        # Get the median time sample width
+        width_t = np.median(np.abs(np.diff(timestamp_lsd)))
+        # Create the regular grid of RA samples
+        target_lsd = np.linspace(self.start, self.end, self.samples, endpoint=False)
+        # Create the rebinning matrix
+        R = regrid.rebin_matrix(timestamp_lsd, target_lsd, width_t=width_t)
+        Rt = ss.csr_array(R.T)
+        # The square is used to calculate rebinned weights
+        Rtsq = Rt.power(2)
+
+        # dereference arrays before loop
+        sera = sdata.effective_ra[:].local_array
+        ssv = sdata.vis[:].local_array
+        ssw = sdata.weight[:].local_array
+
+        # Create a repeating view of the gridded ra axis. This is
+        # used to fill the effective ra of masked samples
+        grid_ra = np.broadcast_to(sdata.ra, (*sera.shape[1:],))
+
+        for fi in range(vis_data.shape[0]):
+            # Normalisation for rebinned datasets
+            norm = tools.invert_no_zero(weight[fi] @ Rt)
+
+            # Weighted rebin of the visibilities
+            ssv[fi] = norm * ((vis_data[fi] * weight[fi]) @ Rt)
+
+            # Weighted rebin of the effective RA
+            effective_lsd = norm * ((timestamp_lsd[np.newaxis] * weight[fi]) @ Rt)
+            sera[fi] = 360 * (effective_lsd - self.start)
+
+            # Rebin the weights
+            rvar = weight[fi] @ Rtsq
+            ssw[fi] = tools.invert_no_zero(norm**2 * rvar)
+
+            # Correct the effective ra where weights are zero. This
+            # is required to avoid discontinuities
+            mask = ssw[fi] == 0.0
+            sera[fi][mask] = grid_ra[mask]
+
+        return sdata
 
 
 class SiderealStacker(task.SingleTask):
