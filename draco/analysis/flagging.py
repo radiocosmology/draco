@@ -2298,10 +2298,16 @@ class BlendStack(task.SingleTask):
             The modified data. This is the same object as the input, and it has been
             modified in place.
         """
-        if type(self.data_stack) != type(data):
+        if "effective_ra" in data.datasets:
+            raise TypeError(
+                "Blending uncorrected rebinned data not supported. "
+                "Please apply a correction such as `sidereal.RebinGradientCorrection."
+            )
+
+        if not isinstance(data, type(self.data_stack)):
             raise TypeError(
                 f"type(data) (={type(data)}) must match"
-                f"type(data_stack) (={type(self.type)}"
+                f"type(data_stack) (={type(self.data_stack)}"
             )
 
         # Try and get both the stack and the incoming data to have the same
