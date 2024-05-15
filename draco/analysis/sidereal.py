@@ -710,6 +710,13 @@ class SiderealStacker(task.SingleTask):
         sdata : containers.SiderealStream
             Individual sidereal day to add to stack.
         """
+        # Check that the input container is of the correct type
+        if (self.stack is not None) and not isinstance(sdata, type(self.stack)):
+            raise TypeError(
+                f"type(sdata) (={type(sdata)}) does not match "
+                f"type(stack) (={type(self.stack)})."
+            )
+
         sdata.redistribute("freq")
 
         # Get the LSD (or CSD) label out of the input's attributes.
@@ -748,13 +755,22 @@ class SiderealStacker(task.SingleTask):
             # Keep track of the sum of squared weights
             # to perform Bessel's correction at the end.
             if self.with_sample_variance:
-                self.sum_coeff_sq = np.zeros_like(self.stack.weight[:].view(np.ndarray))
+                self.sum_coeff_sq = mpiarray.zeros(
+                    self.stack.weight[:].local_shape,
+                    axis=0,
+                    comm=self.stack.comm,
+                    dtype=np.float32,
+                )
 
         # Accumulate
         self.log.info(f"Adding to stack LSD(s): {input_lsd!s}")
 
         self.lsd_list += input_lsd
 
+        # Extract weight dataset
+        weight = sdata.weight[:]
+
+        # Determine if the input sidereal stream is itself a stack over days
         if "nsample" in sdata.datasets:
             # The input sidereal stream is already a stack
             # over multiple sidereal days. Use the nsample
@@ -762,34 +778,22 @@ class SiderealStacker(task.SingleTask):
             count = sdata.nsample[:]
         else:
             # The input sidereal stream contains a single
-            # sidereal day.  Use a boolean array that
+            # sidereal day. Use a boolean array that
             # indicates a non-zero weight dataset as
             # the weight for the uniform case.
-            dtype = self.stack.nsample.dtype
-            count = (sdata.weight[:] > 0.0).astype(dtype)
-
-        # Determine the weights to be used in the average.
-        if self.weight == "uniform":
-            coeff = count.astype(np.float32)
-            # Accumulate the variances in the stack.weight dataset.
-            self.stack.weight[:] += (coeff**2) * tools.invert_no_zero(sdata.weight[:])
-        else:
-            coeff = sdata.weight[:]
-            # We are using inverse variance weights.  In this case,
-            # we accumulate the inverse variances in the stack.weight
-            # dataset.  Do that directly to avoid an unneccessary
-            # division in the more general expression above.
-            self.stack.weight[:] += sdata.weight[:]
+            count = (weight > 0.0).astype(self.stack.nsample.dtype)
 
         # Accumulate the total number of samples.
         self.stack.nsample[:] += count
 
-        # Below we will need to normalize by the current sum of coefficients.
-        # Can be found in the stack.nsample dataset for uniform case or
-        # the stack.weight dataset for inverse variance case.
         if self.weight == "uniform":
-            sum_coeff = self.stack.nsample[:].astype(np.float32)
+            coeff = count.astype(np.float32)
+            self.stack.weight[:] += (coeff**2) * tools.invert_no_zero(weight)
+            sum_coeff = self.stack.nsample[:]
+
         else:
+            coeff = weight
+            self.stack.weight[:] += weight
             sum_coeff = self.stack.weight[:]
 
         # Calculate weighted difference between the new data and the current mean.
@@ -797,6 +801,12 @@ class SiderealStacker(task.SingleTask):
 
         # Update the mean.
         self.stack.vis[:] += delta_before * tools.invert_no_zero(sum_coeff)
+
+        if "effective_ra" in self.stack.datasets:
+            # Accumulate the weighted average effective RA
+            delta_ra = coeff * (sdata.effective_ra[:] - self.stack.effective_ra[:])
+            # Update the mean
+            self.stack.effective_ra[:] += delta_ra * tools.invert_no_zero(sum_coeff)
 
         # The calculations below are only required if the sample variance was requested
         if self.with_sample_variance:
@@ -822,17 +832,23 @@ class SiderealStacker(task.SingleTask):
         self.stack.attrs["tag"] = self.tag
         self.stack.attrs["lsd"] = np.array(self.lsd_list)
 
-        # For uniform weighting, normalize the accumulated variances by the total
-        # number of samples squared and then invert to finalize stack.weight.
         if self.weight == "uniform":
+            # For uniform weighting, normalize the accumulated variances by the total
+            # number of samples squared and then invert to finalize stack.weight.
             norm = self.stack.nsample[:].astype(np.float32)
             self.stack.weight[:] = tools.invert_no_zero(self.stack.weight[:]) * norm**2
+
+        else:
+            # For inverse variance weighting without rebinning,
+            # additional normalization is not required.
+            norm = None
 
         # We need to normalize the sample variance by the sum of coefficients.
         # Can be found in the stack.nsample dataset for uniform case
         # or the stack.weight dataset for inverse variance case.
         if self.with_sample_variance:
-            if self.weight != "uniform":
+
+            if norm is None:
                 norm = self.stack.weight[:]
 
             # Perform Bessel's correction.  In the case of
@@ -882,6 +898,13 @@ class SiderealStackerMatch(task.SingleTask):
         sdata : containers.SiderealStream
             Individual sidereal day to stack up.
         """
+        # Check that the input container is of the correct type
+        if (self.stack is not None) and not isinstance(sdata, type(self.stack)):
+            raise TypeError(
+                f"type(sdata) (={type(sdata)}) does not match "
+                f"type(stack) (={type(self.stack)})."
+            )
+
         sdata.redistribute("freq")
 
         if self.stack is None:
@@ -889,8 +912,10 @@ class SiderealStackerMatch(task.SingleTask):
 
             self.stack = containers.empty_like(sdata)
             self.stack.redistribute("freq")
-            self.stack.vis[:] = 0.0
-            self.stack.weight[:] = 0.0
+
+            # Initialise all datasets to zero
+            for ds in self.stack.datasets.values():
+                ds[:] = 0
 
             self.count = 0
             self.Ni_s = mpiarray.zeros(
@@ -938,6 +963,16 @@ class SiderealStackerMatch(task.SingleTask):
 
         # We need to keep the projection vector until the end
         self.Vm.append(v)
+
+        if "effective_ra" in self.stack.datasets:
+            # Track the effective ra bin centres. We're using the averaged
+            # weights here, so this generally isn't optimal
+            delta = Ni_d * (sdata.effective_ra[:] - self.stack.effective_ra[:])
+            # Update the mean effective ra using the mean of the normalized weights
+            sum_weight = tools.invert_no_zero(self.stack.weight[:]) * self.Ni_s**2
+            self.stack.effective_ra[:] += delta * tools.invert_no_zero(
+                sum_weight.mean(axis=1)
+            )
 
         # Get the LSD label out of the data (resort to using a CSD if it's
         # present). If there's no label just use a place holder and stack
