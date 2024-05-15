@@ -9,8 +9,6 @@ into  :class:`SiderealGrouper`, then feeding that into
 :class:`SiderealStacker` if you want to combine the different days.
 """
 
-from typing import Union
-
 import numpy as np
 import scipy.linalg as la
 from caput import config, mpiarray, tod
@@ -569,6 +567,112 @@ class SiderealRebinner(SiderealRegridder):
             sera[fi][mask] = grid_ra[mask]
 
         return sdata
+
+
+class RebinGradientCorrection(task.SingleTask):
+    """Apply a linear gradient correction to shift RA samples to bin centres.
+
+    Requires a sidereal day with full sidereal coverage to calculate a local
+    gradient for each RA bin. The dataset value at the RA bin centre is
+    interpolated based on the local gradient and difference between bin centre
+    and effective bin centre.
+
+    If the rebinned dataset has full sidereal coverage, it can be used to
+    create the gradient.
+    """
+
+    def setup(self, sstream_ref: containers.SiderealStream) -> None:
+        """Provide the dataset to use in the gradient calculation.
+
+        This dataset must have complete sidereal coverage.
+
+        Parameters
+        ----------
+        sstream_ref
+            Reference SiderealStream
+        """
+        self.sstream_ref = sstream_ref
+
+    def process(self, sstream: containers.SiderealStream) -> containers.SiderealStream:
+        """Apply the gradient correction to the input dataset.
+
+        Parameters
+        ----------
+        sstream
+            sidereal day to apply a correction to
+
+        Returns
+        -------
+        sstream
+            Input sidereal day with gradient correction applied, if needed
+        """
+        self.sstream_ref.redistribute("freq")
+        sstream.redistribute("freq")
+
+        # Allows a normal sidereal stream to pass through this task.
+        # Helpful for creating generic configs
+        try:
+            era = sstream.effective_ra[:].local_array
+        except KeyError:
+            self.log.info(
+                f"Dataset of type ({type(sstream)}) does not have an effective "
+                "ra dataset. No correction will be applied."
+            )
+            return sstream
+
+        try:
+            # If the reference dataset has an effective ra dataset, use this
+            # when calculating the gradient. This could be true if the reference
+            # and target datasets are the same
+            ref_ra = self.sstream_ref.effective_ra[:].local_array
+        except KeyError:
+            # Use fixed ra, which should be regularly sampled
+            ref_ra = self.sstream_ref.ra
+
+        vis = sstream.vis[:].local_array
+        weight = sstream.weight[:].local_array
+
+        ref_vis = self.sstream_ref.vis[:].local_array
+        ref_weight = self.sstream_ref.weight[:].local_array
+
+        # Iterate over frequencies and baselines for memory
+        for fi in range(vis.shape[0]):
+            # Skip if entirely masked already
+            if not np.any(weight[fi]):
+                continue
+
+            for vi in range(vis.shape[1]):
+                # Skip if entire baseline is masked
+                if not np.any(weight[fi, vi]):
+                    continue
+
+                # Depends on whether the effective ra has baseline dependence
+                rra = ref_ra[fi, vi] if ref_ra.ndim > 1 else ref_ra
+                # Calculate the vis gradient at the reference RA points
+                mask = ref_weight[fi, vi] == 0.0
+                grad, mask = regrid.grad_1d(ref_vis[fi, vi], rra, mask, period=360.0)
+
+                # Apply the correction to estimate the sample value at the
+                # RA bin centre
+                vis[fi, vi] -= grad * (era[fi, vi] - sstream.ra)
+                # Zero any weights that could not be corrected
+                weight[fi, vi] *= (~mask).astype(weight.dtype)
+
+        # Copy to a new container without the effective_ra dataset
+        # This sort of functionality should probably be properly
+        # implemented somewhere else
+        out = containers.SiderealStream(attrs_from=sstream, axes_from=sstream)
+        # Iterate over datasets
+        for name, dset in sstream.datasets.items():
+            if name == "effective_ra":
+                continue
+
+            if name not in out.datasets:
+                out.add_dataset(name)
+
+            out.datasets[name][:] = dset[:]
+
+        return out
 
 
 class SiderealStacker(task.SingleTask):
