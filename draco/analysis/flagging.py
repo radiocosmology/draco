@@ -1173,7 +1173,7 @@ class RFIMaskChisqHighDelay(task.SingleTask):
         baseline = tools.arPLS_1d(med_y, mask=med_m, lam=self.reg_arpls)
 
         # Subtract the baseline and estimate the noise
-        abs_dev = np.abs(med_y - baseline)
+        abs_dev = np.where(med_m, 0.0, np.abs(med_y - baseline))
 
         mad = 1.48625 * weighted_median.weighted_median(abs_dev, med_w)
 
