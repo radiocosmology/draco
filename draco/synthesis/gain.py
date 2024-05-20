@@ -430,7 +430,7 @@ class GainStacker(task.SingleTask):
 
 def _ensure_list(x):
     if hasattr(x, "__iter__"):
-        y = list(x)
+        y = [xx for xx in x]  # noqa: C416
     else:
         y = [x]
 
