@@ -125,9 +125,14 @@ class ComputeSystemSensitivity(task.SingleTask):
 
         baseline_pol = np.core.defchararray.add(pol_a, pol_b)
 
+        ew_intra = 0.5 * self.telescope.cylinder_width
         if self.exclude_intracyl:
             baseline_flag = (
-                ew_position[prodstack["input_a"]] != ew_position[prodstack["input_b"]]
+                np.abs(
+                    ew_position[prodstack["input_a"]]
+                    - ew_position[prodstack["input_b"]]
+                )
+                > ew_intra
             )
         else:
             baseline_flag = np.ones(prodstack.size, dtype=bool)
@@ -195,7 +200,9 @@ class ComputeSystemSensitivity(task.SingleTask):
 
         for ii, (ai, pi) in enumerate(zip(auto_input, auto_pol)):
             for jj, (aj, pj) in enumerate(zip(auto_input, auto_pol)):
-                if self.exclude_intracyl and (ew_position[ai] == ew_position[aj]):
+                if self.exclude_intracyl and (
+                    np.abs(ew_position[ai] - ew_position[aj]) < ew_intra
+                ):
                     # Exclude intracylinder baselines
                     continue
 
