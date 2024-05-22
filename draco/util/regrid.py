@@ -214,6 +214,56 @@ def rebin_matrix(tra: np.ndarray, ra: np.ndarray, width_t: float = 0) -> np.ndar
     return R
 
 
+def grad_1d(
+    x: np.ndarray, si: np.ndarray, mask: np.ndarray, period: Union[float, None] = None
+) -> np.ndarray:
+    """Gradient with boundary samples wrapped.
+
+    Parameters
+    ----------
+    x
+        Data to calculate the gradient for.
+    si
+        Positions of the samples. Must be monotonically increasing.
+    mask
+        Boolean mask, True where a sample is flagged.
+    period
+        Period of `samples`. Default is None, which produces a
+        non-periodic gradient.
+
+    Returns
+    -------
+    gradient
+        Gradient of `x`. Gradient is set to zero where any sample in
+        the calculation was flagged.
+    mask
+        Boolean mask corresponding to samples for which a proper
+        gradient could not be calculated. True where a sample
+        is flagged.
+    """
+    if period is not None:
+        # Wrap each array, accounting for the periodicity
+        # in sample positions
+        x = np.concatenate(([x[-1]], x, [x[0]]))
+        mask = np.concatenate(([mask[-1]], mask, [mask[0]]))
+        # Account for the possibility of multiple periods
+        shift = np.ceil(si[-1] / period) * period
+        si = np.concatenate(([si[-1] - shift], si, [si[0] + shift]))
+        # Return with wrapped samples removed
+        sel = slice(1, -1)
+    else:
+        # Calculate the gradient using `np.gradient` first order
+        # one-sided difference at the boundaries
+        sel = slice(None)
+
+    # Extend the flagged values such that any gradient which
+    # includes a flagged sample is set to 0. This effectively
+    # involves masking any sample where an adjacent sample is masked
+    mask |= np.concatenate(([False], mask[:-1])) | np.concatenate((mask[1:], [False]))
+
+    return (~mask * np.gradient(x, si))[sel], mask[sel]
+
+
 def taylor_coeff(
     x: np.ndarray,
     N: int,
