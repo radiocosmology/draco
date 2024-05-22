@@ -208,7 +208,7 @@ class DayenuDelayFilterFixedCutoff(transform.ReduceChisq):
     epsilon : float
         The stop-band rejection of the filter.  Default is 1e-12.
     tauw : float
-        Delay cutoff in micro-seconds.  Default is 0.4 micro-seconds.
+        Delay cutoff in micro-seconds.  Default is 0.45 micro-seconds.
     single_mask : bool
         Apply a single frequency mask for all baselines.  Only includes
         frequencies where the weights are nonzero for all baselines.
@@ -227,7 +227,7 @@ class DayenuDelayFilterFixedCutoff(transform.ReduceChisq):
     """
 
     epsilon = config.Property(proptype=float, default=1e-12)
-    tauw = config.Property(proptype=float, default=0.400)
+    tauw = config.Property(proptype=float, default=0.450)
     single_mask = config.Property(proptype=bool, default=True)
     atten_threshold = config.Property(proptype=float, default=0.0)
 
