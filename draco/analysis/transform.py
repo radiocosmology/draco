@@ -1466,13 +1466,42 @@ class ReduceVar(ReduceBase):
 
         # Calculate the inverted sum of the weights. This is used
         # more than once
-        ws = invert_no_zero(np.sum(weight, axis=axis, keepdims=True))
+        ws = np.sum(weight, axis=axis, keepdims=True)
+        iws = invert_no_zero(ws)
         # Get the weighted mean
-        mu = np.sum(weight * arr, axis=axis, keepdims=True) * ws
+        mu = np.sum(weight * arr, axis=axis, keepdims=True) * iws
         # Get the weighted variance
-        v = np.sum(weight * (arr - mu) ** 2, axis=axis, keepdims=True) * ws
+        v = np.sum(weight * (arr - mu) ** 2, axis=axis, keepdims=True) * iws
 
-        return v, np.ones_like(v)
+        return v, ws
+
+
+class ReduceChisq(ReduceBase):
+    """Calculate the chi-squared per degree of freedom.
+
+    Assumes that the visibilities are uncorrelated noise
+    whose inverse variance is given by the weight dataset.
+    """
+
+    _op = "chisq_per_dof"
+
+    def reduction(self, arr, weight, axis):
+        """Apply a chi-squared calculation."""
+        # Get the total number of unmasked samples
+        num = np.maximum(np.sum(weight > 0, axis=axis, keepdims=True) - 1, 0)
+
+        # Calculate the inverted sum of the weights
+        iws = invert_no_zero(np.sum(weight, axis=axis, keepdims=True))
+
+        # Get the weighted mean
+        mu = np.sum(weight * arr, axis=axis, keepdims=True) * iws
+
+        # Get the chi-squared per degree of freedom
+        v = np.sum(
+            weight * np.abs(arr - mu) ** 2, axis=axis, keepdims=True
+        ) * invert_no_zero(num)
+
+        return v, num
 
 
 class HPFTimeStream(task.SingleTask):

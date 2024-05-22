@@ -1300,6 +1300,253 @@ class RFIStokesIMask(task.SingleTask):
         return np.zeros_like(times, dtype=bool)
 
 
+class RFIMaskChisqHighDelay(task.SingleTask):
+    """Mask frequencies and times with anomalous chi-squared test statistic.
+
+    Attributes
+    ----------
+    reg_arpls : float
+        Smoothness regularisation used when estimating the baseline
+        for flagging bad frequencies. Default is 1e5.
+    nsigma_1d : float
+        Mask any frequency where the median over unmasked time samples
+        deviates from the baseline by more than this number of
+        median absolute deviations.  Default is 5.0.
+    win_t : float
+        Size of the window (in number of time samples)
+        used to compute a median filtered version of the test statistic.
+    win_f : float
+        Size of the window (in number of frequency channels)
+        used to compute a median filtered version of the test statistic.
+    nsigma_2d: float
+        Mask any frequency and time where the absolute deviation
+        from the median filtered version is greater than this number
+        of expected standard deviations given the number of degrees
+        of freedom (i.e., number of baselines).
+    """
+
+    reg_arpls = config.Property(proptype=float, default=1e5)
+    nsigma_1d = config.Property(proptype=float, default=5.0)
+
+    win_t = config.Property(proptype=int, default=601)
+    win_f = config.Property(proptype=int, default=1)
+    nsigma_2d = config.Property(proptype=float, default=5.0)
+
+    def setup(self, telescope=None):
+        """Save telescope object for time calculations.
+
+        Only used to convert (LSD, RA) to unix time when masking
+        sidereal streams.  Not required when masking time streams.
+
+        Parameters
+        ----------
+        telescope : TransitTelescope
+            Telescope object used for time calculations.
+        """
+        self.telescope = None if telescope is None else io.get_telescope(telescope)
+
+    def process(self, stream):
+        """Generate a mask from the data.
+
+        Parameters
+        ----------
+        stream : dcontainers.TimeStream | dcontainers.SiderealStream
+            Container holding a chi-squared test statistic in the visibility dataset.
+            A weighted average will be taken over any axis that is not time/ra or frequency.
+
+        Returns
+        -------
+        mask : dcontainers.RFIMask | dcontainers.SiderealRFIMask
+            Time-frequency mask, where values marked `True` are flagged.
+        """
+        # Distribute over frequency
+        stream.redistribute("freq")
+        freq = stream.freq
+
+        # Determine time axis
+        multiple_days = False
+        if "ra" in stream.index_map:
+
+            if self.telescope is None:
+                raise RuntimeError(
+                    "For sidereal streams, must provide "
+                    "telescope object during setup."
+                )
+
+            csd = stream.attrs.get("lsd", stream.attrs.get("csd"))
+            if csd is None:
+                raise ValueError("Data does not have a `csd` or `lsd` attribute.")
+
+            if not np.isscalar(csd):
+                csd = np.floor(np.mean(csd))
+                multiple_days = True
+
+            timestamp = self.telescope.lsd_to_unix(csd + stream.ra / 360.0)
+
+        else:
+            timestamp = stream.time
+
+        # Sum over any axis that is neither time nor frequency
+        axsum = tuple(
+            [
+                ii
+                for ii, ax in enumerate(stream.vis.attrs["axis"])
+                if ax not in ["freq", "time", "ra"]
+            ]
+        )
+
+        chisq = stream.vis[:].real
+        weight = stream.weight[:]
+
+        wsum = np.sum(weight, axis=axsum)
+        chisq = np.sum(weight * chisq, axis=axsum) * tools.invert_no_zero(wsum)
+
+        # Gather all frequencies on all nodes
+        chisq = chisq.allgather()
+        wsum = wsum.allgather()
+
+        mask_input = wsum == 0.0
+
+        # Determine what time samples should be ignored when constructing the mask
+        if multiple_days:
+            mask_daytime = np.zeros(timestamp.size, dtype=bool)
+        else:
+            mask_daytime = self._day_flag_hook(timestamp)
+
+        mask_time = self._source_flag_hook(timestamp, freq)
+
+        mask = mask_input | mask_time
+
+        # Mask using median over time
+        mask_output = np.zeros((freq.size, timestamp.size), dtype=bool)
+
+        if self.nsigma_1d > 0.0:
+            mask_1d = self.mask_1d(chisq, mask | mask_daytime)[:, np.newaxis]
+            mask |= mask_1d
+            mask_output |= mask_1d
+
+        # Mask using dynamic spectrum
+        if self.nsigma_2d > 0.0:
+            # The inverse variance of the chisq per dof test statistic is ndof / 2.
+            # This expression assumes ndof is stored in the weight dataset.
+            w = ~mask * wsum / 2.0
+            mask_2d = self.mask_2d(chisq, w)
+
+            mask_output |= mask_2d & ~mask_daytime
+
+        # Save to output container
+        OutputContainer = (
+            containers.SiderealRFIMask
+            if "ra" in stream.index_map
+            else containers.RFIMask
+        )
+        output = OutputContainer(axes_from=stream, attrs_from=stream)
+
+        output.mask[:] = mask_output
+
+        return output
+
+    def mask_1d(self, y, m):
+        """Mask frequency channels where median chi-squared deviates from neighbors.
+
+        Parameters
+        ----------
+        y : np.ndarray[nfreq, ntime]
+            Chi-squared per degree of freedom.
+        m : np.ndarray[nfreq, ntime]
+            Boolean mask that indicates which samples to ignore
+            when calculating the median over time.
+
+        Returns
+        -------
+        mask : np.ndarray[nfreq]
+            Boolean mask that indicates frequency channels where
+            the median chi-squared over time deviates significantly
+            from that of the neighboring channels.
+        """
+        # For each frequency, caculate a weighted median
+        y = np.ascontiguousarray(y.astype(np.float64))
+        w = np.ascontiguousarray((~m).astype(np.float64))
+
+        med_y = weighted_median.weighted_median(y, w)
+        med_m = np.all(m, axis=-1)
+        med_w = np.ascontiguousarray((~med_m).astype(np.float64))
+
+        # Estimate a baseline
+        baseline = tools.arPLS_1d(med_y, mask=med_m, lam=self.reg_arpls)
+
+        # Subtract the baseline and estimate the noise
+        abs_dev = np.where(med_m, 0.0, np.abs(med_y - baseline))
+
+        mad = 1.48625 * weighted_median.weighted_median(abs_dev, med_w)
+
+        # Flag outliers
+        return abs_dev > (self.nsigma_1d * mad)
+
+    def mask_2d(self, y, w):
+        """Mask frequencies and times where the chi-squared deviates from local median.
+
+        Parameters
+        ----------
+        y : np.ndarray[nfreq, ntime]
+            Chi-squared per degree of freedom.
+        w : np.ndarray[nfreq, ntime]
+            Inverse variance of the chi-squared per degree of freedom,
+            with zero indicating previously masked samples.
+
+        Returns
+        -------
+        mask : np.ndarray[nfreq]
+            Boolean mask that indicates frequencies and times where
+            chi-squared deviates significantly from the local median.
+        """
+        # For each frequency, caculate a moving weighted median
+        y = np.ascontiguousarray(y.astype(np.float64))
+        w = np.ascontiguousarray(w.astype(np.float64))
+        win_size = (self.win_f, self.win_t)
+
+        med_y = weighted_median.moving_weighted_median(y, w, win_size)
+
+        # Calculate the deviation from the median, normalized by the
+        # expected standard deviation
+        dy = np.abs(y - med_y) * np.sqrt(w)
+
+        # Flag times and frequencies that deviate by more than some threshold
+        return dy > self.nsigma_2d
+
+    def _source_flag_hook(self, times, freq):
+        """Override to mask bright point sources.
+
+        Parameters
+        ----------
+        times : np.ndarray[ntime]
+            Array of timestamps.
+        freq : np.ndarray[nfreq]
+            Array of frequencies.
+
+        Returns
+        -------
+        mask : np.ndarray[nfreq, ntime]
+            Mask array. True will mask out a time sample.
+        """
+        return np.zeros((freq.size, times.size), dtype=bool)
+
+    def _day_flag_hook(self, times):
+        """Override to mask daytime.
+
+        Parameters
+        ----------
+        times : np.ndarray[ntime]
+            Array of timestamps.
+
+        Returns
+        -------
+        mask : np.ndarray[nfreq, ntime]
+            Mask array. True will mask out a time sample.
+        """
+        return np.zeros(times.size, dtype=bool)
+
+
 class RFISensitivityMask(task.SingleTask):
     """Slightly less crappy RFI masking.
 

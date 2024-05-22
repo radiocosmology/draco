@@ -9,9 +9,11 @@ import numpy as np
 import scipy.interpolate
 from caput import config
 from cora.util import units
+from mpi4py import MPI
 
 from ..core import containers, io, task
 from ..util import tools
+from . import transform
 
 
 class DayenuDelayFilter(task.SingleTask):
@@ -120,9 +122,7 @@ class DayenuDelayFilter(task.SingleTask):
             bvis = np.ascontiguousarray(vis[:, bb])
             bvar = tools.invert_no_zero(weight[:, bb])
 
-            self.log.debug(
-                "Filtering baseline %d of %d. [%0.3f micro-sec]" % (bb, nprod, bcut)
-            )
+            self.log.debug(f"Filter baseline {bb} of {nprod}. [{bcut:0.3f} micro-sec]")
 
             # Construct the filter
             try:
@@ -132,8 +132,10 @@ class DayenuDelayFilter(task.SingleTask):
 
             except np.linalg.LinAlgError as exc:
                 self.log.error(
-                    "Failed to converge while processing baseline "
-                    f"{bb} [{bcut:0.3f} micro-sec]: {exc}"
+                    f"Failed to converge while processing baseline {bb} "
+                    f"[{bcut:0.3f} micro-sec]\n"
+                    f"Percentage unmasked frequencies:  {100 * flag.mean():0.1f}\n"
+                    f"Exception:  {exc}"
                 )
                 weight[:, bb] = 0.0
                 continue
@@ -187,6 +189,218 @@ class DayenuDelayFilter(task.SingleTask):
         baseline_delay_cut = 1e6 * self.za_cut * baselines / units.c
 
         return baseline_delay_cut + self.tauw
+
+
+class DayenuDelayFilterFixedCutoff(transform.ReduceChisq):
+    """Apply a DAYENU high-pass delay filter to visibility data.
+
+    This task loops over time instead of baseline.  It can be used
+    to filter timeseries that have a rapidly changing frequency mask,
+    with the caveat that one must use the same delay cutoff for all baselines.
+
+    If reduce_baseline is set to True, then this task will return a
+    chi-squared-per-dof test statistic for each frequency and time
+    by calculating the weighted average over baselines of the squared
+    magnitude of the visibilities.
+
+    Attributes
+    ----------
+    epsilon : float
+        The stop-band rejection of the filter.  Default is 1e-12.
+    tauw : float
+        Delay cutoff in micro-seconds.  Default is 0.45 micro-seconds.
+    single_mask : bool
+        Apply a single frequency mask for all baselines.  Only includes
+        frequencies where the weights are nonzero for all baselines.
+        Otherwise will construct a filter for all unique single-time
+        frequency masks (can be significantly slower).  Default is True.
+    atten_threshold : float
+        Mask any frequency where the diagonal element of the filter
+        is less than this fraction of the median value over all
+        unmasked frequencies.  Default is 0.0 (i.e., do not mask
+        frequencies with low attenuation).
+    reduce_baseline : bool
+        Return chi-squared-per-dof by peforming a weighted average of the
+        squared magnitude of the visibilities after applying the filter.
+    mask_short : float
+        Mask out baselines shorter than a given distance.
+    """
+
+    epsilon = config.Property(proptype=float, default=1e-12)
+    tauw = config.Property(proptype=float, default=0.450)
+    single_mask = config.Property(proptype=bool, default=True)
+    atten_threshold = config.Property(proptype=float, default=0.0)
+
+    reduce_baseline = config.Property(proptype=bool, default=False)
+    mask_short = config.Property(proptype=float, default=None)
+
+    dataset = "vis"
+    axes = ("stack",)
+
+    def setup(self, telescope=None):
+        """Set the telescope model.
+
+        Only required if masking short baselines.
+
+        Parameters
+        ----------
+        telescope : TransitTelescope
+            Telescope object containing the baseline distances
+            to use for masking.
+        """
+        self.tel = None if telescope is None else io.get_telescope(telescope)
+
+        if self.tel is None and self.mask_short is not None:
+            raise RuntimeError(
+                "Must provide telescope object at setup if masking short baselines."
+            )
+
+        if not self.reduce_baseline and self.mask_short is not None:
+            self.log.warning(
+                "You have requested this task mask baselines shorter "
+                f"than {self.mask_short:0.1f} meters, eventhough you "
+                "are not summing over the baseline axis.  Consider using "
+                "task flagging.MaskBaselines instead."
+            )
+
+    def process(self, stream):
+        """Filter delays below some cutoff.
+
+        If reduce_baseline is False, then this will modify
+        the container in place.  If reduce_baseline is True,
+        then this will return a new container that has been
+        collapsed over the `stack` axis.
+
+        Parameters
+        ----------
+        stream : TimeStream or SiderealStream
+            Raw visibilities.
+
+        Returns
+        -------
+        stream_filt : TimeStream or SiderealStream
+            Filtered visibilities.
+        """
+        # Distribute over time
+        stream.redistribute(["ra", "time"])
+
+        # Extract the required axes
+        freq = stream.freq
+        ntime = stream.vis.local_shape[2]
+
+        # Create output container
+        if self.reduce_baseline:
+            out = self._make_output_container(stream)
+            out.add_dataset(self.dataset)
+            out.redistribute(["ra", "time"])
+
+            # Initialize datasets to zero
+            for dset in out.datasets.values():
+                dset[:] = 0.0
+        else:
+            out = stream
+
+        # Dereference the required datasets
+        vis = stream.vis[:].local_array
+        weight = stream.weight[:].local_array
+
+        ovis = out.vis[:].local_array
+        oweight = out.weight[:].local_array
+
+        # Identify baselines that are always flagged
+        temp = np.any(weight > 0.0, axis=(0, 2))
+        baseline_flag = np.zeros_like(temp)
+        self.comm.Allreduce(temp, baseline_flag, op=MPI.LOR)
+
+        # If requested, mask the shortest baselines
+        if self.mask_short is not None:
+            baseline_flag &= (
+                np.sqrt(np.sum(self.tel.baselines**2, axis=1)) >= self.mask_short
+            )
+
+            fmask = 1.0 - baseline_flag.mean()
+            self.log.info(f"Masking {100 * fmask:0.1f} percent of baselines.")
+
+        # Return if all baselines are masked
+        if not np.any(baseline_flag):
+            self.log.error("All baselines flagged as bad.")
+            return None
+
+        valid = np.flatnonzero(baseline_flag)
+
+        # If we are not outputing a sum over baselines,
+        # then make sure the invalid baselines have been masked.
+        if not self.reduce_baseline:
+            invalid = np.flatnonzero(~baseline_flag)
+            oweight[:, invalid, :] = 0.0
+
+        # Loop over time samples
+        for tt in range(ntime):
+            t0 = time.time()
+            self.log.debug(f"Filter time {tt} of {ntime}. [{self.tauw:0.3f} microsec]")
+
+            tweight = weight[:, valid, tt]
+            flag = tweight > 0.0
+
+            # Flag frequencies and times with zero weight
+            if self.single_mask:
+                flag = np.all(flag, axis=-1, keepdims=True)
+
+            if not np.any(flag):
+                oweight[:, :, tt] = 0.0
+                continue
+
+            # Construct the filter
+            try:
+                NF, index = highpass_delay_filter(
+                    freq, self.tauw, flag, epsilon=self.epsilon
+                )
+
+            except np.linalg.LinAlgError as exc:
+                self.log.error(
+                    f"Failed to converge while processing time {tt}.\n"
+                    f"Percentage unmasked frequencies:  {100 * flag.mean():0.1f}\n"
+                    f"Exception:  {exc}"
+                )
+                oweight[:, :, tt] = 0.0
+                continue
+
+            # Extract data for filtering
+            tvis = np.ascontiguousarray(vis[:, valid, tt])
+            tvar = tools.invert_no_zero(tweight)
+
+            tempv = np.zeros_like(tvis)
+            tempw = np.zeros_like(tweight)
+
+            # Apply the filter
+            self.log.debug(f"There are {len(index)} unique masks/filters.")
+            for ii, ind in enumerate(index):
+                bind = slice(None) if self.single_mask else ind
+
+                v = np.matmul(NF[ii], tvis[:, bind])
+                w = tools.invert_no_zero(np.matmul(NF[ii] ** 2, tvar[:, bind]))
+
+                if self.atten_threshold > 0.0:
+                    diag = np.diag(NF[ii])
+                    med_diag = np.median(diag[diag > 0.0])
+
+                    flag_low = diag > (self.atten_threshold * med_diag)
+
+                    w *= flag_low[:, np.newaxis].astype(weight.dtype)
+
+                tempv[:, bind] = v
+                tempw[:, bind] = w
+
+            # If requested, apply a reduction along baseline axis
+            if self.reduce_baseline:
+                ovis[:, :, tt], oweight[:, :, tt] = self.reduction(tempv, tempw, 1)
+            else:
+                ovis[:, valid, tt] = tempv
+                oweight[:, valid, tt] = tempw
+
+            self.log.debug(f"Took {time.time() - t0:0.3f} seconds in total.")
+
+        return out
 
 
 class DayenuDelayFilterMap(task.SingleTask):
@@ -333,8 +547,10 @@ class DayenuDelayFilterMap(task.SingleTask):
 
                 except np.linalg.LinAlgError as exc:
                     self.log.error(
-                        "Failed to converge while processing el "
-                        f"{el:0.3f} [{ecut:0.3f} micro-sec]: {exc}"
+                        f"Failed to converge while processing el {el:0.3f} "
+                        f"[{ecut:0.3f} micro-sec]\n"
+                        f"Percentage unmasked frequencies:  {100 * flag.mean():0.1f}\n"
+                        f"Exception:  {exc}"
                     )
                     weight[wslc] = 0.0
                     continue
