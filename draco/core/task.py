@@ -291,7 +291,10 @@ class SingleTask(MPILoggedTask, pipeline.BasicContMixin):
     save = config.Property(default=False, proptype=bool)
 
     output_root = config.Property(default="", proptype=str)
-    output_name = config.Property(default="{output_root}{tag}.h5", proptype=str)
+    output_name = config.Property(
+        default="{output_root}{tag}.h5",
+        proptype=lambda x: x if isinstance(x, list) else str(x),
+    )
     output_format = config.file_format()
     compression = config.Property(
         default=True, proptype=lambda x: x if isinstance(x, dict) else bool(x)
@@ -368,18 +371,25 @@ class SingleTask(MPILoggedTask, pipeline.BasicContMixin):
         if output is None:
             return None
 
-        # Insert the input tags into the output container
-        output.attrs["input_tags"] = input_tags
+        # Ensure output is a tuple
+        if not isinstance(output, tuple):
+            output = (output,)
 
-        output = self._process_output(output)
+        # Insert the input tags into the output containers
+        for opt in output:
+            opt.attrs["input_tags"] = input_tags
+
+        # Process each output individually
+        output = tuple(self._process_output(opt, ii) for ii, opt in enumerate(output))
 
         # Increment internal counter
         self._count = self._count + 1
 
         self.log.info(f"Leaving next for task {self.__class__.__name__}")
 
-        # Return the output for the next task
-        return output
+        # Return the output for the next task. If there is
+        # only a single output, don't wrap as a tuple
+        return output if len(output) > 1 else output[0]
 
     def finish(self):
         """Should not need to override. Implement `process_finish` instead."""
@@ -398,20 +408,26 @@ class SingleTask(MPILoggedTask, pipeline.BasicContMixin):
             self.log.info(f"Leaving finish for task {class_name}")
             return None
 
-        output = self._process_output(output)
+        # Ensure output is a tuple
+        if not isinstance(output, tuple):
+            output = (output,)
+
+        # Process each output individually
+        output = tuple(self._process_output(opt, ii) for ii, opt in enumerate(output))
 
         self.log.info(f"Leaving finish for task {class_name}")
 
-        return output
+        # If there is only a single output, don't wrap as a tuple
+        return output if len(output) > 1 else output[0]
 
-    def _process_output(self, output):
+    def _process_output(self, output, ii: int = 0):
         if not isinstance(output, memh5.MemDiskGroup):
             raise pipeline.PipelineRuntimeError(
                 f"Task must output a valid memh5 container; given {type(output)}"
             )
 
         # Set the tag according to the format
-        idict = self._interpolation_dict(output)
+        idict = self._interpolation_dict(output, ii)
 
         # Set the attributes in the output container (including from the `tag` config
         # option)
@@ -426,11 +442,11 @@ class SingleTask(MPILoggedTask, pipeline.BasicContMixin):
         output = self._nan_process_output(output)
 
         # Write the output if needed
-        self._save_output(output)
+        self._save_output(output, ii)
 
         return output
 
-    def _save_output(self, output: memh5.MemDiskGroup) -> Optional[str]:
+    def _save_output(self, output: memh5.MemDiskGroup, ii: int = 0) -> Optional[str]:
         """Save the output and return the file path if it was saved."""
         if output is None:
             return None
@@ -486,17 +502,21 @@ class SingleTask(MPILoggedTask, pipeline.BasicContMixin):
                 output.add_history(key, value)
 
             # Construct the filename
-            name_parts = self._interpolation_dict(output)
+            name_parts = self._interpolation_dict(output, ii)
             if self.output_root != "":
                 self.log.warn("Use of `output_root` is deprecated.")
                 name_parts["output_root"] = self.output_root
-            outfile = self.output_name.format(**name_parts)
+
+            if isinstance(self.output_name, list):
+                outfile = self.output_name[ii].format(**name_parts)
+            else:
+                outfile = self.output_name.format(**name_parts)
 
             # Expand any variables in the path
             outfile = os.path.expanduser(outfile)
             outfile = os.path.expandvars(outfile)
 
-            self.log.debug("Writing output %s to disk.", outfile)
+            self.log.debug(f"Writing output {outfile} to disk.")
             self.write_output(
                 outfile,
                 output,
@@ -531,7 +551,7 @@ class SingleTask(MPILoggedTask, pipeline.BasicContMixin):
 
         return output
 
-    def _interpolation_dict(self, output):
+    def _interpolation_dict(self, output, ii: int = 0):
         # Get the set of variables the can be interpolated into the various strings
         idict = dict(output.attrs)
         if "tag" in output.attrs:
@@ -546,7 +566,7 @@ class SingleTask(MPILoggedTask, pipeline.BasicContMixin):
             count=self._count,
             task=self.__class__.__name__,
             key=(
-                self._out_keys[0]
+                self._out_keys[ii]
                 if hasattr(self, "_out_keys") and self._out_keys
                 else ""
             ),
