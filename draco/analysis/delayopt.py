@@ -4,7 +4,7 @@ from typing import Protocol
 
 import numpy as np
 import scipy.linalg as la
-from scipy.optimize import minimize, OptimizeResult
+from scipy.optimize import minimize
 
 from ..util import tools
 
@@ -389,15 +389,33 @@ def delay_power_spectrum_maxpost(
     def _get_intermediate(xk):
         samples.append(np.exp(xk))
 
-    res = minimize(
-        optfunc.value,
-        x0=lsi,
-        jac=optfunc.gradient,
-        hess=optfunc.hessian,
-        method="Newton-CG",
-        options={"maxiter": maxiter, "xtol": tol},
-        callback=_get_intermediate,
-    )
-    # NOTE: the final sample in samples is already the final result
+    success = False
+    try:
+        res = minimize(
+            optfunc.value,
+            x0=lsi,
+            jac=optfunc.gradient,
+            hess=optfunc.hessian,
+            method="Newton-CG",
+            options={"maxiter": maxiter, "xtol": tol},
+            callback=_get_intermediate,
+        )
+        success = res.success
 
-    return samples, res.success
+    # TODO: LinAlgError gets thrown for certain baselines in _precompute during a Cholesky decomposition of the covariance
+    # matrix (used in likelihood computation) when the covariance matrix isn't positive definite. This presumably occurs due to
+    # a numerical instability and should be investigated further.
+    # TODO: ValueError observed to be thrown when large fraction of RA samples masked for certain baselines. Should investigate
+    # further and properly handle this case.
+    except (la.LinAlgError, ValueError):
+        pass
+
+    # If minimize didn't converge above (or exception was thrown), set delay spectrum (last sample in samples) for this baseline to all zeros.
+    if not success:
+        if len(samples) == 0:
+            samples.append(np.zeros(lsi.shape[0]))
+        else:
+            samples[-1] = np.zeros(lsi.shape[0])
+
+    # NOTE: the final sample in samples is already the final result
+    return samples, success
