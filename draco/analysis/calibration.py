@@ -11,8 +11,8 @@ from draco.util import tools
 class EigenCalibration(task.SingleTask):
     """Deteremine response of each feed to a point source.
 
-    Extract the feed response from the real-time eigendecomposition
-    of the N2 visibility matrix.  Flag frequencies that have low dynamic
+    Extract the feed response from an eigendecomposition of the
+    N2 visibility matrix.  Flag frequencies that have low dynamic
     range, orthogonalize the polarizations, fringestop, and reference
     the phases appropriately.
 
@@ -40,9 +40,6 @@ class EigenCalibration(task.SingleTask):
         Ratio of the second largest eigenvalue on source to the largest eigenvalue
         off source below which frequencies and times will be considered contaminated
         and discarded from further analysis.
-    telescope_rotation : float
-        Rotation of the telescope from true north in degrees.  A positive rotation is
-        anti-clockwise when looking down at the telescope from the sky.
     """
 
     source = config.Property(default=None)
