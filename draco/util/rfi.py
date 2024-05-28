@@ -70,9 +70,7 @@ def sumthreshold_py(
         count = (~flag).astype(np.float64)
 
         # Convolution of the data
-        dconv = convolve1d(
-            data, weights=np.ones(m, dtype=float), origin=centre, axis=1
-        )
+        dconv = convolve1d(data, weights=np.ones(m, dtype=float), origin=centre, axis=1)
 
         # Convolution of the counts
         cconv = convolve1d(
@@ -90,9 +88,7 @@ def sumthreshold_py(
         data[flag] = 0.0
         count = (~flag).astype(np.float64)
         # Convolution of the data
-        dconv = convolve1d(
-            data, weights=np.ones(m, dtype=float), origin=centre, axis=0
-        )
+        dconv = convolve1d(data, weights=np.ones(m, dtype=float), origin=centre, axis=0)
         # Convolution of the counts
         cconv = convolve1d(
             count, weights=np.ones(m, dtype=float), origin=centre, axis=0
