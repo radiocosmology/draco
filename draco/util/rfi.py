@@ -71,18 +71,18 @@ def sumthreshold_py(
 
         # Convolution of the data
         dconv = convolve1d(
-            data, weights=np.ones(m, dtype=float), origin=-centre, axis=1
-        )[:, : (nx - m + 1)]
+            data, weights=np.ones(m, dtype=float), origin=centre, axis=1
+        )
 
         # Convolution of the counts
         cconv = convolve1d(
-            count, weights=np.ones(m, dtype=float), origin=-centre, axis=1
-        )[:, : (nx - m + 1)]
+            count, weights=np.ones(m, dtype=float), origin=centre, axis=1
+        )
         if correct_for_missing:
             cconv = m**0.5 * cconv**0.5
         flag_temp = dconv > cconv * threshold
         flag_temp += dconv < -cconv * threshold
-        for ii in range(flag_temp.shape[1]):
+        for ii in range(nx - m + 1):
             flag[:, ii : (ii + m)] += flag_temp[:, ii][:, np.newaxis]
 
         ## Y-axis
@@ -91,18 +91,18 @@ def sumthreshold_py(
         count = (~flag).astype(np.float64)
         # Convolution of the data
         dconv = convolve1d(
-            data, weights=np.ones(m, dtype=float), origin=-centre, axis=0
-        )[: (ny - m + 1), :]
+            data, weights=np.ones(m, dtype=float), origin=centre, axis=0
+        )
         # Convolution of the counts
         cconv = convolve1d(
-            count, weights=np.ones(m, dtype=float), origin=-centre, axis=0
-        )[: (ny - m + 1), :]
+            count, weights=np.ones(m, dtype=float), origin=centre, axis=0
+        )
         if correct_for_missing:
             cconv = m**0.5 * cconv**0.5
         flag_temp = dconv > cconv * threshold
         flag_temp += dconv < -cconv * threshold
 
-        for ii in range(flag_temp.shape[0]):
+        for ii in range(ny - m + 1):
             flag[ii : ii + m, :] += flag_temp[ii, :][np.newaxis, :]
 
         m *= 2
