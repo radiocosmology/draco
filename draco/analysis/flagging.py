@@ -1608,12 +1608,12 @@ class RFISensitivityMask(task.SingleTask):
     niter = config.Property(proptype=int, default=5)
     rho = config.Property(proptype=float, default=1.5)
 
-    base_size = config.list_type(int, length=2, default=(1, 361))
+    base_size = config.list_type(int, length=2, default=(37, 181))
     mad_size = config.list_type(int, length=2, default=(101, 31))
     tv_fraction = config.Property(proptype=float, default=0.5)
     max_m = config.Property(proptype=int, default=64)
 
-    sir = config.Property(proptype=bool, default=True)
+    sir = config.Property(proptype=bool, default=False)
 
     # Convert MAD to RMS
     MAD_TO_RMS = 1.4826
@@ -1708,27 +1708,28 @@ class RFISensitivityMask(task.SingleTask):
 
                 madmask |= tvmask
 
-                # Generate sumthreshold mask
-                stmask = rfi.sumthreshold(
-                    dy,
-                    self.max_m,
-                    start_flag=current_flag | tvmask,
-                    threshold1=nsigma,
-                    remove_median=False,
-                    correct_for_missing=True,
-                    rho=1.0,
-                    variance=med_ady**2,
-                )
-
                 # Pick which of the MAD or SumThreshold mask to use (or blend them)
                 if self.mask_type == "mad":
                     current_flag |= madmask
 
-                elif self.mask_type == "sumthreshold":
-                    current_flag |= stmask
+                else:
+                    # Generate sumthreshold mask
+                    stmask = rfi.sumthreshold(
+                        dy,
+                        self.max_m,
+                        start_flag=current_flag | tvmask,
+                        threshold1=nsigma,
+                        remove_median=False,
+                        correct_for_missing=True,
+                        rho=1.0,
+                        variance=med_ady**2,
+                    )
 
-                else:  # combine
-                    current_flag |= np.where(madtimes, madmask, stmask)
+                    if self.mask_type == "sumthreshold":
+                        current_flag |= stmask
+
+                    else:  # combine
+                        current_flag |= np.where(madtimes, madmask, stmask)
 
             finalmask[li] = current_flag
 
