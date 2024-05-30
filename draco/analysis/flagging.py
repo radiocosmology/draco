@@ -1566,7 +1566,7 @@ class RFISensitivityMask(task.SingleTask):
         by more than this number of median absolute deviations.
     quantile_1d: float, optional
         The quantile to use along time to construct the static mask.
-        Defaults to 0.5 (the median).
+        Defaults to 0.15.
     win_f_1d : int, optional
         Number of frequency channels used to calculate a rolling median
         and median absolute deviation for the staic mask.
@@ -1582,26 +1582,25 @@ class RFISensitivityMask(task.SingleTask):
         will keep the threshold constant for all iterations.  Default: 1.5
     base_size : [int, int]
         The size of the region used to estimate the baseline, provided as
-        (number of frequency channels, number of time samples).  Default: (1, 361)
+        (number of frequency channels, number of time samples).  Default: (37, 181)
     mad_size : [int, int]
         The size of the region used to estimate the standard deviation, provided
         (number of frequency channels, number of time samples).  Default: (101, 31)
     tv_fraction : float, optional
-        Number of bad samples in a digital TV channel that cause the whole
-        channel to be flagged.
+        Fraction of bad samples in a digital TV channel that cause the whole
+        channel to be flagged.  Default: 0.5
     max_m : int, optional
         Maximum size of the SumThreshold window to use.  Default: 64
     sir : bool, optional
-        Apply scale invariant rank (SIR) operator on top of final mask?
-        We find that this is advisable while we still haven't flagged
-        out all the static bands properly. Default: True.
+        Apply scale invariant rank (SIR) operator on top of final mask.
+        Default: False
     """
 
     mask_type = config.enum(["mad", "sumthreshold", "combine"], default="combine")
     include_pol = config.list_type(str, default=None)
 
     nsigma_1d = config.Property(proptype=float, default=None)
-    quantile_1d = config.Property(proptype=float, default=0.50)
+    quantile_1d = config.Property(proptype=float, default=0.15)
     win_f_1d = config.Property(proptype=int, default=None)
 
     nsigma = config.Property(proptype=float, default=5.0)
