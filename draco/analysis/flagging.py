@@ -241,7 +241,7 @@ class MaskBaselines(task.SingleTask):
         baselines = self.telescope.baselines
 
         # The masking array. True will *retain* a sample
-        mask = np.zeros_like(ss.weight[:], dtype=bool)
+        mask = np.zeros_like(ss.weight[:].local_array, dtype=bool)
 
         if self.mask_long_ns is not None:
             long_ns_mask = np.abs(baselines[:, 1]) > self.mask_long_ns
