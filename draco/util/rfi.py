@@ -11,6 +11,8 @@ def sumthreshold_py(
     threshold1=None,
     remove_median=True,
     correct_for_missing=True,
+    variance=None,
+    rho=None,
 ):
     """SumThreshold outlier detection algorithm.
 
@@ -31,6 +33,16 @@ def sumthreshold_py(
         Subtract the median of the full 2D dataset. Default is True.
     correct_for_missing : bool, optional
         Correct for missing counts
+    rho : float, optional
+        Controls the dependence of the threshold on the window size m,
+        specifically threshold = threshold1 / rho ** log2(m).
+        If not provided, will use a value of 1.5 (0.9428)
+        when correct_missing is False (True).  This is to maintain
+        backward compatibility.
+    variance : np.ndarray[:, :], optional
+        Estimate of the uncertainty on each data point.
+        If provided, then correct_missing=True should be set
+        and threshold1 should be provided in units of "sigma".
 
     Returns
     -------
@@ -40,6 +52,16 @@ def sumthreshold_py(
     data = np.copy(data)
     (ny, nx) = data.shape
 
+    # If the variance was provided, then we will need to take the
+    # square root of the sum of the variances prior to thresholding.
+    # Make sure correct_missing is set to True:
+    if variance is not None:
+        correct_missing = True
+
+    # If rho was not provided, then use the backwards-compatible values
+    if rho is None:
+        rho = 0.9428 if correct_missing else 1.5
+
     if start_flag is None:
         start_flag = np.isnan(data)
     flag = np.copy(start_flag)
@@ -48,6 +70,11 @@ def sumthreshold_py(
         data -= np.median(data[~flag])
 
     if threshold1 is None:
+        if variance is not None:
+            raise RuntimeError(
+                "If variance is provided, then must also "
+                "provide starting threshold in units of sigma."
+            )
         threshold1 = np.percentile(data[~flag], 95.0)
 
     m = 1
@@ -55,7 +82,7 @@ def sumthreshold_py(
         if m == 1:
             threshold = threshold1
         else:
-            threshold = threshold1 / 1.5 ** (np.log2(m))
+            threshold = threshold1 / rho ** (np.log2(m))
 
         # The centre of the window for even windows is the bin right to the left of
         # centre. I want the origin at the leftmost bin
@@ -67,7 +94,8 @@ def sumthreshold_py(
         ## X-axis
 
         data[flag] = 0.0
-        count = (~flag).astype(np.float64)
+
+        count = (~flag).astype(np.float64) if variance is None else ~flag * variance
 
         # Convolution of the data
         dconv = convolve1d(data, weights=np.ones(m, dtype=float), origin=centre, axis=1)
@@ -77,16 +105,18 @@ def sumthreshold_py(
             count, weights=np.ones(m, dtype=float), origin=centre, axis=1
         )
         if correct_for_missing:
-            cconv = m**0.5 * cconv**0.5
+            cconv = cconv**0.5
         flag_temp = dconv > cconv * threshold
         flag_temp += dconv < -cconv * threshold
         for ii in range(nx - m + 1):
-            flag[:, ii : (ii + m)] += flag_temp[:, ii][:, np.newaxis]
+            flag[:, ii : (ii + m)] += flag_temp[:, ii, np.newaxis]
 
         ## Y-axis
 
         data[flag] = 0.0
-        count = (~flag).astype(np.float64)
+
+        count = (~flag).astype(np.float64) if variance is None else ~flag * variance
+
         # Convolution of the data
         dconv = convolve1d(data, weights=np.ones(m, dtype=float), origin=centre, axis=0)
         # Convolution of the counts
@@ -94,12 +124,12 @@ def sumthreshold_py(
             count, weights=np.ones(m, dtype=float), origin=centre, axis=0
         )
         if correct_for_missing:
-            cconv = m**0.5 * cconv**0.5
+            cconv = cconv**0.5
         flag_temp = dconv > cconv * threshold
         flag_temp += dconv < -cconv * threshold
 
         for ii in range(ny - m + 1):
-            flag[ii : ii + m, :] += flag_temp[ii, :][np.newaxis, :]
+            flag[ii : ii + m, :] += flag_temp[ii, np.newaxis, :]
 
         m *= 2
 
