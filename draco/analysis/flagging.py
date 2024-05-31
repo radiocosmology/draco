@@ -1564,12 +1564,13 @@ class RFISensitivityMask(task.SingleTask):
         Construct a static mask by identifying any frequency channel
         whose quantile over time deviates from the median over frequency
         by more than this number of median absolute deviations.
+        Default: 5.0
     quantile_1d: float, optional
         The quantile to use along time to construct the static mask.
-        Defaults to 0.15.
+        Default: 0.15
     win_f_1d : int, optional
         Number of frequency channels used to calculate a rolling median
-        and median absolute deviation for the staic mask.
+        and median absolute deviation for the staic mask.  Default: 191
     nsigma : float, optional
         The final threshold for the MAD, TV, and SumThreshold algorithms
         given as number of standard deviations.  Default: 5.0
@@ -1594,14 +1595,19 @@ class RFISensitivityMask(task.SingleTask):
     sir : bool, optional
         Apply scale invariant rank (SIR) operator on top of final mask.
         Default: False
+    eta : float optional
+        Aggressiveness of the SIR operator.  With eta=0, no additional samples
+        are flagged and with eta=1, all samples will be flagged.  Default: 0.2
+    only_time : bool, optinal
+        Only apply the SIR operator along the time axis.  Default: False
     """
 
     mask_type = config.enum(["mad", "sumthreshold", "combine"], default="combine")
     include_pol = config.list_type(str, default=None)
 
-    nsigma_1d = config.Property(proptype=float, default=None)
+    nsigma_1d = config.Property(proptype=float, default=5.0)
     quantile_1d = config.Property(proptype=float, default=0.15)
-    win_f_1d = config.Property(proptype=int, default=None)
+    win_f_1d = config.Property(proptype=int, default=191)
 
     nsigma = config.Property(proptype=float, default=5.0)
     niter = config.Property(proptype=int, default=5)
@@ -1613,6 +1619,8 @@ class RFISensitivityMask(task.SingleTask):
     max_m = config.Property(proptype=int, default=64)
 
     sir = config.Property(proptype=bool, default=False)
+    eta = config.Property(proptype=float, default=0.2)
+    only_time = config.Property(proptype=bool, default=False)
 
     # Convert MAD to RMS
     MAD_TO_RMS = 1.4826
@@ -1680,7 +1688,7 @@ class RFISensitivityMask(task.SingleTask):
             if self.nsigma_1d is not None:
                 flag_1d, y_static = self._mask_1d(y, current_flag)
                 current_flag |= flag_1d[:, None]
-                y = y - y_static
+                y = y - y_static[:, None]
 
             # Slowly reduce the threshold.  At each iteration generate a new estimate
             # of the background sky and the variance using the current mask.
@@ -1728,7 +1736,17 @@ class RFISensitivityMask(task.SingleTask):
                         current_flag |= stmask
 
                     else:  # combine
-                        current_flag |= np.where(madtimes, madmask, stmask)
+                        tempmask = np.where(madtimes, madmask, stmask)
+                        # If SIR is not going to be applied to the final mask,
+                        # then apply it here to extend the sumthreshold mask
+                        # in time across the transits.
+                        if not self.sir:
+                            expanded = rfi.sir(
+                                tempmask[:, None], eta=0.2, only_time=True
+                            )[:, 0]
+                            tempmask = np.where(madtimes, expanded, tempmask)
+
+                        current_flag |= tempmask
 
             finalmask[li] = current_flag
 
@@ -1739,9 +1757,24 @@ class RFISensitivityMask(task.SingleTask):
         # Collect all parts of the mask onto rank 1 and then broadcast to all ranks
         finalmask = mpiarray.MPIArray.wrap(finalmask, 0).allgather()
 
+        # Log the fraction of data masked
+        percent_masked = 100 * np.sum(finalmask) / float(finalmask.size)
+        self.log.info(
+            f"After RFISensitivityMask, {percent_masked:0.2f} percent"
+            "of data will be masked."
+        )
+
         # Apply scale invariant rank (SIR) operator, if asked for.
         if self.sir:
             finalmask = self._apply_sir(finalmask, static_flag)
+
+            # Again log the fraction of data masked, so we can
+            # tell how much data is being excised by SIR
+            percent_masked = 100 * np.sum(finalmask) / float(finalmask.size)
+            self.log.info(
+                f"After SIR operator, {percent_masked:0.2f} percent"
+                "of data will be masked."
+            )
 
         # Create container to hold mask
         rfimask = containers.RFIMask(axes_from=sensitivity, attrs_from=sensitivity)
@@ -1818,7 +1851,9 @@ class RFISensitivityMask(task.SingleTask):
         # Remove baseflag from mask and run SIR
         nobaseflag = np.copy(mask)
         nobaseflag[baseflag] = False
-        nobaseflagsir = rfi.sir(nobaseflag[:, np.newaxis, :], eta=eta)[:, 0, :]
+        nobaseflagsir = rfi.sir(
+            nobaseflag[:, np.newaxis, :], eta=self.eta, only_time=self.only_time
+        )[:, 0, :]
 
         # Make sure the original mask (including baseflag) is still masked
         return nobaseflagsir | mask
