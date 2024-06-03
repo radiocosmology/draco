@@ -36,13 +36,13 @@ def sumthreshold_py(
         Correct for missing counts
     variance : np.ndarray[:, :], optional
         Estimate of the uncertainty on each data point.
-        If provided, then correct_missing=True should be set
+        If provided, then correct_for_missing=True should be set
         and threshold1 should be provided in units of "sigma".
     rho : float, optional
         Controls the dependence of the threshold on the window size m,
         specifically threshold = threshold1 / rho ** log2(m).
         If not provided, will use a value of 1.5 (0.9428)
-        when correct_missing is False (True).  This is to maintain
+        when correct_for_missing is False (True).  This is to maintain
         backward compatibility.
     axes : tuple | int, optional
         Axes of `data` along which to calculate. Flagging is done in
@@ -58,13 +58,13 @@ def sumthreshold_py(
 
     # If the variance was provided, then we will need to take the
     # square root of the sum of the variances prior to thresholding.
-    # Make sure correct_missing is set to True:
+    # Make sure correct_for_missing is set to True:
     if variance is not None:
-        correct_missing = True
+        correct_for_missing = True
 
     # If rho was not provided, then use the backwards-compatible values
     if rho is None:
-        rho = 0.9428 if correct_missing else 1.5
+        rho = 0.9428 if correct_for_missing else 1.5
 
     if axes is None:
         # Iterate over axes in reverse order
