@@ -1752,7 +1752,7 @@ class RFISensitivityMask(task.SingleTask):
         # Log the fraction of data masked
         percent_masked = 100 * np.sum(finalmask) / float(finalmask.size)
         self.log.info(
-            f"After RFISensitivityMask, {percent_masked:0.2f} percent"
+            f"After RFISensitivityMask, {percent_masked:0.2f} percent "
             "of data will be masked."
         )
 
@@ -1764,7 +1764,7 @@ class RFISensitivityMask(task.SingleTask):
             # tell how much data is being excised by SIR
             percent_masked = 100 * np.sum(finalmask) / float(finalmask.size)
             self.log.info(
-                f"After SIR operator, {percent_masked:0.2f} percent"
+                f"After SIR operator, {percent_masked:0.2f} percent "
                 "of data will be masked."
             )
 
