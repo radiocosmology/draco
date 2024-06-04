@@ -2281,11 +2281,14 @@ class MaskFreq(task.SingleTask):
 
         # Solve to find a value of f that minimises the amount of data masked
         res = minimize_scalar(
-            fmask, method="golden", options={"maxiter": 20, "xtol": 1e-2}
+            fun=fmask,
+            bounds=(0, 1),
+            method="bounded",
+            options={"maxiter": 20, "xatol": 1e-4},
         )
 
         if not res.success:
-            self.log.info("Optimisation did not converge, but this isn't unexpected.")
+            self.log.debug("Optimisation did not converge, but this isn't unexpected.")
 
         return genmask(res.x)
 
