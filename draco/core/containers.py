@@ -2348,6 +2348,13 @@ class DelaySpectrum(DelayContainer):
             "distributed": True,
             "distributed_axis": "baseline",
         },
+        "spectrum_mask": {
+            "axes": ["baseline"],
+            "dtype": bool,
+            "initialise": False,
+            "distributed": True,
+            "distributed_axis": "baseline",
+        },
     }
 
     def __init__(self, *args, weight_boost=1.0, sample=1, **kwargs):
