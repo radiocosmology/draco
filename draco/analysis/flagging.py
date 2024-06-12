@@ -84,13 +84,11 @@ class DayMask(task.SingleTask):
 
         if self.remove_average:
             # Estimate the mean level from unmasked data
-            import scipy.stats
-
             nanvis = (
                 sstream.vis[:]
                 * np.where(mask_bool, 1.0, np.nan)[np.newaxis, np.newaxis, :]
             )
-            average = scipy.stats.nanmedian(nanvis, axis=-1)[:, :, np.newaxis]
+            average = np.nanmedian(nanvis, axis=-1)[:, :, np.newaxis]
             sstream.vis[:] -= average
 
         # Apply the mask to the data
