@@ -64,6 +64,19 @@ class CreateBeamStream(task.SingleTask):
         out : containers.HybridVisStream
             Effective beam transfer function.
         """
+        # Ensure the polarisations and EW baseline distances match for data and beam
+        if not np.array_equal(beam.pol, data.index_map["pol"]):
+            raise RuntimeError("Polarisation axis differs for data and beam.")
+
+        ew = data.index_map["ew"][:]
+        if (beam.input.size == 1) and (beam.input[0] == "common-mode"):
+            ew_match = np.zeros(ew.size, dtype=int)
+        else:
+            ew_match = np.array([np.argmin(np.abs(b - beam.input)) for b in ew])
+            if np.any(np.abs(ew - beam.input[ew_match]) > 0.1):
+                raise RuntimeError("EW (input) axis differs for data (beam).")
+
+        # Redistribute over frequency
         beam.redistribute("freq")
 
         # Determine local frequencies
@@ -81,16 +94,17 @@ class CreateBeamStream(task.SingleTask):
             el_beam = np.sin(dec - self.latitude)
 
             ha = beam.phi
-            ra = (ha + 360.0) % 360.0
+            ra_beam = (ha + 360.0) % 360.0
             nra = int(round(360.0 / np.abs(ha[1] - ha[0])))
             delta_ra = 360.0 / nra
+            ra = np.arange(nra) * delta_ra
 
-            map_ra = np.rint(ra / delta_ra).astype(int)
+            map_ra = np.rint(ra_beam / delta_ra).astype(int)
 
             # Test that the positions of the original beam samples are close enough to exact
             # grid locations in the output grid. This 1e-4 number tolerance is just a guess
             # as to what is reasonable.
-            if not np.allclose(ra / delta_ra, map_ra, atol=1e-4):
+            if not np.allclose(ra_beam / delta_ra, map_ra, atol=1e-4):
                 raise ValueError(
                     "Input beam cannot be placed on an grid between 0 and 360 degrees."
                 )
@@ -112,11 +126,8 @@ class CreateBeamStream(task.SingleTask):
             raise RuntimeError("The el axis for the beam and data do not match.")
 
         # Determine baseline distances
-        x = data.index_map["ew"][:]
-
         lmbda = scipy.constants.c * 1e-6 / freq
-        u = x[np.newaxis, :] / lmbda[:, np.newaxis]
-        u = u[:, :, np.newaxis]
+        u = ew[np.newaxis, :] / lmbda[:, np.newaxis]
 
         # Rotate the baseline distances by the telescope's rotation angle.
         # This assumes that the baseline distances used to beamform in the
@@ -138,7 +149,9 @@ class CreateBeamStream(task.SingleTask):
 
         # Transpose the first two dimensions from (freq, pol) to (pol, freq)
         bweight = bweight.swapaxes(0, 1)
-        bvis = beam.beam[:].local_array.swapaxes(0, 1)
+        bvis = beam.beam[:].local_array.real.swapaxes(0, 1)
+
+        self.log.info("Using the real component.")
 
         # Create output container
         out = containers.HybridVisStream(
@@ -164,8 +177,8 @@ class CreateBeamStream(task.SingleTask):
                 ha[np.newaxis, np.newaxis, np.newaxis, :],
                 self.latitude,
                 dec[np.newaxis, np.newaxis, :, np.newaxis],
-                u[:, :, np.newaxis, :],
-                v[:, :, np.newaxis, :],
+                u[:, :, np.newaxis, np.newaxis],
+                v[:, :, np.newaxis, np.newaxis],
             ).conj()
 
             # Save the beam times the phase to the output stream
@@ -179,47 +192,61 @@ class CreateBeamStream(task.SingleTask):
             span_bx = np.percentile(bx, [0, 100])
 
             # The x coordinate must be monotonically increasing
-            # in order to create a CubicSpline.
+            # in order to create a spline.
             if bx[0] > bx[1]:
                 bx = bx[::-1]
                 bvis = bvis[..., ::-1]
 
-            # Set the weight for the stream equal to the average non-zero weight over x
+            # Set the weight for the stream equal to the average non-zero weight over x.
             # We will be interpolating over this dimension.
-            bweight = np.sum(bweight, axis=-1, keepdims=True) * tools.invert_no_zero(
+            oweight[:] = np.sum(bweight, axis=-1, keepdims=True) * tools.invert_no_zero(
                 np.sum(bweight > 0, axis=-1, keepdims=True, dtype=np.float32)
             )
 
-            # Loop over declinations
-            for dd, dc in enumerate(dec):
-                # Create a CubicSpline interpolator for the beam at this declination
-                # as a function of the telescope x coordinate
-                binterpolator = scipy.interpolate.CubicSpline(
-                    bx, bvis[..., dd, :], axis=-1, bc_type="clamped", extrapolate=True
-                )
+            # Calculate the x and y coordinate of the stream
+            arr_ha, arr_dec = np.meshgrid(ha, dec, copy=True, indexing="xy")
+            dx, dy, dz = interferometry.sph_to_ground(arr_ha, self.latitude, arr_dec)
 
-                # Calculate the x coordinate of the stream
-                dx = -1 * np.cos(dc) * np.sin(ha)
+            # Only bother to generate the stream if we are above the horizon and
+            # the x coordinate is within the range spanned by the beam
+            valid = np.nonzero(
+                (dz > 0.0)
+                & (dx >= span_bx[0])
+                & (dx <= span_bx[1])
+                & (np.abs(arr_ha) < (0.5 * np.pi))
+            )
 
-                # Only bother to generate the stream if the x coordinate
-                # is within the range spanned by the beam and the hour
-                # angle is less than 90 degrees (to avoid evaluating
-                # the antipodal transit).
-                valid = np.flatnonzero(
-                    (dx >= span_bx[0])
-                    & (dx <= span_bx[1])
-                    & (np.abs(ha) < (0.5 * np.pi))
-                )
+            arr_ha = arr_ha[valid]
+            arr_dec = arr_dec[valid]
 
-                # Calculate the phase
-                phi = interferometry.fringestop_phase(
-                    ha[np.newaxis, np.newaxis, valid], self.latitude, dc, u, v
-                ).conj()
+            dx = dx[valid]
+            dy = dy[valid]
 
-                # Interpolate the beam to the x coordinates at this declination
-                # and then multiply by the phase
-                ovis[..., dd, valid] = binterpolator(dx[valid]) * phi[np.newaxis, ...]
-                oweight[..., valid] = bweight
+            # Loop over frequencies and ew baseline distances.
+            # This is necessary because we can only create one
+            # 2D interpolator at a time.
+            for ff in range(nfreq):
+
+                for de, be in enumerate(ew_match):
+
+                    # Calculate the phase
+                    phi = interferometry.fringestop_phase(
+                        arr_ha, self.latitude, arr_dec, u[ff, de], v[ff, de]
+                    ).conj()
+
+                    # Loop over polarisations
+                    for pp in range(ovis.shape[0]):
+                        # Create a RectBivariateSpline interpolator for the beam at this frequency
+                        # as a function of the telescope (x,y) coordinates
+                        binterpolator = scipy.interpolate.RectBivariateSpline(
+                            el_beam, bx, bvis[pp, ff, be, :, :], kx=3, ky=3, s=0
+                        )
+
+                        # Interpolate the beam to the valid x,y coordinates in the data container
+                        # and multiply by the phase
+                        binterp = binterpolator(dy, dx, grid=False)
+
+                        ovis[pp, ff, de][valid] = binterp * phi
 
         return out
 
