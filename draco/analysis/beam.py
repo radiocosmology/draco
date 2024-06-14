@@ -17,7 +17,6 @@ Tasks
 import numpy as np
 import scipy.constants
 import scipy.interpolate
-
 from caput import interferometry
 
 from ..core import containers, io, task
