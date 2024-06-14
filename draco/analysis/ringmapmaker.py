@@ -20,17 +20,15 @@ Tasks
     WienerRingMapMakerExternal
     RADependentWeights
 """
+
 import numpy as np
-from numpy.lib.recfunctions import structured_to_unstructured
 import scipy.constants
-from mpi4py import MPI
-
 from caput import config
+from mpi4py import MPI
+from numpy.lib.recfunctions import structured_to_unstructured
 
-from ..core import task
-from ..core import io
+from ..core import containers, io, task
 from ..util import tools
-from ..core import containers
 from . import transform
 
 
@@ -39,7 +37,16 @@ class MakeVisGrid(task.SingleTask):
 
     This will fill out the visibilities in the half plane `x >= 0` where x is the EW
     baseline separation.
+
+    Attributes
+    ----------
+    centered : bool
+        If set, place the zero NS separation at the center of the y-axis with
+        the baselines given in ascending order. Otherwise the zero separation
+        is at position zero, and the baselines are in FFT order.
     """
+
+    centered = config.Property(proptype=bool, default=False)
 
     def setup(self, tel):
         """Set the Telescope instance to use.
@@ -91,9 +98,16 @@ class MakeVisGrid(task.SingleTask):
 
         # Define several variables describing the baseline configuration.
         nx = np.abs(xind).max() + 1
-        ny = 2 * np.abs(yind).max() + 1
+        max_yind = np.abs(yind).max()
+        ny = 2 * max_yind + 1
         vis_pos_x = np.arange(nx) * min_xsep
-        vis_pos_y = np.fft.fftfreq(ny, d=(1.0 / (ny * min_ysep)))
+
+        if self.centered:
+            vis_pos_y = np.arange(-max_yind, max_yind + 1) * min_ysep
+            ns_offset = max_yind
+        else:
+            vis_pos_y = np.fft.fftfreq(ny, d=(1.0 / (ny * min_ysep)))
+            ns_offset = 0
 
         # Extract the right ascension to initialise the new container with (or
         # calculate from timestamp)
@@ -138,15 +152,15 @@ class MakeVisGrid(task.SingleTask):
         # Unpack visibilities into new array
         for vis_ind, (p_ind, x_ind, y_ind) in enumerate(zip(pind, xind, yind)):
             # Different behavior for intracylinder and intercylinder baselines.
-            gsv[p_ind, :, x_ind, y_ind, :] = ssv[:, vis_ind]
-            gsw[p_ind, :, x_ind, y_ind, :] = ssw[:, vis_ind]
-            gsr[p_ind, x_ind, y_ind, :] = redundancy[vis_ind]
+            gsv[p_ind, :, x_ind, ns_offset + y_ind, :] = ssv[:, vis_ind]
+            gsw[p_ind, :, x_ind, ns_offset + y_ind, :] = ssw[:, vis_ind]
+            gsr[p_ind, x_ind, ns_offset - y_ind, :] = redundancy[vis_ind]
 
             if x_ind == 0:
                 pc_ind = pconjmap[p_ind]
-                gsv[pc_ind, :, x_ind, -y_ind, :] = ssv[:, vis_ind].conj()
-                gsw[pc_ind, :, x_ind, -y_ind, :] = ssw[:, vis_ind]
-                gsr[pc_ind, x_ind, -y_ind, :] = redundancy[vis_ind]
+                gsv[pc_ind, :, x_ind, ns_offset - y_ind, :] = ssv[:, vis_ind].conj()
+                gsw[pc_ind, :, x_ind, ns_offset - y_ind, :] = ssw[:, vis_ind]
+                gsr[pc_ind, x_ind, ns_offset - y_ind, :] = redundancy[vis_ind]
 
         return grid
 
@@ -946,11 +960,9 @@ class TikhonovRingMapMaker(DeconvolveHybridMBase):
         if self.exclude_intracyl:
             weight_ew[..., 0, :] = 0.0
 
-        weight_ew = weight_ew * tools.invert_no_zero(
+        return weight_ew * tools.invert_no_zero(
             np.sum(weight_ew, axis=-2, keepdims=True)
         )
-
-        return weight_ew
 
     def _get_regularisation(self, *args):
         return self.inv_SN
@@ -1125,7 +1137,7 @@ def find_basis(baselines):
         Unit vectors pointing in the mostly X and mostly Y directions of the grid.
     """
     # Find the shortest baseline, this should give one of the axes
-    bl = np.abs(baselines)
+    bl = np.sum(baselines**2, axis=1)
     bl[bl == 0] = 1e30
     ind = np.argmin(bl)
 

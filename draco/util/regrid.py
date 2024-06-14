@@ -4,8 +4,11 @@ This is described in some detail in `doclib:173
 <http://bao.chimenet.ca/doc/cgi-bin/general/documents/display?Id=173>`_.
 """
 
+from typing import List, Union
+
 import numpy as np
 import scipy.linalg as la
+import scipy.sparse as ss
 
 from ..util import _fast_tools
 
@@ -131,9 +134,7 @@ def lanczos_forward_matrix(x, y, a=5, periodic=False):
         n = len(x)
         sep = np.where(np.abs(sep) > n // 2, n - np.abs(sep), sep)
 
-    lz_forward = lanczos_kernel(sep, a)
-
-    return lz_forward
+    return lanczos_kernel(sep, a)
 
 
 def lanczos_inverse_matrix(x, y, a=5, cond=1e-1):
@@ -156,6 +157,188 @@ def lanczos_inverse_matrix(x, y, a=5, cond=1e-1):
         Lanczos regridding matrix. Apply to data with `np.dot(matrix, data)`.
     """
     lz_forward = lanczos_forward_matrix(x, y, a)
-    lz_inverse = la.pinv(lz_forward, rcond=cond)
+    return la.pinv(lz_forward, rcond=cond)
 
-    return lz_inverse
+
+def rebin_matrix(tra: np.ndarray, ra: np.ndarray, width_t: float = 0) -> np.ndarray:
+    """Construct a matrix to rebin the samples.
+
+    Parameters
+    ----------
+    tra
+        The samples we have in the time stream.
+    ra
+        The target samples we want in the sidereal stream.
+    width_t
+        The width of a time sample. Set to zero to do a nearest bin assignment.
+
+    Returns
+    -------
+    R
+        A matrix to perform the rebinning.
+    """
+    R = np.zeros((ra.shape[0], tra.shape[0]))
+
+    inds = np.searchsorted(ra, tra)
+
+    # Estimate the typical width of an RA bin
+    width_ra = np.median(np.abs(np.diff(ra)))
+
+    lowest_ra = ra[0] - width_ra / 2
+    highest_ra = ra[-1] + width_ra / 2
+
+    # NOTE: this is a bit of a hack to avoid zero division by zeros, but should have
+    # the required effect of giving 1 if the time sample is inside a bin, and zero
+    # otherwise.
+    if width_t == 0:
+        width_t = 1e-10
+
+    # NOTE: this can probably be done more efficiently, but we typically only need
+    # to do this once per day
+    for ii, (jj, t) in enumerate(zip(inds, tra)):
+
+        lower_edge = t - width_t / 2.0
+        upper_edge = t + width_t / 2.0
+
+        # If we are in here we have weight to assign to the sample below
+        if upper_edge > lowest_ra and jj < len(ra):
+            ra_edge = ra[jj] - width_ra / 2
+            wh = np.clip((upper_edge - ra_edge) / width_t, 0.0, 1.0)
+            R[jj, ii] = wh
+
+        if lower_edge < highest_ra and jj > 0:
+            ra_edge = ra[jj - 1] + width_ra / 2
+            wl = np.clip((ra_edge - lower_edge) / width_t, 0.0, 1.0)
+            R[jj - 1, ii] = wl
+
+    return R
+
+
+def grad_1d(
+    x: np.ndarray, si: np.ndarray, mask: np.ndarray, period: Union[float, None] = None
+) -> np.ndarray:
+    """Gradient with boundary samples wrapped.
+
+    Parameters
+    ----------
+    x
+        Data to calculate the gradient for.
+    si
+        Positions of the samples. Must be monotonically increasing.
+    mask
+        Boolean mask, True where a sample is flagged.
+    period
+        Period of `samples`. Default is None, which produces a
+        non-periodic gradient.
+
+    Returns
+    -------
+    gradient
+        Gradient of `x`. Gradient is set to zero where any sample in
+        the calculation was flagged.
+    mask
+        Boolean mask corresponding to samples for which a proper
+        gradient could not be calculated. True where a sample
+        is flagged.
+    """
+    if period is not None:
+        # Wrap each array, accounting for the periodicity
+        # in sample positions
+        x = np.concatenate(([x[-1]], x, [x[0]]))
+        mask = np.concatenate(([mask[-1]], mask, [mask[0]]))
+        # Account for the possibility of multiple periods
+        shift = np.ceil(si[-1] / period) * period
+        si = np.concatenate(([si[-1] - shift], si, [si[0] + shift]))
+        # Return with wrapped samples removed
+        sel = slice(1, -1)
+    else:
+        # Calculate the gradient using `np.gradient` first order
+        # one-sided difference at the boundaries
+        sel = slice(None)
+
+    # Extend the flagged values such that any gradient which
+    # includes a flagged sample is set to 0. This effectively
+    # involves masking any sample where an adjacent sample is masked
+    mask |= np.concatenate(([False], mask[:-1])) | np.concatenate((mask[1:], [False]))
+
+    return (~mask * np.gradient(x, si))[sel], mask[sel]
+
+
+def taylor_coeff(
+    x: np.ndarray,
+    N: int,
+    M: int,
+    Ni: np.ndarray,
+    Si: float,
+    period: Union[float, None] = None,
+    xc: Union[np.ndarray, None] = None,
+) -> List[ss.csr_array]:
+    """Return a set of sparse matrices that estimates expansion coefficients.
+
+    Parameters
+    ----------
+    x
+        Positions of each element.
+    N
+        Number of positions each side to estimate from.
+    M
+        The number of terms in the expansion.
+    Ni
+        The weight for each position. The inverse noise variance if interpreted as a
+        Wiener filter.
+    Si
+        A regulariser. The inverse signal variance if interpreted as a Wiener filter.
+    period
+        If set, assume the axis is periodic with this period.
+    xc
+        An optional parameter giving the location to return the coefficients at. If not
+        set, just use the locations of each individual sample.
+
+
+    Returns
+    -------
+    matrices
+        A set of sparse matrices that will estimate the coefficents at each location.
+        Each matrix is for a different coefficient.
+    """
+    nx = x.shape[0]
+
+    ind = np.arange(nx)[:, np.newaxis] + np.arange(-N, N + 1)[np.newaxis, :]
+
+    xc = x if xc is None else xc
+
+    # If periodic then just wrap back around
+    if period is not None:
+        ind = ind % nx
+        xf = x[ind] - xc[:, np.newaxis]
+        x = ((x + period / 2) % period) - period / 2
+        Na = Ni[ind]
+
+    # If not then set the weights for out of bounds entries to zero
+    else:
+        mask = (ind < 0) | (ind >= nx)
+        ind = np.where(mask, 0, ind)
+        xf = x[ind] - x[:, np.newaxis]
+        Na = Ni[ind]
+        Na[mask] = 0.0
+
+    # Create the required matrices at each location
+    X = np.stack([xf**m for m in range(M)], axis=2)
+    XhNi = (X * Na[:, :, np.newaxis]).transpose(0, 2, 1)
+    XhNiX = XhNi @ X
+
+    # Calculate the covariance part of the filter
+    Ci = np.identity(M) * Si + XhNiX
+    C = np.zeros_like(Ci)
+    for i in range(nx):
+        C[i] = la.inv(Ci[i])
+
+    W = C @ XhNi
+
+    # Create the indptr array designating the start and end of the indices for each row
+    # in the csr_array
+    indptr = (2 * N + 1) * np.arange(nx + 1, dtype=int)
+    return [
+        ss.csr_array((W[:, i].ravel(), ind.ravel(), indptr), shape=(nx, nx))
+        for i in range(M)
+    ]

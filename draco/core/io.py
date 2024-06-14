@@ -22,22 +22,20 @@ Several tasks accept groups of files as arguments. These are specified in the YA
     single_group:
         files: ['file1.h5', 'file2.h5']
 """
+
 import os.path
 import shutil
 import subprocess
-from typing import Union, Dict, List, Optional
+from typing import ClassVar, Dict, List, Optional, Union
 
 import numpy as np
+from caput import config, fileformats, memh5, pipeline, truncate
+from cora.util import units
+from drift.core import beamtransfer, manager, telescope
 from yaml import dump as yamldump
 
-from caput import pipeline, config, fileformats, memh5, truncate
-
-from cora.util import units
-
-from drift.core import telescope, manager, beamtransfer
-
-from . import task
 from ..util.exception import ConfigError
+from . import task
 
 
 def _list_of_filelists(files: Union[List[str], List[List[str]]]) -> List[List[str]]:
@@ -66,7 +64,7 @@ def _list_of_filelists(files: Union[List[str], List[List[str]]]) -> List[List[st
     for filelist in files:
         if isinstance(filelist, str):
             if "*" not in filelist and not os.path.isfile(filelist):
-                raise ConfigError("File not found: %s" % filelist)
+                raise ConfigError(f"File not found: {filelist!s}")
             filelist = glob.glob(filelist)
         elif isinstance(filelist, list):
             for i in range(len(filelist)):
@@ -105,7 +103,7 @@ def _list_or_glob(files: Union[str, List[str]]) -> List[str]:
         return parsed_files
 
     # If it's a glob we need to expand the glob and then call again
-    if isinstance(files, str) and "*" in files:
+    if isinstance(files, str) and any(c in files for c in "*?["):
         return _list_or_glob(sorted(glob.glob(files)))
 
     # We presume a string is an actual path...
@@ -116,14 +114,14 @@ def _list_or_glob(files: Union[str, List[str]]) -> List[str]:
                 raise ConfigError(
                     f"Expected a zarr directory store, but directory not found: {files}"
                 )
-            return [files]
         else:
             if not os.path.isfile(files):
-                raise ConfigError("File not found: %s" % files)
-            return [files]
+                raise ConfigError(f"File not found: {files!s}")
+
+        return [files]
 
     raise ConfigError(
-        "Argument must be list, glob pattern, or file path, got %s" % repr(files)
+        f"Argument must be list, glob pattern, or file path, got {files!r}"
     )
 
 
@@ -160,9 +158,7 @@ def _list_of_filegroups(groups: Union[List[Dict], Dict]) -> List[Dict]:
         except KeyError:
             raise ConfigError("File group is missing key 'files'.")
         except TypeError:
-            raise ConfigError(
-                "Expected type dict in file groups (got {}).".format(type(group))
-            )
+            raise ConfigError(f"Expected type dict in file groups (got {type(group)}).")
 
         if "tag" not in group:
             group["tag"] = "group_%i" % gi
@@ -171,11 +167,11 @@ def _list_of_filegroups(groups: Union[List[Dict], Dict]) -> List[Dict]:
 
         for fname in files:
             if "*" not in fname and not os.path.isfile(fname):
-                raise ConfigError("File not found: %s" % fname)
+                raise ConfigError(f"File not found: {fname!s}")
             flist += glob.glob(fname)
 
         if not len(flist):
-            raise ConfigError("No files in group exist (%s)." % files)
+            raise ConfigError(f"No files in group exist ({files!s}).")
 
         group["files"] = flist
 
@@ -278,6 +274,7 @@ class LoadFITSCatalog(task.SingleTask):
         catalog : :class:`containers.SpectroscopicCatalog`
         """
         from astropy.io import fits
+
         from . import containers
 
         # Exit this task if we have eaten all the file groups
@@ -346,22 +343,13 @@ class LoadFITSCatalog(task.SingleTask):
         return catalog
 
 
-class BaseLoadFiles(task.SingleTask):
-    """Base class for loading containers from a file on disk.
-
-    Provides the capability to make selections along axes.
+class SelectionsMixin:
+    """Mixin for parsing axis selections, typically from a yaml config.
 
     Attributes
     ----------
-    distributed : bool, optional
-        Whether the file should be loaded distributed across ranks.
-    convert_strings : bool, optional
-        Convert strings to unicode when loading.
     selections : dict, optional
-        A dictionary of axis selections. See the section below for details.
-    redistribute : str, optional
-        An optional axis name to redistribute the container over after it has
-        been read.
+        A dictionary of axis selections. See below for details.
 
     Selections
     ----------
@@ -387,52 +375,11 @@ class BaseLoadFiles(task.SingleTask):
             stack_range: [1, 14]  # Will override the selection above
     """
 
-    distributed = config.Property(proptype=bool, default=True)
-    convert_strings = config.Property(proptype=bool, default=True)
     selections = config.Property(proptype=dict, default=None)
-    redistribute = config.Property(proptype=str, default=None)
 
     def setup(self):
         """Resolve the selections."""
         self._sel = self._resolve_sel()
-
-    def _load_file(self, filename, extra_message=""):
-        # Load the file into the relevant container
-
-        if not os.path.exists(filename):
-            raise RuntimeError(f"File does not exist: {filename}")
-
-        self.log.info(f"Loading file {filename} {extra_message}")
-        self.log.debug(f"Reading with selections: {self._sel}")
-
-        # If we are applying selections we need to dispatch the `from_file` via the
-        # correct subclass, rather than relying on the internal detection of the
-        # subclass. To minimise the number of files being opened this is only done on
-        # rank=0 and is then broadcast
-        if self._sel:
-            if self.comm.rank == 0:
-                with fileformats.guess_file_format(filename).open(filename, "r") as fh:
-                    clspath = memh5.MemDiskGroup._detect_subclass_path(fh)
-            else:
-                clspath = None
-            clspath = self.comm.bcast(clspath, root=0)
-            new_cls = memh5.MemDiskGroup._resolve_subclass(clspath)
-        else:
-            new_cls = memh5.BasicCont
-
-        cont = new_cls.from_file(
-            filename,
-            distributed=self.distributed,
-            comm=self.comm,
-            convert_attribute_strings=self.convert_strings,
-            convert_dataset_strings=self.convert_strings,
-            **self._sel,
-        )
-
-        if self.redistribute is not None:
-            cont.redistribute(self.redistribute)
-
-        return cont
 
     def _resolve_sel(self):
         # Turn the selection parameters into actual selectable types
@@ -483,6 +430,65 @@ class BaseLoadFiles(task.SingleTask):
                 raise ValueError(f"All elements of index spec must be ints. Got {x}")
 
         return list(x)
+
+
+class BaseLoadFiles(SelectionsMixin, task.SingleTask):
+    """Base class for loading containers from a file on disk.
+
+    Provides the capability to make selections along axes.
+
+    Attributes
+    ----------
+    distributed : bool, optional
+        Whether the file should be loaded distributed across ranks.
+    convert_strings : bool, optional
+        Convert strings to unicode when loading.
+    redistribute : str, optional
+        An optional axis name to redistribute the container over after it has
+        been read.
+    """
+
+    distributed = config.Property(proptype=bool, default=True)
+    convert_strings = config.Property(proptype=bool, default=True)
+    redistribute = config.Property(proptype=str, default=None)
+
+    def _load_file(self, filename, extra_message=""):
+        # Load the file into the relevant container
+
+        if not os.path.exists(filename):
+            raise RuntimeError(f"File does not exist: {filename}")
+
+        self.log.info(f"Loading file {filename} {extra_message}")
+        self.log.debug(f"Reading with selections: {self._sel}")
+
+        # If we are applying selections we need to dispatch the `from_file` via the
+        # correct subclass, rather than relying on the internal detection of the
+        # subclass. To minimise the number of files being opened this is only done on
+        # rank=0 and is then broadcast
+        if self._sel:
+            if self.comm.rank == 0:
+                with fileformats.guess_file_format(filename).open(filename, "r") as fh:
+                    clspath = memh5.MemDiskGroup._detect_subclass_path(fh)
+            else:
+                clspath = None
+            clspath = self.comm.bcast(clspath, root=0)
+            new_cls = memh5.MemDiskGroup._resolve_subclass(clspath)
+        else:
+            new_cls = memh5.BasicCont
+
+        cont = new_cls.from_file(
+            filename,
+            distributed=self.distributed,
+            comm=self.comm,
+            convert_attribute_strings=self.convert_strings,
+            convert_dataset_strings=self.convert_strings,
+            **self._sel,
+        )
+
+        if self.redistribute is not None:
+            cont.redistribute(self.redistribute)
+
+        return cont
 
 
 class LoadFilesFromParams(BaseLoadFiles):
@@ -614,7 +620,7 @@ class Save(pipeline.TaskBase):
         else:
             tag = data.attrs["tag"]
 
-        fname = "%s_%s.h5" % (self.root, str(tag))
+        fname = f"{self.root}_{tag!s}.h5"
 
         data.to_hdf5(fname)
 
@@ -699,9 +705,7 @@ class LoadProductManager(pipeline.TaskBase):
             raise RuntimeError("Products do not exist.")
 
         # Load ProductManager and Timestream
-        pm = manager.ProductManager.from_config(self.product_directory)
-
-        return pm
+        return manager.ProductManager.from_config(self.product_directory)
 
 
 class Truncate(task.SingleTask):
@@ -731,7 +735,7 @@ class Truncate(task.SingleTask):
     dataset = config.Property(proptype=dict, default=None)
     ensure_chunked = config.Property(proptype=bool, default=True)
 
-    default_params = {
+    default_params: ClassVar = {
         "weight_dataset": None,
         "fixed_precision": 1e-4,
         "variance_increase": 1e-3,
@@ -754,21 +758,20 @@ class Truncate(task.SingleTask):
         """
         # Check if dataset should get truncated at all
         if (self.dataset is None) or (dset not in self.dataset):
-            if dset not in container._dataset_spec or not container._dataset_spec[
-                dset
-            ].get("truncate", False):
+            cdspec = container._class_dataset_spec()
+            if dset not in cdspec or not cdspec[dset].get("truncate", False):
                 self.log.debug(f"Not truncating dataset '{dset}' in {container}.")
                 return None
             # Use the dataset spec if nothing specified in config
-            given_params = container._dataset_spec[dset].get("truncate", False)
+            given_params = cdspec[dset].get("truncate", False)
         else:
             given_params = self.dataset[dset]
 
         # Parse config parameters
         params = self.default_params.copy()
-        if type(given_params) is dict:
+        if isinstance(given_params, dict):
             params.update(given_params)
-        elif type(given_params) is float:
+        elif isinstance(given_params, float):
             params["fixed_precision"] = given_params
         elif not given_params:
             self.log.debug(f"Not truncating dataset '{dset}' in {container}.")
@@ -806,13 +809,15 @@ class Truncate(task.SingleTask):
         if self.ensure_chunked:
             data._ensure_chunked()
 
-        for dset in data._dataset_spec:
+        for dset in data.dataset_spec:
             # get truncation parameters from config or container defaults
             specs = self._get_params(type(data), dset)
 
             if (specs is None) or (dset not in data):
                 # Don't truncate this dataset
                 continue
+
+            self.log.debug(f"Truncating {dset}")
 
             old_shape = data[dset][:].shape
             # np.ndarray.reshape must be used with ndarrays
@@ -1103,7 +1108,7 @@ class SaveModuleVersions(task.SingleTask):
 
     def setup(self):
         """Save module versions."""
-        fname = "{}_versions.yml".format(self.root)
+        fname = f"{self.root}_versions.yml"
         f = open(fname, "w")
         f.write(yamldump(self.versions))
         f.close()
@@ -1131,7 +1136,7 @@ class SaveConfig(task.SingleTask):
 
     def setup(self):
         """Save module versions."""
-        fname = "{}_config.yml".format(self.root)
+        fname = f"{self.root}_config.yml"
         f = open(fname, "w")
         f.write(yamldump(self.pipeline_config))
         f.close()
@@ -1159,7 +1164,7 @@ def get_telescope(obj):
         if isinstance(obj, telescope.TransitTelescope):
             return obj
 
-    raise RuntimeError("Could not get telescope instance out of %s" % repr(obj))
+    raise RuntimeError(f"Could not get telescope instance out of {obj!r}")
 
 
 def get_beamtransfer(obj):
@@ -1173,4 +1178,4 @@ def get_beamtransfer(obj):
     if isinstance(obj, manager.ProductManager):
         return obj.beamtransfer
 
-    raise RuntimeError("Could not get BeamTransfer instance out of %s" % repr(obj))
+    raise RuntimeError(f"Could not get BeamTransfer instance out of {obj!r}")

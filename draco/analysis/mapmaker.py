@@ -1,9 +1,9 @@
 """Map making from driftscan data using the m-mode formalism."""
 
 import numpy as np
-from caput import mpiarray, config
+from caput import config, mpiarray
 
-from ..core import containers, task, io
+from ..core import containers, io, task
 from ..util import tools
 
 
@@ -164,9 +164,7 @@ class DirtyMapMaker(BaseMapMaker):
         a = np.dot(bm.T.conj(), Ni * v)
 
         # Reshape to the correct output
-        a = a.reshape(bt.telescope.num_pol_sky, bt.telescope.lmax + 1)
-
-        return a
+        return a.reshape(bt.telescope.num_pol_sky, bt.telescope.lmax + 1)
 
 
 class MaximumLikelihoodMapMaker(BaseMapMaker):
@@ -199,9 +197,7 @@ class MaximumLikelihoodMapMaker(BaseMapMaker):
         a = np.dot(ib, Nh * v)
 
         # Reshape to the correct output
-        a = a.reshape(bt.telescope.num_pol_sky, bt.telescope.lmax + 1)
-
-        return a
+        return a.reshape(bt.telescope.num_pol_sky, bt.telescope.lmax + 1)
 
 
 class WienerMapMaker(BaseMapMaker):
@@ -300,6 +296,4 @@ def pinv_svd(M, acond=1e-4, rcond=1e-3):
 
     psigma_diag = 1.0 / sig[:rank]
 
-    B = np.transpose(np.conjugate(np.dot(u[:, :rank] * psigma_diag, vh[:rank])))
-
-    return B
+    return np.transpose(np.conjugate(np.dot(u[:, :rank] * psigma_diag, vh[:rank])))

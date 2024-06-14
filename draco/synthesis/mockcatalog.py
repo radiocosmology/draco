@@ -84,23 +84,15 @@ Below is an example workflow:
 ...
 """
 
-# === Start Python 2/3 compatibility
-from __future__ import absolute_import, division, print_function, unicode_literals
-from future.builtins import *  # noqa  pylint: disable=W0401, W0614
-from future.builtins.disabled import *  # noqa  pylint: disable=W0401, W0614
-
-# === End Python 2/3 compatibility
-
-import numpy as np
 import healpy as hp
+import numpy as np
 import scipy.stats
-
+from caput import config, mpiarray, mpiutil
 from cora.util import units
-from caput import config
-from caput import mpiarray, mpiutil
-from ..core import task, containers
-from ..util import random, tools
 from mpi4py import MPI
+
+from ..core import containers, task
+from ..util import random, tools
 
 # Constants
 C = units.c
@@ -437,9 +429,7 @@ class PdfGeneratorUncorrelated(PdfGeneratorBase):
         z_weights = mpiarray.MPIArray.wrap(1 / gs * np.ones(ls), axis=0)
 
         # Create PDF map
-        pdf_map = self.make_pdf_map(source_map, z_weights)
-
-        return pdf_map
+        return self.make_pdf_map(source_map, z_weights)
 
 
 class PdfGeneratorWithSelectionFunction(PdfGeneratorBase):
@@ -475,9 +465,7 @@ class PdfGeneratorWithSelectionFunction(PdfGeneratorBase):
         z_weights = mpiarray.MPIArray.wrap(z_weights / z_weights_sum, axis=0)
 
         # Create PDF map
-        pdf_map = self.make_pdf_map(source_map, z_weights, selfunc)
-
-        return pdf_map
+        return self.make_pdf_map(source_map, z_weights, selfunc)
 
 
 class PdfGeneratorNoSelectionFunction(PdfGeneratorBase):
@@ -545,9 +533,7 @@ class PdfGeneratorNoSelectionFunction(PdfGeneratorBase):
             z_weights = mpiarray.MPIArray.wrap(z_weights_global[lo : lo + ls], axis=0)
 
         # Create PDF map
-        pdf_map = self.make_pdf_map(source_map, z_weights)
-
-        return pdf_map
+        return self.make_pdf_map(source_map, z_weights)
 
 
 class MockCatalogGenerator(task.SingleTask, random.RandomTask):
@@ -944,9 +930,7 @@ class AddEBOSSZErrorsToCatalog(task.SingleTask, random.RandomTask):
 
         dv = err_func(z, self.rng)
 
-        dz = (1.0 + z) * dv / (C * 1e-3)
-
-        return dz
+        return (1.0 + z) * dv / (C * 1e-3)
 
     @staticmethod
     def qso_velocity_error(z, rng):
@@ -982,9 +966,7 @@ class AddEBOSSZErrorsToCatalog(task.SingleTask, random.RandomTask):
         u = rng.uniform(size=nsample)
         flag = u >= (1.0 / (1.0 + QSO_F))
 
-        dv = np.where(flag, dv1, dv2)
-
-        return dv
+        return np.where(flag, dv1, dv2)
 
     @staticmethod
     def qsoalt_velocity_error(z, rng):
@@ -1036,9 +1018,7 @@ class AddEBOSSZErrorsToCatalog(task.SingleTask, random.RandomTask):
         dv1 = rng.standard_normal(nsample) * sig1z(z)
         dv2 = rng.standard_normal(nsample) * QSO_SIG2
 
-        dv = np.where(flag, dv1, dv2)
-
-        return dv
+        return np.where(flag, dv1, dv2)
 
     @staticmethod
     def lrg_velocity_error(z, rng):
@@ -1066,9 +1046,7 @@ class AddEBOSSZErrorsToCatalog(task.SingleTask, random.RandomTask):
         """
         LRG_SIG = 65.6
 
-        dv = rng.normal(scale=LRG_SIG, size=len(z))
-
-        return dv
+        return rng.normal(scale=LRG_SIG, size=len(z))
 
     @staticmethod
     def elg_velocity_error(z, rng):
@@ -1079,7 +1057,7 @@ class AddEBOSSZErrorsToCatalog(task.SingleTask, random.RandomTask):
         percentiles:
             "Additionally, we can assess with repeats that 99.5, 95, and 50
             percent of our redshift estimates have a precision better than
-            300 km s−1, 100 km s−1, and 20 km s−1, respectively."
+            300 km s-1, 100 km s-1, and 20 km s-1, respectively."
         These percentiles do not follow a Gaussian, but are reasonably well fit
         by a Tukey lambda distribution if the scale and shape parameters
         are allowed to float.
@@ -1101,9 +1079,7 @@ class AddEBOSSZErrorsToCatalog(task.SingleTask, random.RandomTask):
 
         dist = scipy.stats.tukeylambda
         dist.random_state = rng
-        dv = dist.rvs(ELG_LAMBDA, scale=ELG_SIG, size=len(z))
-
-        return dv
+        return dist.rvs(ELG_LAMBDA, scale=ELG_SIG, size=len(z))
 
 
 _velocity_error_function_lookup = {

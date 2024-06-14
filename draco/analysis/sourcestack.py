@@ -1,14 +1,13 @@
 """Source Stack Analysis Tasks."""
 
 import numpy as np
-from mpi4py import MPI
-
 from caput import config, pipeline
 from cora.util import units
+from mpi4py import MPI
 
-from ..util.tools import invert_no_zero
+from ..core import containers, task
 from ..util.random import RandomTask
-from ..core import task, containers
+from ..util.tools import invert_no_zero
 
 # Constants
 NU21 = units.nu21
@@ -367,8 +366,9 @@ class GroupSourceStacks(task.SingleTask):
         )
 
         if (len(self.stack) % self.ngroup) == 0:
-            out = self._reset()
-            return out
+            return self._reset()
+
+        return None
 
     def process_finish(self):
         """Return whatever FrequencyStacks are currently in the list.
@@ -379,8 +379,9 @@ class GroupSourceStacks(task.SingleTask):
             The remaining frequency stacks accumulated into a single container.
         """
         if len(self.stack) > 0:
-            out = self._reset()
-            return out
+            return self._reset()
+
+        return None
 
     def _reset(self):
         """Combine all frequency stacks currently in the list into new container.

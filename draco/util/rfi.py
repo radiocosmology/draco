@@ -1,6 +1,7 @@
 """Collection of routines for RFI excision."""
+
 import numpy as np
-from scipy.ndimage import convolve1d
+from scipy.ndimage import correlate1d
 
 
 def sumthreshold_py(
@@ -10,11 +11,14 @@ def sumthreshold_py(
     threshold1=None,
     remove_median=True,
     correct_for_missing=True,
+    variance=None,
+    rho=None,
+    axes=None,
 ):
     """SumThreshold outlier detection algorithm.
 
-    See http://www.astro.rug.nl/~offringa/SumThreshold.pdf for description of
-    the algorithm.
+    See https://andreoffringa.org/pdfs/SumThreshold-technical-report.pdf
+    for description of the algorithm.
 
     Parameters
     ----------
@@ -30,6 +34,20 @@ def sumthreshold_py(
         Subtract the median of the full 2D dataset. Default is True.
     correct_for_missing : bool, optional
         Correct for missing counts
+    variance : np.ndarray[:, :], optional
+        Estimate of the uncertainty on each data point.
+        If provided, then correct_for_missing=True should be set
+        and threshold1 should be provided in units of "sigma".
+    rho : float, optional
+        Controls the dependence of the threshold on the window size m,
+        specifically threshold = threshold1 / rho ** log2(m).
+        If not provided, will use a value of 1.5 (0.9428)
+        when correct_for_missing is False (True).  This is to maintain
+        backward compatibility.
+    axes : tuple | int, optional
+        Axes of `data` along which to calculate. Flagging is done in
+        the order in which `axes` is provided. By default, loop over
+        all axes in reverse order.
 
     Returns
     -------
@@ -37,72 +55,76 @@ def sumthreshold_py(
         Boolean array, with `True` entries marking outlier data.
     """
     data = np.copy(data)
-    (ny, nx) = data.shape
 
-    if start_flag is None:
-        start_flag = np.isnan(data)
-    flag = np.copy(start_flag)
+    # If the variance was provided, then we will need to take the
+    # square root of the sum of the variances prior to thresholding.
+    # Make sure correct_for_missing is set to True:
+    if variance is not None:
+        correct_for_missing = True
+
+    # If rho was not provided, then use the backwards-compatible values
+    if rho is None:
+        rho = 0.9428 if correct_for_missing else 1.5
+
+    if axes is None:
+        # Iterate over axes in reverse order
+        axes = list(range(data.ndim))[::-1]
+    elif isinstance(axes, int):
+        axes = (axes,)
+
+    # By default, flag anything that is not finite (inf and NaN)
+    flag = ~np.isfinite(data)
+
+    if start_flag is not None:
+        flag += start_flag
 
     if remove_median:
         data -= np.median(data[~flag])
 
     if threshold1 is None:
+        if variance is not None:
+            raise RuntimeError(
+                "If variance is provided, then must also "
+                "provide starting threshold in units of sigma."
+            )
         threshold1 = np.percentile(data[~flag], 95.0)
 
     m = 1
+
     while m <= max_m:
-        if m == 1:
-            threshold = threshold1
-        else:
-            threshold = threshold1 / 1.5 ** (np.log2(m))
+        threshold = threshold1 / rho ** (np.log2(m))
 
         # The centre of the window for even windows is the bin right to the left of
         # centre. I want the origin at the leftmost bin
-        if m == 1:
-            centre = 0
-        else:
-            centre = m // 2 - 1
+        centre = (m - 1) // 2
 
-        ## X-axis
+        # Convolution with the kernel is effectively just a windowed sum
+        kernel = np.ones(m, dtype=np.float64)
 
-        data[flag] = 0.0
-        count = (~flag).astype(np.float64)
+        # Loop over axes in order
+        for axis in axes:
+            # Update the data mask
+            data[flag] = 0.0
+            count = (~flag).astype(np.float64) if variance is None else ~flag * variance
 
-        # Convolution of the data
-        dconv = convolve1d(
-            data, weights=np.ones(m, dtype=float), origin=-centre, axis=1
-        )[:, : (nx - m + 1)]
+            # Convolve the data and counts with the kernel, extending the
+            # boundaries based on the edge values. Setting `origin=centre`
+            # results in a peak at the *rightmost* edge of the region to
+            # be flagged.
+            dconv = correlate1d(data, kernel, origin=centre, axis=axis, mode="nearest")
+            cconv = correlate1d(count, kernel, origin=centre, axis=axis, mode="nearest")
 
-        # Convolution of the counts
-        cconv = convolve1d(
-            count, weights=np.ones(m, dtype=float), origin=-centre, axis=1
-        )[:, : (nx - m + 1)]
-        if correct_for_missing:
-            cconv = m**0.5 * cconv**0.5
-        flag_temp = dconv > cconv * threshold
-        flag_temp += dconv < -cconv * threshold
-        for ii in range(flag_temp.shape[1]):
-            flag[:, ii : (ii + m)] += flag_temp[:, ii][:, np.newaxis]
+            if correct_for_missing:
+                cconv = cconv**0.5
 
-        ## Y-axis
-
-        data[flag] = 0.0
-        count = (~flag).astype(np.float64)
-        # Convolution of the data
-        dconv = convolve1d(
-            data, weights=np.ones(m, dtype=float), origin=-centre, axis=0
-        )[: (ny - m + 1), :]
-        # Convolution of the counts
-        cconv = convolve1d(
-            count, weights=np.ones(m, dtype=float), origin=-centre, axis=0
-        )[: (ny - m + 1), :]
-        if correct_for_missing:
-            cconv = m**0.5 * cconv**0.5
-        flag_temp = dconv > cconv * threshold
-        flag_temp += dconv < -cconv * threshold
-
-        for ii in range(flag_temp.shape[0]):
-            flag[ii : ii + m, :] += flag_temp[ii, :][np.newaxis, :]
+            temp_flag = np.abs(dconv) > cconv * threshold
+            # Extend the mask to symmetrically cover flagged samples. `origin` is
+            # -centre if m is odd and -centre-1 if m is even. This extends the
+            # flag to the *left* and correctly centers the flagged region
+            origin = m % 2 - centre - 1
+            flag += correlate1d(
+                temp_flag, kernel, origin=origin, axis=axis, mode="nearest"
+            )
 
         m *= 2
 

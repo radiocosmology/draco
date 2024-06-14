@@ -1,10 +1,9 @@
 """Sensitivity Analysis Tasks."""
 
 import numpy as np
-
 from caput import config
 
-from ..core import task, io, containers
+from ..core import containers, io, task
 from ..util import tools
 
 
@@ -126,9 +125,14 @@ class ComputeSystemSensitivity(task.SingleTask):
 
         baseline_pol = np.core.defchararray.add(pol_a, pol_b)
 
+        ew_intra = 0.5 * self.telescope.cylinder_width
         if self.exclude_intracyl:
             baseline_flag = (
-                ew_position[prodstack["input_a"]] != ew_position[prodstack["input_b"]]
+                np.abs(
+                    ew_position[prodstack["input_a"]]
+                    - ew_position[prodstack["input_b"]]
+                )
+                > ew_intra
             )
         else:
             baseline_flag = np.ones(prodstack.size, dtype=bool)
@@ -196,7 +200,9 @@ class ComputeSystemSensitivity(task.SingleTask):
 
         for ii, (ai, pi) in enumerate(zip(auto_input, auto_pol)):
             for jj, (aj, pj) in enumerate(zip(auto_input, auto_pol)):
-                if self.exclude_intracyl and (ew_position[ai] == ew_position[aj]):
+                if self.exclude_intracyl and (
+                    np.abs(ew_position[ai] - ew_position[aj]) < ew_intra
+                ):
                     # Exclude intracylinder baselines
                     continue
 
@@ -230,7 +236,6 @@ class ComputeSystemSensitivity(task.SingleTask):
         # Create output container
         metrics = containers.SystemSensitivity(
             pol=np.array(pol_uniq, dtype="<U2"),
-            time=data.time[:],
             axes_from=data,
             attrs_from=data,
             comm=data.comm,
