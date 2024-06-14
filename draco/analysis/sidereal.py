@@ -658,21 +658,10 @@ class RebinGradientCorrection(task.SingleTask):
                 # Zero any weights that could not be corrected
                 weight[fi, vi] *= (~mask).astype(weight.dtype)
 
-        # Copy to a new container without the effective_ra dataset
-        # This sort of functionality should probably be properly
-        # implemented somewhere else
-        out = containers.SiderealStream(attrs_from=sstream, axes_from=sstream)
-        # Iterate over datasets
-        for name, dset in sstream.datasets.items():
-            if name == "effective_ra":
-                continue
+        # Delete the effective ra dataset since it is not needed anymore
+        del sstream["effective_ra"]
 
-            if name not in out.datasets:
-                out.add_dataset(name)
-
-            out.datasets[name][:] = dset[:]
-
-        return out
+        return sstream
 
 
 class SiderealStacker(task.SingleTask):
