@@ -671,6 +671,17 @@ class DelayGibbsSamplerBase(DelayTransformBase, random.RandomTask):
     maxpost = config.Property(proptype=bool, default=False)
     maxpost_tol = config.Property(proptype=float, default=1e-3)
 
+    def setup(self, initial_s=None):
+        """Store the initial prior if provided.
+
+        Parameters
+        ----------
+        initial_s : containers.DelaySpectrum, optional
+            Data container holding the initial spectrum guess.
+            Default is None
+        """
+        self.initial_S = initial_s
+
     def _create_output(
         self,
         ss: FreqContainer,
@@ -738,15 +749,16 @@ class DelayGibbsSamplerBase(DelayTransformBase, random.RandomTask):
         dtype : type | np.dtype | str
             Datatype for the sample if no path is given
         """
-        if self.initial_sample_path is not None:
-            cont = ContainerBase.from_file(self.initial_sample_path, distributed=True)
+        if self.initial_S is not None:
+            initial_S = self.initial_S
+            # Can now delete the instance reference so it doesn't stick around
+            del self.initial_S
 
-            cont.redistribute("baseline")
+        elif self.initial_sample_path is not None:
+            initial_S = ContainerBase.from_file(
+                self.initial_sample_path, distributed=True
+            )
 
-            # Extract the spectrum and ove the baseline axis to the front
-            initial_S = cont.spectrum[:].local_array
-            bl_ax = cont.spectrum.attrs["axis"].tolist().index("baseline")
-            initial_S = np.moveaxis(initial_S, bl_ax, 0)
         # Gibbs case.
         elif not self.maxpost:
             initial_S = np.ones((nbase, ndelay), dtype=dtype) * self.initial_amplitude
@@ -757,6 +769,15 @@ class DelayGibbsSamplerBase(DelayTransformBase, random.RandomTask):
             # estimator will cause it to use an inverse FFT as the
             # initial guess, which works well in practice.
             initial_S = np.full(nbase, None)
+
+        # If the prior was provided, extract it from the container
+        if isinstance(initial_S, ContainerBase):
+            initial_S.redistribute("baseline")
+
+            # Extract the spectrum and ove the baseline axis to the front
+            spec = initial_S.spectrum[:].local_array
+            bl_ax = initial_S.spectrum.attrs["axis"].tolist().index("baseline")
+            initial_S = np.moveaxis(spec, bl_ax, 0)
 
         return initial_S
 
@@ -933,14 +954,18 @@ class DelayGeneralContainerBase(DelayTransformBase):
 class DelayPowerSpectrumStokesIEstimator(DelayGibbsSamplerBase):
     """Class to measure delay power spectrum of Stokes-I visibilities via Gibbs sampling."""
 
-    def setup(self, telescope):
+    def setup(self, telescope, initial_s=None):
         """Set the telescope needed to generate Stokes I.
 
         Parameters
         ----------
         telescope : TransitTelescope
             Telescope object we'll use for baseline and polarization information.
+        initial_s : containers.DelaySpectrum, optional
+            Data container holding the initial spectrum guess.
+            Default is None
         """
+        super().setup(initial_s)
         self.telescope = io.get_telescope(telescope)
 
     def _process_data(self, ss):
