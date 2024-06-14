@@ -147,9 +147,7 @@ class CreateBeamStream(task.SingleTask):
 
         # Transpose the first two dimensions from (freq, pol) to (pol, freq)
         bweight = bweight.swapaxes(0, 1)
-        bvis = beam.beam[:].local_array.real.swapaxes(0, 1)
-
-        self.log.info("Using the real component.")
+        bvis = beam.beam[:].local_array.swapaxes(0, 1)
 
         # Create output container
         out = containers.HybridVisStream(
