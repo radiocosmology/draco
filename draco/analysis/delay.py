@@ -610,10 +610,9 @@ class DelayTransformBase(task.SingleTask):
 
         # Remove the mean from the data before estimating the spectrum
         if self.remove_mean:
-            dmean = (data * weight).mean(axis=0) * tools.invert_no_zero(
-                weight.mean(axis=0)
-            )
-            data = data - dmean[np.newaxis, :]
+            # Do not apply this in place to make sure we don't modify
+            # the input data
+            data = data - data.mean(axis=0, keepdims=True)
 
         # If there are no non-zero data entries skip
         if (data == 0.0).all():
@@ -819,11 +818,10 @@ class DelayGibbsSamplerBase(DelayTransformBase, random.RandomTask):
 
                 # If max-likelihood didn't converge in allowed number of iters, reflect this in the mask.
                 if not success:
-                    out_cont.datasets["spectrum_mask"][
-                        bi
-                    ] = 1  # Indexing into a MemDatasetDistributed object with the
+                    # Indexing into a MemDatasetDistributed object with the
                     # global index bi actually ends up (under the hood)
                     # indexing the underlying MPIArray with the local index.
+                    out_cont.datasets["spectrum_mask"][bi] = 1
 
                 out_cont.spectrum[bi] = np.fft.fftshift(spec[-1])
 
