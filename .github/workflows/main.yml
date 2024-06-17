@@ -101,7 +101,7 @@ jobs:
         pip install wheel
         pip install numpy
         pip install cython
-        pip install --use-deprecated=legacy-resolver -r requirements.txt
+        pip install --use-deprecated=legacy-resolver -r requirements.txt --no-binary bitshuffle
         pip install -r doc/requirements.txt
         python setup.py develop
 
