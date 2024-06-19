@@ -231,16 +231,26 @@ class CreateBeamStream(task.SingleTask):
 
                     # Loop over polarisations
                     for pp in range(ovis.shape[0]):
+
+                        bv = bvis[pp, ff, be, :, :]
+
                         # Create a RectBivariateSpline interpolator for the beam at this frequency
                         # as a function of the telescope (x,y) coordinates
                         binterpolator = scipy.interpolate.RectBivariateSpline(
-                            el_beam, bx, bvis[pp, ff, be, :, :], kx=3, ky=3, s=0
+                            el_beam, bx, bv.real, kx=3, ky=3, s=0
                         )
 
                         # Interpolate the beam to the valid x,y coordinates in the data container
-                        # and multiply by the phase
-                        binterp = binterpolator(dy, dx, grid=False)
+                        binterp = binterpolator(dy, dx, grid=False).astype(np.complex64)
 
+                        # Interpolate the imaginary part if present
+                        if np.any(np.iscomplex(bv)):
+                            binterpolator = scipy.interpolate.RectBivariateSpline(
+                                el_beam, bx, bv.imag, kx=3, ky=3, s=0
+                            )
+                            binterp += 1.0j * binterpolator(dy, dx, grid=False)
+
+                        # Apply the phase and save to output container
                         ovis[pp, ff, de][valid] = binterp * phi
 
         return out
