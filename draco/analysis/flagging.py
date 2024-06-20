@@ -2369,11 +2369,15 @@ class BlendStack(task.SingleTask):
         difference, e.g. a `frac = 1e-4` means that we expect the standard
         deviation of the difference between the data and the stacked data to be
         100x larger than the noise of the stacked data.
+    mask_freq : bool, optional
+        Maintain masking if a frequency is entirely flagged - i.e., even if
+        blending data exists in those bands, do not blend.
     """
 
     frac = config.Property(proptype=float, default=1e-4)
     match_median = config.Property(proptype=bool, default=True)
     subtract = config.Property(proptype=bool, default=False)
+    mask_freq = config.Property(proptype=bool, default=False)
 
     def setup(self, data_stack):
         """Set the stacked data.
@@ -2417,8 +2421,8 @@ class BlendStack(task.SingleTask):
         data.redistribute(["freq", "time", "ra"])
 
         if isinstance(data, containers.SiderealStream):
-            dset_stack = self.data_stack.vis[:]
-            dset = data.vis[:]
+            dset_stack = self.data_stack.vis[:].local_array
+            dset = data.vis[:].local_array
         else:
             raise TypeError(
                 "Only SiderealStream's are currently supported. "
@@ -2431,48 +2435,46 @@ class BlendStack(task.SingleTask):
                 f"data_stack ({dset_stack.shape})"
             )
 
-        weight_stack = self.data_stack.weight[:]
-        weight = data.weight[:]
+        weight_stack = self.data_stack.weight[:].local_array
+        weight = data.weight[:].local_array
 
         # Find the median offset between the stack and the daily data
         if self.match_median:
             # Find the parts of the both the stack and the daily data that are both
             # measured
-            mask = (
-                ((weight[:] > 0) & (weight_stack[:] > 0))
-                .astype(np.float32)
-                .view(np.ndarray)
-            )
+            mask = ((weight[:] > 0) & (weight_stack[:] > 0)).astype(np.float32)
 
-            # ... get the median of the stack in this common subset
+            # Get the median of the stack in this common subset
             stack_med_real = weighted_median.weighted_median(
-                dset_stack.real.view(np.ndarray).copy(), mask
+                np.ascontiguousarray(dset_stack.real), mask
             )
             stack_med_imag = weighted_median.weighted_median(
-                dset_stack.imag.view(np.ndarray).copy(), mask
+                np.ascontiguousarray(dset_stack.imag), mask
             )
 
-            # ... get the median of the data in the common subset
+            # Get the median of the data in the common subset
             data_med_real = weighted_median.weighted_median(
-                dset.real.view(np.ndarray).copy(), mask
+                np.ascontiguousarray(dset.real), mask
             )
             data_med_imag = weighted_median.weighted_median(
-                dset.imag.view(np.ndarray).copy(), mask
+                np.ascontiguousarray(dset.imag), mask
             )
 
-            # ... construct an offset to match the medians in the time/RA direction
+            # Construct an offset to match the medians in the time/RA direction
             stack_offset = (
                 (data_med_real - stack_med_real)
                 + 1.0j * (data_med_imag - stack_med_imag)
             )[..., np.newaxis]
-            stack_offset = mpiarray.MPIArray.wrap(
-                stack_offset,
-                axis=dset_stack.axis,
-                comm=dset_stack.comm,
-            )
 
         else:
             stack_offset = 0
+
+        if self.mask_freq:
+            # Collapse the frequency selection over baselines and RA
+            fsel = np.any(weight, axis=(1, 2), keepdims=True)
+
+            # Apply the frequency selection to the stacked weights
+            weight_stack *= fsel.astype(np.float64)
 
         if self.subtract:
             # Subtract the base stack where data is present, otherwise give zeros
