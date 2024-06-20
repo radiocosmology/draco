@@ -2008,7 +2008,7 @@ class RFIMask(task.SingleTask):
 class ApplyTimeFreqMask(task.SingleTask):
     """Apply a time-frequency mask to the data.
 
-    Typically this is used to ask out all inputs at times and
+    Typically this is used to mask out all inputs at times and
     frequencies contaminated by RFI.
 
     This task may produce output with shared datasets. Be warned that
@@ -2213,12 +2213,16 @@ class MaskFreq(task.SingleTask):
     mask_missing_data : bool, optional
         Mask time-freq samples where some baselines (for visibily data) or
         polarisations/elevations (for ring map data) are missing.
+    freq_frac : float, optional
+        Fully mask any frequency where the fraction of unflagged samples
+        is less than this value. Default is None.
     """
 
     bad_freq_ind = config.Property(proptype=list, default=None)
     factorize = config.Property(proptype=bool, default=False)
     all_time = config.Property(proptype=bool, default=False)
     mask_missing_data = config.Property(proptype=bool, default=False)
+    freq_frac = config.Property(proptype=float, default=None)
 
     def process(
         self, data: Union[containers.VisContainer, containers.RingMap]
@@ -2284,6 +2288,10 @@ class MaskFreq(task.SingleTask):
             nfreq = len(data.freq)
             mask |= self._bad_freq_mask(nfreq)[:, np.newaxis]
             self.log.info(f"Frequency mask: {100.0 * mask.mean():.2f}% flagged.")
+
+        if self.freq_frac is not None:
+            mask |= mask.mean(axis=1)[:, np.newaxis] > (1.0 - self.freq_frac)
+            self.log.info(f"Fractional mask: {100.0 * mask.mean():.2f}% flagged.")
 
         if self.all_time:
             mask |= mask.any(axis=1)[:, np.newaxis]
