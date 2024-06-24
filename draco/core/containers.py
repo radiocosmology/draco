@@ -58,7 +58,7 @@ their own custom container types.
 """
 
 import inspect
-from typing import ClassVar, List, Optional, Union
+from typing import ClassVar, Optional, Union
 
 import numpy as np
 from caput import memh5, mpiarray, tod
@@ -2920,7 +2920,7 @@ def copy_datasets_filter(
     dest: ContainerBase,
     axis: Union[str, list, tuple] = [],
     selection: Union[np.ndarray, list, slice, dict] = {},
-    exclude_axes: Optional[List[str]] = None,
+    exclude_axes: Optional[list[str]] = None,
 ):
     """Copy datasets while filtering a given axis.
 

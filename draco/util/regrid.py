@@ -4,7 +4,7 @@ This is described in some detail in `doclib:173
 <http://bao.chimenet.ca/doc/cgi-bin/general/documents/display?Id=173>`_.
 """
 
-from typing import List, Union
+from typing import Union
 
 import numpy as np
 import scipy.linalg as la
@@ -272,7 +272,7 @@ def taylor_coeff(
     Si: float,
     period: Union[float, None] = None,
     xc: Union[np.ndarray, None] = None,
-) -> List[ss.csr_array]:
+) -> list[ss.csr_array]:
     """Return a set of sparse matrices that estimates expansion coefficients.
 
     Parameters

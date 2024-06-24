@@ -3,7 +3,7 @@
 This includes grouping frequencies and products to performing the m-mode transform.
 """
 
-from typing import Optional, Tuple, Union, overload
+from typing import Optional, Union, overload
 
 import numpy as np
 import scipy.linalg as la
@@ -1444,7 +1444,7 @@ class ReduceBase(task.SingleTask):
 
     def reduction(
         self, arr: np.ndarray, weight: np.ndarray, axis: tuple
-    ) -> Tuple[np.ndarray, np.ndarray]:
+    ) -> tuple[np.ndarray, np.ndarray]:
         """Overwrite to implement the reductino operation."""
         raise NotImplementedError
 
