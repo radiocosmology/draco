@@ -26,7 +26,7 @@ Several tasks accept groups of files as arguments. These are specified in the YA
 import os.path
 import shutil
 import subprocess
-from typing import ClassVar, Dict, List, Optional, Union
+from typing import ClassVar, Optional, Union
 
 import numpy as np
 from caput import config, fileformats, memh5, pipeline, truncate
@@ -38,7 +38,7 @@ from ..util.exception import ConfigError
 from . import task
 
 
-def _list_of_filelists(files: Union[List[str], List[List[str]]]) -> List[List[str]]:
+def _list_of_filelists(files: Union[list[str], list[list[str]]]) -> list[list[str]]:
     """Take in a list of lists/glob patterns of filenames.
 
     Parameters
@@ -76,7 +76,7 @@ def _list_of_filelists(files: Union[List[str], List[List[str]]]) -> List[List[st
     return f2
 
 
-def _list_or_glob(files: Union[str, List[str]]) -> List[str]:
+def _list_or_glob(files: Union[str, list[str]]) -> list[str]:
     """Take in a list of lists/glob patterns of filenames.
 
     Parameters
@@ -125,7 +125,7 @@ def _list_or_glob(files: Union[str, List[str]]) -> List[str]:
     )
 
 
-def _list_of_filegroups(groups: Union[List[Dict], Dict]) -> List[Dict]:
+def _list_of_filegroups(groups: Union[list[dict], dict]) -> list[dict]:
     """Process a file group/groups.
 
     Parameters
@@ -1057,7 +1057,7 @@ class SaveZarrZip(ZipZarrContainers):
 class WaitZarrZip(task.MPILoggedTask):
     """Collect Zarr-zipping jobs and wait for them to complete."""
 
-    _handles: Optional[List[ZarrZipHandle]] = None
+    _handles: Optional[list[ZarrZipHandle]] = None
 
     def next(self, handle: ZarrZipHandle):
         """Receive the handles to wait on.

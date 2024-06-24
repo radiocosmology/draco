@@ -1,6 +1,6 @@
 """draco test utils."""
 
-from typing import List, Optional, Tuple, Union
+from typing import Optional, Union
 
 import numpy as np
 from caput import config, memh5, pipeline
@@ -54,7 +54,7 @@ def mock_freq_data(
     noise: float = 0.0,
     bad_freq: Optional[np.ndarray] = None,
     rng: Optional[np.random.Generator] = None,
-) -> Tuple[np.ndarray, np.ndarray]:
+) -> tuple[np.ndarray, np.ndarray]:
     """Make mock delay data with a constant delay spectrum up to a specified cut.
 
     Parameters
@@ -150,7 +150,7 @@ class RandomFreqData(random.RandomTask):
     delay_cut = config.Property(proptype=float, default=0.2)
     noise = config.Property(proptype=float, default=1e-5)
 
-    def next(self) -> Union[SiderealStream, List[SiderealStream]]:
+    def next(self) -> Union[SiderealStream, list[SiderealStream]]:
         """Generate correlated sidereal streams.
 
         Returns

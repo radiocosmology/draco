@@ -1,6 +1,6 @@
 """Delay space spectrum estimation and filtering."""
 
-from typing import List, Optional, Tuple, TypeVar, Union
+from typing import Optional, TypeVar, Union
 
 import numpy as np
 import scipy.linalg as la
@@ -2072,9 +2072,9 @@ def match_axes(dset1, dset2):
 
 def flatten_axes(
     dset: memh5.MemDatasetDistributed,
-    axes_to_keep: List[str],
+    axes_to_keep: list[str],
     match_dset: Optional[memh5.MemDatasetDistributed] = None,
-) -> Tuple[mpiarray.MPIArray, List[str]]:
+) -> tuple[mpiarray.MPIArray, list[str]]:
     """Move the specified axes of the dataset to the back, and flatten all others.
 
     Optionally this will add length-1 axes to match the axes of another dataset.

@@ -1,7 +1,5 @@
 """Beamform visibilities to the location of known sources."""
 
-from typing import Tuple
-
 import healpy
 import numpy as np
 import scipy.interpolate
@@ -996,7 +994,7 @@ class RingMapBeamForm(task.SingleTask):
 
     def _process_catalog(
         self, catalog: containers.SourceCatalog
-    ) -> Tuple[np.ndarray, np.ndarray]:
+    ) -> tuple[np.ndarray, np.ndarray]:
         """Get the current epoch coordinates of the catalog."""
         if "position" not in catalog:
             raise ValueError("Input is missing a position table.")
@@ -1026,7 +1024,7 @@ class RingMapBeamForm(task.SingleTask):
 
     def _source_ind(
         self, src_ra: np.ndarray, src_dec: np.ndarray
-    ) -> Tuple[np.ndarray, np.ndarray]:
+    ) -> tuple[np.ndarray, np.ndarray]:
         """Get the RA/ZA ringmap pixel indices of the sources."""
         # Get the grid size of the map in RA and sin(ZA)
         dra = np.median(np.abs(np.diff(self.ringmap.index_map["ra"])))
