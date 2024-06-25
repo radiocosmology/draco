@@ -1,9 +1,9 @@
 """Map making from driftscan data using the m-mode formalism."""
 
 import numpy as np
-from caput import mpiarray, config
+from caput import config, mpiarray
 
-from ..core import containers, task, io
+from ..core import containers, io, task
 from ..util import tools
 
 
@@ -35,7 +35,6 @@ class BaseMapMaker(task.SingleTask):
             Beam transfer manager object (or ProductManager) containing all the
             pre-generated beam transfer matrices.
         """
-
         self.beamtransfer = io.get_beamtransfer(bt)
 
     def process(self, mmodes):
@@ -44,12 +43,12 @@ class BaseMapMaker(task.SingleTask):
         Parameters
         ----------
         mmodes : containers.MModes
+            Data to map
 
         Returns
         -------
         map : containers.Map
         """
-
         from cora.util import hputil
 
         # Fetch various properties
@@ -171,7 +170,6 @@ class DirtyMapMaker(BaseMapMaker):
 
     Notes
     -----
-
     The dirty map is produced by generating a set of :math:`a_{lm}` coefficients
     using
 
@@ -192,9 +190,7 @@ class DirtyMapMaker(BaseMapMaker):
         a = np.dot(bm.T.conj(), Ni * v)
 
         # Reshape to the correct output
-        a = a.reshape(bt.telescope.num_pol_sky, bt.telescope.lmax + 1)
-
-        return a
+        return a.reshape(bt.telescope.num_pol_sky, bt.telescope.lmax + 1)
 
 
 class DirtyMapMakerMultiFreq(BaseMapMaker):
@@ -245,7 +241,6 @@ class MaximumLikelihoodMapMaker(BaseMapMaker):
 
     Notes
     -----
-
     The dirty map is produced by generating a set of :math:`a_{lm}` coefficients
     using
 
@@ -271,14 +266,14 @@ class MaximumLikelihoodMapMaker(BaseMapMaker):
         a = np.dot(ib, Nh * v)
 
         # Reshape to the correct output
-        a = a.reshape(bt.telescope.num_pol_sky, bt.telescope.lmax + 1)
-
-        return a
+        return a.reshape(bt.telescope.num_pol_sky, bt.telescope.lmax + 1)
 
 
 class WienerMapMaker(BaseMapMaker):
-    r"""Generate a Wiener filtered map assuming that the signal is a Gaussian
-    random field described by a power-law power spectum.
+    r"""Generate a Wiener filtered map.
+
+    Assumes that the signal is a Gaussian random field described by
+    a power-law power spectum.
 
     Attributes
     ----------
@@ -289,7 +284,6 @@ class WienerMapMaker(BaseMapMaker):
 
     Notes
     -----
-
     The Wiener map is produced by generating a set of :math:`a_{lm}` coefficients
     using
 
@@ -428,9 +422,10 @@ class WienerMapMakerMultiFreq(BaseMapMaker):
 
 
 def pinv_svd(M, acond=1e-4, rcond=1e-3):
-    # Generate the pseudo-inverse from an svd
-    # Not really clear why I'm not just using la.pinv2 instead,
+    """Generate the pseudo-inverse from an svd.
 
+    Not really clear why I'm not just using la.pinv2 instead
+    """
     import scipy.linalg as la
 
     u, sig, vh = la.svd(M, full_matrices=False)
@@ -439,6 +434,4 @@ def pinv_svd(M, acond=1e-4, rcond=1e-3):
 
     psigma_diag = 1.0 / sig[:rank]
 
-    B = np.transpose(np.conjugate(np.dot(u[:, :rank] * psigma_diag, vh[:rank])))
-
-    return B
+    return np.transpose(np.conjugate(np.dot(u[:, :rank] * psigma_diag, vh[:rank])))

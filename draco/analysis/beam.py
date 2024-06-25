@@ -1,7 +1,4 @@
-"""
-======================================================
-Beam model related tasks (:mod:`~draco.analysis.beam`)
-======================================================
+"""Beam model related tasks (:mod:`~draco.analysis.beam`).
 
 .. currentmodule:: draco.analysis.beam
 
@@ -19,12 +16,9 @@ Tasks
 
 import numpy as np
 import scipy.constants
-
 from caput import interferometry
 
-from ..core import task
-from ..core import io
-from ..core import containers
+from ..core import containers, io, task
 from ..util import tools
 
 
@@ -44,8 +38,8 @@ class CreateBeamStream(task.SingleTask):
         self.telescope = io.get_telescope(telescope)
 
         self.log.info(
-            "Using telescope at latitude %0.4f deg with rotation angle %0.4f deg."
-            % (self.telescope.latitude, self.telescope.rotation_angle)
+            f"Using telescope at latitude {self.telescope.latitude:.4f} "
+            f"deg with rotation angle {self.telescope.rotation_angle:.4f} deg."
         )
 
     def process(self, data, beam):
@@ -178,14 +172,12 @@ class CreateBeamStreamFromTelescope(CreateBeamStream):
         out : containers.HybridVisStream
             Effective beam transfer function.
         """
-
         beam = self._evaluate_beam(data)
 
         return super().process(data, beam)
 
     def _evaluate_beam(self, data):
         """Evaluate the beam model at the coordinates in the data container."""
-
         # Create the beam container
         inputs = np.array(["common-mode"])
         ha = (data.ra + 180.0) % 360.0 - 180.0

@@ -2,10 +2,9 @@
 
 import numpy as np
 import scipy.linalg as la
-
 from caput import config
 
-from draco.core import task, containers
+from draco.core import containers, task
 
 
 class SVDSpectrumEstimator(task.SingleTask):
@@ -31,7 +30,6 @@ class SVDSpectrumEstimator(task.SingleTask):
         -------
         spectrum : containers.SVDSpectrum
         """
-
         mmodes.redistribute("m")
 
         vis = mmodes.vis[:]
@@ -83,12 +81,12 @@ class SVDFilter(task.SingleTask):
         Parameters
         ----------
         mmodes : container.MModes
+            MModes to process
 
         Returns
         -------
         mmodes : container.MModes
         """
-
         from mpi4py import MPI
 
         mmodes.redistribute("m")
@@ -172,7 +170,6 @@ def svd_em(A, mask, niter=5, rank=5, full_matrices=False):
     u, sig, vh : np.ndarray
         The singular values and vectors.
     """
-
     # Do an initial fill of the missing entries
     A = A.copy()
     A[mask] = np.median(A[~mask])

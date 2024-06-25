@@ -1,20 +1,23 @@
 """Beamform visibilities to the location of known sources."""
 
 from typing import Tuple
+
 import healpy
 import numpy as np
 import scipy.interpolate
-from skyfield.api import Star, Angle
-
 from caput import config
 from caput import time as ctime
-
 from cora.util import units
+from skyfield.api import Angle, Star
 
-from ..core import task, containers, io
+from ..core import containers, io, task
 from ..util._fast_tools import beamform
-from ..util.tools import baseline_vector, polarization_map, invert_no_zero
-from ..util.tools import calculate_redundancy
+from ..util.tools import (
+    baseline_vector,
+    calculate_redundancy,
+    invert_no_zero,
+    polarization_map,
+)
 
 # Constants
 NU21 = units.nu21
@@ -140,7 +143,6 @@ class BeamFormBase(task.SingleTask):
             Formed beams at each source. Shape depends on parameter
             `collapse_ha`.
         """
-
         # Perform data dependent beam initialization
         self._initialize_beam_with_data()
 
@@ -324,18 +326,18 @@ class BeamFormBase(task.SingleTask):
                     # beamform()
                     this_sumweight = np.sum(sumweight_inrange, axis=-1)
                     # Populate only where ha_mask is true. Zero otherwise.
-                    formed_beam_full[pol][
-                        :, ha_mask
-                    ] = this_formed_beam * invert_no_zero(this_sumweight)
+                    formed_beam_full[pol][:, ha_mask] = (
+                        this_formed_beam * invert_no_zero(this_sumweight)
+                    )
                     if self.weight != "inverse_variance":
                         this_weight2 = np.sum(
                             sumweight_inrange**2 * invert_no_zero(visweight_inrange),
                             axis=-1,
                         )
                         # Populate only where ha_mask is true. Zero otherwise.
-                        weight_full[pol][
-                            :, ha_mask
-                        ] = this_sumweight**2 * invert_no_zero(this_weight2)
+                        weight_full[pol][:, ha_mask] = (
+                            this_sumweight**2 * invert_no_zero(this_weight2)
+                        )
                     else:
                         weight_full[pol][:, ha_mask] = this_sumweight
 
@@ -380,6 +382,18 @@ class BeamFormBase(task.SingleTask):
                     formed_beam.ha[src, ha_mask] = ha_array
 
         return formed_beam
+
+    def process_finish(self):
+        """Clear lists holding copies of data.
+
+        These lists will persist beyond this task being done, so
+        the data stored there will continue to use memory.
+        """
+        for attr in ["vis", "visweight", "bvec", "sumweight"]:
+            try:
+                delattr(self, attr)
+            except AttributeError:
+                pass
 
     def _ha_array(self, ra, source_ra_index, source_ra, ha_side, is_sstream=True):
         """Hour angle for each RA/time bin to be processed.
@@ -445,7 +459,6 @@ class BeamFormBase(task.SingleTask):
         and can be overridden to perform any beam initialization
         that requires the data and catalog to be parsed first.
         """
-
         # Find the index of the local frequencies in
         # the frequency axis of the telescope instance
         if not self.no_beam_model:
@@ -477,7 +490,6 @@ class BeamFormBase(task.SingleTask):
             The primary beam as a function of frequency and hour angle
             at the sources declination for the requested polarisation.
         """
-
         nfreq = self.freq_local.size
 
         if self.no_beam_model:
@@ -621,7 +633,6 @@ class BeamFormBase(task.SingleTask):
 
         Note that `self._process_data` must have been called before this.
         """
-
         if "position" not in catalog:
             raise ValueError("Input is missing a position table.")
 
@@ -668,7 +679,7 @@ class BeamForm(BeamFormBase):
             Catalog of points to beamform at.
 
         """
-        super(BeamForm, self).setup(manager)
+        super().setup(manager)
         self.catalog = source_cat
 
     def process(self, data):
@@ -692,7 +703,7 @@ class BeamForm(BeamFormBase):
             return None
 
         # Call generic process method.
-        return super(BeamForm, self).process()
+        return super().process()
 
 
 class BeamFormCat(BeamFormBase):
@@ -710,7 +721,7 @@ class BeamFormCat(BeamFormBase):
             Data to beamform on.
 
         """
-        super(BeamFormCat, self).setup(manager)
+        super().setup(manager)
 
         # Process and make available various data
         self._process_data(data)
@@ -734,7 +745,7 @@ class BeamFormCat(BeamFormBase):
             return None
 
         # Call generic process method.
-        return super(BeamFormCat, self).process()
+        return super().process()
 
 
 class BeamFormExternalBase(BeamFormBase):
@@ -751,8 +762,9 @@ class BeamFormExternalBase(BeamFormBase):
         ----------
         beam : GridBeam
             Model for the primary beam.
+        args : optional
+            Additional argument to pass to the super class
         """
-
         super().setup(*args)
         self._initialize_beam(beam)
 
@@ -765,7 +777,6 @@ class BeamFormExternalBase(BeamFormBase):
             Container holding the model for the primary beam.
             Currently only accepts GridBeam type containers.
         """
-
         if isinstance(beam, containers.GridBeam):
             self._initialize_grid_beam(beam)
             self._beamfunc = self._grid_beam
@@ -775,7 +786,6 @@ class BeamFormExternalBase(BeamFormBase):
 
     def _initialize_beam_with_data(self):
         """Ensure that the beam and visibilities have the same frequency axis."""
-
         if not np.array_equal(self.freq_local, self._beam_freq):
             raise RuntimeError("Beam and visibility frequency axes do not match.")
 
@@ -791,7 +801,6 @@ class BeamFormExternalBase(BeamFormBase):
             contains the "baseline averaged" beam, which will be applied to
             all baselines of a given polarisation.
         """
-
         # Make sure the beam is in celestial coordinates
         if gbeam.coords != "celestial":
             raise RuntimeError(
@@ -868,7 +877,6 @@ class BeamFormExternalBase(BeamFormBase):
             The primary beam as a function of frequency and hour angle
             at the sources declination for the requested polarisation.
         """
-
         pp = self._beam_pol.index(pol)
 
         primay_beam = np.array(
@@ -920,13 +928,12 @@ class RingMapBeamForm(task.SingleTask):
 
         Parameters
         ----------
-        manager
+        telescope
             The telescope object to use.
         ringmap
             The ringmap to extract the sources from. See the class documentation for how
             the epoch is determined.
         """
-
         self.telescope = io.get_telescope(telescope)
         self.ringmap = ringmap
 
@@ -943,7 +950,6 @@ class RingMapBeamForm(task.SingleTask):
         sources
             The source spectra.
         """
-
         ringmap = self.ringmap
 
         src_ra, src_dec = self._process_catalog(catalog)
@@ -992,7 +998,6 @@ class RingMapBeamForm(task.SingleTask):
         self, catalog: containers.SourceCatalog
     ) -> Tuple[np.ndarray, np.ndarray]:
         """Get the current epoch coordinates of the catalog."""
-
         if "position" not in catalog:
             raise ValueError("Input is missing a position table.")
 
@@ -1023,7 +1028,6 @@ class RingMapBeamForm(task.SingleTask):
         self, src_ra: np.ndarray, src_dec: np.ndarray
     ) -> Tuple[np.ndarray, np.ndarray]:
         """Get the RA/ZA ringmap pixel indices of the sources."""
-
         # Get the grid size of the map in RA and sin(ZA)
         dra = np.median(np.abs(np.diff(self.ringmap.index_map["ra"])))
         dza = np.median(np.abs(np.diff(self.ringmap.index_map["el"])))
@@ -1213,7 +1217,6 @@ class HealpixBeamForm(task.SingleTask):
         hpmap
             The Healpix map to extract the sources from.
         """
-
         self.map = hpmap
         mv = self.map.map[:]
         self.map.redistribute("freq")
@@ -1238,7 +1241,6 @@ class HealpixBeamForm(task.SingleTask):
         formed_beam
             The source spectra.
         """
-
         if "position" not in catalog:
             raise ValueError("Input is missing a position table.")
 

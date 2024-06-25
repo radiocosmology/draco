@@ -15,10 +15,10 @@ jobs:
     steps:
     - uses: actions/checkout@v2
 
-    - name: Set up Python 3.9
+    - name: Set up Python 3.11
       uses: actions/setup-python@v2
       with:
-        python-version: 3.9
+        python-version: "3.11"
 
     - name: Install apt dependencies
       run: |
@@ -26,14 +26,12 @@ jobs:
 
     - name: Install pip dependencies
       run: |
-        pip install black flake8 pylint pylint-ignore
+        pip install black ruff
         pip install -r requirements.txt
         python setup.py develop
 
-    - name: Run flake8
-      # ignore: line too long, variable names, whitespace before ':', line break before
-      # binary operator, comment style
-      run: flake8 --show-source --ignore=E501,E741,E203,W503,E266 draco
+    - name: Run ruff
+      run: ruff check .
 
     - name: Check code with black
       run: black --check .
@@ -42,7 +40,7 @@ jobs:
 
     strategy:
       matrix:
-        python-version: [3.7, 3.9]
+        python-version: [3.8, 3.11]
 
     runs-on: ubuntu-latest
     steps:
@@ -60,6 +58,7 @@ jobs:
 
     - name: Install pip dependencies
       run: |
+        pip install -U pip
         pip install wheel
         pip install numpy
         pip install cython
@@ -91,17 +90,18 @@ jobs:
         sudo apt-get update
         sudo apt-get install -y libopenmpi-dev openmpi-bin
 
-    - name: Set up Python 3.9
+    - name: Set up Python 3.11
       uses: actions/setup-python@v2
       with:
-        python-version: 3.9
+        python-version: "3.11"
 
     - name: Install pip dependencies
       run: |
+        pip install -U pip
         pip install wheel
         pip install numpy
         pip install cython
-        pip install --use-deprecated=legacy-resolver -r requirements.txt
+        pip install --use-deprecated=legacy-resolver -r requirements.txt --no-binary bitshuffle
         pip install -r doc/requirements.txt
         python setup.py develop
 

@@ -6,10 +6,9 @@ all be moved out into their own module.
 """
 
 import numpy as np
-
 from caput import config
 
-from ..core import task, containers
+from ..core import containers, task
 from ..util import tools
 
 
@@ -55,7 +54,7 @@ class ApplyGain(task.SingleTask):
             gain, (containers.CommonModeGainData, containers.CommonModeSiderealGainData)
         ):
             raise ValueError(
-                "Cannot apply input-dependent gains to stacked data: %s" % tstream
+                f"Cannot apply input-dependent gains to stacked data: {tstream!s}"
             )
 
         if isinstance(gain, containers.StaticGainData):
@@ -194,15 +193,18 @@ class AccumulateList(task.MPILoggedTask):
     """Accumulate the inputs into a list and return when the task *finishes*."""
 
     def __init__(self):
-        super(AccumulateList, self).__init__()
+        super().__init__()
         self._items = []
 
     def next(self, input_):
+        """Append an input to the list of inputs."""
         self._items.append(input_)
 
     def finish(self):
-        # Remove the internal reference to the items so they don't hang around after the task
-        # finishes
+        """Remove the internal reference.
+
+        Prevents the items from hanging around after the task finishes.
+        """
         items = self._items
         del self._items
 
@@ -215,6 +217,12 @@ class CheckMPIEnvironment(task.MPILoggedTask):
     timeout = config.Property(proptype=int, default=240)
 
     def setup(self):
+        """Send random messages between all ranks.
+
+        Tests to ensure that all messages are received within a specified amount
+        of time, and that the messages received are the same as those sent (i.e.
+        nothing was corrupted).
+        """
         import time
 
         comm = self.comm
@@ -235,7 +243,7 @@ class CheckMPIEnvironment(task.MPILoggedTask):
         start_time = time.time()
 
         while time.time() - start_time < self.timeout:
-            success = all([r.get_status() for r in results])
+            success = all(r.get_status() for r in results)
 
             if success:
                 break
@@ -265,12 +273,12 @@ class MakeCopy(task.SingleTask):
 
     def process(self, data):
         """Return a copy of the given container.
+
         Parameters
         ----------
         data : containers.ContainerBase
             The container to copy.
         """
-
         return data.copy()
 
 
@@ -290,3 +298,68 @@ class WaitUntil(task.MPILoggedTask):
     def next(self, input_):
         """Immediately forward any input."""
         return input_
+
+
+class PassOn(task.MPILoggedTask):
+    """Unconditionally forward a tasks input.
+
+    While this seems like a pointless no-op it's useful for connecting tasks in complex
+    topologies.
+    """
+
+    def next(self, input_):
+        """Immediately forward any input."""
+        return input_
+
+
+class DebugInfo(task.MPILoggedTask, task.SetMPILogging):
+    """Output some useful debug info."""
+
+    def __init__(self):
+        import logging
+
+        # Set the default log levels to something reasonable for debugging
+        self.level_rank0 = logging.DEBUG
+        self.level_all = logging.INFO
+        task.SetMPILogging.__init__(self)
+        task.MPILoggedTask.__init__(self)
+
+        ip = self._get_external_ip()
+
+        self.log.info(f"External IP is {ip}")
+
+        if self.comm.rank == 0:
+            versions = self._get_package_versions()
+
+            for name, version in versions:
+                self.log.info(f"Package: {name:40s} version={version}")
+
+    def _get_external_ip(self) -> str:
+        # Reference here:
+        # https://community.cloudflare.com/t/can-1-1-1-1-be-used-to-find-out-ones-public-ip-address/14971/6
+
+        # Setup a resolver to point to Cloudflare
+        import dns.resolver
+
+        r = dns.resolver.Resolver()
+        r.nameservers = ["1.1.1.1"]
+
+        # Get IP from cloudflare chaosnet TXT record, and parse the response
+        res = r.resolve("whoami.cloudflare", "TXT", "CH", tcp=True, lifetime=15)
+
+        return str(res[0]).replace('"', "")
+
+    def _get_package_versions(self) -> list[tuple[str, str]]:
+        import json
+        import subprocess
+
+        p = subprocess.run(["pip", "list", "--format", "json"], stdout=subprocess.PIPE)
+
+        package_info = json.loads(p.stdout)
+
+        package_list = []
+
+        for p in package_info:
+            package_list.append((p["name"], p["version"]))
+
+        return package_list

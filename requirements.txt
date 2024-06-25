@@ -3,6 +3,8 @@ caput[compression] @ git+https://github.com/radiocosmology/caput.git
 cora @ git+https://github.com/radiocosmology/cora.git
 Cython>0.18
 mpi4py
-numpy>=1.17
+numpy>=1.17, <2
 scipy>=0.10
+scikit-image
 skyfield
+pywavelets

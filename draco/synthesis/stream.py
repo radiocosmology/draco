@@ -7,11 +7,10 @@ a set of time stream files with :class:`MakeTimeStream`.
 """
 
 import numpy as np
-
+from caput import config, mpiarray, mpiutil, pipeline
 from cora.util import hputil
-from caput import mpiutil, pipeline, config, mpiarray
 
-from ..core import containers, task, io
+from ..core import containers, io, task
 
 
 class SimulateSidereal(task.SingleTask):
@@ -41,11 +40,11 @@ class SimulateSidereal(task.SingleTask):
         self.telescope = io.get_telescope(bt)
 
     def process(self, map_):
-        """Simulate a SiderealStream
+        """Simulate a SiderealStream.
 
         Parameters
         ----------
-        map : :class:`containers.Map`
+        map_ : :class:`containers.Map`
             The sky map to process to into a sidereal stream. Frequencies in the
             map, must match the Beam Transfer matrices.
 
@@ -56,7 +55,6 @@ class SimulateSidereal(task.SingleTask):
         feeds : list of CorrInput
             Description of the feeds simulated.
         """
-
         # Read in telescope system
         bt = self.beamtransfer
         tel = self.telescope
@@ -184,8 +182,8 @@ class ExpandProducts(task.SingleTask):
 
         Parameters
         ----------
-        tel : :class:`drift.core.TransitTelescope`
-            Telescope object.
+        telescope : :class:`drift.core.TransitTelescope`
+            Telescope object to use
         """
         self.telescope = io.get_telescope(telescope)
 
@@ -202,7 +200,6 @@ class ExpandProducts(task.SingleTask):
         new_sstream : :class:`containers.SiderealStream`
             Unwrapped sidereal stream.
         """
-
         sstream.redistribute("freq")
 
         ninput = len(sstream.input)
@@ -296,7 +293,6 @@ class MakeTimeStream(task.SingleTask):
         tstream : :class:`containers.TimeStream`
             Time stream object.
         """
-
         from ..util import regrid
 
         # First check to see if we have reached the end of the requested time,
@@ -407,7 +403,6 @@ class MakeSiderealDayStream(task.SingleTask):
         ss : :class:`containers.SiderealStream`
             Simulated sidereal day stream.
         """
-
         # If current_lsd is None then this is the first time we've run
         if self._current_lsd is None:
             # Check if lsd is an integer, if not add an lsd

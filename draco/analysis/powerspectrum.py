@@ -1,10 +1,9 @@
 """Power spectrum estimation code."""
 
-
 import numpy as np
-
 from caput import config
-from ..core import task, containers
+
+from ..core import containers, task
 
 
 class QuadraticPSEstimation(task.SingleTask):
@@ -32,6 +31,7 @@ class QuadraticPSEstimation(task.SingleTask):
         Parameters
         ----------
         manager : ProductManager
+            Manager object to use
         """
         self.manager = manager
 
@@ -41,18 +41,18 @@ class QuadraticPSEstimation(task.SingleTask):
         Parameters
         ----------
         klmodes : containers.KLModes
+            KLModes for which to estimate the power spectrum
 
         Returns
         -------
         ps : containers.PowerSpectrum
         """
-
         import scipy.linalg as la
 
         if not isinstance(klmodes, containers.KLModes):
             raise ValueError(
                 "Input container must be instance of "
-                "KLModes (received %s)" % klmodes.__class__
+                f"KLModes (received {klmodes.__class__!s})"
             )
 
         klmodes.redistribute("m")

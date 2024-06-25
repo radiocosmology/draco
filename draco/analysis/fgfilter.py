@@ -1,10 +1,9 @@
 """Tasks for foreground filtering data."""
 
-
 import numpy as np
-
 from caput import config
-from ..core import task, containers, io
+
+from ..core import containers, io, task
 
 
 class _ProjectFilterBase(task.SingleTask):
@@ -32,7 +31,6 @@ class _ProjectFilterBase(task.SingleTask):
         -------
         output : memh5.BasicCont
         """
-
         if self.mode == "forward":
             return self._forward(inp)
 
@@ -41,6 +39,8 @@ class _ProjectFilterBase(task.SingleTask):
 
         if self.mode == "filter":
             return self._backward(self._forward(inp))
+
+        return None
 
     def _forward(self, inp):
         pass
@@ -171,8 +171,8 @@ class KLModeProject(_ProjectFilterBase):
         # Check and set the KL basis we are using
         if self.klname not in self.product_manager.kltransforms:
             raise RuntimeError(
-                "Requested KL basis %s not available (options are %s)"
-                % (self.klname, repr(list(self.product_manager.kltransforms.items())))
+                f"Requested KL basis {self.kname} not available (options "
+                f"are {list(self.product_manager.kltransforms.items())!r})"
             )
         kl = self.product_manager.kltransforms[self.klname]
 
@@ -209,8 +209,8 @@ class KLModeProject(_ProjectFilterBase):
         # Check and set the KL basis we are using
         if self.klname not in self.product_manager.kltransforms:
             raise RuntimeError(
-                "Requested KL basis %s not available (options are %s)"
-                % (self.klname, repr(list(self.product_manager.kltransforms.items())))
+                f"Requested KL basis {self.klname} not available (options "
+                f"are {list(self.product_manager.kltransforms.items())!r})"
             )
         kl = self.product_manager.kltransforms[self.klname]
 
