@@ -1,0 +1,336 @@
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" data-content_root="../">
+<head>
+  <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>draco.util.regrid &mdash; draco 0+untagged.1.gb2a701a documentation</title>
+      <link rel="stylesheet" type="text/css" href="../_static/pygments.css?v=80d5e7a1" />
+      <link rel="stylesheet" type="text/css" href="../_static/css/theme.css?v=19f00094" />
+
+  
+  <!--[if lt IE 9]>
+    <script src="../_static/js/html5shiv.min.js"></script>
+  <![endif]-->
+  
+        <script src="../_static/jquery.js?v=5d32c60e"></script>
+        <script src="../_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
+        <script src="../_static/documentation_options.js?v=73249050"></script>
+        <script src="../_static/doctools.js?v=9a2dae69"></script>
+        <script src="../_static/sphinx_highlight.js?v=dc90522c"></script>
+        <script async="async" src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>
+    <script src="../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../genindex.html" />
+    <link rel="search" title="Search" href="../search.html" />
+    <link rel="next" title="draco.util.rfi" href="draco.util.rfi.html" />
+    <link rel="prev" title="draco.util.random" href="draco.util.random.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="../index.html" class="icon icon-home">
+            draco
+          </a>
+              <div class="version">
+                0+untagged.1.gb2a701a
+              </div>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <ul class="current">
+<li class="toctree-l1"><a class="reference internal" href="../tutorial.html">Tutorial</a></li>
+<li class="toctree-l1 current"><a class="reference internal" href="../reference.html">API Reference</a><ul class="current">
+<li class="toctree-l2 current"><a class="reference internal" href="../reference.html#submodules">Submodules</a><ul class="current">
+<li class="toctree-l3"><a class="reference internal" href="draco.analysis.html">draco.analysis</a></li>
+<li class="toctree-l3"><a class="reference internal" href="draco.core.html">draco.core</a></li>
+<li class="toctree-l3"><a class="reference internal" href="draco.synthesis.html">draco.synthesis</a></li>
+<li class="toctree-l3 current"><a class="reference internal" href="draco.util.html">draco.util</a><ul class="current">
+<li class="toctree-l4"><a class="reference internal" href="draco.util.exception.html">draco.util.exception</a></li>
+<li class="toctree-l4"><a class="reference internal" href="draco.util.random.html">draco.util.random</a></li>
+<li class="toctree-l4 current"><a class="current reference internal" href="#">draco.util.regrid</a></li>
+<li class="toctree-l4"><a class="reference internal" href="draco.util.rfi.html">draco.util.rfi</a></li>
+<li class="toctree-l4"><a class="reference internal" href="draco.util.testing.html">draco.util.testing</a></li>
+<li class="toctree-l4"><a class="reference internal" href="draco.util.tools.html">draco.util.tools</a></li>
+<li class="toctree-l4"><a class="reference internal" href="draco.util.truncate.html">draco.util.truncate</a></li>
+</ul>
+</li>
+</ul>
+</li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="../dev.html">Development Guidelines</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../index.html">draco</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../index.html" class="icon icon-home" aria-label="Home"></a></li>
+          <li class="breadcrumb-item"><a href="../reference.html">API Reference</a></li>
+          <li class="breadcrumb-item"><a href="draco.util.html">draco.util</a></li>
+      <li class="breadcrumb-item active">draco.util.regrid</li>
+      <li class="wy-breadcrumbs-aside">
+            <a href="../_sources/_autosummary/draco.util.regrid.rst.txt" rel="nofollow"> View page source</a>
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <section id="module-draco.util.regrid">
+<span id="draco-util-regrid"></span><h1>draco.util.regrid<a class="headerlink" href="#module-draco.util.regrid" title="Link to this heading"></a></h1>
+<p>Routines for regridding irregular data using a Lanczos/Wiener filtering approach.</p>
+<p>This is described in some detail in <a class="reference external" href="http://bao.chimenet.ca/doc/cgi-bin/general/documents/display?Id=173">doclib:173</a>.</p>
+<p class="rubric">Functions</p>
+<table class="autosummary longtable docutils align-default">
+<tbody>
+<tr class="row-odd"><td><p><a class="reference internal" href="#draco.util.regrid.band_wiener" title="draco.util.regrid.band_wiener"><code class="xref py py-obj docutils literal notranslate"><span class="pre">band_wiener</span></code></a>(R, Ni, Si, y, bw)</p></td>
+<td><p>Calculate the Wiener filter assuming various bandedness properties.</p></td>
+</tr>
+<tr class="row-even"><td><p><a class="reference internal" href="#draco.util.regrid.grad_1d" title="draco.util.regrid.grad_1d"><code class="xref py py-obj docutils literal notranslate"><span class="pre">grad_1d</span></code></a>(x, si, mask[, period])</p></td>
+<td><p>Gradient with boundary samples wrapped.</p></td>
+</tr>
+<tr class="row-odd"><td><p><a class="reference internal" href="#draco.util.regrid.lanczos_forward_matrix" title="draco.util.regrid.lanczos_forward_matrix"><code class="xref py py-obj docutils literal notranslate"><span class="pre">lanczos_forward_matrix</span></code></a>(x, y[, a, periodic])</p></td>
+<td><p>Lanczos interpolation matrix.</p></td>
+</tr>
+<tr class="row-even"><td><p><a class="reference internal" href="#draco.util.regrid.lanczos_inverse_matrix" title="draco.util.regrid.lanczos_inverse_matrix"><code class="xref py py-obj docutils literal notranslate"><span class="pre">lanczos_inverse_matrix</span></code></a>(x, y[, a, cond])</p></td>
+<td><p>Regrid data using a maximum likelihood inverse Lanczos.</p></td>
+</tr>
+<tr class="row-odd"><td><p><a class="reference internal" href="#draco.util.regrid.lanczos_kernel" title="draco.util.regrid.lanczos_kernel"><code class="xref py py-obj docutils literal notranslate"><span class="pre">lanczos_kernel</span></code></a>(x, a)</p></td>
+<td><p>Lanczos interpolation kernel.</p></td>
+</tr>
+<tr class="row-even"><td><p><a class="reference internal" href="#draco.util.regrid.rebin_matrix" title="draco.util.regrid.rebin_matrix"><code class="xref py py-obj docutils literal notranslate"><span class="pre">rebin_matrix</span></code></a>(tra, ra[, width_t])</p></td>
+<td><p>Construct a matrix to rebin the samples.</p></td>
+</tr>
+<tr class="row-odd"><td><p><a class="reference internal" href="#draco.util.regrid.taylor_coeff" title="draco.util.regrid.taylor_coeff"><code class="xref py py-obj docutils literal notranslate"><span class="pre">taylor_coeff</span></code></a>(x, N, M, Ni, Si[, period, xc])</p></td>
+<td><p>Return a set of sparse matrices that estimates expansion coefficients.</p></td>
+</tr>
+</tbody>
+</table>
+<dl class="py function">
+<dt class="sig sig-object py" id="draco.util.regrid.band_wiener">
+<span class="sig-prename descclassname"><span class="pre">draco.util.regrid.</span></span><span class="sig-name descname"><span class="pre">band_wiener</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">R</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">Ni</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">Si</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">y</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">bw</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/draco/util/regrid.html#band_wiener"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#draco.util.regrid.band_wiener" title="Link to this definition"></a></dt>
+<dd><p>Calculate the Wiener filter assuming various bandedness properties.</p>
+<p>In particular this asserts that a particular element in the filtered
+output will only couple to the nearest <cite>bw</cite> elements. Equivalently, this
+is that the covariance matrix will be band diagonal. This allows us to use
+fast routines to generate the solution.</p>
+<p>Note that the inverse noise estimate returned is <span class="math notranslate nohighlight">\(\mathrm{diag}(\mathbf{R}^T
+\mathbf{N}^{-1} \mathbf{R})\)</span> and not the full Bayesian estimate including a
+contribution from the signal covariance.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>R</strong> (<em>np.ndarray</em><em>[</em><em>m</em><em>, </em><em>n</em><em>]</em>) – Transfer matrix for the Wiener filter.</p></li>
+<li><p><strong>Ni</strong> (<em>np.ndarray</em><em>[</em><em>k</em><em>, </em><em>n</em><em>]</em>) – Inverse noise matrix. Noise assumed to be uncorrelated (i.e. diagonal matrix).</p></li>
+<li><p><strong>Si</strong> (<em>np.narray</em><em>[</em><em>m</em><em>]</em>) – Inverse signal matrix. Signal model assumed to be uncorrelated (i.e. diagonal
+matrix).</p></li>
+<li><p><strong>y</strong> (<em>np.ndarray</em><em>[</em><em>k</em><em>, </em><em>n</em><em>]</em>) – Data to apply to.</p></li>
+<li><p><strong>bw</strong> (<em>int</em>) – Bandwidth, i.e. how many elements couple together.</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p><ul class="simple">
+<li><p><strong>xhat</strong> (<em>np.ndarray[k, m]</em>) – Filtered data.</p></li>
+<li><p><strong>nw</strong> (<em>np.ndarray[k, m]</em>) – Estimate of variance of each element.</p></li>
+</ul>
+</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="draco.util.regrid.grad_1d">
+<span class="sig-prename descclassname"><span class="pre">draco.util.regrid.</span></span><span class="sig-name descname"><span class="pre">grad_1d</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">x</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">ndarray</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">si</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">ndarray</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">mask</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">ndarray</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">period</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">float</span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><span class="pre">None</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">ndarray</span></span></span><a class="reference internal" href="../_modules/draco/util/regrid.html#grad_1d"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#draco.util.regrid.grad_1d" title="Link to this definition"></a></dt>
+<dd><p>Gradient with boundary samples wrapped.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>x</strong> – Data to calculate the gradient for.</p></li>
+<li><p><strong>si</strong> – Positions of the samples. Must be monotonically increasing.</p></li>
+<li><p><strong>mask</strong> – Boolean mask, True where a sample is flagged.</p></li>
+<li><p><strong>period</strong> – Period of <cite>samples</cite>. Default is None, which produces a
+non-periodic gradient.</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p><ul class="simple">
+<li><p><em>gradient</em> – Gradient of <cite>x</cite>. Gradient is set to zero where any sample in
+the calculation was flagged.</p></li>
+<li><p><em>mask</em> – Boolean mask corresponding to samples for which a proper
+gradient could not be calculated. True where a sample
+is flagged.</p></li>
+</ul>
+</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="draco.util.regrid.lanczos_forward_matrix">
+<span class="sig-prename descclassname"><span class="pre">draco.util.regrid.</span></span><span class="sig-name descname"><span class="pre">lanczos_forward_matrix</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">x</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">y</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">a</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">5</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">periodic</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">False</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/draco/util/regrid.html#lanczos_forward_matrix"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#draco.util.regrid.lanczos_forward_matrix" title="Link to this definition"></a></dt>
+<dd><p>Lanczos interpolation matrix.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>x</strong> (<em>np.ndarray</em><em>[</em><em>m</em><em>]</em>) – Points we have data at. Must be regularly spaced.</p></li>
+<li><p><strong>y</strong> (<em>np.ndarray</em><em>[</em><em>n</em><em>]</em>) – Point we want to interpolate data onto.</p></li>
+<li><p><strong>a</strong> (<em>integer</em><em>, </em><em>optional</em>) – Lanczos width parameter.</p></li>
+<li><p><strong>periodic</strong> (<em>boolean</em><em>, </em><em>optional</em>) – Treat input points as periodic.</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p><strong>matrix</strong> – Lanczos regridding matrix. Apply to data with <cite>np.dot(matrix, data)</cite>.</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>np.ndarray[m, n]</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="draco.util.regrid.lanczos_inverse_matrix">
+<span class="sig-prename descclassname"><span class="pre">draco.util.regrid.</span></span><span class="sig-name descname"><span class="pre">lanczos_inverse_matrix</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">x</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">y</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">a</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">5</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">cond</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">0.1</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/draco/util/regrid.html#lanczos_inverse_matrix"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#draco.util.regrid.lanczos_inverse_matrix" title="Link to this definition"></a></dt>
+<dd><p>Regrid data using a maximum likelihood inverse Lanczos.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>x</strong> (<em>np.ndarray</em><em>[</em><em>m</em><em>]</em>) – Points to regrid data onto. Must be regularly spaced.</p></li>
+<li><p><strong>y</strong> (<em>np.ndarray</em><em>[</em><em>n</em><em>]</em>) – Points we have data at. Irregular spacing.</p></li>
+<li><p><strong>a</strong> (<em>integer</em><em>, </em><em>optional</em>) – Lanczos width parameter.</p></li>
+<li><p><strong>cond</strong> (<em>float</em>) – Relative condition number for pseudo-inverse.</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p><strong>matrix</strong> – Lanczos regridding matrix. Apply to data with <cite>np.dot(matrix, data)</cite>.</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>np.ndarray[m, n]</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="draco.util.regrid.lanczos_kernel">
+<span class="sig-prename descclassname"><span class="pre">draco.util.regrid.</span></span><span class="sig-name descname"><span class="pre">lanczos_kernel</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">x</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">a</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/draco/util/regrid.html#lanczos_kernel"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#draco.util.regrid.lanczos_kernel" title="Link to this definition"></a></dt>
+<dd><p>Lanczos interpolation kernel.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>x</strong> (<em>array_like</em>) – Point separation.</p></li>
+<li><p><strong>a</strong> (<em>integer</em>) – Lanczos kernel width.</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p><strong>kernel</strong></p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>np.ndarray</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="draco.util.regrid.rebin_matrix">
+<span class="sig-prename descclassname"><span class="pre">draco.util.regrid.</span></span><span class="sig-name descname"><span class="pre">rebin_matrix</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">tra</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">ndarray</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">ra</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">ndarray</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">width_t</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">float</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">0</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">ndarray</span></span></span><a class="reference internal" href="../_modules/draco/util/regrid.html#rebin_matrix"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#draco.util.regrid.rebin_matrix" title="Link to this definition"></a></dt>
+<dd><p>Construct a matrix to rebin the samples.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>tra</strong> – The samples we have in the time stream.</p></li>
+<li><p><strong>ra</strong> – The target samples we want in the sidereal stream.</p></li>
+<li><p><strong>width_t</strong> – The width of a time sample. Set to zero to do a nearest bin assignment.</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p>A matrix to perform the rebinning.</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>R</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="draco.util.regrid.taylor_coeff">
+<span class="sig-prename descclassname"><span class="pre">draco.util.regrid.</span></span><span class="sig-name descname"><span class="pre">taylor_coeff</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">x</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">ndarray</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">N</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">int</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">M</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">int</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">Ni</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">ndarray</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">Si</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">float</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">period</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">float</span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><span class="pre">None</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">xc</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">ndarray</span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><span class="pre">None</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">list</span><span class="p"><span class="pre">[</span></span><span class="pre">csr_array</span><span class="p"><span class="pre">]</span></span></span></span><a class="reference internal" href="../_modules/draco/util/regrid.html#taylor_coeff"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#draco.util.regrid.taylor_coeff" title="Link to this definition"></a></dt>
+<dd><p>Return a set of sparse matrices that estimates expansion coefficients.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>x</strong> – Positions of each element.</p></li>
+<li><p><strong>N</strong> – Number of positions each side to estimate from.</p></li>
+<li><p><strong>M</strong> – The number of terms in the expansion.</p></li>
+<li><p><strong>Ni</strong> – The weight for each position. The inverse noise variance if interpreted as a
+Wiener filter.</p></li>
+<li><p><strong>Si</strong> – A regulariser. The inverse signal variance if interpreted as a Wiener filter.</p></li>
+<li><p><strong>period</strong> – If set, assume the axis is periodic with this period.</p></li>
+<li><p><strong>xc</strong> – An optional parameter giving the location to return the coefficients at. If not
+set, just use the locations of each individual sample.</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p>A set of sparse matrices that will estimate the coefficents at each location.
+Each matrix is for a different coefficient.</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>matrices</p>
+</dd>
+</dl>
+</dd></dl>
+
+</section>
+
+
+           </div>
+          </div>
+          <footer><div class="rst-footer-buttons" role="navigation" aria-label="Footer">
+        <a href="draco.util.random.html" class="btn btn-neutral float-left" title="draco.util.random" accesskey="p" rel="prev"><span class="fa fa-arrow-circle-left" aria-hidden="true"></span> Previous</a>
+        <a href="draco.util.rfi.html" class="btn btn-neutral float-right" title="draco.util.rfi" accesskey="n" rel="next">Next <span class="fa fa-arrow-circle-right" aria-hidden="true"></span></a>
+    </div>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2016, Richard Shaw.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>
