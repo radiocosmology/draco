@@ -733,6 +733,9 @@ class SiderealStacker(task.SingleTask):
             ):
                 self.stack.add_dataset("sample_variance")
 
+            if "effective_ra" in sdata.datasets:
+                self.stack.add_dataset("effective_ra")
+
             self.stack.redistribute("freq")
 
             # Initialize all datasets to zero.
