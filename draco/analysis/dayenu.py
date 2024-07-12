@@ -696,6 +696,9 @@ class DayenuDelayFilterMap(task.SingleTask):
 
                 self.log.debug(f"Took {time.time() - t0:0.3f} seconds in total.")
 
+        # Do this due to a bug in MPI IO when distributed over last axis
+        ringmap.redistribute("freq")
+
         return ringmap
 
     def _get_cut(self, el, pol=None, **kwargs):

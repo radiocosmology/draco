@@ -58,7 +58,7 @@ their own custom container types.
 """
 
 import inspect
-from typing import ClassVar, List, Optional, Union
+from typing import ClassVar, Optional, Union
 
 import numpy as np
 from caput import memh5, mpiarray, tod
@@ -2348,6 +2348,13 @@ class DelaySpectrum(DelayContainer):
             "distributed": True,
             "distributed_axis": "baseline",
         },
+        "spectrum_mask": {
+            "axes": ["baseline"],
+            "dtype": bool,
+            "initialise": False,
+            "distributed": True,
+            "distributed_axis": "baseline",
+        },
     }
 
     def __init__(self, *args, weight_boost=1.0, sample=1, **kwargs):
@@ -2913,7 +2920,7 @@ def copy_datasets_filter(
     dest: ContainerBase,
     axis: Union[str, list, tuple] = [],
     selection: Union[np.ndarray, list, slice, dict] = {},
-    exclude_axes: Optional[List[str]] = None,
+    exclude_axes: Optional[list[str]] = None,
 ):
     """Copy datasets while filtering a given axis.
 
