@@ -483,9 +483,9 @@ class DayenuDelayFilterHybridVis(task.SingleTask):
 
                 except np.linalg.LinAlgError as exc:
                     self.log.error(
-                        "Failed to converge while processing time {tt}: {exc}"
+                        f"Failed to converge while processing time {tt}: {exc}"
                     )
-                    weight[pp, :, xx, tt] = 0.0
+                    weight[:, :, xx, tt] = 0.0
                     continue
 
                 # Apply the filter
