@@ -1957,12 +1957,27 @@ class HybridVisStream(FreqContainer, SiderealContainer, VisBase):
             "distributed": True,
             "distributed_axis": "freq",
         },
+        "filter": {
+            "axes": ["freq", "freq", "ew", "ra"],
+            "dtype": np.float64,
+            "initialise": False,
+            "distributed": True,
+            "distributed_axis": "freq",
+        },
     }
 
     @property
     def dirty_beam(self):
         """Not useful at this stage, but it's needed to propagate onward."""
         return self.datasets["dirty_beam"]
+
+    @property
+    def filter(self):
+        """Return the filter dataset, if available."""
+        if "filter" in self.datasets:
+            return self.datasets["filter"]
+
+        raise KeyError("Dataset 'filter' not initialised.")
 
 
 class HybridVisMModes(FreqContainer, MContainer, VisBase):

@@ -404,7 +404,7 @@ class DayenuDelayFilterFixedCutoff(transform.ReduceChisq):
 
 
 class DayenuDelayFilterHybridVis(task.SingleTask):
-    """Apply a DAYENU high-pass delay filter to visibility data.
+    """Apply a DAYENU high-pass delay filter to hybrid beamformed visibilities.
 
     Attributes
     ----------
@@ -412,35 +412,38 @@ class DayenuDelayFilterHybridVis(task.SingleTask):
         The stop-band rejection of the filter.  Default is 1e-12.
     tauw : float
         Delay cutoff in micro-seconds.  Default is 0.4 micro-seconds.
-    single_mask : bool
-        Apply a single frequency mask for all baselines.  Only includes
-        frequencies where the weights are nonzero for all baselines.
-        Otherwise will construct a filter for all unique single-time
-        frequency masks (can be significantly slower).  Default is True.
     atten_threshold : float
         Mask any frequency where the diagonal element of the filter
         is less than this fraction of the median value over all
         unmasked frequencies.  Default is 0.0 (i.e., do not mask
         frequencies with low attenuation).
+    save_filter : bool
+        Save the filter that was applied to the output container.
     """
 
     epsilon = config.Property(proptype=float, default=1e-12)
     tauw = config.Property(proptype=np.atleast_1d, default=0.400)
     atten_threshold = config.Property(proptype=float, default=0.0)
+    save_filter = config.Property(proptype=bool, default=False)
 
     def process(self, stream):
         """Filter out delays from a SiderealStream or TimeStream.
 
         Parameters
         ----------
-        stream : SiderealStream
+        stream : HybridVisStream
             Data to filter.
 
         Returns
         -------
-        stream_filt : SiderealStream
+        stream_filt : HybridVisStream
             Filtered dataset.
         """
+        # Create a filter dataset
+        if self.save_filter:
+            stream.add_dataset("filter")
+            stream.filter[:] = 0.0
+
         # Distribute over products
         stream.redistribute(["ra", "time"])
 
@@ -452,6 +455,7 @@ class DayenuDelayFilterHybridVis(task.SingleTask):
         # Dereference the required datasets
         vis = stream.vis[:].local_array
         weight = stream.weight[:].local_array
+        filt = stream.filter[:].local_array
 
         # Loop over products
         for tt in range(ntime):
@@ -487,6 +491,10 @@ class DayenuDelayFilterHybridVis(task.SingleTask):
                     )
                     weight[:, :, xx, tt] = 0.0
                     continue
+
+                # Save the filter to the container
+                if self.save_filter:
+                    filt[:, :, xx, tt] = NF[0]
 
                 # Apply the filter
                 for pp in range(npol):
