@@ -852,6 +852,20 @@ class SiderealStacker(task.SingleTask):
                 self.stack.nsample[:] > 1, tools.invert_no_zero(norm), 0.0
             )[np.newaxis, :]
 
+        if "effective_ra" in self.stack.datasets:
+            # For samples where there is no data, the effective ra should
+            # be the same as the grid ra
+            weight = self.stack.weight[:].local_array
+            era = self.stack.effective_ra[:].local_array
+
+            # Broadcast the RA array to match the shape of a single frequency,
+            # allowing us to select grid ra values with a 2D mask
+            grid_ra = np.broadcast_to(self.stack.ra, (*era.shape[1:],))
+
+            for fi in range(era.shape[0]):
+                mask = weight[fi] == 0.0
+                era[fi][mask] = grid_ra[mask]
+
         return self.stack
 
 
