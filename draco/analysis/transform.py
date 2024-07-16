@@ -1218,7 +1218,7 @@ class MixData(task.SingleTask):
             self.mixed_data.weight[:] = 0.0
 
         # Validate the types are the same
-        if type(self.mixed_data) != type(data):
+        if type(self.mixed_data) is not type(data):
             raise TypeError(
                 f"type(data) (={type(data)}) must match "
                 f"type(data_stack) (={type(self.type)}"
