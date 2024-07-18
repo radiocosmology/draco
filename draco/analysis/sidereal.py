@@ -641,6 +641,12 @@ class RebinGradientCorrection(task.SingleTask):
             if not np.any(weight[fi]):
                 continue
 
+            # We need to track the full time mask applied to each
+            # baseline. Because the `effective_ra` dataset is baseline
+            # dependent, the gradient could end up producing a slightly
+            # baseline dependent mask
+            fmask = np.zeros(weight.shape[-1], dtype=bool)
+
             for vi in range(vis.shape[1]):
                 # Skip if entire baseline is masked
                 if not np.any(weight[fi, vi]):
@@ -655,8 +661,12 @@ class RebinGradientCorrection(task.SingleTask):
                 # Apply the correction to estimate the sample value at the
                 # RA bin centre
                 vis[fi, vi] -= grad * (era[fi, vi] - sstream.ra)
-                # Zero any weights that could not be corrected
-                weight[fi, vi] *= (~mask).astype(weight.dtype)
+                # Keep track of the time mask being applied
+                fmask |= mask
+
+            # Zero any weights that could not be corrected for at least
+            # one baseline
+            weight[fi] *= (~fmask).astype(weight.dtype)[np.newaxis]
 
         # Delete the effective ra dataset since it is not needed anymore
         del sstream["effective_ra"]
