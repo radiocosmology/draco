@@ -641,6 +641,12 @@ class RebinGradientCorrection(task.SingleTask):
             if not np.any(weight[fi]):
                 continue
 
+            # We need to track the full time mask applied to each
+            # baseline. Because the `effective_ra` dataset is baseline
+            # dependent, the gradient could end up producing a slightly
+            # baseline dependent mask
+            fmask = np.zeros(weight.shape[-1], dtype=bool)
+
             for vi in range(vis.shape[1]):
                 # Skip if entire baseline is masked
                 if not np.any(weight[fi, vi]):
@@ -655,8 +661,12 @@ class RebinGradientCorrection(task.SingleTask):
                 # Apply the correction to estimate the sample value at the
                 # RA bin centre
                 vis[fi, vi] -= grad * (era[fi, vi] - sstream.ra)
-                # Zero any weights that could not be corrected
-                weight[fi, vi] *= (~mask).astype(weight.dtype)
+                # Keep track of the time mask being applied
+                fmask |= mask
+
+            # Zero any weights that could not be corrected for at least
+            # one baseline
+            weight[fi] *= (~fmask).astype(weight.dtype)[np.newaxis]
 
         # Delete the effective ra dataset since it is not needed anymore
         del sstream["effective_ra"]
@@ -732,6 +742,9 @@ class SiderealStacker(task.SingleTask):
                 "sample_variance" not in self.stack.datasets
             ):
                 self.stack.add_dataset("sample_variance")
+
+            if "effective_ra" in sdata.datasets:
+                self.stack.add_dataset("effective_ra")
 
             self.stack.redistribute("freq")
 
@@ -848,6 +861,20 @@ class SiderealStacker(task.SingleTask):
             self.stack.sample_variance[:] *= np.where(
                 self.stack.nsample[:] > 1, tools.invert_no_zero(norm), 0.0
             )[np.newaxis, :]
+
+        if "effective_ra" in self.stack.datasets:
+            # For samples where there is no data, the effective ra should
+            # be the same as the grid ra
+            weight = self.stack.weight[:].local_array
+            era = self.stack.effective_ra[:].local_array
+
+            # Broadcast the RA array to match the shape of a single frequency,
+            # allowing us to select grid ra values with a 2D mask
+            grid_ra = np.broadcast_to(self.stack.ra, (*era.shape[1:],))
+
+            for fi in range(era.shape[0]):
+                mask = weight[fi] == 0.0
+                era[fi][mask] = grid_ra[mask]
 
         return self.stack
 

@@ -261,7 +261,16 @@ def grad_1d(
     # involves masking any sample where an adjacent sample is masked
     mask |= np.concatenate(([False], mask[:-1])) | np.concatenate((mask[1:], [False]))
 
-    return (~mask * np.gradient(x, si))[sel], mask[sel]
+    # `np.gradient` will produce NaNs if the sample separation is zero -
+    # i.e., if there are two adjacent zeros in `si`. Explicitly set
+    # these values to zero
+    with np.errstate(divide="ignore", invalid="ignore"):
+        grad = np.gradient(x, si)
+
+    mask |= ~np.isfinite(grad)
+    grad[mask] = 0.0
+
+    return grad[sel], mask[sel]
 
 
 def taylor_coeff(
