@@ -13,12 +13,12 @@ jobs:
 
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v2
+    - uses: actions/checkout@v4
 
-    - name: Set up Python 3.11
-      uses: actions/setup-python@v2
+    - name: Set up Python 3.12
+      uses: actions/setup-python@v5
       with:
-        python-version: "3.11"
+        python-version: "3.12"
 
     - name: Install apt dependencies
       run: |
@@ -26,9 +26,8 @@ jobs:
 
     - name: Install pip dependencies
       run: |
-        pip install black ruff
-        pip install -r requirements.txt
-        python setup.py develop
+        pip install -e .
+        pip install -e .[lint]
 
     - name: Run ruff
       run: ruff check .
@@ -40,32 +39,26 @@ jobs:
 
     strategy:
       matrix:
-        python-version: [3.9, 3.11]
+        python-version: [3.9, 3.12]
 
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v2
+    - uses: actions/checkout@v4
 
     - name: Install apt dependencies
       run: |
         sudo apt-get update
-        sudo apt-get install -y libopenmpi-dev openmpi-bin
+        sudo apt-get install -y libopenmpi-dev openmpi-bin libhdf5-serial-dev
 
     - name: Set up Python ${{ matrix.python-version }}
-      uses: actions/setup-python@v2
+      uses: actions/setup-python@v5
       with:
         python-version: ${{ matrix.python-version }}
 
     - name: Install pip dependencies
       run: |
-        pip install -U pip
-        pip install wheel
-        pip install numpy
-        pip install cython
-        pip install --use-deprecated=legacy-resolver -r requirements.txt
-        pip install mpi4py
-        pip install pytest
-        python setup.py develop
+        pip install -e .
+        pip install -e .[test]
 
     - name: Run serial tests
       run: pytest -x test/
@@ -83,27 +76,22 @@ jobs:
 
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v2
+    - uses: actions/checkout@v4
 
     - name: Install apt dependencies
       run: |
         sudo apt-get update
         sudo apt-get install -y libopenmpi-dev openmpi-bin
 
-    - name: Set up Python 3.11
-      uses: actions/setup-python@v2
+    - name: Set up Python 3.12
+      uses: actions/setup-python@v5
       with:
-        python-version: "3.11"
+        python-version: "3.12"
 
     - name: Install pip dependencies
       run: |
-        pip install -U pip
-        pip install wheel
-        pip install numpy
-        pip install cython
-        pip install --use-deprecated=legacy-resolver -r requirements.txt --no-binary bitshuffle
-        pip install -r doc/requirements.txt
-        python setup.py develop
+        pip install -e .
+        pip install -e .[docs]
 
     - name: Build sphinx docs
       run: sphinx-build -W -b html doc/ doc/_build/html
