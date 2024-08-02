@@ -1,0 +1,304 @@
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" data-content_root="../">
+<head>
+  <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>draco.util.testing &mdash; draco 0.0.1 documentation</title>
+      <link rel="stylesheet" type="text/css" href="../_static/pygments.css?v=80d5e7a1" />
+      <link rel="stylesheet" type="text/css" href="../_static/css/theme.css?v=19f00094" />
+
+  
+  <!--[if lt IE 9]>
+    <script src="../_static/js/html5shiv.min.js"></script>
+  <![endif]-->
+  
+        <script src="../_static/jquery.js?v=5d32c60e"></script>
+        <script src="../_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
+        <script src="../_static/documentation_options.js?v=d45e8c67"></script>
+        <script src="../_static/doctools.js?v=9a2dae69"></script>
+        <script src="../_static/sphinx_highlight.js?v=dc90522c"></script>
+    <script src="../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../genindex.html" />
+    <link rel="search" title="Search" href="../search.html" />
+    <link rel="next" title="draco.util.tools" href="draco.util.tools.html" />
+    <link rel="prev" title="draco.util.rfi" href="draco.util.rfi.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="../index.html" class="icon icon-home">
+            draco
+          </a>
+              <div class="version">
+                0.0.1
+              </div>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <ul class="current">
+<li class="toctree-l1"><a class="reference internal" href="../tutorial.html">Tutorial</a></li>
+<li class="toctree-l1 current"><a class="reference internal" href="../reference.html">API Reference</a><ul class="current">
+<li class="toctree-l2 current"><a class="reference internal" href="../reference.html#submodules">Submodules</a><ul class="current">
+<li class="toctree-l3"><a class="reference internal" href="draco.analysis.html">draco.analysis</a></li>
+<li class="toctree-l3"><a class="reference internal" href="draco.core.html">draco.core</a></li>
+<li class="toctree-l3"><a class="reference internal" href="draco.synthesis.html">draco.synthesis</a></li>
+<li class="toctree-l3 current"><a class="reference internal" href="draco.util.html">draco.util</a><ul class="current">
+<li class="toctree-l4"><a class="reference internal" href="draco.util.exception.html">draco.util.exception</a></li>
+<li class="toctree-l4"><a class="reference internal" href="draco.util.random.html">draco.util.random</a></li>
+<li class="toctree-l4"><a class="reference internal" href="draco.util.regrid.html">draco.util.regrid</a></li>
+<li class="toctree-l4"><a class="reference internal" href="draco.util.rfi.html">draco.util.rfi</a></li>
+<li class="toctree-l4 current"><a class="current reference internal" href="#">draco.util.testing</a></li>
+<li class="toctree-l4"><a class="reference internal" href="draco.util.tools.html">draco.util.tools</a></li>
+<li class="toctree-l4"><a class="reference internal" href="draco.util.truncate.html">draco.util.truncate</a></li>
+</ul>
+</li>
+</ul>
+</li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="../dev.html">Development Guidelines</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../index.html">draco</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../index.html" class="icon icon-home" aria-label="Home"></a></li>
+          <li class="breadcrumb-item"><a href="../reference.html">API Reference</a></li>
+          <li class="breadcrumb-item"><a href="draco.util.html">draco.util</a></li>
+      <li class="breadcrumb-item active">draco.util.testing</li>
+      <li class="wy-breadcrumbs-aside">
+            <a href="../_sources/_autosummary/draco.util.testing.rst.txt" rel="nofollow"> View page source</a>
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <section id="module-draco.util.testing">
+<span id="draco-util-testing"></span><h1>draco.util.testing<a class="headerlink" href="#module-draco.util.testing" title="Link to this heading"></a></h1>
+<p>draco test utils.</p>
+<p class="rubric">Functions</p>
+<table class="autosummary longtable docutils align-default">
+<tbody>
+<tr class="row-odd"><td><p><a class="reference internal" href="#draco.util.testing.mock_freq_data" title="draco.util.testing.mock_freq_data"><code class="xref py py-obj docutils literal notranslate"><span class="pre">mock_freq_data</span></code></a>(freq, ntime, delaycut[, ...])</p></td>
+<td><p>Make mock delay data with a constant delay spectrum up to a specified cut.</p></td>
+</tr>
+</tbody>
+</table>
+<p class="rubric">Classes</p>
+<table class="autosummary longtable docutils align-default">
+<tbody>
+<tr class="row-odd"><td><p><a class="reference internal" href="#draco.util.testing.DummyTask" title="draco.util.testing.DummyTask"><code class="xref py py-obj docutils literal notranslate"><span class="pre">DummyTask</span></code></a>()</p></td>
+<td><p>Produce an empty data stream for testing.</p></td>
+</tr>
+<tr class="row-even"><td><p><a class="reference internal" href="#draco.util.testing.RandomFreqData" title="draco.util.testing.RandomFreqData"><code class="xref py py-obj docutils literal notranslate"><span class="pre">RandomFreqData</span></code></a>()</p></td>
+<td><p>Generate a random sidereal stream with structure in delay.</p></td>
+</tr>
+</tbody>
+</table>
+<dl class="py class">
+<dt class="sig sig-object py" id="draco.util.testing.DummyTask">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">draco.util.testing.</span></span><span class="sig-name descname"><span class="pre">DummyTask</span></span><a class="reference internal" href="../_modules/draco/util/testing.html#DummyTask"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#draco.util.testing.DummyTask" title="Link to this definition"></a></dt>
+<dd><p>Bases: <a class="reference internal" href="draco.core.task.html#draco.core.task.SingleTask" title="draco.core.task.SingleTask"><code class="xref py py-class docutils literal notranslate"><span class="pre">SingleTask</span></code></a></p>
+<p>Produce an empty data stream for testing.</p>
+<dl class="py attribute">
+<dt class="sig sig-object py" id="draco.util.testing.DummyTask.total_len">
+<span class="sig-name descname"><span class="pre">total_len</span></span><a class="headerlink" href="#draco.util.testing.DummyTask.total_len" title="Link to this definition"></a></dt>
+<dd><p>Length of output data stream. Default: 1.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>int</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="draco.util.testing.DummyTask.tag">
+<span class="sig-name descname"><span class="pre">tag</span></span><a class="headerlink" href="#draco.util.testing.DummyTask.tag" title="Link to this definition"></a></dt>
+<dd><p>What to use as a tag for the produced data.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>str</p>
+</dd>
+</dl>
+</dd></dl>
+
+<p>Initialize pipeline task.</p>
+<p>May be overridden with no arguments.  Will be called after any
+<cite>config.Property</cite> attributes are set and after ‘input’ and ‘requires’
+keys are set up.</p>
+<dl class="py method">
+<dt class="sig sig-object py" id="draco.util.testing.DummyTask.process">
+<span class="sig-name descname"><span class="pre">process</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="../_modules/draco/util/testing.html#DummyTask.process"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#draco.util.testing.DummyTask.process" title="Link to this definition"></a></dt>
+<dd><p>Produce an empty stream and pass on.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Returns<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>cont</strong> – Empty data stream.</p>
+</dd>
+<dt class="field-even">Return type<span class="colon">:</span></dt>
+<dd class="field-even"><p>subclass of <cite>memh5.BasicCont</cite></p>
+</dd>
+</dl>
+</dd></dl>
+
+</dd></dl>
+
+<dl class="py class">
+<dt class="sig sig-object py" id="draco.util.testing.RandomFreqData">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">draco.util.testing.</span></span><span class="sig-name descname"><span class="pre">RandomFreqData</span></span><a class="reference internal" href="../_modules/draco/util/testing.html#RandomFreqData"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#draco.util.testing.RandomFreqData" title="Link to this definition"></a></dt>
+<dd><p>Bases: <a class="reference internal" href="draco.util.random.html#draco.util.random.RandomTask" title="draco.util.random.RandomTask"><code class="xref py py-class docutils literal notranslate"><span class="pre">RandomTask</span></code></a></p>
+<p>Generate a random sidereal stream with structure in delay.</p>
+<dl class="py attribute">
+<dt class="sig sig-object py" id="draco.util.testing.RandomFreqData.num_realisation">
+<span class="sig-name descname"><span class="pre">num_realisation</span></span><a class="headerlink" href="#draco.util.testing.RandomFreqData.num_realisation" title="Link to this definition"></a></dt>
+<dd><p>How many to generate in subsequent process calls.</p>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="draco.util.testing.RandomFreqData.num_correlated">
+<span class="sig-name descname"><span class="pre">num_correlated</span></span><a class="headerlink" href="#draco.util.testing.RandomFreqData.num_correlated" title="Link to this definition"></a></dt>
+<dd><p>The number of correlated realisations output per cycle.</p>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="draco.util.testing.RandomFreqData.num_ra">
+<span class="sig-name descname"><span class="pre">num_ra</span></span><a class="headerlink" href="#draco.util.testing.RandomFreqData.num_ra" title="Link to this definition"></a></dt>
+<dd><p>The number of RA samples in the output.</p>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="draco.util.testing.RandomFreqData.num_base">
+<span class="sig-name descname"><span class="pre">num_base</span></span><a class="headerlink" href="#draco.util.testing.RandomFreqData.num_base" title="Link to this definition"></a></dt>
+<dd><p>The number of baselines in the output.</p>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py">
+<span class="sig-name descname"><span class="pre">freq_start,</span> <span class="pre">freq_end</span></span></dt>
+<dd><p>The start and end frequencies.</p>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="draco.util.testing.RandomFreqData.num_freq">
+<span class="sig-name descname"><span class="pre">num_freq</span></span><a class="headerlink" href="#draco.util.testing.RandomFreqData.num_freq" title="Link to this definition"></a></dt>
+<dd><p>The number of frequency channels.</p>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="draco.util.testing.RandomFreqData.delay_cut">
+<span class="sig-name descname"><span class="pre">delay_cut</span></span><a class="headerlink" href="#draco.util.testing.RandomFreqData.delay_cut" title="Link to this definition"></a></dt>
+<dd><p>The maximum delay in the data in us.</p>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="draco.util.testing.RandomFreqData.noise">
+<span class="sig-name descname"><span class="pre">noise</span></span><a class="headerlink" href="#draco.util.testing.RandomFreqData.noise" title="Link to this definition"></a></dt>
+<dd><p>The RMS noise level.</p>
+</dd></dl>
+
+<p>Initialize pipeline task.</p>
+<p>May be overridden with no arguments.  Will be called after any
+<cite>config.Property</cite> attributes are set and after ‘input’ and ‘requires’
+keys are set up.</p>
+<dl class="py method">
+<dt class="sig sig-object py" id="draco.util.testing.RandomFreqData.next">
+<span class="sig-name descname"><span class="pre">next</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><a class="reference internal" href="draco.core.containers.html#draco.core.containers.SiderealStream" title="draco.core.containers.SiderealStream"><span class="pre">SiderealStream</span></a><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><span class="pre">list</span><span class="p"><span class="pre">[</span></span><a class="reference internal" href="draco.core.containers.html#draco.core.containers.SiderealStream" title="draco.core.containers.SiderealStream"><span class="pre">SiderealStream</span></a><span class="p"><span class="pre">]</span></span></span></span><a class="reference internal" href="../_modules/draco/util/testing.html#RandomFreqData.next"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#draco.util.testing.RandomFreqData.next" title="Link to this definition"></a></dt>
+<dd><p>Generate correlated sidereal streams.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Returns<span class="colon">:</span></dt>
+<dd class="field-odd"><p>Either a single stream (if num_correlated=None), or a list of correlated
+streams.</p>
+</dd>
+<dt class="field-even">Return type<span class="colon">:</span></dt>
+<dd class="field-even"><p>streams</p>
+</dd>
+</dl>
+</dd></dl>
+
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="draco.util.testing.mock_freq_data">
+<span class="sig-prename descclassname"><span class="pre">draco.util.testing.</span></span><span class="sig-name descname"><span class="pre">mock_freq_data</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">freq</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">ndarray</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">ntime</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">int</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">delaycut</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">float</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">ndata</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">int</span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><span class="pre">None</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">noise</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">float</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">0.0</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">bad_freq</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">ndarray</span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><span class="pre">None</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">rng</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">Generator</span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><span class="pre">None</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">tuple</span><span class="p"><span class="pre">[</span></span><span class="pre">ndarray</span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="pre">ndarray</span><span class="p"><span class="pre">]</span></span></span></span><a class="reference internal" href="../_modules/draco/util/testing.html#mock_freq_data"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#draco.util.testing.mock_freq_data" title="Link to this definition"></a></dt>
+<dd><p>Make mock delay data with a constant delay spectrum up to a specified cut.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>freq</strong> – Frequencies of each channel (in MHz).</p></li>
+<li><p><strong>ntime</strong> – Number of independent time samples.</p></li>
+<li><p><strong>delaycut</strong> – Cutoff in us.</p></li>
+<li><p><strong>ndata</strong> – Number of correlated data sets. If not set (i.e. <cite>None</cite>) then do no add a
+dataset axis.</p></li>
+<li><p><strong>noise</strong> – RMS noise level in the data.</p></li>
+<li><p><strong>bad_freq</strong> – A list of bad frequencies to mask out.</p></li>
+<li><p><strong>rng</strong> – The random number generator to use.</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p><ul class="simple">
+<li><p><em>data</em> – The 2D/3D data array [dataset, freq, time]. If ndata is <cite>None</cite> then the dataset
+axis is dropped.</p></li>
+<li><p><em>weights</em> – The 2D weights data [freq, time].</p></li>
+</ul>
+</p>
+</dd>
+</dl>
+</dd></dl>
+
+</section>
+
+
+           </div>
+          </div>
+          <footer><div class="rst-footer-buttons" role="navigation" aria-label="Footer">
+        <a href="draco.util.rfi.html" class="btn btn-neutral float-left" title="draco.util.rfi" accesskey="p" rel="prev"><span class="fa fa-arrow-circle-left" aria-hidden="true"></span> Previous</a>
+        <a href="draco.util.tools.html" class="btn btn-neutral float-right" title="draco.util.tools" accesskey="n" rel="next">Next <span class="fa fa-arrow-circle-right" aria-hidden="true"></span></a>
+    </div>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2016, Richard Shaw.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>
