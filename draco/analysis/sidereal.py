@@ -724,14 +724,19 @@ class RebinGradientCorrection(task.SingleTask):
                 # Depends on whether the effective ra has baseline dependence
                 rra = ref_ra[fi, vi] if ref_ra.ndim > 1 else ref_ra
                 # Calculate the vis gradient at the reference RA points
-                mask = ref_weight[fi, vi] == 0.0
-                grad, mask = regrid.grad_1d(ref_vis[fi, vi], rra, mask, period=360.0)
+                ref_mask = ref_weight[fi, vi] == 0.0
+                grad, ref_mask = regrid.grad_1d(
+                    ref_vis[fi, vi], rra, ref_mask, period=360.0
+                )
 
                 # Apply the correction to estimate the sample value at the
-                # RA bin centre
-                vis[fi, vi] -= grad * (era[fi, vi] - sstream.ra)
+                # RA bin centre. Ensure that values that are masked in the
+                # original dataset do not get shifted if the reference
+                # dataset has a different mask
+                sel = weight[fi, vi] > 0.0
+                vis[fi, vi] -= grad * sel * (era[fi, vi] - sstream.ra)
                 # Keep track of the time mask being applied
-                fmask |= mask
+                fmask |= ref_mask
 
             # Zero any weights that could not be corrected for at least
             # one baseline
