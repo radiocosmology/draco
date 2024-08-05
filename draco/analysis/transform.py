@@ -1593,12 +1593,14 @@ class TransformJanskyToKelvin(task.SingleTask):
             new_stream = sstream.copy()
 
         # Apply the conversion to the data and the weights
+        vis = new_stream.vis[:].local_array
+        weight = new_stream.weight[:].local_array
         if self.convert_Jy_to_K:
-            new_stream.vis[:] *= Jy_to_K
-            new_stream.weight[:] *= K_to_Jy**2
+            vis *= Jy_to_K
+            weight *= K_to_Jy**2
         else:
-            new_stream.vis[:] *= K_to_Jy
-            new_stream.weight[:] *= Jy_to_K**2
+            vis *= K_to_Jy
+            weight *= Jy_to_K**2
 
         return new_stream
 
