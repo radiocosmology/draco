@@ -710,12 +710,6 @@ class RebinGradientCorrection(task.SingleTask):
             if not np.any(weight[fi]):
                 continue
 
-            # We need to track the full time mask applied to each
-            # baseline. Because the `effective_ra` dataset is baseline
-            # dependent, the gradient could end up producing a slightly
-            # baseline dependent mask
-            fmask = np.zeros(weight.shape[-1], dtype=bool)
-
             for vi in range(vis.shape[1]):
                 # Skip if entire baseline is masked
                 if not np.any(weight[fi, vi]):
@@ -736,11 +730,7 @@ class RebinGradientCorrection(task.SingleTask):
                 sel = weight[fi, vi] > 0.0
                 vis[fi, vi] -= grad * sel * (era[fi, vi] - sstream.ra)
                 # Keep track of the time mask being applied
-                fmask |= ref_mask
-
-            # Zero any weights that could not be corrected for at least
-            # one baseline
-            weight[fi] *= (~fmask).astype(weight.dtype)[np.newaxis]
+                weight[fi, vi] *= (~ref_mask).astype(weight.dtype)
 
         # Delete the effective ra dataset since it is not needed anymore
         del sstream["effective_ra"]
