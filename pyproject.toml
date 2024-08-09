@@ -4,7 +4,7 @@ requires = [
     "wheel",
     "setuptools-git-versioning",
     "cython",
-    "oldest-supported-numpy",
+    "numpy>=2.0.0rc1",
 ]
 build-backend = "setuptools.build_meta"
 
@@ -28,7 +28,7 @@ dependencies = [
     "cython>0.18",
     "driftscan @ git+https://github.com/radiocosmology/driftscan.git",
     "mpi4py",
-    "numpy>=1.17, <2",
+    "numpy>=1.24",
     "scikit-image",
     "scipy>=0.10",
     "skyfield",
