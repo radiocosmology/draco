@@ -22,8 +22,8 @@ jobs:
       - uses: actions/checkout@v4
       - name: Install pip requirements
         run: |
-          pip install -e .
-          pip install -e .[docs]
+          pip install .
+          pip install .[docs]
       - name: Sphinx build
         run: |
           git checkout -b gh-pages
