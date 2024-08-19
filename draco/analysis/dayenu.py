@@ -455,7 +455,8 @@ class DayenuDelayFilterHybridVis(task.SingleTask):
         # Dereference the required datasets
         vis = stream.vis[:].local_array
         weight = stream.weight[:].local_array
-        filt = stream.filter[:].local_array
+        if self.save_filter:
+            filt = stream.filter[:].local_array
 
         # Loop over products
         for tt in range(ntime):
@@ -516,6 +517,8 @@ class DayenuDelayFilterHybridVis(task.SingleTask):
                         weight[pp, :, xx, tt] *= flag_low.astype(weight.dtype)
 
             self.log.debug(f"Took {time.time() - t0:0.3f} seconds in total.")
+
+        stream.redistribute("freq")
 
         return stream
 
