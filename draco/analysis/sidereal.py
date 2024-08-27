@@ -613,7 +613,7 @@ class RebinGradientCorrection(task.SingleTask):
         # Helpful for creating generic configs
         try:
             era = sstream.effective_ra[:].local_array
-        except KeyError:
+        except AttributeError:
             self.log.info(
                 f"Dataset of type ({type(sstream)}) does not have an effective "
                 "ra dataset. No correction will be applied."
