@@ -182,16 +182,18 @@ class BeamformNS(task.SingleTask):
         that spans from horizon-to-horizon.  Default is 1.0.
 
     weight : string
-        How to weight the non-redundant baselines:
-            'inverse_variance' - each baseline weighted by the weight attribute
+        How to weight the non-redundant baselines.  Options include:
             'natural' - each baseline weighted by its redundancy (default)
+            'inverse_variance' - each baseline weighted by the weight attribute
             'uniform' - each baseline given equal weight
-            'blackman' - use a Blackman window
-            'nutall' - use a Blackman-Nutall window
+        And any window function supported by drao.util.tools.window_generalised,
+        such as 'hann', 'hanning', 'hamming', 'blackman', 'nuttall',
+        'blackman_nuttall', 'blackman_harris' 'triangular', and 'tukey-0.X'.
 
     scaled : bool
         Scale the window to match the lowest frequency. This should make the
-        beams more frequency independent.
+        beams more frequency independent.  Not supported for 'inverse_variance'
+        and 'natural' weight.
 
     include_auto: bool
         Include autocorrelations in the calculation.  Default is False.
@@ -199,12 +201,10 @@ class BeamformNS(task.SingleTask):
 
     npix = config.Property(proptype=int, default=512)
     span = config.Property(proptype=float, default=1.0)
-    weight = config.enum(
-        ["uniform", "natural", "inverse_variance", "blackman", "nuttall"],
-        default="natural",
-    )
+    weight = config.enum(proptype=str, default="natural")
     scaled = config.Property(proptype=bool, default=False)
     include_auto = config.Property(proptype=bool, default=False)
+    save_dirty_beam = config.Property(proptype=bool, default=False)
 
     def process(self, gstream):
         """Computes the ringmap.
@@ -230,13 +230,15 @@ class BeamformNS(task.SingleTask):
 
         # Create empty ring map
         hv = containers.HybridVisStream(el=el, axes_from=gstream, attrs_from=gstream)
-        hv.add_dataset("dirty_beam")
+        if self.save_dirty_beam:
+            hv.add_dataset("dirty_beam")
         hv.redistribute("freq")
 
         # Dereference datasets
         hvv = hv.vis[:].local_array
         hvw = hv.weight[:].local_array
-        hvb = hv.dirty_beam[:].local_array
+        if self.save_dirty_beam:
+            hvb = hv.dirty_beam[:].local_array
 
         nspos = gstream.index_map["ns"][:]
         freq = gstream.index_map["freq"]["centre"]
@@ -299,7 +301,8 @@ class BeamformNS(task.SingleTask):
             hvv[:, lfi] = np.matmul(F, gw * gv)
 
             # Calculate the dirty beam
-            hvb[:, lfi] = np.matmul(F, gw * np.ones_like(gv)).real
+            if self.save_dirty_beam:
+                hvb[:, lfi] = np.matmul(F, gw * np.ones_like(gv)).real
 
             # Estimate the weights assuming that the errors are all uncorrelated
             t = np.sum(tools.invert_no_zero(gsw[:, lfi]) * gw**2, axis=-2)

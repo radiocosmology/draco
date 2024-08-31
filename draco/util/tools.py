@@ -4,6 +4,7 @@ Miscellaneous tasks should be placed in :py:mod:`draco.core.misc`.
 """
 
 import warnings
+import itertools
 
 import numpy as np
 
@@ -13,6 +14,7 @@ from numpy.lib.recfunctions import structured_to_unstructured
 from scipy import linalg as la
 from scipy.signal import oaconvolve
 from scipy.sparse import dia_array
+
 
 from ._fast_tools import _calc_redundancy
 
@@ -514,31 +516,57 @@ def window_generalised(x, window="nuttall"):
     ----------
     x : np.ndarray[n]
         Location to evaluate at. Values outside the range 0 to 1 are zero.
-    window : one of {'nuttall', 'blackman_nuttall', 'blackman_harris'}
-        Type of window function to return.
+    window : one of {'uniform', 'hann', 'hanning', 'hamming', 'blackman',
+                     'nuttall', 'blackman_nuttall', 'blackman_harris',
+                     'triangular', 'tukey-0.X'}
+        Type of window function to return.  If "tukey-0.X", then 0.X is the
+        fraction of the full window that will be tapered.
 
     Returns
     -------
     w : np.ndarray[n]
         Window function.
     """
-    a_table = {
-        "uniform": np.array([1, 0, 0, 0]),
-        "hann": np.array([0.5, -0.5, 0, 0]),
-        "hanning": np.array([0.5, -0.5, 0, 0]),
-        "hamming": np.array([0.53836, -0.46164, 0, 0]),
-        "blackman": np.array([0.42, -0.5, 0.08, 0]),
-        "nuttall": np.array([0.355768, -0.487396, 0.144232, -0.012604]),
-        "blackman_nuttall": np.array([0.3635819, -0.4891775, 0.1365995, -0.0106411]),
-        "blackman_harris": np.array([0.35875, -0.48829, 0.14128, -0.01168]),
-    }
 
-    a = a_table[window]
+    if window == "triangular":
+        w = 1.0 - 2.0 * np.abs(x - 0.5)
 
-    t = 2 * np.pi * np.arange(4)[:, np.newaxis] * x[np.newaxis, :]
+    elif window.startswith("tukey"):
 
-    w = (a[:, np.newaxis] * np.cos(t)).sum(axis=0)
-    return np.where((x >= 0) & (x <= 1), w, 0)
+        r = float(window.split("-")[1])
+        alpha = 0.5 * r
+
+        w = np.ones_like(x)
+
+        begin = np.flatnonzero(x < alpha)
+        if begin.size > 0:
+            w[begin] = 0.5 * (1.0 + np.cos(np.pi * (x[begin] - alpha) / alpha))
+
+        end = np.flatnonzero(x >= (1.0 - alpha))
+        if end.size > 0:
+            w[end] = 0.5 * (1.0 + np.cos(np.pi * (x[end] - (1.0 - alpha)) / alpha))
+
+    else:
+        a_table = {
+            "uniform": np.array([1, 0, 0, 0]),
+            "hann": np.array([0.5, -0.5, 0, 0]),
+            "hanning": np.array([0.5, -0.5, 0, 0]),
+            "hamming": np.array([0.53836, -0.46164, 0, 0]),
+            "blackman": np.array([0.42, -0.5, 0.08, 0]),
+            "nuttall": np.array([0.355768, -0.487396, 0.144232, -0.012604]),
+            "blackman_nuttall": np.array(
+                [0.3635819, -0.4891775, 0.1365995, -0.0106411]
+            ),
+            "blackman_harris": np.array([0.35875, -0.48829, 0.14128, -0.01168]),
+        }
+
+        a = a_table[window]
+        t = 2 * np.pi * np.arange(4)[:, np.newaxis] * x[np.newaxis, :]
+        w = (a[:, np.newaxis] * np.cos(t)).sum(axis=0)
+
+    w = np.where((x >= 0) & (x <= 1), w, 0)
+
+    return w
 
 
 def arPLS_1d(y, mask=None, lam=1e2, end_frac=1e-2, max_iter=1000):
@@ -702,3 +730,17 @@ def taper_mask(mask, nwidth, outer=False):
         tapered_mask = 1.0 - tapered_mask
 
     return tapered_mask[:, width:-width]
+
+
+def correct_phase_wrap(phi, deg=False):
+
+    period = 180.0 if deg else np.pi
+    return ((phi + period) % (2 * period)) - period
+
+
+def find_contiguous_slices(index):
+    slices = []
+    for w, z in itertools.groupby(index, lambda x, y=itertools.count(): next(y) - x):
+        grouped = list(z)
+        slices.append(slice(grouped[0], grouped[-1] + 1))
+    return slices
