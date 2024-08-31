@@ -3000,6 +3000,7 @@ def copy_datasets_filter(
     axis: Union[str, list, tuple] = [],
     selection: Union[np.ndarray, list, slice, dict] = {},
     exclude_axes: Optional[list[str]] = None,
+    copy_without_selection: bool = False,
 ):
     """Copy datasets while filtering a given axis.
 
@@ -3063,11 +3064,12 @@ def copy_datasets_filter(
 
         item_axes = list(item.attrs.get("axis", ()))
 
-        # Only copy if at least one of the axes we are filtering
-        # are present, and there are no excluded axes in the dataset
-        if not (
-            axis.intersection(item_axes) and exclude_axes_set.isdisjoint(item_axes)
-        ):
+        # Do not copy datasets that contain excluded axes
+        if not exclude_axes_set.isdisjoint(item_axes):
+            continue
+
+        # Unless requested, do not copy datasets that do not contain selected axes
+        if not copy_without_selection and not axis.intersection(item_axes):
             continue
 
         if item.name not in dest:

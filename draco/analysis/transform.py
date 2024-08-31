@@ -409,7 +409,9 @@ class SelectFreq(task.SingleTask):
         # Copy over datasets. If the dataset has a frequency axis,
         # then we only copy over the subset.
         if isinstance(data, containers.ContainerBase):
-            containers.copy_datasets_filter(data, newdata, "freq", newindex)
+            containers.copy_datasets_filter(
+                data, newdata, "freq", newindex, copy_without_selection=True
+            )
         else:
             newdata.vis[:] = data.vis[newindex]
             newdata.weight[:] = data.weight[newindex]
