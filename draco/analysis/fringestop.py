@@ -19,16 +19,16 @@ class Mix(task.SingleTask):
 
         V_{ij}^{downmixed} = V_{ij} * exp(j \omega \phi)
 
-    where the angular frequency \omega is set by instantaneous fringe rate of a
-    source at transit:
+    where the angular frequency \omega is set by instantaneous fringe rate at the
+    centre of the field of view:
 
         \omega = 2 \pi b_{ew} cos(\delta) / \lambda
 
     where b_{ew} is the east-west baseline distance, \delta is the declination
     at the centre of the field of view, and \lambda is the wavelength.  This will
     remove the fringe pattern that would be observed in the signal from a
-    point source located at \delta.  Assuming the field of view is sufficiently
-    small, this will enable further downsampling in time.
+    point source located at \delta.  This will enable further downsampling in time,
+    assuming the field of view is sufficiently small.
 
     Can also be thought of as applying a baseline, declination, and
     frequency dependent shift in m-mode space.
@@ -59,7 +59,6 @@ class Mix(task.SingleTask):
         stream : TimeStream, SiderealStream, or HybridVisStream
             Note this modifies the input container in place.
         """
-
         sign = -1.0 if self.conjugate else 1.0
 
         # Distribute over frequencies
