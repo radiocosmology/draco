@@ -1933,7 +1933,7 @@ class HybridVisStream(FreqContainer, SiderealContainer, VisBase):
     grid in elevation.
     """
 
-    _axes = ("pol", "ew", "el")
+    _axes = ("pol", "ew", "el", "freq_sum")
 
     _dataset_spec: ClassVar = {
         "vis": {
@@ -1957,14 +1957,70 @@ class HybridVisStream(FreqContainer, SiderealContainer, VisBase):
             "distributed": True,
             "distributed_axis": "freq",
         },
+        "effective_ra": {
+            "axes": ["pol", "freq", "ew", "ra"],
+            "dtype": np.float32,
+            "initialise": False,
+            "distributed": True,
+            "distributed_axis": "freq",
+        },
+        "nsample": {
+            "axes": ["pol", "freq", "ew", "ra"],
+            "dtype": np.float32,
+            "initialise": False,
+            "distributed": True,
+            "distributed_axis": "freq",
+        },
         "filter": {
-            "axes": ["freq", "freq", "ew", "ra"],
+            "axes": ["pol", "freq", "freq_sum", "ew", "ra"],
             "dtype": np.float64,
             "initialise": False,
             "distributed": True,
             "distributed_axis": "freq",
         },
+        "complex_filter": {
+            "axes": ["pol", "freq", "freq_sum", "ew", "ra"],
+            "dtype": np.complex128,
+            "initialise": False,
+            "distributed": True,
+            "distributed_axis": "freq",
+        },
     }
+
+    def __init__(self, *args, **kwargs):
+
+        if "freq_sum" not in kwargs:
+            if "axes_from" in kwargs and "freq_sum" in kwargs["axes_from"].index_map:
+                kwargs["freq_sum"] = kwargs["axes_from"].index_map["freq_sum"]
+            elif "freq" in kwargs:
+                kwargs["freq_sum"] = kwargs["freq"]
+            elif "axes_from" in kwargs and "freq" in kwargs["axes_from"].index_map:
+                kwargs["freq_sum"] = kwargs["axes_from"].index_map["freq"]
+            else:
+                raise RuntimeError("Must provide freq_sum or freq axis.")
+
+        super().__init__(*args, **kwargs)
+
+    def add_dataset(self, name):
+        """Override base class to first check that multiple filters are not created."""
+        if name == "filter" and "complex_filter" in self.datasets:
+            raise RuntimeError("Requesting creation of real-valued filter but "
+                               "complex filter already exists.")
+        elif name == "complex_filter" and "filter" in self.datasets:
+            raise RuntimeError("Requesting creation of complex-valued filter but "
+                               "real filter already exists.")
+        else:
+            return super().add_dataset(name)
+
+    @property
+    def filter(self):
+        """Return the filter dataset, if available."""
+        if "filter" in self.datasets:
+            return self.datasets["filter"]
+        elif "complex_filter" in self.datasets:
+            return self.datasets["complex_filter"]
+
+        raise KeyError("Dataset 'filter' not initialised.")
 
     @property
     def dirty_beam(self):
@@ -1972,12 +2028,20 @@ class HybridVisStream(FreqContainer, SiderealContainer, VisBase):
         return self.datasets["dirty_beam"]
 
     @property
-    def filter(self):
-        """Return the filter dataset, if available."""
-        if "filter" in self.datasets:
-            return self.datasets["filter"]
+    def effective_ra(self):
+        """Get the effective_ra dataset if it exists, None otherwise."""
+        if "effective_ra" in self.datasets:
+            return self.datasets["effective_ra"]
 
-        raise KeyError("Dataset 'filter' not initialised.")
+        raise KeyError("Dataset 'effective_ra' not initialised.")
+
+    @property
+    def nsample(self):
+        """Get the nsample dataset if it exists, None otherwise."""
+        if "nsample" in self.datasets:
+            return self.datasets["nsample"]
+
+        raise KeyError("Dataset 'nsample' not initialised.")
 
 
 class HybridVisMModes(FreqContainer, MContainer, VisBase):
