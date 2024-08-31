@@ -111,11 +111,12 @@ class MakeVisGrid(task.SingleTask):
 
         # Extract the right ascension to initialise the new container with (or
         # calculate from timestamp)
-        ra = (
-            sstream.ra
-            if "ra" in sstream.index_map
-            else self.telescope.lsa(sstream.time)
-        )
+        if "ra" in sstream.index_map:
+            ra = sstream.ra
+        elif "lsd" in sstream.attrs:
+            ra = 360 * (self.telescope.unix_to_lsd(sstream.time) - sstream.attrs["lsd"])
+        else:
+            ra = self.telescope.lsa(sstream.time)
 
         # Create container for output
         grid = containers.VisGridStream(
