@@ -920,14 +920,13 @@ def delay_filter(freq, flag, tau_width, tau_centre=0.0, epsilon=1e-12):
     def _ensure_consistent(param, nstopband):
         if np.isscalar(param):
             return [param] * nstopband
-        elif len(param) == 1:
+        if len(param) == 1:
             return [param[0]] * nstopband
-        else:
-            assert len(param) == nstopband
-            return param
+        assert len(param) == nstopband
+        return param
 
     args = [tau_width, tau_centre, epsilon]
-    nstopband = np.max([np.atleas_1d(param).size for param in args])
+    nstopband = np.max([np.atleast_1d(param).size for param in args])
     args = [np.array(_ensure_consistent(param, nstopband)) for param in args]
 
     # Determine datatype

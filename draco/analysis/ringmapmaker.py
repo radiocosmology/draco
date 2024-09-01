@@ -201,7 +201,7 @@ class BeamformNS(task.SingleTask):
 
     npix = config.Property(proptype=int, default=512)
     span = config.Property(proptype=float, default=1.0)
-    weight = config.enum(proptype=str, default="natural")
+    weight = config.Property(proptype=str, default="natural")
     scaled = config.Property(proptype=bool, default=False)
     include_auto = config.Property(proptype=bool, default=False)
     save_dirty_beam = config.Property(proptype=bool, default=False)
@@ -241,7 +241,7 @@ class BeamformNS(task.SingleTask):
             hvb = hv.dirty_beam[:].local_array
 
         nspos = gstream.index_map["ns"][:]
-        freq = gstream.index_map["freq"]["centre"]
+        freq = gstream.freq
 
         # Get the largest baseline present across all nodes while accounting for masking
         baselines_present = (
@@ -254,6 +254,14 @@ class BeamformNS(task.SingleTask):
         )
         nsmax = self.comm.allreduce(nsmax_local, op=MPI.MAX)
         self.log.info(f"Maximum NS baseline is {nsmax:.2f}m")
+
+        # Record how the beamforming was done to enable easy
+        # reconstruction of synthesized beam
+        hv.attrs["beamform_ns_weight"] = self.weight
+        hv.attrs["beamform_ns_scaled"] = self.scaled
+        hv.attrs["beamform_ns_include_auto"] = self.include_auto
+        hv.attrs["beamform_ns_freqmin"] = freq.min()
+        hv.attrs["beamform_ns_nsmax"] = nsmax
 
         # Loop over local frequencies and fill ring map
         for lfi, fi in gstream.vis[:].enumerate(1):
