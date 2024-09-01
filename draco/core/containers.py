@@ -2004,20 +2004,23 @@ class HybridVisStream(FreqContainer, SiderealContainer, VisBase):
     def add_dataset(self, name):
         """Override base class to first check that multiple filters are not created."""
         if name == "filter" and "complex_filter" in self.datasets:
-            raise RuntimeError("Requesting creation of real-valued filter but "
-                               "complex filter already exists.")
-        elif name == "complex_filter" and "filter" in self.datasets:
-            raise RuntimeError("Requesting creation of complex-valued filter but "
-                               "real filter already exists.")
-        else:
-            return super().add_dataset(name)
+            raise RuntimeError(
+                "Requesting creation of real-valued filter but "
+                "complex filter already exists."
+            )
+        if name == "complex_filter" and "filter" in self.datasets:
+            raise RuntimeError(
+                "Requesting creation of complex-valued filter but "
+                "real filter already exists."
+            )
+        return super().add_dataset(name)
 
     @property
     def filter(self):
         """Return the filter dataset, if available."""
         if "filter" in self.datasets:
             return self.datasets["filter"]
-        elif "complex_filter" in self.datasets:
+        if "complex_filter" in self.datasets:
             return self.datasets["complex_filter"]
 
         raise KeyError("Dataset 'filter' not initialised.")
@@ -2914,6 +2917,44 @@ class FormedBeamHA(FormedBeam):
         return self.datasets["object_ha"]
 
 
+class FormedBeamHAEW(FormedBeamHA):
+    """Container for formed beams constructed from a HybridVisStream.
+
+    These have not been collapsed along the hour angle (ha) or
+    east west baseline (ew) axis.
+    """
+
+    _axes = ("ew",)
+
+    _dataset_spec: ClassVar = {
+        "beam": {
+            "axes": ["object_id", "pol", "freq", "ew", "ha"],
+            "dtype": np.complex128,
+            "initialise": True,
+            "distributed": True,
+            "distributed_axis": "freq",
+        },
+        "weight": {
+            "axes": ["object_id", "pol", "freq", "ew", "ha"],
+            "dtype": np.float64,
+            "initialise": True,
+            "distributed": True,
+            "distributed_axis": "freq",
+        },
+        "object_ha": {
+            "axes": ["object_id", "ha"],
+            "dtype": np.float64,
+            "initialise": True,
+            "distributed": False,
+        },
+    }
+
+    @property
+    def ew(self):
+        """Get the ew index map."""
+        return self.index_map["ew"]
+
+
 class FormedBeamMask(FreqContainer):
     """Mask bad formed beams."""
 
@@ -3022,6 +3063,9 @@ def copy_datasets_filter(
     exclude_axes
         An optional set of axes that if a dataset contains one means it will
         not be copied.
+    copy_without_selection
+        If set to True, then datasets that do not have an axis appearing in
+        selection will still be copied over in full.  Default is False.
     """
     exclude_axes_set = set(exclude_axes) if exclude_axes else set()
     if isinstance(axis, str):

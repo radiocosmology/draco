@@ -3,16 +3,20 @@
 import healpy
 import numpy as np
 import scipy.interpolate
-from caput import config
+from caput import config, interferometry
 from caput import time as ctime
 from cora.util import units
 from skyfield.api import Angle, Star
+
+from draco.analysis.sidereal import _search_nearest
 
 from ..core import containers, io, task
 from ..util._fast_tools import beamform
 from ..util.tools import (
     baseline_vector,
     calculate_redundancy,
+    correct_phase_wrap,
+    find_contiguous_slices,
     invert_no_zero,
     polarization_map,
 )
@@ -1188,6 +1192,190 @@ class RingMapStack2D(RingMapBeamForm):
         stack.stack[:] = stack_all[1:-1].transpose((1, 2, 3, 0))
 
         return stack
+
+
+class HybridVisBeamForm(task.SingleTask):
+    """Beamform on a catalog of sources using the HybridVisStream data product.
+
+    Attributes
+    ----------
+    window : float
+        Window size in degrees.  For each source, right ascensions corresponding to
+        |ra - source_ra| <= window are extracted from the hybrid beamformed visibility
+        at the declination closest to the sources location.  Default is 5 degrees.
+    ignore_rot : bool
+        Ignore the telescope rotation_angle when calculating the baseline distances
+        used to beamform in the east-west direction.  Defaults to False.
+    """
+
+    window = config.Property(proptype=float, default=5.0)
+    ignore_rot = config.Property(proptype=bool, default=False)
+
+    def setup(self, manager, catalog):
+        """Define the observer and the catalog of sources.
+
+        Parameters
+        ----------
+        manager : draco.core.io.TelescopeConvertible
+            Observer object holding the geographic location of the telescope.
+            Note that if ignore_rot is False and this object has a non-zero
+            rotation_angle, then the beamforming will account for the phase
+            due to the north-south component of the rotation.
+
+        catalog : draco.core.containers.SourceCatalog
+            Beamform on sources in this catalog.
+        """
+        self.telescope = io.get_telescope(manager)
+        self.latitude = np.radians(self.telescope.latitude)
+        if not self.ignore_rot and hasattr(self.telescope, "rotation_angle"):
+            self.log.info(
+                "Correcting for phase due to north-south component of a "
+                f"{self.telescope.rotation_angle:0.2f} degree rotation."
+            )
+            self.rot = np.radians(self.telescope.rotation_angle)
+        else:
+            self.rot = 0.0
+
+        self.catalog = catalog
+
+    def process(self, hvis):
+        """Finish beamforming in the east-west direction.
+
+        Parameters
+        ----------
+        hvis : draco.core.containers.HybridVisStream
+            Visibilities beamformed in the north-south direction to
+            a grid of declinations along the meridian.
+
+        Returns
+        -------
+        out : draco.core.containers.HybridFormedBeamHA
+            Visibilities beamformed to the location of sources
+            in a catalog.
+        """
+        hvis.redistribute("freq")
+
+        fringestopped = hvis.attrs.get("fringestopped", False)
+
+        # Get source positions
+        if "lsd" in hvis.attrs:
+            lsd = hvis.attrs["lsd"]
+        elif "csd" in hvis.attrs:
+            lsd = hvis.attrs["csd"]
+        else:
+            lsd = None
+
+        src_ra, src_dec = (
+            self.catalog["position"]["ra"][:],
+            self.catalog["position"]["dec"][:],
+        )
+        if lsd is not None:
+            epoch = self.telescope.lsd_to_unix(lsd)
+            src_ra, src_dec = icrs_to_cirs(src_ra, src_dec, epoch)
+
+        # Find nearest declination
+        dec = np.degrees(np.arcsin(hvis.index_map["el"]) + self.latitude)
+        nearest_dec = _search_nearest(dec, src_dec)
+
+        delta_dec = np.max(np.abs(np.diff(dec)))
+        valid_src = np.abs(src_dec - dec[nearest_dec]) < delta_dec
+
+        self.log.info(
+            f"There are {np.sum(valid_src)} catalog sources in this declination range."
+        )
+
+        # Find hour angle window
+        ra = hvis.ra
+        ha_arr = correct_phase_wrap(ra[np.newaxis, :] - src_ra[:, np.newaxis], deg=True)
+        valid = np.abs(ha_arr) <= self.window
+
+        nha = np.sum(valid, axis=-1)
+
+        ra_rad = np.radians(ra)
+
+        # Calculate baseline distances
+        freq = hvis.freq[hvis.vis[:].local_bounds]
+        lmbda = C * 1e-6 / freq
+
+        ew = hvis.index_map["ew"]
+        u = ew[np.newaxis, :, np.newaxis] / lmbda[:, np.newaxis, np.newaxis]
+        v = np.sin(self.rot) * u
+
+        # Dereference input datasets
+        vis = hvis.vis[:].local_array  # pol, freq, ew, el, ra
+        weight = hvis.weight[:].local_array  # pol, freq, ew, ra
+
+        # Create the output container
+        out = containers.FormedBeamHAEW(
+            object_id=self.catalog.index_map["object_id"],
+            ha=np.arange(np.max(nha), dtype=int),
+            axes_from=hvis,
+            attrs_from=hvis,
+            distributed=hvis.distributed,
+            comm=hvis.comm,
+        )
+        out.redistribute("freq")
+
+        out.datasets["position"]["ra"][:] = src_ra
+        out.datasets["position"]["dec"][:] = src_dec
+
+        # Dereference output datasets
+        ofb = out.beam[:].local_array
+        ofb[:] = 0.0
+
+        owe = out.weight[:].local_array
+        owe[:] = 0.0
+
+        oha = out.ha[:]
+        oha[:] = 0.0
+
+        # Loop over sources and fringestop
+        for ss, (idec, sdec) in enumerate(zip(nearest_dec, np.radians(src_dec))):
+
+            in_range = np.flatnonzero(valid[ss])
+            if (in_range.size == 0) or not valid_src[ss]:
+                continue
+
+            cos_dec = np.cos(np.radians(dec[idec]))
+
+            isort = np.argsort(ha_arr[ss, in_range])
+            in_range = in_range[isort]
+
+            islcs = find_contiguous_slices(in_range)
+            count = 0
+            for islc in islcs:
+
+                svis = vis[..., idec, islc]  # pol, freq, ew, ha
+                sweight = weight[..., islc]
+
+                nsample = svis.shape[-1]
+                oslc = slice(count, count + nsample)
+                count = count + nsample
+
+                oha[ss, oslc] = ha_arr[ss, islc]
+                ha = np.radians(ha_arr[ss, islc])
+
+                # Loop over local frequencies and fringestop
+                for ff in range(svis.shape[1]):
+
+                    owe[ss, :, ff, :, oslc] = sweight[:, ff]
+
+                    # Calculate the phase
+                    phi = interferometry.fringestop_phase(
+                        ha, self.latitude, sdec, u[ff], v[ff]
+                    )
+
+                    # If the container has already been fringestopped,
+                    # then we need to remove that contribution from the phase
+                    if fringestopped:
+                        omega = 2.0 * np.pi * ew * cos_dec / lmbda[ff]
+                        phi *= np.exp(
+                            -1.0j * omega[:, np.newaxis] * ra_rad[np.newaxis, islc]
+                        )
+
+                    ofb[ss, :, ff, :, oslc] = svis[:, ff] * phi
+
+        return out
 
 
 class HealpixBeamForm(task.SingleTask):
