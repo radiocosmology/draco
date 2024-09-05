@@ -854,13 +854,12 @@ class Truncate(task.SingleTask):
                         val, specs["fixed_precision"]
                     ).reshape(old_shape)
             else:
-                invvar = (
-                    np.broadcast_to(
-                        data[specs["weight_dataset"]][:], data[dset][:].shape
-                    )
-                    .copy()
-                    .reshape(-1)
-                )
+                if hasattr(data, specs["weight_dataset"]):
+                    invvar = getattr(data, specs["weight_dataset"])
+                else:
+                    invvar = data[specs["weight_dataset"]][:]
+
+                invvar = np.broadcast_to(invvar, data[dset][:].shape).copy().reshape(-1)
                 invvar *= (2.0 if np.iscomplexobj(data[dset]) else 1.0) / specs[
                     "variance_increase"
                 ]
