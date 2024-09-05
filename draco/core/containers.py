@@ -1296,6 +1296,32 @@ class SiderealDirtyStream(FreqContainer, VisContainer, SiderealContainer):
         return weight
 
 
+class SiderealBandCovariance(FreqContainer, VisContainer, SiderealContainer):
+    """A container for holding a banded covariance dataset in sidereal time.
+
+    The main dataset is accessed through the `data` property.
+    """
+
+    _data_dset_name = "cov"
+    _weight_dset_name = None
+
+    _axes = ("bandwidth",)
+
+    _dataset_spec: ClassVar = {
+        "cov": {
+            "axes": ["freq", "stack", "bandwidth", "ra"],
+            "dtype": np.float32,
+            "initialise": True,
+            "distributed": True,
+            "distributed_axis": "freq",
+            "compression": COMPRESSION,
+            "compression_opts": COMPRESSION_OPTS,
+            "chunks": (64, 128, 1, 128),
+            "truncate": True,
+        },
+    }
+
+
 class SystemSensitivity(FreqContainer, TODContainer):
     """A container for holding the total system sensitivity.
 
