@@ -1270,8 +1270,10 @@ class HybridVisBeamForm(task.SingleTask):
             self.catalog["position"]["dec"][:],
         )
         if lsd is not None:
-            epoch = self.telescope.lsd_to_unix(lsd)
-            src_ra, src_dec = icrs_to_cirs(src_ra, src_dec, epoch)
+            epoch = np.atleast_1d(self.telescope.lsd_to_unix(lsd))
+            coords = [icrs_to_cirs(src_ra, src_dec, ep) for ep in epoch]
+            src_ra = np.mean([coord[0] for coord in coords], axis=0)
+            src_dec = np.mean([coord[1] for coord in coords], axis=0)
 
         # Find nearest declination
         dec = np.degrees(np.arcsin(hvis.index_map["el"]) + self.latitude)

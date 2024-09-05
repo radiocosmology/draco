@@ -854,7 +854,10 @@ class SiderealStacker(task.SingleTask):
             # The input sidereal stream is already a stack
             # over multiple sidereal days. Use the nsample
             # dataset as the weight for the uniform case.
-            count = sdata.nsample[:]
+            # Make sure to also zero any samples whose weight
+            # is zero in case other tasks did not also zero
+            # the nsample dataset.
+            count = sdata.nsample[:] * (weight > 0.0)
         else:
             # The input sidereal stream contains a single
             # sidereal day. Use a boolean array that
@@ -877,6 +880,7 @@ class SiderealStacker(task.SingleTask):
 
         # Calculate weighted difference between the new data and the current mean.
         wslc = self.weight_slice["vis"]
+
         delta_before = coeff[wslc] * (sdata.vis[:] - self.stack.vis[:])
         inv_sum_coeff = tools.invert_no_zero(sum_coeff)
 
@@ -1159,7 +1163,7 @@ def get_slice_to_broadcast(weight_axis, dataset_axis):
     assert all(wax == dax for wax, dax in zip(weight_axis, common_axis))
 
     # If all checks passed, then return the slice to broadcast.
-    return [slice(None) if ax in weight_axis else None for ax in dataset_axis]
+    return tuple([slice(None) if ax in weight_axis else None for ax in dataset_axis])
 
 
 def _ensure_list(x):
