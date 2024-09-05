@@ -879,9 +879,17 @@ class Regridder(task.SingleTask):
         Width of the Lanczos interpolation kernel.
     snr_cov: float
         Ratio of signal covariance to noise covariance (used for Wiener filter).
+        Only used if a signal covariance container is not provided in the
+        setup method. Default is 1e-8.
     mask_zero_weight: bool
         Mask the output noise weights at frequencies where the weights were
         zero for all time samples.
+    mask_thresh : float
+        Fraction of lanczos kernel sum below which the projected mask is flagged.
+        The boolean data mask is projected into RA using the lanczos kernel, and
+        samples below this fraction of the kernel weight are flagged. The default
+        value should ensure that only weights equal to zero are flagged.
+        Default is 1e-3.
     """
 
     samples = config.Property(proptype=int, default=1024)
@@ -890,9 +898,10 @@ class Regridder(task.SingleTask):
     lanczos_width = config.Property(proptype=int, default=5)
     snr_cov = config.Property(proptype=float, default=1e-8)
     mask_zero_weight = config.Property(proptype=bool, default=False)
+    mask_thresh = config.Property(proptype=float, default=1e-3)
 
-    def setup(self, observer):
-        """Set the local observers position.
+    def setup(self, observer, signal_cov=None):
+        """Set the local observers position and optional signal covariance.
 
         Parameters
         ----------
@@ -900,8 +909,13 @@ class Regridder(task.SingleTask):
             An Observer object holding the geographic location of the telescope.
             Note that :class:`~drift.core.TransitTelescope` instances are also
             Observers.
+        signal_cov : containers.SiderealSignalCovariance, optional
+            Estimate of the sidereal stream signal covariance. Shape must
+            be broadcastable to the target sidereal stream grid. If not
+            provided, use a constant value from the `snr_cov` attribute.
         """
-        self.observer = observer
+        self.observer = io.get_telescope(observer)
+        self.si = self._process_si(signal_cov)
 
     def process(self, data):
         """Regrid visibility data in the time direction.
@@ -920,8 +934,8 @@ class Regridder(task.SingleTask):
         data.redistribute("freq")
 
         # View of data
-        weight = data.weight[:].view(np.ndarray)
-        vis_data = data.vis[:].view(np.ndarray)
+        weight = data.weight[:].local_array
+        vis_data = data.vis[:].local_array
 
         # Get input time grid
         timelike_axis = data.vis.attrs["axis"][-1]
@@ -940,20 +954,17 @@ class Regridder(task.SingleTask):
         # perform regridding
         new_grid, new_vis, ni = self._regrid(vis_data, weight, times)
 
-        # Wrap to produce MPIArray
-        new_vis = mpiarray.MPIArray.wrap(new_vis, axis=data.vis.distributed_axis)
-        ni = mpiarray.MPIArray.wrap(ni, axis=data.vis.distributed_axis)
-
         # Create new container for output
-        cont_type = data.__class__
-        new_data = cont_type(axes_from=data, **{timelike_axis: new_grid})
+        new_data = data.__class__(axes_from=data, **{timelike_axis: new_grid})
         new_data.redistribute("freq")
+
         new_data.vis[:] = new_vis
         new_data.weight[:] = ni
 
         return new_data
 
     def _regrid(self, vis_data, weight, times):
+        """Perform the interpolation."""
         # Create a regular grid, padded at either end to supress interpolation issues
         pad = 5 * self.lanczos_width
         interp_grid = (
@@ -967,15 +978,18 @@ class Regridder(task.SingleTask):
             interp_grid, times, self.lanczos_width
         ).T.copy()
 
+        # Make a projection of the mask based on the magnitude
+        # of the kernel
+        mp = np.any(weight > 0, axis=1) @ abs(lzf).T
+        lzf_thresh = np.mean(np.sum(np.ma.masked_where(lzf == 0, abs(lzf)), axis=1))
+        mp = mp > self.mask_thresh * lzf_thresh
+
         # Reshape data
         vr = vis_data.reshape(-1, vis_data.shape[-1])
         nr = weight.reshape(-1, vis_data.shape[-1])
 
-        # Construct a signal 'covariance'
-        Si = np.ones_like(interp_grid) * self.snr_cov
-
         # Calculate the interpolated data and a noise weight at the points in the padded grid
-        sts, ni = regrid.band_wiener(lzf, nr, Si, vr, 2 * self.lanczos_width - 1)
+        sts, ni = regrid.band_wiener(lzf, nr, self.si, vr, 2 * self.lanczos_width - 1)
 
         # Throw away the padded ends
         sts = sts[:, pad:-pad].copy()
@@ -988,10 +1002,40 @@ class Regridder(task.SingleTask):
 
         if self.mask_zero_weight:
             # set weights to zero where there is no data
-            w_mask = weight.sum(axis=-1) != 0.0
-            ni *= w_mask[..., np.newaxis]
+            ni *= mp[:, np.newaxis][..., pad:-pad]
+            sts *= mp[:, np.newaxis][..., pad:-pad]
 
         return interp_grid, sts, ni
+
+    def _process_si(self, cont):
+        """Process a signal variance container."""
+        if cont is None:
+            # Use a constant signal variance estimate
+            return np.asarray(self.snr_cov)
+
+        # The signal covariance dataset has a bandwidth axis, but
+        # only the diagonal is used
+        scov = cont.data[:].local_array[:, :, -1]
+
+        if self.samples != scov.shape[-1]:
+            raise ValueError(
+                "Signal variance has incorrect number of samples. "
+                f"Expected {self.samples}, got {scov.shape[-1]}."
+            )
+
+        # Flatten along all but the last axis
+        scov = scov.reshape(-1, scov.shape[-1])
+
+        # Pad the inverse signal variance with the default value
+        pad = 5 * self.lanczos_width
+
+        si = self.snr_cov * np.ones(
+            (scov.shape[0], self.samples + 2 * pad), dtype=scov.dtype
+        )
+
+        si[:, pad:-pad] = tools.invert_no_zero(scov)
+
+        return si
 
 
 class ShiftRA(task.SingleTask):

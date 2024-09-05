@@ -155,7 +155,7 @@ class SiderealGrouper(task.SingleTask):
 
 
 class SiderealRegridder(Regridder):
-    """Take a sidereal days worth of data, and put onto a regular grid.
+    """Take a sidereal days worth of data and put it onto a regular grid.
 
     Uses a maximum-likelihood inverse of a Lanczos interpolation to do the
     regridding. This gives a reasonably local regridding, that is pretty well
@@ -163,31 +163,12 @@ class SiderealRegridder(Regridder):
 
     Attributes
     ----------
-    samples : int
-        Number of samples across the sidereal day.
-    lanczos_width : int
-        Width of the Lanczos interpolation kernel.
-    snr_cov: float
-        Ratio of signal covariance to noise covariance (used for Wiener filter).
     down_mix: bool
         Down mix the visibility prior to interpolation using the fringe rate
         of a source at zenith.  This is un-done after the interpolation.
     """
 
     down_mix = config.Property(proptype=bool, default=False)
-
-    def setup(self, manager):
-        """Set the local observers position.
-
-        Parameters
-        ----------
-        manager : :class:`~caput.time.Observer`
-            An Observer object holding the geographic location of the telescope.
-            Note that :class:`~drift.core.TransitTelescope` instances are also
-            Observers.
-        """
-        # Need an Observer object holding the geographic location of the telescope.
-        self.observer = io.get_telescope(manager)
 
     def process(self, data):
         """Regrid the sidereal day.
@@ -202,14 +183,11 @@ class SiderealRegridder(Regridder):
         sdata : containers.SiderealStream
             The regularly gridded sidereal timestream.
         """
-        self.log.info("Regridding LSD:%i", data.attrs["lsd"])
+        self.log.info(f"Regridding LSD:{data.attrs['lsd']}")
 
-        # Redistribute if needed too
+        # Redistribute if needed
         data.redistribute("freq")
-
-        sfreq = data.vis.local_offset[0]
-        efreq = sfreq + data.vis.local_shape[0]
-        freq = data.freq[sfreq:efreq]
+        freq = data.freq[data.vis[:].local_bounds]
 
         # Convert data timestamps into LSDs
         timestamp_lsd = self.observer.unix_to_lsd(data.time)
@@ -219,8 +197,8 @@ class SiderealRegridder(Regridder):
         self.end = self.start + 1
 
         # Get view of data
-        weight = data.weight[:].view(np.ndarray)
-        vis_data = data.vis[:].view(np.ndarray)
+        weight = data.weight[:].local_array
+        vis_data = data.vis[:].local_array
 
         # Mix down
         if self.down_mix:
@@ -237,18 +215,16 @@ class SiderealRegridder(Regridder):
             sts *= phase
             ni *= (np.abs(phase) > 0.0).astype(ni.dtype)
 
-        # Wrap to produce MPIArray
-        sts = mpiarray.MPIArray.wrap(sts, axis=0)
-        ni = mpiarray.MPIArray.wrap(ni, axis=0)
-
         # FYI this whole process creates an extra copy of the sidereal stack.
         # This could probably be optimised out with a little work.
         sdata = containers.SiderealStream(axes_from=data, ra=self.samples)
         sdata.redistribute("freq")
+
         sdata.vis[:] = sts
         sdata.weight[:] = ni
+
         sdata.attrs["lsd"] = self.start
-        sdata.attrs["tag"] = "lsd_%i" % self.start
+        sdata.attrs["tag"] = f"lsd_{self.start}"
 
         return sdata
 
