@@ -479,6 +479,89 @@ class SiderealRegridderCubic(SiderealRegridder):
         return interp_grid, interp_vis, interp_weight
 
 
+class SiderealSignalVariance(task.SingleTask):
+    """Estimate the local signal variance of a sidereal stream.
+
+    Attributes
+    ----------
+    kernel_width : int
+        Width of the kernel used to estimate local variance.
+        Default is 9.
+    smax : float
+        Maximum allowable signal variance. Used for numerical stability.
+        Default is 1e10.
+    smin : float
+        Minimum allowable signal variance. Used for numerical stability.
+        Default is 1e1.
+    order_of_magnitude : bool
+        If true, round down to the nearest order of magnitude.
+        Default is False.
+    """
+
+    kernel_width = config.Property(proptype=int, default=5)
+    smax = config.Property(proptype=float, default=1e10)
+    smin = config.Property(proptype=float, default=1e1)
+    order_of_magnitude = config.Property(proptype=bool, default=False)
+
+    def process(self, sstream):
+        """Estimate the local signal variance of a dataset.
+
+        Parameters
+        ----------
+        sstream : containers.SiderealStream
+            Data from which to estimate variance.
+
+        Returns
+        -------
+        S : containers.SiderealBandCovariance
+            Estimated signal variance
+        """
+        y = sstream.vis[:].local_array
+
+        # Boxcar kernel
+        ix = np.arange(y.shape[-1], dtype=np.int16)
+        kernel = (abs(np.subtract.outer(ix, ix)) < self.kernel_width).astype(float)
+
+        # Count the number of unflagged samples in the window
+        mask = np.any(sstream.weight[:].local_array > 0, axis=1)[:, np.newaxis]
+        norm = tools.invert_no_zero(mask @ kernel)
+
+        # Get the masked mean over the last axis. Using the `where` argument
+        # in `np.mean` spits out useless RuntimeWarnings and inserts NaNs where
+        # there is an empty slice, wheras `np.sum` has the expected behaviour
+        # of returning zero
+        yhat = np.sum(y, axis=-1, keepdims=True, where=mask)
+        yhat *= tools.invert_no_zero(np.sum(mask, keepdims=True, axis=-1))
+
+        # Make the destination container
+        out = containers.SiderealBandCovariance(
+            axes_from=sstream, attrs_from=sstream, bandwidth=1
+        )
+        out.redistribute("freq")
+
+        S = out.data[:].local_array[:]
+
+        # Iterate over frequencies
+        for fsel in range(y.shape[0]):
+            # Subtract out the sample mean while maintaining the mask
+            dy = np.where(mask[fsel], y[fsel] - yhat[fsel], 0.0)
+            # Calculate the squared difference from the mean for each sample
+            P = np.real(dy) ** 2 + np.imag(dy) ** 2
+            # Convolve with the kernel and divide by the number of unflagged
+            # samples to get the mean
+            S[fsel, :, -1] = norm[fsel] * (P @ kernel)
+
+        if self.order_of_magnitude:
+            for fsel in range(S.shape[0]):
+                S[fsel] = 10 ** np.floor(np.log10(S[fsel]))
+
+        # Enfore maximum and minimum variance for numerical stability
+        S[S > self.smax] = self.smax
+        S[S < self.smin] = self.smin
+
+        return out
+
+
 class SiderealRebinner(SiderealRegridder):
     """Regrid a sidereal day of data using a binning method.
 
