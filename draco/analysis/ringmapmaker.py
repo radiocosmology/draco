@@ -385,6 +385,9 @@ class BeamformEW(task.SingleTask):
         # TODO: derive these from the actual polarisations found in the input
         pol = np.array(["XX", "reXY", "imXY", "YY"], dtype="U4")
 
+        # Determine if we need to process the dirty beam
+        save_dirty_beam = "dirty_beam" in hstream.datasets
+
         # Create ring map, copying over axes/attrs and add the optional datasets
         rm = containers.RingMap(
             beam=nbeam, pol=pol, axes_from=hstream, attrs_from=hstream
@@ -398,7 +401,9 @@ class BeamformEW(task.SingleTask):
         # Dereference datasets
         hvv = hstream.vis[:].local_array
         hvw = hstream.weight[:].local_array
-        hvb = hstream.dirty_beam[:].local_array
+        if save_dirty_beam:
+            hvb = hstream.dirty_beam[:].local_array
+
         rmm = rm.map[:].local_array
         rmb = rm.dirty_beam[:].local_array
 
@@ -412,25 +417,32 @@ class BeamformEW(task.SingleTask):
         for lfi, fi in hstream.vis[:].enumerate(axis=1):
             # Rotate the polarisations
             v = np.tensordot(P, hvv[:, lfi], axes=(1, 0))
-            b = np.tensordot(P, hvb[:, lfi], axes=(1, 0))
 
             # Apply the EW weighting
             v *= weight_ew[np.newaxis, :, np.newaxis, np.newaxis]
-            b *= weight_ew[np.newaxis, :, np.newaxis, np.newaxis]
 
             # Perform  inverse fast fourier transform in x-direction
             if self.single_beam:
                 # Only need the 0th term of the irfft, equivalent to summing in
                 # then EW direction
                 beamformed_data = np.sum(v.real, axis=1)[:, np.newaxis]
-                dirty_beam = np.sum(b.real, axis=1)[:, np.newaxis]
             else:
                 beamformed_data = np.fft.irfft(v, nbeam, axis=1) * nbeam
-                dirty_beam = np.fft.irfft(b, nbeam, axis=1) * nbeam
 
             # Save to container (shifting to the final axis ordering)
             rmm[:, :, lfi] = beamformed_data.transpose(1, 0, 3, 2)
-            rmb[:, :, lfi] = dirty_beam.transpose(1, 0, 3, 2)
+
+            # Repeat all the same operations for the dirty beam if available.
+            if save_dirty_beam:
+                b = np.tensordot(P, hvb[:, lfi], axes=(1, 0))
+                b *= weight_ew[np.newaxis, :, np.newaxis, np.newaxis]
+
+                if self.single_beam:
+                    dirty_beam = np.sum(b.real, axis=1)[:, np.newaxis]
+                else:
+                    dirty_beam = np.fft.irfft(b, nbeam, axis=1) * nbeam
+
+                rmb[:, :, lfi] = dirty_beam.transpose(1, 0, 3, 2)
 
         # Estimate weights/rms noise in the ring map by propagating estimates of the
         # variance in the visibilities
