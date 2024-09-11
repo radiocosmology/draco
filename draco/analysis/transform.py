@@ -7,7 +7,7 @@ from typing import Optional, Union, overload
 
 import numpy as np
 import scipy.linalg as la
-from caput import config, mpiarray
+from caput import config, mpiarray, pipeline
 from caput.tools import invert_no_zero
 from numpy.lib.recfunctions import structured_to_unstructured
 
@@ -424,6 +424,80 @@ class SelectFreq(task.SingleTask):
         newdata.redistribute("freq")
 
         return newdata
+
+
+class GenerateSubBands(SelectFreq):
+    """Generate multiple sub-bands from an input container.
+
+    Attributes
+    ----------
+    sub_band_spec : dict
+        Dictionary of the format:
+            {
+                "band_a": {
+                    "channel_range": [0, 64]
+                },
+                "band_b": {
+                    "channel_range": [64, 128]
+                },
+                ...
+            }
+        where each entry is a separate sub-band with the
+        key providing the tag that will be used to describe the
+        sub-band and the value providing a dictionary that can
+        contain any of the config properties used by the
+        SelectFreq task to downselect along the frequency
+        axis to obtain the sub-band from the input container.
+    """
+
+    sub_band_spec = config.Property(proptype=dict)
+
+    def setup(self, data):
+        """Cache the data product that will be sub-divided along the frequency axis.
+
+        Parameters
+        ----------
+        data : container
+            Any container with a freq axis.
+        """
+        self.default_parameters = {
+            key: val.default
+            for key, val in SelectFreq.__dict__.items()
+            if isinstance(val, config.Property)
+        }
+
+        self.data = data
+        self.base_tag = self.data.attrs.get("tag", None)
+
+        self.sub_bands = list(self.sub_band_spec.keys())[::-1]
+
+    def process(self):
+        """Select the next sub-band from the container that was provided on setup.
+
+        Returns
+        -------
+        sub : container
+            Same type of container as was provided on setup,
+            downselected along the frequency axis.
+        """
+        if len(self.sub_bands) == 0:
+            raise pipeline.PipelineStopIteration
+
+        tag = self.sub_bands.pop()
+        self._set_freq_selection(**self.sub_band_spec[tag])
+
+        if self.base_tag is not None:
+            self.data.attrs["tag"] = "_".join([self.base_tag, tag])
+        else:
+            self.data.attrs["tag"] = tag
+
+        return super().process(self.data)
+
+    def _set_freq_selection(self, **kwargs):
+        """Set properties of the SelectFreq base class to choose the next sub-band."""
+        for key, default in self.default_parameters.items():
+            value = kwargs[key] if key in kwargs else default
+            setattr(self, key, value)
 
 
 class MModeTransform(task.SingleTask):
