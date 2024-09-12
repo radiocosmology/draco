@@ -150,6 +150,7 @@ class ContainerBase(memh5.BasicCont):
 
     convert_attribute_strings = True
     convert_dataset_strings = True
+    allow_chunked = True
 
     def __init__(self, *args, **kwargs):
         # Arguments for pulling in definitions from other containers
@@ -163,7 +164,7 @@ class ContainerBase(memh5.BasicCont):
         comm = kwargs.pop("comm", None)
 
         # Extract misc options
-        self.allow_chunked = kwargs.pop("allow_chunked", True)
+        self.allow_chunked = kwargs.pop("allow_chunked", self.allow_chunked)
         skip_datasets = kwargs.pop("skip_datasets", False)
 
         # Handle the data_group argument. We need to identify if the argument
@@ -2851,7 +2852,7 @@ class FormedBeam(FreqContainer, DataWeightContainer):
         "redshift": {
             "axes": ["object_id"],
             "dtype": np.dtype([("z", np.float64), ("z_error", np.float64)]),
-            "initialise": True,
+            "initialise": False,
             "distributed": False,
         },
     }
@@ -2863,6 +2864,19 @@ class FormedBeam(FreqContainer, DataWeightContainer):
     def beam(self):
         """Get the beam dataset."""
         return self.datasets["beam"]
+
+    @property
+    def position(self):
+        """Get the position dataset."""
+        return self.datasets["position"]
+
+    @property
+    def redshift(self):
+        """Get the redshift dataset."""
+        if "redshift" in self.datasets:
+            return self.datasets["redshift"]
+
+        raise KeyError("Dataset 'redshift' not initialised.")
 
     @property
     def frequency(self):
@@ -2936,7 +2950,7 @@ class FormedBeamHAEW(FormedBeamHA):
         },
         "weight": {
             "axes": ["object_id", "pol", "freq", "ew", "ha"],
-            "dtype": np.float64,
+            "dtype": np.float32,
             "initialise": True,
             "distributed": True,
             "distributed_axis": "freq",
@@ -2946,6 +2960,101 @@ class FormedBeamHAEW(FormedBeamHA):
             "dtype": np.float64,
             "initialise": True,
             "distributed": False,
+        },
+    }
+
+    @property
+    def ew(self):
+        """Get the ew index map."""
+        return self.index_map["ew"]
+
+
+class FitFormedBeam(FormedBeam):
+    """Container for formed beams fit to a primary beam model versus hour angle."""
+
+    _dataset_spec: ClassVar = {
+        "background": {
+            "axes": ["object_id", "pol", "freq"],
+            "dtype": np.complex128,
+            "initialise": True,
+            "distributed": True,
+            "distributed_axis": "freq",
+        },
+        "weight_background": {
+            "axes": ["object_id", "pol", "freq"],
+            "dtype": np.float32,
+            "initialise": True,
+            "distributed": True,
+            "distributed_axis": "freq",
+        },
+        "corr_background_beam": {
+            "axes": ["object_id", "pol", "freq"],
+            "dtype": np.float32,
+            "initialise": True,
+            "distributed": True,
+            "distributed_axis": "freq",
+        },
+    }
+
+    @property
+    def background(self):
+        """Get the background dataset."""
+        return self.datasets["background"]
+
+    @property
+    def weight_background(self):
+        """Get the weight_background dataset."""
+        return self.datasets["weight_background"]
+
+    @property
+    def corr_background_beam(self):
+        """Get the corr_background_beam dataset."""
+        return self.datasets["corr_background_beam"]
+
+
+class FitFormedBeamEW(FitFormedBeam):
+    """Container for formed beams fit to a primary beam model versus hour angle.
+
+    These have not been collapsed along the east west baseline (ew) axis.
+    """
+
+    _axes = ("ew",)
+
+    _dataset_spec: ClassVar = {
+        "beam": {
+            "axes": ["object_id", "pol", "freq", "ew"],
+            "dtype": np.complex128,
+            "initialise": True,
+            "distributed": True,
+            "distributed_axis": "freq",
+        },
+        "weight": {
+            "axes": ["object_id", "pol", "freq", "ew"],
+            "dtype": np.float32,
+            "initialise": True,
+            "distributed": True,
+            "distributed_axis": "freq",
+        },
+        "background": {
+            "axes": ["object_id", "pol", "freq", "ew"],
+            "dtype": np.complex128,
+            "initialise": True,
+            "distributed": True,
+            "distributed_axis": "freq",
+        },
+        "weight_background": {
+            "axes": ["object_id", "pol", "freq", "ew"],
+            "dtype": np.float32,
+            "initialise": True,
+            "distributed": True,
+            "distributed_axis": "freq",
+        },
+        "corr_background_beam": {
+            "axes": ["object_id", "pol", "freq", "ew"],
+            "dtype": np.float32,
+            "initialise": True,
+            "distributed": True,
+            "distributed_axis": "freq",
         },
     }
 
