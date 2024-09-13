@@ -481,9 +481,9 @@ class MaskBeamformedOutliers(task.SingleTask):
         mask.redistribute("freq")
 
         # Multiply the weights by the inverse of the mask
-        flag = ~mask.mask[:].view(np.ndarray)
+        flag = ~mask.mask[:].local_array
 
-        data.weight[:] *= flag.astype(np.float32)
+        data.weight[:].local_array[:] *= flag.astype(np.float32)
 
         return data
 
