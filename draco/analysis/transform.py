@@ -1459,13 +1459,17 @@ class ReduceBase(task.SingleTask):
 
         # Get the weights
         if hasattr(data, "weight"):
-            weight = data.weight[:]
             # The weights should be distributed over the same axis as the array,
             # even if they don't share all the same axes
-            new_weight_ax = list(data.weight.attrs["axis"]).index(new_ax_name)
-            weight = weight.redistribute(new_weight_ax)
+            w_axes = list(data.weight.attrs["axis"])
+            new_weight_ax = w_axes.index(new_ax_name)
+            weight = data.weight[:].redistribute(new_weight_ax)
+            # Insert a size 1 axis for each missing axis in the weights
+            wslc = [slice(None) if ax in w_axes else None for ax in ds_axes]
+            weight = weight.local_array[tuple(wslc)]
         else:
             self.log.info("No weights available. Using equal weighting.")
+            wslc = None
             weight = np.ones(ds.local_shape, ds.dtype)
 
         # Apply the reduction, ensuring that the weights have the correct dimension
@@ -1481,7 +1485,11 @@ class ReduceBase(task.SingleTask):
         out[self.dataset][:] = reduced[:]
 
         if hasattr(out, "weight"):
-            out.weight[:] = reduced_weight[:]
+            if wslc is None:
+                out.weight[:] = reduced_weight
+            else:
+                owslc = [ws if ws is not None else 0 for ws in wslc]
+                out.weight[:] = reduced_weight[tuple(owslc)]
 
         # Redistribute bcak to the original axis, again using the axis name
         out.redistribute(ds_axes[original_ax_id])
