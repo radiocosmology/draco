@@ -382,6 +382,11 @@ class BeamformEW(task.SingleTask):
         # Normalise the weights
         weight_ew = weight_ew / weight_ew.sum()
 
+        # Reshape ew weights so that they will broadcast against
+        # the vis and weight datasets
+        weight_ew2 = weight_ew[:, np.newaxis] ** 2
+        weight_ew = weight_ew[:, np.newaxis, np.newaxi]
+
         # TODO: derive these from the actual polarisations found in the input
         pol = np.array(["XX", "reXY", "imXY", "YY"], dtype="U4")
 
@@ -406,12 +411,15 @@ class BeamformEW(task.SingleTask):
 
         rmm = rm.map[:].local_array
         rmb = rm.dirty_beam[:].local_array
+        rmw = rm.weight[:].local_array
+        rmr = rm.rms[:].local_array
 
         # This matrix takes the linear combinations of polarisations required to rotate
         # from XY, YX basis into reXY and imXY
         P = np.array(
             [[1, 0, 0, 0], [0, 0.5, 0.5, 0], [0, -0.5j, 0.5j, 0], [0, 0, 0, 1]]
         )
+        P2 = np.abs(P) ** 2
 
         # Loop over local frequencies and fill ring map
         for lfi, fi in hstream.vis[:].enumerate(axis=1):
@@ -419,7 +427,7 @@ class BeamformEW(task.SingleTask):
             v = np.tensordot(P, hvv[:, lfi], axes=(1, 0))
 
             # Apply the EW weighting
-            v *= weight_ew[np.newaxis, :, np.newaxis, np.newaxis]
+            v *= weight_ew
 
             # Perform  inverse fast fourier transform in x-direction
             if self.single_beam:
@@ -432,6 +440,14 @@ class BeamformEW(task.SingleTask):
             # Save to container (shifting to the final axis ordering)
             rmm[:, :, lfi] = beamformed_data.transpose(1, 0, 3, 2)
 
+            # Propagate variance in the visibilities to the ringmap.
+            # Factor of 1/2 because we are taking the real component.
+            var = np.tensortdot(P2, tools.invert_no_zero(hvw[:, lfi]), axis=(1, 0))
+            rm_var = 0.5 * np.sum(weight_ew2 * var, axis=1)
+
+            rmw[:, lfi] = tools.invert_no_zero(rm_var[..., np.newaxis])
+            rmr[:, lfi] = rm_var ** 0.5
+
             # Repeat all the same operations for the dirty beam if available.
             if save_dirty_beam:
                 b = np.tensordot(P, hvb[:, lfi], axes=(1, 0))
@@ -443,12 +459,6 @@ class BeamformEW(task.SingleTask):
                     dirty_beam = np.fft.irfft(b, nbeam, axis=1) * nbeam
 
                 rmb[:, :, lfi] = dirty_beam.transpose(1, 0, 3, 2)
-
-        # Estimate weights/rms noise in the ring map by propagating estimates of the
-        # variance in the visibilities
-        rm_var = (tools.invert_no_zero(hvw) * weight_ew[:, np.newaxis] ** 2).sum(axis=2)
-        rm.rms[:] = rm_var**0.5
-        rm.weight[:] = tools.invert_no_zero(rm_var[..., np.newaxis])
 
         return rm
 

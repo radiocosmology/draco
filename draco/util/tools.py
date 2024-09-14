@@ -733,12 +733,42 @@ def taper_mask(mask, nwidth, outer=False):
 
 
 def correct_phase_wrap(phi, deg=False):
+    """Correct for phase wrapping.
 
+    Parameters
+    ----------
+    phi : np.ndarray
+        Phase in radians or degrees.
+    deg : bool
+        Flag indicating the provided phase
+        is in units of radians (False)
+        or degrees (True).
+
+    Returns
+    -------
+    phic : np.ndarray
+        Phase betwen -pi and pi if degree is False,
+        or -180 and 180 if degree is True.
+    """
     period = 180.0 if deg else np.pi
     return ((phi + period) % (2 * period)) - period
 
 
 def find_contiguous_slices(index):
+    """Convert indices into a list of slices.
+
+    Parameters
+    ----------
+    index : list or array of int
+        1D indices into an array.
+
+    Returns
+    slices : list of slice
+        Slices into the array that will return all elements
+        in index but split into contiguous regions.  Useful
+        because these contiguous slices can be used to access
+        the desired subset of the array without making a copy.
+    """
     slices = []
     for w, z in itertools.groupby(index, lambda x, y=itertools.count(): next(y) - x):
         grouped = list(z)
