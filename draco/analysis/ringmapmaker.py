@@ -385,7 +385,7 @@ class BeamformEW(task.SingleTask):
         # Reshape ew weights so that they will broadcast against
         # the vis and weight datasets
         weight_ew2 = weight_ew[:, np.newaxis] ** 2
-        weight_ew = weight_ew[:, np.newaxis, np.newaxi]
+        weight_ew = weight_ew[:, np.newaxis, np.newaxis]
 
         # TODO: derive these from the actual polarisations found in the input
         pol = np.array(["XX", "reXY", "imXY", "YY"], dtype="U4")
@@ -442,11 +442,11 @@ class BeamformEW(task.SingleTask):
 
             # Propagate variance in the visibilities to the ringmap.
             # Factor of 1/2 because we are taking the real component.
-            var = np.tensortdot(P2, tools.invert_no_zero(hvw[:, lfi]), axis=(1, 0))
+            var = np.tensordot(P2, tools.invert_no_zero(hvw[:, lfi]), axes=(1, 0))
             rm_var = 0.5 * np.sum(weight_ew2 * var, axis=1)
 
             rmw[:, lfi] = tools.invert_no_zero(rm_var[..., np.newaxis])
-            rmr[:, lfi] = rm_var ** 0.5
+            rmr[:, lfi] = rm_var**0.5
 
             # Repeat all the same operations for the dirty beam if available.
             if save_dirty_beam:
