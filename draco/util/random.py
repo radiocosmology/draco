@@ -418,11 +418,16 @@ class MultithreadedRNG(np.random.Generator):
             # A worker method for each thread to fill its part of the array with the
             # random numbers
             def _fill(gen: np.random.Generator, local_array: np.ndarray) -> None:
+                if has_dtype:
+                    kwargs["dtype"] = dtype
                 if has_out:
+                    if out.dtype != dtype:
+                        raise TypeError(
+                            f"Output array of type f{local_array.dtype} does not "
+                            f"match dtype argument {dtype}."
+                        )
                     method(gen, *args, **kwargs, out=local_array)
                 else:
-                    if has_dtype:
-                        kwargs["dtype"] = dtype
                     local_array[:] = method(
                         gen,
                         *args,
