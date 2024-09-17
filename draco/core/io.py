@@ -823,6 +823,7 @@ class Truncate(task.SingleTask):
             # np.ndarray.reshape must be used with ndarrays
             # MPIArrays use MPIArray.reshape()
             val = np.ndarray.reshape(data[dset][:].view(np.ndarray), data[dset][:].size)
+
             if specs["weight_dataset"] is None:
                 if np.iscomplexobj(data[dset]):
                     data[dset][:].real = truncate.bit_truncate_relative(
@@ -836,15 +837,27 @@ class Truncate(task.SingleTask):
                         val, specs["fixed_precision"]
                     ).reshape(old_shape)
             else:
+                # If possible, extract the weight dataset from
+                # an attribute
                 if hasattr(data, specs["weight_dataset"]):
                     invvar = getattr(data, specs["weight_dataset"])
                 else:
-                    invvar = data[specs["weight_dataset"]][:]
+                    wdset = data[specs["weight_dataset"]]
+                    # Add missing axes to the weights dataset if
+                    # needed and if possible
+                    waxes = wdset.attrs.get("axis", [])
+                    daxes = data[dset].attrs.get("axis", [])
+                    # Add length-one axes
+                    slobj = tuple(
+                        slice(None) if ax in waxes else np.newaxis for ax in daxes
+                    )
+                    invvar = wdset[:][slobj]
 
                 invvar = np.broadcast_to(invvar, data[dset][:].shape).copy().reshape(-1)
                 invvar *= (2.0 if np.iscomplexobj(data[dset]) else 1.0) / specs[
                     "variance_increase"
                 ]
+
                 if np.iscomplexobj(data[dset]):
                     data[dset][:].real = truncate.bit_truncate_weights(
                         val.real,
