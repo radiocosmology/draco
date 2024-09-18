@@ -7,6 +7,8 @@ from caput import interferometry, mpiutil, config
 from draco.core import task, io
 from draco.util import tools
 
+import json
+
 
 class EigenCalibration(task.SingleTask):
     """Deteremine response of each feed to a point source.
