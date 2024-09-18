@@ -4,7 +4,7 @@ from mpi4py import MPI
 
 from caput import interferometry, mpiutil, config
 
-from draco.core import task, io
+from draco.core import task, io, containers
 from draco.util import tools
 
 import json
@@ -434,6 +434,7 @@ class TransitFit(task.SingleTask):
     """
     TODO: Move the fitting classes FitGaussAmpPolyPhase and 
     FitPolyLogAmpPolyPhase out of ch_util.cal_utils and import
+    TODO: Check defaults
     
     Fit model to the transit of a point source.
 
@@ -626,3 +627,107 @@ class TransitFit(task.SingleTask):
         fit.ndof[:] = model.ndof[:]
 
         return fit
+    
+
+class GainFromTransitFit(task.SingleTask):
+    """Determine gain by evaluating the best-fit model for the point source transit.
+
+    Attributes
+    ----------
+    evaluate : str
+        Evaluate the model at this location, either 'transit' or 'peak'.
+    chisq_per_dof_threshold : float
+        Set gain and weight to zero if the chisq per degree of freedom
+        of the fit is less than this threshold.
+    alpha : float
+        Use confidence level 1 - alpha for the uncertainty on the gain.
+    """
+
+    evaluate = config.enum(["transit", "peak"], default="transit")
+    chisq_per_dof_threshold = config.Property(proptype=float, default=20.0)
+    alpha = config.Property(proptype=float, default=0.32)
+
+    def process(self, fit):
+        """
+        TODO: Modify docstring when we know where TransitFitParams will live
+        
+        Determine gain from best-fit model.
+
+        Parameters
+        ----------
+        fit : ccontainers.TransitFitParams
+            Parameters of the model fit and their covariance.
+            Must also contain 'model_class' and 'model_kwargs'
+            attributes that can be used to evaluate the model.
+
+        Returns
+        -------
+        gain : containers.StaticGainData
+            Gain and uncertainty on the gain.
+        """
+        from pydoc import locate
+
+        # Distribute over frequency
+        fit.redistribute("freq")
+
+        nfreq, ninput, _ = fit.parameter.local_shape
+
+        # Import the function for evaluating the model and keyword arguments
+        ModelClass = locate(fit.attrs["model_class"])
+        model_kwargs = json.loads(fit.attrs["model_kwargs"])
+
+        # Create output container
+        out = containers.StaticGainData(
+            axes_from=fit, attrs_from=fit, distributed=fit.distributed, comm=fit.comm
+        )
+        out.add_dataset("weight")
+
+        # Dereference datasets
+        param = fit.parameter[:].local_array
+        param_cov = fit.parameter_cov[:].local_array
+        chisq = fit.chisq[:].local_array
+        ndof = fit.ndof[:].local_array
+
+        chisq_per_dof = chisq * tools.invert_no_zero(ndof.astype(np.float32))
+
+        gain = out.gain[:]
+        weight = out.weight[:]
+
+        # Instantiate the model object
+        model = ModelClass(
+            param=param, param_cov=param_cov, chisq=chisq, ndof=ndof, **model_kwargs
+        )
+
+        # Suppress numpy floating errors
+        with np.errstate(all="ignore"):
+            # Determine hour angle of evaluation
+            if self.evaluate == "peak":
+                ha = model.peak()
+                elementwise = True
+            else:
+                ha = 0.0
+                elementwise = False
+
+            # Predict model and uncertainty at desired hour angle
+            g = model.predict(ha, elementwise=elementwise)
+
+            gerr = model.uncertainty(ha, alpha=self.alpha, elementwise=elementwise)
+
+            # Use convention that you multiply by gain to calibrate
+            gain[:] = tools.invert_no_zero(g)
+            weight[:] = tools.invert_no_zero(np.abs(gerr) ** 2) * np.abs(g) ** 4
+
+            # Can occassionally get Infs when evaluating fits to anomalous data.
+            # Replace with zeros. Also zero data where the chi-squared per
+            # degree of freedom is greater than threshold.
+            not_valid = ~(
+                np.isfinite(gain)
+                & np.isfinite(weight)
+                & np.all(chisq_per_dof <= self.chisq_per_dof_threshold, axis=-1)
+            )
+
+            if np.any(not_valid):
+                gain[not_valid] = 0.0 + 0.0j
+                weight[not_valid] = 0.0
+
+        return out
