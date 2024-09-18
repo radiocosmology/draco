@@ -2,7 +2,7 @@ import numpy as np
 import scipy.constants
 from mpi4py import MPI
 
-from caput import interferometry, mpiutil, config
+from caput import interferometry, mpiutil, config, mpiarray
 
 from draco.core import task, io, containers
 from draco.util import tools
@@ -731,3 +731,207 @@ class GainFromTransitFit(task.SingleTask):
                 weight[not_valid] = 0.0
 
         return out
+    
+
+class FlagAmplitude(task.SingleTask):
+    """Flag feeds and frequencies with outlier gain amplitude.
+
+    Attributes
+    ----------
+    min_amp_scale_factor : float
+        Flag feeds and frequencies where the amplitude of the gain
+        is less than `min_amp_scale_factor` times the median amplitude
+        over all feeds and frequencies.
+    max_amp_scale_factor : float
+        Flag feeds and frequencies where the amplitude of the gain
+        is greater than `max_amp_scale_factor` times the median amplitude
+        over all feeds and frequencies.
+    nsigma_outlier : float
+        Flag a feed at a particular frequency if the gain amplitude
+        is greater than `nsigma_outlier` from the median value over
+        all feeds of the same polarisation at that frequency.
+    nsigma_med_outlier : float
+        Flag a frequency if the median gain amplitude over all feeds of a
+        given polarisation is `nsigma_med_outlier` away from the local median.
+    window_med_outlier : int
+        Number of frequency bins to use to determine the local median for
+        the test outlined in the description of `nsigma_med_outlier`.
+    threshold_good_freq: float
+        If a frequency has less than this fraction of good inputs, then
+        it is considered bad and the data for all inputs is flagged.
+    threshold_good_input : float
+        If an input has less than this fraction of good frequencies, then
+        it is considered bad and the data for all frequencies is flagged.
+        Note that the fraction is relative to the number of frequencies
+        that pass the test described in `threshold_good_freq`.
+    valid_gains_frac_good_freq : float
+        If the fraction of frequencies that remain after flagging is less than
+        this value, then the task will return None and the processing of the
+        sidereal day will not proceed further.
+    """
+
+    min_amp_scale_factor = config.Property(proptype=float, default=0.05)
+    max_amp_scale_factor = config.Property(proptype=float, default=20.0)
+    nsigma_outlier = config.Property(proptype=float, default=10.0)
+    nsigma_med_outlier = config.Property(proptype=float, default=10.0)
+    window_med_outlier = config.Property(proptype=int, default=24)
+    threshold_good_freq = config.Property(proptype=float, default=0.70)
+    threshold_good_input = config.Property(proptype=float, default=0.80)
+    valid_gains_frac_good_freq = config.Property(proptype=float, default=0.0)
+
+    def process(self, gain, inputmap):
+        """
+        TODO: Move cal_utils.estimate_directional_scale and cal_utils.flag_outliers
+        to somewhere in draco and import
+        
+        Set weight to zero for feeds and frequencies with outlier gain amplitude.
+
+        Parameters
+        ----------
+        gain : containers.StaticGainData
+            Gain derived from point source transit.
+        inputmap : list of CorrInput's
+            List describing the inputs as ordered in gain.
+
+        Returns
+        -------
+        gain : containers.StaticGainData
+            The input gain container with modified weights.
+        """
+        # Distribute over frequency
+        gain.redistribute("freq")
+
+        nfreq, ninput = gain.gain.local_shape
+
+        sfreq = gain.gain.local_offset[0]
+        efreq = sfreq + nfreq
+
+        # Dereference datasets
+        flag = gain.weight[:].local_array > 0.0
+        amp = np.abs(gain.gain[:].local_array)
+
+        # Determine x and y pol index
+        xfeeds = np.array(
+            [idf for idf, inp in enumerate(inputmap) if tools.is_array_x(inp)]
+        )
+        yfeeds = np.array(
+            [idf for idf, inp in enumerate(inputmap) if tools.is_array_y(inp)]
+        )
+        pol = [yfeeds, xfeeds]
+        polstr = ["Y", "X"]
+
+        # Hard cutoffs on the amplitude
+        med_amp = np.median(amp[flag])
+        min_amp = med_amp * self.min_amp_scale_factor
+        max_amp = med_amp * self.max_amp_scale_factor
+
+        flag &= (amp >= min_amp) & (amp <= max_amp)
+
+        # Flag outliers in amplitude for each frequency
+        for pp, feeds in enumerate(pol):
+            med_amp_by_pol = np.zeros(nfreq, dtype=np.float32)
+            sig_amp_by_pol = np.zeros(nfreq, dtype=np.float32)
+
+            for ff in range(nfreq):
+                this_flag = flag[ff, feeds]
+
+                if np.any(this_flag):
+                    med, slow, shigh = cal_utils.estimate_directional_scale(
+                        amp[ff, feeds[this_flag]]
+                    )
+                    lower = med - self.nsigma_outlier * slow
+                    upper = med + self.nsigma_outlier * shigh
+
+                    flag[ff, feeds] &= (amp[ff, feeds] >= lower) & (
+                        amp[ff, feeds] <= upper
+                    )
+
+                    med_amp_by_pol[ff] = med
+                    sig_amp_by_pol[ff] = (
+                        0.5
+                        * (shigh - slow)
+                        / np.sqrt(np.sum(this_flag, dtype=np.float32))
+                    )
+
+            # Flag frequencies that are outliers with respect to local median
+            if self.nsigma_med_outlier:
+                # Collect med_amp_by_pol for all frequencies on rank 0
+                if gain.comm.rank == 0:
+                    full_med_amp_by_pol = np.zeros(gain.freq.size, dtype=np.float32)
+                else:
+                    full_med_amp_by_pol = None
+
+                mpiutil.gather_local(
+                    full_med_amp_by_pol,
+                    med_amp_by_pol,
+                    (sfreq,),
+                    root=0,
+                    comm=gain.comm,
+                )
+
+                # Flag outlier frequencies on rank 0
+                not_outlier = None
+                if gain.comm.rank == 0:
+                    med_flag = full_med_amp_by_pol > 0.0
+
+                    not_outlier = cal_utils.flag_outliers(
+                        full_med_amp_by_pol,
+                        med_flag,
+                        window=self.window_med_outlier,
+                        nsigma=self.nsigma_med_outlier,
+                    )
+
+                    self.log.info(
+                        "Pol %s:  %d frequencies are outliers."
+                        % (polstr[pp], np.sum(~not_outlier & med_flag, dtype=np.int64))
+                    )
+
+                # Broadcast outlier frequencies to other ranks
+                not_outlier = gain.comm.bcast(not_outlier, root=0)
+                gain.comm.Barrier()
+
+                flag[:, feeds] &= not_outlier[sfreq:efreq, np.newaxis]
+
+        # Determine bad frequencies
+        flag_freq = (
+            np.sum(flag, axis=1, dtype=np.float32) / float(ninput)
+        ) > self.threshold_good_freq
+
+        good_freq = list(sfreq + np.flatnonzero(flag_freq))
+        good_freq = np.array(mpiutil.allreduce(good_freq, op=MPI.SUM, comm=gain.comm))
+
+        flag &= flag_freq[:, np.newaxis]
+
+        self.log.info("%d good frequencies after flagging amplitude." % good_freq.size)
+
+        # If fraction of good frequencies is less than threshold, stop and return None
+        frac_good_freq = good_freq.size / float(gain.freq.size)
+        if frac_good_freq < self.valid_gains_frac_good_freq:
+            self.log.info(
+                f"Only {100.0 * frac_good_freq:0.1f}% of frequencies remain after flagging amplitude.  Will "
+                "not process this sidereal day further."
+            )
+            return None
+
+        # Determine bad inputs
+        flag = mpiarray.MPIArray.wrap(flag, axis=0, comm=gain.comm)
+        flag = flag.redistribute(1)
+
+        fraction_good = np.sum(
+            flag[good_freq, :], axis=0, dtype=np.float32
+        ) * tools.invert_no_zero(float(good_freq.size))
+        flag_input = fraction_good > self.threshold_good_input
+
+        good_input = list(flag.local_offset[1] + np.flatnonzero(flag_input))
+        good_input = np.array(mpiutil.allreduce(good_input, op=MPI.SUM, comm=gain.comm))
+
+        flag[:] &= flag_input[np.newaxis, :]
+
+        self.log.info("%d good inputs after flagging amplitude." % good_input.size)
+
+        # Redistribute flags back over frequencies and update container
+        flag = flag.redistribute(0)
+
+        gain.weight[:] *= flag.astype(gain.weight.dtype)
+
+        return gain
