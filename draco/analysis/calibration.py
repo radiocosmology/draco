@@ -345,3 +345,87 @@ class EigenCalibration(task.SingleTask):
                 out_weight[ff, feeds, :] = tools.invert_no_zero(resp_err**2)
 
         return response
+    
+
+class DetermineSourceTransit(task.SingleTask):
+    """Determine the sources that are transiting within time range covered by container.
+
+    Attributes
+    ----------
+    source_list : list of str
+        List of source names to consider.  If not specified, all sources
+        contained in `ch_ephem.sources.source_dictionary` will be considered.
+    freq : float
+        Frequency in MHz.  Sort the sources by the flux at this frequency.
+    require_transit: bool
+        If this is True and a source transit is not found in the container,
+        then the task will return None.
+    """
+
+    source_list = config.Property(proptype=list, default=[])
+    freq = config.Property(proptype=float, default=None) # No assumption about which telescope
+    require_transit = config.Property(proptype=bool, default=True)
+
+    def setup(self, fluxcatalog):
+        """Set list of sources, sorted by flux in descending order.
+        
+        Parameters
+        ----------
+        fluxcatalog : FluxCatalog object 
+            TODO: move this object out of ch_util.fluxcat
+        """
+        self.source_list = sorted(
+            self.source_list, # This must be set
+            key=lambda src: fluxcatalog[src].predict_flux(self.freq),
+            reverse=True,
+        )
+
+    def process(self, sstream, observer, source_dictionary):
+        """Add attributes to container describing source transit contained within.
+
+        Parameters
+        ----------
+        sstream : containers.SiderealStream, containers.TimeStream, or equivalent
+            Container covering the source transit.
+
+        observer : caput.time.Observer object representing a local observer in
+            terms of coordinates, etc.
+
+        source_dictionary : A dictionary whose keys are source names and
+            values are `skyfield.starlib.Star` objects.
+
+        Returns
+        -------
+        sstream : containers.SiderealStream, containers.TimeStream, or equivalent
+            Container covering the source transit, now with `source_name` and
+            `transit_time` attributes.
+        """
+        # Determine the time covered by input container
+        if "time" in sstream.index_map:
+            timestamp = sstream.time
+        else:
+            lsd = sstream.attrs.get("lsd", sstream.attrs.get("csd"))
+            timestamp = observer.lsd_to_unix(lsd + sstream.ra / 360.0)
+
+        # Loop over sources and check if there is a transit within time range
+        # covered by container.  If so, then add attributes describing that source
+        # and break from the loop.
+        contains_transit = False
+        for src in self.source_list:
+            transit_time = observer.transit_times(
+                source_dictionary[src], timestamp[0], timestamp[-1]
+            )
+            if transit_time.size > 0:
+                self.log.info(
+                    "Data stream contains %s transit on LSD %d."
+                    % (src, observer.unix_to_lsd(transit_time[0]))
+                )
+                sstream.attrs["source_name"] = src
+                sstream.attrs["transit_time"] = transit_time[0]
+                contains_transit = True
+                break
+
+        if contains_transit or not self.require_transit:
+            return sstream
+
+        return None
