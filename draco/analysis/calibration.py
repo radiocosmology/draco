@@ -432,8 +432,6 @@ class DetermineSourceTransit(task.SingleTask):
 
 class TransitFit(task.SingleTask):
     """
-    TODO: Move the fitting classes FitGaussAmpPolyPhase and 
-    FitPolyLogAmpPolyPhase out of ch_util.cal_utils and import
     TODO: Check defaults
     
     Fit model to the transit of a point source.
