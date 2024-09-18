@@ -348,7 +348,10 @@ class EigenCalibration(task.SingleTask):
     
 
 class DetermineSourceTransit(task.SingleTask):
-    """Determine the sources that are transiting within time range covered by container.
+    """
+    TODO: move generalized FluxCatalog object out of ch_util.fluxcat and import
+    
+    Determine the sources that are transiting within time range covered by container.
 
     Attributes
     ----------
@@ -367,16 +370,10 @@ class DetermineSourceTransit(task.SingleTask):
     require_transit = config.Property(proptype=bool, default=True)
 
     def setup(self, fluxcatalog):
-        """Set list of sources, sorted by flux in descending order.
-        
-        Parameters
-        ----------
-        fluxcatalog : FluxCatalog object 
-            TODO: move this object out of ch_util.fluxcat
-        """
+        """Set list of sources, sorted by flux in descending order."""
         self.source_list = sorted(
             self.source_list, # This must be set
-            key=lambda src: fluxcatalog[src].predict_flux(self.freq),
+            key=lambda src: fluxcat.FluxCatalog[src].predict_flux(self.freq),
             reverse=True,
         )
 
@@ -429,3 +426,201 @@ class DetermineSourceTransit(task.SingleTask):
             return sstream
 
         return None
+    
+
+class TransitFit(task.SingleTask):
+    """
+    TODO: Move the fitting classes FitGaussAmpPolyPhase and 
+    FitPolyLogAmpPolyPhase out of ch_util.cal_utils and import
+    
+    Fit model to the transit of a point source.
+
+    Multiple model choices are available and can be specified through the `model`
+    config property.  Default is `gauss_amp_poly_phase`, a nonlinear fit
+    of a gaussian in amplitude and a polynomial in phase to the complex data.
+    There is also `poly_log_amp_poly_phase`, an iterative weighted least squares
+    fit of a polynomial to log amplitude and phase.  The type of polynomial can be
+    chosen through the `poly_type`, `poly_deg_amp`, and `poly_deg_phi` config properties.
+
+    Attributes
+    ----------
+    model : str
+        Name of the model to fit.  One of 'gauss_amp_poly_phase' or
+        'poly_log_amp_poly_phase'.
+    nsigma : float
+        Number of standard deviations away from transit to fit.
+    absolute_sigma : bool
+        Set to True if the errors provided are absolute.  Set to False if
+        the errors provided are relative, in which case the parameter covariance
+        will be scaled by the chi-squared per degree-of-freedom.
+    poly_type : str
+        Type of polynomial.  Either 'standard', 'hermite', or 'chebychev'.
+        Relevant if `poly = True`.
+    poly_deg_amp : int
+        Degree of the polynomial to fit to amplitude.
+        Relevant if `poly = True`.
+    poly_deg_phi : int
+        Degree of the polynomial to fit to phase.
+        Relevant if `poly = True`.
+    niter : int
+        Number of times to update the errors using model amplitude.
+        Relevant if `poly = True`.
+    moving_window : int
+        Number of standard deviations away from peak to fit.
+        The peak location is updated with each iteration.
+        Must be less than `nsigma`.  Relevant if `poly = True`.
+    """
+
+    model = config.enum(
+        ["gauss_amp_poly_phase", "poly_log_amp_poly_phase"],
+        default="gauss_amp_poly_phase",
+    )
+    nsigma = config.Property(
+        proptype=(lambda x: x if x is None else float(x)), default=0.60
+    )
+    absolute_sigma = config.Property(proptype=bool, default=False)
+    poly_type = config.Property(proptype=str, default="standard")
+    poly_deg_amp = config.Property(proptype=int, default=5)
+    poly_deg_phi = config.Property(proptype=int, default=5)
+    niter = config.Property(proptype=int, default=5)
+    moving_window = config.Property(
+        proptype=(lambda x: x if x is None else float(x)), default=0.30
+    )
+
+    def setup(self):
+        """Define model to fit to transit."""
+        self.fit_kwargs = {"absolute_sigma": self.absolute_sigma}
+
+        if self.model == "gauss_amp_poly_phase":
+            self.ModelClass = cal_utils.FitGaussAmpPolyPhase
+            self.model_kwargs = {
+                "poly_type": self.poly_type,
+                "poly_deg_phi": self.poly_deg_phi,
+            }
+
+        elif self.model == "poly_log_amp_poly_phase":
+            self.ModelClass = cal_utils.FitPolyLogAmpPolyPhase
+            self.model_kwargs = {
+                "poly_type": self.poly_type,
+                "poly_deg_amp": self.poly_deg_amp,
+                "poly_deg_phi": self.poly_deg_phi,
+            }
+            self.fit_kwargs.update(
+                {"niter": self.niter, "moving_window": self.moving_window}
+            )
+
+        else:
+            raise ValueError(
+                f"Do not recognize model {self.model}.  Options are "
+                "`gauss_amp_poly_phase` and `poly_log_amp_poly_phase`."
+            )
+
+    def process(self, response, inputmap):
+        """
+        TODO: Move generalized ccontainers.TransitFitParams out of 
+        ch_pipeline.core.containers and import it
+
+
+        Fit model to the point source response for each feed and frequency.
+
+        Parameters
+        ----------
+        response : containers.SiderealStream
+            SiderealStream covering the source transit.  Must contain
+            `source_name` and `transit_time` attributes.
+        inputmap : list of CorrInput's
+            List describing the inputs as ordered in response.
+
+        Returns
+        -------
+        fit : ccontainers.TransitFitParams
+            Parameters of the model fit and their covariance.
+        """
+        # Ensure that we are distributed over frequency
+        response.redistribute("freq")
+
+        # Determine local dimensions
+        nfreq, ninput, nra = response.vis.local_shape
+
+        # Find the local frequencies
+        freq = response.freq[response.vis[:].local_bounds]
+
+        # Calculate the hour angle using the source and transit time saved to attributes
+        source_obj = sources.source_dictionary[response.attrs["source_name"]]
+        ttrans = response.attrs["transit_time"]
+
+        src_ra, src_dec = coord.object_coords(source_obj, date=ttrans, deg=True)
+
+        ha = response.ra[:] - src_ra
+        ha = ((ha + 180.0) % 360.0) - 180.0
+
+        # Determine the fit window
+        input_flags = np.any(response.input_flags[:], axis=-1)
+
+        xfeeds = np.array(
+            [
+                idf
+                for idf, inp in enumerate(inputmap)
+                if input_flags[idf] and tools.is_array_x(inp)
+            ]
+        )
+        yfeeds = np.array(
+            [
+                idf
+                for idf, inp in enumerate(inputmap)
+                if input_flags[idf] and tools.is_array_y(inp)
+            ]
+        )
+
+        pol = {"X": xfeeds, "Y": yfeeds}
+
+        sigma = np.zeros((nfreq, ninput), dtype=np.float32)
+        for pstr, feed in pol.items():
+            sigma[:, feed] = cal_utils.guess_fwhm(
+                freq, pol=pstr, dec=np.radians(src_dec), sigma=True, voltage=True
+            )[:, np.newaxis]
+
+        # Dereference datasets
+        vis = response.vis[:].local_array
+        weight = response.weight[:].local_array
+        err = np.sqrt(tools.invert_no_zero(weight))
+
+        # Flag data that is outside the fit window set by nsigma config parameter
+        if self.nsigma is not None:
+            err *= (
+                np.abs(ha[np.newaxis, np.newaxis, :])
+                <= (self.nsigma * sigma[:, :, np.newaxis])
+            ).astype(err.dtype)
+
+        # Instantiate the model fitter
+        model = self.ModelClass(**self.model_kwargs)
+
+        # Fit the model
+        model.fit(ha, vis, err, width=sigma, **self.fit_kwargs)
+
+        # Create an output container
+        fit = ccontainers.TransitFitParams(
+            param=model.parameter_names,
+            component=model.component,
+            axes_from=response,
+            attrs_from=response,
+            distributed=response.distributed,
+            comm=response.comm,
+        )
+
+        fit.add_dataset("chisq")
+        fit.add_dataset("ndof")
+
+        # Transfer fit information to container attributes
+        fit.attrs["model_kwargs"] = json.dumps(model.model_kwargs)
+        fit.attrs["model_class"] = ".".join(
+            [getattr(self.ModelClass, key) for key in ["__module__", "__name__"]]
+        )
+
+        # Save datasets
+        fit.parameter[:] = model.param[:]
+        fit.parameter_cov[:] = model.param_cov[:]
+        fit.chisq[:] = model.chisq[:]
+        fit.ndof[:] = model.ndof[:]
+
+        return fit
