@@ -516,7 +516,7 @@ class TransitFit(task.SingleTask):
                 "`gauss_amp_poly_phase` and `poly_log_amp_poly_phase`."
             )
 
-    def process(self, response, inputmap):
+    def process(self, response, inputmap, guess_fwhm):
         """
         TODO: Move generalized ccontainers.TransitFitParams out of 
         ch_pipeline.core.containers and import it
@@ -531,6 +531,12 @@ class TransitFit(task.SingleTask):
             `source_name` and `transit_time` attributes.
         inputmap : list of CorrInput's
             List describing the inputs as ordered in response.
+        guess_fwhm : function
+            A callable (function) that provides the FWHM of the primary beam.
+            
+            Should have signature:
+            
+            guess_fwhm(freq, pol="X", dec=None, sigma=False, voltage=False, seconds=False)
 
         Returns
         -------
@@ -577,7 +583,7 @@ class TransitFit(task.SingleTask):
 
         sigma = np.zeros((nfreq, ninput), dtype=np.float32)
         for pstr, feed in pol.items():
-            sigma[:, feed] = cal_utils.guess_fwhm(
+            sigma[:, feed] = guess_fwhm(
                 freq, pol=pstr, dec=np.radians(src_dec), sigma=True, voltage=True
             )[:, np.newaxis]
 
