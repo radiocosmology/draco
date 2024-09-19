@@ -52,7 +52,7 @@ def band_wiener(R, Ni, Si, y, bw):
     return wiener_deconvolve(R, Ni, Si, xh, bw)
 
 
-def wiener_projection(R, y, Ni=None):
+def wiener_projection(R, y, Ni=None, inplace=False):
     r"""Calculate the dirty estimate of a signal given the transfer matrix and inverse noise.
 
     :math:`\mathbf{R}^{T} \mathbf{N}^{-1} \mathbf{y}`
@@ -65,6 +65,8 @@ def wiener_projection(R, y, Ni=None):
         Inverse noise matrix
     y : np.ndarray[k, n]
         Measured signal/data
+    inplace : bool
+        If True, multiply Ni in place.
 
     Returns
     -------
@@ -76,7 +78,10 @@ def wiener_projection(R, y, Ni=None):
     # Multiply by noise weights inplace to reduce
     # memory usage (destroys original)
     if Ni is not None:
-        y *= np.atleast_2d(Ni)
+        if inplace:
+            y *= np.atleast_2d(Ni)
+        else:
+            y = y * np.atleast_2d(Ni)
 
     return y @ R.T.astype(y.real.dtype)
 
