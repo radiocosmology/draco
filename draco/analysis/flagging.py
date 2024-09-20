@@ -1394,7 +1394,7 @@ class RFIMaskChisqHighDelay(task.SingleTask):
 
         Parameters
         ----------
-        stream : dcontainers.TimeStream | dcontainers.SiderealStream | dcontainers.RingMap
+        ss : dcontainers.TimeStream | dcontainers.SiderealStream | dcontainers.RingMap
             Container holding a chi-squared test statistic in the visibility or ringmap  dataset.
             A weighted average will be taken over any axis that is not time/ra or frequency.
 
