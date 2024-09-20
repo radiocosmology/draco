@@ -1389,13 +1389,13 @@ class RFIMaskChisqHighDelay(task.SingleTask):
         """
         self.telescope = None if telescope is None else io.get_telescope(telescope)
 
-    def process(self, stream):
+    def process(self, ss):
         """Generate a mask from the data.
 
         Parameters
         ----------
-        stream : dcontainers.TimeStream | dcontainers.SiderealStream
-            Container holding a chi-squared test statistic in the visibility dataset.
+        stream : dcontainers.TimeStream | dcontainers.SiderealStream | dcontainers.RingMap
+            Container holding a chi-squared test statistic in the visibility or ringmap  dataset.
             A weighted average will be taken over any axis that is not time/ra or frequency.
 
         Returns
@@ -1403,21 +1403,34 @@ class RFIMaskChisqHighDelay(task.SingleTask):
         mask : dcontainers.RFIMask | dcontainers.SiderealRFIMask
             Time-frequency mask, where values marked `True` are flagged.
         """
+        _default_dataset = {
+            containers.SiderealStream: "vis",
+            containers.TimeStream: "vis",
+            containers.RingMap: "map",
+        }
+
+        for cls, dataset in _default_dataset.items():
+            if isinstance(ss, cls):
+                dset = dataset
+                break
+        else:
+            raise ValueError(f"No default dataset know for {type(ss)} container.")
+        
         # Distribute over frequency
-        stream.redistribute("freq")
-        freq = stream.freq
+        ss.redistribute("freq")
+        freq = ss.freq
 
         # Determine time axis
         multiple_days = False
-        if "ra" in stream.index_map:
+        if "ra" in ss.index_map:
 
             if self.telescope is None:
                 raise RuntimeError(
-                    "For sidereal streams, must provide "
+                    "For sidereal streams or ringmap, must provide "
                     "telescope object during setup."
                 )
 
-            csd = stream.attrs.get("lsd", stream.attrs.get("csd"))
+            csd = ss.attrs.get("lsd", ss.attrs.get("csd"))
             if csd is None:
                 raise ValueError("Data does not have a `csd` or `lsd` attribute.")
 
@@ -1425,22 +1438,22 @@ class RFIMaskChisqHighDelay(task.SingleTask):
                 csd = np.floor(np.mean(csd))
                 multiple_days = True
 
-            timestamp = self.telescope.lsd_to_unix(csd + stream.ra / 360.0)
+            timestamp = self.telescope.lsd_to_unix(csd + ss.ra / 360.0)
 
         else:
-            timestamp = stream.time
+            timestamp = ss.time
 
         # Sum over any axis that is neither time nor frequency
         axsum = tuple(
             [
                 ii
-                for ii, ax in enumerate(stream.vis.attrs["axis"])
+                for ii, ax in enumerate(ss.datasets[dset].attrs["axis"])
                 if ax not in ["freq", "time", "ra"]
             ]
         )
 
-        chisq = stream.vis[:].real
-        weight = stream.weight[:]
+        chisq = ss.datasets[dset][:].real
+        weight = delay.match_axes(ss.datasets[dset],ss.weight)
 
         wsum = np.sum(weight, axis=axsum)
         chisq = np.sum(weight * chisq, axis=axsum) * tools.invert_no_zero(wsum)
@@ -1481,10 +1494,10 @@ class RFIMaskChisqHighDelay(task.SingleTask):
         # Save to output container
         OutputContainer = (
             containers.SiderealRFIMask
-            if "ra" in stream.index_map
+            if "ra" in ss.index_map
             else containers.RFIMask
         )
-        output = OutputContainer(axes_from=stream, attrs_from=stream)
+        output = OutputContainer(axes_from=ss, attrs_from=ss)
 
         output.mask[:] = mask_output
 
