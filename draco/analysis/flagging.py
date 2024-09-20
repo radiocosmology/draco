@@ -1415,7 +1415,7 @@ class RFIMaskChisqHighDelay(task.SingleTask):
                 break
         else:
             raise ValueError(f"No default dataset know for {type(ss)} container.")
-        
+
         # Distribute over frequency
         ss.redistribute("freq")
         freq = ss.freq
@@ -1453,7 +1453,7 @@ class RFIMaskChisqHighDelay(task.SingleTask):
         )
 
         chisq = ss.datasets[dset][:].real
-        weight = delay.match_axes(ss.datasets[dset],ss.weight)
+        weight = delay.match_axes(ss.datasets[dset], ss.weight)
 
         wsum = np.sum(weight, axis=axsum)
         chisq = np.sum(weight * chisq, axis=axsum) * tools.invert_no_zero(wsum)
@@ -1493,9 +1493,7 @@ class RFIMaskChisqHighDelay(task.SingleTask):
 
         # Save to output container
         OutputContainer = (
-            containers.SiderealRFIMask
-            if "ra" in ss.index_map
-            else containers.RFIMask
+            containers.SiderealRFIMask if "ra" in ss.index_map else containers.RFIMask
         )
         output = OutputContainer(axes_from=ss, attrs_from=ss)
 
