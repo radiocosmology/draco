@@ -6,6 +6,7 @@ from caput import interferometry, mpiutil, config, mpiarray
 
 from draco.core import task, io, containers
 from draco.util import tools, cal_utils
+from draco.analysis import coord
 
 import json
 
