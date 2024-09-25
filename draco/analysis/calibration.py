@@ -368,7 +368,7 @@ class DetermineSourceTransit(task.SingleTask):
     """
 
     source_list = config.Property(proptype=list, default=[])
-    freq = config.Property(proptype=float, default=None) # No assumption about which telescope
+    freq = config.Property(proptype=float, default=600.)
     require_transit = config.Property(proptype=bool, default=True)
 
     def setup(self, fluxcatalog):
