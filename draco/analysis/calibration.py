@@ -380,7 +380,7 @@ class DetermineSourceTransit(task.SingleTask):
             reverse=True,
         )
 
-    def process(self, sstream, observer, source_dictionary):
+    def process(self, sstream, observer):
         """Add attributes to container describing source transit contained within.
 
         Parameters
@@ -390,9 +390,6 @@ class DetermineSourceTransit(task.SingleTask):
 
         observer : caput.time.Observer object representing a local observer in
             terms of coordinates, etc.
-
-        source_dictionary : A dictionary whose keys are source names and
-            values are `skyfield.starlib.Star` objects.
 
         Returns
         -------
@@ -413,7 +410,7 @@ class DetermineSourceTransit(task.SingleTask):
         contains_transit = False
         for src in self.source_list:
             transit_time = observer.transit_times(
-                source_dictionary[src], timestamp[0], timestamp[-1]
+                sources.source_dictionary[src], timestamp[0], timestamp[-1]
             )
             if transit_time.size > 0:
                 self.log.info(
