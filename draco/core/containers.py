@@ -3035,3 +3035,72 @@ def copy_datasets_filter(
         if isinstance(dest_dset, memh5.MemDatasetDistributed):
             # Redistribute back to the original axis
             dest_dset.redistribute(original_ax_id)
+
+
+class TransitFitParams(ContainerBase):
+    """Parallel container for holding the results of fitting a model to a point source transit."""
+
+    _axes = ("freq", "input", "param", "component")
+
+    _dataset_spec: ClassVar = {
+        "parameter": {
+            "axes": ["freq", "input", "param"],
+            "dtype": np.float32,
+            "initialise": True,
+            "distributed": True,
+            "distributed_axis": "freq",
+        },
+        "parameter_cov": {
+            "axes": ["freq", "input", "param", "param"],
+            "dtype": np.float32,
+            "initialise": True,
+            "distributed": True,
+            "distributed_axis": "freq",
+        },
+        "chisq": {
+            "axes": ["freq", "input", "component"],
+            "dtype": np.float32,
+            "initialise": False,
+            "distributed": True,
+            "distributed_axis": "freq",
+        },
+        "ndof": {
+            "axes": ["freq", "input", "component"],
+            "dtype": int,
+            "initialise": False,
+            "distributed": True,
+            "distributed_axis": "freq",
+        },
+    }
+
+    @property
+    def parameter(self):
+        return self.datasets["parameter"]
+
+    @property
+    def parameter_cov(self):
+        return self.datasets["parameter_cov"]
+
+    @property
+    def chisq(self):
+        return self.datasets["chisq"]
+
+    @property
+    def ndof(self):
+        return self.datasets["ndof"]
+
+    @property
+    def freq(self):
+        return self.index_map["freq"]["centre"]
+
+    @property
+    def input(self):
+        return self.index_map["input"]
+
+    @property
+    def param(self):
+        return self.index_map["param"]
+
+    @property
+    def component(self):
+        return self.index_map["component"]

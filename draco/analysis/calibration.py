@@ -519,10 +519,6 @@ class TransitFit(task.SingleTask):
 
     def process(self, response, inputmap, guess_fwhm):
         """
-        TODO: Move generalized ccontainers.TransitFitParams out of 
-        ch_pipeline.core.containers and import it
-
-
         Fit model to the point source response for each feed and frequency.
 
         Parameters
@@ -541,7 +537,7 @@ class TransitFit(task.SingleTask):
 
         Returns
         -------
-        fit : ccontainers.TransitFitParams
+        fit : containers.TransitFitParams
             Parameters of the model fit and their covariance.
         """
         # Ensure that we are distributed over frequency
@@ -607,7 +603,7 @@ class TransitFit(task.SingleTask):
         model.fit(ha, vis, err, width=sigma, **self.fit_kwargs)
 
         # Create an output container
-        fit = ccontainers.TransitFitParams(
+        fit = containers.TransitFitParams(
             param=model.parameter_names,
             component=model.component,
             axes_from=response,
@@ -660,7 +656,7 @@ class GainFromTransitFit(task.SingleTask):
 
         Parameters
         ----------
-        fit : ccontainers.TransitFitParams
+        fit : containers.TransitFitParams
             Parameters of the model fit and their covariance.
             Must also contain 'model_class' and 'model_kwargs'
             attributes that can be used to evaluate the model.
