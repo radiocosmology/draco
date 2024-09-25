@@ -102,16 +102,17 @@ class GaussianNoiseDataset(task.SingleTask, random.RandomTask):
         data.redistribute("freq")
 
         # Replace visibilities with noise
-        dset = data[dataset_name][:]
+        dset = data[dataset_name][:].local_array
+        weight = data.weight[:].local_array
         if np.iscomplexobj(dset):
             random.complex_normal(
-                scale=tools.invert_no_zero(data.weight[:]) ** 0.5,
+                scale=tools.invert_no_zero(weight) ** 0.5,
                 out=dset,
                 rng=self.rng,
             )
         else:
             self.rng.standard_normal(out=dset)
-            dset *= tools.invert_no_zero(data.weight[:]) ** 0.5
+            dset *= tools.invert_no_zero(weight) ** 0.5
 
         # We need to loop to ensure the autos are real and have the correct variance
         if dataset_name == "vis":

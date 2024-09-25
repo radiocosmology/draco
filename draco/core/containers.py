@@ -500,62 +500,6 @@ class ContainerBase(memh5.BasicCont):
 
         return selections
 
-    def copy(self, shared=None):
-        """Copy this container, optionally sharing the source datasets.
-
-        This routine will create a copy of the container. By default this is
-        as full copy with the contents fully independent. However, a set of
-        dataset names can be given that will share the same data as the
-        source to save memory for large datasets. These will just view the
-        same memory, so any modification to either the original or the copy
-        will be visible to the other. This includes all write operations,
-        addition and removal of attributes, redistribution etc. This
-        functionality should be used with caution and clearly documented.
-
-        Parameters
-        ----------
-        shared : list, optional
-            A list of datasets whose content will be shared with the original.
-
-        Returns
-        -------
-        copy : subclass of ContainerBase
-            The copied container.
-        """
-        new_cont = self.__class__(
-            attrs_from=self,
-            axes_from=self,
-            skip_datasets=True,
-            distributed=self.distributed,
-            comm=self.comm,
-        )
-
-        # Loop over datasets that exist in the source and either add a view of
-        # the source dataset, or perform a full copy
-        for name, data in self.datasets.items():
-            if shared and name in shared:
-                # TODO: find a way to do this that doesn't depend on the
-                # internal implementation of BasicCont and MemGroup
-                # NOTE: we don't use `.view()` on the RHS here as we want to
-                # preserve the shared data through redistributions
-                new_cont._data._get_storage()[name] = self._data._get_storage()[name]
-            else:
-                dset = new_cont.add_dataset(name)
-
-                # Ensure that we have exactly the same distribution
-                if dset.distributed:
-                    dset.redistribute(data.distributed_axis)
-
-                # Copy over the data and attributes
-                dset[:] = data[:]
-                memh5.copyattrs(data.attrs, dset.attrs)
-                # TODO Is there a case where these properties don't exist?
-                dset.chunks = data.chunks
-                dset.compression = data.compression
-                dset.compression_opts = data.compression_opts
-
-        return new_cont
-
 
 class TableBase(ContainerBase):
     """A base class for containers holding tables of data.
