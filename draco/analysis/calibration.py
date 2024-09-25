@@ -4,8 +4,8 @@ from mpi4py import MPI
 
 from caput import interferometry, mpiutil, config, mpiarray
 
-from draco.core import task, io, containers
-from draco.util import tools, cal_utils
+from ..core import task, io, containers
+from ..util import tools, cal_utils, fluxcat
 from ..ephem import coord, sources
 
 import json
