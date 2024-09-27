@@ -13,6 +13,7 @@ import numpy as np
 import scipy.linalg as la
 from caput import config, mpiarray, tod
 from cora.util import units
+from sklearn.gaussian_process.kernels import Matern
 
 from ..core import containers, io, task
 from ..util import regrid, tools
@@ -877,6 +878,157 @@ class SiderealStacker(task.SingleTask):
                 era[fi][mask] = grid_ra[mask]
 
         return self.stack
+
+
+class SiderealStackerGPR(task.SingleTask):
+    """Combine a set of sidereal days with a GPR process."""
+
+    stack = None
+
+    tag = config.Property(proptype=str, default="stack")
+    kernel_width = config.Property(proptype=int, default=15)
+
+    def setup(self, manager):
+        """Initialize the telescope instance."""
+        self.observer = io.get_telescope(manager)
+
+    def process(self, sdata):
+        """Stack up days."""
+        if (self.stack is not None) and not isinstance(sdata, type(self.stack)):
+            raise TypeError
+
+        sdata.redistribute("freq")
+
+        vis = sdata.vis[:]
+        weight = sdata.weight[:]
+
+        if self.stack is None:
+            # Initialize temporary datasets
+            self.alpha = np.zeros(
+                shape=(vis.shape[:2], 2, *vis.shape[2:]), dtype=np.float64
+            )
+            self.nsamples = np.zeros_like(weight[:, 0], dtype=np.uint16)
+
+            self.stack = containers.SiderealStream(axes_from=sdata, skip_datasets=True)
+
+            self.lsd_list = []
+            self.ra = self.stack.ra.reshape(-1, 1)
+            self.kernel_func = self.get_kernel(self.ra[:, 0])
+
+        # Accumulate
+        self.train_alpha(vis, weight)
+
+        # Get the CSD if available
+        input_lsd = sdata.attrs.get("lsd", sdata.attrs.get("csd"))
+
+        self.lsd_list += _ensure_list(input_lsd)
+
+    def process_finish(self):
+        """Solve the training nodes."""
+        vout = self.solve_alpha()
+        ...
+
+    def train_alpha(self, vis, weight):
+        """Compute the training nodes for this dataset."""
+        # Indices of bad baselines to skip
+        bad_bl = set(np.nonzero(np.all(weight == 0, axis=(0, 2)))[0])
+
+        # Iterate over frequencies to save memory
+        for fsel, gind in vis.enumerate(0):
+            flag = ~np.all(weight[fsel] == 0, axis=0)
+
+            # Update the nsample count
+            self.nsamples[fsel, flag] += 1
+
+            # Get a kernel at the
+            ra_fit = self.ra[flag]
+            kernel = self.kernel_func(ra_fit)
+
+            # Turn the kernel into a banded matrix for faster compute
+            M = np.sum(kernel > 1e-4, axis=0).max() // 2
+            N = kernel.shape[0]
+
+            K = np.zeros((M, N), dtype=np.float64)
+            for i in range(M):
+                K[i, : N - i] = kernel.diagonal(i)
+
+            # Get the fringestopped visibilities for this frequency
+            fstop = self.fstop(self.stack.freq[gind], ra_fit[:, 0])
+            vfit = fstop * vis.local_array[fsel][:, flag]
+
+            # Estimate the signal and noise variances
+            svar = 0.5 * np.var(vfit, axis=-1)
+            nvar = tools.invert_no_zero(weight.local_array[fsel][:, flag])
+
+            # Quickly iterate over baselines
+            for bl in vfit.shape[0]:
+                if bl in bad_bl:
+                    # Skip
+                    continue
+
+                # Convert complex array into float
+                y = np.ascontiguousarray(vfit[bl])
+                y = y.view(np.float64).reshape(y.shape + (2,))
+
+                # Make the scaled covariance kernel with added noise
+                L = svar[bl] * K
+                L[0] += nvar[bl]
+
+                # perform the fitting step
+                alpha_bl = la.solveh_banded(L, y, lower=True, check_finite=False)
+
+                # Write alpha to the global array
+                self.alpha[fsel, bl, :, ~flag] += alpha_bl
+
+    def solve_alpha(self):
+        """Solve."""
+        flag = self.nsamples > 0
+
+        vis_predict = np.zeros(self.alpha[:, :, 0].shape, dtype=np.complex128)
+
+        # Iterate over frequencies
+        for fsel in range(self.alpha.shape[0]):
+            ra_node = self.ra[flag[fsel]]
+
+            Kstar = self.kernel_func(self.ra, ra_node)
+
+            # Get the fringestopped visibilities for this frequency
+            # fstop = self.fstop(self.stack.freq[gind], ra_node[:, 0])
+
+            # TODO: accumulate variances here too
+            # Estimate the variance of the prediction for this mask
+            # Calculate this once per frequency instead of per baseline
+            # Maybe we can used a scaled copy to estimate added noise?
+            # taken from equation 2.26 https://gaussianprocess.org/gpml/chapters/RW.pdf
+            # Lhat = K.copy()
+            # Lhat[0] += nvar.mean(axis=0) / svar.mean()
+            # Vhat = la.solveh_banded(Lhat, Kstar.T, lower=True)
+            # Vphat = kernel_func.diag(ra) - np.einsum("ij,ji->i", Kstar, Vhat)
+
+            for bl in range(self.alpha.shape[1]):
+                yp = Kstar @ self.alpha[fsel, bl]
+                yp = yp[:, 0] + 1j * yp[:, 1]
+
+                # vis_predict[fsel, bl] = svar[bl] * yp * fstop[fsel, bl].conj()
+
+        return vis_predict
+
+    def fstop(self, freq: np.ndarray, samples: np.ndarray):
+        """Fringestop to zenith for specific frequencies."""
+        freq = np.atleast_1d(freq)
+        u = self.observer.baselines[np.newaxis, :, 0] * freq * 1e6 / units.c
+        omega = -2.0 * np.pi * u * np.cos(np.deg2rad(self.observer.latitude))
+        dphi = np.deg2rad(samples)
+
+        return np.exp(-1.0j * omega[:, :, np.newaxis] * dphi[np.newaxis, np.newaxis])
+
+    def get_kernel(self, samples: np.ndarray):
+        """Get a function to generate a covariance kernel."""
+        ds = np.median(abs(np.diff(samples)))
+
+        return Matern(
+            length_scale=self.kernel_width * ds, length_scale_bounds="fixed", nu=1.5
+        )
 
 
 class SiderealStackerMatch(task.SingleTask):
