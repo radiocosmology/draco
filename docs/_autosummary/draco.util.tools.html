@@ -1,0 +1,541 @@
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" data-content_root="../">
+<head>
+  <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>draco.util.tools &mdash; draco 0.0.1 documentation</title>
+      <link rel="stylesheet" type="text/css" href="../_static/pygments.css?v=80d5e7a1" />
+      <link rel="stylesheet" type="text/css" href="../_static/css/theme.css?v=19f00094" />
+
+  
+  <!--[if lt IE 9]>
+    <script src="../_static/js/html5shiv.min.js"></script>
+  <![endif]-->
+  
+        <script src="../_static/jquery.js?v=5d32c60e"></script>
+        <script src="../_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
+        <script src="../_static/documentation_options.js?v=d45e8c67"></script>
+        <script src="../_static/doctools.js?v=9a2dae69"></script>
+        <script src="../_static/sphinx_highlight.js?v=dc90522c"></script>
+        <script async="async" src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>
+    <script src="../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../genindex.html" />
+    <link rel="search" title="Search" href="../search.html" />
+    <link rel="next" title="draco.util.truncate" href="draco.util.truncate.html" />
+    <link rel="prev" title="draco.util.testing" href="draco.util.testing.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="../index.html" class="icon icon-home">
+            draco
+          </a>
+              <div class="version">
+                0.0.1
+              </div>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <ul class="current">
+<li class="toctree-l1"><a class="reference internal" href="../tutorial.html">Tutorial</a></li>
+<li class="toctree-l1 current"><a class="reference internal" href="../reference.html">API Reference</a><ul class="current">
+<li class="toctree-l2 current"><a class="reference internal" href="../reference.html#submodules">Submodules</a><ul class="current">
+<li class="toctree-l3"><a class="reference internal" href="draco.analysis.html">draco.analysis</a></li>
+<li class="toctree-l3"><a class="reference internal" href="draco.core.html">draco.core</a></li>
+<li class="toctree-l3"><a class="reference internal" href="draco.synthesis.html">draco.synthesis</a></li>
+<li class="toctree-l3 current"><a class="reference internal" href="draco.util.html">draco.util</a><ul class="current">
+<li class="toctree-l4"><a class="reference internal" href="draco.util.exception.html">draco.util.exception</a></li>
+<li class="toctree-l4"><a class="reference internal" href="draco.util.random.html">draco.util.random</a></li>
+<li class="toctree-l4"><a class="reference internal" href="draco.util.regrid.html">draco.util.regrid</a></li>
+<li class="toctree-l4"><a class="reference internal" href="draco.util.rfi.html">draco.util.rfi</a></li>
+<li class="toctree-l4"><a class="reference internal" href="draco.util.testing.html">draco.util.testing</a></li>
+<li class="toctree-l4 current"><a class="current reference internal" href="#">draco.util.tools</a></li>
+<li class="toctree-l4"><a class="reference internal" href="draco.util.truncate.html">draco.util.truncate</a></li>
+</ul>
+</li>
+</ul>
+</li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="../dev.html">Development Guidelines</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../index.html">draco</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../index.html" class="icon icon-home" aria-label="Home"></a></li>
+          <li class="breadcrumb-item"><a href="../reference.html">API Reference</a></li>
+          <li class="breadcrumb-item"><a href="draco.util.html">draco.util</a></li>
+      <li class="breadcrumb-item active">draco.util.tools</li>
+      <li class="wy-breadcrumbs-aside">
+            <a href="../_sources/_autosummary/draco.util.tools.rst.txt" rel="nofollow"> View page source</a>
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <section id="module-draco.util.tools">
+<span id="draco-util-tools"></span><h1>draco.util.tools<a class="headerlink" href="#module-draco.util.tools" title="Link to this heading"></a></h1>
+<p>Collection of miscellaneous routines.</p>
+<p>Miscellaneous tasks should be placed in <a class="reference internal" href="draco.core.misc.html#module-draco.core.misc" title="draco.core.misc"><code class="xref py py-mod docutils literal notranslate"><span class="pre">draco.core.misc</span></code></a>.</p>
+<p class="rubric">Functions</p>
+<table class="autosummary longtable docutils align-default">
+<tbody>
+<tr class="row-odd"><td><p><a class="reference internal" href="#draco.util.tools.apply_gain" title="draco.util.tools.apply_gain"><code class="xref py py-obj docutils literal notranslate"><span class="pre">apply_gain</span></code></a>(vis, gain[, axis, out, prod_map])</p></td>
+<td><p>Apply per input gains to a set of visibilities packed in upper triangular format.</p></td>
+</tr>
+<tr class="row-even"><td><p><a class="reference internal" href="#draco.util.tools.arPLS_1d" title="draco.util.tools.arPLS_1d"><code class="xref py py-obj docutils literal notranslate"><span class="pre">arPLS_1d</span></code></a>(y[, mask, lam, end_frac, max_iter])</p></td>
+<td><p>Use arPLS to estimate a signal baseline.</p></td>
+</tr>
+<tr class="row-odd"><td><p><a class="reference internal" href="#draco.util.tools.baseline_vector" title="draco.util.tools.baseline_vector"><code class="xref py py-obj docutils literal notranslate"><span class="pre">baseline_vector</span></code></a>(index_map, telescope)</p></td>
+<td><p>Baseline vectors in meters.</p></td>
+</tr>
+<tr class="row-even"><td><p><a class="reference internal" href="#draco.util.tools.calculate_redundancy" title="draco.util.tools.calculate_redundancy"><code class="xref py py-obj docutils literal notranslate"><span class="pre">calculate_redundancy</span></code></a>(input_flags, prod_map, ...)</p></td>
+<td><p>Calculates the number of redundant baselines that were stacked to form each unique baseline.</p></td>
+</tr>
+<tr class="row-odd"><td><p><a class="reference internal" href="#draco.util.tools.cmap" title="draco.util.tools.cmap"><code class="xref py py-obj docutils literal notranslate"><span class="pre">cmap</span></code></a>(i, j, n)</p></td>
+<td><p>Given a pair of feed indices, return the pair index.</p></td>
+</tr>
+<tr class="row-even"><td><p><a class="reference internal" href="#draco.util.tools.extract_diagonal" title="draco.util.tools.extract_diagonal"><code class="xref py py-obj docutils literal notranslate"><span class="pre">extract_diagonal</span></code></a>(utmat[, axis])</p></td>
+<td><p>Extract the diagonal elements of an upper triangular array.</p></td>
+</tr>
+<tr class="row-odd"><td><p><a class="reference internal" href="#draco.util.tools.find_inputs" title="draco.util.tools.find_inputs"><code class="xref py py-obj docutils literal notranslate"><span class="pre">find_inputs</span></code></a>(input_index, inputs[, require_match])</p></td>
+<td><p>Find the indices of inputs into a list of inputs.</p></td>
+</tr>
+<tr class="row-even"><td><p><a class="reference internal" href="#draco.util.tools.find_key" title="draco.util.tools.find_key"><code class="xref py py-obj docutils literal notranslate"><span class="pre">find_key</span></code></a>(key_list, key)</p></td>
+<td><p>Find the index of a key in a list of keys.</p></td>
+</tr>
+<tr class="row-odd"><td><p><a class="reference internal" href="#draco.util.tools.find_keys" title="draco.util.tools.find_keys"><code class="xref py py-obj docutils literal notranslate"><span class="pre">find_keys</span></code></a>(key_list, keys[, require_match])</p></td>
+<td><p>Find the indices of keys into a list of keys.</p></td>
+</tr>
+<tr class="row-even"><td><p><a class="reference internal" href="#draco.util.tools.icmap" title="draco.util.tools.icmap"><code class="xref py py-obj docutils literal notranslate"><span class="pre">icmap</span></code></a>(ix, n)</p></td>
+<td><p>Inverse feed map.</p></td>
+</tr>
+<tr class="row-odd"><td><p><a class="reference internal" href="#draco.util.tools.polarization_map" title="draco.util.tools.polarization_map"><code class="xref py py-obj docutils literal notranslate"><span class="pre">polarization_map</span></code></a>(index_map, telescope[, ...])</p></td>
+<td><p>Map the visibilities corresponding to entries in pol = ['XX', 'XY', 'YX', 'YY'].</p></td>
+</tr>
+<tr class="row-even"><td><p><a class="reference internal" href="#draco.util.tools.redefine_stack_index_map" title="draco.util.tools.redefine_stack_index_map"><code class="xref py py-obj docutils literal notranslate"><span class="pre">redefine_stack_index_map</span></code></a>(telescope, inputs, ...)</p></td>
+<td><p>Ensure baselines between unmasked inputs are used to represent each stack.</p></td>
+</tr>
+<tr class="row-odd"><td><p><a class="reference internal" href="#draco.util.tools.taper_mask" title="draco.util.tools.taper_mask"><code class="xref py py-obj docutils literal notranslate"><span class="pre">taper_mask</span></code></a>(mask, nwidth[, outer])</p></td>
+<td><p>Taper a 2d mask along the last axis.</p></td>
+</tr>
+<tr class="row-even"><td><p><a class="reference internal" href="#draco.util.tools.window_generalised" title="draco.util.tools.window_generalised"><code class="xref py py-obj docutils literal notranslate"><span class="pre">window_generalised</span></code></a>(x[, window])</p></td>
+<td><p>A generalised high-order window at arbitrary locations.</p></td>
+</tr>
+</tbody>
+</table>
+<dl class="py function">
+<dt class="sig sig-object py" id="draco.util.tools.apply_gain">
+<span class="sig-prename descclassname"><span class="pre">draco.util.tools.</span></span><span class="sig-name descname"><span class="pre">apply_gain</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">vis</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">gain</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">axis</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">1</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">out</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">prod_map</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/draco/util/tools.html#apply_gain"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#draco.util.tools.apply_gain" title="Link to this definition"></a></dt>
+<dd><p>Apply per input gains to a set of visibilities packed in upper triangular format.</p>
+<p>This allows us to apply the gains while minimising the intermediate
+products created.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>vis</strong> (<em>np.ndarray</em><em>[</em><em>...</em><em>, </em><em>nprod</em><em>, </em><em>...</em><em>]</em>) – Array of visibility products.</p></li>
+<li><p><strong>gain</strong> (<em>np.ndarray</em><em>[</em><em>...</em><em>, </em><em>ninput</em><em>, </em><em>...</em><em>]</em>) – Array of gains. One gain per input.</p></li>
+<li><p><strong>axis</strong> (<em>integer</em><em>, </em><em>optional</em>) – The axis along which the inputs (or visibilities) are
+contained.</p></li>
+<li><p><strong>out</strong> (<em>np.ndarray</em>) – Array to place output in. If <code class="xref py py-obj docutils literal notranslate"><span class="pre">None</span></code> create a new
+array. This routine can safely use <cite>out = vis</cite>.</p></li>
+<li><p><strong>prod_map</strong> (<em>ndarray</em><em> of </em><em>integer pairs</em>) – Gives the mapping from product axis to input pairs. If not supplied,
+<a class="reference internal" href="#draco.util.tools.icmap" title="draco.util.tools.icmap"><code class="xref py py-func docutils literal notranslate"><span class="pre">icmap()</span></code></a> is used.</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p><strong>out</strong> – Visibility array with gains applied. Same shape as <code class="xref py py-obj docutils literal notranslate"><span class="pre">vis</span></code>.</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>np.ndarray</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="draco.util.tools.arPLS_1d">
+<span class="sig-prename descclassname"><span class="pre">draco.util.tools.</span></span><span class="sig-name descname"><span class="pre">arPLS_1d</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">y</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">mask</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">lam</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">100.0</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">end_frac</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">0.01</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">max_iter</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">1000</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/draco/util/tools.html#arPLS_1d"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#draco.util.tools.arPLS_1d" title="Link to this definition"></a></dt>
+<dd><p>Use arPLS to estimate a signal baseline.</p>
+<p>1D implementation of symmetrically reweighted penalized least squares.
+Solves for a signal baseline in the presence of high power outliers by
+heavily weighting values below the signal and minimizing the weights
+of values above the signal.</p>
+<p class="rubric">Notes</p>
+<p>arPLS solves the following linear system given signal :math: <cite>mathtt{y}</cite>
+.. math:: (W + lambdaD_{d}^{T}D_{d})z = Wy
+where the weighting function is given by
+.. math:: w_{i} = (1 + exp(2sigma^{-1}(r_{i} - (2sigma - mu))))^{-1}
+where <span class="math notranslate nohighlight">\(\mathtt{r_{i}}\)</span> is the difference <span class="math notranslate nohighlight">\(\mathtt{y_{i} - z_{i}}\)</span>
+and <span class="math notranslate nohighlight">\(\mathtt{\mu}\)</span> and <span class="math notranslate nohighlight">\(\mathtt{\sigma}\)</span> are the mean and standard
+deviation of the negative values in <span class="math notranslate nohighlight">\(\mathbf{r}\)</span>.
+The solver runs until <cite>max_iter</cite> iterations, or until the fractional mean
+change in weights is less than <cite>end_frac</cite>.</p>
+<p>Reference:
+<a class="reference external" href="https://www.sciencedirect.com/science/article/pii/S1090780706002266">https://www.sciencedirect.com/science/article/pii/S1090780706002266</a></p>
+<section id="properties">
+<h2>Properties<a class="headerlink" href="#properties" title="Link to this heading"></a></h2>
+<dl class="simple">
+<dt>y<span class="classifier">np.ndarray</span></dt><dd><p>1D signal array</p>
+</dd>
+<dt>mask<span class="classifier">np.ndarray, optional</span></dt><dd><p>1D boolean array of same length as <cite>y</cite>. Default is None.</p>
+</dd>
+<dt>lam<span class="classifier">float, optional</span></dt><dd><p>Scaling parameter used to control importance of smoothness vs.
+fit. High value prioritizes smoothness of the baseline estimate.
+Default is 1e2.</p>
+</dd>
+<dt>end_frac<span class="classifier">float, optional</span></dt><dd><p>Convergeance ratio <cite>norm(delta_w) / norm(w)</cite>.</p>
+</dd>
+<dt>max_iter<span class="classifier">int, optional</span></dt><dd><p>Maximum number of iterations to run, even if the convergance
+criteria is not met.</p>
+</dd>
+</dl>
+<dl class="field-list simple">
+<dt class="field-odd">returns<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>z</strong> – Baseline estimate of the same shape as <cite>y</cite></p>
+</dd>
+<dt class="field-even">rtype<span class="colon">:</span></dt>
+<dd class="field-even"><p>np.ndarray</p>
+</dd>
+</dl>
+</section>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="draco.util.tools.baseline_vector">
+<span class="sig-prename descclassname"><span class="pre">draco.util.tools.</span></span><span class="sig-name descname"><span class="pre">baseline_vector</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">index_map</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">telescope</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/draco/util/tools.html#baseline_vector"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#draco.util.tools.baseline_vector" title="Link to this definition"></a></dt>
+<dd><p>Baseline vectors in meters.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>index_map</strong> (<em>h5py.group</em><em> or </em><em>dict</em>) – Index map to map into polarizations. Must contain a <cite>stack</cite>
+entry and an <cite>input</cite> entry.</p></li>
+<li><p><strong>telescope</strong> – Telescope object containing feed information.</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p><strong>bvec_m</strong> – Array of shape (2, nstack). The 2D baseline vector
+(in meters) for each visibility in index_map[‘stack’]</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>array</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="draco.util.tools.calculate_redundancy">
+<span class="sig-prename descclassname"><span class="pre">draco.util.tools.</span></span><span class="sig-name descname"><span class="pre">calculate_redundancy</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">input_flags</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">prod_map</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">stack_index</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">nstack</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/draco/util/tools.html#calculate_redundancy"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#draco.util.tools.calculate_redundancy" title="Link to this definition"></a></dt>
+<dd><p>Calculates the number of redundant baselines that were stacked to form each unique baseline.</p>
+<p>Accounts for the fact that some fraction of the inputs are flagged as bad at any given time.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>input_flags</strong> (<em>np.ndarray</em><em> [</em><em>ninput</em><em>, </em><em>ntime</em><em>]</em>) – Array indicating which inputs were good at each time.
+Non-zero value indicates that an input was good.</p></li>
+<li><p><strong>prod_map</strong> (<em>np.ndarray</em><em>[</em><em>nprod</em><em>]</em>) – The products that were included in the stack.
+Typically found in the <cite>index_map[‘prod’]</cite> attribute of the
+<cite>containers.TimeStream</cite> or <cite>containers.SiderealStream</cite> object.</p></li>
+<li><p><strong>stack_index</strong> (<em>np.ndarray</em><em>[</em><em>nprod</em><em>]</em>) – The index of the stack axis that each product went into.
+Typically found in <cite>reverse_map[‘stack’][‘stack’]</cite> attribute
+of the <cite>containers.Timestream</cite> or <cite>containers.SiderealStream</cite> object.</p></li>
+<li><p><strong>nstack</strong> (<em>int</em>) – Total number of unique baselines.</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p><strong>redundancy</strong> – Array indicating the total number of redundant baselines
+with good inputs that were stacked into each unique baseline.</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>np.ndarray[nstack, ntime]</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="draco.util.tools.cmap">
+<span class="sig-prename descclassname"><span class="pre">draco.util.tools.</span></span><span class="sig-name descname"><span class="pre">cmap</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">i</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">j</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">n</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/draco/util/tools.html#cmap"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#draco.util.tools.cmap" title="Link to this definition"></a></dt>
+<dd><p>Given a pair of feed indices, return the pair index.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>i</strong> (<em>integer</em>) – Feed index.</p></li>
+<li><p><strong>j</strong> (<em>integer</em>) – Feed index.</p></li>
+<li><p><strong>n</strong> (<em>integer</em>) – Total number of feeds.</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p><strong>pi</strong> – Pair index.</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>integer</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="draco.util.tools.extract_diagonal">
+<span class="sig-prename descclassname"><span class="pre">draco.util.tools.</span></span><span class="sig-name descname"><span class="pre">extract_diagonal</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">utmat</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">axis</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">1</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/draco/util/tools.html#extract_diagonal"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#draco.util.tools.extract_diagonal" title="Link to this definition"></a></dt>
+<dd><p>Extract the diagonal elements of an upper triangular array.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>utmat</strong> (<em>np.ndarray</em><em>[</em><em>...</em><em>, </em><em>nprod</em><em>, </em><em>...</em><em>]</em>) – Upper triangular array.</p></li>
+<li><p><strong>axis</strong> (<em>int</em><em>, </em><em>optional</em>) – Axis of array that is upper triangular.</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p><strong>diag</strong> – Diagonal of the array.</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>np.ndarray[…, ninput, …]</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="draco.util.tools.find_inputs">
+<span class="sig-prename descclassname"><span class="pre">draco.util.tools.</span></span><span class="sig-name descname"><span class="pre">find_inputs</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">input_index</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">inputs</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">require_match</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">False</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/draco/util/tools.html#find_inputs"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#draco.util.tools.find_inputs" title="Link to this definition"></a></dt>
+<dd><p>Find the indices of inputs into a list of inputs.</p>
+<p>This behaves similarly to <cite>find_keys</cite> but will automatically choose the key to
+match on.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>input_index</strong> (<em>np.ndarray</em>) – Inputs to search</p></li>
+<li><p><strong>inputs</strong> (<em>np.ndarray</em>) – Inputs to find</p></li>
+<li><p><strong>require_match</strong> (<em>bool</em>) – Require that <cite>input_index</cite> contain every element of <cite>inputs</cite>,
+and if not, raise ValueError.</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p><strong>indices</strong> – List of the same length as <cite>inputs</cite> containing
+the indices of <cite>inputs</cite> in <cite>input_inswx</cite>.  If <cite>require_match</cite>
+is False, then this can also contain None for inputs
+that are not contained in <cite>input_index</cite>.</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>list of int or None</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="draco.util.tools.find_key">
+<span class="sig-prename descclassname"><span class="pre">draco.util.tools.</span></span><span class="sig-name descname"><span class="pre">find_key</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">key_list</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">key</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/draco/util/tools.html#find_key"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#draco.util.tools.find_key" title="Link to this definition"></a></dt>
+<dd><p>Find the index of a key in a list of keys.</p>
+<p>This is a wrapper for the list method <cite>index</cite>
+that can search any interable (not just lists)
+and will return None if the key is not found.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>key_list</strong> (<em>iterable</em>) – Iterable containing keys to search</p></li>
+<li><p><strong>key</strong> (<em>object to be searched</em>) – Keys to search for</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p><strong>index</strong> – The index of <cite>key</cite> in <cite>key_list</cite>.
+If <cite>key_list</cite> does not contain <cite>key</cite>,
+then None is returned.</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>int or None</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="draco.util.tools.find_keys">
+<span class="sig-prename descclassname"><span class="pre">draco.util.tools.</span></span><span class="sig-name descname"><span class="pre">find_keys</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">key_list</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">keys</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">require_match</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">False</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/draco/util/tools.html#find_keys"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#draco.util.tools.find_keys" title="Link to this definition"></a></dt>
+<dd><p>Find the indices of keys into a list of keys.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>key_list</strong> (<em>iterable</em>) – Iterable of keys to search</p></li>
+<li><p><strong>keys</strong> (<em>iterable</em>) – Keys to search for</p></li>
+<li><p><strong>require_match</strong> (<em>bool</em>) – Require that <cite>key_list</cite> contain every element of <cite>keys</cite>,
+and if not, raise ValueError.</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p><strong>indices</strong> – List of the same length as <cite>keys</cite> containing
+the indices of <cite>keys</cite> in <cite>key_list</cite>.  If <cite>require_match</cite>
+is False, then this can also contain None for keys
+that are not contained in <cite>key_list</cite>.</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>list of int or None</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="draco.util.tools.icmap">
+<span class="sig-prename descclassname"><span class="pre">draco.util.tools.</span></span><span class="sig-name descname"><span class="pre">icmap</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">ix</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">n</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/draco/util/tools.html#icmap"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#draco.util.tools.icmap" title="Link to this definition"></a></dt>
+<dd><p>Inverse feed map.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>ix</strong> (<em>integer</em>) – Pair index.</p></li>
+<li><p><strong>n</strong> (<em>integer</em>) – Total number of feeds.</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p><strong>fi, fj</strong> – Feed indices.</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>integer</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="draco.util.tools.polarization_map">
+<span class="sig-prename descclassname"><span class="pre">draco.util.tools.</span></span><span class="sig-name descname"><span class="pre">polarization_map</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">index_map</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">telescope</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">exclude_autos</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">True</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/draco/util/tools.html#polarization_map"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#draco.util.tools.polarization_map" title="Link to this definition"></a></dt>
+<dd><p>Map the visibilities corresponding to entries in pol = [‘XX’, ‘XY’, ‘YX’, ‘YY’].</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>index_map</strong> (<em>h5py.group</em><em> or </em><em>dict</em>) – Index map to map into polarizations. Must contain a <cite>stack</cite>
+entry and an <cite>input</cite> entry.</p></li>
+<li><p><strong>telescope</strong> – Telescope object containing feed information.</p></li>
+<li><p><strong>exclude_autos</strong> (<em>bool</em>) – If True (default), auto-correlations are set to -1.</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p><strong>polmap</strong> – Array of size <cite>nstack</cite>. Each entry is the index to the
+corresponding polarization in pol = [‘XX’, ‘XY’, ‘YX’, ‘YY’]</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>array of int</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="draco.util.tools.redefine_stack_index_map">
+<span class="sig-prename descclassname"><span class="pre">draco.util.tools.</span></span><span class="sig-name descname"><span class="pre">redefine_stack_index_map</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">telescope</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">inputs</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">prod</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">stack</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">reverse_stack</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/draco/util/tools.html#redefine_stack_index_map"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#draco.util.tools.redefine_stack_index_map" title="Link to this definition"></a></dt>
+<dd><p>Ensure baselines between unmasked inputs are used to represent each stack.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>telescope</strong> – Telescope object containing feed information.</p></li>
+<li><p><strong>inputs</strong> (<em>np.ndarray</em><em>[</em><em>ninput</em><em>,</em><em>] of </em><em>dtype=</em><em>(</em><em>'correlator_input'</em><em>, </em><em>'chan_id'</em><em>)</em>) – The ‘correlator_input’ or ‘chan_id’ of the inputs in the stack.</p></li>
+<li><p><strong>prod</strong> (<em>np.ndarray</em><em>[</em><em>nprod</em><em>,</em><em>] of </em><em>dtype=</em><em>(</em><em>'input_a'</em><em>, </em><em>'input_b'</em><em>)</em>) – The correlation products as pairs of inputs.</p></li>
+<li><p><strong>stack</strong> (<em>np.ndarray</em><em>[</em><em>nstack</em><em>,</em><em>] of </em><em>dtype=</em><em>(</em><em>'prod'</em><em>, </em><em>'conjugate'</em><em>)</em>) – The index into the <cite>prod</cite> axis of a characteristic baseline included in the stack.</p></li>
+<li><p><strong>reverse_stack</strong> (<em>np.ndarray</em><em>[</em><em>nprod</em><em>,</em><em>] of </em><em>dtype=</em><em>(</em><em>'stack'</em><em>, </em><em>'conjugate'</em><em>)</em>) – The index into the <cite>stack</cite> axis that each <cite>prod</cite> belongs.</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p><ul class="simple">
+<li><p><strong>stack_new</strong> (<em>np.ndarray[nstack,] of dtype=(‘prod’, ‘conjugate’)</em>) – The updated <cite>stack</cite> index map, where each element is an index to a product
+consisting of a pair of unmasked inputs.</p></li>
+<li><p><strong>stack_flag</strong> (<em>np.ndarray[nstack,] of dtype=bool</em>) – Boolean flag that is True if this element of the stack index map is now valid,
+and False if none of the baselines that were stacked contained unmasked inputs.</p></li>
+</ul>
+</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="draco.util.tools.taper_mask">
+<span class="sig-prename descclassname"><span class="pre">draco.util.tools.</span></span><span class="sig-name descname"><span class="pre">taper_mask</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">mask</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">nwidth</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">outer</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">False</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/draco/util/tools.html#taper_mask"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#draco.util.tools.taper_mask" title="Link to this definition"></a></dt>
+<dd><p>Taper a 2d mask along the last axis.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>mask</strong> (<em>np.ndarray</em>) – Mask to taper</p></li>
+<li><p><strong>nwidth</strong> (<em>int</em>) – Number of samples on either side of the mask to taper</p></li>
+<li><p><strong>outer</strong> (<em>bool</em><em>, </em><em>optional</em>) – If True, expand the mask outwards (wider). Otherwise,
+expand the mask inwards (narrower). Default is False</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p><strong>tapered_mask</strong> – Mask convolved with taper window</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>np.ndarray[np.float64]</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="draco.util.tools.window_generalised">
+<span class="sig-prename descclassname"><span class="pre">draco.util.tools.</span></span><span class="sig-name descname"><span class="pre">window_generalised</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">x</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">window</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'nuttall'</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/draco/util/tools.html#window_generalised"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#draco.util.tools.window_generalised" title="Link to this definition"></a></dt>
+<dd><p>A generalised high-order window at arbitrary locations.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>x</strong> (<em>np.ndarray</em><em>[</em><em>n</em><em>]</em>) – Location to evaluate at. Values outside the range 0 to 1 are zero.</p></li>
+<li><p><strong>window</strong> (<em>one</em><em> of </em><em>{'nuttall'</em><em>, </em><em>'blackman_nuttall'</em><em>, </em><em>'blackman_harris'}</em>) – Type of window function to return.</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p><strong>w</strong> – Window function.</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>np.ndarray[n]</p>
+</dd>
+</dl>
+</dd></dl>
+
+</section>
+
+
+           </div>
+          </div>
+          <footer><div class="rst-footer-buttons" role="navigation" aria-label="Footer">
+        <a href="draco.util.testing.html" class="btn btn-neutral float-left" title="draco.util.testing" accesskey="p" rel="prev"><span class="fa fa-arrow-circle-left" aria-hidden="true"></span> Previous</a>
+        <a href="draco.util.truncate.html" class="btn btn-neutral float-right" title="draco.util.truncate" accesskey="n" rel="next">Next <span class="fa fa-arrow-circle-right" aria-hidden="true"></span></a>
+    </div>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2016, Richard Shaw.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>
