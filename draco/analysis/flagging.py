@@ -2284,24 +2284,18 @@ class MaskFreq(task.SingleTask):
         mask = maskcont.mask[:]
 
         # Get the total number of amount of data for each freq-time. This is used to
-        # create an initial mask. For visibilities find the number of baselines
-        # present...
-        if isinstance(data, containers.VisContainer):
-            present_data = mpiarray.MPIArray.wrap(
-                (data.weight[:] > 0).sum(axis=1), comm=data.weight.comm, axis=0
-            )
-        # ... for ringmaps find the number of polarisations/elevations present
-        elif isinstance(data, containers.RingMap):
-            present_data = mpiarray.MPIArray.wrap(
-                (data.weight[:] > 0).sum(axis=3).sum(axis=0),
-                comm=data.weight.comm,
-                axis=0,
-            )
-        else:
-            raise ValueError(
-                f"Received data of type {data._class__}. "
-                "Only visibility type data and ringmaps are supported."
-            )
+        # create an initial mask.
+        waxes = list(data.weight.attrs["axis"])
+        axis_sum = tuple(
+            [ii for ii, ax in enumerate(waxes) if ax not in ["freq", "time", "ra"]]
+        )
+        axis_dist = [ax for ax in waxes if ax in ["freq", "time", "ra"]].index("freq")
+
+        present_data = mpiarray.MPIArray.wrap(
+            (data.weight[:] > 0).sum(axis=axis_sum),
+            comm=data.weight.comm,
+            axis=axis_dist,
+        )
 
         all_present_data = present_data.allgather()
         mask[:] = all_present_data == 0
