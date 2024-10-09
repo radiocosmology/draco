@@ -203,17 +203,20 @@ class SiderealRegridder(Regridder):
         # Mix down
         if self.down_mix:
             self.log.info("Downmixing before regridding.")
-            phase = self._get_phase(freq, data.prodstack, timestamp_lsd)
-            vis_data *= phase
+            # Iterate over frequencies to reduce memory
+            for ii, f in enumerate(freq):
+                phase = self._get_phase(f, data.prodstack, timestamp_lsd)[0]
+                vis_data[ii] *= phase
 
         # perform regridding
         new_grid, sts, ni = self._regrid(vis_data, weight, timestamp_lsd)
 
         # Mix back up
         if self.down_mix:
-            phase = self._get_phase(freq, data.prodstack, new_grid).conj()
-            sts *= phase
-            ni *= (np.abs(phase) > 0.0).astype(ni.dtype)
+            for ii, f in enumerate(freq):
+                phase = self._get_phase(f, data.prodstack, new_grid)[0].conj()
+                sts[ii] *= phase
+                ni[ii] *= (np.abs(phase) > 0.0).astype(ni.dtype)
 
         # FYI this whole process creates an extra copy of the sidereal stack.
         # This could probably be optimised out with a little work.
@@ -239,8 +242,8 @@ class SiderealRegridder(Regridder):
         ]
 
         # Calculate the fringe rate assuming that ha = 0.0 and dec = lat
-        lmbda = units.c / (freq * 1e6)
-        u = self.observer.baselines[np.newaxis, :, 0] / lmbda[:, np.newaxis]
+        lmbda = np.atleast_1d(units.c / (freq * 1e6))[:, np.newaxis]
+        u = self.observer.baselines[np.newaxis, :, 0] / lmbda
 
         omega = -2.0 * np.pi * u * np.cos(np.radians(self.observer.latitude))
 
