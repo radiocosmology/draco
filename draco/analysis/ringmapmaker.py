@@ -343,12 +343,6 @@ class BeamformEW(task.SingleTask):
         # Redistribute over frequency
         hstream.redistribute("freq")
 
-        # TODO: figure out how to get around this
-        if len(hstream.index_map["pol"]) != 4:
-            raise ValueError(
-                "We need all 4 polarisation combinations for this to work."
-            )
-
         # Create empty ring map
         n_ew = len(hstream.index_map["ew"])
         nbeam = 1 if self.single_beam else 2 * n_ew - 1
@@ -370,8 +364,8 @@ class BeamformEW(task.SingleTask):
         # Normalise the weights
         weight_ew = weight_ew / weight_ew.sum()
 
-        # TODO: derive these from the actual polarisations found in the input
-        pol = np.array(["XX", "reXY", "imXY", "YY"], dtype="U4")
+        # Derive the new polarisation index map and rotation matrix
+        pol, P = self._get_pol(hstream.index_map["pol"])
 
         # Create ring map, copying over axes/attrs and add the optional datasets
         rm = containers.RingMap(
@@ -389,12 +383,6 @@ class BeamformEW(task.SingleTask):
         hvb = hstream.dirty_beam[:].local_array
         rmm = rm.map[:].local_array
         rmb = rm.dirty_beam[:].local_array
-
-        # This matrix takes the linear combinations of polarisations required to rotate
-        # from XY, YX basis into reXY and imXY
-        P = np.array(
-            [[1, 0, 0, 0], [0, 0.5, 0.5, 0], [0, -0.5j, 0.5j, 0], [0, 0, 0, 1]]
-        )
 
         # Loop over local frequencies and fill ring map
         for lfi, fi in hstream.vis[:].enumerate(axis=1):
@@ -427,6 +415,40 @@ class BeamformEW(task.SingleTask):
         rm.weight[:] = tools.invert_no_zero(rm_var[..., np.newaxis])
 
         return rm
+
+    @staticmethod
+    def _get_pol(pols):
+        """Derive the output polarizations based on the input index map."""
+        # Require both cross-pol terms to exist if at least one exists
+        if ("XY" in pols) or ("YX" in pols):
+            if ("XY" in pols) ^ ("YX" in pols):
+                raise ValueError(
+                    "If cross-pols exist, both XY and YX must be present. "
+                    f"Got {pols}."
+                )
+            dpol = ["reXY", "imXY"]
+        else:
+            dpol = []
+
+        if "XX" in pols:
+            # XX is first
+            dpol = ["XX", *dpol]
+
+        if "YY" in pols:
+            # YY is last
+            dpol.append("YY")
+
+        # This matrix takes the linear combinations of polarisations
+        # required to rotate from XY, YX basis into reXY and imXY
+        P = np.eye(len(dpol), dtype=np.complex64)
+
+        # add the cross-pol terms if they exist
+        if "reXY" in dpol:
+            i = dpol.index("reXY")
+            P[i, i : i + 2] = [0.5, 0.5]
+            P[i + 1, i : i + 2] = [-0.5j, 0.5j]
+
+        return np.array(dpol, dtype="U4"), P
 
 
 class RingMapMaker(task.group_tasks(MakeVisGrid, BeamformNS, BeamformEW)):
