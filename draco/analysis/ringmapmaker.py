@@ -334,11 +334,16 @@ class BeamformEW(task.SingleTask):
         How to weight the EW baselines? One of:
             'natural' - weight by the redundancy of the EW baselines.
             'uniform' - give each EW baseline uniform weight.
+    flag_ew : list
+        List of boolean values with length equal to the number of EW baselines.
+        If provided, this specifies what baselines are included in the calculation
+        with True/False denoting include/exclude.
     """
 
     exclude_intracyl = config.Property(proptype=bool, default=False)
     single_beam = config.Property(proptype=bool, default=False)
     weight_ew = config.enum(["natural", "uniform"], default="natural")
+    flag_ew = config.Property(proptype=np.array)
 
     def process(self, hstream):
         """Computes the ringmap.
@@ -374,6 +379,10 @@ class BeamformEW(task.SingleTask):
         # Exclude the in cylinder baselines if requested (EW = 0)
         if self.exclude_intracyl:
             weight_ew[0] = 0.0
+
+        # Apply a flag if provided
+        if self.flag_ew is not None and self.flag_ew.size == n_ew:
+            weight_ew *= self.flag_ew.astype(bool).astype(weight_ew.dtype)
 
         # Factor to include negative elements in sum single beam sum
         if self.single_beam:
