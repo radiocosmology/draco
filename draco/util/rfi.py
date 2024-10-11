@@ -14,6 +14,7 @@ def sumthreshold_py(
     variance=None,
     rho=None,
     axes=None,
+    only_positive=False,
 ):
     """SumThreshold outlier detection algorithm.
 
@@ -66,6 +67,10 @@ def sumthreshold_py(
     if rho is None:
         rho = 0.9428 if correct_for_missing else 1.5
 
+    # Function that determines if we flag all excursions or only positive excursions
+    func = lambda x: x if only_positive else np.abs
+
+    # Determine what axes to flag over
     if axes is None:
         # Iterate over axes in reverse order
         axes = list(range(data.ndim))[::-1]
@@ -117,7 +122,7 @@ def sumthreshold_py(
             if correct_for_missing:
                 cconv = cconv**0.5
 
-            temp_flag = np.abs(dconv) > cconv * threshold
+            temp_flag = func(dconv) > cconv * threshold
             # Extend the mask to symmetrically cover flagged samples. `origin` is
             # -centre if m is odd and -centre-1 if m is even. This extends the
             # flag to the *left* and correctly centers the flagged region
