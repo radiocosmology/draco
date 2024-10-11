@@ -1349,6 +1349,9 @@ class RFIMaskChisqHighDelay(task.SingleTask):
 
     Attributes
     ----------
+    flag_ew : array
+        If the input container has an east-west baseline axis, then this
+        flag will be applied to the weights before collapsing over that axis.
     reg_arpls : float
         Smoothness regularisation used when estimating the baseline
         for flagging bad frequencies. Default is 1e5.
@@ -1374,7 +1377,19 @@ class RFIMaskChisqHighDelay(task.SingleTask):
     only_positive : bool
         Only mask large postive excursions in the test statistic,
         leaving large negative excursions unmasked.
+    mask_type : {"mad"|"sumthreshold"}
+        Algorithm to use to generate the mask.
+    niter : int, optional
+        Number of iterations.  At each iterations the baseline and standard
+        deviation are re-estimated using the mask from the previous iteration.
+    rho : float, optional
+        Reduce the threshold by this factor at each iteration.  A value of 1
+        will keep the threshold constant for all iterations.
+    max_m : int, optional
+        Maximum size of the SumThreshold window to use.
     """
+
+    flag_ew = config.Property(proptype=np.array)
 
     reg_arpls = config.Property(proptype=float, default=1e5)
     nsigma_1d = config.Property(proptype=float, default=5.0)
@@ -1384,6 +1399,11 @@ class RFIMaskChisqHighDelay(task.SingleTask):
     nsigma_2d = config.Property(proptype=float, default=5.0)
     estimate_var = config.Property(proptype=bool, default=False)
     only_positive = config.Property(proptype=bool, default=False)
+
+    mask_type = config.enum(["mad", "sumthreshold"], default="mad")
+    niter = config.Property(proptype=int, default=5)
+    rho = config.Property(proptype=float, default=1.5)
+    max_m = config.Property(proptype=int, default=32)
 
     def setup(self, telescope=None):
         """Save telescope object for time calculations.
@@ -1397,6 +1417,10 @@ class RFIMaskChisqHighDelay(task.SingleTask):
             Telescope object used for time calculations.
         """
         self.telescope = None if telescope is None else io.get_telescope(telescope)
+
+        # Set thresholds for sum-threshold algorithm
+        if self.mask_type == "sumthreshold":
+            self.threshold = self.nsigma_2d * self.rho ** np.arange(self.niter)[::-1]
 
     def process(self, stream):
         """Generate a mask from the data.
@@ -1462,6 +1486,10 @@ class RFIMaskChisqHighDelay(task.SingleTask):
         chisq = stream.data[:].real
         weight = stream.weight[:].reshape(*wshp)
 
+        if self.flag_ew is not None and "ew" in dax:
+            ew_slc = tuple([slice(None) if ax == "ew" else None for ax in dax])
+            weight = weight * self.flag_ew[ew_slc]
+
         wsum = wfactor * np.sum(weight, axis=axsum)
         chisq = np.sum(weight * chisq, axis=axsum) * tools.invert_no_zero(wsum)
 
@@ -1494,7 +1522,10 @@ class RFIMaskChisqHighDelay(task.SingleTask):
             # The inverse variance of the chisq per dof test statistic is ndof / 2.
             # This expression assumes ndof is stored in the weight dataset.
             w = ~mask * wsum / 2.0
-            mask_2d = self.mask_2d(chisq, w)
+            if self.mask_type == "mad":
+                mask_2d = self.mask_2d(chisq, w)
+            else:
+                mask_2d = self.mask_2d_sumthreshold(chisq, w)
 
             mask_output |= mask_2d & ~mask_daytime
 
@@ -1591,6 +1622,71 @@ class RFIMaskChisqHighDelay(task.SingleTask):
 
         # Flag times and frequencies that deviate by more than some threshold
         return dy > self.nsigma_2d
+
+    def mask_2d_sumthreshold(self, y, w):
+        """Iterative application of sumthreshold algorithm to mask large chi-squared.
+
+        Parameters
+        ----------
+        y : np.ndarray[nfreq, ntime]
+            Chi-squared per degree of freedom.
+        w : np.ndarray[nfreq, ntime]
+            Inverse variance of the chi-squared per degree of freedom,
+            with zero indicating previously masked samples.
+
+        Returns
+        -------
+        mask : np.ndarray[nfreq]
+            Boolean mask that indicates frequencies and times where
+            chi-squared deviates significantly from the local median.
+        """
+        y = np.ascontiguousarray(y, dtype=np.float64)
+
+        win_size = (self.win_f, self.win_t)
+
+        if not self.estimate_var:
+            mad_y = np.ones_like(y)
+
+        # Slowly reduce the threshold.  At each iteration generate a new estimate
+        # of the background sky and the variance using the current mask.
+        mask = w == 0.0
+        for nsigma in self.threshold:
+
+            f = np.ascontiguousarray(~mask * w, dtype=np.float64)
+
+            # Calculate the local median
+            med_y = weighted_median.moving_weighted_median(y, f, win_size)
+
+            # Calculate the deviation from the median, normalized by the
+            # expected standard deviation
+            dy = (y - med_y) * np.sqrt(w)
+
+            # If requested, estimate the variance in the test statistic
+            # using the median absolute deviation.
+            if self.estimate_var:
+                f = np.ascontiguousarray(f > 0.0, dtype=np.float64)
+                mad_y = 1.48625 * weighted_median.moving_weighted_median(
+                    np.abs(dy), f, win_size
+                )
+
+            # Generate a mask using sumthreshold
+            stmask = rfi.sumthreshold(
+                dy,
+                self.max_m,
+                start_flag=mask,
+                threshold1=nsigma,
+                remove_median=False,
+                correct_for_missing=True,
+                rho=1.0,
+                variance=mad_y**2,
+                only_positive=self.only_positive,
+            )
+
+            # Update the current mask
+            mask |= stmask
+
+        # Return the mask
+        return mask
 
     def _source_flag_hook(self, times, freq):
         """Override to mask bright point sources.
