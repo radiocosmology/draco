@@ -1377,6 +1377,9 @@ class RFIMaskChisqHighDelay(task.SingleTask):
     only_positive : bool
         Only mask large postive excursions in the test statistic,
         leaving large negative excursions unmasked.
+    separate_pol : bool
+        If true, construct a mask for each pol separately.  If false, sum the
+        chi-squared values over all polarisations and construct a single mask.
     mask_type : {"mad"|"sumthreshold"}
         Algorithm to use to generate the mask.
     niter : int, optional
@@ -1399,6 +1402,7 @@ class RFIMaskChisqHighDelay(task.SingleTask):
     nsigma_2d = config.Property(proptype=float, default=5.0)
     estimate_var = config.Property(proptype=bool, default=False)
     only_positive = config.Property(proptype=bool, default=False)
+    separate_pol = config.Property(proptype=bool, default=False)
 
     mask_type = config.enum(["mad", "sumthreshold"], default="mad")
     niter = config.Property(proptype=int, default=5)
@@ -1434,7 +1438,8 @@ class RFIMaskChisqHighDelay(task.SingleTask):
 
         Returns
         -------
-        mask : dcontainers.RFIMask | dcontainers.SiderealRFIMask
+        mask : dcontainers.RFIMask | dcontainers.SiderealRFIMask |
+               dcontainers.RFIMaskByPol | dcontainers.SiderealRFIMaskByPol
             Time-frequency mask, where values marked `True` are flagged.
         """
         # Distribute over frequency
@@ -1479,9 +1484,13 @@ class RFIMaskChisqHighDelay(task.SingleTask):
         wfactor = np.prod(wshp_missing) if len(wshp_missing) > 0 else 1.0
 
         # Sum over any axis that is neither time nor frequency
-        axsum = tuple(
-            [ii for ii, ax in enumerate(dax) if ax not in ["freq", "time", "ra"]]
-        )
+        keep_axis = ["freq", "time", "ra"]
+
+        separate_pol = self.separate_pol and "pol" in dax
+        if separate_pol:
+            keep_axis.append("pol")
+
+        axsum = tuple([ii for ii, ax in enumerate(dax) if ax not in keep_axis])
 
         chisq = stream.data[:].real
         weight = stream.weight[:].reshape(*wshp)
@@ -1505,39 +1514,44 @@ class RFIMaskChisqHighDelay(task.SingleTask):
         else:
             mask_daytime = self._day_flag_hook(timestamp)
 
-        mask_time = self._source_flag_hook(timestamp, freq)
+        mask_sources = self._source_flag_hook(timestamp, freq)
 
-        mask = mask_input | mask_time
-
-        # Mask using median over time
-        mask_output = np.zeros((freq.size, timestamp.size), dtype=bool)
-
-        if self.nsigma_1d > 0.0:
-            mask_1d = self.mask_1d(chisq, mask | mask_daytime)[:, np.newaxis]
-            mask |= mask_1d
-            mask_output |= mask_1d
-
-        # Mask using dynamic spectrum
-        if self.nsigma_2d > 0.0:
-            # The inverse variance of the chisq per dof test statistic is ndof / 2.
-            # This expression assumes ndof is stored in the weight dataset.
-            w = ~mask * wsum / 2.0
-            if self.mask_type == "mad":
-                mask_2d = self.mask_2d(chisq, w)
+        # Create output container
+        if separate_pol:
+            if "ra" in stream.index_map:
+                OutputContainer = containers.SiderealRFIMaskByPol
             else:
-                mask_2d = self.mask_2d_sumthreshold(chisq, w)
+                OutputContainer = containers.RFIMaskByPol
+        elif "ra" in stream.index_map:
+            OutputContainer = containers.SiderealRFIMask
+        else:
+            OutputContainer = containers.RFIMask
 
-            mask_output |= mask_2d & ~mask_daytime
-
-        # Save to output container
-        OutputContainer = (
-            containers.SiderealRFIMask
-            if "ra" in stream.index_map
-            else containers.RFIMask
-        )
         output = OutputContainer(axes_from=stream, attrs_from=stream)
+        output.mask[:] = False
 
-        output.mask[:] = mask_output
+        # If requested, construct a mask for each polarisation separately
+        pol_slice = np.arange(stream.pol.size) if separate_pol else [slice(None)]
+        for pslc in pol_slice:
+
+            mask = mask_input[pslc] | mask_sources
+
+            if self.nsigma_1d > 0.0:
+                mask_1d = self.mask_1d(chisq[pslc], mask | mask_daytime)[:, np.newaxis]
+                mask |= mask_1d
+                output.mask[pslc] |= mask_1d
+
+            # Mask using dynamic spectrum
+            if self.nsigma_2d > 0.0:
+                # The inverse variance of the chisq per dof test statistic is ndof / 2.
+                # This expression assumes ndof is stored in the weight dataset.
+                w = ~mask * wsum[pslc] / 2.0
+                if self.mask_type == "mad":
+                    mask_2d = self.mask_2d(chisq[pslc], w)
+                else:
+                    mask_2d = self.mask_2d_sumthreshold(chisq[pslc], w)
+
+                output.mask[pslc] |= mask_2d & ~mask_daytime
 
         return output
 
@@ -2152,9 +2166,14 @@ class ApplyTimeFreqMask(task.SingleTask):
         full copy of the data, if "vis" or "map" we create a copy only of the modified
         weight dataset and the unmodified vis dataset is shared, if "all" we
         modify in place and return the input container.
+    collapse_pol : bool
+        Take the logical OR of the mask along the polarisation axis prior to applying
+        it to the data.  In other words, mask a frequency and time in all polarisations
+        if it was identified as contaminated in any polarisation.
     """
 
     share = config.enum(["none", "vis", "map", "all"], default="all")
+    collapse_pol = config.Property(proptype=bool, default=False)
 
     def process(self, tstream, rfimask):
         """Apply the mask by zeroing the weights.
@@ -2165,7 +2184,8 @@ class ApplyTimeFreqMask(task.SingleTask):
             A timestream or sidereal stream like container. For example,
             `containers.TimeStream`, `andata.CorrData` or
             `containers.SiderealStream`.
-        rfimask : containers.RFIMask
+        rfimask : containers.RFIMask, containers.RFIMaskByPol,
+                  containers.SiderealRFIMask, containers.SiderealRFIMaskByPol
             An RFI mask for the same period of time.
 
         Returns
@@ -2173,7 +2193,7 @@ class ApplyTimeFreqMask(task.SingleTask):
         tstream : timestream or sidereal stream
             The masked timestream. Note that the masking is done in place.
         """
-        if isinstance(rfimask, containers.RFIMask):
+        if isinstance(rfimask, (containers.RFIMask, containers.RFIMaskByPol)):
             if not hasattr(tstream, "time"):
                 raise TypeError(
                     f"Expected a timestream like type. Got {type(tstream)}."
@@ -2182,7 +2202,9 @@ class ApplyTimeFreqMask(task.SingleTask):
             if not np.array_equal(tstream.time, rfimask.time):
                 raise ValueError("timestream and mask data have different time axes.")
 
-        elif isinstance(rfimask, containers.SiderealRFIMask):
+        elif isinstance(
+            rfimask, (containers.SiderealRFIMask, containers.SiderealRFIMaskByPol)
+        ):
             if not hasattr(tstream, "ra"):
                 raise TypeError(
                     f"Expected a sidereal stream like type. Got {type(tstream)}."
@@ -2204,18 +2226,44 @@ class ApplyTimeFreqMask(task.SingleTask):
         tstream.redistribute("freq")
 
         # Create a slice that broadcasts the mask to the final shape
-        t_axes = tstream.weight.attrs["axis"]
-        m_axes = rfimask.mask.attrs["axis"]
-        bcast_slice = tuple(
-            slice(None) if ax in m_axes else np.newaxis for ax in t_axes
-        )
+        t_axes = list(tstream.weight.attrs["axis"])
+        m_axes = list(rfimask.mask.attrs["axis"])
+
+        mask = rfimask.mask[:]
+
+        # Deal with the polarisation axis
+        if isinstance(
+            rfimask, (containers.RFIMaskByPol, containers.SiderealRFIMaskByPol)
+        ):
+
+            if self.collapse_pol or "pol" not in t_axes:
+
+                # Collapse polarisation axis
+                mask = np.any(mask, axis=m_axes.index("pol"))
+                m_axes.remove("pol")
+
+            elif "pol" in t_axes:
+
+                # Validate the polarisation axis
+                if not np.array_equal(tstream.pol, rfimask.pol):
+                    raise ValueError(
+                        "timestream and mask data have different pol axes."
+                    )
+
+        # Create a slice that broadcasts the mask to the final shape
+        bcast_slice = [slice(None) if ax in m_axes else np.newaxis for ax in t_axes]
 
         # RFI Mask is not distributed, so we need to cut out the frequencies
         # that are local for the tstream
-        ax = list(t_axes).index("freq")
-        sf = tstream.weight.local_offset[ax]
-        ef = sf + tstream.weight.local_shape[ax]
+        t_ax = t_axes.index("freq")
+        sf = tstream.weight.local_offset[t_ax]
+        ef = sf + tstream.weight.local_shape[t_ax]
 
+        m_ax = m_axes.index("freq")
+        bcast_slice[m_ax] = slice(sf, ef)
+        bcast_slice = tuple(bcast_slice)
+
+        # Create output container by copying based on share parameter
         if self.share == "all":
             tsc = tstream
         elif self.share == "vis":
@@ -2226,9 +2274,7 @@ class ApplyTimeFreqMask(task.SingleTask):
             tsc = tstream.copy()
 
         # Mask the data.
-        tsc.weight[:].local_array[:] *= (~rfimask.mask[sf:ef][bcast_slice]).astype(
-            np.float32
-        )
+        tsc.weight[:].local_array[:] *= (~mask[bcast_slice]).astype(np.float32)
 
         return tsc
 

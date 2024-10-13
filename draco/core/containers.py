@@ -1309,6 +1309,31 @@ class RFIMask(FreqContainer, TODContainer):
         return self.datasets["mask"]
 
 
+class RFIMaskByPol(RFIMask):
+    """A container for holding a polarisation-dependent RFI mask as a function of time.
+
+    The mask is `True` for contaminated samples that should be excluded, and
+    `False` for clean samples.
+    """
+
+    _axes = ("pol",)
+
+    _dataset_spec: ClassVar = {
+        "mask": {
+            "axes": ["pol", "freq", "time"],
+            "dtype": bool,
+            "initialise": True,
+            "distributed": False,
+            "distributed_axis": "freq",
+        }
+    }
+
+    @property
+    def pol(self):
+        """Get the pol index map."""
+        return self.index_map["pol"]
+
+
 class SiderealRFIMask(FreqContainer, SiderealContainer):
     """A container for holding an RFI mask for a sidereal stream.
 
@@ -1330,6 +1355,31 @@ class SiderealRFIMask(FreqContainer, SiderealContainer):
     def mask(self):
         """Get the mask dataset."""
         return self.datasets["mask"]
+
+
+class SiderealRFIMaskByPol(SiderealRFIMask):
+    """A container for holding a polarisation-dependent RFI mask as a function of RA.
+
+    The mask is `True` for contaminated samples that should be excluded, and
+    `False` for clean samples.
+    """
+
+    _axes = ("pol",)
+
+    _dataset_spec: ClassVar = {
+        "mask": {
+            "axes": ["pol", "freq", "ra"],
+            "dtype": bool,
+            "initialise": True,
+            "distributed": False,
+            "distributed_axis": "freq",
+        }
+    }
+
+    @property
+    def pol(self):
+        """Get the pol index map."""
+        return self.index_map["pol"]
 
 
 class BaselineMask(FreqContainer, TODContainer):
@@ -1990,6 +2040,16 @@ class HybridVisStream(FreqContainer, SiderealContainer, VisBase):
             return self.datasets["nsample"]
 
         raise KeyError("Dataset 'nsample' not initialised.")
+
+    @property
+    def pol(self):
+        """Get the polarisation index map."""
+        return self.index_map["pol"]
+
+    @property
+    def ew(self):
+        """Get the east-west baseline index map."""
+        return self.index_map["ew"]
 
 
 class HybridVisMModes(FreqContainer, MContainer, VisBase):
