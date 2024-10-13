@@ -26,8 +26,7 @@ jobs:
 
     - name: Install pip dependencies
       run: |
-        pip install -e .
-        pip install -e .[lint]
+        pip install black ruff
 
     - name: Run ruff
       run: ruff check .
