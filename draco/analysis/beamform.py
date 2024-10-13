@@ -1105,11 +1105,11 @@ class RingMapStack2D(RingMapBeamForm):
         local_freq = ringmap.freq[fs:fe]
 
         # Dereference the datasets
-        rmm = ringmap.map[:]
+        rmm = ringmap.map[:].local_array
         rmw = (
-            ringmap.weight[:]
+            ringmap.weight[:].local_array
             if "weight" in ringmap.datasets
-            else invert_no_zero(ringmap.rms[:]) ** 2
+            else invert_no_zero(ringmap.rms[:].local_array) ** 2
         )
 
         # Calculate the frequencies bins to use
@@ -1563,7 +1563,6 @@ class FitBeamFormed(BeamFormExternalMixin, task.SingleTask):
             First column is entirely 1 and corresponds to an overall additive
             offset. Second column is the primary beam model versus hour angle.
         """
-
         t = np.ones((self.freq_local.size, ha.size, 2), dtype=float)
         t[..., 1] = self._beamfunc(pol, dec, ha)
 
