@@ -432,22 +432,12 @@ class GenerateSubBands(SelectFreq):
     Attributes
     ----------
     sub_band_spec : dict
-        Dictionary of the format:
-            {
-                "band_a": {
-                    "channel_range": [0, 64]
-                },
-                "band_b": {
-                    "channel_range": [64, 128]
-                },
-                ...
-            }
-        where each entry is a separate sub-band with the
-        key providing the tag that will be used to describe the
-        sub-band and the value providing a dictionary that can
-        contain any of the config properties used by the
-        SelectFreq task to downselect along the frequency
-        axis to obtain the sub-band from the input container.
+        Dictionary of the format {"band_a": {"channel_range": [0, 64]}, ...}
+        where each entry is a separate sub-band with the key providing the tag
+        that will be used to describe the sub-band and the value providing a
+        dictionary that can contain any of the config properties used by the
+        SelectFreq task to downselect along the frequency axis to obtain the
+        sub-band from the input container.
     """
 
     sub_band_spec = config.Property(proptype=dict)

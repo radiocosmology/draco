@@ -1199,8 +1199,9 @@ class HybridVisBeamForm(task.SingleTask):
     ----------
     window : float
         Window size in degrees.  For each source, right ascensions corresponding to
-        |ra - source_ra| <= window are extracted from the hybrid beamformed visibility
-        at the declination closest to the sources location.  Default is 5 degrees.
+        abs(ra - source_ra) <= window are extracted from the hybrid beamformed
+        visibility at the declination closest to the sources location.  Default is
+        5 degrees.
     ignore_rot : bool
         Ignore the telescope rotation_angle when calculating the baseline distances
         used to beamform in the east-west direction.  Defaults to False.

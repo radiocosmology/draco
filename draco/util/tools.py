@@ -515,11 +515,12 @@ def window_generalised(x, window="nuttall"):
     ----------
     x : np.ndarray[n]
         Location to evaluate at. Values outside the range 0 to 1 are zero.
-    window : one of {'uniform', 'hann', 'hanning', 'hamming', 'blackman',
-                     'nuttall', 'blackman_nuttall', 'blackman_harris',
-                     'triangular', 'tukey-0.X'}
-        Type of window function to return.  If "tukey-0.X", then 0.X is the
-        fraction of the full window that will be tapered.
+    window : str
+        Type of window function to return.  Must be one of the following strings:
+        'uniform', 'hann', 'hanning', 'hamming', 'blackman', 'nuttall',
+        'blackman_nuttall', 'blackman_harris', 'triangular', or 'tukey-0.X'.
+        If "tukey-0.X", then 0.X is the fraction of the full window that
+        will be tapered.
 
     Returns
     -------
