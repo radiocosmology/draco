@@ -3,8 +3,8 @@
 Miscellaneous tasks should be placed in :py:mod:`draco.core.misc`.
 """
 
-import warnings
 import itertools
+import warnings
 
 import numpy as np
 
@@ -14,7 +14,6 @@ from numpy.lib.recfunctions import structured_to_unstructured
 from scipy import linalg as la
 from scipy.signal import oaconvolve
 from scipy.sparse import dia_array
-
 
 from ._fast_tools import _calc_redundancy
 
@@ -527,7 +526,6 @@ def window_generalised(x, window="nuttall"):
     w : np.ndarray[n]
         Window function.
     """
-
     if window == "triangular":
         w = 1.0 - 2.0 * np.abs(x - 0.5)
 
@@ -564,9 +562,7 @@ def window_generalised(x, window="nuttall"):
         t = 2 * np.pi * np.arange(4)[:, np.newaxis] * x[np.newaxis, :]
         w = (a[:, np.newaxis] * np.cos(t)).sum(axis=0)
 
-    w = np.where((x >= 0) & (x <= 1), w, 0)
-
-    return w
+    return np.where((x >= 0) & (x <= 1), w, 0)
 
 
 def arPLS_1d(y, mask=None, lam=1e2, end_frac=1e-2, max_iter=1000):
@@ -763,6 +759,7 @@ def find_contiguous_slices(index):
         1D indices into an array.
 
     Returns
+    -------
     slices : list of slice
         Slices into the array that will return all elements
         in index but split into contiguous regions.  Useful

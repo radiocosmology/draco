@@ -1256,12 +1256,7 @@ class HybridVisBeamForm(task.SingleTask):
         fringestopped = hvis.attrs.get("fringestopped", False)
 
         # Get source positions
-        if "lsd" in hvis.attrs:
-            lsd = hvis.attrs["lsd"]
-        elif "csd" in hvis.attrs:
-            lsd = hvis.attrs["csd"]
-        else:
-            lsd = None
+        lsd = hvis.attrs.get("lsd", hvis.attrs.get("csd"))
 
         src_ra, src_dec = (
             self.catalog["position"]["ra"][:],

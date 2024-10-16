@@ -1937,6 +1937,9 @@ class HybridVisStream(FreqContainer, SiderealContainer, VisBase):
             "initialise": True,
             "distributed": True,
             "distributed_axis": "freq",
+            "chunks": (1, 32, 1, 512, 2048),
+            "compression": COMPRESSION,
+            "compression_opts": COMPRESSION_OPTS,
         },
         "dirty_beam": {
             "axes": ["pol", "freq", "ew", "el", "ra"],
@@ -1944,6 +1947,9 @@ class HybridVisStream(FreqContainer, SiderealContainer, VisBase):
             "initialise": False,
             "distributed": True,
             "distributed_axis": "freq",
+            "chunks": (1, 32, 1, 512, 2048),
+            "compression": COMPRESSION,
+            "compression_opts": COMPRESSION_OPTS,
         },
         "vis_weight": {
             "axes": ["pol", "freq", "ew", "ra"],
@@ -1951,6 +1957,9 @@ class HybridVisStream(FreqContainer, SiderealContainer, VisBase):
             "initialise": True,
             "distributed": True,
             "distributed_axis": "freq",
+            "chunks": (1, 32, 4, 2048),
+            "compression": COMPRESSION,
+            "compression_opts": COMPRESSION_OPTS,
         },
         "effective_ra": {
             "axes": ["pol", "freq", "ew", "ra"],
@@ -1958,6 +1967,9 @@ class HybridVisStream(FreqContainer, SiderealContainer, VisBase):
             "initialise": False,
             "distributed": True,
             "distributed_axis": "freq",
+            "chunks": (1, 32, 4, 2048),
+            "compression": COMPRESSION,
+            "compression_opts": COMPRESSION_OPTS,
         },
         "nsample": {
             "axes": ["pol", "freq", "ew", "ra"],
@@ -1965,6 +1977,9 @@ class HybridVisStream(FreqContainer, SiderealContainer, VisBase):
             "initialise": False,
             "distributed": True,
             "distributed_axis": "freq",
+            "chunks": (1, 32, 4, 2048),
+            "compression": COMPRESSION,
+            "compression_opts": COMPRESSION_OPTS,
         },
         "filter": {
             "axes": ["pol", "freq", "freq_sum", "ew", "ra"],
@@ -1972,6 +1987,9 @@ class HybridVisStream(FreqContainer, SiderealContainer, VisBase):
             "initialise": False,
             "distributed": True,
             "distributed_axis": "freq",
+            "chunks": (1, 32, 96, 4, 2048),
+            "compression": COMPRESSION,
+            "compression_opts": COMPRESSION_OPTS,
         },
         "complex_filter": {
             "axes": ["pol", "freq", "freq_sum", "ew", "ra"],
@@ -1979,6 +1997,9 @@ class HybridVisStream(FreqContainer, SiderealContainer, VisBase):
             "initialise": False,
             "distributed": True,
             "distributed_axis": "freq",
+            "chunks": (1, 32, 96, 4, 2048),
+            "compression": COMPRESSION,
+            "compression_opts": COMPRESSION_OPTS,
         },
     }
 
