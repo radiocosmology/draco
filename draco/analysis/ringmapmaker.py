@@ -402,7 +402,6 @@ class BeamformEW(task.SingleTask):
             beam=nbeam, pol=pol, axes_from=hstream, attrs_from=hstream
         )
         rm.add_dataset("rms")
-        rm.add_dataset("dirty_beam")
 
         # Make sure ring map is distributed over frequency
         rm.redistribute("freq")
@@ -410,11 +409,16 @@ class BeamformEW(task.SingleTask):
         # Dereference datasets
         hvv = hstream.vis[:].local_array
         hvw = hstream.weight[:].local_array
+
         if save_dirty_beam:
+            # Only add this dataset if the input container has
+            # a `dirty_beam` dataset
+            rm.add_dataset("dirty_beam")
+            rmb = rm.dirty_beam[:].local_array
+
             hvb = hstream.dirty_beam[:].local_array
 
         rmm = rm.map[:].local_array
-        rmb = rm.dirty_beam[:].local_array
         rmw = rm.weight[:].local_array
         rmr = rm.rms[:].local_array
 
