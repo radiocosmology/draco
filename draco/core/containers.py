@@ -2934,6 +2934,9 @@ class FormedBeamHA(FormedBeam):
             "initialise": True,
             "distributed": True,
             "distributed_axis": "freq",
+            "chunks": (32, 4, 128, 64),
+            "compression": COMPRESSION,
+            "compression_opts": COMPRESSION_OPTS,
         },
         "weight": {
             "axes": ["object_id", "pol", "freq", "ha"],
@@ -2941,6 +2944,9 @@ class FormedBeamHA(FormedBeam):
             "initialise": True,
             "distributed": True,
             "distributed_axis": "freq",
+            "chunks": (32, 4, 128, 64),
+            "compression": COMPRESSION,
+            "compression_opts": COMPRESSION_OPTS,
         },
         "object_ha": {
             "axes": ["object_id", "ha"],
@@ -2972,6 +2978,9 @@ class FormedBeamHAEW(FormedBeamHA):
             "initialise": True,
             "distributed": True,
             "distributed_axis": "freq",
+            "chunks": (8, 4, 128, 4, 64),
+            "compression": COMPRESSION,
+            "compression_opts": COMPRESSION_OPTS,
         },
         "weight": {
             "axes": ["object_id", "pol", "freq", "ew", "ha"],
@@ -2979,6 +2988,9 @@ class FormedBeamHAEW(FormedBeamHA):
             "initialise": True,
             "distributed": True,
             "distributed_axis": "freq",
+            "chunks": (8, 4, 128, 4, 64),
+            "compression": COMPRESSION,
+            "compression_opts": COMPRESSION_OPTS,
         },
         "object_ha": {
             "axes": ["object_id", "ha"],
