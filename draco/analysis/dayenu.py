@@ -408,9 +408,9 @@ class DayenuDelayFilterHybridVis(task.SingleTask):
 
     Attributes
     ----------
-    tau_width : float or np.ndarray[nstopband,]
+    tauw : float or np.ndarray[nstopband,]
         The half width of the stop-band region in micro-seconds.
-    tau_centre : float or np.ndarray[nstopband,]
+    tauc : float or np.ndarray[nstopband,]
         The centre of the stop-band region in micro-seconds.
         Defaults to 0.
     epsilon : float or np.ndarray[nstopband,]
