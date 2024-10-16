@@ -1134,7 +1134,7 @@ class SiderealStream(
             "distributed_axis": "freq",
             "compression": COMPRESSION,
             "compression_opts": COMPRESSION_OPTS,
-            "chunks": (64, 128, 128),
+            "chunks": (32, 512, 2048),
             "truncate": {
                 "weight_dataset": "vis_weight",
             },
@@ -1147,7 +1147,7 @@ class SiderealStream(
             "distributed_axis": "freq",
             "compression": COMPRESSION,
             "compression_opts": COMPRESSION_OPTS,
-            "chunks": (64, 128, 128),
+            "chunks": (32, 512, 2048),
             "truncate": True,
         },
         "input_flags": {
@@ -1171,7 +1171,7 @@ class SiderealStream(
             "distributed_axis": "freq",
             "compression": COMPRESSION,
             "compression_opts": COMPRESSION_OPTS,
-            "chunks": (3, 64, 128, 128),
+            "chunks": (3, 32, 512, 2048),
             "truncate": True,
         },
         "nsample": {
@@ -1182,7 +1182,7 @@ class SiderealStream(
             "distributed_axis": "freq",
             "compression": COMPRESSION,
             "compression_opts": COMPRESSION_OPTS,
-            "chunks": (64, 128, 128),
+            "chunks": (32, 512, 2048),
         },
         "effective_ra": {
             "axes": ["freq", "stack", "ra"],
@@ -1192,7 +1192,7 @@ class SiderealStream(
             "distributed_axis": "freq",
             "compression": COMPRESSION,
             "compression_opts": COMPRESSION_OPTS,
-            "chunks": (64, 128, 128),
+            "chunks": (32, 512, 2048),
             "truncate": True,
         },
     }
@@ -1219,6 +1219,112 @@ class SiderealStream(
             return self.datasets["effective_ra"]
 
         raise KeyError("Dataset 'effective_ra' not initialised.")
+
+
+class SiderealDirtyStream(FreqContainer, VisContainer, SiderealContainer):
+    """A container for holding a dirty visibility dataset in sidereal time.
+
+    Weights are not stored by defualt. They can be reconstructed by doing
+    `modes @ noise_cov[:, :, -1]`.
+    """
+
+    _axes = ("bandwidth",)
+
+    _dataset_spec: ClassVar = {
+        "vis": {
+            "axes": ["freq", "stack", "ra"],
+            "dtype": np.complex64,
+            "initialise": True,
+            "distributed": True,
+            "distributed_axis": "freq",
+            "compression": COMPRESSION,
+            "compression_opts": COMPRESSION_OPTS,
+            "chunks": (32, 512, 2048),
+            "truncate": True,
+        },
+        "mask": {
+            "axes": ["freq", "ra"],
+            "dtype": bool,
+            "initialise": False,
+            "distributed": True,
+            "distributed_axis": "freq",
+        },
+        "noise_cov": {
+            "axes": ["freq", "bandwidth", "ra"],
+            "dtype": np.float64,
+            "initialise": True,
+            "distributed": True,
+            "distributed_axis": "freq",
+            "compression": COMPRESSION,
+            "compression_opts": COMPRESSION_OPTS,
+            "chunks": (32, 1, 2048),
+            "truncate": False,
+        },
+        "modes": {
+            "axes": ["freq", "stack"],
+            "dtype": np.float64,
+            "initialise": True,
+            "distributed": True,
+            "distributed_axis": "freq",
+            "compression": COMPRESSION,
+            "compression_opts": COMPRESSION_OPTS,
+            "truncate": False,
+        },
+    }
+
+    @property
+    def noise_cov(self):
+        """Get the signal covariance dataset."""
+        return self.datasets["noise_cov"]
+
+    @property
+    def modes(self):
+        """Get the modes dataset."""
+        return self.datasets["modes"]
+
+    @property
+    def mask(self):
+        """Get the mask dataset."""
+        return self.datasets["mask"]
+
+    @property
+    def weight(self):
+        """Get the reconstructed weight dataset."""
+        weight = (
+            self.modes[:].local_array[:, :, np.newaxis]
+            @ self.noise_cov[:].local_array[:, -1][:, np.newaxis]
+        ).astype(np.float32)
+
+        if self.distributed:
+            weight = mpiarray.MPIArray.wrap(weight, axis=0, comm=self.comm)
+
+        return weight
+
+
+class SiderealBandCovariance(FreqContainer, VisContainer, SiderealContainer):
+    """A container for holding a banded covariance dataset in sidereal time.
+
+    The main dataset is accessed through the `data` property.
+    """
+
+    _data_dset_name = "cov"
+    _weight_dset_name = None
+
+    _axes = ("bandwidth",)
+
+    _dataset_spec: ClassVar = {
+        "cov": {
+            "axes": ["freq", "stack", "bandwidth", "ra"],
+            "dtype": np.float32,
+            "initialise": True,
+            "distributed": True,
+            "distributed_axis": "freq",
+            "compression": COMPRESSION,
+            "compression_opts": COMPRESSION_OPTS,
+            "chunks": (32, 512, 1, 2048),
+            "truncate": True,
+        },
+    }
 
 
 class SystemSensitivity(FreqContainer, TODContainer):
@@ -1463,7 +1569,7 @@ class TimeStream(FreqContainer, VisContainer, TODContainer):
             "distributed_axis": "freq",
             "compression": COMPRESSION,
             "compression_opts": COMPRESSION_OPTS,
-            "chunks": (64, 128, 128),
+            "chunks": (32, 512, 2048),
             "truncate": {
                 "weight_dataset": "vis_weight",
             },
@@ -1476,7 +1582,7 @@ class TimeStream(FreqContainer, VisContainer, TODContainer):
             "distributed_axis": "freq",
             "compression": COMPRESSION,
             "compression_opts": COMPRESSION_OPTS,
-            "chunks": (64, 128, 128),
+            "chunks": (32, 512, 2048),
             "truncate": True,
         },
         "input_flags": {
@@ -1505,7 +1611,72 @@ class TimeStream(FreqContainer, VisContainer, TODContainer):
         return self.datasets["input_flags"]
 
 
-class GridBeam(FreqContainer, DataWeightContainer):
+class FactorizedTimeStream(TimeStream):
+    """TimeStream with the weights factorized.
+
+    Weights are split into a projection dataset and a modes dataset.
+    """
+
+    _dataset_spec: ClassVar = {
+        "vis": {
+            "axes": ["freq", "stack", "time"],
+            "dtype": np.complex64,
+            "initialise": True,
+            "distributed": True,
+            "distributed_axis": "freq",
+            "compression": COMPRESSION,
+            "compression_opts": COMPRESSION_OPTS,
+            "chunks": (32, 512, 2048),
+            "truncate": True,
+        },
+        "vis_weight": {
+            "axes": ["freq", "time"],
+            "dtype": np.float64,
+            "initialise": True,
+            "distributed": True,
+            "distributed_axis": "freq",
+            "compression": COMPRESSION,
+            "compression_opts": COMPRESSION_OPTS,
+            "chunks": (512, 2048),
+            "truncate": False,
+        },
+        "modes": {
+            "axes": ["freq", "stack"],
+            "dtype": np.float64,
+            "initialise": True,
+            "distributed": True,
+            "distributed_axis": "freq",
+            "compression": COMPRESSION,
+            "compression_opts": COMPRESSION_OPTS,
+            "chunks": (512, 512),
+            "truncate": False,
+        },
+    }
+
+    @property
+    def modes(self):
+        """Get the modes dataset."""
+        return self.datasets["modes"]
+
+    @property
+    def full_weight(self):
+        """Get the full reconstructed dataset weights.
+
+        This dataset will _never_ be a distributed array, because
+        this is a convenience method for reconstructing the weights.
+        """
+        weight = (
+            self.modes[:].local_array[:, :, np.newaxis]
+            @ self.weight[:].local_array[:, np.newaxis]
+        ).astype(np.float32)
+
+        if self.distributed:
+            weight = mpiarray.MPIArray.wrap(weight, axis=0, comm=self.comm)
+
+        return weight
+
+
+class GridBeam(FreqContainer):
     """Generic container for representing a 2D beam on a rectangular grid."""
 
     _axes = ("pol", "input", "theta", "phi")
@@ -1886,7 +2057,7 @@ class VisGridStream(FreqContainer, SiderealContainer, VisBase):
             "initialise": True,
             "distributed": True,
             "distributed_axis": "freq",
-            "chunks": (1, 64, 1, 64, 128),
+            "chunks": (1, 32, 1, 256, 2048),
             "compression": COMPRESSION,
             "compression_opts": COMPRESSION_OPTS,
             "truncate": {
@@ -1899,7 +2070,7 @@ class VisGridStream(FreqContainer, SiderealContainer, VisBase):
             "initialise": True,
             "distributed": True,
             "distributed_axis": "freq",
-            "chunks": (1, 64, 1, 64, 128),
+            "chunks": (1, 32, 1, 256, 2048),
             "compression": COMPRESSION,
             "compression_opts": COMPRESSION_OPTS,
             "truncate": True,
@@ -1909,7 +2080,7 @@ class VisGridStream(FreqContainer, SiderealContainer, VisBase):
             "dtype": np.int32,
             "initialise": True,
             "distributed": False,
-            "chunks": (1, 64, 1, 64, 128),
+            "chunks": (1, 1, 256, 2048),
             "compression": COMPRESSION,
             "compression_opts": COMPRESSION_OPTS,
         },
@@ -2124,7 +2295,7 @@ class RingMap(FreqContainer, SiderealContainer, DataWeightContainer):
             "initialise": True,
             "distributed": True,
             "distributed_axis": "freq",
-            "chunks": (1, 1, 64, 128, 128),
+            "chunks": (1, 1, 32, 2048, 512),
             "compression": COMPRESSION,
             "compression_opts": COMPRESSION_OPTS,
             "truncate": {
@@ -2137,7 +2308,7 @@ class RingMap(FreqContainer, SiderealContainer, DataWeightContainer):
             "initialise": True,
             "distributed": True,
             "distributed_axis": "freq",
-            "chunks": (1, 64, 128, 128),
+            "chunks": (1, 32, 2048, 512),
             "compression": COMPRESSION,
             "compression_opts": COMPRESSION_OPTS,
             "truncate": True,
@@ -2148,7 +2319,7 @@ class RingMap(FreqContainer, SiderealContainer, DataWeightContainer):
             "initialise": False,
             "distributed": True,
             "distributed_axis": "freq",
-            "chunks": (1, 1, 64, 128, 128),
+            "chunks": (1, 1, 32, 2048, 512),
             "compression": COMPRESSION,
             "compression_opts": COMPRESSION_OPTS,
             "truncate": True,
@@ -2159,7 +2330,7 @@ class RingMap(FreqContainer, SiderealContainer, DataWeightContainer):
             "initialise": False,
             "distributed": True,
             "distributed_axis": "freq",
-            "chunks": (4, 512, 512),
+            "chunks": (4, 512, 2048),
             "compression": COMPRESSION,
             "compression_opts": COMPRESSION_OPTS,
             "truncate": True,
