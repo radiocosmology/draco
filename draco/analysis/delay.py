@@ -2203,17 +2203,17 @@ def null_delay_filter(
     # to be the fault of MKL (see https://github.com/scipy/scipy/issues/10032 and links
     # therein). This seems to be limited to the `gesdd` LAPACK routine, so we can get
     # around it by switching to `gesvd`.
-    u, sig, vh = la.svd(F, full_matrices=False, lapack_driver=lapack_driver)
+    u, sig, _ = la.svd(F, full_matrices=False, lapack_driver=lapack_driver)
     nmodes = np.sum(sig > tol * sig.max())
-
-    # Select the modes to null out based on the filter type
-    if type_ == "high":
-        p = u[:, :nmodes]
-    elif type_ == "low":
-        p = u[:, nmodes:]
+    p = u[:, :nmodes]
 
     # Construct a projection matrix for the filter
-    proj = np.identity(len(freq)) - np.dot(p, p.T.conj())
+    proj = p @ p.T.conj()
+
+    if type_ == "high":
+        proj = np.identity(len(freq)) - proj
+
+    # Multiply in the mask and window (if applicable)
     proj *= mask[np.newaxis, :]
 
     if window:
