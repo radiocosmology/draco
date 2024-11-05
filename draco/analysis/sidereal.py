@@ -9,6 +9,8 @@ into  :class:`SiderealGrouper`, then feeding that into
 :class:`SiderealStacker` if you want to combine the different days.
 """
 
+import inspect
+
 import numpy as np
 import scipy.linalg as la
 from caput import config, mpiarray, tod
@@ -520,7 +522,18 @@ class SiderealRebinner(SiderealRegridder):
             containers.HybridVisStream: containers.HybridVisStream,
         }
 
-        OutputContainer = container_map[data.__class__]
+        # We need to be able to check for subclasses in the container map
+        for cls in inspect.getmro(data.__class__):
+            OutputContainer = container_map.get(cls)
+
+            if OutputContainer is not None:
+                break
+
+        if OutputContainer is None:
+            raise TypeError(
+                f"No valid container mapping.\nGot {data.__class__}.\n"
+                f"Mappings exist for {list(container_map.keys())}."
+            )
 
         # Redistribute if needed too
         data.redistribute("freq")
