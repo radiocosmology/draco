@@ -13,7 +13,7 @@ import inspect
 
 import numpy as np
 import scipy.linalg as la
-from caput import config, mpiarray, tod
+from caput import config, fftw, mpiarray, tod
 from cora.util import units
 
 from ..core import containers, io, task
@@ -972,6 +972,201 @@ class SiderealStacker(task.SingleTask):
             for fi in range(era.shape[0]):
                 mask = weight[fi] == 0.0
                 era[fi][mask] = grid_ra[mask]
+
+        return self.stack
+
+
+class SiderealStackerFT(task.SingleTask):
+    """Stack sidereal days in filtered delay-m space."""
+
+    stack = None
+
+    tag = config.Property(proptype=str, default="stack")
+    weight = config.enum(["uniform"], default="uniform")
+
+    tau_cut = config.list_type(float, default=[0.1, 0.2, 0.4, 0.6, 0.8])
+    m_cut = config.list_type(int, default=[10, 20, 40, 60, 80])
+
+    def setup(self, observer):
+        """Set the local observer properties."""
+        self.observer = io.get_telescope(observer)
+
+    def process(self, data):
+        """Stack sidereal days."""
+        # Check that the input container is of the correct type
+        if (self.stack is not None) and not isinstance(data, type(self.stack)):
+            raise TypeError(
+                f"type(sdata) (={type(data)}) does not match "
+                f"type(stack) (={type(self.stack)})."
+            )
+
+        data.redistribute("stack")
+
+        # If this our first sidereal day, then initialize the container
+        # that will hold the stack
+        if self.stack is None:
+            self.stack = containers.empty_like(data)
+
+            # Add stack-specific datasets
+            if "nsample" not in self.stack.datasets:
+                self.stack.add_dataset("nsample")
+
+            self.stack.redistribute("stack")
+
+            # Initialise all datasets to zero
+            for ds in self.stack.datasets.values():
+                ds[:] = 0
+
+            self.lsd_list = []
+            self.windows = self._set_windows()
+
+            # Create the fftw class to perform ffts
+            shape = (len(self.stack.freq), len(self.stack.ra))
+            self.fft = fftw.FFT(shape, self.stack.vis.dtype)
+
+        input_lsd = _ensure_list(data.attrs.get("lsd", data.attrs.get("csd")))
+        self.log.info(f"Adding LSD {input_lsd} to stack.")
+        self.lsd_list += input_lsd
+
+        # Update the stacked visibilities
+        self.accumulate_vis(data.vis[:], data.weight[:])
+        # Update the stacked weights
+        self.accumulate_weight(data.weight[:])
+
+    def _set_windows(self):
+        """Get fourier domain windows."""
+        tau, mmodes = self._fftaxes()
+
+        windows = []
+
+        for tc, mc in zip(self.tau_cut, self.m_cut):
+            window = tools.window_generalised_2d(
+                tau / (2 * tc) + 0.5, mmodes / (2 * mc) + 0.5
+            )
+            windows.append(np.ascontiguousarray(window.astype(np.complex64)))
+
+        return windows
+
+    def _fftaxes(self):
+        """Return the frequency and RA fourier conjugate axes."""
+        df = np.median(abs(np.diff(self.stack.freq)))
+        dra = np.median(abs(np.diff(np.deg2rad(self.stack.ra))))
+
+        tau = np.abs(np.fft.fftfreq(len(self.stack.freq), df))
+        mmodes = np.abs(np.fft.fftfreq(len(self.stack.ra), dra))
+
+        return tau, mmodes
+
+    def _ew_fringe_cut(self):
+        """Return the fringe rate based on east-west baseline length."""
+        lam = self.stack.freq[:] * 1e6 / units.c
+        dec = np.cos(np.deg2rad(self.observer.latitude))
+
+        return self.observer.baselines[:, 0] * lam.max() / dec
+
+    def accumulate_vis(self, vis, weight):
+        """Add a day to the stack."""
+        # Get the FFT axes
+        tau, mmodes = self._fftaxes()
+        taumax = tau.max()
+
+        # Get a cutoff in m for each baseline, if it is
+        # larger than the largest existing cutoff
+        mcut_per_bl = np.maximum(self._ew_fringe_cut(), np.max(self.m_cut))
+
+        # Use uniform weighting and a consistent dtype
+        count = (weight[:].local_array > 0.0).astype(vis.dtype)
+        scount = self.stack.nsample[:].local_array.astype(vis.dtype)
+
+        # Get the local selections and initialize a buffer
+        # to store the accumulated data on each loop
+        dvis = vis[:].local_array
+        stack_vis = self.stack.vis[:].local_array
+        vavg = np.zeros_like(stack_vis[:, 0])
+
+        # Loop over baselines
+        # TODO: should there be a reshape before looping?
+        for ii, gind in vis.enumerate(1):
+            vi = dvis[:, ii]
+            vsi = stack_vis[:, ii]
+
+            ci = count[:, ii]
+            sci = scount[:, ii]
+
+            # Get an extra window for each baseline
+            bl_win = tools.window_generalised_2d(
+                tau / (2 * taumax) + 0.5, mmodes / (2 * mcut_per_bl[gind]) + 0.5
+            )
+
+            # Loop over windows, applying each one iteratively
+            for window in (*self.windows, bl_win):
+                vilp = self.fft.fftwindow(vi * ci, window)
+                wilp = self.fft.fftwindow(ci, window)
+
+                vsilp = self.fft.fftwindow(vsi * sci, window)
+                wsilp = self.fft.fftwindow(sci, window)
+
+                # Accumulate the weighted mean
+                vavg += (vilp + vsilp) * tools.invert_no_zero(wilp + wsilp)
+                # Normalize and subtract the individual filtered visibilities
+                vilp *= tools.invert_no_zero(wilp)
+                vsilp *= tools.invert_no_zero(wsilp)
+                # Don't subtract in-place here because we don't want to
+                # modify the actual datasets
+                # TODO: is it faster to do a copy and subtract in-place here?
+                vi = vi - vilp
+                vsi = vsi - vsilp
+
+            # Get the weighted mean of the residuals. This is subtracted
+            # before averaging and then the average of the means is re-added
+            # to minimize residual effects of masking
+            vi_ms = np.sum(vi * ci, axis=-1, keepdims=True)
+            vi_ms *= tools.invert_no_zero(np.sum(ci, axis=-1, keepdims=True))
+
+            vsi_ms = np.sum(vsi * sci, axis=-1, keepdims=True)
+            vsi_ms *= tools.invert_no_zero(np.sum(sci, axis=-1, keepdims=True))
+
+            # Get the mean of the residuals after filtering. If the
+            # filtering was done correctly, this should be noise-like
+            vres = (vi - vi_ms) * ci + (vsi - vsi_ms) * sci
+            vres *= tools.invert_no_zero(ci + sci)
+            vres += np.mean([vi_ms, vsi_ms], axis=0)
+
+            # Update the stacked vis and clear buffer
+            # TODO: is there a faster way to do this without using the buffer?
+            flag = (ci > 0.0) | (sci > 0.0)
+            stack_vis[:, ii] = flag * (vavg + vres)
+            vavg[:] = 0.0
+
+    def accumulate_weight(self, weight):
+        """Accumulate the weights."""
+        # TODO: this probably isn't correct since we don't use
+        # the same filters, but I'm doing it this way for now
+        # for testing
+
+        # Use uniform weighting
+        count = (weight > 0.0).astype(self.stack.nsample.dtype)
+        # Accumulate the total number of samples
+        self.stack.nsample[:] += count
+        # Accumulate the inverse variance weights
+        coeff = count.astype(weight.dtype)
+
+        self.stack.weight[:] += (coeff**2) * tools.invert_no_zero(weight)
+
+    def process_finish(self):
+        """Normalize the stacked weights and return the result."""
+        # Set tags
+        self.stack.attrs["tag"] = self.tag
+        self.stack.attrs["lsd"] = np.array(self.lsd_list)
+
+        # Normalize the accumulated variances by the total
+        # number of samples squared and then invert to get the
+        # final stack weights
+        norm = self.stack.nsample[:].astype(np.float32)
+        self.stack.weight[:] = tools.invert_no_zero(self.stack.weight[:]) * (norm**2)
+
+        # Redistribute over frequencies before saving
+        self.stack.redistribute("freq")
 
         return self.stack
 
