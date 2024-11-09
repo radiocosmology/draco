@@ -566,6 +566,16 @@ def window_generalised(x, window="nuttall"):
     return np.where((x >= 0) & (x <= 1), w, 0)
 
 
+def window_generalised_2d(x1, x2, window="nuttall"):
+    """Generalised 2D window. See `window_generalised` for more information."""
+    w1 = window_generalised(x1, window=window)
+    w2 = window_generalised(x2, window=window)
+
+    win = np.outer(w1, w2)
+
+    return np.sign(win) * (np.abs(win) ** 0.5)
+
+
 def arPLS_1d(y, mask=None, lam=1e2, end_frac=1e-2, max_iter=1000):
     r"""Use arPLS to estimate a signal baseline.
 
