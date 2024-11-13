@@ -977,7 +977,28 @@ class SiderealStacker(task.SingleTask):
 
 
 class SiderealStackerFT(task.SingleTask):
-    """Stack sidereal days in filtered delay-m space."""
+    """Stack sidereal days by iteratively filtering in delay-m space.
+
+    Try to compensate for complex masking by averaging different sets
+    of modes separately.
+
+    Attributes
+    ----------
+    tag : str
+        The tag to give the stack. Default is "stack".
+    weight: str
+        The weighting to use in the stack. Only "uniform"
+        is currently supported. Default is "uniform".
+    tau_cut : list[float]
+        List of delay cutoffs to apply, in usec. Cuts in delay
+        and m are paired, so only the cuts up to the length of
+        the shorter of `tau_cut` and `m_cut` are appplied.
+    m_cut : list[int]
+        List of m-space cutoffs to apply. See `tau_cut`.
+    bl_cut : bool, optional
+        Whether to include an additional cut in m for each east-west
+        baseline length. Default is False.
+    """
 
     stack = None
 
@@ -986,13 +1007,26 @@ class SiderealStackerFT(task.SingleTask):
 
     tau_cut = config.list_type(float, default=[0.1, 0.2, 0.4, 0.6, 0.8])
     m_cut = config.list_type(int, default=[10, 20, 40, 60, 80])
+    bl_cut = config.Property(proptype=bool, default=False)
 
     def setup(self, observer):
-        """Set the local observer properties."""
+        """Set the local observers position.
+
+        Parameters
+        ----------
+        observer : :class:`caput.time.Observer`
+            An Observer object holding the baseline layout of the telescope.
+        """
         self.observer = io.get_telescope(observer)
 
     def process(self, data):
-        """Stack sidereal days."""
+        """Add a sidereal day to the stack.
+
+        Parameters
+        ----------
+        data : containers.SiderealStream
+            Individual sidereal day to add to stack.
+        """
         # Check that the input container is of the correct type
         if (self.stack is not None) and not isinstance(data, type(self.stack)):
             raise TypeError(
@@ -1018,11 +1052,13 @@ class SiderealStackerFT(task.SingleTask):
                 ds[:] = 0
 
             self.lsd_list = []
-            self.windows = self._set_windows()
 
             # Create the fftw class to perform ffts
             shape = (len(self.stack.freq), len(self.stack.ra))
             self.fft = fftw.FFT(shape, self.stack.vis.dtype)
+
+            # Set the fourier windows
+            self._set_windows()
 
         input_lsd = _ensure_list(data.attrs.get("lsd", data.attrs.get("csd")))
         self.log.info(f"Adding LSD {input_lsd} to stack.")
@@ -1032,20 +1068,6 @@ class SiderealStackerFT(task.SingleTask):
         self.accumulate_vis(data.vis[:], data.weight[:])
         # Update the stacked weights
         self.accumulate_weight(data.weight[:])
-
-    def _set_windows(self):
-        """Get fourier domain windows."""
-        tau, mmodes = self._fftaxes()
-
-        windows = []
-
-        for tc, mc in zip(self.tau_cut, self.m_cut):
-            window = tools.window_generalised_2d(
-                tau / (2 * tc) + 0.5, mmodes / (2 * mc) + 0.5
-            )
-            windows.append(np.ascontiguousarray(window.astype(np.complex64)))
-
-        return windows
 
     def _fftaxes(self):
         """Return the frequency and RA fourier conjugate axes."""
@@ -1057,86 +1079,163 @@ class SiderealStackerFT(task.SingleTask):
 
         return tau, mmodes
 
-    def _ew_fringe_cut(self):
-        """Return the fringe rate based on east-west baseline length."""
-        lam = self.stack.freq[:] * 1e6 / units.c
+    def _set_windows(self):
+        """Get fourier domain windows."""
+        dtype = self.fft.params["dtype"]
+
+        # Windows used for difference EW cylinder separations
+        baselines = self.observer.baselines[:, 0]
+        u = self.observer.u_width
+        # Get rough east-west baseline separations and map to
+        # each individual baseline. This means we only generate
+        # a single extra window for each cylinder separation
+        unique = np.unique(baselines // u)
+        self.ew_map = np.maximum(np.searchsorted(unique * u, baselines) - 1, 0)
+
+        # Convert to fringe rate
+        lam = self.stack.freq[:].max() * 1e6 / units.c
         dec = np.cos(np.deg2rad(self.observer.latitude))
+        frbase = u * lam / dec
 
-        return self.observer.baselines[:, 0] * lam.max() / dec
-
-    def accumulate_vis(self, vis, weight):
-        """Add a day to the stack."""
-        # Get the FFT axes
+        # Get the fourier complement axes
         tau, mmodes = self._fftaxes()
         taumax = tau.max()
 
-        # Get a cutoff in m for each baseline, if it is
-        # larger than the largest existing cutoff
-        mcut_per_bl = np.maximum(self._ew_fringe_cut(), np.max(self.m_cut))
+        # Windows used for all baselines
+        windows = []
+        for tc, mc in zip(self.tau_cut, self.m_cut):
+            window = tools.window_generalised_2d(
+                tau / (2 * tc) + 0.5, mmodes / (2 * mc) + 0.5
+            )
+            windows.append(np.ascontiguousarray(window.astype(dtype)))
 
-        # Use uniform weighting and a consistent dtype
-        count = (weight[:].local_array > 0.0).astype(vis.dtype)
-        scount = self.stack.nsample[:].local_array.astype(vis.dtype)
+        # Make a dictionary with each set of unique baseline windows
+        # Each list must be a unique object
+        self.windows = {int(k): [*windows] for k in unique}
 
-        # Get the local selections and initialize a buffer
-        # to store the accumulated data on each loop
-        dvis = vis[:].local_array
-        stack_vis = self.stack.vis[:].local_array
-        vavg = np.zeros_like(stack_vis[:, 0])
+        # No need to compute the extra baseline-dependent windows
+        if not self.bl_cut:
+            return
 
-        # Loop over baselines
-        # TODO: should there be a reshape before looping?
-        for ii, gind in vis.enumerate(1):
-            vi = dvis[:, ii]
-            vsi = stack_vis[:, ii]
+        # Windows used for individual baselines
+        for index in unique:
+            window = tools.window_generalised_2d(
+                tau / (2 * taumax) + 0.5, mmodes / (2 * index * frbase) + 0.5
+            )
+            self.windows[int(index)].append(np.ascontiguousarray(window.astype(dtype)))
 
-            ci = count[:, ii]
-            sci = scount[:, ii]
+    def _get_uniform_norms(self, w1, w2):
+        """Filter and set norms for each filtering window.
 
-            # Get an extra window for each baseline
-            bl_win = tools.window_generalised_2d(
-                tau / (2 * taumax) + 0.5, mmodes / (2 * mcut_per_bl[gind]) + 0.5
+        This is useful since the uniform norms are
+        baseline-independent, so we reduce the number of ffts
+        by nearly a factor of two.
+        """
+        norms = {k: [] for k in self.windows.keys()}
+
+        # Compute norms for each unique set of windows
+        for index, windows in self.windows.items():
+            for window in windows:
+                c1lp = self.fft.fftwindow(w1, window)
+                c2lp = self.fft.fftwindow(w2, window)
+
+                norms[index].append(
+                    (
+                        tools.invert_no_zero(c1lp),
+                        tools.invert_no_zero(c2lp),
+                        tools.invert_no_zero(c1lp + c2lp),
+                    )
+                )
+
+        return norms
+
+    def accumulate_vis(self, vis, weight):
+        """Add a day to the stack."""
+        if self.weight == "uniform":
+            # Use uniform weighting, ignoring fully-masked baselines
+            # Average number of samples ignoring masked baselines. This should
+            # be constant over all baselines
+            nsample = self.stack.nsample[:].local_array
+
+            scount = np.sum(nsample, axis=1).astype(np.float64)
+            scount *= tools.invert_no_zero(np.sum(nsample > 0, axis=1))
+            count = np.any(weight.local_array > 0.0, axis=1)
+
+            # Cast to valid types for the fft
+            count = count.astype(self.fft.params["dtype"])
+            scount = scount.astype(self.fft.params["dtype"])
+
+            # Calculate the norms to use when filtering. The number of samples
+            # should be constant across baselines, so just do this once
+            norms = self._get_uniform_norms(count, scount)
+
+            # Create some flag and normalization parameters which only need
+            # to be done once
+            count_mi = tools.invert_no_zero(np.sum(count, axis=-1, keepdims=True))
+            scount_mi = tools.invert_no_zero(np.sum(scount, axis=-1, keepdims=True))
+            cnorm = tools.invert_no_zero(count + scount)
+        else:
+            raise NotImplementedError(
+                "Only `uniform` weighting is supported at the moment"
             )
 
-            # Loop over windows, applying each one iteratively
-            for window in (*self.windows, bl_win):
-                vilp = self.fft.fftwindow(vi * ci, window)
-                wilp = self.fft.fftwindow(ci, window)
+        # Skip baselines where _both_ datasets are fully masked
+        bl_mask = np.all(nsample == 0, axis=(0, 2))
+        bl_mask &= np.all(weight.local_array == 0, axis=(0, 2))
 
-                vsilp = self.fft.fftwindow(vsi * sci, window)
-                wsilp = self.fft.fftwindow(sci, window)
+        # Get the local selections and initialize buffers
+        # to store the accumulated data on each loop
+        dvis = vis.local_array
+        stack_vis = self.stack.vis[:].local_array
+        # Use buffers here so we can subtract in place without
+        # modifying the actual visibility arrays
+        vbuf = np.empty_like(stack_vis[:, 0], order="C")
+        vibuf = np.empty_like(vbuf)
+        vsibuf = np.empty_like(vibuf)
 
-                # Accumulate the weighted mean
-                vavg += (vilp + vsilp) * tools.invert_no_zero(wilp + wsilp)
+        # Loop over baselines
+        for ii, gind in vis.enumerate(1):
+            if bl_mask[ii]:
+                continue
+
+            # Place data in the buffers
+            vibuf[:] = dvis[:, ii]
+            vsibuf[:] = stack_vis[:, ii]
+            vbuf[:] = 0.0
+
+            # Get the windows and norms
+            wi = self.windows[self.ew_map[gind]]
+            ni = norms[self.ew_map[gind]]
+
+            # Loop over windows and norms, applying each one iteratively
+            for window, norm in zip(wi, ni):
+                # Low-pass filter
+                vilp = self.fft.fftwindow(vibuf * count, window)
+                vsilp = self.fft.fftwindow(vsibuf * scount, window)
+                # Accumulate the mean
+                vbuf += (vilp + vsilp) * norm[2]
                 # Normalize and subtract the individual filtered visibilities
-                vilp *= tools.invert_no_zero(wilp)
-                vsilp *= tools.invert_no_zero(wsilp)
-                # Don't subtract in-place here because we don't want to
-                # modify the actual datasets
-                # TODO: is it faster to do a copy and subtract in-place here?
-                vi = vi - vilp
-                vsi = vsi - vsilp
+                vilp *= norm[0]
+                vibuf -= vilp
+                vsilp *= norm[1]
+                vsibuf -= vsilp
 
             # Get the weighted mean of the residuals. This is subtracted
             # before averaging and then the average of the means is re-added
             # to minimize residual effects of masking
-            vi_ms = np.sum(vi * ci, axis=-1, keepdims=True)
-            vi_ms *= tools.invert_no_zero(np.sum(ci, axis=-1, keepdims=True))
-
-            vsi_ms = np.sum(vsi * sci, axis=-1, keepdims=True)
-            vsi_ms *= tools.invert_no_zero(np.sum(sci, axis=-1, keepdims=True))
+            vi_ms = count_mi * np.sum(vibuf * count, axis=-1, keepdims=True)
+            vsi_ms = scount_mi * np.sum(vsibuf * scount, axis=-1, keepdims=True)
 
             # Get the mean of the residuals after filtering. If the
             # filtering was done correctly, this should be noise-like
-            vres = (vi - vi_ms) * ci + (vsi - vsi_ms) * sci
-            vres *= tools.invert_no_zero(ci + sci)
+            vres = ((vibuf - vi_ms) * count + (vsibuf - vsi_ms) * scount) * cnorm
             vres += np.mean([vi_ms, vsi_ms], axis=0)
 
-            # Update the stacked vis and clear buffer
-            # TODO: is there a faster way to do this without using the buffer?
-            flag = (ci > 0.0) | (sci > 0.0)
-            stack_vis[:, ii] = flag * (vavg + vres)
-            vavg[:] = 0.0
+            # Update the stacked vis
+            stack_vis[:, ii] = vbuf + vres
+
+        # Apply the final mask
+        stack_vis[:] *= ((count > 0.0) | (scount > 0.0))[:, np.newaxis]
 
     def accumulate_weight(self, weight):
         """Accumulate the weights."""
