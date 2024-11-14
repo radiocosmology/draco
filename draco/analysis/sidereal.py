@@ -998,6 +998,9 @@ class SiderealStackerFT(task.SingleTask):
     bl_cut : bool, optional
         Whether to include an additional cut in m for each east-west
         baseline length. Default is False.
+    down_mix: bool
+        Down mix the visibility prior to interpolation using the fringe rate
+        of a source at zenith.  This is un-done after stacking.
     """
 
     stack = None
@@ -1007,7 +1010,9 @@ class SiderealStackerFT(task.SingleTask):
 
     tau_cut = config.list_type(float, default=[0.1, 0.2, 0.4, 0.6, 0.8])
     m_cut = config.list_type(int, default=[10, 20, 40, 60, 80])
+
     bl_cut = config.Property(proptype=bool, default=False)
+    down_mix = config.Property(proptype=bool, default=False)
 
     def setup(self, observer):
         """Set the local observers position.
@@ -1036,7 +1041,7 @@ class SiderealStackerFT(task.SingleTask):
 
         data.redistribute("stack")
 
-        # If this our first sidereal day, then initialize the container
+        # If this our first sidereal day, initialize the container
         # that will hold the stack
         if self.stack is None:
             self.stack = containers.empty_like(data)
@@ -1053,12 +1058,19 @@ class SiderealStackerFT(task.SingleTask):
 
             self.lsd_list = []
 
-            # Create the fftw class to perform ffts
+            # Create the fftw class to perform fast ffts
             shape = (len(self.stack.freq), len(self.stack.ra))
             self.fft = fftw.FFT(shape, self.stack.vis.dtype)
 
-            # Set the fourier windows
+            # Set fourier windows
             self._set_windows()
+
+            # Set base fringestopping phase
+            if self.down_mix:
+                self._set_normalised_phase_and_baselines()
+                self.stack.attrs["downmixed"] = True
+            else:
+                self.stack.attrs["downmixed"] = False
 
         input_lsd = _ensure_list(data.attrs.get("lsd", data.attrs.get("csd")))
         self.log.info(f"Adding LSD {input_lsd} to stack.")
@@ -1079,50 +1091,72 @@ class SiderealStackerFT(task.SingleTask):
 
         return tau, mmodes
 
+    def _set_normalised_phase_and_baselines(self):
+        """Fringestop phase per frequency for a baseline of length 1.
+
+        East-west baseline lengths are set for available baselines."
+
+        The phase for a given baseline length is phase ** bl_length.
+        """
+        u = self.stack.freq[:, np.newaxis] * 1e6 / units.c
+        dec = np.cos(np.deg2rad(self.observer.latitude))
+
+        omega = -2.0 * np.pi * u * dec
+        phi = np.deg2rad(self.stack.ra)[np.newaxis]
+
+        # Set the fringestopping phase for a length-1 baseline
+        self.phase = np.exp(-1.0j * omega * phi, dtype=self.fft.params["dtype"])
+
+        prod = self.stack.prodstack
+        sel = self.observer.feedmap[(prod["input_a"], prod["input_b"])]
+
+        # Select east-west lengths of available baselines
+        self.baselines = self.observer.baselines[sel, 0]
+
     def _set_windows(self):
         """Get fourier domain windows."""
-        dtype = self.fft.params["dtype"]
-
         # Windows used for difference EW cylinder separations
         baselines = self.observer.baselines[:, 0]
-        u = self.observer.u_width
+        uw = self.observer.u_width
+        dec = np.cos(np.deg2rad(self.observer.latitude))
         # Get rough east-west baseline separations and map to
         # each individual baseline. This means we only generate
         # a single extra window for each cylinder separation
-        unique = np.unique(baselines // u)
-        self.ew_map = np.maximum(np.searchsorted(unique * u, baselines) - 1, 0)
+        unique = np.unique(baselines // uw)
+        self.ew_map = np.maximum(np.searchsorted(unique * uw, baselines) - 1, 0)
 
-        # Convert to fringe rate
-        lam = self.stack.freq[:].max() * 1e6 / units.c
-        dec = np.cos(np.deg2rad(self.observer.latitude))
-        frbase = u * lam / dec
+        # Make a dictionary with each set of unique baseline windows
+        # Each list must be a unique object
+        self.windows = {int(k): [] for k in unique}
 
-        # Get the fourier complement axes
+        # Fourier complement axes
         tau, mmodes = self._fftaxes()
-        taumax = tau.max()
+        dtype = self.fft.params["dtype"]
 
         # Windows used for all baselines
-        windows = []
         for tc, mc in zip(self.tau_cut, self.m_cut):
             window = tools.window_generalised_2d(
                 tau / (2 * tc) + 0.5, mmodes / (2 * mc) + 0.5
             )
-            windows.append(np.ascontiguousarray(window.astype(dtype)))
-
-        # Make a dictionary with each set of unique baseline windows
-        # Each list must be a unique object
-        self.windows = {int(k): [*windows] for k in unique}
+            # Add this window to every unique baseline list
+            for windows in self.windows.values():
+                windows.append(np.ascontiguousarray(window.astype(dtype)))
 
         # No need to compute the extra baseline-dependent windows
         if not self.bl_cut:
             return
 
+        # Fringe cutoff per cylinder separation
+        frbase = uw * self.stack.freq[:].max() * 1e6 / (dec * units.c)
+        taumax = tau.max()
+
         # Windows used for individual baselines
-        for index in unique:
+        for index, windows in self.windows.items():
+            mc = np.maximum(np.max(self.m_cut), index * frbase)
             window = tools.window_generalised_2d(
-                tau / (2 * taumax) + 0.5, mmodes / (2 * index * frbase) + 0.5
+                tau / (2 * taumax) + 0.5, mmodes / (2 * mc) + 0.5
             )
-            self.windows[int(index)].append(np.ascontiguousarray(window.astype(dtype)))
+            windows.append(np.ascontiguousarray(window.astype(dtype)))
 
     def _get_uniform_norms(self, w1, w2):
         """Filter and set norms for each filtering window.
@@ -1131,6 +1165,10 @@ class SiderealStackerFT(task.SingleTask):
         baseline-independent, so we reduce the number of ffts
         by nearly a factor of two.
         """
+        # Ensure that the weights have correct type
+        w1 = w1.astype(self.fft.params["dtype"], copy=False)
+        w2 = w2.astype(self.fft.params["dtype"], copy=False)
+
         norms = {k: [] for k in self.windows.keys()}
 
         # Compute norms for each unique set of windows
@@ -1156,83 +1194,93 @@ class SiderealStackerFT(task.SingleTask):
             # Average number of samples ignoring masked baselines. This should
             # be constant over all baselines
             nsample = self.stack.nsample[:].local_array
-
-            scount = np.sum(nsample, axis=1).astype(np.float64)
+            # Cast to valid types for the fft. This should also be
+            # faster when multiplying with visibilities
+            scount = np.sum(nsample, axis=1).astype(self.fft.params["dtype"])
             scount *= tools.invert_no_zero(np.sum(nsample > 0, axis=1))
-            count = np.any(weight.local_array > 0.0, axis=1)
 
-            # Cast to valid types for the fft
+            count = np.any(weight.local_array > 0.0, axis=1)
             count = count.astype(self.fft.params["dtype"])
-            scount = scount.astype(self.fft.params["dtype"])
+
+            # Get normalization parameters which only need
+            # to be computed once
+            count_mi = tools.invert_no_zero(np.sum(count, axis=-1, keepdims=True))
+            scount_mi = tools.invert_no_zero(np.sum(scount, axis=-1, keepdims=True))
+            cnorm = tools.invert_no_zero(count + scount)
 
             # Calculate the norms to use when filtering. The number of samples
             # should be constant across baselines, so just do this once
             norms = self._get_uniform_norms(count, scount)
-
-            # Create some flag and normalization parameters which only need
-            # to be done once
-            count_mi = tools.invert_no_zero(np.sum(count, axis=-1, keepdims=True))
-            scount_mi = tools.invert_no_zero(np.sum(scount, axis=-1, keepdims=True))
-            cnorm = tools.invert_no_zero(count + scount)
         else:
             raise NotImplementedError(
                 "Only `uniform` weighting is supported at the moment"
             )
 
-        # Skip baselines where _both_ datasets are fully masked
-        bl_mask = np.all(nsample == 0, axis=(0, 2))
-        bl_mask &= np.all(weight.local_array == 0, axis=(0, 2))
+        # Skip baselines where the new array is masked
+        bl_mask = np.all(weight.local_array == 0, axis=(0, 2))
 
         # Get the local selections and initialize buffers
         # to store the accumulated data on each loop
-        dvis = vis.local_array
+        data_vis = vis.local_array
         stack_vis = self.stack.vis[:].local_array
-        # Use buffers here so we can subtract in place without
-        # modifying the actual visibility arrays
-        vbuf = np.empty_like(stack_vis[:, 0], order="C")
-        vibuf = np.empty_like(vbuf)
-        vsibuf = np.empty_like(vibuf)
+
+        # Use a temporary arrays to speed up the FFTs and
+        # avoid making some direct modifications to the
+        # actual visibility arrays
+        vavg = np.empty_like(stack_vis[:, 0], order="C")
+        dvtmp = np.empty_like(vavg)
+        svtmp = np.empty_like(vavg)
 
         # Loop over baselines
         for ii, gind in vis.enumerate(1):
             if bl_mask[ii]:
                 continue
 
-            # Place data in the buffers
-            vibuf[:] = dvis[:, ii]
-            vsibuf[:] = stack_vis[:, ii]
-            vbuf[:] = 0.0
+            # Clear the temporary output array
+            vavg[:] = 0.0
 
-            # Get the windows and norms
+            # Fill the temp arrays
+            dvtmp[:] = data_vis[:, ii]
+            svtmp[:] = stack_vis[:, ii]
+
+            if self.down_mix:
+                # Down mix the data array. If this is true,
+                # expect that the stack array is already
+                # down mixed and will be corrected at the end
+                dvtmp[:] *= np.power(self.phase, self.baselines[gind])
+
+            # Get the windows and norms for this baseline
             wi = self.windows[self.ew_map[gind]]
             ni = norms[self.ew_map[gind]]
 
             # Loop over windows and norms, applying each one iteratively
             for window, norm in zip(wi, ni):
                 # Low-pass filter
-                vilp = self.fft.fftwindow(vibuf * count, window)
-                vsilp = self.fft.fftwindow(vsibuf * scount, window)
+                vilp = self.fft.fftwindow(dvtmp * count, window)
+                vsilp = self.fft.fftwindow(svtmp * scount, window)
                 # Accumulate the mean
-                vbuf += (vilp + vsilp) * norm[2]
-                # Normalize and subtract the individual filtered visibilities
+                vavg += (vilp + vsilp) * norm[2]
+
+                # Normalize and subtract the individual filtered visibilities,
                 vilp *= norm[0]
-                vibuf -= vilp
+                dvtmp -= vilp
+
                 vsilp *= norm[1]
-                vsibuf -= vsilp
+                svtmp -= vsilp
 
             # Get the weighted mean of the residuals. This is subtracted
             # before averaging and then the average of the means is re-added
             # to minimize residual effects of masking
-            vi_ms = count_mi * np.sum(vibuf * count, axis=-1, keepdims=True)
-            vsi_ms = scount_mi * np.sum(vsibuf * scount, axis=-1, keepdims=True)
+            vi_ms = np.sum(dvtmp * count, axis=-1, keepdims=True) * count_mi
+            vsi_ms = np.sum(svtmp * scount, axis=-1, keepdims=True) * scount_mi
 
             # Get the mean of the residuals after filtering. If the
             # filtering was done correctly, this should be noise-like
-            vres = ((vibuf - vi_ms) * count + (vsibuf - vsi_ms) * scount) * cnorm
+            vres = ((dvtmp - vi_ms) * count + (svtmp - vsi_ms) * scount) * cnorm
             vres += np.mean([vi_ms, vsi_ms], axis=0)
 
-            # Update the stacked vis
-            stack_vis[:, ii] = vbuf + vres
+            # Add the mean residuals to the stack
+            stack_vis[:, ii] = vavg + vres
 
         # Apply the final mask
         stack_vis[:] *= ((count > 0.0) | (scount > 0.0))[:, np.newaxis]
@@ -1263,6 +1311,13 @@ class SiderealStackerFT(task.SingleTask):
         # final stack weights
         norm = self.stack.nsample[:].astype(np.float32)
         self.stack.weight[:] = tools.invert_no_zero(self.stack.weight[:]) * (norm**2)
+
+        # Undo the fringestopping that was applied
+        if self.down_mix:
+            phase = self.phase.conj()
+
+            for ii, gind in self.stack.vis[:].enumerate(1):
+                self.stack.vis[:, ii] *= np.power(phase, self.baselines[gind])
 
         # Redistribute over frequencies before saving
         self.stack.redistribute("freq")
