@@ -2314,23 +2314,59 @@ class DelayCutoff(ContainerBase):
         return self.index_map["el"]
 
 
-class DelaySpectrum(ContainerBase):
-    """Container for a delay power spectrum."""
+class DelayContainer(ContainerBase):
+    """A container with a delay axis."""
 
-    _axes = ("baseline", "delay")
+    _axes = ("delay",)
 
-    _dataset_spec = {
+    @property
+    def delay(self) -> np.ndarray:
+        """The delay axis in microseconds."""
+        return self.index_map["delay"]
+
+
+class DelaySpectrum(DelayContainer):
+    """Container for a delay power spectrum.
+
+    Notes
+    -----
+    A note about definitions: for a dataset with a frequency axis, the corresponding
+    delay spectrum is the result of Fourier transforming in frequency, while the delay
+    power spectrum is obtained by taking the squared magnitude of each element of the
+    delay spectrum, and then usually averaging over some other axis. Our unfortunate
+    convention is to store a delay power spectrum in a `DelaySpectrum` container, and
+    store a delay spectrum in a :py:class:`~draco.core.containers.DelayTransform`
+    container.
+    """
+
+    _axes = ("baseline", "sample")
+
+    _dataset_spec: ClassVar = {
         "spectrum": {
             "axes": ["baseline", "delay"],
             "dtype": np.float64,
             "initialise": True,
             "distributed": True,
             "distributed_axis": "baseline",
-        }
+        },
+        "spectrum_samples": {
+            "axes": ["sample", "baseline", "delay"],
+            "dtype": np.float64,
+            "initialise": False,
+            "distributed": True,
+            "distributed_axis": "baseline",
+        },
+        "spectrum_mask": {
+            "axes": ["baseline"],
+            "dtype": bool,
+            "initialise": False,
+            "distributed": True,
+            "distributed_axis": "baseline",
+        },
     }
 
-    def __init__(self, weight_boost=1.0, *args, **kwargs):
-        super(DelaySpectrum, self).__init__(*args, **kwargs)
+    def __init__(self, *args, weight_boost=1.0, sample=1, **kwargs):
+        super().__init__(*args, sample=sample, **kwargs)
         self.attrs["weight_boost"] = weight_boost
 
     @property
@@ -2340,16 +2376,20 @@ class DelaySpectrum(ContainerBase):
 
     @property
     def weight_boost(self):
-        """Get the weight boost attributes."""
+        """Get the weight boost factor.
+
+        If set, this factor was used to set the assumed noise when computing the
+        spectrum.
+        """
         return self.attrs["weight_boost"]
 
     @property
     def freq(self):
-        """Get the frequency axis."""
-        return self.index_map["freq"]
+        """Get the frequency axis of the input data."""
+        return self.attrs["freq"]
 
 
-class DelayTransform(ContainerBase):
+class DelayTransform(DelayContainer):
     """Container for a delay spectrum.
 
     Notes
@@ -2358,9 +2398,9 @@ class DelayTransform(ContainerBase):
     description of the difference between `DelayTransform` and `DelaySpectrum`.
     """
 
-    _axes = ("baseline", "sample", "delay")
+    _axes = ("baseline", "sample")
 
-    _dataset_spec = {
+    _dataset_spec: ClassVar = {
         "spectrum": {
             "axes": ["baseline", "sample", "delay"],
             "dtype": np.complex128,
@@ -2371,7 +2411,7 @@ class DelayTransform(ContainerBase):
     }
 
     def __init__(self, weight_boost=1.0, *args, **kwargs):
-        super(DelayTransform, self).__init__(*args, **kwargs)
+        super().__init__(*args, **kwargs)
         self.attrs["weight_boost"] = weight_boost
 
     @property
@@ -2381,14 +2421,18 @@ class DelayTransform(ContainerBase):
 
     @property
     def weight_boost(self):
-        """Get the weight boost attributes."""
+        """Get the weight boost factor.
+
+        If set, this factor was used to set the assumed noise when computing the
+        spectrum.
+        """
         return self.attrs["weight_boost"]
 
     @property
     def freq(self):
-        """Get the frequency axis."""
-        return self.index_map["freq"]
-
+        """Get the frequency axis of the input data."""
+        return self.attrs["freq"]
+        
 
 class SpatialDelayCube(ContainerBase):
     """Container for a data in (delay,kx,ky) domain."""
