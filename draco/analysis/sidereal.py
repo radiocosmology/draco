@@ -9,16 +9,16 @@ into  :class:`SiderealGrouper`, then feeding that into
 :class:`SiderealStacker` if you want to combine the different days.
 """
 
+import inspect
 
 import numpy as np
 import scipy.linalg as la
-
 from caput import config, mpiarray, tod
 from cora.util import units
 
+from ..core import containers, io, task
+from ..util import regrid, tools
 from .transform import Regridder
-from ..core import task, containers, io
-from ..util import tools
 
 
 class SiderealGrouper(task.SingleTask):
@@ -43,7 +43,7 @@ class SiderealGrouper(task.SingleTask):
     min_day_length = config.Property(proptype=float, default=0.10)
 
     def __init__(self):
-        super(SiderealGrouper, self).__init__()
+        super().__init__()
 
         self._timestream_list = []
         self._current_lsd = None
@@ -110,8 +110,8 @@ class SiderealGrouper(task.SingleTask):
             self._current_lsd = lsd_end
 
             return tstream_all
-        else:
-            return None
+
+        return None
 
     def process_finish(self):
         """Return the final sidereal day.
@@ -147,6 +147,9 @@ class SiderealGrouper(task.SingleTask):
         # Add attributes for the LSD and a tag for labelling saved files
         ts.attrs["tag"] = "lsd_%i" % lsd
         ts.attrs["lsd"] = lsd
+
+        # Clear the timestream list since these days have already been processed
+        self._timestream_list = []
 
         return ts
 
@@ -270,11 +273,9 @@ class SiderealRegridder(Regridder):
 
         # Construct a complex sinusoid whose frequency
         # is equal to each baselines fringe rate
-        phase = mask * np.exp(
+        return mask * np.exp(
             -1.0j * omega[:, :, np.newaxis] * dphi[np.newaxis, np.newaxis, :]
         )
-
-        return phase
 
 
 def _search_nearest(x, xeval):
@@ -283,13 +284,11 @@ def _search_nearest(x, xeval):
     index_previous = np.maximum(0, index_next - 1)
     index_next = np.minimum(x.size - 1, index_next)
 
-    index = np.where(
+    return np.where(
         np.abs(xeval - x[index_previous]) < np.abs(xeval - x[index_next]),
         index_previous,
         index_next,
     )
-
-    return index
 
 
 class SiderealRegridderNearest(SiderealRegridder):
@@ -480,6 +479,270 @@ class SiderealRegridderCubic(SiderealRegridder):
         return interp_grid, interp_vis, interp_weight
 
 
+class SiderealRebinner(SiderealRegridder):
+    """Regrid a sidereal day of data using a binning method.
+
+    Assign a fraction of each time sample to the nearest RA bin based
+    on the propotion of the time bin that overlaps the RA bin.
+
+    Tracks the weighted effective centre of RA bin so that a centring
+    correction can be applied afterwards. A correction option is
+    implemented in `RebinGradientCorrection`.
+
+    Parameters
+    ----------
+    weight: str (default: "inverse_variance")
+        The weighting to use in the stack.  Either `uniform` or `inverse_variance`.
+    """
+
+    weight = config.enum(["uniform", "inverse_variance"], default="inverse_variance")
+
+    def process(self, data):
+        """Rebin the sidereal day.
+
+        Parameters
+        ----------
+        data : containers.TimeStream
+            Timestream data for the day (must have a `LSD` attribute).
+
+        Returns
+        -------
+        sdata : containers.SiderealStream
+            The regularly gridded sidereal timestream.
+        """
+        import scipy.sparse as ss
+
+        self.log.info(
+            f"Rebinning LSD {data.attrs['lsd']:.0f} with {self.weight} weighting."
+        )
+
+        # Determine output container based on input container
+        container_map = {
+            containers.TimeStream: containers.SiderealStream,
+            containers.HybridVisStream: containers.HybridVisStream,
+        }
+
+        # We need to be able to check for subclasses in the container map
+        for cls in inspect.getmro(data.__class__):
+            OutputContainer = container_map.get(cls)
+
+            if OutputContainer is not None:
+                break
+
+        if OutputContainer is None:
+            raise TypeError(
+                f"No valid container mapping.\nGot {data.__class__}.\n"
+                f"Mappings exist for {list(container_map.keys())}."
+            )
+
+        # Redistribute if needed too
+        data.redistribute("freq")
+
+        # Fetch which LSD this is to set bounds
+        self.start = data.attrs["lsd"]
+        self.end = self.start + 1
+
+        # Convert data timestamps into LSDs
+        if "ra" in data.index_map:
+            timestamp_lsd = self.start + data.ra / 360.0
+        else:
+            timestamp_lsd = self.observer.unix_to_lsd(data.time)
+
+        # Create the output container
+        sdata = OutputContainer(ra=self.samples, axes_from=data, attrs_from=data)
+
+        # Initialize any missing datasets
+        alt_dspec = {}
+        for name, dataset in data.datasets.items():
+            if name not in sdata.datasets:
+                alt_dspec[name] = dataset.attrs["axis"]
+                sdata.add_dataset(name)
+
+        sdata.add_dataset("effective_ra")
+        sdata.add_dataset("nsample")
+
+        sdata.redistribute("freq")
+
+        # Get view of data
+        weight = data.weight[:].local_array
+        vis_data = data.vis[:].local_array
+        alt_data = {
+            name: data.datasets[name][:].local_array for name in alt_dspec.keys()
+        }
+
+        # Get the median time sample width
+        width_t = np.median(np.abs(np.diff(timestamp_lsd)))
+        # Create the regular grid of RA samples
+        target_lsd = np.linspace(self.start, self.end, self.samples, endpoint=False)
+        # Create the rebinning matrix
+        R = regrid.rebin_matrix(timestamp_lsd, target_lsd, width_t=width_t)
+        Rt = ss.csr_array(R.T)
+        # The square is used to calculate rebinned weights
+        Rtsq = Rt.power(2)
+
+        # dereference arrays before loop
+        sera = sdata.datasets["effective_ra"][:].local_array
+        ssw = sdata.weight[:].local_array
+        ssv = sdata.vis[:].local_array
+        ssn = sdata.nsample[:].local_array
+        salt = {name: sdata.datasets[name][:].local_array for name in alt_dspec.keys()}
+
+        lookup = {name: nn for nn, name in enumerate(data.vis.attrs["axis"][:-2])}
+
+        # Loop over all but the last two axes.
+        # For an input TimeStream, this will be a loop over freq.
+        # For an input HybridVisStream, this will be a loop over (pol, freq, ew).
+        for ind in np.ndindex(*vis_data.shape[:-2]):
+
+            w = weight[ind]
+            m = (w > 0.0).astype(np.float32)
+            if self.weight == "uniform":
+                v = tools.invert_no_zero(w)
+                w = m
+            else:
+                v = w
+
+            # Normalisation for rebinned datasets
+            norm = tools.invert_no_zero(w @ Rt)
+
+            # Weighted rebin of the visibilities
+            ssv[ind] = norm * ((vis_data[ind] * w) @ Rt)
+
+            # Count number of samples
+            ssn[ind] = m @ Rt
+
+            # Weighted rebin of other datasets
+            for name, axis in alt_dspec.items():
+                aind = tuple(
+                    [
+                        ind[lookup[ax]] if ax in lookup else slice(None)
+                        for ii, ax in enumerate(axis)
+                    ]
+                )
+
+                salt[name][aind] = norm * ((alt_data[name][aind] * w) @ Rt)
+
+            # Weighted rebin of the effective RA
+            effective_lsd = norm * ((timestamp_lsd * w) @ Rt)
+            sera[ind] = 360 * (effective_lsd - self.start)
+
+            # Rebin the weights
+            rvar = v @ Rtsq
+            ssw[ind] = tools.invert_no_zero(norm**2 * rvar)
+
+            # Correct the effective ra where weights are zero. This
+            # is required to avoid discontinuities
+            imask = np.nonzero(ssw[ind] == 0.0)
+            sera[ind][imask] = sdata.ra[imask[-1]]
+
+        return sdata
+
+
+class RebinGradientCorrection(task.SingleTask):
+    """Apply a linear gradient correction to shift RA samples to bin centres.
+
+    Requires a sidereal day with full sidereal coverage to calculate a local
+    gradient for each RA bin. The dataset value at the RA bin centre is
+    interpolated based on the local gradient and difference between bin centre
+    and effective bin centre.
+
+    If the rebinned dataset has full sidereal coverage, it can be used to
+    create the gradient.
+    """
+
+    def setup(self, sstream_ref: containers.SiderealStream) -> None:
+        """Provide the dataset to use in the gradient calculation.
+
+        This dataset must have complete sidereal coverage.
+
+        Parameters
+        ----------
+        sstream_ref
+            Reference SiderealStream
+        """
+        self.sstream_ref = sstream_ref
+
+    def process(self, sstream: containers.SiderealStream) -> containers.SiderealStream:
+        """Apply the gradient correction to the input dataset.
+
+        Parameters
+        ----------
+        sstream
+            sidereal day to apply a correction to
+
+        Returns
+        -------
+        sstream
+            Input sidereal day with gradient correction applied, if needed
+        """
+        self.sstream_ref.redistribute("freq")
+        sstream.redistribute("freq")
+
+        # Allows a normal sidereal stream to pass through this task.
+        # Helpful for creating generic configs
+        try:
+            era = sstream.effective_ra[:].local_array
+        except KeyError:
+            self.log.info(
+                f"Dataset of type ({type(sstream)}) does not have an effective "
+                "ra dataset. No correction will be applied."
+            )
+            return sstream
+
+        try:
+            # If the reference dataset has an effective ra dataset, use this
+            # when calculating the gradient. This could be true if the reference
+            # and target datasets are the same
+            ref_ra = self.sstream_ref.effective_ra[:].local_array
+        except KeyError:
+            # Use fixed ra, which should be regularly sampled
+            ref_ra = self.sstream_ref.ra
+
+        vis = sstream.vis[:].local_array
+        weight = sstream.weight[:].local_array
+
+        ref_vis = self.sstream_ref.vis[:].local_array
+        ref_weight = self.sstream_ref.weight[:].local_array
+
+        # Iterate over frequencies and baselines for memory
+        for fi in range(vis.shape[0]):
+            # Skip if entirely masked already
+            if not np.any(weight[fi]):
+                continue
+
+            # We need to track the full time mask applied to each
+            # baseline. Because the `effective_ra` dataset is baseline
+            # dependent, the gradient could end up producing a slightly
+            # baseline dependent mask
+            fmask = np.zeros(weight.shape[-1], dtype=bool)
+
+            for vi in range(vis.shape[1]):
+                # Skip if entire baseline is masked
+                if not np.any(weight[fi, vi]):
+                    continue
+
+                # Depends on whether the effective ra has baseline dependence
+                rra = ref_ra[fi, vi] if ref_ra.ndim > 1 else ref_ra
+                # Calculate the vis gradient at the reference RA points
+                mask = ref_weight[fi, vi] == 0.0
+                grad, mask = regrid.grad_1d(ref_vis[fi, vi], rra, mask, period=360.0)
+
+                # Apply the correction to estimate the sample value at the
+                # RA bin centre
+                vis[fi, vi] -= grad * (era[fi, vi] - sstream.ra)
+                # Keep track of the time mask being applied
+                fmask |= mask
+
+            # Zero any weights that could not be corrected for at least
+            # one baseline
+            weight[fi] *= (~fmask).astype(weight.dtype)[np.newaxis]
+
+        # Delete the effective ra dataset since it is not needed anymore
+        del sstream["effective_ra"]
+
+        return sstream
+
+
 class SiderealStacker(task.SingleTask):
     """Take in a set of sidereal days, and stack them up.
 
@@ -515,6 +778,13 @@ class SiderealStacker(task.SingleTask):
         sdata : containers.SiderealStream
             Individual sidereal day to add to stack.
         """
+        # Check that the input container is of the correct type
+        if (self.stack is not None) and not isinstance(sdata, type(self.stack)):
+            raise TypeError(
+                f"type(sdata) (={type(sdata)}) does not match "
+                f"type(stack) (={type(self.stack)})."
+            )
+
         sdata.redistribute("freq")
 
         # Get the LSD (or CSD) label out of the input's attributes.
@@ -542,6 +812,30 @@ class SiderealStacker(task.SingleTask):
             ):
                 self.stack.add_dataset("sample_variance")
 
+            # Create a slice into the weight dataset that will allow it
+            # to be broadcasted against the vis dataset.
+            wax = sdata.weight.attrs["axis"]
+
+            self.weight_slice = {}
+            self.weight_slice["vis"] = get_slice_to_broadcast(
+                wax, sdata.vis.attrs["axis"]
+            )
+
+            # Initialize any missing datasets, which will include effective_ra.
+            self.additional_datasets = []
+            for name, dataset in sdata.datasets.items():
+                if name not in self.stack.datasets:
+                    self.log.info(f"Creating {name} dataset in the sidereal stack.")
+                    self.stack.add_dataset(name)
+                    self.additional_datasets.append(name)
+
+                    # Create a slice into the weight dataset that will allow it
+                    # to be broadcasted against the additional dataset.
+                    self.weight_slice[name] = get_slice_to_broadcast(
+                        wax, dataset.attrs["axis"]
+                    )
+
+            # Now that we have all datasets, redistribute over frequency.
             self.stack.redistribute("freq")
 
             # Initialize all datasets to zero.
@@ -553,55 +847,64 @@ class SiderealStacker(task.SingleTask):
             # Keep track of the sum of squared weights
             # to perform Bessel's correction at the end.
             if self.with_sample_variance:
-                self.sum_coeff_sq = np.zeros_like(self.stack.weight[:].view(np.ndarray))
+                self.sum_coeff_sq = mpiarray.zeros(
+                    self.stack.weight[:].local_shape,
+                    axis=0,
+                    comm=self.stack.comm,
+                    dtype=np.float32,
+                )
 
         # Accumulate
-        self.log.info("Adding to stack LSD(s): %s" % input_lsd)
+        self.log.info(f"Adding LSD {input_lsd} to stack with {self.weight} weighting.")
 
         self.lsd_list += input_lsd
 
+        # Extract weight dataset
+        weight = sdata.weight[:]
+
+        # Determine if the input sidereal stream is itself a stack over days
         if "nsample" in sdata.datasets:
             # The input sidereal stream is already a stack
             # over multiple sidereal days. Use the nsample
             # dataset as the weight for the uniform case.
-            count = sdata.nsample[:]
+            # Make sure to also zero any samples whose weight
+            # is zero in case other tasks did not also zero
+            # the nsample dataset.
+            count = sdata.nsample[:] * (weight > 0.0)
         else:
             # The input sidereal stream contains a single
-            # sidereal day.  Use a boolean array that
+            # sidereal day. Use a boolean array that
             # indicates a non-zero weight dataset as
             # the weight for the uniform case.
-            dtype = self.stack.nsample.dtype
-            count = (sdata.weight[:] > 0.0).astype(dtype)
-
-        # Determine the weights to be used in the average.
-        if self.weight == "uniform":
-            coeff = count.astype(np.float32)
-            # Accumulate the variances in the stack.weight dataset.
-            self.stack.weight[:] += (coeff**2) * tools.invert_no_zero(sdata.weight[:])
-        else:
-            coeff = sdata.weight[:]
-            # We are using inverse variance weights.  In this case,
-            # we accumulate the inverse variances in the stack.weight
-            # dataset.  Do that directly to avoid an unneccessary
-            # division in the more general expression above.
-            self.stack.weight[:] += sdata.weight[:]
+            count = (weight > 0.0).astype(self.stack.nsample.dtype)
 
         # Accumulate the total number of samples.
         self.stack.nsample[:] += count
 
-        # Below we will need to normalize by the current sum of coefficients.
-        # Can be found in the stack.nsample dataset for uniform case or
-        # the stack.weight dataset for inverse variance case.
         if self.weight == "uniform":
-            sum_coeff = self.stack.nsample[:].astype(np.float32)
+            coeff = count.astype(np.float32)
+            self.stack.weight[:] += (coeff**2) * tools.invert_no_zero(weight)
+            sum_coeff = self.stack.nsample[:]
+
         else:
+            coeff = weight
+            self.stack.weight[:] += weight
             sum_coeff = self.stack.weight[:]
 
         # Calculate weighted difference between the new data and the current mean.
-        delta_before = coeff * (sdata.vis[:] - self.stack.vis[:])
+        wslc = self.weight_slice["vis"]
+
+        delta_before = coeff[wslc] * (sdata.vis[:] - self.stack.vis[:])
+        inv_sum_coeff = tools.invert_no_zero(sum_coeff)
 
         # Update the mean.
-        self.stack.vis[:] += delta_before * tools.invert_no_zero(sum_coeff)
+        self.stack.vis[:] += delta_before * inv_sum_coeff[wslc]
+
+        # Update any additional datasets.  Note this will include the effective_ra.
+        for name in self.additional_datasets:
+            wslc = self.weight_slice[name]
+            delta = coeff[wslc] * (sdata[name][:] - self.stack[name][:])
+            self.stack[name][:] += delta * inv_sum_coeff[wslc]
 
         # The calculations below are only required if the sample variance was requested
         if self.with_sample_variance:
@@ -627,19 +930,23 @@ class SiderealStacker(task.SingleTask):
         self.stack.attrs["tag"] = self.tag
         self.stack.attrs["lsd"] = np.array(self.lsd_list)
 
-        # For uniform weighting, normalize the accumulated variances by the total
-        # number of samples squared and then invert to finalize stack.weight.
         if self.weight == "uniform":
+            # For uniform weighting, normalize the accumulated variances by the total
+            # number of samples squared and then invert to finalize stack.weight.
             norm = self.stack.nsample[:].astype(np.float32)
-            self.stack.weight[:] = (
-                tools.invert_no_zero(self.stack.weight[:]) * norm**2
-            )
+            self.stack.weight[:] = tools.invert_no_zero(self.stack.weight[:]) * norm**2
+
+        else:
+            # For inverse variance weighting without rebinning,
+            # additional normalization is not required.
+            norm = None
 
         # We need to normalize the sample variance by the sum of coefficients.
         # Can be found in the stack.nsample dataset for uniform case
         # or the stack.weight dataset for inverse variance case.
         if self.with_sample_variance:
-            if self.weight != "uniform":
+
+            if norm is None:
                 norm = self.stack.weight[:]
 
             # Perform Bessel's correction.  In the case of
@@ -647,9 +954,24 @@ class SiderealStacker(task.SingleTask):
             norm = norm - self.sum_coeff_sq * tools.invert_no_zero(norm)
 
             # Normalize the sample variance.
+            wslc = (None,) + self.weight_slice["vis"]
             self.stack.sample_variance[:] *= np.where(
                 self.stack.nsample[:] > 1, tools.invert_no_zero(norm), 0.0
-            )[np.newaxis, :]
+            )[wslc]
+
+        if "effective_ra" in self.stack.datasets:
+            # For samples where there is no data, the effective ra should
+            # be the same as the grid ra
+            weight = self.stack.weight[:].local_array
+            era = self.stack.effective_ra[:].local_array
+
+            # Broadcast the RA array to match the shape of a single frequency,
+            # allowing us to select grid ra values with a 2D mask
+            grid_ra = np.broadcast_to(self.stack.ra, (*era.shape[1:],))
+
+            for fi in range(era.shape[0]):
+                mask = weight[fi] == 0.0
+                era[fi][mask] = grid_ra[mask]
 
         return self.stack
 
@@ -689,6 +1011,13 @@ class SiderealStackerMatch(task.SingleTask):
         sdata : containers.SiderealStream
             Individual sidereal day to stack up.
         """
+        # Check that the input container is of the correct type
+        if (self.stack is not None) and not isinstance(sdata, type(self.stack)):
+            raise TypeError(
+                f"type(sdata) (={type(sdata)}) does not match "
+                f"type(stack) (={type(self.stack)})."
+            )
+
         sdata.redistribute("freq")
 
         if self.stack is None:
@@ -696,12 +1025,17 @@ class SiderealStackerMatch(task.SingleTask):
 
             self.stack = containers.empty_like(sdata)
             self.stack.redistribute("freq")
-            self.stack.vis[:] = 0.0
-            self.stack.weight[:] = 0.0
+
+            # Initialise all datasets to zero
+            for ds in self.stack.datasets.values():
+                ds[:] = 0
 
             self.count = 0
-            self.Ni_s = np.zeros(
-                (sdata.weight.local_shape[0], sdata.weight.local_shape[2])
+            self.Ni_s = mpiarray.zeros(
+                (sdata.weight.shape[0], sdata.weight.shape[2]),
+                axis=0,
+                comm=sdata.comm,
+                dtype=np.float64,
             )
             self.Vm = []
             self.lsd_list = []
@@ -743,6 +1077,16 @@ class SiderealStackerMatch(task.SingleTask):
         # We need to keep the projection vector until the end
         self.Vm.append(v)
 
+        if "effective_ra" in self.stack.datasets:
+            # Track the effective ra bin centres. We're using the averaged
+            # weights here, so this generally isn't optimal
+            delta = Ni_d * (sdata.effective_ra[:] - self.stack.effective_ra[:])
+            # Update the mean effective ra using the mean of the normalized weights
+            sum_weight = tools.invert_no_zero(self.stack.weight[:]) * self.Ni_s**2
+            self.stack.effective_ra[:] += delta * tools.invert_no_zero(
+                sum_weight.mean(axis=1)
+            )
+
         # Get the LSD label out of the data (resort to using a CSD if it's
         # present). If there's no label just use a place holder and stack
         # anyway.
@@ -769,14 +1113,14 @@ class SiderealStackerMatch(task.SingleTask):
         Va = np.array(self.Vm).transpose(1, 2, 0)
 
         # Dereference for efficiency to avoid MPI calls in the loop
-        sv = self.stack.vis[:]
-        sw = self.stack.weight[:]
+        sv = self.stack.vis[:].local_array
+        sw = self.stack.weight[:].local_array
 
         # Loop over all frequencies to do the deconvolution. The loop is done because
         # of the difficulty mapping the operations we would want to do into what numpy
         # allows
         for lfi in range(self.stack.vis[:].local_shape[0]):
-            Ni_s = self.Ni_s[lfi]
+            Ni_s = self.Ni_s.local_array[lfi]
             N_s = tools.invert_no_zero(Ni_s)
             V = Va[lfi] * N_s[:, np.newaxis]
 
@@ -794,11 +1138,8 @@ class SiderealStackerMatch(task.SingleTask):
 
         # Remove the full day median to set a well defined normalisation, otherwise the
         # mean is undefined
-        stack_median = (
-            np.median(sv.view(np.ndarray).real, axis=2)
-            + np.median(sv.view(np.ndarray).imag, axis=2) * 1.0j
-        )
-        sv[:] -= stack_median[:, :, np.newaxis]
+        stack_median = np.median(sv.real, axis=2) + np.median(sv.imag, axis=2) * 1.0j
+        sv -= stack_median[:, :, np.newaxis]
 
         # Set the full LSD list
         self.stack.attrs["lsd"] = np.array(self.lsd_list)
@@ -806,9 +1147,41 @@ class SiderealStackerMatch(task.SingleTask):
         return self.stack
 
 
+def get_slice_to_broadcast(weight_axis, dataset_axis):
+    """Generate a slice that will broadcast the weights against some other dataset.
+
+    Parameters
+    ----------
+    weight_axis : list of str
+        Names of the axes in the weights.
+    dataset_axis : list of str
+        Names of the axes in the dataset.
+
+    Returns
+    -------
+    slc : list containing either slice(None) or None
+        Slice that when applied to the weights will make them broadcastable
+        against the other dataset.
+    """
+    # The number of dimensions in the weights must be equal or less than
+    # the number of dimensions in the dataset.
+    assert len(weight_axis) <= len(dataset_axis)
+
+    # The weights cannot have any additional axes that are not present in the dataset.
+    assert all(wax in dataset_axis for wax in weight_axis)
+
+    # The axes that are shared between the weights and the other dataset
+    # must be in the same order.
+    common_axis = [ax for ax in dataset_axis if ax in weight_axis]
+    assert all(wax == dax for wax, dax in zip(weight_axis, common_axis))
+
+    # If all checks passed, then return the slice to broadcast.
+    return tuple([slice(None) if ax in weight_axis else None for ax in dataset_axis])
+
+
 def _ensure_list(x):
     if hasattr(x, "__iter__"):
-        y = [xx for xx in x]
+        y = list(x)
     else:
         y = [x]
 

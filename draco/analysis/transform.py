@@ -2,15 +2,17 @@
 
 This includes grouping frequencies and products to performing the m-mode transform.
 """
+
 from typing import Optional, Union, overload
 
 import numpy as np
+import scipy.linalg as la
+from caput import config, mpiarray, pipeline
+from caput.tools import invert_no_zero
 from numpy.lib.recfunctions import structured_to_unstructured
-from caput import mpiarray, config
 
-from ..core import containers, task, io
-from ..util import tools
-from ..util import regrid
+from ..core import containers, io, task
+from ..util import regrid, tools
 
 
 class FrequencyRebin(task.SingleTask):
@@ -118,16 +120,18 @@ class CollateProducts(task.SingleTask):
             Telescope object to use
         """
         if self.weight not in ["natural", "uniform", "inverse_variance"]:
-            KeyError("Do not recognize weight = %s" % self.weight)
+            KeyError(f"Do not recognize weight = {self.weight!s}")
 
         self.telescope = io.get_telescope(tel)
 
         # Precalculate the stack properties
         self.bt_stack = np.array(
             [
-                (tools.cmap(upp[0], upp[1], self.telescope.nfeed), 0)
-                if upp[0] <= upp[1]
-                else (tools.cmap(upp[1], upp[0], self.telescope.nfeed), 1)
+                (
+                    (tools.cmap(upp[0], upp[1], self.telescope.nfeed), 0)
+                    if upp[0] <= upp[1]
+                    else (tools.cmap(upp[1], upp[0], self.telescope.nfeed), 1)
+                )
                 for upp in self.telescope.uniquepairs
             ],
             dtype=[("prod", "<u4"), ("conjugate", "u1")],
@@ -152,12 +156,10 @@ class CollateProducts(task.SingleTask):
         self.bt_rev["conjugate"] = np.where(feedmask, self.telescope.feedconj[triu], 0)
 
     @overload
-    def process(self, ss: containers.SiderealStream) -> containers.SiderealStream:
-        ...
+    def process(self, ss: containers.SiderealStream) -> containers.SiderealStream: ...
 
     @overload
-    def process(self, ss: containers.TimeStream) -> containers.TimeStream:
-        ...
+    def process(self, ss: containers.TimeStream) -> containers.TimeStream: ...
 
     def process(self, ss):
         """Select and reorder the products.
@@ -226,14 +228,10 @@ class CollateProducts(task.SingleTask):
         # Check if frequencies are already ordered
         no_redistribute = freq_ind == list(range(len(ss.freq[:])))
 
-        # Add gain dataset.
-        # if 'gain' in ss.datasets:
-        #     sp.add_dataset('gain')
-
         # If frequencies are mapped across ranks, we have to redistribute so all
         # frequencies and products are on each rank
         raxis = "freq" if no_redistribute else ["ra", "time"]
-        self.log.info(f"Distributing across '{raxis}' axis")
+        self.log.debug(f"Distributing across '{raxis}' axis")
         ss.redistribute(raxis)
         sp.redistribute(raxis)
 
@@ -241,11 +239,6 @@ class CollateProducts(task.SingleTask):
         sp.vis[:] = 0.0
         sp.weight[:] = 0.0
         sp.input_flags[:] = ss.input_flags[rev_input_ind, :]
-
-        # The gain transfer below fails when distributed over multiple nodes,
-        # have to debug.
-        # if 'gain' in ss.datasets:
-        #     sp.gain[:] = ss.gain[freq_ind][:, rev_input_ind, :]
 
         # Infer number of products that went into each stack
         if self.weight != "inverse_variance":
@@ -319,7 +312,7 @@ class CollateProducts(task.SingleTask):
 
         # Copy over any additional datasets that need to be frequency filtered
         containers.copy_datasets_filter(
-            ss, sp, "freq", freq_ind, ["input", "prod", "stack"], allow_distributed=True
+            ss, sp, "freq", freq_ind, ["input", "prod", "stack"]
         )
 
         # Switch back to frequency distribution. This will have minimal
@@ -374,12 +367,10 @@ class SelectFreq(task.SingleTask):
         # Construct the frequency channel selection
         if self.freq_physical:
             newindex = sorted(
-                set(
-                    [
-                        np.argmin(np.abs(freq_map["centre"] - freq))
-                        for freq in self.freq_physical
-                    ]
-                )
+                {
+                    np.argmin(np.abs(freq_map["centre"] - freq))
+                    for freq in self.freq_physical
+                }
             )
 
         elif self.channel_range and (len(self.channel_range) <= 3):
@@ -418,7 +409,9 @@ class SelectFreq(task.SingleTask):
         # Copy over datasets. If the dataset has a frequency axis,
         # then we only copy over the subset.
         if isinstance(data, containers.ContainerBase):
-            containers.copy_datasets_filter(data, newdata, "freq", newindex)
+            containers.copy_datasets_filter(
+                data, newdata, "freq", newindex, copy_without_selection=True
+            )
         else:
             newdata.vis[:] = data.vis[newindex]
             newdata.weight[:] = data.weight[newindex]
@@ -431,6 +424,70 @@ class SelectFreq(task.SingleTask):
         newdata.redistribute("freq")
 
         return newdata
+
+
+class GenerateSubBands(SelectFreq):
+    """Generate multiple sub-bands from an input container.
+
+    Attributes
+    ----------
+    sub_band_spec : dict
+        Dictionary of the format {"band_a": {"channel_range": [0, 64]}, ...}
+        where each entry is a separate sub-band with the key providing the tag
+        that will be used to describe the sub-band and the value providing a
+        dictionary that can contain any of the config properties used by the
+        SelectFreq task to downselect along the frequency axis to obtain the
+        sub-band from the input container.
+    """
+
+    sub_band_spec = config.Property(proptype=dict)
+
+    def setup(self, data):
+        """Cache the data product that will be sub-divided along the frequency axis.
+
+        Parameters
+        ----------
+        data : container
+            Any container with a freq axis.
+        """
+        self.default_parameters = {
+            key: val.default
+            for key, val in SelectFreq.__dict__.items()
+            if isinstance(val, config.Property)
+        }
+
+        self.data = data
+        self.base_tag = self.data.attrs.get("tag", None)
+
+        self.sub_bands = list(self.sub_band_spec.keys())[::-1]
+
+    def process(self):
+        """Select the next sub-band from the container that was provided on setup.
+
+        Returns
+        -------
+        sub : container
+            Same type of container as was provided on setup,
+            downselected along the frequency axis.
+        """
+        if len(self.sub_bands) == 0:
+            raise pipeline.PipelineStopIteration
+
+        tag = self.sub_bands.pop()
+        self._set_freq_selection(**self.sub_band_spec[tag])
+
+        if self.base_tag is not None:
+            self.data.attrs["tag"] = "_".join([self.base_tag, tag])
+        else:
+            self.data.attrs["tag"] = tag
+
+        return super().process(self.data)
+
+    def _set_freq_selection(self, **kwargs):
+        """Set properties of the SelectFreq base class to choose the next sub-band."""
+        for key, default in self.default_parameters.items():
+            value = kwargs[key] if key in kwargs else default
+            setattr(self, key, value)
 
 
 class MModeTransform(task.SingleTask):
@@ -693,9 +750,7 @@ class SiderealMModeResample(task.group_tasks(MModeTransform, MModeInverseTransfo
 def _make_ssarray(mmodes, n=None):
     # Construct an array of sidereal time streams from m-modes
     marray = _unpack_marray(mmodes, n=n)
-    ssarray = np.fft.ifft(marray * marray.shape[-1], axis=-1)
-
-    return ssarray
+    return np.fft.ifft(marray * marray.shape[-1], axis=-1)
 
 
 def _unpack_marray(mmodes, n=None):
@@ -717,7 +772,7 @@ def _unpack_marray(mmodes, n=None):
         mmax_minus = np.amin(((ntimes - 1) // 2, mmax_minus))
 
     # Create array to contain mmodes
-    marray = np.zeros(shape + (ntimes,), dtype=np.complex128)
+    marray = np.zeros((*shape, ntimes), dtype=np.complex128)
     # Add the DC bin
     marray[..., 0] = mmodes[0, 0]
     # Add all m-modes up to mmax_minus
@@ -989,15 +1044,20 @@ class SelectPol(task.SingleTask):
         YY_ind = list(polcont.index_map["pol"]).index("YY")
 
         for name, dset in polcont.datasets.items():
+            out_dset = outcont.datasets[name]
             if "pol" not in dset.attrs["axis"]:
-                outcont.datasets[name][:] = dset[:]
+                out_dset[:] = dset[:]
             else:
                 pol_axis_pos = list(dset.attrs["axis"]).index("pol")
 
                 sl = tuple([slice(None)] * pol_axis_pos)
-                outcont.datasets[name][sl + (0,)] = dset[sl + (XX_ind,)]
-                outcont.datasets[name][sl + (0,)] += dset[sl + (YY_ind,)]
-                outcont.datasets[name][:] *= 0.5
+                out_dset[(*sl, 0)] = dset[(*sl, XX_ind)]
+                out_dset[(*sl, 0)] += dset[(*sl, YY_ind)]
+
+                if np.issubdtype(out_dset.dtype, np.integer):
+                    out_dset[:] //= 2
+                else:
+                    out_dset[:] *= 0.5
 
         return outcont
 
@@ -1204,8 +1264,11 @@ class MixData(task.SingleTask):
             # Helpful routine to get the data dset depending on the type
             if isinstance(data, containers.SiderealStream):
                 return data.vis
-            elif isinstance(data, containers.RingMap):
+
+            if isinstance(data, containers.RingMap):
                 return data.map
+
+            return None
 
         if self._data_ind >= len(self.data_coeff):
             raise RuntimeError(
@@ -1221,7 +1284,7 @@ class MixData(task.SingleTask):
             self.mixed_data.weight[:] = 0.0
 
         # Validate the types are the same
-        if type(self.mixed_data) != type(data):
+        if type(self.mixed_data) is not type(data):
             raise TypeError(
                 f"type(data) (={type(data)}) must match "
                 f"type(data_stack) (={type(self.type)}"
@@ -1265,3 +1328,374 @@ class MixData(task.SingleTask):
         self.mixed_data = None
 
         return data
+
+
+class Downselect(io.SelectionsMixin, task.SingleTask):
+    """Apply axis selections to a container.
+
+    Apply slice or `np.take` operations across multiple axes of a container.
+    The selections are applied to every dataset.
+
+    If a dataset is distributed, there must be at least one axis not included
+    in the selections.
+    """
+
+    def process(self, data: containers.ContainerBase) -> containers.ContainerBase:
+        """Apply downselections to the container.
+
+        Parameters
+        ----------
+        data
+            Container to process
+
+        Returns
+        -------
+        out
+            Container of same type as the input with specific axis selections.
+            Any datasets not included in the selections will not be initialized.
+        """
+        sel = {}
+
+        # Parse axes with selections and reformat to use only
+        # the axis name
+        for k in self.selections:
+            *axis, type_ = k.split("_")
+            axis_name = "_".join(axis)
+
+            ax_sel = self._sel.get(f"{axis_name}_sel")
+
+            if type_ == "map":
+                # Use index map to get the correct axis indices
+                imap = list(data.index_map[axis_name])
+                ax_sel = [imap.index(x) for x in ax_sel]
+
+            if ax_sel is not None:
+                sel[axis_name] = ax_sel
+
+        # Figure out the axes for the new container and
+        # Apply the downselections to each axis index_map
+        output_axes = {
+            ax: mpiarray._apply_sel(data.index_map[ax], ax_sel, 0)
+            for ax, ax_sel in sel.items()
+        }
+        # Create the output container without initializing any datasets.
+        out = data.__class__(
+            axes_from=data, attrs_from=data, skip_datasets=True, **output_axes
+        )
+        containers.copy_datasets_filter(data, out, selection=sel)
+
+        return out
+
+
+class ReduceBase(task.SingleTask):
+    """Apply a weighted reduction operation across specific axes.
+
+    This is non-functional without overriding the `reduction` method.
+
+    There must be at least one axis not included in the reduction.
+
+    Attributes
+    ----------
+    axes : list
+        Axis names to apply the reduction to
+    dataset : str
+        Dataset name to reduce.
+    weighting : str
+        Which type of weighting to use, if applicable. Options are "none",
+        "masked", or "weighted"
+    """
+
+    axes = config.Property(proptype=list)
+    dataset = config.Property(proptype=str)
+    weighting = config.enum(["none", "masked", "weighted"], default="none")
+
+    _op = None
+
+    def process(self, data: containers.ContainerBase) -> containers.ContainerBase:
+        """Downselect and apply the reduction operation to the data.
+
+        Parameters
+        ----------
+        data
+            Dataset to process.
+
+        Returns
+        -------
+        out
+            Dataset of same type as input with axes reduced. Any datasets
+            which are not included in the reduction list will not be initialized,
+            other than weights.
+        """
+        out = self._make_output_container(data)
+        out.add_dataset(self.dataset)
+
+        # Get the dataset
+        ds = data.datasets[self.dataset]
+        original_ax_id = ds.distributed_axis
+
+        # Get the axis indices to apply the operation over
+        ds_axes = list(ds.attrs["axis"])
+
+        # Get the new axis to distribute over
+        if ds_axes[original_ax_id] not in self.axes:
+            new_ax_id = original_ax_id
+        else:
+            ax_priority = [
+                x for _, x in sorted(zip(ds.shape, ds_axes)) if x not in self.axes
+            ]
+            if not ax_priority:
+                raise ValueError(
+                    "Could not find a valid axis to redistribute. At least one "
+                    "axis must be omitted from filtering."
+                )
+            # Get the longest axis
+            new_ax_id = ds_axes.index(ax_priority[-1])
+
+        new_ax_name = ds_axes[new_ax_id]
+
+        # Redistribute the dataset to the target axis
+        ds.redistribute(new_ax_id)
+        # Redistribute the output container (group) to the target axis
+        # Since this is a container, distribute based on axis name
+        # rather than index
+        out.redistribute(new_ax_name)
+
+        # Get the weights
+        if hasattr(data, "weight"):
+            # The weights should be distributed over the same axis as the array,
+            # even if they don't share all the same axes
+            w_axes = list(data.weight.attrs["axis"])
+            new_weight_ax = w_axes.index(new_ax_name)
+            weight = data.weight[:].redistribute(new_weight_ax)
+            # Insert a size 1 axis for each missing axis in the weights
+            wslc = [slice(None) if ax in w_axes else None for ax in ds_axes]
+            weight = weight.local_array[tuple(wslc)]
+        else:
+            self.log.info("No weights available. Using equal weighting.")
+            wslc = None
+            weight = np.ones(ds.local_shape, ds.dtype)
+
+        # Apply the reduction, ensuring that the weights have the correct dimension
+        weight = np.broadcast_to(weight, ds.local_shape, subok=False)
+        apply_over = tuple([ds_axes.index(ax) for ax in self.axes if ax in ds_axes])
+
+        reduced, reduced_weight = self.reduction(
+            ds[:].local_array[:], weight, apply_over
+        )
+
+        # Add the reduced data and redistribute the container back to the
+        # original axis
+        out[self.dataset][:] = reduced[:]
+
+        if hasattr(out, "weight"):
+            if wslc is None:
+                out.weight[:] = reduced_weight
+            else:
+                owslc = [ws if ws is not None else 0 for ws in wslc]
+                out.weight[:] = reduced_weight[tuple(owslc)]
+
+        # Redistribute bcak to the original axis, again using the axis name
+        out.redistribute(ds_axes[original_ax_id])
+
+        return out
+
+    def _make_output_container(
+        self, data: containers.ContainerBase
+    ) -> containers.ContainerBase:
+        """Create the output container."""
+        # For a collapsed axis, the meaning of the index map will depend on
+        # the reduction being done, and can be meaningless. The first value
+        # of the relevant index map is chosen as the default to provide
+        # some meaning to the index map regardless of the reduction operation
+        # or reduction axis involved
+        output_axes = {ax: np.array([data.index_map[ax][0]]) for ax in self.axes}
+
+        # Create the output container without initializing any datasets.
+        # Add some extra metadata about which axes were reduced and which
+        # datasets are meaningful
+        out = data.__class__(
+            axes_from=data, attrs_from=data, skip_datasets=True, **output_axes
+        )
+        out.attrs["reduced"] = True
+        out.attrs["reduction_axes"] = np.array(self.axes)
+        out.attrs["reduced_dataset"] = self.dataset
+        out.attrs["reduction_op"] = self._op
+
+        # Initialize the weight dataset
+        if "weight" in data.datasets:
+            out.add_dataset("weight")
+        elif "vis_weight" in data.datasets:
+            out.add_dataset("vis_weight")
+
+        return out
+
+    def reduction(
+        self, arr: np.ndarray, weight: np.ndarray, axis: tuple
+    ) -> tuple[np.ndarray, np.ndarray]:
+        """Overwrite to implement the reductino operation."""
+        raise NotImplementedError
+
+
+class ReduceVar(ReduceBase):
+    """Take the weighted variance of a container."""
+
+    _op = "variance"
+
+    def reduction(self, arr, weight, axis):
+        """Apply a weighted variance."""
+        if self.weighting == "none":
+            v = np.var(arr, axis=axis, keepdims=True)
+
+            return v, np.ones_like(v)
+
+        if self.weighting == "masked":
+            weight = (weight > 0).astype(weight.dtype)
+
+        # Calculate the inverted sum of the weights. This is used
+        # more than once
+        ws = np.sum(weight, axis=axis, keepdims=True)
+        iws = invert_no_zero(ws)
+        # Get the weighted mean
+        mu = np.sum(weight * arr, axis=axis, keepdims=True) * iws
+        # Get the weighted variance
+        v = np.sum(weight * (arr - mu) ** 2, axis=axis, keepdims=True) * iws
+
+        return v, ws
+
+
+class ReduceChisq(ReduceBase):
+    """Calculate the chi-squared per degree of freedom.
+
+    Assumes that the visibilities are uncorrelated noise
+    whose inverse variance is given by the weight dataset.
+    """
+
+    _op = "chisq_per_dof"
+
+    def reduction(self, arr, weight, axis):
+        """Apply a chi-squared calculation."""
+        # Get the total number of unmasked samples
+        num = np.maximum(np.sum(weight > 0, axis=axis, keepdims=True) - 1, 0)
+
+        # Calculate the inverted sum of the weights
+        iws = invert_no_zero(np.sum(weight, axis=axis, keepdims=True))
+
+        # Get the weighted mean
+        mu = np.sum(weight * arr, axis=axis, keepdims=True) * iws
+
+        # Get the chi-squared per degree of freedom
+        v = np.sum(
+            weight * np.abs(arr - mu) ** 2, axis=axis, keepdims=True
+        ) * invert_no_zero(num)
+
+        return v, num
+
+
+class HPFTimeStream(task.SingleTask):
+    """High pass filter a timestream.
+
+    This is done by solving for a low-pass filtered version of the timestream and then
+    subtracting it from the original.
+
+    Parameters
+    ----------
+    tau
+        Timescale in seconds to filter out fluctuations below.
+    pad
+        Implicitly pad the timestream with this many multiples of tau worth of zeros.
+        This is used to mitigate edge effects. The default is 2.
+    window
+        Use a Blackman window when determining the low-pass filtered timestream. When
+        applied this approximately doubles the length of the timescale, which is only
+        crudely corrected for.
+    prior
+        This should be approximately the size of the large scale fluctuations that we
+        will use as a regulariser.
+    """
+
+    tau = config.Property(proptype=float)
+    pad = config.Property(proptype=float, default=2)
+    window = config.Property(proptype=bool, default=True)
+
+    prior = config.Property(proptype=float, default=1e2)
+
+    def process(self, tstream: containers.TODContainer) -> containers.TODContainer:
+        """High pass filter a time stream.
+
+        Parameters
+        ----------
+        tstream
+            A TOD container that also implements DataWeightContainer.
+
+        Returns
+        -------
+        filtered_tstream
+            The high-pass filtered time stream.
+        """
+        if not isinstance(tstream, containers.DataWeightContainer):
+            # NOTE: no python intersection type so need to do this for now
+            raise TypeError("Need a DataWeightContainers")
+
+        if "time" != tstream.data.attrs["axis"][-1]:
+            raise TypeError("'time' is not the last axis of the dataset.")
+
+        if tstream.data.shape != tstream.weight.shape:
+            raise ValueError("Data and weights must have the same shape.")
+
+        # Distribute over the first axis
+        tstream.redistribute(tstream.data.attrs["axis"][0])
+
+        tau = 2 * self.tau if self.window else self.tau
+
+        dt = np.diff(tstream.time)
+        if not np.allclose(dt, dt[0], atol=1e-4):
+            self.log.warn(
+                "Samples are not regularly spaced. This might not work super well."
+            )
+
+        total_T = tstream.time[-1] - tstream.time[0] + 2 * tau
+
+        # Calculate the nearest integer multiple of modes based on the total length and
+        # the timescale
+        nmodes = int(np.ceil(total_T / tau))
+
+        # Calculate the conjugate fourier frequencies to use, we don't need to be in the
+        # canonical order as we're going to calculate this exactly via matrices
+        t_freq = np.arange(-nmodes, nmodes) / total_T
+
+        F = np.exp(2.0j * np.pi * tstream.time[:, np.newaxis] * t_freq[np.newaxis, :])
+
+        if self.window:
+            F *= np.blackman(2 * nmodes)[np.newaxis, :]
+
+        Fh = F.T.conj().copy()
+
+        dflat = tstream.data[:].view(np.ndarray).reshape(-1, len(tstream.time))
+        wflat = tstream.weight[:].view(np.ndarray).reshape(-1, len(tstream.time))
+
+        Si = np.identity(2 * nmodes) * self.prior**-2
+
+        for ii in range(dflat.shape[0]):
+            d, w = dflat[ii], wflat[ii]
+
+            wsum = w.sum()
+            if wsum == 0:
+                continue
+
+            m = np.sum(d * w) / wsum
+
+            # dirty = Fh @ ((d - m) * w)
+            # Ci = Fh @ (w[:, np.newaxis] * F)
+            d -= m
+            dirty = np.dot(Fh, (d * w))
+            Ci = np.dot(Fh, w[:, np.newaxis] * F)
+            Ci += Si
+
+            f_lpf = la.solve(Ci, dirty, assume_a="pos")
+
+            # As we know the result will be real, split up the matrix multiplication to
+            # guarantee this
+            t_lpf = np.dot(F.real, f_lpf.real) - np.dot(F.imag, f_lpf.imag)
+            d -= t_lpf
+
+        return tstream

@@ -3,13 +3,19 @@
 Miscellaneous tasks should be placed in :py:mod:`draco.core.misc`.
 """
 
-import numpy as np
-from numpy.lib.recfunctions import structured_to_unstructured
+import itertools
+import warnings
 
-from ._fast_tools import _calc_redundancy
+import numpy as np
 
 # Keep this here for compatibility
-from caput.tools import invert_no_zero  # noqa: F401
+from caput.tools import invert_no_zero
+from numpy.lib.recfunctions import structured_to_unstructured
+from scipy import linalg as la
+from scipy.signal import oaconvolve
+from scipy.sparse import dia_array
+
+from ._fast_tools import _calc_redundancy
 
 
 def cmap(i, j, n):
@@ -29,8 +35,8 @@ def cmap(i, j, n):
     """
     if i <= j:
         return (n * (n + 1) // 2) - ((n - i) * (n - i + 1) // 2) + (j - i)
-    else:
-        return cmap(j, i, n)
+
+    return cmap(j, i, n)
 
 
 def icmap(ix, n):
@@ -115,10 +121,10 @@ def find_keys(key_list, keys, require_match=False):
         dct = {kk: ii for ii, kk in enumerate(key_list)}
         index = [dct.get(key) for key in keys]
 
-    if require_match and any([ind is None for ind in index]):
+    if require_match and any(ind is None for ind in index):
         raise ValueError("Could not find all of the keys.")
-    else:
-        return index
+
+    return index
 
 
 def find_inputs(input_index, inputs, require_match=False):
@@ -157,7 +163,7 @@ def find_inputs(input_index, inputs, require_match=False):
         )
 
     if field_to_match not in inputs.dtype.fields:
-        raise ValueError("`inputs` array does not have a `%s` field." % field_to_match)
+        raise ValueError(f"`inputs` array does not have a `{field_to_match!s}` field.")
 
     return find_keys(
         input_index[field_to_match], inputs[field_to_match], require_match=require_match
@@ -220,11 +226,11 @@ def apply_gain(vis, gain, axis=1, out=None, prod_map=None):
         ii, ij = prod_map[pp]
 
         # Fetch the gains
-        gi = gain[gain_vis_slice + (ii,)]
-        gj = gain[gain_vis_slice + (ij,)].conj()
+        gi = gain[(*gain_vis_slice, ii)]
+        gj = gain[(*gain_vis_slice, ij)].conj()
 
         # Apply the gains and save into the output array.
-        out[gain_vis_slice + (pp,)] = vis[gain_vis_slice + (pp,)] * gi * gj
+        out[(*gain_vis_slice, pp)] = vis[(*gain_vis_slice, pp)] * gi * gj
 
     return out
 
@@ -264,10 +270,8 @@ def extract_diagonal(utmat, axis=1):
     slice1 = (np.s_[:],) * (len(utmat.shape) - axis - 1)
 
     # Extract wanted elements with a giant slice
-    sl = slice0 + (diag_ind,) + slice1
-    diag_array = utmat[sl]
-
-    return diag_array
+    sl = (*slice0, diag_ind, *slice1)
+    return utmat[sl]
 
 
 def calculate_redundancy(input_flags, prod_map, stack_index, nstack):
@@ -511,30 +515,260 @@ def window_generalised(x, window="nuttall"):
     ----------
     x : np.ndarray[n]
         Location to evaluate at. Values outside the range 0 to 1 are zero.
-    window : one of {'nuttall', 'blackman_nuttall', 'blackman_harris'}
-        Type of window function to return.
+    window : str
+        Type of window function to return.  Must be one of the following strings:
+        'uniform', 'hann', 'hanning', 'hamming', 'blackman', 'nuttall',
+        'blackman_nuttall', 'blackman_harris', 'triangular', or 'tukey-0.X'.
+        If "tukey-0.X", then 0.X is the fraction of the full window that
+        will be tapered.
 
     Returns
     -------
     w : np.ndarray[n]
         Window function.
     """
-    a_table = {
-        "uniform": np.array([1, 0, 0, 0]),
-        "hann": np.array([0.5, -0.5, 0, 0]),
-        "hanning": np.array([0.5, -0.5, 0, 0]),
-        "hamming": np.array([0.53836, -0.46164, 0, 0]),
-        "blackman": np.array([0.42, -0.5, 0.08, 0]),
-        "nuttall": np.array([0.355768, -0.487396, 0.144232, -0.012604]),
-        "blackman_nuttall": np.array([0.3635819, -0.4891775, 0.1365995, -0.0106411]),
-        "blackman_harris": np.array([0.35875, -0.48829, 0.14128, -0.01168]),
-    }
+    if window == "triangular":
+        w = 1.0 - 2.0 * np.abs(x - 0.5)
 
-    a = a_table[window]
+    elif window.startswith("tukey"):
 
-    t = 2 * np.pi * np.arange(4)[:, np.newaxis] * x[np.newaxis, :]
+        r = float(window.split("-")[1])
+        alpha = 0.5 * r
 
-    w = (a[:, np.newaxis] * np.cos(t)).sum(axis=0)
-    w = np.where((x >= 0) & (x <= 1), w, 0)
+        w = np.ones_like(x)
 
-    return w
+        begin = np.flatnonzero(x < alpha)
+        if begin.size > 0:
+            w[begin] = 0.5 * (1.0 + np.cos(np.pi * (x[begin] - alpha) / alpha))
+
+        end = np.flatnonzero(x >= (1.0 - alpha))
+        if end.size > 0:
+            w[end] = 0.5 * (1.0 + np.cos(np.pi * (x[end] - (1.0 - alpha)) / alpha))
+
+    else:
+        a_table = {
+            "uniform": np.array([1, 0, 0, 0]),
+            "hann": np.array([0.5, -0.5, 0, 0]),
+            "hanning": np.array([0.5, -0.5, 0, 0]),
+            "hamming": np.array([0.53836, -0.46164, 0, 0]),
+            "blackman": np.array([0.42, -0.5, 0.08, 0]),
+            "nuttall": np.array([0.355768, -0.487396, 0.144232, -0.012604]),
+            "blackman_nuttall": np.array(
+                [0.3635819, -0.4891775, 0.1365995, -0.0106411]
+            ),
+            "blackman_harris": np.array([0.35875, -0.48829, 0.14128, -0.01168]),
+        }
+
+        a = a_table[window]
+        t = 2 * np.pi * np.arange(4)[:, np.newaxis] * x[np.newaxis, :]
+        w = (a[:, np.newaxis] * np.cos(t)).sum(axis=0)
+
+    return np.where((x >= 0) & (x <= 1), w, 0)
+
+
+def arPLS_1d(y, mask=None, lam=1e2, end_frac=1e-2, max_iter=1000):
+    r"""Use arPLS to estimate a signal baseline.
+
+    1D implementation of symmetrically reweighted penalized least squares.
+    Solves for a signal baseline in the presence of high power outliers by
+    heavily weighting values below the signal and minimizing the weights
+    of values above the signal.
+
+    Notes
+    -----
+    arPLS solves the following linear system given signal :math: `\mathtt{y}`
+    .. math:: (W + \lambdaD_{d}^{T}D_{d})z = Wy
+    where the weighting function is given by
+    .. math:: w_{i} = (1 + \exp(2\sigma^{-1}(r_{i} - (2\sigma - \mu))))^{-1}
+    where :math:`\mathtt{r_{i}}` is the difference :math:`\mathtt{y_{i} - z_{i}}`
+    and :math:`\mathtt{\mu}` and :math:`\mathtt{\sigma}` are the mean and standard
+    deviation of the negative values in :math:`\mathbf{r}`.
+    The solver runs until `max_iter` iterations, or until the fractional mean
+    change in weights is less than `end_frac`.
+
+    Reference:
+    https://www.sciencedirect.com/science/article/pii/S1090780706002266
+
+
+    Properties
+    ----------
+    y : np.ndarray
+        1D signal array
+    mask : np.ndarray, optional
+        1D boolean array of same length as `y`. Default is None.
+    lam : float, optional
+        Scaling parameter used to control importance of smoothness vs.
+        fit. High value prioritizes smoothness of the baseline estimate.
+        Default is 1e2.
+    end_frac : float, optional
+        Convergeance ratio `norm(delta_w) / norm(w)`.
+    max_iter : int, optional
+        Maximum number of iterations to run, even if the convergance
+        criteria is not met.
+
+    Returns
+    -------
+    z : np.ndarray
+        Baseline estimate of the same shape as `y`
+    """
+    y = np.squeeze(y)
+    if y.ndim != 1:
+        raise ValueError(f"Expected 1D data array - got array with shape {y.shape}")
+
+    N = y.shape[0]
+
+    if mask is None:
+        mask = np.zeros(N, dtype=bool)
+    elif np.all(mask):
+        warnings.warn("Entire dataset is masked.")
+
+        return np.zeros_like(y)
+
+    mask = np.squeeze(mask)
+
+    if mask.ndim != 1:
+        raise ValueError(f"Expected 1D mask array - got array with shape {mask.shape}")
+
+    # Construct second-order difference matrix
+    D = np.array([[1, -2, 1]]).T.repeat(N - 1, axis=1)
+    D = dia_array((D, [-2, -1, 0]), shape=(N, N - 2))
+    Hp = lam * D @ D.T
+
+    # Create the banded smoothness matrix and weights matrix
+    H = np.ones((3, N), dtype=np.float64)
+    W = np.zeros_like(H)
+
+    # Fill the lower banded matrix
+    for i in range(H.shape[0]):
+        H[i, : N - i] = Hp.diagonal(i)
+
+    # Initialize weights to one
+    W[0] = 1.0
+
+    # Get the maximum exponential to avoid runtime warnings
+    maxpwr = np.log(np.finfo(y.dtype).max)
+
+    for _ in range(max_iter):
+        # Ignore masked values
+        W[:, mask] = 0.0
+        # Extract the actual weights. W is a 3xN matrix to match
+        # the banded shape of H, all off-diagonal elements are zero
+        w = W[0]
+
+        z = la.solveh_banded(H + W, w * y, lower=True)
+
+        # Get the difference between the signal and the baseline estimate,
+        # and compute the mean and std where unmasked data is less than zero
+        d = y - z
+        dn = d[(d < 0) & ~mask]
+        m = np.mean(dn)
+        s = np.std(dn)
+
+        # Adjust weights based on the criteria discussed in the paper
+        pwr = 2 * (d - ((2 * s) - m)) * invert_no_zero(s)
+        pwr = np.clip(pwr, -maxpwr, maxpwr)
+        wt = invert_no_zero(1 + np.exp(pwr))
+
+        # Check for convergeance
+        if la.norm(w - wt) / la.norm(w) < end_frac:
+            break
+
+        # Update the weights
+        W[0] = wt
+
+    return z
+
+
+def taper_mask(mask, nwidth, outer=False):
+    """Taper a 2d mask along the last axis.
+
+    Parameters
+    ----------
+    mask : np.ndarray
+        Mask to taper
+    nwidth : int
+        Number of samples on either side of the mask to taper
+    outer : bool, optional
+        If True, expand the mask outwards (wider). Otherwise,
+        expand the mask inwards (narrower). Default is False
+
+    Returns
+    -------
+    tapered_mask : np.ndarray[np.float64]
+        Mask convolved with taper window
+    """
+    mask = np.atleast_2d(mask)
+
+    width = 2 * nwidth - 1
+
+    kernel = np.hanning(width)[np.newaxis]
+    kernel /= np.sum(kernel)
+
+    tapered_mask = np.zeros(
+        (mask.shape[0], mask.shape[-1] + 2 * width), dtype=np.float64
+    )
+    tapered_mask[:, width:-width] = mask.astype(np.float64)
+    # Extend the edges
+    tapered_mask[:, :width] = tapered_mask[:, width][:, np.newaxis]
+    tapered_mask[:, -width:] = tapered_mask[:, -width - 1][:, np.newaxis]
+
+    if outer:
+        tapered_mask = 1.0 - tapered_mask
+
+    # Tapering is always done on the interior of `tapered_mask` - i.e.
+    # any value in `tapered_mask` which is zero here will remain zero,
+    # and the mask is inverted aftwards if needed.
+    tapered_mask = np.isclose(
+        oaconvolve(tapered_mask, kernel, axes=-1, mode="same"), 1.0
+    ).astype(np.float64)
+    tapered_mask = oaconvolve(tapered_mask, kernel, axes=-1, mode="same")
+
+    if outer:
+        tapered_mask = 1.0 - tapered_mask
+
+    return tapered_mask[:, width:-width]
+
+
+def correct_phase_wrap(phi, deg=False):
+    """Correct for phase wrapping.
+
+    Parameters
+    ----------
+    phi : np.ndarray
+        Phase in radians or degrees.
+    deg : bool
+        Flag indicating the provided phase
+        is in units of radians (False)
+        or degrees (True).
+
+    Returns
+    -------
+    phic : np.ndarray
+        Phase betwen -pi and pi if degree is False,
+        or -180 and 180 if degree is True.
+    """
+    period = 180.0 if deg else np.pi
+    return ((phi + period) % (2 * period)) - period
+
+
+def find_contiguous_slices(index):
+    """Convert indices into a list of slices.
+
+    Parameters
+    ----------
+    index : list or array of int
+        1D indices into an array.
+
+    Returns
+    -------
+    slices : list of slice
+        Slices into the array that will return all elements
+        in index but split into contiguous regions.  Useful
+        because these contiguous slices can be used to access
+        the desired subset of the array without making a copy.
+    """
+    slices = []
+    for w, z in itertools.groupby(index, lambda x, y=itertools.count(): next(y) - x):
+        grouped = list(z)
+        slices.append(slice(grouped[0], grouped[-1] + 1))
+    return slices

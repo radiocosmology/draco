@@ -10,12 +10,11 @@ using the variance of the noise estimate in the existing data.
 """
 
 import numpy as np
-
 from caput import config
 from caput.time import STELLAR_S
 
-from ..core import task, containers, io
-from ..util import tools, random
+from ..core import containers, io, task
+from ..util import random, tools
 
 
 class ReceiverTemperature(task.SingleTask):
@@ -103,16 +102,17 @@ class GaussianNoiseDataset(task.SingleTask, random.RandomTask):
         data.redistribute("freq")
 
         # Replace visibilities with noise
-        dset = data[dataset_name][:]
+        dset = data[dataset_name][:].local_array
+        weight = data.weight[:].local_array
         if np.iscomplexobj(dset):
             random.complex_normal(
-                scale=tools.invert_no_zero(data.weight[:]) ** 0.5,
+                scale=tools.invert_no_zero(weight) ** 0.5,
                 out=dset,
                 rng=self.rng,
             )
         else:
             self.rng.standard_normal(out=dset)
-            dset *= tools.invert_no_zero(data.weight[:]) ** 0.5
+            dset *= tools.invert_no_zero(weight) ** 0.5
 
         # We need to loop to ensure the autos are real and have the correct variance
         if dataset_name == "vis":
@@ -212,7 +212,7 @@ class GaussianNoise(task.SingleTask, random.RandomTask):
 
         if self.add_noise:
             noise = random.complex_normal(
-                (nfreq, nprod, ntime),
+                size=(nfreq, nprod, ntime),
                 scale=std[np.newaxis, :, np.newaxis],
                 rng=self.rng,
             )
@@ -274,6 +274,7 @@ class SampleNoise(task.SingleTask, random.RandomTask):
             The sampled (i.e. noisy) visibility dataset.
         """
         from caput.time import STELLAR_S
+
         from ..util import _fast_tools
 
         data_exp.redistribute("freq")

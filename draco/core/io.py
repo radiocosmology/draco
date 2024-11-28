@@ -22,25 +22,24 @@ Several tasks accept groups of files as arguments. These are specified in the YA
     single_group:
         files: ['file1.h5', 'file2.h5']
 """
+
 import os.path
 import shutil
 import subprocess
-from typing import Union, Dict, List, Optional
+from functools import partial
+from typing import ClassVar, Optional, Union
 
 import numpy as np
+from caput import config, fileformats, memh5, pipeline, truncate
+from cora.util import units
+from drift.core import beamtransfer, manager, telescope
 from yaml import dump as yamldump
 
-from caput import pipeline, config, fileformats, memh5, truncate
-
-from cora.util import units
-
-from drift.core import telescope, manager, beamtransfer
-
-from . import task
 from ..util.exception import ConfigError
+from . import task
 
 
-def _list_of_filelists(files: Union[List[str], List[List[str]]]) -> List[List[str]]:
+def _list_of_filelists(files: Union[list[str], list[list[str]]]) -> list[list[str]]:
     """Take in a list of lists/glob patterns of filenames.
 
     Parameters
@@ -66,7 +65,7 @@ def _list_of_filelists(files: Union[List[str], List[List[str]]]) -> List[List[st
     for filelist in files:
         if isinstance(filelist, str):
             if "*" not in filelist and not os.path.isfile(filelist):
-                raise ConfigError("File not found: %s" % filelist)
+                raise ConfigError(f"File not found: {filelist!s}")
             filelist = glob.glob(filelist)
         elif isinstance(filelist, list):
             for i in range(len(filelist)):
@@ -78,7 +77,7 @@ def _list_of_filelists(files: Union[List[str], List[List[str]]]) -> List[List[st
     return f2
 
 
-def _list_or_glob(files: Union[str, List[str]]) -> List[str]:
+def _list_or_glob(files: Union[str, list[str]]) -> list[str]:
     """Take in a list of lists/glob patterns of filenames.
 
     Parameters
@@ -105,7 +104,7 @@ def _list_or_glob(files: Union[str, List[str]]) -> List[str]:
         return parsed_files
 
     # If it's a glob we need to expand the glob and then call again
-    if isinstance(files, str) and "*" in files:
+    if isinstance(files, str) and any(c in files for c in "*?["):
         return _list_or_glob(sorted(glob.glob(files)))
 
     # We presume a string is an actual path...
@@ -116,18 +115,18 @@ def _list_or_glob(files: Union[str, List[str]]) -> List[str]:
                 raise ConfigError(
                     f"Expected a zarr directory store, but directory not found: {files}"
                 )
-            return [files]
         else:
             if not os.path.isfile(files):
-                raise ConfigError("File not found: %s" % files)
-            return [files]
+                raise ConfigError(f"File not found: {files!s}")
+
+        return [files]
 
     raise ConfigError(
-        "Argument must be list, glob pattern, or file path, got %s" % repr(files)
+        f"Argument must be list, glob pattern, or file path, got {files!r}"
     )
 
 
-def _list_of_filegroups(groups: Union[List[Dict], Dict]) -> List[Dict]:
+def _list_of_filegroups(groups: Union[list[dict], dict]) -> list[dict]:
     """Process a file group/groups.
 
     Parameters
@@ -160,9 +159,7 @@ def _list_of_filegroups(groups: Union[List[Dict], Dict]) -> List[Dict]:
         except KeyError:
             raise ConfigError("File group is missing key 'files'.")
         except TypeError:
-            raise ConfigError(
-                "Expected type dict in file groups (got {}).".format(type(group))
-            )
+            raise ConfigError(f"Expected type dict in file groups (got {type(group)}).")
 
         if "tag" not in group:
             group["tag"] = "group_%i" % gi
@@ -171,11 +168,11 @@ def _list_of_filegroups(groups: Union[List[Dict], Dict]) -> List[Dict]:
 
         for fname in files:
             if "*" not in fname and not os.path.isfile(fname):
-                raise ConfigError("File not found: %s" % fname)
+                raise ConfigError(f"File not found: {fname!s}")
             flist += glob.glob(fname)
 
         if not len(flist):
-            raise ConfigError("No files in group exist (%s)." % files)
+            raise ConfigError(f"No files in group exist ({files!s}).")
 
         group["files"] = flist
 
@@ -278,6 +275,7 @@ class LoadFITSCatalog(task.SingleTask):
         catalog : :class:`containers.SpectroscopicCatalog`
         """
         from astropy.io import fits
+
         from . import containers
 
         # Exit this task if we have eaten all the file groups
@@ -346,7 +344,113 @@ class LoadFITSCatalog(task.SingleTask):
         return catalog
 
 
-class BaseLoadFiles(task.SingleTask):
+class SelectionsMixin:
+    """Mixin for parsing axis selections, typically from a yaml config.
+
+    Attributes
+    ----------
+    selections : dict, optional
+        A dictionary of axis selections. See below for details.
+
+    allow_index_map : bool, optional
+        If true, selections can be made based on an index_map dataset.
+        This cannot be implemented when reading from disk. See below for
+        details. Default is False.
+
+    Selections
+    ----------
+    Selections can be given to limit the data read to specified subsets. They can be
+    given for any named axis in the container.
+
+    Selections can be given as a slice with an `<axis name>_range` key with either
+    `[start, stop]` or `[start, stop, step]` as the value. Alternatively a list of
+    explicit indices to extract can be given with the `<axis name>_index` key, and
+    the value is a list of the indices. Finally, selection based on an `index_map`
+    can be given with specific `index_map` entries with the `<axis name>_map` key,
+    which will be converted to axis indices. `<axis name>_range` will take precedence
+    over `<axis name>_index`, which will in turn take precedence over `<axis_name>_map`,
+    but you should clearly avoid doing this.
+
+    Additionally, index-based selections currently don't work for distributed reads.
+
+    Here's an example in the YAML format that the pipeline uses:
+
+    .. code-block:: yaml
+
+        selections:
+            freq_range: [256, 512, 4]  # A strided slice
+            stack_index: [1, 2, 4, 9, 16, 25, 36, 49, 64]  # A sparse selection
+            stack_range: [1, 14]  # Will override the selection above
+            pol_map: ["XX", "YY"] # Select the indices corresponding to these entries
+    """
+
+    selections = config.Property(proptype=dict, default=None)
+    allow_index_map = config.Property(proptype=bool, default=False)
+
+    def setup(self):
+        """Resolve the selections."""
+        self._sel = self._resolve_sel()
+
+    def _resolve_sel(self):
+        # Turn the selection parameters into actual selectable types
+
+        sel = {}
+
+        sel_parsers = {
+            "range": self._parse_range,
+            "index": partial(self._parse_index, type_=int),
+            "map": self._parse_index,
+        }
+
+        if not self.allow_index_map:
+            del sel_parsers["map"]
+
+        # To enforce the precedence of range vs index selections, we rely on the fact
+        # that a sort will place the axis_range keys after axis_index keys
+        for k in sorted(self.selections or []):
+            # Parse the key to get the axis name and type, accounting for the fact the
+            # axis name may contain an underscore
+            *axis, type_ = k.split("_")
+            axis_name = "_".join(axis)
+
+            if type_ not in sel_parsers:
+                raise ValueError(
+                    f'Unsupported selection type "{type_}", or invalid key "{k}". '
+                    "Note that map-type selections require `allow_index_map=True`."
+                )
+
+            sel[f"{axis_name}_sel"] = sel_parsers[type_](self.selections[k])
+
+        return sel
+
+    def _parse_range(self, x):
+        # Parse and validate a range type selection
+
+        if not isinstance(x, (list, tuple)) or len(x) > 3 or len(x) < 2:
+            raise ValueError(
+                f"Range spec must be a length 2 or 3 list or tuple. Got {x}."
+            )
+
+        for v in x:
+            if not isinstance(v, int):
+                raise ValueError(f"All elements of range spec must be ints. Got {x}")
+
+        return slice(*x)
+
+    def _parse_index(self, x, type_=object):
+        # Parse and validate an index type selection
+
+        if not isinstance(x, (list, tuple)) or len(x) == 0:
+            raise ValueError(f"Index spec must be a non-empty list or tuple. Got {x}.")
+
+        for v in x:
+            if not isinstance(v, type_):
+                raise ValueError(f"All elements of index spec must be {type_}. Got {x}")
+
+        return list(x)
+
+
+class BaseLoadFiles(SelectionsMixin, task.SingleTask):
     """Base class for loading containers from a file on disk.
 
     Provides the capability to make selections along axes.
@@ -357,44 +461,14 @@ class BaseLoadFiles(task.SingleTask):
         Whether the file should be loaded distributed across ranks.
     convert_strings : bool, optional
         Convert strings to unicode when loading.
-    selections : dict, optional
-        A dictionary of axis selections. See the section below for details.
     redistribute : str, optional
         An optional axis name to redistribute the container over after it has
         been read.
-
-    Selections
-    ----------
-    Selections can be given to limit the data read to specified subsets. They can be
-    given for any named axis in the container.
-
-    Selections can be given as a slice with an `<axis name>_range` key with either
-    `[start, stop]` or `[start, stop, step]` as the value. Alternatively a list of
-    explicit indices to extract can be given with the `<axis name>_index` key, and
-    the value is a list of the indices. If both `<axis name>_range` and `<axis
-    name>_index` keys are given the former will take precedence, but you should
-    clearly avoid doing this.
-
-    Additionally index based selections currently don't work for distributed reads.
-
-    Here's an example in the YAML format that the pipeline uses:
-
-    .. code-block:: yaml
-
-        selections:
-            freq_range: [256, 512, 4]  # A strided slice
-            stack_index: [1, 2, 4, 9, 16, 25, 36, 49, 64]  # A sparse selection
-            stack_range: [1, 14]  # Will override the selection above
     """
 
     distributed = config.Property(proptype=bool, default=True)
     convert_strings = config.Property(proptype=bool, default=True)
-    selections = config.Property(proptype=dict, default=None)
     redistribute = config.Property(proptype=str, default=None)
-
-    def setup(self):
-        """Resolve the selections."""
-        self._sel = self._resolve_sel()
 
     def _load_file(self, filename, extra_message=""):
         # Load the file into the relevant container
@@ -433,56 +507,6 @@ class BaseLoadFiles(task.SingleTask):
             cont.redistribute(self.redistribute)
 
         return cont
-
-    def _resolve_sel(self):
-        # Turn the selection parameters into actual selectable types
-
-        sel = {}
-
-        sel_parsers = {"range": self._parse_range, "index": self._parse_index}
-
-        # To enforce the precedence of range vs index selections, we rely on the fact
-        # that a sort will place the axis_range keys after axis_index keys
-        for k in sorted(self.selections or []):
-            # Parse the key to get the axis name and type, accounting for the fact the
-            # axis name may contain an underscore
-            *axis, type_ = k.split("_")
-            axis_name = "_".join(axis)
-
-            if type_ not in sel_parsers:
-                raise ValueError(
-                    f'Unsupported selection type "{type_}", or invalid key "{k}"'
-                )
-
-            sel[f"{axis_name}_sel"] = sel_parsers[type_](self.selections[k])
-
-        return sel
-
-    def _parse_range(self, x):
-        # Parse and validate a range type selection
-
-        if not isinstance(x, (list, tuple)) or len(x) > 3 or len(x) < 2:
-            raise ValueError(
-                f"Range spec must be a length 2 or 3 list or tuple. Got {x}."
-            )
-
-        for v in x:
-            if not isinstance(v, int):
-                raise ValueError(f"All elements of range spec must be ints. Got {x}")
-
-        return slice(*x)
-
-    def _parse_index(self, x):
-        # Parse and validate an index type selection
-
-        if not isinstance(x, (list, tuple)) or len(x) == 0:
-            raise ValueError(f"Index spec must be a non-empty list or tuple. Got {x}.")
-
-        for v in x:
-            if not isinstance(v, int):
-                raise ValueError(f"All elements of index spec must be ints. Got {x}")
-
-        return list(x)
 
 
 class LoadFilesFromParams(BaseLoadFiles):
@@ -614,7 +638,7 @@ class Save(pipeline.TaskBase):
         else:
             tag = data.attrs["tag"]
 
-        fname = "%s_%s.h5" % (self.root, str(tag))
+        fname = f"{self.root}_{tag!s}.h5"
 
         data.to_hdf5(fname)
 
@@ -699,9 +723,7 @@ class LoadProductManager(pipeline.TaskBase):
             raise RuntimeError("Products do not exist.")
 
         # Load ProductManager and Timestream
-        pm = manager.ProductManager.from_config(self.product_directory)
-
-        return pm
+        return manager.ProductManager.from_config(self.product_directory)
 
 
 class Truncate(task.SingleTask):
@@ -731,7 +753,7 @@ class Truncate(task.SingleTask):
     dataset = config.Property(proptype=dict, default=None)
     ensure_chunked = config.Property(proptype=bool, default=True)
 
-    default_params = {
+    default_params: ClassVar = {
         "weight_dataset": None,
         "fixed_precision": 1e-4,
         "variance_increase": 1e-3,
@@ -754,21 +776,20 @@ class Truncate(task.SingleTask):
         """
         # Check if dataset should get truncated at all
         if (self.dataset is None) or (dset not in self.dataset):
-            if dset not in container._dataset_spec or not container._dataset_spec[
-                dset
-            ].get("truncate", False):
+            cdspec = container._class_dataset_spec()
+            if dset not in cdspec or not cdspec[dset].get("truncate", False):
                 self.log.debug(f"Not truncating dataset '{dset}' in {container}.")
                 return None
             # Use the dataset spec if nothing specified in config
-            given_params = container._dataset_spec[dset].get("truncate", False)
+            given_params = cdspec[dset].get("truncate", False)
         else:
             given_params = self.dataset[dset]
 
         # Parse config parameters
         params = self.default_params.copy()
-        if type(given_params) is dict:
+        if isinstance(given_params, dict):
             params.update(given_params)
-        elif type(given_params) is float:
+        elif isinstance(given_params, float):
             params["fixed_precision"] = given_params
         elif not given_params:
             self.log.debug(f"Not truncating dataset '{dset}' in {container}.")
@@ -806,13 +827,15 @@ class Truncate(task.SingleTask):
         if self.ensure_chunked:
             data._ensure_chunked()
 
-        for dset in data._dataset_spec:
+        for dset in data.dataset_spec:
             # get truncation parameters from config or container defaults
             specs = self._get_params(type(data), dset)
 
             if (specs is None) or (dset not in data):
                 # Don't truncate this dataset
                 continue
+
+            self.log.debug(f"Truncating {dset}")
 
             old_shape = data[dset][:].shape
             # np.ndarray.reshape must be used with ndarrays
@@ -1052,7 +1075,7 @@ class SaveZarrZip(ZipZarrContainers):
 class WaitZarrZip(task.MPILoggedTask):
     """Collect Zarr-zipping jobs and wait for them to complete."""
 
-    _handles: Optional[List[ZarrZipHandle]] = None
+    _handles: Optional[list[ZarrZipHandle]] = None
 
     def next(self, handle: ZarrZipHandle):
         """Receive the handles to wait on.
@@ -1103,7 +1126,7 @@ class SaveModuleVersions(task.SingleTask):
 
     def setup(self):
         """Save module versions."""
-        fname = "{}_versions.yml".format(self.root)
+        fname = f"{self.root}_versions.yml"
         f = open(fname, "w")
         f.write(yamldump(self.versions))
         f.close()
@@ -1131,7 +1154,7 @@ class SaveConfig(task.SingleTask):
 
     def setup(self):
         """Save module versions."""
-        fname = "{}_config.yml".format(self.root)
+        fname = f"{self.root}_config.yml"
         f = open(fname, "w")
         f.write(yamldump(self.pipeline_config))
         f.close()
@@ -1159,7 +1182,7 @@ def get_telescope(obj):
         if isinstance(obj, telescope.TransitTelescope):
             return obj
 
-    raise RuntimeError("Could not get telescope instance out of %s" % repr(obj))
+    raise RuntimeError(f"Could not get telescope instance out of {obj!r}")
 
 
 def get_beamtransfer(obj):
@@ -1173,4 +1196,4 @@ def get_beamtransfer(obj):
     if isinstance(obj, manager.ProductManager):
         return obj.beamtransfer
 
-    raise RuntimeError("Could not get BeamTransfer instance out of %s" % repr(obj))
+    raise RuntimeError(f"Could not get BeamTransfer instance out of {obj!r}")

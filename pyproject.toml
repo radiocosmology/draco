@@ -1,5 +1,67 @@
 [build-system]
-requires = ['setuptools', 'wheel', 'Cython', 'oldest-supported-numpy']
+requires = [
+    "setuptools>=61.0",
+    "wheel",
+    "setuptools-git-versioning",
+    "cython",
+    "numpy>=2.0.0rc1",
+]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "draco"
+description = "Analysis and simulation tools for driftscan radio interferometers"
+license = { file = "LICENSE" }
+authors = [
+    { name = "The CHIME Collaboration", email = "lgray@phas.ubc.ca" }
+]
+maintainers = [
+    { name = "Liam Gray", email = "lgray@phas.ubc.ca" },
+    { name = "Don Wiebe", email = "dvw@phas.ubc.ca" }
+]
+dynamic = ["readme", "version"]
+requires-python = ">=3.9"
+dependencies = [
+    "caput @ git+https://github.com/radiocosmology/caput.git",
+    "caput[compression] @ git+https://github.com/radiocosmology/caput.git",
+    "cora @ git+https://github.com/radiocosmology/cora.git",
+    "cython>0.18",
+    "driftscan @ git+https://github.com/radiocosmology/driftscan.git",
+    "mpi4py",
+    "numpy>=1.24",
+    "scikit-image",
+    "scipy>=0.10",
+    "skyfield",
+    "pywavelets",
+]
+classifiers = [
+    "Development Status :: 5 - Production/Stable",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Science/Research",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+]
+
+[project.optional-dependencies]
+lint = ["black", "ruff"]
+test = ["pytest", "wheel"]
+docs = ["Sphinx>=5.0", "sphinx_rtd_theme"]
+
+[project.urls]
+Documentation = "https://radiocosmology.github.io/draco"
+Repository = "https://github.com/radiocosmology/draco"
+
+[tool.setuptools.dynamic]
+readme = { file = ["README.md"], content-type = "text/markdown" }
+
+[tool.setuptools-git-versioning]
+enabled = true
+
+[tool.setuptools.packages]
+find = {}
 
 [tool.pytest.ini_options]
 minversion = "6"
@@ -7,11 +69,21 @@ addopts = "--strict-markers"
 markers = ["mpi: mark a test that should be run under MPI"]
 
 [tool.ruff]
-# Enable pycodestyle ('E'), pydocstyle ('D'), pyflakes ('F')
-select = ["E", "D", "F"]
+# Enable:
+# pycodestyle ('E')
+# pydocstyle ('D')
+# pyflakes ('F')
+# isort ('I')
+# pyupgrade ('UP')
+# numpy-specific ('NPY')
+# ruff-specific ('RUF')
+# flake8-blind-except ('BLE')
+# flake8-comprehensions ('C4')
+# flake8-return ('RET')
+lint.select = ["E", "D", "F", "I", "UP", "NPY", "RUF", "BLE", "C4", "RET"]
 
 # E203, W503
-ignore = [
+lint.ignore = [
     "E501", # E501: line length violations. Enforce these with `black`
     "E741", # E741: Ambiguous variable name
     "D105", # D105: Missing docstring in magic method
@@ -23,6 +95,7 @@ ignore = [
     "D402", # D402: First line should not be the function’s “signature”
     "D413", # D413: Missing blank line after last section
     "D416", # D416: Section name should end with a colon
+    "NPY002", # NPY002: replace legacy numpy.random calls with np.random.Generator
 ]
 
 # Ignore the following directories
@@ -32,9 +105,7 @@ exclude = [
     "build",
     "doc",
     "test",
-    "setup.py",
-    "versioneer.py",
     "*/__init__.py",
 ]
 
-target-version = "py311"
+target-version = "py39"

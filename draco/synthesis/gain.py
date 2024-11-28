@@ -1,11 +1,9 @@
 """Tasks for generating random gain fluctuations in the data and stacking them."""
 
-
 import numpy as np
-
 from caput import config, mpiarray, pipeline
 
-from ..core import containers, task, io
+from ..core import containers, io, task
 
 
 class BaseGains(task.SingleTask):
@@ -273,9 +271,7 @@ class RandomGains(BaseGains):
         self._prev_amp = gain_amp
 
         gain_amp = gain_amp.reshape((len(self.freq), ninput, ntime))
-        gain_amp = 1.0 + gain_amp
-
-        return gain_amp
+        return 1.0 + gain_amp
 
     def _generate_phase(self, time):
         # Generate the correlation function
@@ -292,9 +288,7 @@ class RandomGains(BaseGains):
         # Save phase fluctuations to instannce
         self._prev_phase = gain_phase_fluc
         # Reshape to correct size
-        gain_phase_fluc = gain_phase_fluc.reshape((len(self.freq), ninput, ntime))
-
-        return gain_phase_fluc
+        return gain_phase_fluc.reshape((len(self.freq), ninput, ntime))
 
 
 class RandomSiderealGains(RandomGains, SiderealGains):
@@ -436,7 +430,7 @@ class GainStacker(task.SingleTask):
 
 def _ensure_list(x):
     if hasattr(x, "__iter__"):
-        y = [xx for xx in x]
+        y = list(x)
     else:
         y = [x]
 
@@ -597,6 +591,4 @@ def constrained_gaussian_realisation(x, corrfunc, n, x2, y2, rcond=1e-12):
     y_r = _realisation(Ap_r, n, rcond)
 
     # Project into the original basis for A
-    y = np.dot(z_r + y_r, R_A.T)
-
-    return y
+    return np.dot(z_r + y_r, R_A.T)
