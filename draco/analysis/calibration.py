@@ -5,14 +5,253 @@ from mpi4py import MPI
 from caput import interferometry, mpiutil, config, mpiarray
 
 from ..core import task, io, containers
-from ..util import tools, cal_utils, fluxcat
+from ..util import tools, cal_utils, fluxcat, _fast_tools
+
 from ..ephem import coord, sources
 
 import json
 
 
+class PerformEigendecomposition(task.SingleTask):
+    """Perform eigendecomposition of N2 visibility matrix.
+
+    Short baselines can be excluded from the eigen-decomposition
+    by iteratively replacing them with their low-rank approximation.
+
+    Attributes
+    ----------
+    max_ev_rms : int
+        Number of largest eigenvalues to exclude when calculating
+        the RMS of the eigenvalues.
+    nev : int
+        Number of eigenvalues to return in the output container.
+        Defaults to the number of inputs.
+    mask_type : str
+        Strategy for masking short baselines.  Can take one of the following values:
+            "baseline":       mask any baseline whose total distance
+                              is less than the threshold
+            "baseline_copol": mask any co-polar baseline whose total distance
+                              is less than the threshold
+            "diag":           mask any baseline whose offset from the diagonal
+                              is less than the threshold
+            "diag_copol":     mask any co-polar baseline whose offset from the diagonal
+                              is less than the threshold
+    mask_threshold : float
+        Threshold to use when masking short baselines.  Provide in units of meters
+        for baseline mask_type and index for diag mask_type.
+    niter : int
+        Number of iterations.  At each iteration, the visibilities of
+        masked baselines are replaced with the low-rank approximation
+        from the previous iteration.
+    rank : int
+        Include all eigenmodes up to this rank when constructing the
+        low-rank approximation to the visibility matrix.
+    """
+
+    max_ev_rms = config.Property(proptype=int, default=4)
+    nev = config.Property(proptype=int)
+
+    mask_type = config.enum(["baseline", "baseline_copol", "diag", "diag_copol"], default="diag")
+    mask_threshold = config.Property(proptype=float, default=0.5)
+    niter = config.Property(proptype=int, default=20)
+    rank = config.Property(proptype=int, default=4)
+
+    def setup(self, manager: io.TelescopeConvertible):
+        """Set the telescope instance.
+
+        Parameters
+        ----------
+        manager : manager.ProductManager, optional
+            The telescope/manager used to determine
+            feed polarisation/position and perform
+            ephemeris calculations.
+        """
+        self.telescope = io.get_telescope(manager)
+
+    def process(self, data):
+        """ Perform the eigendecomposition.
+
+        Parameters
+        ----------
+        data : subclass of containers.VisContainer
+            Container holding the N2 visilibity matrix
+            in upper triangle format.
+
+        Returns
+        -------
+        eigen : containers.Eigendecomposition
+            Eigendecomposition of the visibility matrix.
+        """
+
+        # Make sure we are dealing with N2 visibilities in upper triangle format
+        if data.is_stacked:
+            raise RuntimeError("Cannot perform eigen-decomposition of stacked visibilities.")
+
+        ninput = data.input.size
+        nprod = data.prod.size
+
+        if nprod != (ninput * (ninput + 1) // 2):
+            raise RuntimeError("Must provide visibilities in upper triangle format.")
+
+        # Determine the axis to distribute over
+        axis_size = {ax: data.index_map[ax].size for ax in data.vis.attrs["axis"]
+                    if ax not in ["prod", "stack"]}
+        dist_axis = max(axis_size, key=axis_size.get)
+
+        # Extract visibilities and weights
+        data.redistribute(dist_axis)
+
+        vis = data.vis[:].local_array
+        weight = data.weight[:].local_array
+
+        # Consult telescope instance on what inputs to ignore
+        tindex = np.array(tools.find_inputs(self.telescope.input_index, data.input, require_match=True))
+        input_flag = self.telescope.feedmask[(tindex, tindex)]
+        good_inputs = np.flatnonzero(input_flag)
+        ngood = good_inputs.size
+
+        # Create prod, input, and stack axes for just the autocorrelations
+        index_auto = np.flatnonzero([data.prod["input_a"] == data.prod["input_b"]])
+        prod = data.prod[index_auto]
+
+        stack = np.zeros(ninput, dtype=[("prod", "<u4"), ("conjugate", "u1")])
+        stack["prod"][:] = np.arange(ninput)
+
+        nev = self.nev if self.nev is not None else ngood
+        ecalc = (ngood - self.rank, ngood - 1)
+
+        # Create the output container
+        out = containers.Eigendecomposition(prod=prod, stack=stack,
+                                            ev=np.arange(nev, dtype=int),
+                                            axes_from=data, attrs_from=data,
+                                            distributed=data.distributed,
+                                            comm=data.comm)
+
+        out.redistribute(dist_axis)
+
+        for dset in out.datasets.values():
+            dset[:] = 0
+
+        # Select the autocorrelations
+        out.vis[:].local_array[:] = vis[:, index_auto]
+        out.weight[:].local_array[:] = weight[:, index_auto]
+
+        flag = np.any(weight > 0.0, axis=1)
+
+        # Dereference the other datasets
+        evecs = out.datasets["evec"][:].local_array
+        evalues = out.datasets["eval"][:].local_array
+        erms = out.datasets["erms"][:].local_array
+
+        nfreq, ntime = erms.shape
+
+        # Construct a baseline mask
+        baseline_mask = self.get_baseline_mask(data.prod, data.input, good_inputs)
+
+        niter = self.niter if baseline_mask[0].size > 0 else 0
+
+        # Loop over freq and time
+        for ff in range(nfreq):
+
+            for tt in range(ntime):
+
+                if not flag[ff, tt]:
+                    continue
+
+                # Initialise a temporary square matrix for unpacked products
+                V = np.zeros((ngood, ngood), dtype=vis.dtype)
+
+                # Unpack visibility into the square matrix
+                _fast_tools._unpack_product_array_fast(
+                    vis[ff, :, tt].copy(), V, good_inputs, ninput
+                )
+
+                # Iterate, replacing with low-rank approximation
+                for ii in range(niter):
+
+                    evalue, evec = scipy.linalg.eigh(V, eigvals=ecalc, check_finite=False)
+
+                    low_rank_approx = np.matmul(evec, evalue * evec.T.conj())
+
+                    v[baseline_mask] = low_rank_approx[baseline_mask]
+
+                # Calculate all eigenvalues and eigenvectors
+                evalue, evec = scipy.linalg.eigh(V)
+
+                # Sort in descending order
+                evalue = evalue[::-1]
+                evec = evec[:, ::-1]
+
+                # Save to output arrays
+                evalues[ff, :, tt] = evalue[:nev]
+                evecs[ff, :, :, tt][:, good_inputs] = evecs[:, :nev].T
+                erms[ff, tt] = np.std(evalue[self.max_ev_rms:])
+
+        # Return output container
+        out.redistribute("freq")
+
+        return out
+
+    def get_baseline_mask(self, prod, inputs, good_inputs):
+        """Generate a mask that identifies short baselines.
+
+        Parameters
+        ----------
+        prod : np.ndarray[nprod,]
+            The pairs of inputs that form each baseline.
+        inputs : np.ndarray[ninput,]
+            The unique identifier for each input.  Used to match
+            into the telescope object.
+        good_inputs : np.ndarray[ngood,]
+            Indices in the inputs array that should be included
+            in the eigen-decomposition.
+
+        Reuturns
+        --------
+        mask_index : (np.ndarray[nmask,], np.ndarray[nmask,])
+            Indices in the (ngood, ngood) array that should be masked.
+        """
+        nprod = prod.size
+        ninput = inputs.size
+        ngood = good_inputs.size
+
+        # Find feeds in telescope instance
+        tel_index = np.array(tools.find_inputs(self.telescope.input_index, inputs, require_match=True))
+
+        aa = tel_index[prod["input_a"]]
+        bb = tel_index[prod["input_b"]]
+
+        # If requested, only mask copolar baselines.
+        if "copol" in self.mask_type:
+            pol = self.telescope.polarisation
+            mask = (pol[aa] == pol[bb])
+        else:
+            mask = np.ones(nprod, dtype=bool)
+
+        # Update mask to exclude short baselines.
+        if "baseline" in self.mask_type:
+            position = self.telescope.feedpositions
+            baseline = (position[aa, :] - position[bb, :])
+            dist = np.sqrt(np.sum(baseline ** 2, axis=-1))
+
+            mask &= (dist < self.mask_threshold)
+
+        else:
+            offset = np.abs(aa - bb)
+            mask &= (offset < self.mask_threshold)
+
+        # Repackage
+        M = np.zeros((ngood, ngood), dtype=np.complex64)
+        _fast_tools._unpack_product_array_fast(
+            mask.astype(np.complex64), M, good_inputs, ninput
+        )
+
+        return np.nonzero(M)
+
+
+
 class EigenCalibration(task.SingleTask):
-    """Deteremine response of each feed to a point source.
+    """Determine response of each feed to a point source.
 
     Extract the feed response from an eigendecomposition of the
     N2 visibility matrix.  Flag frequencies that have low dynamic
@@ -53,7 +292,7 @@ class EigenCalibration(task.SingleTask):
     max_hour_angle = config.Property(proptype=float, default=10.0)
     window = config.Property(proptype=float, default=0.75)
     dyn_rng_threshold = config.Property(proptype=float, default=3.0)
-        
+
     def setup(self, manager: io.TelescopeConvertible):
         """Set the telescope instance.
 
@@ -164,7 +403,7 @@ class EigenCalibration(task.SingleTask):
                     "was not included in decomposition." % ref
                 )
 
-        # Determine index of the x and y pol feeds        
+        # Determine index of the x and y pol feeds
         xfeeds = np.flatnonzero((self.telescope.polarisation == "X") & input_flags)
         xfeeds = np.flatnonzero((self.telescope.polarisation == "Y") & input_flags)
 
@@ -348,12 +587,12 @@ class EigenCalibration(task.SingleTask):
                 out_weight[ff, feeds, :] = tools.invert_no_zero(resp_err**2)
 
         return response
-    
+
 
 class DetermineSourceTransit(task.SingleTask):
     """
     TODO: move generalized FluxCatalog object out of ch_util.fluxcat and import
-    
+
     Determine the sources that are transiting within time range covered by container.
 
     Attributes
@@ -426,12 +665,12 @@ class DetermineSourceTransit(task.SingleTask):
             return sstream
 
         return None
-    
+
 
 class TransitFit(task.SingleTask):
     """
     TODO: Check defaults
-    
+
     Fit model to the transit of a point source.
 
     Multiple model choices are available and can be specified through the `model`
@@ -527,9 +766,9 @@ class TransitFit(task.SingleTask):
             List describing the inputs as ordered in response.
         guess_fwhm : function
             A callable (function) that provides the FWHM of the primary beam.
-            
+
             Should have signature:
-            
+
             guess_fwhm(freq, pol="X", dec=None, sigma=False, voltage=False, seconds=False)
 
         Returns
@@ -625,7 +864,7 @@ class TransitFit(task.SingleTask):
         fit.ndof[:] = model.ndof[:]
 
         return fit
-    
+
 
 class GainFromTransitFit(task.SingleTask):
     """Determine gain by evaluating the best-fit model for the point source transit.
@@ -648,7 +887,7 @@ class GainFromTransitFit(task.SingleTask):
     def process(self, fit):
         """
         TODO: Modify docstring when we know where TransitFitParams will live
-        
+
         Determine gain from best-fit model.
 
         Parameters
@@ -729,7 +968,7 @@ class GainFromTransitFit(task.SingleTask):
                 weight[not_valid] = 0.0
 
         return out
-    
+
 
 class FlagAmplitude(task.SingleTask):
     """Flag feeds and frequencies with outlier gain amplitude.
@@ -781,7 +1020,7 @@ class FlagAmplitude(task.SingleTask):
         """
         TODO: Move cal_utils.estimate_directional_scale and cal_utils.flag_outliers
         to somewhere in draco and import
-        
+
         Set weight to zero for feeds and frequencies with outlier gain amplitude.
 
         Parameters

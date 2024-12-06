@@ -1510,6 +1510,56 @@ class TimeStream(FreqContainer, VisContainer, TODContainer):
         return self.datasets["input_flags"]
 
 
+class Eigendecomposition(TimeStream):
+    """A container for holding the eigendecomposition of the N2 visibilities."""
+
+    _axes = ("ev",)
+
+    _dataset_spec: ClassVar = {
+        "evec": {
+            "axes": ["freq", "ev", "input", "time"],
+            "dtype": np.complex64,
+            "initialise": True,
+            "distributed": True,
+            "distributed_axis": "freq",
+        },
+        "eval": {
+            "axes": ["freq", "ev", "time"],
+            "dtype": np.float32,
+            "initialise": True,
+            "distributed": True,
+            "distributed_axis": "freq",
+        },
+        "erms": {
+            "axes": ["freq", "time"],
+            "dtype": np.float32,
+            "initialise": True,
+            "distributed": True,
+            "distributed_axis": "freq",
+        },
+    }
+
+    @property
+    def ev(self):
+        """Get the ev index map."""
+        return self.index_map["ev"]
+
+    @property
+    def evec(self):
+        """Get the evec dataset."""
+        return self.datasets["evec"]
+
+    @property
+    def eval(self):
+        """Get the eval dataset."""
+        return self.datasets["eval"]
+
+    @property
+    def erms(self):
+        """Get the erms dataset."""
+        return self.datasets["erms"]
+
+
 class GridBeam(FreqContainer, DataWeightContainer):
     """Generic container for representing a 2D beam on a rectangular grid."""
 
