@@ -600,7 +600,7 @@ class TableBase(ContainerBase):
         dt = []
         for ci, (name, dtype) in enumerate(columns):
             if not isinstance(name, str):
-                raise ValueError("Column %i is invalid" % ci)
+                raise ValueError(f"Column {ci:d} is invalid")
             dt.append((name, dtype))
 
         return dt

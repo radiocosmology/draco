@@ -162,7 +162,7 @@ def _list_of_filegroups(groups: Union[list[dict], dict]) -> list[dict]:
             raise ConfigError(f"Expected type dict in file groups (got {type(group)}).")
 
         if "tag" not in group:
-            group["tag"] = "group_%i" % gi
+            group["tag"] = f"group_{gi:d}"
 
         flist = []
 
