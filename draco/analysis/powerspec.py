@@ -555,7 +555,6 @@ class CylindricalPowerSpectrum2D(task.SingleTask):
         """
 
         if weight is not None:
-            weight.redistribute("delay")
             self.weight = weight
         else:
             self.weight = None
@@ -580,6 +579,7 @@ class CylindricalPowerSpectrum2D(task.SingleTask):
             )
 
         ps.redistribute("delay")
+        self.weight.redistribute("delay")
 
         # Extract required data axes
         pol = ps.index_map["pol"]
@@ -799,7 +799,6 @@ class SphericalPowerSpectrum3Dto1D(task.SingleTask):
         """
 
         if weight is not None:
-            weight.redistribute("delay")
             self.weight = weight
         else:
             self.weight = None
@@ -823,6 +822,7 @@ class SphericalPowerSpectrum3Dto1D(task.SingleTask):
                 "Powerspec2D (received %s)" % ps.__class__
             )
         ps.redistribute("pol")
+        self.weight.redistribute("pol")
 
         # Extract required data axes
         pol = ps.index_map["pol"]
