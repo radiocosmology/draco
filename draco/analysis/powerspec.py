@@ -1,12 +1,12 @@
 """Power spectrum estimation from ringmap."""
 
 import numpy as np
-from draco.core import containers, io, task
-from caput import mpiarray, config
-from draco.analysis.delay import match_axes
+from astropy.cosmology import Planck15
+from caput import config, mpiarray
 from cora.util import units
-from astropy.cosmology import Planck15, Planck18
+
 from draco.analysis.delay import flatten_axes
+from draco.core import containers, io, task
 from draco.util import tools
 
 f21 = units.nu21  # 21cm line frequency in MHz
@@ -71,8 +71,7 @@ class TransformJyPerBeamToKelvin(task.SingleTask):
 
         if not isinstance(rm, containers.RingMap):
             raise ValueError(
-                "Input container must be instance of "
-                "RingMap (received %s)" % rm.__class__
+                f"Input container must be instance of RingMap (received {rm.__class__})"
             )
 
         # Get the local frequencies in the ringmap
@@ -103,8 +102,6 @@ class TransformJyPerBeamToKelvin(task.SingleTask):
         return out_map
 
     def _get_max_baseline(self):
-        "Derive the maximum baseline from the telescope class"
-
         from draco.analysis.ringmapmaker import find_grid_indices
 
         prod = self.telescope.prodstack
@@ -174,8 +171,7 @@ class DelayTransformMapFFT(task.SingleTask):
 
         if not isinstance(rm, containers.RingMap):
             raise ValueError(
-                "Input container must be instance of "
-                "RingMap (received %s)" % rm.__class__
+                f"Input container must be instance of RingMap (received {rm.__class__})"
             )
 
         freq_spacing = np.abs(np.diff(rm.freq[:])).mean()
@@ -269,7 +265,7 @@ class SpatialTransformDelayMap(task.SingleTask):
         Whether to apply apodisation to RA and Dec axis before taking
         spatial FFT. Default: True.
     spatial_window : window available in :func:`draco.util.tools.window_generalised()`, optional
-        Apodisation to perform on frequency axis. Default: 'Tukey-0.5'.
+        Apodisation to perform along spatial axes. Default: 'Tukey-0.5'.
         Here "tukey-0.5" means 0.5 is the fraction of the full window that
         will be tapered.
     ew_min : float
@@ -314,8 +310,7 @@ class SpatialTransformDelayMap(task.SingleTask):
         """
         if not isinstance(ds, containers.DelayTransform):
             raise ValueError(
-                "Input container must be instance of "
-                "DelayTransform (received %s)" % ds.__class__
+                f"Input container must be instance of DelayTransform (received {ds.__class__})"
             )
 
         ds.redistribute("delay")
@@ -333,7 +328,7 @@ class SpatialTransformDelayMap(task.SingleTask):
         # and reshape it as (pol,delay,ra,el)
         axes = list(ds.attrs["baseline_axes"])
         shp = tuple([ds.index_map[ax].size for ax in axes])
-        data_view = ds.spectrum[:].local_array.reshape(shp + (ra.size,) + (-1,))[0, :]
+        data_view = ds.spectrum[:].local_array.reshape(*shp, ra.size, -1)[0, :]
         data_view = np.swapaxes(data_view, 1, 3)
         data_view = mpiarray.MPIArray.wrap(data_view, axis=1, comm=ds.comm)
         # redistribute over delay axis
@@ -510,8 +505,7 @@ class AutoPowerSpectrum3D(CrossPowerSpectrum3D):
         auto_ps : containers.Powerspec3D
            The 3D auto power spectum.
         """
-        ps = super().process(data, data)
-        return ps
+        return super().process(data, data)
 
 
 class CylindricalPowerSpectrum2D(task.SingleTask):
@@ -542,8 +536,7 @@ class CylindricalPowerSpectrum2D(task.SingleTask):
     delay_cut = config.Property(proptype=float, default=300.0e-9)
 
     def setup(self, weight=None):
-        """Set the weight to use as the inverse variance weight
-           during averaging in bins for the power spectrum.
+        """Set the weight to use as the inverse variance weight.
 
         Parameters
         ----------
@@ -553,7 +546,6 @@ class CylindricalPowerSpectrum2D(task.SingleTask):
             Note this is variance, we need to take inverse of this
             to have inverse variance weight.
         """
-
         if weight is not None:
             self.weight = weight
         else:
@@ -574,8 +566,7 @@ class CylindricalPowerSpectrum2D(task.SingleTask):
         """
         if not isinstance(ps, containers.Powerspec3D):
             raise ValueError(
-                "Input container must be instance of "
-                "Powerspec3D (received %s)" % ps.__class__
+                f"Input container must be instance of Powerspec3D (received {ps.__class__})"
             )
 
         ps.redistribute("delay")
@@ -713,8 +704,7 @@ class SphericalPowerSpectrum2Dto1D(task.SingleTask):
         """
         if not isinstance(ps2D, containers.Powerspec2D):
             raise ValueError(
-                "Input container must be instance of "
-                "Powerspec2D (received %s)" % ps2D.__class__
+                f"Input container must be instance of Powerspec2D (received {ps2D.__class__})"
             )
         ps2D.redistribute("pol")
 
@@ -786,8 +776,7 @@ class SphericalPowerSpectrum3Dto1D(task.SingleTask):
     delay_cut = config.Property(proptype=float, default=300.0e-9)
 
     def setup(self, weight=None):
-        """Set the weight to use as the inverse variance weight
-           during averaging in bins for the power spectrum.
+        """Set the weight to use as the inverse variance weight.
 
         Parameters
         ----------
@@ -797,7 +786,6 @@ class SphericalPowerSpectrum3Dto1D(task.SingleTask):
             Note this is variance, we need to take inverse of this
             to have inverse variance weight.
         """
-
         if weight is not None:
             self.weight = weight
         else:
@@ -818,8 +806,7 @@ class SphericalPowerSpectrum3Dto1D(task.SingleTask):
         """
         if not isinstance(ps, containers.Powerspec3D):
             raise ValueError(
-                "Input container must be instance of "
-                "Powerspec2D (received %s)" % ps.__class__
+                f"Input container must be instance of Powerspec2D (received {ps.__class__})"
             )
         ps.redistribute("pol")
         self.weight.redistribute("pol")
@@ -925,7 +912,7 @@ class SphericalPowerSpectrum3Dto1D(task.SingleTask):
 
 
 def f2z(freq):
-    """Convert frequency to redshift for the 21 cm line
+    """Convert frequency to redshift for the 21 cm line.
 
     Parameters
     ----------
@@ -936,7 +923,6 @@ def f2z(freq):
     -------
     redshift: float
     """
-
     return f21 / freq - 1
 
 
@@ -953,13 +939,11 @@ def z2f(z):
     frequency: float
        frequency in MHz
     """
-
     return f21 / (z + 1)
 
 
 def dRperp_dtheta(z):
-    """Conversion factor from angular size (radian) to transverse
-    comoving distance (Mpc) at a specific redshift: [Mpc / radians]
+    """Conversion factor from angular size (radian) to transverse comoving distance (Mpc) at a specific redshift: [Mpc / radians].
 
     Parameters
     ----------
@@ -970,13 +954,11 @@ def dRperp_dtheta(z):
     -------
     comoving transverse distance: float. unit in Mpc
     """
-
     return cosmo.comoving_transverse_distance(z).value
 
 
 def dRpara_df(z):
-    """Conversion from frequency bandwidth to radial comoving distance at a
-    specific redshift: [Mpc / Hz]
+    """Conversion from frequency bandwidth to radial comoving distance at a specific redshift: [Mpc / Hz].
 
     Parameters
     ----------
@@ -987,7 +969,6 @@ def dRpara_df(z):
     -------
     Radial comoving distance: float. unit in Mpc
     """
-
     # Eqn A9 of Liu,A 2014A
     return (1 + z) ** 2.0 / cosmo.H(z).value * (C / 1e3) / (f21 * 1e6)
 
@@ -1008,7 +989,6 @@ def delays_to_kpara(delay, z):
        The spatial fluctuation scale parallel to the line of sight probed by
        the input delay (eta).unit [1/Mpc]
     """
-
     # Eqn A10 of Liu,A 2014A
     kpara = (delay * 2 * np.pi) / dRpara_df(z)
     return kpara
@@ -1030,7 +1010,6 @@ def kpara_to_delay(kpara, z):
       The inteferometric delay in unit second
       which probes the spatial scale given by kparr.
     """
-
     # Eqn A10 of Liu,A 2014A
     delay = kpara * dRpara_df(z) / (2 * np.pi)
     return delay
@@ -1040,7 +1019,7 @@ def u_to_kperp(
     u,
     z,
 ):
-    """Convert baseline length u to k_perpendicular in unit [1/Mpc]
+    """Convert baseline length u to k_perpendicular in unit [1/Mpc].
 
     Parameters
     ----------
@@ -1055,7 +1034,6 @@ def u_to_kperp(
         The spatial fluctuation scale perpendicular to the line of sight
         probed by the baseline length u.
     """
-
     # Eqn A10 of Liu,A 2014A
     kperp = 2 * np.pi * u / dRperp_dtheta(z)
     return kperp
@@ -1078,7 +1056,6 @@ def kperp_to_u(kperp, z):
      wavelength which probes the spatial scale given by kperp.
 
     """
-
     # Eqn A10 of Liu,A 2014A
     u = kperp * dRperp_dtheta(z) / (2 * np.pi)
     return u
@@ -1109,7 +1086,7 @@ def jy_per_beam_to_kelvin(freq, bl_length):
     # Bmaj=Bmin= PSF_arcsec; beam_area = (pi * Bmaj * Bmin)/(4 * log(2))
     PSF = 1.22 * wl / bl_length
     PSF = np.degrees(PSF)  # in deg
-    omega_psf = (np.pi * PSF**2) / ((4 * np.log(2)))
+    omega_psf = (np.pi * PSF**2) / (4 * np.log(2))
     omega_psf_sr = omega_psf * (np.pi / 180.0) ** 2  # convert the PSF area to sr
 
     kB = units.k_B  # Boltzmann Const in J/k (1.38 * 10-23)
@@ -1143,6 +1120,7 @@ def noise_equivalent_bandwidth(window):
     ----------
     window : array_like
         A 1-Dimenaional array like.
+
     Returns
     -------
     float
@@ -1214,7 +1192,10 @@ def image_to_uv(data, ra, dec, window="tukey-0.5"):
     ra : np.array(ra)
       RA of the map in degrees.
     dec : np.array(dec)
-      Dec of the map in degrees
+      Dec of the map in degrees.
+    window: window available in :func:`draco.util.tools.window_generalised()`, optional
+       Apply an apodisation function. Default: 'tukey-0.5'.
+
     Returns
     -------
       data_cube : np.ndarray[kx,ky]
@@ -1340,6 +1321,7 @@ def spatial_mask(k_x, k_y, ew_min, ew_max, ns_bl, wl_min, wl_max, redshift):
       maximum wavelength in meter.
     redshift: float
        redshift at the center of the band.
+
     Returns
     -------
     fourier_mask : np.ndarray[u,v]
