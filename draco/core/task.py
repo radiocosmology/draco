@@ -107,7 +107,7 @@ class SetMPILogging(pipeline.TaskBase):
 
         rank_length = int(math.log10(MPI.COMM_WORLD.size)) + 1
 
-        mpi_fmt = "[MPI %%(mpi_rank)%id/%%(mpi_size)%id]" % (rank_length, rank_length)
+        mpi_fmt = f"[MPI %(mpi_rank){rank_length:d}d/%(mpi_size){rank_length:d}d]"
         filt = MPILogFilter(level_all=self.level_all, level_rank0=self.level_rank0)
 
         # This uses the fact that caput.pipeline.Manager has already

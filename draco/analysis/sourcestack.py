@@ -362,7 +362,7 @@ class GroupSourceStacks(task.SingleTask):
             self.nmock += 1
 
         self.log.info(
-            "Collected frequency stack.  Current size is %d." % len(self.stack)
+            f"Collected frequency stack.  Current size is {len(self.stack):d}."
         )
 
         if (len(self.stack) % self.ngroup) == 0:
@@ -389,8 +389,8 @@ class GroupSourceStacks(task.SingleTask):
         Then, empty the list, reset the stack counter, and increment the group counter.
         """
         self.log.info(
-            "We have accumulated %d mock realizations.  Saving to file. [group %03d]"
-            % (self.nmock, self.counter)
+            f"We have accumulated {self.nmock:d} mock realizations.  "
+            f"Saving to file. [group {self.counter:03d}]"
         )
 
         mock = np.arange(self.nmock, dtype=np.int64)
