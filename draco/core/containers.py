@@ -2539,7 +2539,7 @@ class SpatialDelayCube(ContainerBase):
 
     _axes = ("pol", "delay", "kx", "ky")
 
-    _dataset_spec = {
+    _dataset_spec: ClassVar = {
         "data_tau_uv": {
             "axes": ["pol", "delay", "kx", "ky"],
             "dtype": np.complex128,
@@ -2595,7 +2595,7 @@ class Powerspec3D(ContainerBase):
 
     _axes = ("pol", "delay", "kx", "ky")
 
-    _dataset_spec = {
+    _dataset_spec: ClassVar = {
         "ps3D": {
             "axes": ["pol", "delay", "kx", "ky"],
             "dtype": float,
@@ -2641,7 +2641,7 @@ class Powerspec2D(ContainerBase):
 
     _axes = ("pol", "kpar", "kperp")
 
-    _dataset_spec = {
+    _dataset_spec: ClassVar = {
         "ps2D": {
             "axes": ["pol", "kpar", "kperp"],
             "dtype": np.float64,
@@ -2704,7 +2704,7 @@ class Powerspec1D(ContainerBase):
 
     _axes = ("pol", "k")
 
-    _dataset_spec = {
+    _dataset_spec: ClassVar = {
         "ps1D": {
             "axes": ["pol", "k"],
             "dtype": np.float64,
