@@ -1354,31 +1354,35 @@ class Downselect(io.SelectionsMixin, task.SingleTask):
             Container of same type as the input with specific axis selections.
             Any datasets not included in the selections will not be initialized.
         """
+        sel = {}
+
         # Parse axes with selections and reformat to use only
         # the axis name
         for k in self.selections:
             *axis, type_ = k.split("_")
             axis_name = "_".join(axis)
 
-            sel = self._sel.pop(f"{axis_name}_sel")
+            ax_sel = self._sel.get(f"{axis_name}_sel")
 
             if type_ == "map":
+                # Use index map to get the correct axis indices
                 imap = list(data.index_map[axis_name])
-                sel = [imap.index(x) for x in sel]
+                ax_sel = [imap.index(x) for x in ax_sel]
 
-            self._sel[axis_name] = sel
+            if ax_sel is not None:
+                sel[axis_name] = ax_sel
 
         # Figure out the axes for the new container and
         # Apply the downselections to each axis index_map
         output_axes = {
-            ax: mpiarray._apply_sel(data.index_map[ax], sel, 0)
-            for ax, sel in self._sel.items()
+            ax: mpiarray._apply_sel(data.index_map[ax], ax_sel, 0)
+            for ax, ax_sel in sel.items()
         }
         # Create the output container without initializing any datasets.
         out = data.__class__(
             axes_from=data, attrs_from=data, skip_datasets=True, **output_axes
         )
-        containers.copy_datasets_filter(data, out, selection=self._sel)
+        containers.copy_datasets_filter(data, out, selection=sel)
 
         return out
 
