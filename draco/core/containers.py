@@ -2463,7 +2463,6 @@ class DelaySpectrum(DelayContainer):
             "distributed": True,
             "distributed_axis": "baseline",
         },
-
     }
 
     def __init__(self, *args, weight_boost=1.0, sample=1, **kwargs):
@@ -2535,126 +2534,8 @@ class DelayTransform(DelayContainer):
         return self.attrs["freq"]
 
 
-class WaveletSpectrum(FreqContainer, DelayContainer, DataWeightContainer):
-    """Container for a wavelet power spectrum."""
-
-    _axes = ("baseline",)
-
-    _dataset_spec: ClassVar = {
-        "spectrum": {
-            "axes": ["baseline", "delay", "freq"],
-            "dtype": np.float64,
-            "initialise": True,
-            "distributed": True,
-            "distributed_axis": "baseline",
-        },
-        "weight": {
-            "axes": ["baseline", "freq"],
-            "dtype": np.float64,
-            "initialise": True,
-            "distributed": True,
-            "distributed_axis": "baseline",
-        },
-    }
-    _data_dset_name = "spectrum"
-    _weight_dset_name = "weight"
-
-    @property
-    def spectrum(self):
-        """The wavelet spectrum."""
-        return self.datasets["spectrum"]
-
-
-class DelayCrossSpectrum(DelaySpectrum):
-    """Container for a delay cross power spectra."""
-
-    _axes = ("dataset",)
-
-    _dataset_spec: ClassVar = {
-        "spectrum": {
-            "axes": ["dataset", "dataset", "baseline", "delay"],
-            "dtype": np.float64,
-            "initialise": True,
-            "distributed": True,
-            "distributed_axis": "baseline",
-        },
-        "spectrum_samples": {
-            "axes": ["sample", "dataset", "dataset", "baseline", "delay"],
-            "dtype": np.float64,
-            "initialise": False,
-            "distributed": True,
-            "distributed_axis": "baseline",
-        },
-    }
-
->>>>>>> master
-    @property
-    def spectrum(self):
-        """Get the spectrum dataset."""
-        return self.datasets["spectrum"]
-
-    @property
-    def weight_boost(self):
-        """Get the weight boost factor.
-
-        If set, this factor was used to set the assumed noise when computing the
-        spectrum.
-        """
-        return self.attrs["weight_boost"]
-
-    @property
-    def freq(self):
-        """Get the frequency axis of the input data."""
-        return self.attrs["freq"]
-
-
-class DelayTransform(DelayContainer):
-    """Container for a delay spectrum.
-
-    Notes
-    -----
-    See the docstring for :py:class:`~draco.core.containers.DelaySpectrum` for a
-    description of the difference between `DelayTransform` and `DelaySpectrum`.
-    """
-
-    _axes = ("baseline", "sample")
-
-    _dataset_spec: ClassVar = {
-        "spectrum": {
-            "axes": ["baseline", "sample", "delay"],
-            "dtype": np.complex128,
-            "initialise": True,
-            "distributed": True,
-            "distributed_axis": "baseline",
-        }
-    }
-
-    def __init__(self, weight_boost=1.0, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        self.attrs["weight_boost"] = weight_boost
-
-    @property
-    def spectrum(self):
-        """Get the spectrum dataset."""
-        return self.datasets["spectrum"]
-
-    @property
-    def weight_boost(self):
-        """Get the weight boost factor.
-
-        If set, this factor was used to set the assumed noise when computing the
-        spectrum.
-        """
-        return self.attrs["weight_boost"]
-
-    @property
-    def freq(self):
-        """Get the frequency axis of the input data."""
-        return self.attrs["freq"]
-        
-
 class SpatialDelayCube(ContainerBase):
-    """Container for a data in (delay,kx,ky) domain."""
+    """Container for a data in (delays,kx,ky) domain."""
 
     _axes = ("pol", "delay", "kx", "ky")
 
@@ -2679,21 +2560,6 @@ class SpatialDelayCube(ContainerBase):
         return self.index_map["pol"]
 
     @property
-    def ra(self):
-        """Get the ra axis."""
-        return self.index_map["ra"]
-
-    @property
-    def el(self):
-        """Get the el axis."""
-        return self.index_map["el"]
-
-    @property
-    def freq(self):
-        """Get the freq axis."""
-        return self.index_map["freq"]
-
-    @property
     def k_parallel(self):
         """Get the k_parallel axis."""
         return self.index_map["k_parallel"]
@@ -2707,6 +2573,11 @@ class SpatialDelayCube(ContainerBase):
     def v(self):
         """Get the v coord axis."""
         return self.index_map["v"]
+
+    @property
+    def uv_mask(self):
+        """Get the uv-domain mask."""
+        return self.index_map["uv_mask"]
 
     @property
     def redshift(self):
@@ -2786,7 +2657,7 @@ class Powerspec2D(ContainerBase):
         },
         "signal_mask": {
             "axes": ["pol", "kpar", "kperp"],
-            "dtype": np.float64,
+            "dtype": bool,
             "initialise": True,
             "distributed": True,
         },
@@ -2846,6 +2717,12 @@ class Powerspec1D(ContainerBase):
             "initialise": True,
             "distributed": True,
         },
+        "ps1D_var": {
+            "axes": ["pol", "k"],
+            "dtype": np.float64,
+            "initialise": True,
+            "distributed": True,
+        },
         "k1D": {
             "axes": ["pol", "k"],
             "dtype": np.float64,
@@ -2865,6 +2742,11 @@ class Powerspec1D(ContainerBase):
         return self.datasets["ps1D_error"]
 
     @property
+    def ps1D_var(self):
+        """Get the 1D power spectrum var dataset."""
+        return self.datasets["ps1D_var"]
+
+    @property
     def k1D(self):
         """Get the k1D dataset."""
         return self.datasets["k1D"]
@@ -2873,6 +2755,64 @@ class Powerspec1D(ContainerBase):
     def pol(self):
         """Get the pol axis."""
         return self.index_map["pol"]
+
+
+class WaveletSpectrum(FreqContainer, DelayContainer, DataWeightContainer):
+    """Container for a wavelet power spectrum."""
+
+    _axes = ("baseline",)
+
+    _dataset_spec: ClassVar = {
+        "spectrum": {
+            "axes": ["baseline", "delay", "freq"],
+            "dtype": np.float64,
+            "initialise": True,
+            "distributed": True,
+            "distributed_axis": "baseline",
+        },
+        "weight": {
+            "axes": ["baseline", "freq"],
+            "dtype": np.float64,
+            "initialise": True,
+            "distributed": True,
+            "distributed_axis": "baseline",
+        },
+    }
+    _data_dset_name = "spectrum"
+    _weight_dset_name = "weight"
+
+    @property
+    def spectrum(self):
+        """The wavelet spectrum."""
+        return self.datasets["spectrum"]
+
+
+class DelayCrossSpectrum(DelaySpectrum):
+    """Container for a delay cross power spectra."""
+
+    _axes = ("dataset",)
+
+    _dataset_spec: ClassVar = {
+        "spectrum": {
+            "axes": ["dataset", "dataset", "baseline", "delay"],
+            "dtype": np.float64,
+            "initialise": True,
+            "distributed": True,
+            "distributed_axis": "baseline",
+        },
+        "spectrum_samples": {
+            "axes": ["sample", "dataset", "dataset", "baseline", "delay"],
+            "dtype": np.float64,
+            "initialise": False,
+            "distributed": True,
+            "distributed_axis": "baseline",
+        },
+    }
+
+    @property
+    def spectrum(self):
+        """Get the spectrum dataset."""
+        return self.datasets["spectrum"]
 
 
 class Powerspectrum2D(ContainerBase):
