@@ -428,7 +428,7 @@ class CrossPowerSpectrum3D(task.SingleTask):
             )
 
         # Validate the types are the same
-        if type(data_1) != type(data_2):
+        if type(data_1) is not type(data_2):
             raise TypeError(
                 f"type(data_1) (={type(data_1)}) must match "
                 f"type(data_2) (={type(data_2)})"
@@ -547,6 +547,7 @@ class CylindricalPowerSpectrum2D(task.SingleTask):
             to have inverse variance weight.
         """
         if weight is not None:
+            weight.redistribute("delay")
             self.weight = weight
         else:
             self.weight = None
@@ -570,8 +571,7 @@ class CylindricalPowerSpectrum2D(task.SingleTask):
             )
 
         ps.redistribute("delay")
-        self.weight.redistribute("delay")
-
+        
         # Extract required data axes
         pol = ps.index_map["pol"]
         kpar = ps.index_map["k_parallel"]
@@ -787,6 +787,7 @@ class SphericalPowerSpectrum3Dto1D(task.SingleTask):
             to have inverse variance weight.
         """
         if weight is not None:
+            weight.redistribute("pol")
             self.weight = weight
         else:
             self.weight = None
@@ -809,8 +810,7 @@ class SphericalPowerSpectrum3Dto1D(task.SingleTask):
                 f"Input container must be instance of Powerspec2D (received {ps.__class__})"
             )
         ps.redistribute("pol")
-        self.weight.redistribute("pol")
-
+        
         # Extract required data axes
         pol = ps.index_map["pol"]
         kpar = ps.index_map["k_parallel"]
@@ -990,8 +990,7 @@ def delays_to_kpara(delay, z):
        the input delay (eta).unit [1/Mpc]
     """
     # Eqn A10 of Liu,A 2014A
-    kpara = (delay * 2 * np.pi) / dRpara_df(z)
-    return kpara
+    return (delay * 2 * np.pi) / dRpara_df(z)
 
 
 def kpara_to_delay(kpara, z):
@@ -1011,8 +1010,7 @@ def kpara_to_delay(kpara, z):
       which probes the spatial scale given by kparr.
     """
     # Eqn A10 of Liu,A 2014A
-    delay = kpara * dRpara_df(z) / (2 * np.pi)
-    return delay
+    return kpara * dRpara_df(z) / (2 * np.pi)
 
 
 def u_to_kperp(
@@ -1035,8 +1033,7 @@ def u_to_kperp(
         probed by the baseline length u.
     """
     # Eqn A10 of Liu,A 2014A
-    kperp = 2 * np.pi * u / dRperp_dtheta(z)
-    return kperp
+    return 2 * np.pi * u / dRperp_dtheta(z)
 
 
 def kperp_to_u(kperp, z):
@@ -1057,8 +1054,7 @@ def kperp_to_u(kperp, z):
 
     """
     # Eqn A10 of Liu,A 2014A
-    u = kperp * dRperp_dtheta(z) / (2 * np.pi)
-    return u
+    return kperp * dRperp_dtheta(z) / (2 * np.pi)
 
 
 def jy_per_beam_to_kelvin(freq, bl_length):
@@ -1090,8 +1086,7 @@ def jy_per_beam_to_kelvin(freq, bl_length):
     omega_psf_sr = omega_psf * (np.pi / 180.0) ** 2  # convert the PSF area to sr
 
     kB = units.k_B  # Boltzmann Const in J/k (1.38 * 10-23)
-    Conv = wl**2 * Jy / (2 * kB * omega_psf_sr)
-    return Conv
+    return wl**2 * Jy / (2 * kB * omega_psf_sr)
 
 
 def sza2dec(sza):
@@ -1266,9 +1261,8 @@ def vol_normalization(ra, dec, freq, redshift):
     dz_Mpc = dRpara_df(redshift) * chan_width  # Mpc
     Lz = dz_Mpc * nfreq  # survey length along line-of-sight [Mpc]
 
-    norm = Lx * Ly * Lz
+    return Lx * Ly * Lz
 
-    return norm
 
 
 def nanaverage(d, w, axis=None):
@@ -1350,10 +1344,9 @@ def spatial_mask(k_x, k_y, ew_min, ew_max, ns_bl, wl_min, wl_max, redshift):
     zone_y2 = (k_y >= -ky_max) & (k_y <= -ky_min)
     zone_y = zone_y1 | zone_y2
 
-    # Now take the product of kx and ky mask
-    fourier_mask = zone_x[:, None] * zone_y[None, :]
+    # Now take the product of kx and ky mask and return it
+    return zone_x[:, None] * zone_y[None, :]
 
-    return fourier_mask
 
 
 def get_3D_ps(data_cube_1, data_cube_2, vol_norm_factor):
