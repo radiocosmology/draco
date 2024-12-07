@@ -547,7 +547,6 @@ class CylindricalPowerSpectrum2D(task.SingleTask):
             to have inverse variance weight.
         """
         if weight is not None:
-            weight.redistribute("delay")
             self.weight = weight
         else:
             self.weight = None
@@ -604,6 +603,7 @@ class CylindricalPowerSpectrum2D(task.SingleTask):
         else:
             # input weight is variance and we are taking the
             # inverse to have a inverse variance weight
+            self.weight.redistribute("delay")
             weight = tools.invert_no_zero(self.weight.ps3D[:].local_array)
 
         # Define the 2D power spectrum container
@@ -787,7 +787,6 @@ class SphericalPowerSpectrum3Dto1D(task.SingleTask):
             to have inverse variance weight.
         """
         if weight is not None:
-            weight.redistribute("pol")
             self.weight = weight
         else:
             self.weight = None
@@ -833,6 +832,7 @@ class SphericalPowerSpectrum3Dto1D(task.SingleTask):
         else:
             # input weight is variance and we are taking the
             # inverse to have a inverse variance weight
+            self.weight.redistribute("pol")
             weight = tools.invert_no_zero(self.weight.ps3D[:].local_array)
 
         # Define the 1D power spectrum container
