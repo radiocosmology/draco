@@ -130,7 +130,7 @@ class BeamFormBase(task.SingleTask):
 
         else:
             self.log.info(
-              f"Tracking source for fixed amount of time [{self.timetrack:0.0f} seconds]"
+                f"Tracking source for fixed amount of time [{self.timetrack:0.0f} seconds]"
             )
 
     def process(self):

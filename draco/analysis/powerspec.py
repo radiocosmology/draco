@@ -570,7 +570,7 @@ class CylindricalPowerSpectrum2D(task.SingleTask):
             )
 
         ps.redistribute("delay")
-        
+
         # Extract required data axes
         pol = ps.index_map["pol"]
         kpar = ps.index_map["k_parallel"]
@@ -809,7 +809,7 @@ class SphericalPowerSpectrum3Dto1D(task.SingleTask):
                 f"Input container must be instance of Powerspec2D (received {ps.__class__})"
             )
         ps.redistribute("pol")
-        
+
         # Extract required data axes
         pol = ps.index_map["pol"]
         kpar = ps.index_map["k_parallel"]
@@ -1264,7 +1264,6 @@ def vol_normalization(ra, dec, freq, redshift):
     return Lx * Ly * Lz
 
 
-
 def nanaverage(d, w, axis=None):
     """Estimate the nanaverage data using the weight.
 
@@ -1346,7 +1345,6 @@ def spatial_mask(k_x, k_y, ew_min, ew_max, ns_bl, wl_min, wl_max, redshift):
 
     # Now take the product of kx and ky mask and return it
     return zone_x[:, None] * zone_y[None, :]
-
 
 
 def get_3D_ps(data_cube_1, data_cube_2, vol_norm_factor):
