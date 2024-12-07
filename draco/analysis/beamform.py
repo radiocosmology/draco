@@ -119,7 +119,7 @@ class BeamFormBase(task.SingleTask):
             if self.collapse_ha:
                 self.log.info(
                     "Tracking source for declination dependent amount of time "
-                    f"[{self.timetrack} seconds at equator]"
+                    f"[{self.timetrack:0.0f} seconds at equator]"
                 )
             else:
                 raise NotImplementedError(
@@ -130,7 +130,7 @@ class BeamFormBase(task.SingleTask):
 
         else:
             self.log.info(
-                f"Tracking source for fixed amount of time [{self.timetrack} seconds]"
+              f"Tracking source for fixed amount of time [{self.timetrack:0.0f} seconds]"
             )
 
     def process(self):

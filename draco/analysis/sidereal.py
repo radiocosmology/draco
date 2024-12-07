@@ -145,7 +145,7 @@ class SiderealGrouper(task.SingleTask):
         ts = tod.concatenate(self._timestream_list)
 
         # Add attributes for the LSD and a tag for labelling saved files
-        ts.attrs["tag"] = "lsd_%i" % lsd
+        ts.attrs["tag"] = f"lsd_{lsd:d}"
         ts.attrs["lsd"] = lsd
 
         # Clear the timestream list since these days have already been processed
@@ -248,7 +248,7 @@ class SiderealRegridder(Regridder):
         sdata.vis[:] = sts
         sdata.weight[:] = ni
         sdata.attrs["lsd"] = self.start
-        sdata.attrs["tag"] = "lsd_%i" % self.start
+        sdata.attrs["tag"] = f"lsd_{self.start:d}"
 
         return sdata
 

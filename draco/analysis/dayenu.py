@@ -154,7 +154,7 @@ class DayenuDelayFilter(task.SingleTask):
                     weight[:, bb] *= flag_low[:, np.newaxis].astype(np.float32)
 
             else:
-                self.log.debug("There are %d unique masks/filters." % len(index))
+                self.log.debug(f"There are {len(index):d} unique masks/filters.")
                 for ii, ind in enumerate(index):
                     vis[:, bb, ind] = np.matmul(NF[ii], bvis[:, ind])
                     weight[:, bb, ind] = tools.invert_no_zero(
@@ -663,8 +663,7 @@ class DayenuDelayFilterMap(task.SingleTask):
                 ecut = self._get_cut(el, **kwargs)
 
                 self.log.debug(
-                    "Filtering el %0.3f, %d of %d. [%0.3f micro-sec]"
-                    % (el, ee, nel, ecut)
+                    f"Filtering el {el:0.3f}, {ee:d} of {nel:d}. [{ecut:0.3f} micro-sec]"
                 )
 
                 erm = np.ascontiguousarray(rm[slc])
@@ -837,7 +836,7 @@ class DayenuMFilter(task.SingleTask):
             if not np.any(flag):
                 continue
 
-            self.log.debug("Filtering freq %d of %d." % (ff, nfreq))
+            self.log.debug(f"Filtering freq {ff:d} of {nfreq:d}.")
 
             # Construct the filters
             m_cut = np.abs(self._get_cut(nu, db))
