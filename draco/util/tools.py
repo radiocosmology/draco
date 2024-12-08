@@ -256,9 +256,8 @@ def extract_diagonal(utmat, axis=1):
     # Check that this nside is correct
     if utmat.shape[axis] != (nside * (nside + 1) // 2):
         msg = (
-            "Array length (%i) of axis %i does not correspond upper triangle\
-                of square matrix"
-            % (utmat.shape[axis], axis)
+            f"Array length ({utmat.shape[axis]:d}) of axis {axis:d} does not "
+            "correspond upper triangle of square matrix"
         )
         raise RuntimeError(msg)
 
