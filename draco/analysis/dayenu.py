@@ -534,6 +534,93 @@ class DayenuDelayFilterHybridVis(task.SingleTask):
         return stream
 
 
+class ApplyDelayFilterHybridVis(task.SingleTask):
+    """Apply a previously saved filter to the hybrid beamformed visibilities.
+
+    This task takes a DAYENU filter saved in hybrid beamformed data and applies to
+    another hybrid beamformed visibilities. This task is used to apply the foreground
+    filter to the 21-cm simulation.
+
+    Attributes
+    ----------
+    atten_threshold : float
+        Mask any frequency where the diagonal element of the filter
+        is less than this fraction of the median value over all
+        unmasked frequencies.  Default is 0.0 (i.e., do not mask
+        frequencies with low attenuation).
+    """
+
+    atten_threshold = config.Property(proptype=float, default=0.0)
+
+    def setup(self, ss):
+        """Set the DAYENU filter to be applied to hybrid beamformed data.
+
+        Parameters
+        ----------
+        ss: containers.HybridVisStream
+          The filter of HybridVisStream to be applied.
+        """
+        self.sstream = ss
+
+    def process(self, hv):
+        """Apply the DAYENU filter to a HybridVisStream.
+
+        Parameters
+        ----------
+        hv: containers.HybridVisStream
+         The data the filter will be applied to.
+
+        Returns
+        -------
+        hv_filt: containers.HybridVisStream
+          The filtered dataset.
+        """
+        # Distribute over products
+        hv.redistribute(["ra", "time"])
+        self.sstream.redistribute(["ra", "time"])
+
+        npol, nfreq, new, nel, ntime = hv.vis.local_shape
+
+        # Dereference the required datasets
+        vis = hv.vis[:].local_array
+        weight = hv.weight[:].local_array
+        filt = self.sstream.filter[:].local_array
+
+        # loop over products
+        for tt in range(ntime):
+            t0 = time.time()
+
+            for xx in range(new):
+                self.log.debug(f"Filter time {tt} of {ntime}, baseline {xx} of {new}.")
+
+                for pp in range(npol):
+                    # Grab datasets for this pol and ew baseline
+                    tvis = np.ascontiguousarray(vis[pp, :, xx, :, tt])
+                    tvar = tools.invert_no_zero(weight[pp, :, xx, tt])
+
+                    # Grab the filter for this pol and ew baseline
+                    NF = np.ascontiguousarray(filt[pp, :, :, xx, tt])
+
+                    # Apply the filter
+                    vis[pp, :, xx, :, tt] = np.matmul(NF, tvis)
+                    weight[pp, :, xx, tt] = tools.invert_no_zero(
+                        np.matmul(np.abs(NF) ** 2, tvar)
+                    )
+                    # Flag frequencies with large attenuation
+                    if self.atten_threshold > 0.0:
+                        diag = np.abs(np.diag(NF))
+                        med_diag = np.median(diag[diag > 0.0])
+                        flag_low = diag > (self.atten_threshold * med_diag)
+                        weight[pp, :, xx, tt] *= flag_low.astype(weight.dtype)
+
+            self.log.debug(f"Took {time.time() - t0:0.3f} seconds in total.")
+
+        # Problems saving to disk when distributed over last axis
+        hv.redistribute("freq")
+
+        return hv
+
+
 class DayenuDelayFilterMap(task.SingleTask):
     """Apply a DAYENU high-pass delay filter to ringmap data.
 
