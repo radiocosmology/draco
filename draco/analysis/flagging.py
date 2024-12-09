@@ -2259,8 +2259,7 @@ class ApplyTimeFreqMask(task.SingleTask):
         sf = tstream.weight.local_offset[t_ax]
         ef = sf + tstream.weight.local_shape[t_ax]
 
-        m_ax = m_axes.index("freq")
-        bcast_slice[m_ax] = slice(sf, ef)
+        bcast_slice[t_ax] = slice(sf, ef)
         bcast_slice = tuple(bcast_slice)
 
         # Create output container by copying based on share parameter
