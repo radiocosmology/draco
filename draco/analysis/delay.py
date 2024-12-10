@@ -403,9 +403,9 @@ class DelayTransformBase(task.SingleTask):
     weight_boost = config.Property(proptype=float, default=1.0)
 
     freq_frac = config.Property(proptype=float, default=0.0)
-    time_frac = config.Property(proptype=float, default=-1.0)
+    time_frac = config.Property(proptype=float, default=0.0)
 
-    remove_mean = config.Property(proptype=bool, default=False)
+    remove_mean = config.Property(proptype=bool, default=True)
     scale_freq = config.Property(proptype=bool, default=False)
 
     def process(self, ss):
