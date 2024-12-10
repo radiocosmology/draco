@@ -594,7 +594,7 @@ class ApplyDelayFilterHybridVis(task.SingleTask):
 
         if not np.array_equal(self.stream.ra, hv.ra):
             raise ValueError("Right Ascension do not match for hybrid visibilities.")
-            
+
         npol, nfreq, new, nel, ntime = hv.vis.local_shape
 
         # Dereference the required datasets
