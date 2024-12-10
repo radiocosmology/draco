@@ -10,7 +10,7 @@ using the variance of the noise estimate in the existing data.
 """
 
 import numpy as np
-from caput import config
+from caput import config, pipeline
 from caput.time import STELLAR_S
 
 from ..core import containers, io, task
@@ -56,6 +56,7 @@ class GaussianNoiseDataset(task.SingleTask, random.RandomTask):
     """
 
     dataset = config.Property(proptype=str, default=None)
+    in_place = config.Property(proptype=bool, default=True)
 
     def process(self, data):
         """Generates a Gaussian distributed noise dataset given the provided dataset's visibility weights.
@@ -101,8 +102,16 @@ class GaussianNoiseDataset(task.SingleTask, random.RandomTask):
         # Distribute in something other than `stack`
         data.redistribute("freq")
 
+        # If requested, create a new output container
+        if not self.in_place:
+            out = containers.empty_like(data)
+            out.redistribute("freq")
+            out.weight[:].local_array[:] = data.weight[:].local_array.copy()
+        else:
+            out = data
+
         # Replace visibilities with noise
-        dset = data[dataset_name][:].local_array
+        dset = out[dataset_name][:].local_array
         weight = data.weight[:].local_array
         if np.iscomplexobj(dset):
             random.complex_normal(
@@ -123,6 +132,41 @@ class GaussianNoiseDataset(task.SingleTask, random.RandomTask):
                     dset[:, si].imag = 0.0
 
         return data
+
+
+class MultipleGaussianNoiseDatasets(GaussianNoiseDataset):
+    """Generates multiple Gaussian distributed noise datasets.
+
+    Attributes
+    ----------
+    niter : int
+        Number of Gaussian noise datasets to generate.
+    """
+
+    niter = config.Property(proptype=int, default=1)
+    in_place = False
+
+    def setup(self, data):
+        """Save the data as a class attribute.
+
+        Parameters
+        ----------
+        data : :class:`VisContainer`
+            Any dataset which contains a vis and weight attribute.
+        """
+        self.data = data
+        self.data.redistribute("freq")
+
+    def process(self):
+        """Generate a noise realization.
+
+        The variance will be set to the inverse of the
+        weight dataset of the container provided on setup.
+        """
+        if self._count == self.niter:
+            raise pipeline.PipelineStopIteration
+
+        return super().process(self.data)
 
 
 class GaussianNoise(task.SingleTask, random.RandomTask):
