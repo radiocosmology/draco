@@ -580,19 +580,19 @@ class ApplyDelayFilterHybridVis(task.SingleTask):
         self.sstream.redistribute(["ra", "time"])
 
         # Validate that both hybrid beamformed visibilites match
-        if not np.array_equal(self.stream.freq, hv.freq):
+        if not np.array_equal(self.sstream.freq, hv.freq):
             raise ValueError("Frequencies do not match for hybrid visibilities.")
 
-        if not np.array_equal(self.stream.index_map["el"], hv.index_map["el"]):
+        if not np.array_equal(self.sstream.index_map["el"], hv.index_map["el"]):
             raise ValueError("Elevations do not match for hybrid visibilities.")
 
-        if not np.array_equal(self.stream.index_map["ew"], hv.index_map["ew"]):
+        if not np.array_equal(self.sstream.index_map["ew"], hv.index_map["ew"]):
             raise ValueError("EW baselines do not match for hybrid visibilities.")
 
-        if not np.array_equal(self.stream.index_map["pol"], hv.index_map["pol"]):
+        if not np.array_equal(self.sstream.index_map["pol"], hv.index_map["pol"]):
             raise ValueError("Polarisations do not match for hybrid visibilities.")
 
-        if not np.array_equal(self.stream.ra, hv.ra):
+        if not np.array_equal(self.sstream.ra, hv.ra):
             raise ValueError("Right Ascension do not match for hybrid visibilities.")
 
         npol, nfreq, new, nel, ntime = hv.vis.local_shape
