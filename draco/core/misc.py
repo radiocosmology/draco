@@ -190,7 +190,20 @@ class ApplyGain(task.SingleTask):
 
 
 class AccumulateList(task.MPILoggedTask):
-    """Accumulate the inputs into a list and return when the task *finishes*."""
+    """Accumulate the inputs into a list and return as a group.
+
+    If `group_size` is None, return when the task *finishes*. Otherwise,
+    return every time `group_size` inputs have been accumulated.
+
+    Attributes
+    ----------
+    group_size
+        If this is set, this task will return the list of accumulated
+        data whenever it reaches this length. If not set, wait until
+        no more input is received and then return everything.
+    """
+
+    group_size = config.Property(proptype=int, default=None)
 
     def __init__(self):
         super().__init__()
@@ -199,6 +212,15 @@ class AccumulateList(task.MPILoggedTask):
     def next(self, input_):
         """Append an input to the list of inputs."""
         self._items.append(input_)
+
+        if self.group_size is not None:
+            if len(self._items) >= self.group_size:
+                output = self._items
+                self._items = []
+
+                return output
+
+        return None
 
     def finish(self):
         """Remove the internal reference.
