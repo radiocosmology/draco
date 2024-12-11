@@ -1086,7 +1086,7 @@ class DelaySpectrumWienerEstimator(DelayGeneralContainerBase):
                 complex_timedomain=self.complex_timedomain,
             )
             # FFT-shift along the last axis
-            out_cont.spectrum[bi, nzt] = np.fft.fftshift(y_spec, axes=1)
+            out_cont.spectrum[bi].local_array[:, nzt] = np.fft.fftshift(y_spec, axes=1)
 
         return out_cont
 
