@@ -2299,6 +2299,46 @@ class ApplyGenericMask(task.SingleTask):
 MaskBeamformedOutliers = ApplyGenericMask
 
 
+class CombineMasks(task.SingleTask):
+    """Combine an arbitrary number of masks (conservatively).
+
+    All of the given masks must be of the same type and that type must have a `mask` dataset.
+    Any flagged value in any of the provided masks will be flagged in the output mask.
+
+    Assumes that a sample marked `True` is flagged.
+    """
+
+    def process(self, masks: list[containers.ContainerBase]):
+        """Combine the given list of masks into a single mask.
+
+        Parameters
+        ----------
+        masks
+            A list of containers that all have the same type. The type
+            must have a `mask` dataset.
+
+        Returns
+        -------
+        combined_mask
+            A combined mask such that any flagged value in any of the
+            input masks is flagged in the output mask.
+        """
+        # Check that all types are the same.
+        if any(type(mask) is not type(masks[0]) for mask in masks[1:]):
+            raise TypeError(
+                "At least one type mismatch between masks. All masks must have the same type."
+            )
+
+        # Create combined output mask
+        combined_mask = masks[0].copy()
+
+        # Loop over masks "accumulating" each mask after the first.
+        for mask in masks[1:]:
+            combined_mask.mask[:] |= mask.mask[:]
+
+        return combined_mask
+
+
 class ApplyBaselineMask(task.SingleTask):
     """Apply a distributed mask that varies across baselines.
 
