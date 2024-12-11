@@ -2275,7 +2275,11 @@ class ApplyGenericMask(task.SingleTask):
 
         # Make sure all the mask axes exist in the data
         if any(ax not in daxes for ax in maxes):
-            raise NameError("At least ones axis in `mask` does not exist in `data`.")
+            missing_axes = [ax for ax in maxes if ax not in daxes]
+            raise NameError(
+                f"Mask has axes {missing_axes} which are not found in data."
+                f"\nData axes: {daxes}\nMask axes: {maxes}"
+            )
 
         # Redistribute over frequency, assuming that all containers have
         # a frequency axis
