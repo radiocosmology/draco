@@ -2271,7 +2271,7 @@ class ApplyGenericMask(task.SingleTask):
         """
         # Pull out the axes of each dataset
         daxes = list(data.weight.attrs["axis"])
-        maxes = list(data.mask.attrs["axis"])
+        maxes = list(mask.mask.attrs["axis"])
 
         # Make sure all the mask axes exist in the data
         if any(ax not in daxes for ax in maxes):
