@@ -490,6 +490,37 @@ class GenerateSubBands(SelectFreq):
             setattr(self, key, value)
 
 
+class ElevationDependentHybridVisWeight(task.SingleTask):
+    """Add elevation dependence to hybrid visibility weights."""
+
+    def process(self, data: containers.HybridVisStream):
+        """Remove the weights dataset and broadcast to elevation weights.
+
+        Parameters
+        ----------
+        data
+            Hybrid visibilities with elevation-independent weights.
+
+        Returns
+        -------
+        data
+            Input container with different weights dataset
+        """
+        weights = data.weight[:].local_array
+
+        # Remove the reference to the vis_weight dataset
+        del data["vis_weight"]
+
+        # Add the new elevation-dependent weight dataset
+        data.add_dataset("elevation_vis_weight")
+
+        # Write the weights into the new dataset, broadcasting over
+        # the elevation axis
+        data.weight[:].local_array[:] = weights[..., np.newaxis, :]
+
+        return data
+
+
 class MModeTransform(task.SingleTask):
     """Transform a sidereal stream to m-modes.
 
