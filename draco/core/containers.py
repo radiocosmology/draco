@@ -1961,6 +1961,16 @@ class HybridVisStream(FreqContainer, SiderealContainer, VisBase):
             "compression": COMPRESSION,
             "compression_opts": COMPRESSION_OPTS,
         },
+        "elevation_vis_weight": {
+            "axes": ["pol", "freq", "ew", "el", "ra"],
+            "dtype": np.float32,
+            "initialise": False,
+            "distributed": True,
+            "distributed_axis": "freq",
+            "chunks": (1, 32, 4, 512, 2048),
+            "compression": COMPRESSION,
+            "compression_opts": COMPRESSION_OPTS,
+        },
         "effective_ra": {
             "axes": ["pol", "freq", "ew", "ra"],
             "dtype": np.float32,
@@ -2029,6 +2039,19 @@ class HybridVisStream(FreqContainer, SiderealContainer, VisBase):
                 "Requesting creation of complex-valued filter but "
                 "real filter already exists."
             )
+        if name == "vis_weight" and "elevation_vis_weight" in self.datasets:
+            raise RuntimeError(
+                "Requesting creation of elevation-independent weights but "
+                "elevation-dependent weights already exist."
+            )
+        if name == "elevation_vis_weight":
+            if "vis_weight" in self.datasets:
+                raise RuntimeError(
+                    "Requesting creation of elevation-dependent weights but "
+                    "elevation-independent weights already exist."
+                )
+            # Make this the default weight dataset
+            self._weight_dset_name = "elevation_vis_weight"
         return super().add_dataset(name)
 
     @property
