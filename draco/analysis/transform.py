@@ -1252,7 +1252,7 @@ class MixData(task.SingleTask):
     This can generate arbitrary linear combinations of the data and weights for both
     `SiderealStream` and `RingMap` objects, and can be used for many purposes such as:
     adding together simulated timestreams, injecting signal into data, replacing weights
-    in simulated data with those from real data, etc.
+    in simulated data with those from real data, performing jackknifes, etc.
 
     All coefficients are applied naively to generate the final combinations, i.e. no
     normalisations or weighted summation is performed.
@@ -1260,16 +1260,24 @@ class MixData(task.SingleTask):
     Attributes
     ----------
     data_coeff : list
-        A list of coefficients to apply to the data dataset of each input containter to
+        A list of coefficients to apply to the data dataset of each input container to
         produce the final output. These are applied to either the `vis` or `map` dataset
         depending on the the type of the input container.
     weight_coeff : list
         Coefficient to be applied to each input containers weights to generate the
         output.
+    invert_weight : bool
+        Invert the weights to convert to variance prior to mixing.  Re-invert in the
+        final mixed data product to convert back to inverse variance.
+    require_nonzero_weight : bool
+        Set the weight to zero in the mixed data if the weight is zero in any of the
+        input data.
     """
 
     data_coeff = config.list_type(type_=float)
     weight_coeff = config.list_type(type_=float)
+    invert_weight = config.Property(proptype=bool, default=False)
+    require_nonzero_weight = config.Property(proptype=bool, default=False)
 
     mixed_data = None
 
@@ -1281,6 +1289,8 @@ class MixData(task.SingleTask):
             )
 
         self._data_ind = 0
+        self._tags = []
+        self._wfunc = tools.invert_no_zero if self.invert_weight else lambda x: x
 
     def process(self, data: Union[containers.SiderealStream, containers.RingMap]):
         """Add the input data into the mixed data output.
@@ -1290,17 +1300,6 @@ class MixData(task.SingleTask):
         data
             The data to be added into the mix.
         """
-
-        def _get_dset(data):
-            # Helpful routine to get the data dset depending on the type
-            if isinstance(data, containers.SiderealStream):
-                return data.vis
-
-            if isinstance(data, containers.RingMap):
-                return data.map
-
-            return None
-
         if self._data_ind >= len(self.data_coeff):
             raise RuntimeError(
                 "This task cannot accept more items than there are coefficents set."
@@ -1311,8 +1310,16 @@ class MixData(task.SingleTask):
             self.mixed_data.redistribute("freq")
 
             # Zero out data and weights
-            _get_dset(self.mixed_data)[:] = 0.0
+            self.mixed_data.data[:] = 0.0
             self.mixed_data.weight[:] = 0.0
+
+            if self.require_nonzero_weight:
+                self._flag = mpiarray.ones(
+                    self.mixed_data.weight.shape,
+                    axis=self.mixed_data.weight.distributed_axis,
+                    comm=self.mixed_data.comm,
+                    dtype=bool,
+                )
 
         # Validate the types are the same
         if type(self.mixed_data) is not type(data):
@@ -1323,19 +1330,32 @@ class MixData(task.SingleTask):
 
         data.redistribute("freq")
 
-        mixed_dset = _get_dset(self.mixed_data)[:]
-        data_dset = _get_dset(data)[:]
-
         # Validate the shapes match
-        if mixed_dset.shape != data_dset.shape:
+        if self.mixed_data.data.shape != data.data.shape:
             raise ValueError(
-                f"Size of data ({data_dset.shape}) must match "
-                f"data_stack ({mixed_dset.shape})"
+                f"Size of data ({data.data.shape}) must match "
+                f"data_stack ({self.mixed_data.data.shape})"
+            )
+
+        if self.mixed_data.weight.shape != data.weight.shape:
+            raise ValueError(
+                f"Size of data ({data.weight.shape}) must match "
+                f"data_stack ({self.mixed_data.weightshape})"
             )
 
         # Mix in the data and weights
-        mixed_dset[:] += self.data_coeff[self._data_ind] * data_dset[:]
-        self.mixed_data.weight[:] += self.weight_coeff[self._data_ind] * data.weight[:]
+        self.mixed_data.data[:] += self.data_coeff[self._data_ind] * data.data[:]
+        self.mixed_data.weight[:] += self.weight_coeff[self._data_ind] * self._wfunc(
+            data.weight[:]
+        )
+
+        # Update the flag
+        if self.require_nonzero_weight:
+            self._flag &= (data.weight[:] > 0.0)
+
+        # Save the tags
+        if "tag" in data.attrs:
+            self._tags.append(data.attrs["tag"])
 
         self._data_ind += 1
 
@@ -1358,7 +1378,31 @@ class MixData(task.SingleTask):
         data = self.mixed_data
         self.mixed_data = None
 
+        # Apply the logical AND of all flags
+        if self.require_nonzero_weight:
+            data.weight[:] *= self._flag.astype(data.weight.dtype)
+            self._flag = None
+
+        # Convert back to inverse variance
+        data.weight[:] = self._wfunc(data.weight[:])
+
+        # Combine the tags
+        data.attrs["tag"] = "_".join(self._tags)
+
         return data
+
+
+class Jackknife(MixData):
+    """Perform a jackknife of two datasets.
+
+    This is identical to MixData but sets the default config properties
+    to values appropriate for carrying out a jackknife of two datasets.
+    """
+
+    data_coeff = config.list_type(type_=float, default=[0.5, -0.5])
+    weight_coeff = config.list_type(type_=float, default=[0.25, 0.25])
+    invert_weight = config.Property(proptype=bool, default=True)
+    require_nonzero_weight = config.Property(proptype=bool, default=True)
 
 
 class Downselect(io.SelectionsMixin, task.SingleTask):
