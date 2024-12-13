@@ -1351,7 +1351,7 @@ class MixData(task.SingleTask):
 
         # Update the flag
         if self.require_nonzero_weight:
-            self._flag &= (data.weight[:] > 0.0)
+            self._flag &= data.weight[:] > 0.0
 
         # Save the tags
         if "tag" in data.attrs:
