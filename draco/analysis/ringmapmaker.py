@@ -111,11 +111,12 @@ class MakeVisGrid(task.SingleTask):
 
         # Extract the right ascension to initialise the new container with (or
         # calculate from timestamp)
-        ra = (
-            sstream.ra
-            if "ra" in sstream.index_map
-            else self.telescope.lsa(sstream.time)
-        )
+        if "ra" in sstream.index_map:
+            ra = sstream.ra
+        elif "lsd" in sstream.attrs:
+            ra = 360 * (self.telescope.unix_to_lsd(sstream.time) - sstream.attrs["lsd"])
+        else:
+            ra = self.telescope.lsa(sstream.time)
 
         # Create container for output
         grid = containers.VisGridStream(
@@ -181,16 +182,18 @@ class BeamformNS(task.SingleTask):
         that spans from horizon-to-horizon.  Default is 1.0.
 
     weight : string
-        How to weight the non-redundant baselines:
-            'inverse_variance' - each baseline weighted by the weight attribute
+        How to weight the non-redundant baselines.  Options include:
             'natural' - each baseline weighted by its redundancy (default)
+            'inverse_variance' - each baseline weighted by the weight attribute
             'uniform' - each baseline given equal weight
-            'blackman' - use a Blackman window
-            'nutall' - use a Blackman-Nutall window
+        And any window function supported by drao.util.tools.window_generalised,
+        such as 'hann', 'hanning', 'hamming', 'blackman', 'nuttall',
+        'blackman_nuttall', 'blackman_harris' 'triangular', and 'tukey-0.X'.
 
     scaled : bool
         Scale the window to match the lowest frequency. This should make the
-        beams more frequency independent.
+        beams more frequency independent.  Not supported for 'inverse_variance'
+        and 'natural' weight.
 
     include_auto: bool
         Include autocorrelations in the calculation.  Default is False.
@@ -198,12 +201,10 @@ class BeamformNS(task.SingleTask):
 
     npix = config.Property(proptype=int, default=512)
     span = config.Property(proptype=float, default=1.0)
-    weight = config.enum(
-        ["uniform", "natural", "inverse_variance", "blackman", "nuttall"],
-        default="natural",
-    )
+    weight = config.Property(proptype=str, default="natural")
     scaled = config.Property(proptype=bool, default=False)
     include_auto = config.Property(proptype=bool, default=False)
+    save_dirty_beam = config.Property(proptype=bool, default=False)
 
     def process(self, gstream):
         """Computes the ringmap.
@@ -229,16 +230,18 @@ class BeamformNS(task.SingleTask):
 
         # Create empty ring map
         hv = containers.HybridVisStream(el=el, axes_from=gstream, attrs_from=gstream)
-        hv.add_dataset("dirty_beam")
+        if self.save_dirty_beam:
+            hv.add_dataset("dirty_beam")
         hv.redistribute("freq")
 
         # Dereference datasets
         hvv = hv.vis[:].local_array
         hvw = hv.weight[:].local_array
-        hvb = hv.dirty_beam[:].local_array
+        if self.save_dirty_beam:
+            hvb = hv.dirty_beam[:].local_array
 
         nspos = gstream.index_map["ns"][:]
-        freq = gstream.index_map["freq"]["centre"]
+        freq = gstream.freq
 
         # Get the largest baseline present across all nodes while accounting for masking
         baselines_present = (
@@ -251,6 +254,14 @@ class BeamformNS(task.SingleTask):
         )
         nsmax = self.comm.allreduce(nsmax_local, op=MPI.MAX)
         self.log.info(f"Maximum NS baseline is {nsmax:.2f}m")
+
+        # Record how the beamforming was done to enable easy
+        # reconstruction of synthesized beam
+        hv.attrs["beamform_ns_weight"] = self.weight
+        hv.attrs["beamform_ns_scaled"] = self.scaled
+        hv.attrs["beamform_ns_include_auto"] = self.include_auto
+        hv.attrs["beamform_ns_freqmin"] = freq.min()
+        hv.attrs["beamform_ns_nsmax"] = nsmax
 
         # Loop over local frequencies and fill ring map
         for lfi, fi in gstream.vis[:].enumerate(1):
@@ -298,7 +309,8 @@ class BeamformNS(task.SingleTask):
             hvv[:, lfi] = np.matmul(F, gw * gv)
 
             # Calculate the dirty beam
-            hvb[:, lfi] = np.matmul(F, gw * np.ones_like(gv)).real
+            if self.save_dirty_beam:
+                hvb[:, lfi] = np.matmul(F, gw * np.ones_like(gv)).real
 
             # Estimate the weights assuming that the errors are all uncorrelated
             t = np.sum(tools.invert_no_zero(gsw[:, lfi]) * gw**2, axis=-2)
@@ -322,11 +334,16 @@ class BeamformEW(task.SingleTask):
         How to weight the EW baselines? One of:
             'natural' - weight by the redundancy of the EW baselines.
             'uniform' - give each EW baseline uniform weight.
+    flag_ew : list
+        List of boolean values with length equal to the number of EW baselines.
+        If provided, this specifies what baselines are included in the calculation
+        with True/False denoting include/exclude.
     """
 
     exclude_intracyl = config.Property(proptype=bool, default=False)
     single_beam = config.Property(proptype=bool, default=False)
     weight_ew = config.enum(["natural", "uniform"], default="natural")
+    flag_ew = config.Property(proptype=np.array)
 
     def process(self, hstream):
         """Computes the ringmap.
@@ -343,12 +360,6 @@ class BeamformEW(task.SingleTask):
         # Redistribute over frequency
         hstream.redistribute("freq")
 
-        # TODO: figure out how to get around this
-        if len(hstream.index_map["pol"]) != 4:
-            raise ValueError(
-                "We need all 4 polarisation combinations for this to work."
-            )
-
         # Create empty ring map
         n_ew = len(hstream.index_map["ew"])
         nbeam = 1 if self.single_beam else 2 * n_ew - 1
@@ -363,6 +374,10 @@ class BeamformEW(task.SingleTask):
         if self.exclude_intracyl:
             weight_ew[0] = 0.0
 
+        # Apply a flag if provided
+        if self.flag_ew is not None and self.flag_ew.size == n_ew:
+            weight_ew *= self.flag_ew.astype(bool).astype(weight_ew.dtype)
+
         # Factor to include negative elements in sum single beam sum
         if self.single_beam:
             weight_ew[1:] *= 2
@@ -370,15 +385,23 @@ class BeamformEW(task.SingleTask):
         # Normalise the weights
         weight_ew = weight_ew / weight_ew.sum()
 
-        # TODO: derive these from the actual polarisations found in the input
-        pol = np.array(["XX", "reXY", "imXY", "YY"], dtype="U4")
+        # Reshape ew weights so that they will broadcast against
+        # the vis and weight datasets
+        weight_ew2 = weight_ew[:, np.newaxis] ** 2
+        weight_ew = weight_ew[:, np.newaxis, np.newaxis]
+
+        # Derive the new polarisation index map and rotation matrix
+        pol, P = self._get_pol(hstream.index_map["pol"])
+        P2 = np.abs(P) ** 2
+
+        # Determine if we need to process the dirty beam
+        save_dirty_beam = "dirty_beam" in hstream.datasets
 
         # Create ring map, copying over axes/attrs and add the optional datasets
         rm = containers.RingMap(
             beam=nbeam, pol=pol, axes_from=hstream, attrs_from=hstream
         )
         rm.add_dataset("rms")
-        rm.add_dataset("dirty_beam")
 
         # Make sure ring map is distributed over frequency
         rm.redistribute("freq")
@@ -386,47 +409,93 @@ class BeamformEW(task.SingleTask):
         # Dereference datasets
         hvv = hstream.vis[:].local_array
         hvw = hstream.weight[:].local_array
-        hvb = hstream.dirty_beam[:].local_array
-        rmm = rm.map[:].local_array
-        rmb = rm.dirty_beam[:].local_array
 
-        # This matrix takes the linear combinations of polarisations required to rotate
-        # from XY, YX basis into reXY and imXY
-        P = np.array(
-            [[1, 0, 0, 0], [0, 0.5, 0.5, 0], [0, -0.5j, 0.5j, 0], [0, 0, 0, 1]]
-        )
+        if save_dirty_beam:
+            # Only add this dataset if the input container has
+            # a `dirty_beam` dataset
+            rm.add_dataset("dirty_beam")
+            rmb = rm.dirty_beam[:].local_array
+
+            hvb = hstream.dirty_beam[:].local_array
+
+        rmm = rm.map[:].local_array
+        rmw = rm.weight[:].local_array
+        rmr = rm.rms[:].local_array
 
         # Loop over local frequencies and fill ring map
         for lfi, fi in hstream.vis[:].enumerate(axis=1):
             # Rotate the polarisations
             v = np.tensordot(P, hvv[:, lfi], axes=(1, 0))
-            b = np.tensordot(P, hvb[:, lfi], axes=(1, 0))
 
             # Apply the EW weighting
-            v *= weight_ew[np.newaxis, :, np.newaxis, np.newaxis]
-            b *= weight_ew[np.newaxis, :, np.newaxis, np.newaxis]
+            v *= weight_ew
 
             # Perform  inverse fast fourier transform in x-direction
             if self.single_beam:
                 # Only need the 0th term of the irfft, equivalent to summing in
                 # then EW direction
                 beamformed_data = np.sum(v.real, axis=1)[:, np.newaxis]
-                dirty_beam = np.sum(b.real, axis=1)[:, np.newaxis]
             else:
                 beamformed_data = np.fft.irfft(v, nbeam, axis=1) * nbeam
-                dirty_beam = np.fft.irfft(b, nbeam, axis=1) * nbeam
 
             # Save to container (shifting to the final axis ordering)
             rmm[:, :, lfi] = beamformed_data.transpose(1, 0, 3, 2)
-            rmb[:, :, lfi] = dirty_beam.transpose(1, 0, 3, 2)
 
-        # Estimate weights/rms noise in the ring map by propagating estimates of the
-        # variance in the visibilities
-        rm_var = (tools.invert_no_zero(hvw) * weight_ew[:, np.newaxis] ** 2).sum(axis=2)
-        rm.rms[:] = rm_var**0.5
-        rm.weight[:] = tools.invert_no_zero(rm_var[..., np.newaxis])
+            # Propagate variance in the visibilities to the ringmap.
+            # Factor of 1/2 because we are taking the real component.
+            var = np.tensordot(P2, tools.invert_no_zero(hvw[:, lfi]), axes=(1, 0))
+            rm_var = 0.5 * np.sum(weight_ew2 * var, axis=1)
+
+            rmw[:, lfi] = tools.invert_no_zero(rm_var[..., np.newaxis])
+            rmr[:, lfi] = rm_var**0.5
+
+            # Repeat all the same operations for the dirty beam if available.
+            if save_dirty_beam:
+                b = np.tensordot(P, hvb[:, lfi], axes=(1, 0))
+                b *= weight_ew[np.newaxis, :, np.newaxis, np.newaxis]
+
+                if self.single_beam:
+                    dirty_beam = np.sum(b.real, axis=1)[:, np.newaxis]
+                else:
+                    dirty_beam = np.fft.irfft(b, nbeam, axis=1) * nbeam
+
+                rmb[:, :, lfi] = dirty_beam.transpose(1, 0, 3, 2)
 
         return rm
+
+    @staticmethod
+    def _get_pol(pols):
+        """Derive the output polarizations based on the input index map."""
+        # Require both cross-pol terms to exist if at least one exists
+        if ("XY" in pols) or ("YX" in pols):
+            if ("XY" in pols) ^ ("YX" in pols):
+                raise ValueError(
+                    "If cross-pols exist, both XY and YX must be present. "
+                    f"Got {pols}."
+                )
+            dpol = ["reXY", "imXY"]
+        else:
+            dpol = []
+
+        if "XX" in pols:
+            # XX is first
+            dpol = ["XX", *dpol]
+
+        if "YY" in pols:
+            # YY is last
+            dpol.append("YY")
+
+        # This matrix takes the linear combinations of polarisations
+        # required to rotate from XY, YX basis into reXY and imXY
+        P = np.eye(len(dpol), dtype=np.complex64)
+
+        # add the cross-pol terms if they exist
+        if "reXY" in dpol:
+            i = dpol.index("reXY")
+            P[i, i : i + 2] = [0.5, 0.5]
+            P[i + 1, i : i + 2] = [-0.5j, 0.5j]
+
+        return np.array(dpol, dtype="U4"), P
 
 
 class RingMapMaker(task.group_tasks(MakeVisGrid, BeamformNS, BeamformEW)):

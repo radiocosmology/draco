@@ -7,7 +7,7 @@ from typing import Optional, Union, overload
 
 import numpy as np
 import scipy.linalg as la
-from caput import config, mpiarray
+from caput import config, mpiarray, pipeline
 from caput.tools import invert_no_zero
 from numpy.lib.recfunctions import structured_to_unstructured
 
@@ -202,8 +202,8 @@ class CollateProducts(task.SingleTask):
 
             if not np.all(stack_flag):
                 self.log.warning(
-                    "There are %d stacked baselines that are masked "
-                    "in the telescope instance." % np.sum(~stack_flag)
+                    f"There are {np.sum(~stack_flag):0.0f} stacked baselines "
+                    "that are masked in the telescope instance."
                 )
 
             ss_prod = ss.prod[stack_new["prod"]]
@@ -409,7 +409,9 @@ class SelectFreq(task.SingleTask):
         # Copy over datasets. If the dataset has a frequency axis,
         # then we only copy over the subset.
         if isinstance(data, containers.ContainerBase):
-            containers.copy_datasets_filter(data, newdata, "freq", newindex)
+            containers.copy_datasets_filter(
+                data, newdata, "freq", newindex, copy_without_selection=True
+            )
         else:
             newdata.vis[:] = data.vis[newindex]
             newdata.weight[:] = data.weight[newindex]
@@ -422,6 +424,101 @@ class SelectFreq(task.SingleTask):
         newdata.redistribute("freq")
 
         return newdata
+
+
+class GenerateSubBands(SelectFreq):
+    """Generate multiple sub-bands from an input container.
+
+    Attributes
+    ----------
+    sub_band_spec : dict
+        Dictionary of the format {"band_a": {"channel_range": [0, 64]}, ...}
+        where each entry is a separate sub-band with the key providing the tag
+        that will be used to describe the sub-band and the value providing a
+        dictionary that can contain any of the config properties used by the
+        SelectFreq task to downselect along the frequency axis to obtain the
+        sub-band from the input container.
+    """
+
+    sub_band_spec = config.Property(proptype=dict)
+
+    def setup(self, data):
+        """Cache the data product that will be sub-divided along the frequency axis.
+
+        Parameters
+        ----------
+        data : container
+            Any container with a freq axis.
+        """
+        self.default_parameters = {
+            key: val.default
+            for key, val in SelectFreq.__dict__.items()
+            if isinstance(val, config.Property)
+        }
+
+        self.data = data
+        self.base_tag = self.data.attrs.get("tag", None)
+
+        self.sub_bands = list(self.sub_band_spec.keys())[::-1]
+
+    def process(self):
+        """Select the next sub-band from the container that was provided on setup.
+
+        Returns
+        -------
+        sub : container
+            Same type of container as was provided on setup,
+            downselected along the frequency axis.
+        """
+        if len(self.sub_bands) == 0:
+            raise pipeline.PipelineStopIteration
+
+        tag = self.sub_bands.pop()
+        self._set_freq_selection(**self.sub_band_spec[tag])
+
+        if self.base_tag is not None:
+            self.data.attrs["tag"] = "_".join([self.base_tag, tag])
+        else:
+            self.data.attrs["tag"] = tag
+
+        return super().process(self.data)
+
+    def _set_freq_selection(self, **kwargs):
+        """Set properties of the SelectFreq base class to choose the next sub-band."""
+        for key, default in self.default_parameters.items():
+            value = kwargs[key] if key in kwargs else default
+            setattr(self, key, value)
+
+
+class ElevationDependentHybridVisWeight(task.SingleTask):
+    """Add elevation dependence to hybrid visibility weights."""
+
+    def process(self, data: containers.HybridVisStream):
+        """Remove the weights dataset and broadcast to elevation weights.
+
+        Parameters
+        ----------
+        data
+            Hybrid visibilities with elevation-independent weights.
+
+        Returns
+        -------
+        data
+            Input container with different weights dataset
+        """
+        weights = data.weight[:].local_array
+
+        # Remove the reference to the vis_weight dataset
+        del data["vis_weight"]
+
+        # Add the new elevation-dependent weight dataset
+        data.add_dataset("elevation_vis_weight")
+
+        # Write the weights into the new dataset, broadcasting over
+        # the elevation axis
+        data.weight[:].local_array[:] = weights[..., np.newaxis, :]
+
+        return data
 
 
 class MModeTransform(task.SingleTask):
@@ -1288,22 +1385,35 @@ class Downselect(io.SelectionsMixin, task.SingleTask):
             Container of same type as the input with specific axis selections.
             Any datasets not included in the selections will not be initialized.
         """
-        # Re-format selections to only use axis name
-        for ax_sel in list(self._sel):
-            ax = ax_sel.replace("_sel", "")
-            self._sel[ax] = self._sel.pop(ax_sel)
+        sel = {}
+
+        # Parse axes with selections and reformat to use only
+        # the axis name
+        for k in self.selections:
+            *axis, type_ = k.split("_")
+            axis_name = "_".join(axis)
+
+            ax_sel = self._sel.get(f"{axis_name}_sel")
+
+            if type_ == "map":
+                # Use index map to get the correct axis indices
+                imap = list(data.index_map[axis_name])
+                ax_sel = [imap.index(x) for x in ax_sel]
+
+            if ax_sel is not None:
+                sel[axis_name] = ax_sel
 
         # Figure out the axes for the new container and
         # Apply the downselections to each axis index_map
         output_axes = {
-            ax: mpiarray._apply_sel(data.index_map[ax], sel, 0)
-            for ax, sel in self._sel.items()
+            ax: mpiarray._apply_sel(data.index_map[ax], ax_sel, 0)
+            for ax, ax_sel in sel.items()
         }
         # Create the output container without initializing any datasets.
         out = data.__class__(
             axes_from=data, attrs_from=data, skip_datasets=True, **output_axes
         )
-        containers.copy_datasets_filter(data, out, selection=self._sel)
+        containers.copy_datasets_filter(data, out, selection=sel)
 
         return out
 
@@ -1383,13 +1493,17 @@ class ReduceBase(task.SingleTask):
 
         # Get the weights
         if hasattr(data, "weight"):
-            weight = data.weight[:]
             # The weights should be distributed over the same axis as the array,
             # even if they don't share all the same axes
-            new_weight_ax = list(data.weight.attrs["axis"]).index(new_ax_name)
-            weight = weight.redistribute(new_weight_ax)
+            w_axes = list(data.weight.attrs["axis"])
+            new_weight_ax = w_axes.index(new_ax_name)
+            weight = data.weight[:].redistribute(new_weight_ax)
+            # Insert a size 1 axis for each missing axis in the weights
+            wslc = [slice(None) if ax in w_axes else None for ax in ds_axes]
+            weight = weight.local_array[tuple(wslc)]
         else:
             self.log.info("No weights available. Using equal weighting.")
+            wslc = None
             weight = np.ones(ds.local_shape, ds.dtype)
 
         # Apply the reduction, ensuring that the weights have the correct dimension
@@ -1405,7 +1519,11 @@ class ReduceBase(task.SingleTask):
         out[self.dataset][:] = reduced[:]
 
         if hasattr(out, "weight"):
-            out.weight[:] = reduced_weight[:]
+            if wslc is None:
+                out.weight[:] = reduced_weight
+            else:
+                owslc = [ws if ws is not None else 0 for ws in wslc]
+                out.weight[:] = reduced_weight[tuple(owslc)]
 
         # Redistribute bcak to the original axis, again using the axis name
         out.redistribute(ds_axes[original_ax_id])

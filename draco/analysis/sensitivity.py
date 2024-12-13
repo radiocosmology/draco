@@ -85,8 +85,8 @@ class ComputeSystemSensitivity(task.SingleTask):
 
         if not np.all(stack_flag):
             self.log.warning(
-                "There are %d stacked baselines that are masked "
-                "in the telescope instance." % np.sum(~stack_flag)
+                f"There are {np.sum(~stack_flag):0.0f} stacked baselines that are "
+                "masked in the telescope instance."
             )
 
         ps = data.prod[stack_new["prod"]]

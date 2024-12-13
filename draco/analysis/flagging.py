@@ -451,43 +451,6 @@ class MaskBadGains(task.SingleTask):
         return mask_cont
 
 
-class MaskBeamformedOutliers(task.SingleTask):
-    """Mask beamformed visibilities that deviate from our expectation for noise.
-
-    This is operating under the assumption that, after proper foreground filtering,
-    the beamformed visibilities should be consistent with noise.
-    """
-
-    def process(self, data, mask):
-        """Mask outlier beamformed visibilities.
-
-        Parameters
-        ----------
-        data : FormedBeam, FormedBeamHA, or RingMap
-            Beamformed visibilities.
-
-        mask : FormedBeamMask, FormedBeamHAMask, or RingMapMask
-            Container with a boolean mask where True indicates
-            a beamformed visibility that should be ignored.
-
-        Returns
-        -------
-        data : FormedBeam or RingMap
-            The input container with the weight dataset set to zero
-            for samples that were identified as outliers.
-        """
-        # Redistribute data over frequency
-        data.redistribute("freq")
-        mask.redistribute("freq")
-
-        # Multiply the weights by the inverse of the mask
-        flag = ~mask.mask[:].view(np.ndarray)
-
-        data.weight[:] *= flag.astype(np.float32)
-
-        return data
-
-
 class MaskBeamformedWeights(task.SingleTask):
     """Mask beamformed visibilities with anomalously large weights before stacking.
 
@@ -1349,6 +1312,9 @@ class RFIMaskChisqHighDelay(task.SingleTask):
 
     Attributes
     ----------
+    flag_ew : array
+        If the input container has an east-west baseline axis, then this
+        flag will be applied to the weights before collapsing over that axis.
     reg_arpls : float
         Smoothness regularisation used when estimating the baseline
         for flagging bad frequencies. Default is 1e5.
@@ -1367,7 +1333,29 @@ class RFIMaskChisqHighDelay(task.SingleTask):
         from the median filtered version is greater than this number
         of expected standard deviations given the number of degrees
         of freedom (i.e., number of baselines).
+    estimate_var : bool
+        Estimate the variance in the test statistic using the median
+        absolute deviation over a region defined by the win_t and
+        win_f parameters.
+    only_positive : bool
+        Only mask large postive excursions in the test statistic,
+        leaving large negative excursions unmasked.
+    separate_pol : bool
+        If true, construct a mask for each pol separately.  If false, sum the
+        chi-squared values over all polarisations and construct a single mask.
+    mask_type : {"mad"|"sumthreshold"}
+        Algorithm to use to generate the mask.
+    niter : int, optional
+        Number of iterations.  At each iterations the baseline and standard
+        deviation are re-estimated using the mask from the previous iteration.
+    rho : float, optional
+        Reduce the threshold by this factor at each iteration.  A value of 1
+        will keep the threshold constant for all iterations.
+    max_m : int, optional
+        Maximum size of the SumThreshold window to use.
     """
+
+    flag_ew = config.Property(proptype=np.array)
 
     reg_arpls = config.Property(proptype=float, default=1e5)
     nsigma_1d = config.Property(proptype=float, default=5.0)
@@ -1375,6 +1363,14 @@ class RFIMaskChisqHighDelay(task.SingleTask):
     win_t = config.Property(proptype=int, default=601)
     win_f = config.Property(proptype=int, default=1)
     nsigma_2d = config.Property(proptype=float, default=5.0)
+    estimate_var = config.Property(proptype=bool, default=False)
+    only_positive = config.Property(proptype=bool, default=False)
+    separate_pol = config.Property(proptype=bool, default=False)
+
+    mask_type = config.enum(["mad", "sumthreshold"], default="mad")
+    niter = config.Property(proptype=int, default=5)
+    rho = config.Property(proptype=float, default=1.5)
+    max_m = config.Property(proptype=int, default=32)
 
     def setup(self, telescope=None):
         """Save telescope object for time calculations.
@@ -1389,18 +1385,24 @@ class RFIMaskChisqHighDelay(task.SingleTask):
         """
         self.telescope = None if telescope is None else io.get_telescope(telescope)
 
+        # Set thresholds for sum-threshold algorithm
+        if self.mask_type == "sumthreshold":
+            self.threshold = self.nsigma_2d * self.rho ** np.arange(self.niter)[::-1]
+
     def process(self, stream):
         """Generate a mask from the data.
 
         Parameters
         ----------
-        stream : dcontainers.TimeStream | dcontainers.SiderealStream
+        stream : dcontainers.TimeStream | dcontainers.SiderealStream |
+                 dcontainers.HybridVisStream | dcontainers.RingMap
             Container holding a chi-squared test statistic in the visibility dataset.
             A weighted average will be taken over any axis that is not time/ra or frequency.
 
         Returns
         -------
-        mask : dcontainers.RFIMask | dcontainers.SiderealRFIMask
+        mask : dcontainers.RFIMask | dcontainers.SiderealRFIMask |
+               dcontainers.RFIMaskByPol | dcontainers.SiderealRFIMaskByPol
             Time-frequency mask, where values marked `True` are flagged.
         """
         # Distribute over frequency
@@ -1430,19 +1432,37 @@ class RFIMaskChisqHighDelay(task.SingleTask):
         else:
             timestamp = stream.time
 
+        # Expand the weight dataset so that it can broadcast against the data dataset.
+        # Assumes that weight contains a subset of the axes in data, with the shared
+        # axes in the same order.  This is true for all of the supported input
+        # containers listed in the docstring.
+        dax = list(stream.data.attrs["axis"])
+        wax = list(stream.weight.attrs["axis"])
+        wshp = [stream.weight.shape[wax.index(ax)] if ax in wax else 1 for ax in dax]
+        wshp[dax.index("freq")] = None
+
+        # Extract the shape of the axes that are missing from the weights dataset,
+        # so that we can scale the denominator by this factor.
+        wshp_missing = [sz for sz, ax in zip(stream.data.shape, dax) if ax not in wax]
+        wfactor = np.prod(wshp_missing) if len(wshp_missing) > 0 else 1.0
+
         # Sum over any axis that is neither time nor frequency
-        axsum = tuple(
-            [
-                ii
-                for ii, ax in enumerate(stream.vis.attrs["axis"])
-                if ax not in ["freq", "time", "ra"]
-            ]
-        )
+        keep_axis = ["freq", "time", "ra"]
 
-        chisq = stream.vis[:].real
-        weight = stream.weight[:]
+        separate_pol = self.separate_pol and "pol" in dax
+        if separate_pol:
+            keep_axis.append("pol")
 
-        wsum = np.sum(weight, axis=axsum)
+        axsum = tuple([ii for ii, ax in enumerate(dax) if ax not in keep_axis])
+
+        chisq = stream.data[:].real
+        weight = stream.weight[:].reshape(*wshp)
+
+        if self.flag_ew is not None and "ew" in dax:
+            ew_slc = tuple([slice(None) if ax == "ew" else None for ax in dax])
+            weight = weight * self.flag_ew[ew_slc]
+
+        wsum = wfactor * np.sum(weight, axis=axsum)
         chisq = np.sum(weight * chisq, axis=axsum) * tools.invert_no_zero(wsum)
 
         # Gather all frequencies on all nodes
@@ -1457,36 +1477,44 @@ class RFIMaskChisqHighDelay(task.SingleTask):
         else:
             mask_daytime = self._day_flag_hook(timestamp)
 
-        mask_time = self._source_flag_hook(timestamp, freq)
+        mask_sources = self._source_flag_hook(timestamp, freq)
 
-        mask = mask_input | mask_time
+        # Create output container
+        if separate_pol:
+            if "ra" in stream.index_map:
+                OutputContainer = containers.SiderealRFIMaskByPol
+            else:
+                OutputContainer = containers.RFIMaskByPol
+        elif "ra" in stream.index_map:
+            OutputContainer = containers.SiderealRFIMask
+        else:
+            OutputContainer = containers.RFIMask
 
-        # Mask using median over time
-        mask_output = np.zeros((freq.size, timestamp.size), dtype=bool)
-
-        if self.nsigma_1d > 0.0:
-            mask_1d = self.mask_1d(chisq, mask | mask_daytime)[:, np.newaxis]
-            mask |= mask_1d
-            mask_output |= mask_1d
-
-        # Mask using dynamic spectrum
-        if self.nsigma_2d > 0.0:
-            # The inverse variance of the chisq per dof test statistic is ndof / 2.
-            # This expression assumes ndof is stored in the weight dataset.
-            w = ~mask * wsum / 2.0
-            mask_2d = self.mask_2d(chisq, w)
-
-            mask_output |= mask_2d & ~mask_daytime
-
-        # Save to output container
-        OutputContainer = (
-            containers.SiderealRFIMask
-            if "ra" in stream.index_map
-            else containers.RFIMask
-        )
         output = OutputContainer(axes_from=stream, attrs_from=stream)
+        output.mask[:] = False
 
-        output.mask[:] = mask_output
+        # If requested, construct a mask for each polarisation separately
+        pol_slice = np.arange(stream.pol.size) if separate_pol else [slice(None)]
+        for pslc in pol_slice:
+
+            mask = mask_input[pslc] | mask_sources
+
+            if self.nsigma_1d > 0.0:
+                mask_1d = self.mask_1d(chisq[pslc], mask | mask_daytime)[:, np.newaxis]
+                mask |= mask_1d
+                output.mask[pslc] |= mask_1d
+
+            # Mask using dynamic spectrum
+            if self.nsigma_2d > 0.0:
+                # The inverse variance of the chisq per dof test statistic is ndof / 2.
+                # This expression assumes ndof is stored in the weight dataset.
+                w = ~mask * wsum[pslc] / 2.0
+                if self.mask_type == "mad":
+                    mask_2d = self.mask_2d(chisq[pslc], w)
+                else:
+                    mask_2d = self.mask_2d_sumthreshold(chisq[pslc], w)
+
+                output.mask[pslc] |= mask_2d & ~mask_daytime
 
         return output
 
@@ -1553,10 +1581,89 @@ class RFIMaskChisqHighDelay(task.SingleTask):
 
         # Calculate the deviation from the median, normalized by the
         # expected standard deviation
-        dy = np.abs(y - med_y) * np.sqrt(w)
+        dy = (y - med_y) * np.sqrt(w)
+
+        # If requested, estimate the variance in the test statistic
+        # using the median absolute deviation.
+        if self.estimate_var:
+            f = np.ascontiguousarray((w > 0.0).astype(np.float64))
+            mad_y = 1.48625 * weighted_median.moving_weighted_median(
+                np.abs(dy), f, win_size
+            )
+            dy *= tools.invert_no_zero(mad_y)
+
+        # Take the absolute value of the relative excursion unless
+        # explicitely requested to only flag positive excursions.
+        if not self.only_positive:
+            dy = np.abs(dy)
 
         # Flag times and frequencies that deviate by more than some threshold
         return dy > self.nsigma_2d
+
+    def mask_2d_sumthreshold(self, y, w):
+        """Iterative application of sumthreshold algorithm to mask large chi-squared.
+
+        Parameters
+        ----------
+        y : np.ndarray[nfreq, ntime]
+            Chi-squared per degree of freedom.
+        w : np.ndarray[nfreq, ntime]
+            Inverse variance of the chi-squared per degree of freedom,
+            with zero indicating previously masked samples.
+
+        Returns
+        -------
+        mask : np.ndarray[nfreq]
+            Boolean mask that indicates frequencies and times where
+            chi-squared deviates significantly from the local median.
+        """
+        y = np.ascontiguousarray(y, dtype=np.float64)
+
+        win_size = (self.win_f, self.win_t)
+
+        if not self.estimate_var:
+            mad_y = np.ones_like(y)
+
+        # Slowly reduce the threshold.  At each iteration generate a new estimate
+        # of the background sky and the variance using the current mask.
+        mask = w == 0.0
+        for nsigma in self.threshold:
+
+            f = np.ascontiguousarray(~mask * w, dtype=np.float64)
+
+            # Calculate the local median
+            med_y = weighted_median.moving_weighted_median(y, f, win_size)
+
+            # Calculate the deviation from the median, normalized by the
+            # expected standard deviation
+            dy = (y - med_y) * np.sqrt(w)
+
+            # If requested, estimate the variance in the test statistic
+            # using the median absolute deviation.
+            if self.estimate_var:
+                f = np.ascontiguousarray(f > 0.0, dtype=np.float64)
+                mad_y = 1.48625 * weighted_median.moving_weighted_median(
+                    np.abs(dy), f, win_size
+                )
+
+            # Generate a mask using sumthreshold
+            stmask = rfi.sumthreshold(
+                dy,
+                self.max_m,
+                start_flag=mask,
+                threshold1=nsigma,
+                remove_median=False,
+                correct_for_missing=True,
+                rho=1.0,
+                variance=mad_y**2,
+                only_positive=self.only_positive,
+            )
+
+            # Update the current mask
+            mask |= stmask
+
+        # Return the mask
+        return mask
 
     def _source_flag_hook(self, times, freq):
         """Override to mask bright point sources.
@@ -2022,9 +2129,14 @@ class ApplyTimeFreqMask(task.SingleTask):
         full copy of the data, if "vis" or "map" we create a copy only of the modified
         weight dataset and the unmodified vis dataset is shared, if "all" we
         modify in place and return the input container.
+    collapse_pol : bool
+        Take the logical OR of the mask along the polarisation axis prior to applying
+        it to the data.  In other words, mask a frequency and time in all polarisations
+        if it was identified as contaminated in any polarisation.
     """
 
     share = config.enum(["none", "vis", "map", "all"], default="all")
+    collapse_pol = config.Property(proptype=bool, default=False)
 
     def process(self, tstream, rfimask):
         """Apply the mask by zeroing the weights.
@@ -2035,7 +2147,8 @@ class ApplyTimeFreqMask(task.SingleTask):
             A timestream or sidereal stream like container. For example,
             `containers.TimeStream`, `andata.CorrData` or
             `containers.SiderealStream`.
-        rfimask : containers.RFIMask
+        rfimask : containers.RFIMask, containers.RFIMaskByPol,
+                  containers.SiderealRFIMask, containers.SiderealRFIMaskByPol
             An RFI mask for the same period of time.
 
         Returns
@@ -2043,7 +2156,7 @@ class ApplyTimeFreqMask(task.SingleTask):
         tstream : timestream or sidereal stream
             The masked timestream. Note that the masking is done in place.
         """
-        if isinstance(rfimask, containers.RFIMask):
+        if isinstance(rfimask, (containers.RFIMask, containers.RFIMaskByPol)):
             if not hasattr(tstream, "time"):
                 raise TypeError(
                     f"Expected a timestream like type. Got {type(tstream)}."
@@ -2052,7 +2165,9 @@ class ApplyTimeFreqMask(task.SingleTask):
             if not np.array_equal(tstream.time, rfimask.time):
                 raise ValueError("timestream and mask data have different time axes.")
 
-        elif isinstance(rfimask, containers.SiderealRFIMask):
+        elif isinstance(
+            rfimask, (containers.SiderealRFIMask, containers.SiderealRFIMaskByPol)
+        ):
             if not hasattr(tstream, "ra"):
                 raise TypeError(
                     f"Expected a sidereal stream like type. Got {type(tstream)}."
@@ -2074,18 +2189,43 @@ class ApplyTimeFreqMask(task.SingleTask):
         tstream.redistribute("freq")
 
         # Create a slice that broadcasts the mask to the final shape
-        t_axes = tstream.weight.attrs["axis"]
-        m_axes = rfimask.mask.attrs["axis"]
-        bcast_slice = tuple(
-            slice(None) if ax in m_axes else np.newaxis for ax in t_axes
-        )
+        t_axes = list(tstream.weight.attrs["axis"])
+        m_axes = list(rfimask.mask.attrs["axis"])
+
+        mask = rfimask.mask[:]
+
+        # Deal with the polarisation axis
+        if isinstance(
+            rfimask, (containers.RFIMaskByPol, containers.SiderealRFIMaskByPol)
+        ):
+
+            if self.collapse_pol or "pol" not in t_axes:
+
+                # Collapse polarisation axis
+                mask = np.any(mask, axis=m_axes.index("pol"))
+                m_axes.remove("pol")
+
+            elif "pol" in t_axes:
+
+                # Validate the polarisation axis
+                if not np.array_equal(tstream.pol, rfimask.pol):
+                    raise ValueError(
+                        "timestream and mask data have different pol axes."
+                    )
+
+        # Create a slice that broadcasts the mask to the final shape
+        bcast_slice = [slice(None) if ax in m_axes else np.newaxis for ax in t_axes]
 
         # RFI Mask is not distributed, so we need to cut out the frequencies
         # that are local for the tstream
-        ax = list(t_axes).index("freq")
-        sf = tstream.weight.local_offset[ax]
-        ef = sf + tstream.weight.local_shape[ax]
+        t_ax = t_axes.index("freq")
+        sf = tstream.weight.local_offset[t_ax]
+        ef = sf + tstream.weight.local_shape[t_ax]
 
+        bcast_slice[t_ax] = slice(sf, ef)
+        bcast_slice = tuple(bcast_slice)
+
+        # Create output container by copying based on share parameter
         if self.share == "all":
             tsc = tstream
         elif self.share == "vis":
@@ -2096,11 +2236,111 @@ class ApplyTimeFreqMask(task.SingleTask):
             tsc = tstream.copy()
 
         # Mask the data.
-        tsc.weight[:].local_array[:] *= (~rfimask.mask[sf:ef][bcast_slice]).astype(
-            np.float32
-        )
+        tsc.weight[:].local_array[:] *= (~mask[bcast_slice]).astype(np.float32)
 
         return tsc
+
+
+class ApplyGenericMask(task.SingleTask):
+    """Apply a mask to a dataset with arbitrary axes.
+
+    All of the mask axes must be present in the dataset, but
+    the dataset can have additional axes.
+
+    Assumes that a sample marked `True` in the mask dataset
+    should be flagged.
+    """
+
+    def process(self, data: containers.ContainerBase, mask: containers.ContainerBase):
+        """Apply the mask to the dataset weights.
+
+        Reorder the mask axes and add broadcasting axes if necessary.
+
+        Parameters
+        ----------
+        data
+            Any container with a frequency axis.
+        mask
+            Any container whose axes are a subset of the axes in data
+
+        Returns
+        -------
+        data
+            The input container with the weight dataset set to zero
+            for masked samples.
+        """
+        # Pull out the axes of each dataset
+        daxes = list(data.weight.attrs["axis"])
+        maxes = list(mask.mask.attrs["axis"])
+
+        # Make sure all the mask axes exist in the data
+        if any(ax not in daxes for ax in maxes):
+            missing_axes = [ax for ax in maxes if ax not in daxes]
+            raise NameError(
+                f"Mask has axes {missing_axes} which are not found in data."
+                f"\nData axes: {daxes}\nMask axes: {maxes}"
+            )
+
+        # Redistribute over frequency, assuming that all containers have
+        # a frequency axis
+        data.redistribute("freq")
+        mask.redistribute("freq")
+
+        # Rearrange the existing mask axes to match their order in the dataset
+        tinds = tuple(maxes.index(ax) for ax in daxes if ax in maxes)
+        mask = mask.mask[:].local_array.transpose(tinds)
+
+        # Add broadcasting axes now that mask axes are in the correct order
+        bcast_slobj = tuple(slice(None) if ax in maxes else np.newaxis for ax in daxes)
+
+        # Multiply the inverse mask into the weights
+        data.weight[:].local_array[:] *= (~mask[bcast_slobj]).astype(data.weight.dtype)
+
+        return data
+
+
+# Alias for backwards compatibility
+MaskBeamformedOutliers = ApplyGenericMask
+
+
+class CombineMasks(task.SingleTask):
+    """Combine an arbitrary number of masks (conservatively).
+
+    All of the given masks must be of the same type and that type must have a `mask` dataset.
+    Any flagged value in any of the provided masks will be flagged in the output mask.
+
+    Assumes that a sample marked `True` is flagged.
+    """
+
+    def process(self, masks: list[containers.ContainerBase]):
+        """Combine the given list of masks into a single mask.
+
+        Parameters
+        ----------
+        masks
+            A list of containers that all have the same type. The type
+            must have a `mask` dataset.
+
+        Returns
+        -------
+        combined_mask
+            A combined mask such that any flagged value in any of the
+            input masks is flagged in the output mask.
+        """
+        # Check that all types are the same.
+        if any(type(mask) is not type(masks[0]) for mask in masks[1:]):
+            raise TypeError(
+                "At least one type mismatch between masks. All masks must have the same type."
+            )
+
+        # Create combined output mask
+        combined_mask = masks[0].copy()
+
+        # Loop over masks "accumulating" each mask after the first.
+        for mask in masks[1:]:
+            combined_mask.mask[:] |= mask.mask[:]
+
+        return combined_mask
 
 
 class ApplyBaselineMask(task.SingleTask):
@@ -2250,24 +2490,18 @@ class MaskFreq(task.SingleTask):
         mask = maskcont.mask[:]
 
         # Get the total number of amount of data for each freq-time. This is used to
-        # create an initial mask. For visibilities find the number of baselines
-        # present...
-        if isinstance(data, containers.VisContainer):
-            present_data = mpiarray.MPIArray.wrap(
-                (data.weight[:] > 0).sum(axis=1), comm=data.weight.comm, axis=0
-            )
-        # ... for ringmaps find the number of polarisations/elevations present
-        elif isinstance(data, containers.RingMap):
-            present_data = mpiarray.MPIArray.wrap(
-                (data.weight[:] > 0).sum(axis=3).sum(axis=0),
-                comm=data.weight.comm,
-                axis=0,
-            )
-        else:
-            raise ValueError(
-                f"Received data of type {data._class__}. "
-                "Only visibility type data and ringmaps are supported."
-            )
+        # create an initial mask.
+        waxes = list(data.weight.attrs["axis"])
+        axis_sum = tuple(
+            [ii for ii, ax in enumerate(waxes) if ax not in ["freq", "time", "ra"]]
+        )
+        axis_dist = [ax for ax in waxes if ax in ["freq", "time", "ra"]].index("freq")
+
+        present_data = mpiarray.MPIArray.wrap(
+            (data.weight[:] > 0).sum(axis=axis_sum),
+            comm=data.weight.comm,
+            axis=axis_dist,
+        )
 
         all_present_data = present_data.allgather()
         mask[:] = all_present_data == 0
