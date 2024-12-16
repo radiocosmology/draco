@@ -420,6 +420,9 @@ class DayenuDelayFilterHybridVis(task.SingleTask):
         is less than this fraction of the median value over all
         unmasked frequencies.  Default is 0.0 (i.e., do not mask
         frequencies with low attenuation).
+    apply_filter : bool
+        Apply the filter that was generated. If False, `save_filter`
+        must be True.
     save_filter : bool
         Save the filter that was applied to the output container.
     """
@@ -429,7 +432,15 @@ class DayenuDelayFilterHybridVis(task.SingleTask):
     epsilon = config.Property(proptype=np.atleast_1d, default=1e-12)
 
     atten_threshold = config.Property(proptype=float, default=0.0)
+    apply_filter = config.Property(proptype=bool, default=True)
     save_filter = config.Property(proptype=bool, default=False)
+
+    def setup(self):
+        """Check that `save_filter` and `apply_filter` are set."""
+        if not self.apply_filter and not self.save_filter:
+            raise RuntimeError(
+                "At least one of `save_filter` and `apply_filter` must be True."
+            )
 
     def process(self, stream):
         """Filter out delays from a SiderealStream or TimeStream.
@@ -451,6 +462,9 @@ class DayenuDelayFilterHybridVis(task.SingleTask):
             else:
                 stream.add_dataset("filter")
             stream.filter[:] = 0.0
+
+        if not self.apply_filter:
+            self.log.debug("Filter will be generated but not applied.")
 
         # Distribute over products
         stream.redistribute(["ra", "time"])
@@ -506,6 +520,10 @@ class DayenuDelayFilterHybridVis(task.SingleTask):
                     # Save the filter to the container
                     if self.save_filter:
                         filt[pp, :, :, xx, tt] = NF[0]
+
+                    if not self.apply_filter:
+                        # Skip the rest
+                        continue
 
                     # Grab datasets for this pol and ew baseline
                     tvis = np.ascontiguousarray(vis[pp, :, xx, :, tt])
