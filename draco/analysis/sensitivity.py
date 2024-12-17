@@ -61,7 +61,7 @@ class ComputeSystemSensitivity(task.SingleTask):
 
         if "gain" in data.datasets:
             # Derive frequency dependent flags from gains
-            gainflg = data.gain[:].view(np.ndarray) != (1.0 + 0.0j)
+            gainflg = data.gain[:].local_array != (1.0 + 0.0j)
             inpflg = np.swapaxes(inpflg[np.newaxis, :, :] & gainflg, 0, 1)
             # Flatten frequency and time axis so we can use numpy's unique
             inpflg = inpflg.reshape(inpflg.shape[0], -1)
@@ -155,7 +155,7 @@ class ComputeSystemSensitivity(task.SingleTask):
             )
 
         # Dereference the weight dataset
-        bweight = data.weight[:].view(np.ndarray)
+        bweight = data.weight[:].local_array
         bflag = bweight > 0.0
 
         # Initialize arrays
