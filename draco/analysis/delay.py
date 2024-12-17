@@ -626,11 +626,14 @@ class DelayTransformBase(task.SingleTask):
                 / data.std(axis=(-1, -2))[..., np.newaxis, np.newaxis]
             )
             data = data * tools.invert_no_zero(dscl)
+            weight = weight * dscl ** 2
+
+        var = tools.invert_no_zero(weight)
 
         weight = np.mean(weight, axis=-2)
         weight *= self.weight_boost
 
-        return data, weight, non_zero_freq, non_zero_time
+        return data, var, weight, non_zero_freq, non_zero_time
 
 
 class DelayGibbsSamplerBase(DelayTransformBase, random.RandomTask):
@@ -802,7 +805,7 @@ class DelayGibbsSamplerBase(DelayTransformBase, random.RandomTask):
             t = self._cut_data(data, weight)
             if t is None:
                 continue
-            data, weight, nzf, _ = t
+            data, _, weight, nzf, _ = t
 
             if self.maxpost:
                 spec, success = delay_power_spectrum_maxpost(
@@ -1013,6 +1016,7 @@ class DelaySpectrumWienerEstimator(DelayGeneralContainerBase):
         )
         delay_spec.redistribute("baseline")
         delay_spec.spectrum[:] = 0.0
+        delay_spec.weight[:] = 0.0
 
         # Copy the index maps for all the flattened axes into the output container, and
         # write out their order into an attribute so we can reconstruct this easily
@@ -1070,23 +1074,25 @@ class DelaySpectrumWienerEstimator(DelayGeneralContainerBase):
             t = self._cut_data(data, weight)
             if t is None:
                 continue
-            data, weight, nzf, nzt = t
+            data, var, weight, nzf, nzt = t
 
             # Pass the delay power spectrum and frequency spectrum for each "baseline"
             # to the Wiener filtering routine.The delay power spectrum has been
             # fftshifted in the DelaySpectrumEstimatorBase task, so need to do another
             # fftshift.
-            y_spec = delay_spectrum_wiener_filter(
+            y_spec, w_spec = delay_spectrum_wiener_filter(
                 np.fft.fftshift(delay_ps[lbi, :]),
                 data,
                 ndelay,
                 weight,
+                var,
                 window=self.window if self.apply_window else None,
                 fsel=channel_ind[nzf],
                 complex_timedomain=self.complex_timedomain,
             )
             # FFT-shift along the last axis
             out_cont.spectrum[bi, nzt] = np.fft.fftshift(y_spec, axes=1)
+            out_cont.weight[bi, nzt] = np.fft.fftshift(w_spec, axes=1)
 
         return out_cont
 
@@ -1216,7 +1222,7 @@ class DelayCrossPowerSpectrumEstimator(
             t = self._cut_data(data, weight)
             if t is None:
                 continue
-            data, weight, nzf, _ = t
+            data, _, weight, nzf, _ = t
 
             spec = delay_spectrum_gibbs_cross(
                 data,
@@ -1893,7 +1899,7 @@ delay_spectrum_gibbs = delay_power_spectrum_gibbs
 
 
 def delay_spectrum_wiener_filter(
-    delay_PS, data, N, Ni, window="nuttall", fsel=None, complex_timedomain=False
+    delay_PS, data, N, Ni, var, window="nuttall", fsel=None, complex_timedomain=False
 ):
     """Estimate the delay spectrum from an input frequency spectrum by Wiener filtering.
 
@@ -1914,6 +1920,9 @@ def delay_spectrum_wiener_filter(
         for a complex delay spectrum.
     Ni : np.ndarray[freq]
         Inverse noise variance.
+    var : np.ndarray[nsample, freq]
+        Noise variance of each data point.  This will be propagated through the
+        Wiener filter.
     fsel : np.ndarray[freq], optional
         Indices of channels that we have data at. By default assume all channels.
     window : one of {'nuttall', 'blackman_nuttall', 'blackman_harris', None}, optional
@@ -1927,6 +1936,8 @@ def delay_spectrum_wiener_filter(
     -------
     y_spec : np.ndarray[nsample, ndelay]
         Delay spectrum for each element of the `sample` axis.
+    weight_spec : np.ndarray[nsample, ndelay]
+        Inverse variance of the delay spectrum each element of the `sample` axis.
     """
     # Pre-whiten and apply frequency window to data, and compute F^dagger N^{-1/2}
     # and F^dagger N^{-1} F
@@ -1936,6 +1947,10 @@ def delay_spectrum_wiener_filter(
 
     # Apply F^dagger N^{-1/2} to input frequency spectrum
     y = np.dot(FTNih, data)
+
+    # Apply F^dagger N^{-1/2} to the input noise variance
+    shp = (FTNih.shape[0], FTNih.shape[1] // 2, 2)
+    var_y = np.dot(np.sum(FTNih.reshape(shp) ** 2, axis=-1), var.T)
 
     # Construct the Wiener covariance
     if complex_timedomain:
@@ -1954,10 +1969,16 @@ def delay_spectrum_wiener_filter(
     # [average_axis, delay]
     y_spec = la.solve(Ci, y, assume_a="pos").T
 
+    # Solve for the covariance matrix.  Propagate uncertainty.
+    C = la.inv(Ci)
+    var_y_spec = np.matmul(np.abs(C) ** 2, var_y).T
+
+    # If requested, convert to complex
     if complex_timedomain:
         y_spec = _alternating_real_to_complex(y_spec)
+        var_y_spec = var_y_spec[:, 0::2] + var_y_spec[:, 1::2]
 
-    return y_spec
+    return y_spec, tools.invert_no_zero(var_y_spec)
 
 
 def null_delay_filter(

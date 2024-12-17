@@ -2512,7 +2512,7 @@ class DelaySpectrum(DelayContainer):
         return self.attrs["freq"]
 
 
-class DelayTransform(DelayContainer):
+class DelayTransform(DelayContainer, DataWeightContainer):
     """Container for a delay spectrum.
 
     Notes
@@ -2521,12 +2521,22 @@ class DelayTransform(DelayContainer):
     description of the difference between `DelayTransform` and `DelaySpectrum`.
     """
 
+    _data_dset_name = "spectrum"
+    _weight_dset_name = "weight"
+
     _axes = ("baseline", "sample")
 
     _dataset_spec: ClassVar = {
         "spectrum": {
             "axes": ["baseline", "sample", "delay"],
             "dtype": np.complex128,
+            "initialise": True,
+            "distributed": True,
+            "distributed_axis": "baseline",
+        },
+        "weight": {
+            "axes": ["baseline", "sample", "delay"],
+            "dtype": np.float64,
             "initialise": True,
             "distributed": True,
             "distributed_axis": "baseline",
