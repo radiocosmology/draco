@@ -2561,6 +2561,229 @@ class DelayTransform(DelayContainer):
         return self.attrs["freq"]
 
 
+class SpatialDelayCube(ContainerBase):
+    """Container for a data in (delays,kx,ky) domain."""
+
+    _axes = ("pol", "delay", "kx", "ky")
+
+    _dataset_spec: ClassVar = {
+        "data_tau_uv": {
+            "axes": ["pol", "delay", "kx", "ky"],
+            "dtype": np.complex128,
+            "initialise": True,
+            "distributed": True,
+            "distributed_axis": "delay",
+        }
+    }
+
+    @property
+    def data_tau_uv(self):
+        """Get the spatial data cube."""
+        return self.datasets["data_tau_uv"]
+
+    @property
+    def pol(self):
+        """Get the pol axis."""
+        return self.index_map["pol"]
+
+    @property
+    def k_parallel(self):
+        """Get the k_parallel axis."""
+        return self.index_map["k_parallel"]
+
+    @property
+    def u(self):
+        """Get the u coord axis."""
+        return self.index_map["u"]
+
+    @property
+    def v(self):
+        """Get the v coord axis."""
+        return self.index_map["v"]
+
+    @property
+    def uv_mask(self):
+        """Get the uv-domain mask."""
+        return self.index_map["uv_mask"]
+
+    @property
+    def redshift(self):
+        """Get the redshift attrs."""
+        return self.attrs["redshift"]
+
+    @property
+    def freq_center(self):
+        """Get the central frequency attrs."""
+        return self.attrs["freq_center"]
+
+
+class Powerspec3D(ContainerBase):
+    """Container for a 3D power spectrum."""
+
+    _axes = ("pol", "delay", "kx", "ky")
+
+    _dataset_spec: ClassVar = {
+        "ps3D": {
+            "axes": ["pol", "delay", "kx", "ky"],
+            "dtype": float,
+            "initialise": True,
+            "distributed": True,
+            "distributed_axis": "delay",
+        }
+    }
+
+    @property
+    def ps3D(self):
+        """Get the 3D power spectrum."""
+        return self.datasets["ps3D"]
+
+    @property
+    def pol(self):
+        """Get the pol axis."""
+        return self.index_map["pol"]
+
+    @property
+    def k_parallel(self):
+        """Get the k_parallel axis."""
+        return self.index_map["k_parallel"]
+
+    @property
+    def u(self):
+        """Get the u coord axis."""
+        return self.index_map["u"]
+
+    @property
+    def v(self):
+        """Get the v coord axis."""
+        return self.index_map["v"]
+
+    @property
+    def ps_norm(self):
+        """Get the power spectrum normalizaiton attrs."""
+        return self.attrs["ps_norm"]
+
+
+class Powerspec2D(ContainerBase):
+    """Container for a 2D cylindrically averaged  power spectrum."""
+
+    _axes = ("pol", "kpar", "kperp")
+
+    _dataset_spec: ClassVar = {
+        "ps2D": {
+            "axes": ["pol", "kpar", "kperp"],
+            "dtype": np.float64,
+            "initialise": True,
+            "distributed": True,
+            "distributed_axis": "kpar",
+        },
+        "ps2D_weight": {
+            "axes": ["pol", "kpar", "kperp"],
+            "dtype": np.float64,
+            "initialise": True,
+            "distributed": True,
+        },
+        "signal_mask": {
+            "axes": ["pol", "kpar", "kperp"],
+            "dtype": bool,
+            "initialise": True,
+            "distributed": True,
+        },
+    }
+
+    @property
+    def ps2D(self):
+        """Get the 2D power spectrum dataset."""
+        return self.datasets["ps2D"]
+
+    @property
+    def ps2D_weight(self):
+        """Get the 2D weight dataset."""
+        return self.datasets["ps2D_weight"]
+
+    @property
+    def signal_mask(self):
+        """Get the 2D signal window dataset."""
+        return self.datasets["signal_mask"]
+
+    @property
+    def pol(self):
+        """Get the pol axis."""
+        return self.index_map["pol"]
+
+    @property
+    def kpar(self):
+        """Get the kpar axis."""
+        return self.index_map["kpar"]
+
+    @property
+    def kperp(self):
+        """Get the kprep axis."""
+        return self.index_map["kperp"]
+
+    @property
+    def delay_cut(self):
+        """Get the delay cutoff value."""
+        return self.attrs["delay_cut"]
+
+
+class Powerspec1D(ContainerBase):
+    """Container for a 1D power spectrum."""
+
+    _axes = ("pol", "k")
+
+    _dataset_spec: ClassVar = {
+        "ps1D": {
+            "axes": ["pol", "k"],
+            "dtype": np.float64,
+            "initialise": True,
+            "distributed": True,
+        },
+        "ps1D_error": {
+            "axes": ["pol", "k"],
+            "dtype": np.float64,
+            "initialise": True,
+            "distributed": True,
+        },
+        "ps1D_var": {
+            "axes": ["pol", "k"],
+            "dtype": np.float64,
+            "initialise": True,
+            "distributed": True,
+        },
+        "k1D": {
+            "axes": ["pol", "k"],
+            "dtype": np.float64,
+            "initialise": True,
+            "distributed": True,
+        },
+    }
+
+    @property
+    def ps1D(self):
+        """Get the 1D power spectrum dataset."""
+        return self.datasets["ps1D"]
+
+    @property
+    def ps1D_error(self):
+        """Get the 1D power spectrum error dataset."""
+        return self.datasets["ps1D_error"]
+
+    @property
+    def ps1D_var(self):
+        """Get the 1D power spectrum var dataset."""
+        return self.datasets["ps1D_var"]
+
+    @property
+    def k1D(self):
+        """Get the k1D dataset."""
+        return self.datasets["k1D"]
+
+    @property
+    def pol(self):
+        """Get the pol axis."""
+        return self.index_map["pol"]
+
+
 class WaveletSpectrum(FreqContainer, DelayContainer, DataWeightContainer):
     """Container for a wavelet power spectrum."""
 
