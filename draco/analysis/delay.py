@@ -1082,7 +1082,7 @@ class DelayTransformFFT(DelayGeneralContainerBase, DelayGibbsSamplerBase):
             # Take the inverse fourier transform
             y_spec = fftw.ifft(data, axes=-1)
             # fftshift over the transform axis
-            y_spec = np.fft.fftshift(y_spec, axis=-1)
+            y_spec = np.fft.fftshift(y_spec, axes=-1)
 
             if self.powerspectrum:
                 y_spec = np.var(y_spec, axis=0)
@@ -1091,6 +1091,21 @@ class DelayTransformFFT(DelayGeneralContainerBase, DelayGibbsSamplerBase):
                 out_cont.spectrum[bi, nzt] = y_spec
 
         return out_cont
+
+
+class DelayTransformStokesIFFT(DelayTransformFFT, DelayPowerSpectrumStokesIEstimator):
+    """Stokes I delay transform."""
+
+    def setup(self, telescope):
+        """Set the telescope needed to generate Stokes I.
+
+        Parameters
+        ----------
+        telescope : TransitTelescope
+            Telescope object we'll use for baseline and polarization information.
+        """
+        super(DelayPowerSpectrumStokesIEstimator, self).setup(telescope)
+        super(DelayTransformFFT, self).setup()
 
 
 class DelaySpectrumWienerEstimator(DelayTransformFFT):
