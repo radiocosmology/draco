@@ -11,6 +11,7 @@ from caput import config, mpiarray, pipeline
 from caput.tools import invert_no_zero
 from numpy.lib.recfunctions import structured_to_unstructured
 
+from ..analysis.delay import stokes_I
 from ..core import containers, io, task
 from ..util import regrid, tools
 
@@ -1095,6 +1096,64 @@ class SelectPol(task.SingleTask):
                     out_dset[:] *= 0.5
 
         return outcont
+
+
+class StokesIVis(task.SingleTask):
+    """Extract instrumental Stokes I from visibilities."""
+
+    def setup(self, telescope):
+        """Set the local observers.
+
+        Parameters
+        ----------
+        telescope : :class:`~caput.time.Observer`
+            An Observer object holding the geographic location of the telescope.
+            Note that :class:`~drift.core.TransitTelescope` instances are also
+            Observers.
+        """
+        self.telescope = io.get_telescope(telescope)
+
+    def process(self, data):
+        """Extract instrumental Stokes I.
+
+        This process will reduce the length of the baseline axis.
+
+        Parameters
+        ----------
+        data : containers.VisContainer
+            Container with visibilities and baselines matching
+            the telescope object.
+
+        Returns
+        -------
+        data : containers.VisContainer
+            Container with the same type as `data`, with polarised
+            baselines combined into Stokes I.
+        """
+        data.redistribute("freq")
+
+        # Get stokes I
+        # TODO: move `stokes_I` function somewhere more general
+        # TODO: this would be a lot faster without the extra
+        # redistributes. Try to refactor `stokes_I` a bit
+        vis, weight, baselines = stokes_I(data, self.telescope)
+
+        # Reshape from [baseline, freq, ra] to [freq, baseline, ra]
+        vis = vis.transpose(1, 0, 2)
+        weight = weight.transpose(1, 0, 2)
+
+        # Redistribute over frequency
+        vis = vis.redistribute(0)
+        weight = weight.redistribute(0)
+
+        # Make the output container
+        out = containers.empty_like(data, stack=baselines)
+        out.redistribute("freq")
+
+        out.vis[:] = vis
+        out.weight[:] = weight
+
+        return out
 
 
 class TransformJanskyToKelvin(task.SingleTask):
