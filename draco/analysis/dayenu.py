@@ -616,8 +616,16 @@ class ApplyDelayFilterHybridVis(task.SingleTask):
         for tt in range(ntime):
             t0 = time.time()
 
+            # Skip fully masked times
+            flag = weight[..., tt] > 0.0
+            flag = np.all(flag, axis=0, keepdims=True)
+            weight[..., tt] *= flag.astype(weight.dtype)
+
             for xx in range(new):
                 self.log.debug(f"Filter time {tt} of {ntime}, baseline {xx} of {new}.")
+
+                if not np.any(flag[0, :, xx]):
+                    continue
 
                 for pp in range(npol):
                     # Grab datasets for this pol and ew baseline
