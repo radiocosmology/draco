@@ -487,7 +487,6 @@ class DayenuDelayFilterHybridVis(task.SingleTask):
 
             flag = weight[..., tt] > 0.0
             flag = np.all(flag, axis=0, keepdims=True)
-            weight[..., tt] *= flag.astype(weight.dtype)
 
             for xx in range(new):
 
@@ -511,7 +510,8 @@ class DayenuDelayFilterHybridVis(task.SingleTask):
                     self.log.error(
                         f"Failed to converge while processing time {tt}: {exc}"
                     )
-                    weight[:, :, xx, tt] = 0.0
+                    if self.apply_filter:
+                        weight[:, :, xx, tt] = 0.0
                     continue
 
                 # Apply the filter
@@ -623,7 +623,7 @@ class ApplyDelayFilterHybridVis(task.SingleTask):
 
                     flag = weight[pp, :, xx, tt] > 0.0
 
-                    # Skip full masked samples
+                    # Skip fully masked samples
                     if not np.any(flag):
                         continue
 
@@ -636,8 +636,14 @@ class ApplyDelayFilterHybridVis(task.SingleTask):
 
                     # Make sure that any frequencies unmasked during filter generation
                     # are also unmasked in the data
-                    valid_freq = np.any(np.abs(NF) > 0.0, axis=0)
-                    missing_freq = np.flatnonzero(valid_freq & ~flag)
+                    valid_freq_flag = np.any(np.abs(NF) > 0.0, axis=0)
+
+                    if not np.any(valid_freq_flag):
+                        # Skip samples where filter is entirely zero
+                        weight[pp, :, xx, tt] = 0.0
+                        continue
+
+                    missing_freq = np.flatnonzero(valid_freq_flag & ~flag)
                     if missing_freq.size > 0:
                         self.log.warning(
                             "Missing the following frequencies that were "
@@ -655,9 +661,9 @@ class ApplyDelayFilterHybridVis(task.SingleTask):
                     # Flag frequencies with large attenuation
                     if self.atten_threshold > 0.0:
                         diag = np.abs(np.diag(NF))
-                        valid_diag = diag > 0.0
-                        if np.any(valid_diag):
-                            med_diag = np.median(diag[valid_diag])
+                        nonzero_diag_flag = diag > 0.0
+                        if np.any(nonzero_diag_flag):
+                            med_diag = np.median(diag[nonzero_diag_flag])
                             flag_low = diag > (self.atten_threshold * med_diag)
                             weight[pp, :, xx, tt] *= flag_low.astype(weight.dtype)
 
