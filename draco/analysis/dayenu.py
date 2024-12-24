@@ -639,9 +639,11 @@ class ApplyDelayFilterHybridVis(task.SingleTask):
                     valid_freq = np.any(np.abs(NF) > 0.0, axis=0)
                     missing_freq = np.flatnonzero(valid_freq & ~flag)
                     if missing_freq.size > 0:
-                        self.log.warning("Missing the following frequencies that were "
-                                         "assumed valid during filter generation: "
-                                         f"{missing_freq}")
+                        self.log.warning(
+                            "Missing the following frequencies that were "
+                            "assumed valid during filter generation: "
+                            f"{missing_freq}"
+                        )
                         weight[pp, :, xx, tt] = 0.0
                         continue
 
