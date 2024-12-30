@@ -561,6 +561,44 @@ class LoadFilesFromParams(BaseLoadFiles):
 LoadBasicCont = LoadFilesFromParams
 
 
+class LoadFilesFromAttrs(BaseLoadFiles):
+    """Load files from paths constructed using the attributes of another container.
+
+    This class enables the dynamic generation of file paths by formatting a specified
+    filename template with attributes from an input container.  It inherits from
+    `BaseLoadFiles` and provides functionality to load files into a container.
+
+    Attributes
+    ----------
+    filename : str
+        Template for the file path, which can include placeholders referencing attributes
+        in the input container.  For example: `rfi_mask_lsd_{lsd}.h5`.  The placeholders
+        will be replaced with corresponding attribute values from the input container.
+    """
+
+    filename = config.Property(proptype=str)
+
+    def process(self, incont):
+        """Load a file based on attributes from the input container.
+
+        Parameters
+        ----------
+        incont : subclass of `memh5.BasicCont`
+            Input container whose attributes are used to construct the file path.
+
+        Returns
+        -------
+        outcont : subclass of `memh5.BasicCont`
+            A container populated with data from the loaded file.
+        """
+        # Construct the filename from the attributes in the input container
+        attrs = dict(incont.attrs)
+        filename = self.filename.format(**attrs)
+
+        # Use the base class method to load the file
+        return self._load_file(filename)
+
+
 class FindFiles(pipeline.TaskBase):
     """Take a glob or list of files and pass on to other tasks.
 
