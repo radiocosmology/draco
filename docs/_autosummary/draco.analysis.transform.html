@@ -1,0 +1,1181 @@
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" data-content_root="../">
+<head>
+  <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>draco.analysis.transform &mdash; draco 0.0.1 documentation</title>
+      <link rel="stylesheet" type="text/css" href="../_static/pygments.css?v=80d5e7a1" />
+      <link rel="stylesheet" type="text/css" href="../_static/css/theme.css?v=e59714d7" />
+
+  
+      <script src="../_static/jquery.js?v=5d32c60e"></script>
+      <script src="../_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
+      <script src="../_static/documentation_options.js?v=d45e8c67"></script>
+      <script src="../_static/doctools.js?v=9bcbadda"></script>
+      <script src="../_static/sphinx_highlight.js?v=dc90522c"></script>
+    <script src="../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../genindex.html" />
+    <link rel="search" title="Search" href="../search.html" />
+    <link rel="next" title="draco.core" href="draco.core.html" />
+    <link rel="prev" title="draco.analysis.svdfilter" href="draco.analysis.svdfilter.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="../index.html" class="icon icon-home">
+            draco
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <ul class="current">
+<li class="toctree-l1"><a class="reference internal" href="../tutorial.html">Tutorial</a></li>
+<li class="toctree-l1 current"><a class="reference internal" href="../reference.html">API Reference</a><ul class="current">
+<li class="toctree-l2 current"><a class="reference internal" href="../reference.html#submodules">Submodules</a><ul class="current">
+<li class="toctree-l3 current"><a class="reference internal" href="draco.analysis.html">draco.analysis</a><ul class="current">
+<li class="toctree-l4"><a class="reference internal" href="draco.analysis.beamform.html">draco.analysis.beamform</a></li>
+<li class="toctree-l4"><a class="reference internal" href="draco.analysis.delay.html">draco.analysis.delay</a></li>
+<li class="toctree-l4"><a class="reference internal" href="draco.analysis.fgfilter.html">draco.analysis.fgfilter</a></li>
+<li class="toctree-l4"><a class="reference internal" href="draco.analysis.flagging.html">draco.analysis.flagging</a></li>
+<li class="toctree-l4"><a class="reference internal" href="draco.analysis.mapmaker.html">draco.analysis.mapmaker</a></li>
+<li class="toctree-l4"><a class="reference internal" href="draco.analysis.powerspectrum.html">draco.analysis.powerspectrum</a></li>
+<li class="toctree-l4"><a class="reference internal" href="draco.analysis.sensitivity.html">draco.analysis.sensitivity</a></li>
+<li class="toctree-l4"><a class="reference internal" href="draco.analysis.sidereal.html">draco.analysis.sidereal</a></li>
+<li class="toctree-l4"><a class="reference internal" href="draco.analysis.sourcestack.html">draco.analysis.sourcestack</a></li>
+<li class="toctree-l4"><a class="reference internal" href="draco.analysis.svdfilter.html">draco.analysis.svdfilter</a></li>
+<li class="toctree-l4 current"><a class="current reference internal" href="#">draco.analysis.transform</a></li>
+</ul>
+</li>
+<li class="toctree-l3"><a class="reference internal" href="draco.core.html">draco.core</a></li>
+<li class="toctree-l3"><a class="reference internal" href="draco.synthesis.html">draco.synthesis</a></li>
+<li class="toctree-l3"><a class="reference internal" href="draco.util.html">draco.util</a></li>
+</ul>
+</li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="../dev.html">Development Guidelines</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../index.html">draco</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../index.html" class="icon icon-home" aria-label="Home"></a></li>
+          <li class="breadcrumb-item"><a href="../reference.html">API Reference</a></li>
+          <li class="breadcrumb-item"><a href="draco.analysis.html">draco.analysis</a></li>
+      <li class="breadcrumb-item active">draco.analysis.transform</li>
+      <li class="wy-breadcrumbs-aside">
+            <a href="../_sources/_autosummary/draco.analysis.transform.rst.txt" rel="nofollow"> View page source</a>
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <section id="module-draco.analysis.transform">
+<span id="draco-analysis-transform"></span><h1>draco.analysis.transform<a class="headerlink" href="#module-draco.analysis.transform" title="Link to this heading"></a></h1>
+<p>Miscellaneous transformations to do on data.</p>
+<p>This includes grouping frequencies and products to performing the m-mode transform.</p>
+<p class="rubric">Classes</p>
+<table class="autosummary longtable docutils align-default">
+<tbody>
+<tr class="row-odd"><td><p><a class="reference internal" href="#draco.analysis.transform.CollateProducts" title="draco.analysis.transform.CollateProducts"><code class="xref py py-obj docutils literal notranslate"><span class="pre">CollateProducts</span></code></a>()</p></td>
+<td><p>Extract and order the correlation products for map-making.</p></td>
+</tr>
+<tr class="row-even"><td><p><a class="reference internal" href="#draco.analysis.transform.Downselect" title="draco.analysis.transform.Downselect"><code class="xref py py-obj docutils literal notranslate"><span class="pre">Downselect</span></code></a>()</p></td>
+<td><p>Apply axis selections to a container.</p></td>
+</tr>
+<tr class="row-odd"><td><p><a class="reference internal" href="#draco.analysis.transform.ElevationDependentHybridVisWeight" title="draco.analysis.transform.ElevationDependentHybridVisWeight"><code class="xref py py-obj docutils literal notranslate"><span class="pre">ElevationDependentHybridVisWeight</span></code></a>()</p></td>
+<td><p>Add elevation dependence to hybrid visibility weights.</p></td>
+</tr>
+<tr class="row-even"><td><p><a class="reference internal" href="#draco.analysis.transform.FrequencyRebin" title="draco.analysis.transform.FrequencyRebin"><code class="xref py py-obj docutils literal notranslate"><span class="pre">FrequencyRebin</span></code></a>()</p></td>
+<td><p>Rebin neighbouring frequency channels.</p></td>
+</tr>
+<tr class="row-odd"><td><p><a class="reference internal" href="#draco.analysis.transform.GenerateSubBands" title="draco.analysis.transform.GenerateSubBands"><code class="xref py py-obj docutils literal notranslate"><span class="pre">GenerateSubBands</span></code></a>()</p></td>
+<td><p>Generate multiple sub-bands from an input container.</p></td>
+</tr>
+<tr class="row-even"><td><p><a class="reference internal" href="#draco.analysis.transform.HPFTimeStream" title="draco.analysis.transform.HPFTimeStream"><code class="xref py py-obj docutils literal notranslate"><span class="pre">HPFTimeStream</span></code></a>()</p></td>
+<td><p>High pass filter a timestream.</p></td>
+</tr>
+<tr class="row-odd"><td><p><a class="reference internal" href="#draco.analysis.transform.Jackknife" title="draco.analysis.transform.Jackknife"><code class="xref py py-obj docutils literal notranslate"><span class="pre">Jackknife</span></code></a>()</p></td>
+<td><p>Perform a jackknife of two datasets.</p></td>
+</tr>
+<tr class="row-even"><td><p><a class="reference internal" href="#draco.analysis.transform.MModeInverseTransform" title="draco.analysis.transform.MModeInverseTransform"><code class="xref py py-obj docutils literal notranslate"><span class="pre">MModeInverseTransform</span></code></a>()</p></td>
+<td><p>Transform m-modes to sidereal stream.</p></td>
+</tr>
+<tr class="row-odd"><td><p><a class="reference internal" href="#draco.analysis.transform.MModeTransform" title="draco.analysis.transform.MModeTransform"><code class="xref py py-obj docutils literal notranslate"><span class="pre">MModeTransform</span></code></a>()</p></td>
+<td><p>Transform a sidereal stream to m-modes.</p></td>
+</tr>
+<tr class="row-even"><td><p><a class="reference internal" href="#draco.analysis.transform.MixData" title="draco.analysis.transform.MixData"><code class="xref py py-obj docutils literal notranslate"><span class="pre">MixData</span></code></a>()</p></td>
+<td><p>Mix together pieces of data with specified weights.</p></td>
+</tr>
+<tr class="row-odd"><td><p><a class="reference internal" href="#draco.analysis.transform.ReduceBase" title="draco.analysis.transform.ReduceBase"><code class="xref py py-obj docutils literal notranslate"><span class="pre">ReduceBase</span></code></a>()</p></td>
+<td><p>Apply a weighted reduction operation across specific axes.</p></td>
+</tr>
+<tr class="row-even"><td><p><a class="reference internal" href="#draco.analysis.transform.ReduceChisq" title="draco.analysis.transform.ReduceChisq"><code class="xref py py-obj docutils literal notranslate"><span class="pre">ReduceChisq</span></code></a>()</p></td>
+<td><p>Calculate the chi-squared per degree of freedom.</p></td>
+</tr>
+<tr class="row-odd"><td><p><a class="reference internal" href="#draco.analysis.transform.ReduceVar" title="draco.analysis.transform.ReduceVar"><code class="xref py py-obj docutils literal notranslate"><span class="pre">ReduceVar</span></code></a>()</p></td>
+<td><p>Take the weighted variance of a container.</p></td>
+</tr>
+<tr class="row-even"><td><p><a class="reference internal" href="#draco.analysis.transform.Regridder" title="draco.analysis.transform.Regridder"><code class="xref py py-obj docutils literal notranslate"><span class="pre">Regridder</span></code></a>()</p></td>
+<td><p>Interpolate time-ordered data onto a regular grid.</p></td>
+</tr>
+<tr class="row-odd"><td><p><a class="reference internal" href="#draco.analysis.transform.SelectFreq" title="draco.analysis.transform.SelectFreq"><code class="xref py py-obj docutils literal notranslate"><span class="pre">SelectFreq</span></code></a>()</p></td>
+<td><p>Select a subset of frequencies from a container.</p></td>
+</tr>
+<tr class="row-even"><td><p><a class="reference internal" href="#draco.analysis.transform.SelectPol" title="draco.analysis.transform.SelectPol"><code class="xref py py-obj docutils literal notranslate"><span class="pre">SelectPol</span></code></a>()</p></td>
+<td><p>Extract a subset of polarisations, including Stokes parameters.</p></td>
+</tr>
+<tr class="row-odd"><td><p><a class="reference internal" href="#draco.analysis.transform.ShiftRA" title="draco.analysis.transform.ShiftRA"><code class="xref py py-obj docutils literal notranslate"><span class="pre">ShiftRA</span></code></a>()</p></td>
+<td><p>Add a shift to the RA axis.</p></td>
+</tr>
+<tr class="row-even"><td><p><a class="reference internal" href="#draco.analysis.transform.SiderealMModeResample" title="draco.analysis.transform.SiderealMModeResample"><code class="xref py py-obj docutils literal notranslate"><span class="pre">SiderealMModeResample</span></code></a>()</p></td>
+<td><p>Resample a sidereal stream by FFT.</p></td>
+</tr>
+<tr class="row-odd"><td><p><a class="reference internal" href="#draco.analysis.transform.TransformJanskyToKelvin" title="draco.analysis.transform.TransformJanskyToKelvin"><code class="xref py py-obj docutils literal notranslate"><span class="pre">TransformJanskyToKelvin</span></code></a>()</p></td>
+<td><p>Task to convert from Jy to Kelvin and vice-versa.</p></td>
+</tr>
+</tbody>
+</table>
+<dl class="py class">
+<dt class="sig sig-object py" id="draco.analysis.transform.CollateProducts">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">draco.analysis.transform.</span></span><span class="sig-name descname"><span class="pre">CollateProducts</span></span><a class="reference internal" href="../_modules/draco/analysis/transform.html#CollateProducts"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#draco.analysis.transform.CollateProducts" title="Link to this definition"></a></dt>
+<dd><p>Bases: <a class="reference internal" href="draco.core.task.html#draco.core.task.SingleTask" title="draco.core.task.SingleTask"><code class="xref py py-class docutils literal notranslate"><span class="pre">SingleTask</span></code></a></p>
+<p>Extract and order the correlation products for map-making.</p>
+<p>The task will take a sidereal task and format the products that are needed
+or the map-making. It uses a BeamTransfer instance to figure out what these
+products are, and how they should be ordered. It similarly selects only the
+required frequencies.</p>
+<p>It is important to note that while the input
+<code class="xref py py-class docutils literal notranslate"><span class="pre">SiderealStream</span></code> can contain more feeds and frequencies
+than are contained in the BeamTransfers, the converse is not true. That is,
+all the frequencies and feeds that are in the BeamTransfers must be found in
+the timestream object.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>weight</strong> (<em>string</em><em> (</em><em>'natural'</em><em>, </em><em>'uniform'</em><em>, or </em><em>'inverse_variance'</em><em>)</em>) – <dl class="simple">
+<dt>How to weight the redundant baselines when stacking:</dt><dd><p>’natural’ - each baseline weighted by its redundancy (default)
+‘uniform’ - each baseline given equal weight
+‘inverse_variance’ - each baseline weighted by the weight attribute</p>
+</dd>
+</dl>
+</p>
+</dd>
+</dl>
+<p>Initialize pipeline task.</p>
+<p>May be overridden with no arguments.  Will be called after any
+<cite>config.Property</cite> attributes are set and after ‘input’ and ‘requires’
+keys are set up.</p>
+<dl class="py method">
+<dt class="sig sig-object py" id="draco.analysis.transform.CollateProducts.process">
+<span class="sig-name descname"><span class="pre">process</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">ss</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference internal" href="draco.core.containers.html#draco.core.containers.SiderealStream" title="draco.core.containers.SiderealStream"><span class="pre">SiderealStream</span></a></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><a class="reference internal" href="draco.core.containers.html#draco.core.containers.SiderealStream" title="draco.core.containers.SiderealStream"><span class="pre">SiderealStream</span></a></span></span><a class="reference internal" href="../_modules/draco/analysis/transform.html#CollateProducts.process"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#draco.analysis.transform.CollateProducts.process" title="Link to this definition"></a></dt>
+<dt class="sig sig-object py">
+<span class="sig-name descname"><span class="pre">process</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">ss</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference internal" href="draco.core.containers.html#draco.core.containers.TimeStream" title="draco.core.containers.TimeStream"><span class="pre">TimeStream</span></a></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><a class="reference internal" href="draco.core.containers.html#draco.core.containers.TimeStream" title="draco.core.containers.TimeStream"><span class="pre">TimeStream</span></a></span></span></dt>
+<dd><p>Select and reorder the products.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>ss</strong> – Data with products</p>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p>Dataset containing only the required products.</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>sp</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="draco.analysis.transform.CollateProducts.setup">
+<span class="sig-name descname"><span class="pre">setup</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">tel</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/draco/analysis/transform.html#CollateProducts.setup"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#draco.analysis.transform.CollateProducts.setup" title="Link to this definition"></a></dt>
+<dd><p>Set the Telescope instance to use.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>tel</strong> (<em>TransitTelescope</em>) – Telescope object to use</p>
+</dd>
+</dl>
+</dd></dl>
+
+</dd></dl>
+
+<dl class="py class">
+<dt class="sig sig-object py" id="draco.analysis.transform.Downselect">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">draco.analysis.transform.</span></span><span class="sig-name descname"><span class="pre">Downselect</span></span><a class="reference internal" href="../_modules/draco/analysis/transform.html#Downselect"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#draco.analysis.transform.Downselect" title="Link to this definition"></a></dt>
+<dd><p>Bases: <a class="reference internal" href="draco.core.io.html#draco.core.io.SelectionsMixin" title="draco.core.io.SelectionsMixin"><code class="xref py py-class docutils literal notranslate"><span class="pre">SelectionsMixin</span></code></a>, <a class="reference internal" href="draco.core.task.html#draco.core.task.SingleTask" title="draco.core.task.SingleTask"><code class="xref py py-class docutils literal notranslate"><span class="pre">SingleTask</span></code></a></p>
+<p>Apply axis selections to a container.</p>
+<p>Apply slice or <cite>np.take</cite> operations across multiple axes of a container.
+The selections are applied to every dataset.</p>
+<p>If a dataset is distributed, there must be at least one axis not included
+in the selections.</p>
+<dl class="py method">
+<dt class="sig sig-object py" id="draco.analysis.transform.Downselect.process">
+<span class="sig-name descname"><span class="pre">process</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">data</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference internal" href="draco.core.containers.html#draco.core.containers.ContainerBase" title="draco.core.containers.ContainerBase"><span class="pre">ContainerBase</span></a></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><a class="reference internal" href="draco.core.containers.html#draco.core.containers.ContainerBase" title="draco.core.containers.ContainerBase"><span class="pre">ContainerBase</span></a></span></span><a class="reference internal" href="../_modules/draco/analysis/transform.html#Downselect.process"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#draco.analysis.transform.Downselect.process" title="Link to this definition"></a></dt>
+<dd><p>Apply downselections to the container.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>data</strong> – Container to process</p>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p>Container of same type as the input with specific axis selections.
+Any datasets not included in the selections will not be initialized.</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>out</p>
+</dd>
+</dl>
+</dd></dl>
+
+</dd></dl>
+
+<dl class="py class">
+<dt class="sig sig-object py" id="draco.analysis.transform.ElevationDependentHybridVisWeight">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">draco.analysis.transform.</span></span><span class="sig-name descname"><span class="pre">ElevationDependentHybridVisWeight</span></span><a class="reference internal" href="../_modules/draco/analysis/transform.html#ElevationDependentHybridVisWeight"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#draco.analysis.transform.ElevationDependentHybridVisWeight" title="Link to this definition"></a></dt>
+<dd><p>Bases: <a class="reference internal" href="draco.core.task.html#draco.core.task.SingleTask" title="draco.core.task.SingleTask"><code class="xref py py-class docutils literal notranslate"><span class="pre">SingleTask</span></code></a></p>
+<p>Add elevation dependence to hybrid visibility weights.</p>
+<p>Initialize pipeline task.</p>
+<p>May be overridden with no arguments.  Will be called after any
+<cite>config.Property</cite> attributes are set and after ‘input’ and ‘requires’
+keys are set up.</p>
+<dl class="py method">
+<dt class="sig sig-object py" id="draco.analysis.transform.ElevationDependentHybridVisWeight.process">
+<span class="sig-name descname"><span class="pre">process</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">data</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference internal" href="draco.core.containers.html#draco.core.containers.HybridVisStream" title="draco.core.containers.HybridVisStream"><span class="pre">HybridVisStream</span></a></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/draco/analysis/transform.html#ElevationDependentHybridVisWeight.process"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#draco.analysis.transform.ElevationDependentHybridVisWeight.process" title="Link to this definition"></a></dt>
+<dd><p>Remove the weights dataset and broadcast to elevation weights.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>data</strong> – Hybrid visibilities with elevation-independent weights.</p>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p>Input container with different weights dataset</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>data</p>
+</dd>
+</dl>
+</dd></dl>
+
+</dd></dl>
+
+<dl class="py class">
+<dt class="sig sig-object py" id="draco.analysis.transform.FrequencyRebin">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">draco.analysis.transform.</span></span><span class="sig-name descname"><span class="pre">FrequencyRebin</span></span><a class="reference internal" href="../_modules/draco/analysis/transform.html#FrequencyRebin"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#draco.analysis.transform.FrequencyRebin" title="Link to this definition"></a></dt>
+<dd><p>Bases: <a class="reference internal" href="draco.core.task.html#draco.core.task.SingleTask" title="draco.core.task.SingleTask"><code class="xref py py-class docutils literal notranslate"><span class="pre">SingleTask</span></code></a></p>
+<p>Rebin neighbouring frequency channels.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>channel_bin</strong> (<em>int</em>) – Number of channels to in together.</p>
+</dd>
+</dl>
+<p>Initialize pipeline task.</p>
+<p>May be overridden with no arguments.  Will be called after any
+<cite>config.Property</cite> attributes are set and after ‘input’ and ‘requires’
+keys are set up.</p>
+<dl class="py method">
+<dt class="sig sig-object py" id="draco.analysis.transform.FrequencyRebin.process">
+<span class="sig-name descname"><span class="pre">process</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">ss</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/draco/analysis/transform.html#FrequencyRebin.process"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#draco.analysis.transform.FrequencyRebin.process" title="Link to this definition"></a></dt>
+<dd><p>Take the input dataset and rebin the frequencies.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>ss</strong> (<a class="reference internal" href="draco.core.containers.html#draco.core.containers.SiderealStream" title="draco.core.containers.SiderealStream"><em>containers.SiderealStream</em></a><em> or </em><a class="reference internal" href="draco.core.containers.html#draco.core.containers.TimeStream" title="draco.core.containers.TimeStream"><em>containers.TimeStream</em></a>) – Input data to rebin. Can also be an <cite>andata.CorrData</cite> instance,
+however the output will be a <cite>containers.TimeStream</cite> instance.</p>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p><strong>sb</strong> – Rebinned data. Type should match the input.</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p><a class="reference internal" href="draco.core.containers.html#draco.core.containers.SiderealStream" title="draco.core.containers.SiderealStream">containers.SiderealStream</a> or <a class="reference internal" href="draco.core.containers.html#draco.core.containers.TimeStream" title="draco.core.containers.TimeStream">containers.TimeStream</a></p>
+</dd>
+</dl>
+</dd></dl>
+
+</dd></dl>
+
+<dl class="py class">
+<dt class="sig sig-object py" id="draco.analysis.transform.GenerateSubBands">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">draco.analysis.transform.</span></span><span class="sig-name descname"><span class="pre">GenerateSubBands</span></span><a class="reference internal" href="../_modules/draco/analysis/transform.html#GenerateSubBands"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#draco.analysis.transform.GenerateSubBands" title="Link to this definition"></a></dt>
+<dd><p>Bases: <a class="reference internal" href="#draco.analysis.transform.SelectFreq" title="draco.analysis.transform.SelectFreq"><code class="xref py py-class docutils literal notranslate"><span class="pre">SelectFreq</span></code></a></p>
+<p>Generate multiple sub-bands from an input container.</p>
+<dl class="py attribute">
+<dt class="sig sig-object py" id="draco.analysis.transform.GenerateSubBands.sub_band_spec">
+<span class="sig-name descname"><span class="pre">sub_band_spec</span></span><a class="headerlink" href="#draco.analysis.transform.GenerateSubBands.sub_band_spec" title="Link to this definition"></a></dt>
+<dd><p>Dictionary of the format {“band_a”: {“channel_range”: [0, 64]}, …}
+where each entry is a separate sub-band with the key providing the tag
+that will be used to describe the sub-band and the value providing a
+dictionary that can contain any of the config properties used by the
+SelectFreq task to downselect along the frequency axis to obtain the
+sub-band from the input container.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>dict</p>
+</dd>
+</dl>
+</dd></dl>
+
+<p>Initialize pipeline task.</p>
+<p>May be overridden with no arguments.  Will be called after any
+<cite>config.Property</cite> attributes are set and after ‘input’ and ‘requires’
+keys are set up.</p>
+<dl class="py method">
+<dt class="sig sig-object py" id="draco.analysis.transform.GenerateSubBands.process">
+<span class="sig-name descname"><span class="pre">process</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="../_modules/draco/analysis/transform.html#GenerateSubBands.process"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#draco.analysis.transform.GenerateSubBands.process" title="Link to this definition"></a></dt>
+<dd><p>Select the next sub-band from the container that was provided on setup.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Returns<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>sub</strong> – Same type of container as was provided on setup,
+downselected along the frequency axis.</p>
+</dd>
+<dt class="field-even">Return type<span class="colon">:</span></dt>
+<dd class="field-even"><p>container</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="draco.analysis.transform.GenerateSubBands.setup">
+<span class="sig-name descname"><span class="pre">setup</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">data</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/draco/analysis/transform.html#GenerateSubBands.setup"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#draco.analysis.transform.GenerateSubBands.setup" title="Link to this definition"></a></dt>
+<dd><p>Cache the data product that will be sub-divided along the frequency axis.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>data</strong> (<em>container</em>) – Any container with a freq axis.</p>
+</dd>
+</dl>
+</dd></dl>
+
+</dd></dl>
+
+<dl class="py class">
+<dt class="sig sig-object py" id="draco.analysis.transform.HPFTimeStream">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">draco.analysis.transform.</span></span><span class="sig-name descname"><span class="pre">HPFTimeStream</span></span><a class="reference internal" href="../_modules/draco/analysis/transform.html#HPFTimeStream"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#draco.analysis.transform.HPFTimeStream" title="Link to this definition"></a></dt>
+<dd><p>Bases: <a class="reference internal" href="draco.core.task.html#draco.core.task.SingleTask" title="draco.core.task.SingleTask"><code class="xref py py-class docutils literal notranslate"><span class="pre">SingleTask</span></code></a></p>
+<p>High pass filter a timestream.</p>
+<p>This is done by solving for a low-pass filtered version of the timestream and then
+subtracting it from the original.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>tau</strong> – Timescale in seconds to filter out fluctuations below.</p></li>
+<li><p><strong>pad</strong> – Implicitly pad the timestream with this many multiples of tau worth of zeros.
+This is used to mitigate edge effects. The default is 2.</p></li>
+<li><p><strong>window</strong> – Use a Blackman window when determining the low-pass filtered timestream. When
+applied this approximately doubles the length of the timescale, which is only
+crudely corrected for.</p></li>
+<li><p><strong>prior</strong> – This should be approximately the size of the large scale fluctuations that we
+will use as a regulariser.</p></li>
+</ul>
+</dd>
+</dl>
+<p>Initialize pipeline task.</p>
+<p>May be overridden with no arguments.  Will be called after any
+<cite>config.Property</cite> attributes are set and after ‘input’ and ‘requires’
+keys are set up.</p>
+<dl class="py method">
+<dt class="sig sig-object py" id="draco.analysis.transform.HPFTimeStream.process">
+<span class="sig-name descname"><span class="pre">process</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">tstream</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference internal" href="draco.core.containers.html#draco.core.containers.TODContainer" title="draco.core.containers.TODContainer"><span class="pre">TODContainer</span></a></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><a class="reference internal" href="draco.core.containers.html#draco.core.containers.TODContainer" title="draco.core.containers.TODContainer"><span class="pre">TODContainer</span></a></span></span><a class="reference internal" href="../_modules/draco/analysis/transform.html#HPFTimeStream.process"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#draco.analysis.transform.HPFTimeStream.process" title="Link to this definition"></a></dt>
+<dd><p>High pass filter a time stream.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>tstream</strong> – A TOD container that also implements DataWeightContainer.</p>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p>The high-pass filtered time stream.</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>filtered_tstream</p>
+</dd>
+</dl>
+</dd></dl>
+
+</dd></dl>
+
+<dl class="py class">
+<dt class="sig sig-object py" id="draco.analysis.transform.Jackknife">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">draco.analysis.transform.</span></span><span class="sig-name descname"><span class="pre">Jackknife</span></span><a class="reference internal" href="../_modules/draco/analysis/transform.html#Jackknife"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#draco.analysis.transform.Jackknife" title="Link to this definition"></a></dt>
+<dd><p>Bases: <a class="reference internal" href="#draco.analysis.transform.MixData" title="draco.analysis.transform.MixData"><code class="xref py py-class docutils literal notranslate"><span class="pre">MixData</span></code></a></p>
+<p>Perform a jackknife of two datasets.</p>
+<p>This is identical to MixData but sets the default config properties
+to values appropriate for carrying out a jackknife of two datasets.</p>
+<p>Initialize pipeline task.</p>
+<p>May be overridden with no arguments.  Will be called after any
+<cite>config.Property</cite> attributes are set and after ‘input’ and ‘requires’
+keys are set up.</p>
+</dd></dl>
+
+<dl class="py class">
+<dt class="sig sig-object py" id="draco.analysis.transform.MModeInverseTransform">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">draco.analysis.transform.</span></span><span class="sig-name descname"><span class="pre">MModeInverseTransform</span></span><a class="reference internal" href="../_modules/draco/analysis/transform.html#MModeInverseTransform"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#draco.analysis.transform.MModeInverseTransform" title="Link to this definition"></a></dt>
+<dd><p>Bases: <a class="reference internal" href="draco.core.task.html#draco.core.task.SingleTask" title="draco.core.task.SingleTask"><code class="xref py py-class docutils literal notranslate"><span class="pre">SingleTask</span></code></a></p>
+<p>Transform m-modes to sidereal stream.</p>
+<p>Currently ignores any noise weighting.</p>
+<div class="admonition warning">
+<p class="admonition-title">Warning</p>
+<p>Using <cite>apply_integration_window</cite> will modify the input mmodes.</p>
+</div>
+<dl class="py attribute">
+<dt class="sig sig-object py" id="draco.analysis.transform.MModeInverseTransform.nra">
+<span class="sig-name descname"><span class="pre">nra</span></span><a class="headerlink" href="#draco.analysis.transform.MModeInverseTransform.nra" title="Link to this definition"></a></dt>
+<dd><p>Number of RA bins in the output. Note that if the number of samples does not
+Nyquist sample the maximum m, information may be lost. If not set, then try to
+get from an <cite>original_nra</cite> attribute on the incoming MModes, otherwise determine
+an appropriate number of RA bins from the mmax.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>int</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="draco.analysis.transform.MModeInverseTransform.apply_integration_window">
+<span class="sig-name descname"><span class="pre">apply_integration_window</span></span><a class="headerlink" href="#draco.analysis.transform.MModeInverseTransform.apply_integration_window" title="Link to this definition"></a></dt>
+<dd><p>Apply the effect of the finite width of the RA integration (presuming a
+rectangular integration window). This is applied to both the visibilities and
+the weights. If this is true, as a side effect the input data will be modified
+in place.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>bool</p>
+</dd>
+</dl>
+</dd></dl>
+
+<p>Initialize pipeline task.</p>
+<p>May be overridden with no arguments.  Will be called after any
+<cite>config.Property</cite> attributes are set and after ‘input’ and ‘requires’
+keys are set up.</p>
+<dl class="py method">
+<dt class="sig sig-object py" id="draco.analysis.transform.MModeInverseTransform.process">
+<span class="sig-name descname"><span class="pre">process</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">mmodes</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference internal" href="draco.core.containers.html#draco.core.containers.MContainer" title="draco.core.containers.MContainer"><span class="pre">MContainer</span></a></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><a class="reference internal" href="draco.core.containers.html#draco.core.containers.SiderealContainer" title="draco.core.containers.SiderealContainer"><span class="pre">SiderealContainer</span></a></span></span><a class="reference internal" href="../_modules/draco/analysis/transform.html#MModeInverseTransform.process"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#draco.analysis.transform.MModeInverseTransform.process" title="Link to this definition"></a></dt>
+<dd><p>Perform the m-mode inverse transform.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>mmodes</strong> (<a class="reference internal" href="draco.core.containers.html#draco.core.containers.MModes" title="draco.core.containers.MModes"><em>containers.MModes</em></a>) – The input m-modes.</p>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p><strong>sstream</strong> – The output sidereal stream.</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p><a class="reference internal" href="draco.core.containers.html#draco.core.containers.SiderealStream" title="draco.core.containers.SiderealStream">containers.SiderealStream</a></p>
+</dd>
+</dl>
+</dd></dl>
+
+</dd></dl>
+
+<dl class="py class">
+<dt class="sig sig-object py" id="draco.analysis.transform.MModeTransform">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">draco.analysis.transform.</span></span><span class="sig-name descname"><span class="pre">MModeTransform</span></span><a class="reference internal" href="../_modules/draco/analysis/transform.html#MModeTransform"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#draco.analysis.transform.MModeTransform" title="Link to this definition"></a></dt>
+<dd><p>Bases: <a class="reference internal" href="draco.core.task.html#draco.core.task.SingleTask" title="draco.core.task.SingleTask"><code class="xref py py-class docutils literal notranslate"><span class="pre">SingleTask</span></code></a></p>
+<p>Transform a sidereal stream to m-modes.</p>
+<p>Currently ignores any noise weighting.</p>
+<p>The maximum m used in the container is derived from the number of
+time samples, or if a manager is supplied <cite>telescope.mmax</cite> is used.</p>
+<dl class="py attribute">
+<dt class="sig sig-object py" id="draco.analysis.transform.MModeTransform.remove_integration_window">
+<span class="sig-name descname"><span class="pre">remove_integration_window</span></span><a class="headerlink" href="#draco.analysis.transform.MModeTransform.remove_integration_window" title="Link to this definition"></a></dt>
+<dd><p>Deconvolve the effect of the finite width of the RA integration (presuming it
+was a rectangular integration window). This is applied to both the visibilities
+and the weights.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>bool</p>
+</dd>
+</dl>
+</dd></dl>
+
+<p>Initialize pipeline task.</p>
+<p>May be overridden with no arguments.  Will be called after any
+<cite>config.Property</cite> attributes are set and after ‘input’ and ‘requires’
+keys are set up.</p>
+<dl class="py method">
+<dt class="sig sig-object py" id="draco.analysis.transform.MModeTransform.process">
+<span class="sig-name descname"><span class="pre">process</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">sstream</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference internal" href="draco.core.containers.html#draco.core.containers.SiderealContainer" title="draco.core.containers.SiderealContainer"><span class="pre">SiderealContainer</span></a></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><a class="reference internal" href="draco.core.containers.html#draco.core.containers.MContainer" title="draco.core.containers.MContainer"><span class="pre">MContainer</span></a></span></span><a class="reference internal" href="../_modules/draco/analysis/transform.html#MModeTransform.process"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#draco.analysis.transform.MModeTransform.process" title="Link to this definition"></a></dt>
+<dd><p>Perform the m-mode transform.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>sstream</strong> (<a class="reference internal" href="draco.core.containers.html#draco.core.containers.SiderealStream" title="draco.core.containers.SiderealStream"><em>containers.SiderealStream</em></a><em> or </em><a class="reference internal" href="draco.core.containers.html#draco.core.containers.HybridVisStream" title="draco.core.containers.HybridVisStream"><em>containers.HybridVisStream</em></a>) – The input sidereal stream.</p>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p><strong>mmodes</strong></p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p><a class="reference internal" href="draco.core.containers.html#draco.core.containers.MModes" title="draco.core.containers.MModes">containers.MModes</a></p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="draco.analysis.transform.MModeTransform.setup">
+<span class="sig-name descname"><span class="pre">setup</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">manager</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">ProductManager</span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><span class="pre">BeamTransfer</span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><span class="pre">TransitTelescope</span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><span class="pre">None</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/draco/analysis/transform.html#MModeTransform.setup"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#draco.analysis.transform.MModeTransform.setup" title="Link to this definition"></a></dt>
+<dd><p>Set the telescope instance if a manager object is given.</p>
+<p>This is used to set the <cite>mmax</cite> used in the transform.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>manager</strong> (<em>manager.ProductManager</em><em>, </em><em>optional</em>) – The telescope/manager used to set the <cite>mmax</cite>. If not set, <cite>mmax</cite>
+is derived from the timestream.</p>
+</dd>
+</dl>
+</dd></dl>
+
+</dd></dl>
+
+<dl class="py class">
+<dt class="sig sig-object py" id="draco.analysis.transform.MixData">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">draco.analysis.transform.</span></span><span class="sig-name descname"><span class="pre">MixData</span></span><a class="reference internal" href="../_modules/draco/analysis/transform.html#MixData"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#draco.analysis.transform.MixData" title="Link to this definition"></a></dt>
+<dd><p>Bases: <a class="reference internal" href="draco.core.task.html#draco.core.task.SingleTask" title="draco.core.task.SingleTask"><code class="xref py py-class docutils literal notranslate"><span class="pre">SingleTask</span></code></a></p>
+<p>Mix together pieces of data with specified weights.</p>
+<p>This can generate arbitrary linear combinations of the data and weights for both
+<cite>SiderealStream</cite> and <cite>RingMap</cite> objects, and can be used for many purposes such as:
+adding together simulated timestreams, injecting signal into data, replacing weights
+in simulated data with those from real data, performing jackknifes, etc.</p>
+<p>All coefficients are applied naively to generate the final combinations, i.e. no
+normalisations or weighted summation is performed.</p>
+<dl class="py attribute">
+<dt class="sig sig-object py" id="draco.analysis.transform.MixData.data_coeff">
+<span class="sig-name descname"><span class="pre">data_coeff</span></span><a class="headerlink" href="#draco.analysis.transform.MixData.data_coeff" title="Link to this definition"></a></dt>
+<dd><p>A list of coefficients to apply to the data dataset of each input container to
+produce the final output. These are applied to either the <cite>vis</cite> or <cite>map</cite> dataset
+depending on the the type of the input container.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>list</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="draco.analysis.transform.MixData.weight_coeff">
+<span class="sig-name descname"><span class="pre">weight_coeff</span></span><a class="headerlink" href="#draco.analysis.transform.MixData.weight_coeff" title="Link to this definition"></a></dt>
+<dd><p>Coefficient to be applied to each input containers weights to generate the
+output.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>list</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="draco.analysis.transform.MixData.invert_weight">
+<span class="sig-name descname"><span class="pre">invert_weight</span></span><a class="headerlink" href="#draco.analysis.transform.MixData.invert_weight" title="Link to this definition"></a></dt>
+<dd><p>Invert the weights to convert to variance prior to mixing.  Re-invert in the
+final mixed data product to convert back to inverse variance.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>bool</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="draco.analysis.transform.MixData.require_nonzero_weight">
+<span class="sig-name descname"><span class="pre">require_nonzero_weight</span></span><a class="headerlink" href="#draco.analysis.transform.MixData.require_nonzero_weight" title="Link to this definition"></a></dt>
+<dd><p>Set the weight to zero in the mixed data if the weight is zero in any of the
+input data.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>bool</p>
+</dd>
+</dl>
+</dd></dl>
+
+<p>Initialize pipeline task.</p>
+<p>May be overridden with no arguments.  Will be called after any
+<cite>config.Property</cite> attributes are set and after ‘input’ and ‘requires’
+keys are set up.</p>
+<dl class="py method">
+<dt class="sig sig-object py" id="draco.analysis.transform.MixData.process">
+<span class="sig-name descname"><span class="pre">process</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">data</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference internal" href="draco.core.containers.html#draco.core.containers.SiderealStream" title="draco.core.containers.SiderealStream"><span class="pre">SiderealStream</span></a><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><a class="reference internal" href="draco.core.containers.html#draco.core.containers.RingMap" title="draco.core.containers.RingMap"><span class="pre">RingMap</span></a></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/draco/analysis/transform.html#MixData.process"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#draco.analysis.transform.MixData.process" title="Link to this definition"></a></dt>
+<dd><p>Add the input data into the mixed data output.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>data</strong> – The data to be added into the mix.</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="draco.analysis.transform.MixData.process_finish">
+<span class="sig-name descname"><span class="pre">process_finish</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><a class="reference internal" href="draco.core.containers.html#draco.core.containers.SiderealStream" title="draco.core.containers.SiderealStream"><span class="pre">SiderealStream</span></a><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><a class="reference internal" href="draco.core.containers.html#draco.core.containers.RingMap" title="draco.core.containers.RingMap"><span class="pre">RingMap</span></a></span></span><a class="reference internal" href="../_modules/draco/analysis/transform.html#MixData.process_finish"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#draco.analysis.transform.MixData.process_finish" title="Link to this definition"></a></dt>
+<dd><p>Return the container with the mixed inputs.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Returns<span class="colon">:</span></dt>
+<dd class="field-odd"><p>The mixed data.</p>
+</dd>
+<dt class="field-even">Return type<span class="colon">:</span></dt>
+<dd class="field-even"><p>mixed_data</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="draco.analysis.transform.MixData.setup">
+<span class="sig-name descname"><span class="pre">setup</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="../_modules/draco/analysis/transform.html#MixData.setup"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#draco.analysis.transform.MixData.setup" title="Link to this definition"></a></dt>
+<dd><p>Check the lists have the same length.</p>
+</dd></dl>
+
+</dd></dl>
+
+<dl class="py class">
+<dt class="sig sig-object py" id="draco.analysis.transform.ReduceBase">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">draco.analysis.transform.</span></span><span class="sig-name descname"><span class="pre">ReduceBase</span></span><a class="reference internal" href="../_modules/draco/analysis/transform.html#ReduceBase"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#draco.analysis.transform.ReduceBase" title="Link to this definition"></a></dt>
+<dd><p>Bases: <a class="reference internal" href="draco.core.task.html#draco.core.task.SingleTask" title="draco.core.task.SingleTask"><code class="xref py py-class docutils literal notranslate"><span class="pre">SingleTask</span></code></a></p>
+<p>Apply a weighted reduction operation across specific axes.</p>
+<p>This is non-functional without overriding the <cite>reduction</cite> method.</p>
+<p>There must be at least one axis not included in the reduction.</p>
+<dl class="py attribute">
+<dt class="sig sig-object py" id="draco.analysis.transform.ReduceBase.axes">
+<span class="sig-name descname"><span class="pre">axes</span></span><a class="headerlink" href="#draco.analysis.transform.ReduceBase.axes" title="Link to this definition"></a></dt>
+<dd><p>Axis names to apply the reduction to</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>list</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="draco.analysis.transform.ReduceBase.dataset">
+<span class="sig-name descname"><span class="pre">dataset</span></span><a class="headerlink" href="#draco.analysis.transform.ReduceBase.dataset" title="Link to this definition"></a></dt>
+<dd><p>Dataset name to reduce.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>str</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="draco.analysis.transform.ReduceBase.weighting">
+<span class="sig-name descname"><span class="pre">weighting</span></span><a class="headerlink" href="#draco.analysis.transform.ReduceBase.weighting" title="Link to this definition"></a></dt>
+<dd><p>Which type of weighting to use, if applicable. Options are “none”,
+“masked”, or “weighted”</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>str</p>
+</dd>
+</dl>
+</dd></dl>
+
+<p>Initialize pipeline task.</p>
+<p>May be overridden with no arguments.  Will be called after any
+<cite>config.Property</cite> attributes are set and after ‘input’ and ‘requires’
+keys are set up.</p>
+<dl class="py method">
+<dt class="sig sig-object py" id="draco.analysis.transform.ReduceBase.process">
+<span class="sig-name descname"><span class="pre">process</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">data</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference internal" href="draco.core.containers.html#draco.core.containers.ContainerBase" title="draco.core.containers.ContainerBase"><span class="pre">ContainerBase</span></a></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><a class="reference internal" href="draco.core.containers.html#draco.core.containers.ContainerBase" title="draco.core.containers.ContainerBase"><span class="pre">ContainerBase</span></a></span></span><a class="reference internal" href="../_modules/draco/analysis/transform.html#ReduceBase.process"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#draco.analysis.transform.ReduceBase.process" title="Link to this definition"></a></dt>
+<dd><p>Downselect and apply the reduction operation to the data.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>data</strong> – Dataset to process.</p>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p>Dataset of same type as input with axes reduced. Any datasets
+which are not included in the reduction list will not be initialized,
+other than weights.</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>out</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="draco.analysis.transform.ReduceBase.reduction">
+<span class="sig-name descname"><span class="pre">reduction</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">arr</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">ndarray</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">weight</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">ndarray</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">axis</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">tuple</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">tuple</span><span class="p"><span class="pre">[</span></span><span class="pre">ndarray</span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="pre">ndarray</span><span class="p"><span class="pre">]</span></span></span></span><a class="reference internal" href="../_modules/draco/analysis/transform.html#ReduceBase.reduction"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#draco.analysis.transform.ReduceBase.reduction" title="Link to this definition"></a></dt>
+<dd><p>Overwrite to implement the reductino operation.</p>
+</dd></dl>
+
+</dd></dl>
+
+<dl class="py class">
+<dt class="sig sig-object py" id="draco.analysis.transform.ReduceChisq">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">draco.analysis.transform.</span></span><span class="sig-name descname"><span class="pre">ReduceChisq</span></span><a class="reference internal" href="../_modules/draco/analysis/transform.html#ReduceChisq"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#draco.analysis.transform.ReduceChisq" title="Link to this definition"></a></dt>
+<dd><p>Bases: <a class="reference internal" href="#draco.analysis.transform.ReduceBase" title="draco.analysis.transform.ReduceBase"><code class="xref py py-class docutils literal notranslate"><span class="pre">ReduceBase</span></code></a></p>
+<p>Calculate the chi-squared per degree of freedom.</p>
+<p>Assumes that the visibilities are uncorrelated noise
+whose inverse variance is given by the weight dataset.</p>
+<p>Initialize pipeline task.</p>
+<p>May be overridden with no arguments.  Will be called after any
+<cite>config.Property</cite> attributes are set and after ‘input’ and ‘requires’
+keys are set up.</p>
+<dl class="py method">
+<dt class="sig sig-object py" id="draco.analysis.transform.ReduceChisq.reduction">
+<span class="sig-name descname"><span class="pre">reduction</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">arr</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">weight</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">axis</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/draco/analysis/transform.html#ReduceChisq.reduction"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#draco.analysis.transform.ReduceChisq.reduction" title="Link to this definition"></a></dt>
+<dd><p>Apply a chi-squared calculation.</p>
+</dd></dl>
+
+</dd></dl>
+
+<dl class="py class">
+<dt class="sig sig-object py" id="draco.analysis.transform.ReduceVar">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">draco.analysis.transform.</span></span><span class="sig-name descname"><span class="pre">ReduceVar</span></span><a class="reference internal" href="../_modules/draco/analysis/transform.html#ReduceVar"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#draco.analysis.transform.ReduceVar" title="Link to this definition"></a></dt>
+<dd><p>Bases: <a class="reference internal" href="#draco.analysis.transform.ReduceBase" title="draco.analysis.transform.ReduceBase"><code class="xref py py-class docutils literal notranslate"><span class="pre">ReduceBase</span></code></a></p>
+<p>Take the weighted variance of a container.</p>
+<p>Initialize pipeline task.</p>
+<p>May be overridden with no arguments.  Will be called after any
+<cite>config.Property</cite> attributes are set and after ‘input’ and ‘requires’
+keys are set up.</p>
+<dl class="py method">
+<dt class="sig sig-object py" id="draco.analysis.transform.ReduceVar.reduction">
+<span class="sig-name descname"><span class="pre">reduction</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">arr</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">weight</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">axis</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/draco/analysis/transform.html#ReduceVar.reduction"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#draco.analysis.transform.ReduceVar.reduction" title="Link to this definition"></a></dt>
+<dd><p>Apply a weighted variance.</p>
+</dd></dl>
+
+</dd></dl>
+
+<dl class="py class">
+<dt class="sig sig-object py" id="draco.analysis.transform.Regridder">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">draco.analysis.transform.</span></span><span class="sig-name descname"><span class="pre">Regridder</span></span><a class="reference internal" href="../_modules/draco/analysis/transform.html#Regridder"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#draco.analysis.transform.Regridder" title="Link to this definition"></a></dt>
+<dd><p>Bases: <a class="reference internal" href="draco.core.task.html#draco.core.task.SingleTask" title="draco.core.task.SingleTask"><code class="xref py py-class docutils literal notranslate"><span class="pre">SingleTask</span></code></a></p>
+<p>Interpolate time-ordered data onto a regular grid.</p>
+<p>Uses a maximum-likelihood inverse of a Lanczos interpolation to do the
+regridding. This gives a reasonably local regridding, that is pretty well
+behaved in m-space.</p>
+<dl class="py attribute">
+<dt class="sig sig-object py" id="draco.analysis.transform.Regridder.samples">
+<span class="sig-name descname"><span class="pre">samples</span></span><a class="headerlink" href="#draco.analysis.transform.Regridder.samples" title="Link to this definition"></a></dt>
+<dd><p>Number of samples to interpolate onto.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>int</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="draco.analysis.transform.Regridder.start">
+<span class="sig-name descname"><span class="pre">start</span></span><a class="headerlink" href="#draco.analysis.transform.Regridder.start" title="Link to this definition"></a></dt>
+<dd><p>Start of the interpolated samples.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>float</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="draco.analysis.transform.Regridder.end">
+<span class="sig-name descname"><span class="pre">end</span></span><a class="headerlink" href="#draco.analysis.transform.Regridder.end" title="Link to this definition"></a></dt>
+<dd><p>End of the interpolated samples.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>float</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="draco.analysis.transform.Regridder.lanczos_width">
+<span class="sig-name descname"><span class="pre">lanczos_width</span></span><a class="headerlink" href="#draco.analysis.transform.Regridder.lanczos_width" title="Link to this definition"></a></dt>
+<dd><p>Width of the Lanczos interpolation kernel.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>int</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="draco.analysis.transform.Regridder.snr_cov">
+<span class="sig-name descname"><span class="pre">snr_cov</span></span><a class="headerlink" href="#draco.analysis.transform.Regridder.snr_cov" title="Link to this definition"></a></dt>
+<dd><p>Ratio of signal covariance to noise covariance (used for Wiener filter).</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>float</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="draco.analysis.transform.Regridder.mask_zero_weight">
+<span class="sig-name descname"><span class="pre">mask_zero_weight</span></span><a class="headerlink" href="#draco.analysis.transform.Regridder.mask_zero_weight" title="Link to this definition"></a></dt>
+<dd><p>Mask the output noise weights at frequencies where the weights were
+zero for all time samples.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>bool</p>
+</dd>
+</dl>
+</dd></dl>
+
+<p>Initialize pipeline task.</p>
+<p>May be overridden with no arguments.  Will be called after any
+<cite>config.Property</cite> attributes are set and after ‘input’ and ‘requires’
+keys are set up.</p>
+<dl class="py method">
+<dt class="sig sig-object py" id="draco.analysis.transform.Regridder.process">
+<span class="sig-name descname"><span class="pre">process</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">data</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/draco/analysis/transform.html#Regridder.process"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#draco.analysis.transform.Regridder.process" title="Link to this definition"></a></dt>
+<dd><p>Regrid visibility data in the time direction.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>data</strong> (<a class="reference internal" href="draco.core.containers.html#draco.core.containers.TODContainer" title="draco.core.containers.TODContainer"><em>containers.TODContainer</em></a>) – Time-ordered data.</p>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p><strong>new_data</strong> – The regularly gridded interpolated timestream.</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p><a class="reference internal" href="draco.core.containers.html#draco.core.containers.TODContainer" title="draco.core.containers.TODContainer">containers.TODContainer</a></p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="draco.analysis.transform.Regridder.setup">
+<span class="sig-name descname"><span class="pre">setup</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">observer</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/draco/analysis/transform.html#Regridder.setup"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#draco.analysis.transform.Regridder.setup" title="Link to this definition"></a></dt>
+<dd><p>Set the local observers position.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>observer</strong> (<code class="xref py py-class docutils literal notranslate"><span class="pre">Observer</span></code>) – An Observer object holding the geographic location of the telescope.
+Note that <code class="xref py py-class docutils literal notranslate"><span class="pre">TransitTelescope</span></code> instances are also
+Observers.</p>
+</dd>
+</dl>
+</dd></dl>
+
+</dd></dl>
+
+<dl class="py class">
+<dt class="sig sig-object py" id="draco.analysis.transform.SelectFreq">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">draco.analysis.transform.</span></span><span class="sig-name descname"><span class="pre">SelectFreq</span></span><a class="reference internal" href="../_modules/draco/analysis/transform.html#SelectFreq"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#draco.analysis.transform.SelectFreq" title="Link to this definition"></a></dt>
+<dd><p>Bases: <a class="reference internal" href="draco.core.task.html#draco.core.task.SingleTask" title="draco.core.task.SingleTask"><code class="xref py py-class docutils literal notranslate"><span class="pre">SingleTask</span></code></a></p>
+<p>Select a subset of frequencies from a container.</p>
+<dl class="py attribute">
+<dt class="sig sig-object py" id="draco.analysis.transform.SelectFreq.freq_physical">
+<span class="sig-name descname"><span class="pre">freq_physical</span></span><a class="headerlink" href="#draco.analysis.transform.SelectFreq.freq_physical" title="Link to this definition"></a></dt>
+<dd><p>List of physical frequencies in MHz.
+Given first priority.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>list</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="draco.analysis.transform.SelectFreq.channel_range">
+<span class="sig-name descname"><span class="pre">channel_range</span></span><a class="headerlink" href="#draco.analysis.transform.SelectFreq.channel_range" title="Link to this definition"></a></dt>
+<dd><p>Range of frequency channel indices, either
+[start, stop, step], [start, stop], or [stop]
+is acceptable.  Given second priority.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>list</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="draco.analysis.transform.SelectFreq.channel_index">
+<span class="sig-name descname"><span class="pre">channel_index</span></span><a class="headerlink" href="#draco.analysis.transform.SelectFreq.channel_index" title="Link to this definition"></a></dt>
+<dd><p>List of frequency channel indices.
+Given third priority.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>list</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="draco.analysis.transform.SelectFreq.freq_physical_range">
+<span class="sig-name descname"><span class="pre">freq_physical_range</span></span><a class="headerlink" href="#draco.analysis.transform.SelectFreq.freq_physical_range" title="Link to this definition"></a></dt>
+<dd><p>Range of physical frequencies to include given as (low_freq, high_freq).
+Given fourth priority.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>list</p>
+</dd>
+</dl>
+</dd></dl>
+
+<p>Initialize pipeline task.</p>
+<p>May be overridden with no arguments.  Will be called after any
+<cite>config.Property</cite> attributes are set and after ‘input’ and ‘requires’
+keys are set up.</p>
+<dl class="py method">
+<dt class="sig sig-object py" id="draco.analysis.transform.SelectFreq.process">
+<span class="sig-name descname"><span class="pre">process</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">data</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/draco/analysis/transform.html#SelectFreq.process"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#draco.analysis.transform.SelectFreq.process" title="Link to this definition"></a></dt>
+<dd><p>Selet a subset of the frequencies.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>data</strong> (<a class="reference internal" href="draco.core.containers.html#draco.core.containers.ContainerBase" title="draco.core.containers.ContainerBase"><em>containers.ContainerBase</em></a>) – A data container with a frequency axis.</p>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p><strong>newdata</strong> – New container with trimmed frequencies.</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p><a class="reference internal" href="draco.core.containers.html#draco.core.containers.ContainerBase" title="draco.core.containers.ContainerBase">containers.ContainerBase</a></p>
+</dd>
+</dl>
+</dd></dl>
+
+</dd></dl>
+
+<dl class="py class">
+<dt class="sig sig-object py" id="draco.analysis.transform.SelectPol">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">draco.analysis.transform.</span></span><span class="sig-name descname"><span class="pre">SelectPol</span></span><a class="reference internal" href="../_modules/draco/analysis/transform.html#SelectPol"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#draco.analysis.transform.SelectPol" title="Link to this definition"></a></dt>
+<dd><p>Bases: <a class="reference internal" href="draco.core.task.html#draco.core.task.SingleTask" title="draco.core.task.SingleTask"><code class="xref py py-class docutils literal notranslate"><span class="pre">SingleTask</span></code></a></p>
+<p>Extract a subset of polarisations, including Stokes parameters.</p>
+<p>This currently only extracts Stokes I.</p>
+<dl class="py attribute">
+<dt class="sig sig-object py" id="draco.analysis.transform.SelectPol.pol">
+<span class="sig-name descname"><span class="pre">pol</span></span><a class="headerlink" href="#draco.analysis.transform.SelectPol.pol" title="Link to this definition"></a></dt>
+<dd><p>Polarisations to extract. Only Stokes I extraction is supported (i.e. <cite>pol =
+[“I”]</cite>).</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>list</p>
+</dd>
+</dl>
+</dd></dl>
+
+<p>Initialize pipeline task.</p>
+<p>May be overridden with no arguments.  Will be called after any
+<cite>config.Property</cite> attributes are set and after ‘input’ and ‘requires’
+keys are set up.</p>
+<dl class="py method">
+<dt class="sig sig-object py" id="draco.analysis.transform.SelectPol.process">
+<span class="sig-name descname"><span class="pre">process</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">polcont</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/draco/analysis/transform.html#SelectPol.process"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#draco.analysis.transform.SelectPol.process" title="Link to this definition"></a></dt>
+<dd><p>Extract the specified polarisation from the input.</p>
+<p>This will combine polarisation pairs to get instrumental Stokes polarisations if
+requested.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>polcont</strong> (<a class="reference internal" href="draco.core.containers.html#draco.core.containers.ContainerBase" title="draco.core.containers.ContainerBase"><em>ContainerBase</em></a>) – A container with a polarisation axis.</p>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p><strong>selectedpolcont</strong> – A new container with the selected polarisation.</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>same as polcont</p>
+</dd>
+</dl>
+</dd></dl>
+
+</dd></dl>
+
+<dl class="py class">
+<dt class="sig sig-object py" id="draco.analysis.transform.ShiftRA">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">draco.analysis.transform.</span></span><span class="sig-name descname"><span class="pre">ShiftRA</span></span><a class="reference internal" href="../_modules/draco/analysis/transform.html#ShiftRA"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#draco.analysis.transform.ShiftRA" title="Link to this definition"></a></dt>
+<dd><p>Bases: <a class="reference internal" href="draco.core.task.html#draco.core.task.SingleTask" title="draco.core.task.SingleTask"><code class="xref py py-class docutils literal notranslate"><span class="pre">SingleTask</span></code></a></p>
+<p>Add a shift to the RA axis.</p>
+<p>This is useful for fixing a bug in earlier revisions of CHIME processing.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>delta</strong> (<em>float</em>) – The shift to <em>add</em> to the RA axis.</p></li>
+<li><p><strong>periodic</strong> (<em>bool</em><em>, </em><em>optional</em>) – If True, wrap any time sample that is shifted to RA &gt; 360 deg around to its
+360-degree-periodic counterpart, and likewise for any sample that is shifted
+to RA &lt; 0 deg. This wrapping is applied to the RA index_map along with any
+dataset with an <cite>ra</cite> axis. Default: False.</p></li>
+</ul>
+</dd>
+</dl>
+<p>Initialize pipeline task.</p>
+<p>May be overridden with no arguments.  Will be called after any
+<cite>config.Property</cite> attributes are set and after ‘input’ and ‘requires’
+keys are set up.</p>
+<dl class="py method">
+<dt class="sig sig-object py" id="draco.analysis.transform.ShiftRA.process">
+<span class="sig-name descname"><span class="pre">process</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">sscont</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference internal" href="draco.core.containers.html#draco.core.containers.SiderealContainer" title="draco.core.containers.SiderealContainer"><span class="pre">SiderealContainer</span></a></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><a class="reference internal" href="draco.core.containers.html#draco.core.containers.SiderealContainer" title="draco.core.containers.SiderealContainer"><span class="pre">SiderealContainer</span></a></span></span><a class="reference internal" href="../_modules/draco/analysis/transform.html#ShiftRA.process"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#draco.analysis.transform.ShiftRA.process" title="Link to this definition"></a></dt>
+<dd><p>Add a shift to the input sidereal container.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>sscont</strong> – The container to shift. The input is modified in place.</p>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p>The shifted container.</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>sscont</p>
+</dd>
+</dl>
+</dd></dl>
+
+</dd></dl>
+
+<dl class="py class">
+<dt class="sig sig-object py" id="draco.analysis.transform.SiderealMModeResample">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">draco.analysis.transform.</span></span><span class="sig-name descname"><span class="pre">SiderealMModeResample</span></span><a class="reference internal" href="../_modules/draco/analysis/transform.html#SiderealMModeResample"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#draco.analysis.transform.SiderealMModeResample" title="Link to this definition"></a></dt>
+<dd><p>Bases: <code class="xref py py-class docutils literal notranslate"><span class="pre">TaskGroup</span></code></p>
+<p>Resample a sidereal stream by FFT.</p>
+<p>This performs a forward and inverse m-mode transform to resample a sidereal stream.</p>
+<dl class="py attribute">
+<dt class="sig sig-object py" id="draco.analysis.transform.SiderealMModeResample.nra">
+<span class="sig-name descname"><span class="pre">nra</span></span><a class="headerlink" href="#draco.analysis.transform.SiderealMModeResample.nra" title="Link to this definition"></a></dt>
+<dd><p>The number of RA bins for the output stream.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>int</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py">
+<span class="sig-name descname"><span class="pre">remove_integration_window,</span> <span class="pre">apply_integration_window</span></span></dt>
+<dd><p>Remove the integration window from the incoming data, and/or apply it to the
+output sidereal stream.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>bool</p>
+</dd>
+</dl>
+</dd></dl>
+
+<p>Initialize pipeline task.</p>
+<p>May be overridden with no arguments.  Will be called after any
+<cite>config.Property</cite> attributes are set and after ‘input’ and ‘requires’
+keys are set up.</p>
+</dd></dl>
+
+<dl class="py class">
+<dt class="sig sig-object py" id="draco.analysis.transform.TransformJanskyToKelvin">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">draco.analysis.transform.</span></span><span class="sig-name descname"><span class="pre">TransformJanskyToKelvin</span></span><a class="reference internal" href="../_modules/draco/analysis/transform.html#TransformJanskyToKelvin"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#draco.analysis.transform.TransformJanskyToKelvin" title="Link to this definition"></a></dt>
+<dd><p>Bases: <a class="reference internal" href="draco.core.task.html#draco.core.task.SingleTask" title="draco.core.task.SingleTask"><code class="xref py py-class docutils literal notranslate"><span class="pre">SingleTask</span></code></a></p>
+<p>Task to convert from Jy to Kelvin and vice-versa.</p>
+<p>This integrates over the primary beams in the telescope class to derive the
+brightness temperature to flux conversion.</p>
+<dl class="py attribute">
+<dt class="sig sig-object py" id="draco.analysis.transform.TransformJanskyToKelvin.convert_Jy_to_K">
+<span class="sig-name descname"><span class="pre">convert_Jy_to_K</span></span><a class="headerlink" href="#draco.analysis.transform.TransformJanskyToKelvin.convert_Jy_to_K" title="Link to this definition"></a></dt>
+<dd><p>If True, apply a Jansky to Kelvin conversion factor. If False apply a Kelvin to
+Jansky conversion.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>bool</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="draco.analysis.transform.TransformJanskyToKelvin.reference_declination">
+<span class="sig-name descname"><span class="pre">reference_declination</span></span><a class="headerlink" href="#draco.analysis.transform.TransformJanskyToKelvin.reference_declination" title="Link to this definition"></a></dt>
+<dd><p>The declination to set the flux reference for. A source transiting at this
+declination will produce a visibility signal equal to its flux. If <cite>None</cite>
+(default) use the zenith.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>float, optional</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="draco.analysis.transform.TransformJanskyToKelvin.share">
+<span class="sig-name descname"><span class="pre">share</span></span><a class="headerlink" href="#draco.analysis.transform.TransformJanskyToKelvin.share" title="Link to this definition"></a></dt>
+<dd><p>Which datasets should the output share with the input. Default is “all”.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>{“none”, “all”}</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="draco.analysis.transform.TransformJanskyToKelvin.nside">
+<span class="sig-name descname"><span class="pre">nside</span></span><a class="headerlink" href="#draco.analysis.transform.TransformJanskyToKelvin.nside" title="Link to this definition"></a></dt>
+<dd><p>The NSIDE to use for the primary beam area calculation. This may need to be
+increased for beams with intricate small scale structure. Default is 256.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>int</p>
+</dd>
+</dl>
+</dd></dl>
+
+<p>Initialize pipeline task.</p>
+<p>May be overridden with no arguments.  Will be called after any
+<cite>config.Property</cite> attributes are set and after ‘input’ and ‘requires’
+keys are set up.</p>
+<dl class="py method">
+<dt class="sig sig-object py" id="draco.analysis.transform.TransformJanskyToKelvin.process">
+<span class="sig-name descname"><span class="pre">process</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">sstream</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference internal" href="draco.core.containers.html#draco.core.containers.SiderealStream" title="draco.core.containers.SiderealStream"><span class="pre">SiderealStream</span></a></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><a class="reference internal" href="draco.core.containers.html#draco.core.containers.SiderealStream" title="draco.core.containers.SiderealStream"><span class="pre">SiderealStream</span></a></span></span><a class="reference internal" href="../_modules/draco/analysis/transform.html#TransformJanskyToKelvin.process"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#draco.analysis.transform.TransformJanskyToKelvin.process" title="Link to this definition"></a></dt>
+<dd><p>Apply the brightness temperature to flux conversion to the data.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>sstream</strong> – The visibilities to apply the conversion to. They are converted to/from
+brightness temperature units depending on the setting of <cite>convert_Jy_to_K</cite>.</p>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p>Visibilities with the conversion applied. This may be the same as the input
+container if <cite>share == “all”</cite>.</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>new_sstream</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="draco.analysis.transform.TransformJanskyToKelvin.setup">
+<span class="sig-name descname"><span class="pre">setup</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">telescope</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">ProductManager</span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><span class="pre">BeamTransfer</span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><span class="pre">TransitTelescope</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/draco/analysis/transform.html#TransformJanskyToKelvin.setup"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#draco.analysis.transform.TransformJanskyToKelvin.setup" title="Link to this definition"></a></dt>
+<dd><p>Set the telescope object.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>telescope</strong> – An object we can get a telescope object from. This telescope must be able to
+calculate the beams at all incoming frequencies.</p>
+</dd>
+</dl>
+</dd></dl>
+
+</dd></dl>
+
+</section>
+
+
+           </div>
+          </div>
+          <footer><div class="rst-footer-buttons" role="navigation" aria-label="Footer">
+        <a href="draco.analysis.svdfilter.html" class="btn btn-neutral float-left" title="draco.analysis.svdfilter" accesskey="p" rel="prev"><span class="fa fa-arrow-circle-left" aria-hidden="true"></span> Previous</a>
+        <a href="draco.core.html" class="btn btn-neutral float-right" title="draco.core" accesskey="n" rel="next">Next <span class="fa fa-arrow-circle-right" aria-hidden="true"></span></a>
+    </div>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2016, Richard Shaw.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>
