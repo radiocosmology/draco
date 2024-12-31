@@ -2,8 +2,9 @@
 
 import numpy as np
 from caput import config
+from cora.util import units
 
-from ..core import task
+from ..core import io, task
 from ..util import dpss
 
 
@@ -63,57 +64,156 @@ class InpaintDPSS(task.SingleTask):
 
         # Redistribute over an independent axis
         data.redistribute(["stack", "el"])
+        # Set the local selection over the distributed axis
+        self._local_sel = self._get_sel(data)
+
+        vinp, _ = self.inpaint(data.vis, data.weight, samples)
+        # TODO: need a weight estimate
 
         # Make the output container
         out = data.copy() if self.copy else data
-        # This should already have the same distributed
-        # axis as `data`
         out.redistribute(["stack", "el"])
 
-        vinp = self.inpaint(data.vis, data.weight, samples)
-        # TODO: this should also return a weight estimate
         out.vis[:].local_array[:] = vinp
 
         return out
 
     def inpaint(self, vis, weight, samples):
-        """Inpaint visibilities using a wiener filter."""
-        # Construct the covariance matrix and get dpss modes
-        cov = dpss.make_covariance(samples, self.halfwidths, self.centres)
-        A = dpss.get_sequence(cov)
+        """Inpaint visibilities using a wiener filter.
 
-        # Move the interpolation axis to the front
-        # and flatten the other axes
-        vaxind = list(vis.attrs["axis"]).index(self.axis)
-        waxind = list(weight.attrs["axis"]).index(self.axis)
+        Use a single sequence for the entire dataset.
+        """
+        # Move the iteration and interpolation axes
+        # to the front and flatten the other axes
+        vax = list(vis.attrs["axis"])
+        wax = list(vis.attrs["axis"])
+
+        vaxind = []
+        waxind = []
+
+        for axis in ("stack", "el", self.axis):
+            if axis in vax:
+                vaxind.append(vax.index(axis))
+                waxind.append(wax.index(axis))
 
         vobs = _move_front(vis[:].local_array, vaxind, vis.local_shape)
         wobs = _move_front(weight[:].local_array, waxind, weight.local_shape)
 
+        # Pre-allocate the full output array
+        vinp = np.zeros_like(vobs)
+        winp = np.zeros_like(wobs)
+
+        # Construct the covariance matrix and get dpss modes
+        modes, amap = self._get_basis(samples)
+
+        # Iterate over the variable axis
+        for ii in range(vobs.shape[0]):
+            # Get the correct basis for each slice
+            A = modes[amap[ii]]
+            # Write directly into the preallocated output array
+            self.inpaint_single(vobs[ii], wobs[ii], A, out=vinp[ii])
+
+        # Reshape and move the interpolation axis back
+        vinp = _inv_move_front(vinp, vaxind, vis.local_shape)
+        winp = _inv_move_front(winp, waxind, weight.local_shape)
+
+        return vinp, winp
+
+    @staticmethod
+    def inpaint_single(vobs, wobs, A, out):
+        """Inpaint a data slice."""
         # Project visibilities into the dpss basis
         vproj = dpss.project(vobs, wobs, A)
         # Solve for basis coefficients
         b = dpss.solve(vproj, wobs, A)
         # Get the inpainted visibilities
-        vinp = dpss.inpaint(A, b, vobs, wobs > 0)
+        return dpss.inpaint(A, b, vobs, wobs > 0, out=out)
 
-        # Reshape and move the interpolation axis back
-        # TODO: we also need to return some weights
-        return _inv_move_front(vinp, vaxind, vis.local_shape)
+    def _get_sel(self, data):
+        """Extract selection along local axis."""
+        return data.vis[:].local_bounds
+
+    def _get_basis(self, samples):
+        """Make the DPSS basis.
+
+        Returns a list of bases and a map.
+        """
+        # Construct the covariance matrix and get dpss modes
+        cov = dpss.make_covariance(samples, self.halfwidths, self.centres)
+        modes = dpss.get_sequence(cov)
+        # All iterations map to the same basis
+        amap = [0] * (self._local_sel.stop - self._local_sel.start)
+
+        return [modes], amap
 
 
-# TODO: these are copied from `draco.analysis.delay`. They
-# should be moved somewhere more general
-def _move_front(arr: np.ndarray, axis: int, shape: tuple) -> np.ndarray:
-    # Move the specified axis to the front and flatten to give a 2D array
-    new_arr = np.moveaxis(arr, axis, 0)
-    return new_arr.reshape(shape[axis], -1)
+class InpaintDPSSDelay(InpaintDPSS):
+    """Inpaint with baseline-dependent delay cut."""
+
+    axis = config.enum(["freq"], default="freq")
+
+    def setup(self, telescope):
+        """Load an observer object."""
+        self.telescope = io.get_telescope(telescope)
+
+    def _get_sel(self, data):
+        """Get the set of local baselines."""
+        prod = data.prodstack
+
+        return self.telescope.feedmap[(prod["input_a"], prod["input_b"])]
+
+    def _get_basis(self, samples):
+        """Make the DPSS basis."""
+        # Note that this produces covariances for
+        # _all_ baselines. An additional slice has to
+        # be checked at each iteration or something
+        blen = abs(self.telescope.baselines[:, 1])
+        # Use only the local baselines
+        blen = blen[self._local_sel]
+
+        # Get the delay cut for each baseline
+        delay_cut = np.maximum(blen / units.c * 1.0e6, self.halfwidths[0])
+        delay_cut = np.round(delay_cut, decimals=3)
+
+        # Compute covariances for each unique baseline and
+        # map to each individual baseline
+        delay_cut, amap = np.unique(delay_cut, return_inverse=True)
+
+        modes = []
+
+        for ii, cut in enumerate(delay_cut):
+            self.log.debug(f"Making unique covariance {ii}/{len(delay_cut)}.")
+            cov = dpss.make_covariance(samples, cut, 0.0)
+            modes.append(dpss.get_sequence(cov))
+
+        return modes, amap
 
 
-def _inv_move_front(arr: np.ndarray, axis: int, shape: tuple) -> np.ndarray:
-    # Move the first axis back to it's original position and return the original shape,
-    # i.e. reverse the above operation
-    rshape = (shape[axis],) + shape[:axis] + shape[(axis + 1) :]
-    new_arr = arr.reshape(rshape)
-    new_arr = np.moveaxis(new_arr, 0, axis)
-    return new_arr.reshape(shape)
+# TODO: These should be moved somewhere more general
+def _move_front(arr: np.ndarray, axis: int | list, shape: tuple) -> np.ndarray:
+    """Move specified axes to the front and flatten remaining axes."""
+    if np.isscalar(axis):
+        axis = [axis]
+
+    new_shape = [shape[i] for i in axis]
+    # Move the N specified axes to the first N positions
+    inds = list(range(len(axis)))
+    # Move the specified axes to the front and flatten
+    # the remaining axes
+    arr = np.moveaxis(arr, axis, inds)
+
+    return arr.reshape(*new_shape, -1)
+
+
+def _inv_move_front(arr: np.ndarray, axis: int | list, shape: tuple) -> np.ndarray:
+    """Move axes back to their original position and expand."""
+    new_shape = [shape[i] for i in axis]
+    new_shape += [sh for sh in shape if sh not in new_shape]
+    inds = list(range(len(axis)))
+
+    # Undo the flattening process
+    arr = arr.reshape(new_shape)
+    # Move axes back to their original positions
+    arr = np.moveaxis(arr, inds, axis)
+
+    return arr.reshape(shape)
