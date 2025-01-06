@@ -13,6 +13,7 @@ from draco.core.containers import ContainerBase, FreqContainer
 from ..core import containers, io, task
 from ..util import random, tools
 from .delayopt import delay_power_spectrum_maxpost
+from .transform import stokes_I
 
 
 class DelayFilter(task.SingleTask):
@@ -964,11 +965,15 @@ class DelayPowerSpectrumStokesIEstimator(DelayGibbsSamplerBase):
 
         tel = self.telescope
 
-        # Construct the Stokes I vis, and transpose from [baseline, freq, ra] to
-        # [baseline, ra, freq].
+        # Construct the Stokes I vis
         data_view, weight_view, baselines = stokes_I(ss, tel)
-        data_view = data_view.transpose(0, 2, 1)
-        weight_view = weight_view.transpose(0, 2, 1)
+
+        # Distribute over baselines
+        data_view = data_view.redistribute(1)
+        weight_view = weight_view.redistribute(1)
+        # Reshape from [freq, baseline, ra] to [baseline, ra, freq]
+        data_view = np.moveaxis(data_view, 0, -1)
+        weight_view = np.moveaxis(weight_view, 0, -1)
 
         return data_view, weight_view, baselines
 
@@ -1270,70 +1275,6 @@ class DelayCrossPowerSpectrumEstimator(
                 out_cont.datasets["spectrum_samples"][..., bi, :] = spec
 
         return out_cont
-
-
-def stokes_I(sstream, tel):
-    """Extract instrumental Stokes I from a time/sidereal stream.
-
-    Parameters
-    ----------
-    sstream : containers.SiderealStream, container.TimeStream
-        Stream of correlation data.
-    tel : TransitTelescope
-        Instance describing the telescope.
-
-    Returns
-    -------
-    vis_I : mpiarray.MPIArray[nbase, nfreq, ntime]
-        The instrumental Stokes I visibilities, distributed over baselines.
-    vis_weight : mpiarray.MPIArray[nbase, nfreq, ntime]
-        The weights for each visibility, distributed over baselines.
-    ubase : np.ndarray[nbase, 2]
-        Baseline vectors corresponding to output.
-    """
-    # Construct a complex number representing each baseline (used for determining
-    # unique baselines).
-    # NOTE: due to floating point precision, some baselines don't get matched as having
-    # the same lengths. To get around this, round all separations to 0.1 mm precision
-    bl_round = np.around(tel.baselines[:, 0] + 1.0j * tel.baselines[:, 1], 4)
-
-    # ==== Unpack into Stokes I
-    ubase, uinv, ucount = np.unique(bl_round, return_inverse=True, return_counts=True)
-    ubase = ubase.astype(np.complex128, copy=False).view(np.float64).reshape(-1, 2)
-    nbase = ubase.shape[0]
-
-    vis_shape = (nbase, sstream.vis.global_shape[0], sstream.vis.global_shape[2])
-    vis_I = mpiarray.zeros(vis_shape, dtype=sstream.vis.dtype, axis=1)
-    vis_weight = mpiarray.zeros(vis_shape, dtype=sstream.weight.dtype, axis=1)
-
-    # Iterate over products to construct the Stokes I vis
-    # TODO: this should be updated when driftscan gains a concept of polarisation
-    ssv = sstream.vis[:]
-    ssw = sstream.weight[:]
-
-    # Cache beamclass as it's regenerated every call
-    beamclass = tel.beamclass[:]
-    for ii, ui in enumerate(uinv):
-        # Skip if not all polarisations were included
-        if ucount[ui] < 4:
-            continue
-
-        fi, fj = tel.uniquepairs[ii]
-        bi, bj = beamclass[fi], beamclass[fj]
-
-        upi = tel.feedmap[fi, fj]
-
-        if upi == -1:
-            continue
-
-        if bi == bj:
-            vis_I[ui] += ssv[:, ii]
-            vis_weight[ui] += ssw[:, ii]
-
-    vis_I = vis_I.redistribute(axis=0)
-    vis_weight = vis_weight.redistribute(axis=0)
-
-    return vis_I, vis_weight, ubase
 
 
 def fourier_matrix_r2c(N, fsel=None):
