@@ -1169,42 +1169,48 @@ def stokes_I(sstream, tel):
     sstream.redistribute("freq")
     # Construct a complex number representing each baseline (used for determining
     # unique baselines).
-    # NOTE: due to floating point precision, some baselines don't get matched as having
+    # Due to floating point precision, some baselines don't get matched as having
     # the same lengths. To get around this, round all separations to 0.1 mm precision
     bl_round = np.around(tel.baselines[:, 0] + 1.0j * tel.baselines[:, 1], 4)
 
-    # ==== Unpack into Stokes I
+    # Map unique baseline lengths to each polarisation pair
     ubase, uinv, ucount = np.unique(bl_round, return_inverse=True, return_counts=True)
     ubase = ubase.astype(np.complex128, copy=False).view(np.float64).reshape(-1, 2)
-    nbase = ubase.shape[0]
 
-    vis_shape = (sstream.vis.global_shape[0], nbase, sstream.vis.global_shape[2])
-    vis_I = mpiarray.zeros(vis_shape, dtype=sstream.vis.dtype, axis=1)
-    vis_weight = mpiarray.zeros(vis_shape, dtype=sstream.weight.dtype, axis=1)
+    # Construct the output arrays
+    new_shape = (
+        sstream.vis.global_shape[0],
+        ubase.shape[0],
+        sstream.vis.global_shape[2],
+    )
+    vis_I = mpiarray.zeros(new_shape, dtype=sstream.vis.dtype, axis=0)
+    vis_weight = mpiarray.zeros(new_shape, dtype=sstream.weight.dtype, axis=0)
+
+    # Find co-pol baselines (XX and YY)
+    pairs = tel.uniquepairs
+    pols = tel.polarisation[pairs]
+    is_copol = pols[:, 0] == pols[:, 1]
 
     # Iterate over products to construct the Stokes I vis
-    # TODO: this should be updated when driftscan gains a concept of polarisation
     ssv = sstream.vis[:]
     ssw = sstream.weight[:]
 
-    # Cache beamclass as it's regenerated every call
-    beamclass = tel.beamclass[:]
     for ii, ui in enumerate(uinv):
-        # Skip if not all polarisations were included
+        # Skip if not a co-pol baseline
+        if not is_copol[ii]:
+            continue
+
+        # Skip if not all polarisations are included
         if ucount[ui] < 4:
             continue
 
-        fi, fj = tel.uniquepairs[ii]
-        bi, bj = beamclass[fi], beamclass[fj]
-
-        upi = tel.feedmap[fi, fj]
-
-        if upi == -1:
+        # Skip if there's a bad feed
+        if tel.feedmap[(*pairs[ii],)] == -1:
             continue
 
-        if bi == bj:
-            vis_I[:, ui] += ssv[:, ii]
-            vis_weight[:, ui] += ssw[:, ii]
+        # Accumulate the visibilities and weights
+        vis_I[:, ui] += ssv[:, ii]
+        vis_weight[:, ui] += ssw[:, ii]
 
     return vis_I, vis_weight, ubase
 
