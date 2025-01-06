@@ -11,7 +11,6 @@ from caput import config, mpiarray, pipeline
 from caput.tools import invert_no_zero
 from numpy.lib.recfunctions import structured_to_unstructured
 
-from ..analysis.delay import stokes_I
 from ..core import containers, io, task
 from ..util import regrid, tools
 
@@ -1133,27 +1132,81 @@ class StokesIVis(task.SingleTask):
         data.redistribute("freq")
 
         # Get stokes I
-        # TODO: move `stokes_I` function somewhere more general
-        # TODO: this would be a lot faster without the extra
-        # redistributes. Try to refactor `stokes_I` a bit
         vis, weight, baselines = stokes_I(data, self.telescope)
 
-        # Reshape from [baseline, freq, ra] to [freq, baseline, ra]
-        vis = vis.transpose(1, 0, 2)
-        weight = weight.transpose(1, 0, 2)
-
-        # Redistribute over frequency
-        vis = vis.redistribute(0)
-        weight = weight.redistribute(0)
-
         # Make the output container
+        # TODO: the axes for this container should probably
+        # be adjusted to make more sense
         out = containers.empty_like(data, stack=baselines)
         out.redistribute("freq")
 
-        out.vis[:] = vis
-        out.weight[:] = weight
+        out.vis[:] = vis.redistribute(0)
+        out.weight[:] = weight.redistribute(0)
 
         return out
+
+
+def stokes_I(sstream, tel):
+    """Extract instrumental Stokes I from a time/sidereal stream.
+
+    Parameters
+    ----------
+    sstream : containers.SiderealStream, container.TimeStream
+        Stream of correlation data.
+    tel : TransitTelescope
+        Instance describing the telescope.
+
+    Returns
+    -------
+    vis_I : mpiarray.MPIArray[nbase, nfreq, ntime]
+        The instrumental Stokes I visibilities, distributed over baselines.
+    vis_weight : mpiarray.MPIArray[nbase, nfreq, ntime]
+        The weights for each visibility, distributed over baselines.
+    ubase : np.ndarray[nbase, 2]
+        Baseline vectors corresponding to output.
+    """
+    # Make sure the data is distributed in a reasonable way
+    sstream.redistribute("freq")
+    # Construct a complex number representing each baseline (used for determining
+    # unique baselines).
+    # NOTE: due to floating point precision, some baselines don't get matched as having
+    # the same lengths. To get around this, round all separations to 0.1 mm precision
+    bl_round = np.around(tel.baselines[:, 0] + 1.0j * tel.baselines[:, 1], 4)
+
+    # ==== Unpack into Stokes I
+    ubase, uinv, ucount = np.unique(bl_round, return_inverse=True, return_counts=True)
+    ubase = ubase.astype(np.complex128, copy=False).view(np.float64).reshape(-1, 2)
+    nbase = ubase.shape[0]
+
+    vis_shape = (sstream.vis.global_shape[0], nbase, sstream.vis.global_shape[2])
+    vis_I = mpiarray.zeros(vis_shape, dtype=sstream.vis.dtype, axis=1)
+    vis_weight = mpiarray.zeros(vis_shape, dtype=sstream.weight.dtype, axis=1)
+
+    # Iterate over products to construct the Stokes I vis
+    # TODO: this should be updated when driftscan gains a concept of polarisation
+    ssv = sstream.vis[:]
+    ssw = sstream.weight[:]
+
+    # Cache beamclass as it's regenerated every call
+    beamclass = tel.beamclass[:]
+    for ii, ui in enumerate(uinv):
+        # Skip if not all polarisations were included
+        if ucount[ui] < 4:
+            continue
+
+        fi, fj = tel.uniquepairs[ii]
+        bi, bj = beamclass[fi], beamclass[fj]
+
+        upi = tel.feedmap[fi, fj]
+
+        if upi == -1:
+            continue
+
+        if bi == bj:
+            vis_I[:, ui] += ssv[:, ii]
+            vis_weight[:, ui] += ssw[:, ii]
+
+    return vis_I, vis_weight, ubase
 
 
 class TransformJanskyToKelvin(task.SingleTask):
