@@ -1134,7 +1134,7 @@ class SiderealStream(
             "distributed_axis": "freq",
             "compression": COMPRESSION,
             "compression_opts": COMPRESSION_OPTS,
-            "chunks": (64, 128, 128),
+            "chunks": (32, 512, 2048),
             "truncate": {
                 "weight_dataset": "vis_weight",
             },
@@ -1147,7 +1147,7 @@ class SiderealStream(
             "distributed_axis": "freq",
             "compression": COMPRESSION,
             "compression_opts": COMPRESSION_OPTS,
-            "chunks": (64, 128, 128),
+            "chunks": (32, 512, 2048),
             "truncate": True,
         },
         "input_flags": {
@@ -1171,7 +1171,7 @@ class SiderealStream(
             "distributed_axis": "freq",
             "compression": COMPRESSION,
             "compression_opts": COMPRESSION_OPTS,
-            "chunks": (3, 64, 128, 128),
+            "chunks": (1, 32, 512, 2048),
             "truncate": True,
         },
         "nsample": {
@@ -1182,7 +1182,7 @@ class SiderealStream(
             "distributed_axis": "freq",
             "compression": COMPRESSION,
             "compression_opts": COMPRESSION_OPTS,
-            "chunks": (64, 128, 128),
+            "chunks": (32, 512, 2048),
         },
         "effective_ra": {
             "axes": ["freq", "stack", "ra"],
@@ -1192,7 +1192,7 @@ class SiderealStream(
             "distributed_axis": "freq",
             "compression": COMPRESSION,
             "compression_opts": COMPRESSION_OPTS,
-            "chunks": (64, 128, 128),
+            "chunks": (32, 512, 2048),
             "truncate": True,
         },
     }
@@ -2533,6 +2533,10 @@ class DelayTransform(DelayContainer, DataWeightContainer):
             "initialise": True,
             "distributed": True,
             "distributed_axis": "baseline",
+            "compression": COMPRESSION,
+            "compression_opts": COMPRESSION_OPTS,
+            "chunks": (512, 2048, 32),
+            "truncate": True,
         },
         "weight": {
             "axes": ["baseline", "sample", "delay"],
@@ -2540,6 +2544,10 @@ class DelayTransform(DelayContainer, DataWeightContainer):
             "initialise": True,
             "distributed": True,
             "distributed_axis": "baseline",
+            "compression": COMPRESSION,
+            "compression_opts": COMPRESSION_OPTS,
+            "chunks": (512, 2048, 32),
+            "truncate": True,
         }
     }
 
