@@ -7,6 +7,7 @@ from typing import overload
 
 import numpy as np
 import scipy.linalg as la
+from scipy.special import lpn
 from caput import config, fftw, mpiarray, pipeline
 from caput.tools import invert_no_zero
 from numpy.lib.recfunctions import structured_to_unstructured
@@ -878,6 +879,18 @@ def _cross_ang_ps(a, b, lmax):
     mnorm = 1.0 / (np.arange(lmax + 1) + 1)
 
     return np.sum(a_2d[:lmax + 1, :lmax + 1] * b_2d[:lmax + 1, :lmax + 1].conj(), axis=1) * mnorm
+
+
+def _ps2corr(Cl, lmax, theta):
+    """Compute the angular correlation function from the power spectrum."""
+    if (lmax + 1) > Cl.size:
+        raise ValueError(f"lmax of {lmax} too large for Cl with size {Cl.size}.")
+    Pl = lpn(lmax, np.cos(theta))[0]
+    ell = np.arange(lmax + 1)
+    return np.sum(
+            ((2 * ell + 1) * Cl[:lmax + 1])[:, np.newaxis] * Pl,
+        axis=0
+    ) / np.pi / 4
 
 
 class SiderealMModeResample(task.group_tasks(MModeTransform, MModeInverseTransform)):
