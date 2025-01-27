@@ -11,8 +11,9 @@ class CatalogPixelization(task.SingleTask):
         pols = rm_empty.index_map["pol"]
         if ("XY" in pols) or ("YX" in pols):
             if ("XY" in pols) ^ ("YX" in pols):
-                raise ValueError("If cross-pols exist both XY and YX must be present." \
-                                 f"Got {pols}.")
+                raise ValueError(
+                    "If cross-pols exist both XY and YX must be present." f"Got {pols}."
+                )
             dpol = ["reXY", "imXY"]
         else:
             dpol = []
@@ -35,35 +36,24 @@ class CatalogPixelization(task.SingleTask):
 
         rm_store.redistribute("freq")
 
-        offset_ind = rm_store.map.local_offset[2]
+        freq_axis_ind = list(rm_store.map.attrs["axis"]).index("freq")
+        offset_ind = rm_store.map.local_offset[freq_axis_ind]
 
-        rm_v = rm_empty.index_map["freq"][:]
+        rm_freq = rm_empty.index_map["freq"]["centre"][:]
+        freq_width = rm_empty.index_map["freq"]["width"][:]
+        nfreq = len(rm_freq)
+
         rm_ra = rm_empty.index_map["ra"][:]
         rm_el = rm_empty.index_map["el"][:]
 
-        beam = len(rm_empty.index_map["beam"][:])
-        pol = len(rm_empty.index_map["pol"][:])
-        rm_freq = np.zeros(len(rm_v))
-        freq_width = np.zeros(len(rm_v))
+        nbeam = len(rm_empty.index_map["beam"][:])
+        npol = len(rm_empty.index_map["pol"][:])
 
-        for i in range(len(rm_v)):
-            rm_freq[i] = rm_v[i][0]
-            freq_width[i] = rm_v[i][1]
+        pos_arr = np.array(mock_cat["position"])
+        dec_arr = pos_arr["dec"]
+        ra_arr = pos_arr["ra"]
 
-        pos_arr = np.array(mock_cat['position'])
-        z_arr = np.array(mock_cat['redshift'])
-
-        dec_arr = np.zeros(len(pos_arr))
-        for i in range(len(pos_arr)):
-            dec_arr[i] = pos_arr[i][1]
-
-        ra_arr = np.zeros(len(pos_arr))
-        for i in range(len(pos_arr)):
-            ra_arr[i] = pos_arr[i][0]
-
-        freq_arr = np.zeros(len(z_arr))
-        for i in range(len(z_arr)):
-            freq_arr[i] = 1420/(1+z_arr[i][0])
+        freq_arr = 1420 / (1 + mock_cat["redshift"]["z"])
 
         dra = np.median(np.abs(np.diff(rm_ra)))
         dza = np.median(np.abs(np.diff(rm_el)))
@@ -71,9 +61,11 @@ class CatalogPixelization(task.SingleTask):
 
         full_ind = []
 
-        for i in range(len(rm_freq)):
-            index_arr = np.where((rm_freq[i]-freq_width[i]/2
-                                  < freq_arr) & (freq_arr <= rm_freq[i]+freq_width[i]/2))
+        for i in range(nfreq):
+            index_arr = np.where(
+                (rm_freq[i] - freq_width[i] / 2 < freq_arr)
+                & (freq_arr <= rm_freq[i] + freq_width[i] / 2)
+            )
 
             ra_bin = ra_arr[index_arr]
             dec_bin = dec_arr[index_arr]
@@ -81,14 +73,16 @@ class CatalogPixelization(task.SingleTask):
             max_ra_ind = len(rm_ra) - 1
             ra_ind = (np.rint(ra_bin) / dra % max_ra_ind).astype(np.int64)
 
-            za_ind = np.rint((np.sin(np.radians(dec_bin - 49)) - za_min) / dza).astype(np.int64)
+            za_ind = np.rint(
+                (np.sin(np.radians(dec_bin - 49.0)) - za_min) / dza
+            ).astype(np.int64)
 
             ind_stack = np.vstack((ra_ind, za_ind))
             full_ind.append(ind_stack)
 
         rm_store = np.zeros((np.shape(rm_empty["map"][:])))
-        for b in range(beam):
-            for p in range(pol):
+        for b in range(nbeam):
+            for p in range(npol):
                 for freq in range(np.shape(rm_store)[2]):
                     freq_offset = freq + offset_ind
                     ra_ind = full_ind[freq_offset][0]
@@ -97,4 +91,4 @@ class CatalogPixelization(task.SingleTask):
                         rm_store[b][p][freq][ra_ind[i]][el_ind[i]] += 1
 
         rm_empty["map"][:] = rm_store
-        return rm_empty
+        return rm_store
