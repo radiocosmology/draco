@@ -6,6 +6,10 @@ from ch_util import ephemeris
 
 class CatalogPixelization(task.SingleTask):
 
+    def setup(self, telescope):
+
+        self.telescope = telescope
+
     def process(self, rm_empty, mock_cat):
 
         pols = rm_empty.index_map["pol"]
@@ -74,7 +78,7 @@ class CatalogPixelization(task.SingleTask):
             ra_ind = (np.rint(ra_bin) / dra % max_ra_ind).astype(np.int64)
 
             za_ind = np.rint(
-                (np.sin(np.radians(dec_bin - 49.0)) - za_min) / dza
+                (np.sin(np.radians(dec_bin - self.telescope.latitude)) - za_min) / dza
             ).astype(np.int64)
 
             ind_stack = np.vstack((ra_ind, za_ind))
