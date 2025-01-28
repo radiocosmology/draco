@@ -57,6 +57,7 @@ class GaussianNoiseDataset(task.SingleTask, random.RandomTask):
 
     dataset = config.Property(proptype=str, default=None)
     in_place = config.Property(proptype=bool, default=True)
+    skip_autos = config.Property(proptype=bool, default=False)
 
     def process(self, data):
         """Generates a Gaussian distributed noise dataset given the provided dataset's visibility weights.
@@ -102,6 +103,9 @@ class GaussianNoiseDataset(task.SingleTask, random.RandomTask):
         # Replace visibilities with noise
         dset = out[dataset_name][:].local_array
         weight = data.weight[:].local_array
+        if weight.shape != dset.shape:
+            # assume we are dealing with beamformed data
+            weight = weight[..., np.newaxis, :]
         if np.iscomplexobj(dset):
             random.complex_normal(
                 scale=tools.invert_no_zero(weight) ** 0.5,
@@ -113,7 +117,7 @@ class GaussianNoiseDataset(task.SingleTask, random.RandomTask):
             dset *= tools.invert_no_zero(weight) ** 0.5
 
         # We need to loop to ensure the autos are real and have the correct variance
-        if dataset_name == "vis":
+        if dataset_name == "vis" and (not self.skip_autos):
             for si, prod in enumerate(data.prodstack):
                 if prod[0] == prod[1]:
                     # This is an auto-correlation
