@@ -27,6 +27,7 @@ dependencies = [
     "cora @ git+https://github.com/radiocosmology/cora.git",
     "cython>0.18",
     "driftscan @ git+https://github.com/radiocosmology/driftscan.git",
+    "jax",
     "mpi4py",
     "numpy>=1.24",
     "astropy>=6.1.6",
