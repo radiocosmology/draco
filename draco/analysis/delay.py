@@ -2,10 +2,13 @@
 
 from typing import TypeVar
 
+import jax
+import jax.numpy as jnp
 import numpy as np
 import scipy.linalg as la
 from caput import config, fftw, memh5, mpiarray
 from cora.util import units
+from jax.scipy import linalg as jla
 from numpy.lib.recfunctions import structured_to_unstructured
 
 from draco.core.containers import ContainerBase, FreqContainer
@@ -1571,7 +1574,7 @@ def _compute_delay_spectrum_inputs(data, N, Ni, fsel, window, complex_timedomain
         fourier_matrix_c2c(N, fsel)
         if complex_timedomain
         else fourier_matrix_r2c(N, fsel)
-    )
+    ).astype(np.float32)
 
     # Construct a view of the data with alternating real and imaginary parts
     data = _complex_to_alternating_real(data).T.copy()
@@ -1595,14 +1598,14 @@ def _compute_delay_spectrum_inputs(data, N, Ni, fsel, window, complex_timedomain
     # Construct the Noise inverse array for the real and imaginary parts of the
     # frequency spectrum (taking into account that the zero and Nyquist frequencies are
     # strictly real if the delay spectrum is assumed to be real)
-    Ni_r = np.zeros(2 * Ni.shape[0])
+    Ni_r = np.zeros(2 * Ni.shape[0], dtype=np.float32)
     Ni_r[0::2] = np.where(is_real_freq, Ni, Ni * 2)
     Ni_r[1::2] = np.where(is_real_freq, 0.0, Ni * 2)
 
     # Create the transpose of the Fourier matrix weighted by the noise
     # (this is used multiple times)
     FTNih = F.T * Ni_r[np.newaxis, :] ** 0.5
-    FTNiF = np.dot(FTNih, FTNih.T)
+    FTNiF = FTNih @ FTNih.T
 
     # Pre-whiten the data to save doing it repeatedly
     data = data * Ni_r[:, np.newaxis] ** 0.5
@@ -1659,9 +1662,10 @@ def delay_power_spectrum_gibbs(
     spec : list
         List of spectrum samples.
     """
-    # Get reference to RNG
-    if rng is None:
-        rng = random.default_rng()
+    # Create random jax keys. We have to make all
+    # of the unique keys upfront
+    basekey = jax.random.PRNGKey(0)
+    randomkeys = jax.random.split(basekey, niter * 3)
 
     spec = []
 
@@ -1670,18 +1674,24 @@ def delay_power_spectrum_gibbs(
     data, FTNih, FTNiF = _compute_delay_spectrum_inputs(
         data, N, Ni, fsel, window, complex_timedomain
     )
+    # Convert numpy arrays to jax arrays
+    data = jnp.asarray(data)
+    FTNih = jnp.asarray(FTNih)
+    FTNiF = jnp.asarray(FTNiF)
 
     # Set the initial guess for the delay power spectrum.
-    S_samp = initial_S
+    S_samp = jnp.asarray(initial_S)
 
-    def _draw_signal_sample_f(S):
+    @jax.jit
+    def _draw_signal_sample_f(S, key1, key2):
         # Draw a random sample of the signal (delay spectrum) assuming a Gaussian model
         # with a given delay power spectrum `S`. Do this using the perturbed Wiener
         # filter approach
 
-        # This method is fastest if the number of frequencies is larger than the number
-        # of delays we are solving for. Typically this isn't true, so we probably want
-        # `_draw_signal_sample_t`
+        # This method is generally faster unless there are very
+        # few frequencies available
+
+        Si = jnp.nan_to_num(1.0 / S)
 
         # Construct the Wiener covariance
         if complex_timedomain:
@@ -1689,28 +1699,36 @@ def delay_power_spectrum_gibbs(
             # real and imaginary components of the delay spectrum, each of which have
             # power spectrum equal to 0.5 times the power spectrum of the complex
             # delay spectrum, if the statistics are circularly symmetric
-            S = 0.5 * np.repeat(S, 2)
-        Si = 1.0 * tools.invert_no_zero(S)
-        Ci = np.diag(Si) + FTNiF
+            Si = 2.0 * jnp.repeat(Si, 2)
 
         # Draw random vectors that form the perturbations
         if complex_timedomain:
             # If delay spectrum is complex, draw for real and imaginary components
             # separately
-            w1 = rng.standard_normal((2 * N, data.shape[1]))
+            w1 = jax.random.normal(key1, (2 * N, data.shape[1]))
         else:
-            w1 = rng.standard_normal((N, data.shape[1]))
-        w2 = rng.standard_normal(data.shape)
+            w1 = jax.random.normal(key1, (N, data.shape[1]))
+
+        w2 = jax.random.normal(key2, data.shape)
 
         # Construct the random signal sample by forming a perturbed vector and
         # then doing a matrix solve
-        y = np.dot(FTNih, data + w2) + Si[:, np.newaxis] ** 0.5 * w1
+        w2d = w2 + data
+        w1Si = w1 * (Si**0.5)[:, np.newaxis]
 
-        return la.solve(Ci, y, assume_a="pos")
+        y = w1Si + (FTNih @ w2d)
+        Ci = FTNiF + jnp.diag(Si)
 
-    def _draw_signal_sample_t(S):
-        # This method is fastest if the number of delays is larger than the number of
-        # frequencies. This is usually the regime we are in.
+        CiL = jla.cho_factor(Ci, check_finite=False, lower=False, overwrite_a=True)
+
+        return jla.cho_solve(CiL, y, check_finite=False, overwrite_b=True)
+
+    @jax.jit
+    def _draw_signal_sample_t(S, key1, key2):
+        # This method is fastest if the number of delays is significantly
+        # larger than the number of frequencies.
+
+        Sh = S**0.5
 
         # Construct various dependent matrices
         if complex_timedomain:
@@ -1718,56 +1736,70 @@ def delay_power_spectrum_gibbs(
             # real and imaginary components of the delay spectrum, each of which have
             # power spectrum equal to 0.5 times the power spectrum of the complex
             # delay spectrum, if the statistics are circularly symmetric
-            S = 0.5 * np.repeat(S, 2)
-        Sh = S**0.5
-        Rt = Sh[:, np.newaxis] * FTNih
-        R = Rt.T.conj()
+            Sh = (0.5**0.5) * np.repeat(Sh, 2)
 
         # Draw random vectors that form the perturbations
         if complex_timedomain:
             # If delay spectrum is complex, draw for real and imaginary components
             # separately
-            w1 = rng.standard_normal((2 * N, data.shape[1]))
+            w1 = jax.random.normal(key1, (2 * N, data.shape[1]))
         else:
-            w1 = rng.standard_normal((N, data.shape[1]))
-        w2 = rng.standard_normal(data.shape)
+            w1 = jax.random.normal(key1, (N, data.shape[1]))
+
+        w2 = jax.random.normal(key2, data.shape)
+
+        Rt = Sh[:, np.newaxis] * FTNih
+        R = Rt.T
 
         # Perform the solve step (rather than explicitly using the inverse)
-        y = data + w2 - np.dot(R, w1)
-        Ci = np.identity(2 * Ni.shape[0]) + np.dot(R, Rt)
-        x = la.solve(Ci, y, assume_a="pos")
+        y = data + w2 - (R @ w1)
 
-        return Sh[:, np.newaxis] * (np.dot(Rt, x) + w1)
+        Ci = (R @ Rt) + I
 
-    def _draw_ps_sample(d):
-        # Draw a random delay power spectrum sample assuming the signal is Gaussian and
-        # we have a flat prior on the power spectrum.
+        CiL = jla.cho_factor(Ci, check_finite=False, lower=False, overwrite_a=True)
+
+        x = jla.cho_solve(CiL, y, check_finite=False, overwrite_b=True)
+
+        return Sh[:, np.newaxis] * ((Rt @ x) + w1)
+
+    @jax.jit
+    def _draw_ps_sample(d, key):
+        # Draw a random delay power spectrum sample assuming the signal
+        # is Gaussian and we have a flat prior on the power spectrum.
         # This means drawing from a inverse chi^2.
+
+        S_hat = jnp.var(d, axis=-1)
 
         if complex_timedomain:
             # If delay spectrum is complex, combine real and imaginary components
             # stored in d, such that variance below is variance of complex spectrum
-            d = d[0::2] + 1.0j * d[1::2]
-        S_hat = d.var(axis=1)
+            # It's computationally faster to do this operation after taking
+            # the variance, since this is a much smaller array
+            S_hat = S_hat[::2] + S_hat[1::2]
 
         df = d.shape[1]
-        chi2 = rng.chisquare(df, size=d.shape[0])
+        chi2 = jax.random.chisquare(key, df, shape=S_hat.shape[0])
 
         return S_hat * df / chi2
 
     # Select the method to use for the signal sample based on how many frequencies
     # versus delays there are
-    _draw_signal_sample = (
-        _draw_signal_sample_f if (len(fsel) > 0.25 * N) else _draw_signal_sample_t
-    )
+    if len(fsel) > 0.25 * N:
+        _draw_signal_sample = _draw_signal_sample_f
+    else:
+        # Create an identity matrix used repeatedly in this case
+        I = jnp.eye(data.shape[0])
+        _draw_signal_sample = _draw_signal_sample_t
 
     # Perform the Gibbs sampling iteration for a given number of loops and
     # return the power spectrum output of them.
     for ii in range(niter):
-        d_samp = _draw_signal_sample(S_samp)
-        S_samp = _draw_ps_sample(d_samp)
+        keys = randomkeys[3 * ii : 3 * ii + 3]
 
-        spec.append(S_samp)
+        d_samp = jax.block_until_ready(_draw_signal_sample(S_samp, *keys[1:]))
+        S_samp = jax.block_until_ready(_draw_ps_sample(d_samp, keys[0]))
+
+        spec.append(np.asarray(S_samp))
 
     return spec
 
