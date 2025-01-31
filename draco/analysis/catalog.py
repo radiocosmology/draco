@@ -12,46 +12,45 @@ class CatalogPixelization(task.SingleTask):
 
     def process(self, rm_empty, mock_cat):
 
-        pols = rm_empty.index_map["pol"]
-        if ("XY" in pols) or ("YX" in pols):
-            if ("XY" in pols) ^ ("YX" in pols):
-                raise ValueError(
-                    "If cross-pols exist both XY and YX must be present." f"Got {pols}."
-                )
-            dpol = ["reXY", "imXY"]
-        else:
-            dpol = []
+        rm_empty.redistribute("freq")
 
-        if "XX" in pols:
-            dpol = ["XX", *dpol]
+        #pols = rm_empty.index_map["pol"]
+        #if ("XY" in pols) or ("YX" in pols):
+        #    if ("XY" in pols) ^ ("YX" in pols):
+        #        raise ValueError(
+        #            "If cross-pols exist both XY and YX must be present." f"Got {pols}."
+        #        )
+        #    dpol = ["reXY", "imXY"]
+        #else:
+        #    dpol = []
 
-        if "YY" in pols:
-            dpol = dpol.append("YY")
+        #if "XX" in pols:
+        #    dpol = ["XX", *dpol]
 
-        dpol = np.array(dpol, dtype="U4")
+        #if "YY" in pols:
+        #    dpol = dpol.append("YY")
 
-        nbeam = len(rm_empty.index_map["beam"])
+        #dpol = np.array(dpol, dtype="U4")
 
-        rm_store = containers.RingMap(
-            beam=nbeam,
-            pol=dpol,
+        rm_out = containers.RingMap(
+            attrs_from=rm_empty,
             axes_from=rm_empty,
         )
 
-        rm_store.redistribute("freq")
+        rm_out.redistribute("freq")
 
-        freq_axis_ind = list(rm_store.map.attrs["axis"]).index("freq")
-        offset_ind = rm_store.map.local_offset[freq_axis_ind]
+        rm_freq = rm_empty.index_map["freq"][:]
 
-        rm_freq = rm_empty.index_map["freq"]["centre"][:]
-        freq_width = rm_empty.index_map["freq"]["width"][:]
-        nfreq = len(rm_freq)
+        freq_axis_index = list(rm_empty.map.attrs["axis"]).index("freq")
+        nfreq_local = rm_empty.map.local_shape[freq_axis_index]
+        freq_local_offset = rm_empty.map.local_offset[freq_axis_index]
+
+        local_freq_slice = slice(
+            freq_local_offset, freq_local_offset + nfreq_local
+        )
 
         rm_ra = rm_empty.index_map["ra"][:]
         rm_el = rm_empty.index_map["el"][:]
-
-        nbeam = len(rm_empty.index_map["beam"][:])
-        npol = len(rm_empty.index_map["pol"][:])
 
         pos_arr = np.array(mock_cat["position"])
         dec_arr = pos_arr["dec"]
@@ -60,39 +59,25 @@ class CatalogPixelization(task.SingleTask):
         freq_arr = 1420 / (1 + mock_cat["redshift"]["z"])
 
         dra = np.median(np.abs(np.diff(rm_ra)))
+        max_ra_ind = len(rm_ra) - 1
         dza = np.median(np.abs(np.diff(rm_el)))
         za_min = rm_el.min()
 
-        full_ind = []
+        for ff, (nu, width) in enumerate(rm_freq[local_freq_slice]):
+            lb = nu - width/2
+            ub = nu + width/2
 
-        for i in range(nfreq):
-            index_arr = np.where(
-                (rm_freq[i] - freq_width[i] / 2 < freq_arr)
-                & (freq_arr <= rm_freq[i] + freq_width[i] / 2)
-            )
+            in_band = (freq_arr < ub) & (freq_arr > lb)
 
-            ra_bin = ra_arr[index_arr]
-            dec_bin = dec_arr[index_arr]
+            ra_ib = ra_arr[in_band]
+            dec_ib = dec_arr[in_band]
 
-            max_ra_ind = len(rm_ra) - 1
-            ra_ind = (np.rint(ra_bin) / dra % max_ra_ind).astype(np.int64)
+            ra_ind = (np.rint(ra_ib) / dra % max_ra_ind).astype(np.int64)
 
             za_ind = np.rint(
-                (np.sin(np.radians(dec_bin - self.telescope.latitude)) - za_min) / dza
+                (np.sin(np.radians(dec_ib - self.telescope.latitude)) - za_min) / dza
             ).astype(np.int64)
 
-            ind_stack = np.vstack((ra_ind, za_ind))
-            full_ind.append(ind_stack)
+            rm_out.map[:, :, ff, ra_ind, za_ind] += 1
 
-        rm_store = np.zeros((np.shape(rm_empty["map"][:])))
-        for b in range(nbeam):
-            for p in range(npol):
-                for freq in range(np.shape(rm_store)[2]):
-                    freq_offset = freq + offset_ind
-                    ra_ind = full_ind[freq_offset][0]
-                    el_ind = full_ind[freq_offset][1]
-                    for i in range(len(ra_ind)):
-                        rm_store[b][p][freq][ra_ind[i]][el_ind[i]] += 1
-
-        rm_empty["map"][:] = rm_store
-        return rm_store
+        return rm_out
