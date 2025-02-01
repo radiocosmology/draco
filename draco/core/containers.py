@@ -3683,7 +3683,7 @@ class LocalizedRFIMask(FreqContainer, TODContainer):
             "distributed_axis": "freq",
         },
     }
-
+    
     @property
     def mask(self):
         """Get the mask dataset."""
@@ -3740,3 +3740,203 @@ class LocalizedSiderealRFIMask(FreqContainer, SiderealContainer):
     def el(self):
         """Get the el axis."""
         return self.index_map["el"]
+    
+
+class VisBandpassWindow(FreqContainer):
+    """Container for bandpass gains and their window estimated by running bandpass HyFoReS on hybrid beam-formed visibilities."""
+
+    _axes = ("pol",)
+
+    # TODO: check if np.complex128 is required
+    _dataset_spec: ClassVar = {
+        "bandpass": {
+            "axes": ["pol", "freq"],
+            "dtype": np.complex128,
+            "initialise": True,
+            "distributed": False,
+        },
+        "window": {
+            "axes": ["pol", "freq", "freq"],
+            "dtype": np.complex128,
+            "initialise": True,
+            "distributed": False,
+        },
+    }
+
+    @property
+    def bandpass(self):
+        """Get the bandpass dataset."""
+        return self.datasets["bandpass"]
+
+    @property
+    def window(self):
+        """Get the window dataset."""
+        return self.datasets["window"]
+
+
+class VisBandpassCompensate(FreqContainer):
+    """Container for window-compensated bandpass gains."""
+
+    _axes = ("pol",)
+
+    # TODO: redefine the second axis for sval
+    _dataset_spec: ClassVar = {
+        "comp_bandpass": {
+            "axes": ["pol", "freq"],
+            "dtype": np.complex128,
+            "initialise": True,
+            "distributed": False,
+        },
+        "sval": {
+            "axes": ["pol", "freq"],
+            "dtype": np.complex128,
+            "initialise": True,
+            "distributed": False,
+        },
+    }
+
+    @property
+    def comp_bandpass(self):
+        """Get the comp_bandpass dataset."""
+        return self.datasets["comp_bandpass"]
+
+    @property
+    def sval(self):
+        """Get the sval dataset."""
+        return self.datasets["sval"]
+
+
+class VisBandpassWindowBaseline(VisBandpassWindow):
+    """Container for bandpass gains and their window estimated by running bandpass HyFoReS on hybrid beam-formed visibilities."""
+
+    _axes = ("ew",)
+
+    _dataset_spec: ClassVar = {
+        "bandpass": {
+            "axes": ["pol", "ew", "freq"],
+            "dtype": np.complex128,
+            "initialise": True,
+            "distributed": False,
+        },
+        "window": {
+            "axes": ["pol", "ew", "freq", "freq"],
+            "dtype": np.complex128,
+            "initialise": True,
+            "distributed": False,
+        },
+    }
+
+    @property
+    def bandpass(self):
+        """Get the bandpass dataset."""
+        return self.datasets["bandpass"]
+
+    @property
+    def window(self):
+        """Get the window dataset."""
+        return self.datasets["window"]
+
+
+class VisBandpassCompensateBaseline(VisBandpassCompensate):
+    """Container for window-compensated bandpass gains."""
+
+    _axes = ("ew",)
+
+    _dataset_spec: ClassVar = {
+        "comp_bandpass": {
+            "axes": ["pol", "ew", "freq"],
+            "dtype": np.complex128,
+            "initialise": True,
+            "distributed": False,
+        },
+        "sval": {
+            "axes": ["pol", "ew", "freq"],
+            "dtype": np.complex128,
+            "initialise": True,
+            "distributed": False,
+        },
+    }
+
+    @property
+    def comp_bandpass(self):
+        """Get the comp_bandpass dataset."""
+        return self.datasets["comp_bandpass"]
+
+    @property
+    def sval(self):
+        """Get the sval dataset."""
+        return self.datasets["sval"]
+
+    
+class VisBandpassWindowBaselineRA(SiderealContainer, VisBandpassWindowBaseline):
+    """Container for bandpass gains and their window estimated by running bandpass HyFoReS on hybrid beam-formed visibilities."""
+
+    _dataset_spec: ClassVar = {
+        "bandpass": {
+            "axes": ["pol", "ew", "ra", "freq"],
+            "dtype": np.complex128,
+            "initialise": True,
+            "distributed": True,
+            "distributed_axis": "ra",
+            "chunks": (1, 4, 2048, 32),
+            "compression": COMPRESSION,
+            "compression_opts": COMPRESSION_OPTS,
+        },
+        "window": {
+            "axes": ["pol", "ew", "ra", "freq", "freq"],
+            "dtype": np.complex128,
+            "initialise": True,
+            "distributed": True,
+            "distributed_axis": "ra",
+            "chunks": (1, 4, 2048, 32, 32),
+            "compression": COMPRESSION,
+            "compression_opts": COMPRESSION_OPTS,
+        },
+    }
+
+    @property
+    def bandpass(self):
+        """Get the bandpass dataset."""
+        return self.datasets["bandpass"]
+
+    @property
+    def window(self):
+        """Get the window dataset."""
+        return self.datasets["window"]
+
+
+class VisBandpassCompensateBaselineRA(SiderealContainer, VisBandpassCompensateBaseline):
+    """Container for window-compensated bandpass gains."""
+
+    _dataset_spec: ClassVar = {
+        "comp_bandpass": {
+            "axes": ["pol", "ew", "ra", "freq"],
+            "dtype": np.complex128,
+            "initialise": True,
+            "distributed": True,
+            "distributed_axis": "ra",
+            "chunks": (1, 4, 2048, 32),
+            "compression": COMPRESSION,
+            "compression_opts": COMPRESSION_OPTS,
+        },
+        "rank": {
+            "axes": ["pol", "ew", "ra"],
+            "dtype": np.complex128,
+            "initialise": True,
+            "distributed": True,
+            "distributed_axis": "ra",
+            "chunks": (1, 4, 2048),
+            "compression": COMPRESSION,
+            "compression_opts": COMPRESSION_OPTS,
+        },
+    }
+
+    @property
+    def comp_bandpass(self):
+        """Get the comp_bandpass dataset."""
+        return self.datasets["comp_bandpass"]
+
+    @property
+    def rank(self):
+        """Get the sval dataset."""
+        return self.datasets["rank"]
