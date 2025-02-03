@@ -2018,22 +2018,27 @@ def delay_spectrum_wiener_filter(
     # Apply F^dagger N^{-1/2} to input frequency spectrum
     y = np.dot(FTNih, data)
 
+    # Get the inverse signal variance
+    Si = tools.invert_no_zero(delay_PS)
+
     # Construct the Wiener covariance
     if complex_timedomain:
         # If delay spectrum is complex, extend delay_PS to correspond to the individual
         # real and imaginary components of the delay spectrum, each of which have
         # power spectrum equal to 0.5 times the power spectrum of the complex
         # delay spectrum, if the statistics are circularly symmetric
-        S = 0.5 * np.repeat(delay_PS, 2)
-        Si = 1.0 / S
-    else:
-        Si = 1.0 / delay_PS
+        Si = 2.0 * np.repeat(Si, 2)
 
-    Ci = np.diag(Si) + FTNiF
+    # Add the inverse signal component
+    np.einsum("ii->i", FTNiF)[:] += Si
+    # Do a cholesky decomposition of the covariance.
+    # This solve is pretty much always faster than a
+    # standard one
+    CiL = la.cho_factor(FTNiF, check_finite=False, lower=False)
 
     # Solve the linear equation for the Wiener-filtered spectrum, and transpose to
     # [average_axis, delay]
-    y_spec = la.solve(Ci, y, assume_a="pos").T
+    y_spec = la.cho_solve(CiL, y, check_finite=False).T
 
     if complex_timedomain:
         y_spec = _alternating_real_to_complex(y_spec)
