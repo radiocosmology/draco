@@ -614,7 +614,7 @@ class DetermineSourceTransit(task.SingleTask):
     def setup(self, fluxcatalog):
         """Set list of sources, sorted by flux in descending order."""
         self.source_list = sorted(
-            self.source_list, # This must be set
+            self.source_list or sources.source_dictionary.keys(), #FIXME: Do we want to use this source dictionary?
             key=lambda src: fluxcat.FluxCatalog[src].predict_flux(self.freq),
             reverse=True,
         )
