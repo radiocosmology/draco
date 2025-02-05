@@ -6,7 +6,7 @@ import numpy as np
 import scipy.linalg as la
 from scipy.optimize import minimize
 
-from ..util import tools
+from ..util import kernels, tools
 
 
 class OptFunc(Protocol):
@@ -86,6 +86,8 @@ class LogLikePS(OptFunc):
     exact_hessian
         If set, use the exact Hessian for the calculation. Otherwise use the Fisher
         matrix in the same way as the original NRML methods.
+    bounds
+        Bounds on the minimisation parameters. Default is (1e-10, 1e10).
     """
 
     def __init__(
@@ -96,16 +98,21 @@ class LogLikePS(OptFunc):
         nsamp: int,
         fsel: np.ndarray | slice | list | None = None,
         exact_hessian: bool = True,
+        bounds: tuple = (1e-10, 1e10),
     ) -> None:
         if fsel is None:
             fsel = (MF != 0).any(axis=1)
 
         self.X = X[fsel][:, fsel]
+        self.N = N[fsel]
         self.MF = MF[fsel]
-        self.N = N[fsel][:, fsel]
+        # Pre-compute the conjugate transpose since
+        # it doesn't change during the minimization
+        self.MFT = self.MF.T.conj()
 
         self.nsamp = nsamp
         self.exact_hessian = exact_hessian
+        self._logbounds = tuple(sorted(np.log(x) for x in bounds))
 
     # Store the location we are calculating for.
     _s_a: np.ndarray | None = None
@@ -122,23 +129,34 @@ class LogLikePS(OptFunc):
         -------
         True if a pre-computation was done, otherwise False.
         """
-        if np.all(x == self._s_a):
+        if np.array_equal(x, self._s_a):
             return False
 
-        self._s_a = x
+        # Enforce bounds on the parameters. Do this
+        # on the log values to avoid huge exponentials.
+        self._s_a = np.clip(x, *self._logbounds)
 
-        S = np.exp(x)
+        S = np.exp(self._s_a)
         dS = S
 
-        self._C = (self.MF * S[np.newaxis, :]) @ self.MF.T.conj() + self.N
+        # Compute the covariance and inverse covariance
+        self._C = (self.MF * S[np.newaxis, :]) @ self.MFT
+        np.einsum("ii->i", self._C)[:] += self.N
+        # Get the Cholesky decomposition of the covariance
+        # matrix. This is both faster for solving inverse
+        # problems and provides a fast way to calculate the
+        # log of the determinant
+        self._Ch = la.cho_factor(self._C, check_finite=False)
+
+        # Compute matrices used for the gradient and hessian
         self._XC = self.X - self._C
 
-        self._Ch = la.cholesky(self._C, lower=False)
-
         self._U = dS[np.newaxis, :] ** 0.5 * self.MF
-        self._Ut = la.cho_solve((self._Ch, False), self._U)
-        self._XC_Ut = self._XC @ self._Ut
+        self._Ut = la.cho_solve(self._Ch, self._U, check_finite=False)
 
+        self._XC_Ut = self._XC @ self._Ut
+        # These are used in the hessian, and are just
+        # re-assigned for notation purposes
         self._W = self._U
         self._Wt = self._Ut
         self._XC_Wt = self._XC_Ut
@@ -159,13 +177,16 @@ class LogLikePS(OptFunc):
         """
         self._precompute(x)
 
-        CiX = la.cho_solve((self._Ch, False), self.X)
+        # The log of the determinant of `C` is equal to
+        # 2 times the sum of the log of the diagonal of the
+        # Cholesky of C, which is much faster to compute
+        lndet = 2 * np.log(np.einsum("ii->i", self._Ch[0])).real.sum()
 
-        lndet = 2 * np.log(np.diagonal(self._Ch)).sum().real
+        # Add the trace of XC^{-1}
+        CiX = la.cho_solve(self._Ch, self.X, check_finite=False)
+        lndet += np.einsum("ii->i", CiX).real.sum()
 
-        ll = lndet + np.diagonal(CiX).sum().real
-
-        return self.nsamp * ll
+        return self.nsamp * lndet
 
     def gradient(self, x: np.ndarray) -> np.ndarray:
         """Calculate the gradient of the negative log-likelihood.
@@ -181,7 +202,7 @@ class LogLikePS(OptFunc):
         """
         self._precompute(x)
 
-        g = -(self._Ut.conj() * self._XC_Ut).sum(axis=0).real
+        g = -(self._Ut.conj() * self._XC_Ut).real.sum(axis=0)
 
         return self.nsamp * g
 
@@ -206,145 +227,88 @@ class LogLikePS(OptFunc):
         if self.exact_hessian:
             Uta_dX_Utb = self._Ut.T.conj() @ self._XC_Ut
             H += (2 * Uta_dX_Utb * Ua_Utb.T).real
-            t = -(self._Wt.conj() * self._XC_Wt).sum(axis=0).real
-            H += np.diag(t.real)
+            # Add the diagonal element, which is just the gradient.
+            # This is extremely fast to compute, so don't bother
+            # trying to optimise with the call to `gradient`.
+            t = -(self._Wt.conj() * self._XC_Wt).real.sum(axis=0)
+            np.einsum("ii->i", H)[:] += t
 
         return self.nsamp * H
-
-
-class SmoothnessRegulariser(OptFunc):
-    """A smoothness prior on the values at given locations.
-
-    This calculates the average in a window of `width` points, and then applies a
-    Gaussian with precision `alpha` and this average as the mean for each point. For a
-    `width` of 3 this is effectively a constraint on the second derivative.
-
-    Parameters
-    ----------
-    N
-        The number of points in the function we are inferring. The sample locations are
-        implicitly assumed to be at `np.arange(N)`.
-    alpha
-        The smoothness precision.
-    width
-        The width over which the smoothness is calculated in samples.
-    periodic
-        Assume that the function is periodic and wrap around.
-    """
-
-    def __init__(
-        self, N: int, alpha: float, *, width: int = 5, periodic: bool = True
-    ) -> None:
-
-        # Calculate the matrix for the moving average
-        W = np.zeros((N, N))
-        for i in range(N):
-
-            ll, ul = i - (width - 1) // 2, i + (width + 1) // 2
-            if not periodic:
-                ll, ul = max(0, ll), min(ul, N)
-            v = np.arange(ll, ul)
-
-            W[i][v] = 1.0 / len(v)
-
-        IW = np.identity(N) - W
-        self.Ci = alpha * (IW.T @ IW)
-
-    def value(self, x: np.ndarray) -> float:
-        """Calculate the value of the smoothness regularizer.
-
-        Parameters
-        ----------
-        x
-            The array of parameters in the optimization.
-
-        Returns
-        -------
-        Value of the smoothness regularizer for the given set of params.
-        """
-        return 0.5 * float(x @ self.Ci @ x)
-
-    def gradient(self, x: np.ndarray) -> np.ndarray:
-        """Calculate the gradient of the smoothness regularizer.
-
-        Parameters
-        ----------
-        x
-            The array of parameters in the optimization.
-
-        Returns
-        -------
-        Gradient of the smoothness regularizer for the given set of params.
-        """
-        return self.Ci @ x
-
-    def hessian(self, x: np.ndarray) -> np.ndarray:
-        """Calculate the hessian of the smoothness regularizer.
-
-        Parameters
-        ----------
-        x
-            The array of parameters in the optimization.
-
-        Returns
-        -------
-        Hessian of the smoothness regularizer for the given set of params.
-        """
-        return self.Ci
 
 
 class GaussianProcessPrior(OptFunc):
     """A Gaussian process prior on the inputs.
 
-    The kernel has a standard deviation of `width`, and the variance is `alpha**2`.
+    The kernel has a standard deviation of `width`, and the
+    variance is `alpha**2`.
 
     Parameters
     ----------
-    N
-        The number of points in the function we are inferring. The sample locations are
-        implicitly assumed to be at `np.arange(N)`.
-    alpha
-        The scale of the distribution.
-    width
-        The width of the kernel used in the covariance.
-    kernel
-        The name of the kernel to use. Either 'gaussian' or 'rational'.
-    a
-        Parameter for the rational quadratic kernel.
-    periodic
-        Assume that the function is periodic and wrap around.
-    reg
-        Add a small diagonal entry of size `alpha**2 * reg` for numerical stability.
+    N : int
+        The number of points in the function we are inferring. The
+        sample locations are implicitly assumed to be at `np.arange(N)`.
+    width : int
+        The width of the kernel used in the covariance. Default is 5.
+    alpha : float
+        The scale of the distribution. Default is 1.0.
+    kernel : str
+        The name of the kernel to use. Supported kernels are
+        'gaussian', 'rational', and 'matern'. Default is `gaussian`.
+    reg : float
+        Add a small diagonal entry of size `alpha**2 * reg`
+        for numerical stability. Default is 1e-8.
+    kernel_params : dict
+        Additional parameters depending on the kernel being used.
+        See `draco.util.kernels` for kernel details.
     """
 
     def __init__(
         self,
         N: int,
-        alpha: float,
-        width: int = 5,
         *,
+        width: int = 5,
+        alpha: float = 1,
         kernel: str = "gaussian",
-        a: float = 1.0,
-        periodic: bool = True,
-        reg: float = 1e-6,
+        reg: float = 1e-8,
+        **kernel_params,
     ) -> None:
+        # Get the covariance kernel. Alpha needs to be applied _after_
+        # inverting with the regularisation, so just set it to 1.0 here.
+        # Strictly do not support band-diagonal kernels for now.
+        kernel_params.update(
+            {"N": int(N), "width": int(width), "alpha": 1.0, "banded": False}
+        )
 
-        ii = np.arange(N)
-        d = ii[:, np.newaxis] - ii[np.newaxis, :]
+        C = kernels.get_kernel(kernel, **kernel_params)
 
-        if periodic:
-            d = ((d + N / 2) % N) - N / 2
-
-        d2 = (d / width) ** 2
-
-        if kernel == "gaussian":
-            C = np.exp(-0.5 * d2)
-        elif kernel == "rational":
-            C = (1 + d2 / (2 * a)) ** -a
+        if kernel == "moving_average":
+            self.Ci = alpha * C
         else:
-            raise ValueError(f"Unknown kernel type '{kernel}'")
+            self.Ci = la.inv(C + np.identity(N) * reg) / alpha**2
 
-        self.Ci: np.ndarray = la.inv(C + np.identity(N) * reg) / alpha**2
+    # Store the location we are calculating for.
+    _s_a: np.ndarray | None = None
+
+    def _precompute(self, x: np.ndarray) -> bool:
+        """Pre-compute matrices for the given value.
+
+        Parameters
+        ----------
+        x
+            The array of parameters in the optimization.
+
+        Returns
+        -------
+        True if a pre-computation was done, otherwise False.
+        """
+        if np.array_equal(x, self._s_a):
+            return False
+
+        self._s_a = x
+
+        self._Cix = self.Ci @ x
+
+        return True
 
     def value(self, x: np.ndarray) -> float:
         """Calculate the value of the gaussian process prior.
@@ -358,7 +322,9 @@ class GaussianProcessPrior(OptFunc):
         -------
         Value of the gaussian process prior for the given set of params.
         """
-        return 0.5 * float(x @ self.Ci @ x)
+        self._precompute(x)
+
+        return 0.5 * float(x @ self._Cix)
 
     def gradient(self, x: np.ndarray) -> np.ndarray:
         """Calculate the gradient of the gaussian process prior.
@@ -372,7 +338,9 @@ class GaussianProcessPrior(OptFunc):
         -------
         Gradient of the gaussian process prior for the given set of params.
         """
-        return self.Ci @ x
+        self._precompute(x)
+
+        return self._Cix
 
     def hessian(self, x: np.ndarray) -> np.ndarray:
         """Calculate the hessian of the gaussian process prior.
@@ -462,13 +430,16 @@ def delay_power_spectrum_maxpost(
     initial_S: np.ndarray | None = None,
     window: str = "nuttall",
     fsel: np.ndarray | None = None,
-    maxiter: int = 30,
+    maxiter: int = 100,
     tol: float = 1e-3,
+    bounds: tuple = (1e-15, 1e10),
 ):
     """Estimate the delay power spectrum with a maximum-likelihood estimator.
 
     This routine uses `scipy.optimize.minimize` to find the maximum likelihood power
     spectrum.
+
+    64-bit precision is required for the data covariance and fourier matrices.
 
     Parameters
     ----------
@@ -487,17 +458,22 @@ def delay_power_spectrum_maxpost(
     fsel : np.ndarray[freq], optional
         Indices of channels that we have data at. By default assume all channels.
     maxiter : int, optional
-        Maximum number of iterations to run of the solver.
+        Maximum number of iterations to run of the solver. Default is 100.
     tol : float, optional
         The convergence tolerance for the optimization that is passed to scipy.optimize.minimize.
+        Default is 1e-3.
+    bounds : tuple, optional
+        Bounds on the minimisation paramaters. Default is (1e-15, 1e10).
 
     Returns
     -------
-    spec : list
+    samples : list
         List of spectrum samples.
     success : bool
         True if the solver successfully converged, False otherwise.
     """
+    # This import can't be at the top level or else
+    # we end up with a circular import
     from .delay import fourier_matrix
 
     nsamp, Nf = data.shape
@@ -510,60 +486,60 @@ def delay_power_spectrum_maxpost(
             f"{len(fsel)} != {data.shape[-1]}"
         )
 
-    # Construct the Fourier matrix
-    F = fourier_matrix(N, fsel)
+    # Construct the Fourier matrix. 64-bit precision
+    # is required for numerically stable results.
+    F = fourier_matrix(N, fsel).astype(np.complex128, copy=False)
+    data = data.astype(F.dtype, copy=True)
 
     # Compute the covariance matrix of the data
     # Window the frequency data if requested
     if window is not None:
         # Construct the window function
-        x = fsel * 1.0 / N
-        w = tools.window_generalised(x, window=window)
-
-        # Apply to the projection matrix and the data
+        w = tools.window_generalised(fsel / N, window=window)
+        # Apply to data and projection matrix
         F *= w[:, np.newaxis]
-        data = data * w[np.newaxis, :]
+        data *= w[np.newaxis, :]
 
-    X = data.T @ data.conj()
-    X /= nsamp
+    # Make the data covariance matrix
+    X = (data.T @ data.conj()) / nsamp
 
-    # Construct the noise matrix from the diagonal of its inverse
-    Nm = np.diag(tools.invert_no_zero(Ni))
+    # Make the noise matrix from the diagonal of its inverse.
+    # Assume that this is also diagonal
+    Nm = tools.invert_no_zero(Ni)
 
     # Mask out any completely missing frequencies
     F[Ni == 0] = 0.0
 
     # Use the pseudo-inverse to give a starting point for the optimiser
     if initial_S is None:
-        lsi = np.log((data @ la.pinv(F.T, rtol=1e-3)).var(axis=0))
-    else:
-        lsi = np.log(initial_S)
+        initial_S = (data @ la.pinv(F.T, rtol=1e-3)).var(axis=0)
 
+    # Create a list to store intermediate samples
+    # during the minimization routine. The first item
+    # will always be the initial guess
+    samples = [initial_S]
+
+    # Construct the optimisation function as the sum of the
+    # PS likelihood and a GP prior. The matern kernel is used
+    # as a prior to reduce over-smoothing.
     optfunc = AddFunctions(
         [
-            LogLikePS(X, F, Nm, nsamp, exact_hessian=True),
-            GaussianProcessPrior(
-                N, alpha=5, width=3.0, kernel="gaussian", a=5.0, reg=1e-8
-            ),
+            LogLikePS(X, F, Nm, nsamp, exact_hessian=True, bounds=bounds),
+            GaussianProcessPrior(N, width=5, alpha=1.0, kernel="matern", nu=1.5),
         ]
     )
 
-    samples = []
-
-    # This callback is for getting the intermediate samples such that we can access
-    # convergence of the solution
-    def _get_intermediate(xk):
-        samples.append(np.exp(xk))
-
     try:
+        # Minimize over the log of the delay PS. Each PS sample
+        # (note the `exp`) is stored via the callback function.
         res = minimize(
             optfunc.value,
-            x0=lsi,
+            x0=np.log(initial_S),
             jac=optfunc.gradient,
             hess=optfunc.hessian,
             method="Newton-CG",
             options={"maxiter": maxiter, "xtol": tol},
-            callback=_get_intermediate,
+            callback=lambda xk: samples.append(np.exp(xk)),
         )
         success = res.success
 
@@ -578,14 +554,9 @@ def delay_power_spectrum_maxpost(
     # np.exp() of the minimization parameter to get the delay spectrum. The ValueError gets thrown
     # again in the Cholesky decomposition when numpy runs a check_finite on the covariance (which
     # at that point contains infs/nans).
+    # NOTE: I think that this is fixed now, but I'm leaving these checks and this note here for the
+    # time being.
     except (la.LinAlgError, ValueError):
-        success = False
-
-    # In rare cases a LinAlgError can be thrown before the _get_intermediate callback is called in `minimize`.
-    # In this scenario, an empty `samples` is returned and this causes errors in the calling function.
-    # Add the initial guess to the samples list in this case and ensure success is set to False.
-    if len(samples) == 0:
-        samples.append(np.exp(lsi))
         success = False
 
     # NOTE: the final sample in samples is already the final result
