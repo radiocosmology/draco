@@ -702,3 +702,44 @@ def taper_mask(mask, nwidth, outer=False):
         tapered_mask = 1.0 - tapered_mask
 
     return tapered_mask[:, width:-width]
+
+def ensure_list(obj, num=None):
+    """Ensure `obj` is list-like, optionally with the length `num`.
+
+    If `obj` not a string but is iterable, it is returned as-is,
+    although a length different than `num`, if given, will result in a
+    `ValueError`.
+
+    If `obj` is a string or non-iterable, a new list is created with
+    `num` copies of `obj` as elements.  In this case, if `num` is not
+    given, it is taken to be 1.
+
+    Parameters
+    ----------
+    obj
+        The object to check.
+    num: int, optional
+        If given, also ensure that the list has `num` elements.
+
+
+    Returns
+    -------
+    obj
+        The input object, or the newly created list
+
+    Raises
+    ------
+    ValueError:
+        `obj` was iterable but did not have a length of `num`
+    """
+    if hasattr(obj, "__iter__") and not isinstance(obj, str):
+        nnum = len(obj)
+        if (num is not None) and (nnum != num):
+            raise ValueError("Input list has wrong size.")
+    else:
+        if num is not None:
+            obj = [obj] * num
+        else:
+            obj = [obj]
+
+    return obj
