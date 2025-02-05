@@ -72,7 +72,8 @@ from . import transform
 
 class DelayFilterHyFoReSBandpassHybridVis(task.SingleTask): 
     """Apply HyFoReS to estimate bandpass gains and compute their window matrix from unfiltered hybrid beam formed visibilities. 
-
+    
+    Fixed the issue of noise bias in gain estimation.
     This task builds on ApplyDelayFilterHybridVis. HyFoReS uses the unfiltered visibilities 
     as estimated foregrounds and use the delay filtered visibilities as estimated signals. It
     cross correlates the two to estimate the bandpass errors in the postfiltered data.
@@ -105,7 +106,7 @@ class DelayFilterHyFoReSBandpassHybridVis(task.SingleTask):
 
         # Save the minimum north-south separation
         self.min_ysep = min_ysep
-    
+
     def process(self, hv, source):
         """First apply the DAYENU filter to a HybridVisStream.
            Then use HyFoReS to estimate the bandpass errors and compute their window matrix
@@ -231,15 +232,18 @@ class DelayFilterHyFoReSBandpassHybridVis(task.SingleTask):
             
                 for xx in range(new):
                     # grab datasets
-                    tvis = np.ascontiguousarray(vis[pp, ff, xx, ...]) # ensures an array is stored in contiguous memory, following the C-order (row-major) layout #Q5:does this work for arrays with > 2 dimensions? Do I need to do this? # not necessary here
-                    tpost_vis = np.ascontiguousarray(post_vis[pp, ff, xx, ...])
+                    tvis = np.ascontiguousarray(vis[pp, ff, xx, ...]) # original data
+                    tpost_vis = np.ascontiguousarray(post_vis[pp, ff, xx, ...]) # estimated signal
 
-                    weight_mask = weight[pp, ff, xx, :] > 0.0 # this is technically the post-filtered vis weight, which should be what we want. # this accounts for RFI, daytime, and other masks # does not account for aliasing
-                    tvis_masked = tvis*weight_mask[np.newaxis,:]*el_mask[:, np.newaxis] # applying the aliasing mask as well
-                    tpost_vis_masked = tpost_vis*weight_mask[np.newaxis,:]*el_mask[:, np.newaxis]
+                    weight_mask = weight[pp, ff, xx, :] > 0.0 # post-filtered vis (estimated signal) weight
+                    tpost_vis_masked = tpost_vis*weight_mask[np.newaxis,:]*el_mask[:, np.newaxis] # apply weight and liasing mask to estimated signal
+                    #tvis_masked = tvis*weight_mask[np.newaxis,:]*el_mask[:, np.newaxis] # applying the aliasing mask as well
 
-                    yN[pp, xx, ff] = np.vdot(tvis_masked,tpost_vis_masked) # step 2 numerator
-                    D[pp, xx, ff] = np.vdot(tvis_masked,tvis_masked) # step 2 denominator
+                    # masked foreground template = original data - estimated signal (filtered data)
+                    tfg_temp_mask = tvis*weight_mask[np.newaxis,:]*el_mask[:, np.newaxis] - tpost_vis_masked # 
+
+                    yN[pp, xx, ff] = np.vdot(tfg_temp_mask,tpost_vis_masked) # step 2 numerator
+                    D[pp, xx, ff] = np.vdot(tfg_temp_mask,tfg_temp_mask) # step 2 denominator
     
                 self.log.debug(f"Gains estimated for Polarization {pp} of {npol} and freq {ff} of {nfreq}.")
         self.log.debug(f"Gain estimation finished. Took {time.time() - t0:0.3f} seconds in total.")
@@ -252,13 +256,16 @@ class DelayFilterHyFoReSBandpassHybridVis(task.SingleTask):
             for xx in range(new):
                 for tt in range(ntime):
                     # grab datasets
-                    vis_f_l = np.ascontiguousarray(vis[pp,:, xx, :, tt])
-                    filt_f_f = np.ascontiguousarray(filt[pp,:,:,xx, tt])
+                    vis_f_l = np.ascontiguousarray(vis[pp,:, xx, :, tt]) # original data
+                    sg_f_l = np.ascontiguousarray(post_vis[pp,:, xx, :, tt]) # estimated signal
+                    filt_f_f = np.ascontiguousarray(filt[pp,:,:,xx, tt]) # filter
 
-                    weight_mask_N = weight[pp, :, xx, tt] > 0.0 # this accounts for RFI, daytime, and other masks # does not account for aliasing
-                    vis_f_l_masked = vis_f_l*weight_mask_N[:, np.newaxis]*el_mask[np.newaxis, :] # apply the aliasing mask
+                    weight_mask_N = weight[pp, :, xx, tt] > 0.0 # this accounts for RFI, daytime, and other masks
+                    #vis_f_l_masked = vis_f_l*weight_mask_N[:, np.newaxis]*el_mask[np.newaxis, :] # apply the aliasing mask
+                    # get estimated foreground template
+                    fg_f_l = (vis_f_l - sg_f_l)*weight_mask_N[:, np.newaxis]*el_mask[np.newaxis, :] 
 
-                    N[pp, xx, :, :] += np.matmul(np.conj(vis_f_l_masked), vis_f_l_masked.T)*filt_f_f
+                    N[pp, xx, :, :] += np.matmul(np.conj(fg_f_l), fg_f_l.T)*filt_f_f
                     # the line above does vis[pp,:, xx, :, tt].conj().dot(vis[pp,:, xx, :, tt].T())*filt[pp,:,:,xx, tt]
 
                 self.log.debug(f"Window summed for Polarization {pp} of {npol} and East-West baseline {xx} of {new}.")
@@ -289,6 +296,44 @@ class DelayFilterHyFoReSBandpassHybridVis(task.SingleTask):
         bp_gain_win.window[...] = W
 
         return bp_gain_win
+
+    def aliased_el_mask(self, hv):
+        """Return a mask for the el axis to mask out zenith angles beyond the aliased horizon
+        Computed using the maximum frequency in the hybrid beamformed visibilities.
+
+        Parameters
+        ----------
+        hv: HybridVisStream
+        Input container for which we want to provide a aliased region mask along the el axis
+
+        Returns
+        -------
+        mask: a mask to flag aliased regions along the el axis
+        """
+
+        freq = np.max(hv.freq)
+        horizon_limit = self.get_horizon_limit(freq)
+        el = hv.index_map["el"]
+        mask = np.abs(el) < horizon_limit
+
+        return mask
+
+    def get_horizon_limit(self, freq):
+        """Calculate the value of sin(za) where the southern horizon aliases.
+        Parameters
+        ----------
+        freq : np.ndarray[nfreq,]
+            Frequency in MHz.
+
+        Returns
+        -------
+        horizon_limit : np.ndarray[nfreq,]
+            This is the value of sin(za) where the southern horizon aliases.
+            Regions of sky where ``|sin(za)|`` is greater than or equal to
+            this value will contain aliases.
+        """
+        
+        return scipy.constants.c / (freq * 1e6 * self.min_ysep) - 1.0
 
     def aliased_el_mask(self, hv):
         """Return a mask for the el axis to mask out zenith angles beyond the aliased horizon
