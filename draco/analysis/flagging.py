@@ -15,6 +15,7 @@ import scipy.signal
 from caput import config, mpiarray, weighted_median
 from cora.util import units
 from skimage.filters import apply_hysteresis_threshold
+from ch_util import ephemeris as ephem
 
 from ..analysis import delay
 from ..core import containers, io, task
