@@ -3341,13 +3341,15 @@ def copy_datasets_filter(
             # Redistribute back to the original axis
             dest_dset.redistribute(original_ax_id)
 
-
     # New container for the estimated bandpass gains and window
+
+
 class VisBandpassWindow(FreqContainer):
-    """Container for bandpass gains and their window estimated by running bandpass HyFoReS on hybrid beam-formed visibilities"""
+    """Container for bandpass gains and their window estimated by running bandpass HyFoReS on hybrid beam-formed visibilities."""
 
-    _axes = ("pol", "freq") #Q8: do I need to declare _axes? What is the point of this? might have to add pol
+    _axes = ("pol",)
 
+    # TODO: check if np.complex128 is required
     _dataset_spec: ClassVar = {
         "bandpass": {
             "axes": ["pol", "freq"],
@@ -3363,9 +3365,6 @@ class VisBandpassWindow(FreqContainer):
         },
     }
 
-    #_data_dset_name = "stack"
-    #_weight_dset_name = "weight"
-
     @property
     def bandpass(self):
         """Get the bandpass dataset."""
@@ -3376,11 +3375,13 @@ class VisBandpassWindow(FreqContainer):
         """Get the window dataset."""
         return self.datasets["window"]
 
+
 class VisBandpassCompensate(FreqContainer):
-    """Container for window-compensated bandpass gains"""
+    """Container for window-compensated bandpass gains."""
 
-    _axes = ("pol", "freq")
+    _axes = ("pol",)
 
+    # TODO: redefine the second axis for sval
     _dataset_spec: ClassVar = {
         "comp_bandpass": {
             "axes": ["pol", "freq"],
@@ -3389,27 +3390,12 @@ class VisBandpassCompensate(FreqContainer):
             "distributed": False,
         },
         "sval": {
-            "axes": ["pol", "freq"], # want an axis that has the same length as the freq axis "mode"
+            "axes": ["pol", "freq"],
             "dtype": np.complex128,
             "initialise": True,
             "distributed": False,
         },
-        #"rank": {
-        # 	"axes": [],              #Q9: to define a scalar, saving to an attribute is easier, using container.attrs
-        #	"dtype": int,
-        #	"initialise": True,
-        #	"distributed": False,
-        #},
-        #"cutoff": {
-        # 	"axes": [],
-        #	"dtype": float,
-        #	"initialise": True,
-        #	"distributed": False,
-        #},
     }
-
-    #_data_dset_name = "stack"       #Q10: I don't think I need to distinguish between datasets and weights, right?
-    #_weight_dset_name = "weight"
 
     @property
     def comp_bandpass(self):
@@ -3421,10 +3407,11 @@ class VisBandpassCompensate(FreqContainer):
         """Get the sval dataset."""
         return self.datasets["sval"]
 
-class VisBandpassWindowBaseline(FreqContainer):
-    """Container for bandpass gains and their window estimated by running bandpass HyFoReS on hybrid beam-formed visibilities"""
 
-    _axes = ("pol", "ew", "freq") #Q8: do I need to declare _axes? What is the point of this? might have to add pol                                                                                                                                                                                                                                                               
+class VisBandpassWindowBaseline(VisBandpassWindow):
+    """Container for bandpass gains and their window estimated by running bandpass HyFoReS on hybrid beam-formed visibilities."""
+
+    _axes = ("ew",)
 
     _dataset_spec: ClassVar = {
         "bandpass": {
@@ -3441,9 +3428,6 @@ class VisBandpassWindowBaseline(FreqContainer):
         },
     }
 
-    #_data_dset_name = "stack"                                                                                                                                                                                                                                                                                                                                              
-    #_weight_dset_name = "weight"                                                                                                                                                                                                                                                                                                                                           
-
     @property
     def bandpass(self):
         """Get the bandpass dataset."""
@@ -3455,10 +3439,10 @@ class VisBandpassWindowBaseline(FreqContainer):
         return self.datasets["window"]
 
 
-class VisBandpassCompensateBaseline(FreqContainer):
-    """Container for window-compensated bandpass gains"""
+class VisBandpassCompensateBaseline(VisBandpassCompensate):
+    """Container for window-compensated bandpass gains."""
 
-    _axes = ("pol", "ew", "freq")
+    _axes = ("ew",)
 
     _dataset_spec: ClassVar = {
         "comp_bandpass": {
@@ -3468,7 +3452,7 @@ class VisBandpassCompensateBaseline(FreqContainer):
             "distributed": False,
         },
         "sval": {
-            "axes": ["pol", "ew", "freq"], # want an axis that has the same length as the freq axis "mode"                                                                                                                                                                                                                                                                        
+            "axes": ["pol", "ew", "freq"],
             "dtype": np.complex128,
             "initialise": True,
             "distributed": False,
@@ -3485,11 +3469,9 @@ class VisBandpassCompensateBaseline(FreqContainer):
         """Get the sval dataset."""
         return self.datasets["sval"]
 
-    
-class VisBandpassWindowBaselineRA(FreqContainer):
-    """Container for bandpass gains and their window estimated by running bandpass HyFoReS on hybrid beam-formed visibilities"""
 
-    _axes = ("pol", "ew", "ra", "freq") #Q8: do I need to declare _axes? What is the point of this? might have to add pol                                                                                                                                                                                                                                                               
+class VisBandpassWindowBaselineRA(SiderealContainer, VisBandpassWindowBaseline):
+    """Container for bandpass gains and their window estimated by running bandpass HyFoReS on hybrid beam-formed visibilities."""
 
     _dataset_spec: ClassVar = {
         "bandpass": {
@@ -3514,9 +3496,6 @@ class VisBandpassWindowBaselineRA(FreqContainer):
         },
     }
 
-    #_data_dset_name = "stack"                                                                                                                                                                                                                                                                                                                                              
-    #_weight_dset_name = "weight"                                                                                                                                                                                                                                                                                                                                           
-
     @property
     def bandpass(self):
         """Get the bandpass dataset."""
@@ -3527,10 +3506,9 @@ class VisBandpassWindowBaselineRA(FreqContainer):
         """Get the window dataset."""
         return self.datasets["window"]
 
-class VisBandpassCompensateBaselineRA(FreqContainer):
-    """Container for window-compensated bandpass gains"""
 
-    _axes = ("pol", "ew", "ra", "freq")
+class VisBandpassCompensateBaselineRA(SiderealContainer, VisBandpassCompensateBaseline):
+    """Container for window-compensated bandpass gains."""
 
     _dataset_spec: ClassVar = {
         "comp_bandpass": {
@@ -3544,7 +3522,7 @@ class VisBandpassCompensateBaselineRA(FreqContainer):
             "compression_opts": COMPRESSION_OPTS,
         },
         "rank": {
-            "axes": ["pol", "ew", "ra"], # want an axis that has the same length as the freq axis "mode"                                                                                                                                                                                                                                                                        
+            "axes": ["pol", "ew", "ra"],
             "dtype": np.complex128,
             "initialise": True,
             "distributed": True,
