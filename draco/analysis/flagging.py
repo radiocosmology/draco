@@ -13,14 +13,14 @@ from typing import Union, overload
 import numpy as np
 import scipy.signal
 from caput import config, mpiarray, weighted_median
+from ch_util import ephemeris as ephem
 from cora.util import units
 from skimage.filters import apply_hysteresis_threshold
-from ch_util import ephemeris as ephem
-from caput import mpiarray
 
 from ..analysis import delay
 from ..core import containers, io, task
 from ..util import rfi, tools
+
 
 class DayMask(task.SingleTask):
     """Crudely simulate a masking out of the daytime data.
@@ -1872,12 +1872,12 @@ class RFIMask(task.SingleTask):
     stack_ind = config.Property(proptype=int)
 
     @overload
-    def process(
-        self, sstream: containers.SiderealStream
-    ) -> containers.SiderealRFIMask: ...
+    def process(self, sstream: containers.SiderealStream) -> containers.SiderealRFIMask:
+        ...
 
     @overload
-    def process(self, sstream: containers.TimeStream) -> containers.RFIMask: ...
+    def process(self, sstream: containers.TimeStream) -> containers.RFIMask:
+        ...
 
     def process(
         self, sstream: Union[containers.TimeStream, containers.SiderealStream]
@@ -2076,12 +2076,14 @@ class ApplyBaselineMask(task.SingleTask):
     @overload
     def process(
         self, data: containers.TimeStream, mask: containers.BaselineMask
-    ) -> containers.TimeStream: ...
+    ) -> containers.TimeStream:
+        ...
 
     @overload
     def process(
         self, data: containers.SiderealStream, mask: containers.SiderealBaselineMask
-    ) -> containers.SiderealStream: ...
+    ) -> containers.SiderealStream:
+        ...
 
     def process(self, data, mask):
         """Flag data by zeroing the weights.
@@ -2684,8 +2686,9 @@ def destripe(x, w, axis=1):
 
     return x - stripe[bsel]
 
+
 class SiderealMaskConversion(task.SingleTask):
-    """ Convert the axis of an RFI mask from time to ra.
+    """Convert the axis of an RFI mask from time to ra.
 
     Attributes
     ----------
@@ -2702,7 +2705,7 @@ class SiderealMaskConversion(task.SingleTask):
     npix = config.Property(proptype=int, default=4096)
 
     def process(self, stream):
-        """ Produce a RFI mask.
+        """Produce a RFI mask.
 
         Parameters
         ----------
@@ -2718,64 +2721,61 @@ class SiderealMaskConversion(task.SingleTask):
             Its axes are freq, ra, and el.
 
         """
-
         # Extract mask/frac and axes data
         mask = stream.mask[:]
-        freq = stream._data["index_map/freq"][:].view(np.ndarray)
-        time = stream._data["index_map/time"][:].view(np.ndarray)
-        el = stream._data["index_map/el"][:].view(np.ndarray)
-
-        nfreq, n_el, ntime = mask.shape
+        freq = stream.freq[:]
+        time = stream.time[:]
+        el = stream.el[:]
+        nfreq, nel, ntime = mask.shape
 
         # Find closest ra indices
-        ra = ephem.unix_to_lsa(time['ctime'])
-        full_ra = np.linspace(0, 360, self.npix, endpoint = False)
+        ra = ephem.unix_to_lsa(time)
+        full_ra = np.linspace(0, 360, self.npix, endpoint=False)
         ra_closest_indices = np.abs(ra[:, None] - full_ra).argmin(axis=1)
 
         # Make the new ra axis
         min_index = np.min(ra_closest_indices)
         max_index = np.max(ra_closest_indices)
-        new_ra = full_ra[min_index:max_index+1]
+        new_ra = full_ra[min_index : max_index + 1]
         nra = len(new_ra)
 
-        # Make freq and el indices
-        freq_indices = np.arange(nfreq)[:, None]
-        el_indices = np.arange(n_el)[None,:]
-
         # Broadcast the mask data for corresponding cells
-        mask_adj = np.full((nfreq, n_el, nra), False)
-        mask_adj[freq_indices[:,None], el_indices[...,None], ra_closest_indices[None, :]-min_index] = mask
+        mask_adj = np.full((nfreq, nel, nra), False)
+        mask_adj[:, :, ra_closest_indices - min_index] = mask
 
         # Falg before and after a given true value for conservative flagging
         for repeat in range(self.spread_size):
-            mask_adj[:,:, :-1] |= mask_adj[: ,:, 1:]
-            mask_adj[:,:, 1:] |= mask_adj[:,:, :-1]
+            mask_adj[:, :, :-1] |= mask_adj[:, :, 1:]
+            mask_adj[:, :, 1:] |= mask_adj[:, :, :-1]
 
         # Save the adjusted mask to output container
-        mask_adj = np.transpose(mask_adj, (0,2,1))
-        out = containers.LocalizedSiderealRFIMask(freq = freq, ra = new_ra, el = el)
+        mask_adj = np.transpose(mask_adj, (0, 2, 1))
+        out = containers.LocalizedSiderealRFIMask(freq=freq, ra=new_ra, el=el)
         out.mask[:] = mask_adj
 
         if stream.datasets.get("frac_rfi", None) is not None:
-            frac_rfi = stream.frac_rfi[:].view(np.ndarray)
-            frac_rfi_adj = np.full((nfreq, n_el, nra), 0.0)
-            frac_rfi_adj[freq_indices[:,None], el_indices[...,None], ra_closest_indices[None, :]-min_index] = frac_rfi
+            frac_rfi = stream.frac_rfi[:]
+            frac_rfi_adj = np.full((nfreq, nel, nra), 0.0)
+            frac_rfi_adj[:, :, ra_closest_indices - min_index] = frac_rfi
 
             for repeat in range(self.spread_size):
-                frac_rfi_adj[:, :, :-1] = np.maximum(frac_rfi_adj[:, :, :-1], frac_rfi_adj[:, :, 1:])
-                frac_rfi_adj[:, :, 1:] = np.maximum(frac_rfi_adj[:, :, 1:], frac_rfi_adj[:, :, :-1])
+                frac_rfi_adj[:, :, :-1] = np.maximum(
+                    frac_rfi_adj[:, :, :-1], frac_rfi_adj[:, :, 1:]
+                )
+                frac_rfi_adj[:, :, 1:] = np.maximum(
+                    frac_rfi_adj[:, :, 1:], frac_rfi_adj[:, :, :-1]
+                )
 
-            frac_rfi_adj = np.transpose(frac_rfi_adj, (0,2,1))
+            frac_rfi_adj = np.transpose(frac_rfi_adj, (0, 2, 1))
             out.add_dataset("frac_rfi")
             out.frac_rfi[:] = frac_rfi_adj
 
         # Return output container
         return out
 
+
 class ReduceMaskEl(task.SingleTask):
-    """ Reduce the 'el' axis from input classes and produce corresponding reduced output classes.
-    i.e.    LocalizedRFIMask(freq, el, time) -> RFIMask(freq, time)
-            LocalizedSiderealRFIMask(freq, ra, el) -> SiderealRFIMask(freq, ra)
+    """Reduce the 'el' axis from input classes and produce corresponding reduced output classes.
 
     Reduction algorithm: If the number of True values in the mask along the el axis
     is higher than a given threshold, set the mask to True.
@@ -2787,51 +2787,57 @@ class ReduceMaskEl(task.SingleTask):
     to be included in the reduced mask. Default is 1.
 
     """
+
     threshold = config.Property(proptype=int, default=1)
 
     def process(self, stream):
-        """ Produce a RFI mask.
+        """Produce a RFI mask.
 
         Parameters
         ----------
-        stream : containers.LocalizedRFIMask or containers.SiderealLocalizedRFIMask
+        stream : containers.LocalizedRFIMask(freq, el, time) or containers.SiderealLocalizedRFIMask(freq, ra, el)
             El-specific RFI mask indicating channels that are free from RFI events.
 
         Returns
         -------
-            out : containers.RFIMask or containers.SiderealRFIMask
+            out : containers.RFIMask(freq, time) or containers.SiderealRFIMask(freq, ra)
             Non el-specific RFI mask indicating channels that are free from RFI events.
 
         """
-
         # Validate inpput class
-        if (not isinstance(stream, containers.LocalizedRFIMask)) & (not isinstance(stream, containers.LocalizedSiderealRFIMask)):
-            raise ValueError(f"Input class must be LocalizedRFIMask or LocalizedSiderealRFIMask. Got {type(rfimask)}.")
+        if (not isinstance(stream, containers.LocalizedRFIMask)) & (
+            not isinstance(stream, containers.LocalizedSiderealRFIMask)
+        ):
+            raise ValueError(
+                f"Input class must be LocalizedRFIMask or LocalizedSiderealRFIMask. Got {type(stream)}."
+            )
 
         # Extract mask/frac and axes data
         mask = stream.mask[:]
-        el_axis = stream._axes.index("el")
-        freq = stream._data["index_map/freq"][:].view(np.ndarray)
+        el_axis = list(stream.mask.attrs["axis"]).index("el")
+        freq = stream.freq[:]
 
         # Apply reduction condition
         reduced_mask = np.sum(mask, axis=el_axis) >= self.threshold
 
         # Determine output class type
-        if isinstance(stream, containers.LocalizedRFIMask):  # LocalizedRFIMask -> RFIMask
-            time = stream._data["index_map/time"][:].view(np.ndarray)
-            output = containers.RFIMask(freq = freq, time = time)
-        elif isinstance(stream, containers.LocalizedSiderealRFIMask):  # LocalizedSiderealRFIMask  -> SiderealRFIMask
-            ra = stream._data["index_map/ra"][:].view(np.ndarray)
-            output = containers.SiderealRFIMask(freq = freq, ra = ra)
-        else:
-            raise ValueError(f"Input class must be LocalizedRFIMask or LocalizedSiderealRFIMask. Got {type(rfimask)}.")
+        if isinstance(stream, containers.LocalizedRFIMask):
+            # LocalizedRFIMask(freq, el, time) -> RFIMask(freq, time)
+            time = stream.time[:]
+            output = containers.RFIMask(freq=freq, time=time)
+        elif isinstance(stream, containers.LocalizedSiderealRFIMask):
+            # LocalizedSiderealRFIMask(freq, ra, el)  -> SiderealRFIMask(freq, ra)
+            ra = stream.ra[:]
+            output = containers.SiderealRFIMask(freq=freq, ra=ra)
 
         output.mask[:] = reduced_mask
 
+        # Return output container
         return output
 
+
 class ApplyLocalizedRFIMask(task.SingleTask):
-    """Apply a localised (el-sensitive) RFI mask to the data by zeroing the weights
+    """Apply a localised (el-sensitive) RFI mask to the data by zeroing the weights.
 
     This class extends the class ApplyTimeFreqMask to include el in addition to freq and ra,
     and can be further extended for a new RingMap class (freq,el,time).
@@ -2855,64 +2861,18 @@ class ApplyLocalizedRFIMask(task.SingleTask):
         tstream : containers.RingMap
             A data container with axes (pol, freq, ra, el).
         rfimask : containers.LocalizedSiderealRFIMask(freq, ra, el)
-            An RFI mask with overlapping ra and el regions with the tstream, containers.RingMap.
+            An RFI mask with overlapping freq, ra and el regions with the tstream, containers.RingMap.
 
         Returns
         -------
         tstream : containers.RingMap
             The masked RingMap with weights modified in overlapping regions. Note that the masking is done in place.
         """
-
         # Validate axes
-        if isinstance(rfimask, containers.LocalizedSiderealRFIMask):        
-            if not np.array_equal(tstream.freq, rfimask.freq):
-                raise ValueError("tstream and mask data have different freq axes.")
-        else:
-            raise TypeError(
-                f"Require a LocalizedSiderealRFIMask. Got {type(rfimask)}."
-            )
-
-        # Ensure we are frequency distributed
-        tstream.redistribute("freq")
-
-        # Get mask data
-        mask = rfimask.mask[:]
-        m_axes = list(rfimask.mask.attrs["axis"])
-        t_axes = list(tstream.weight.attrs["axis"])
-
-        # Find the overlapping el indices
-        el = rfimask._data["index_map/el"][:]
-        el_overlap = np.intersect1d(tstream.el, el, return_indices=True)
-        #el_overlap = np.intersect1d(tstream.el, rfimask.el, return_indices=True)
-
-        if len(el_overlap[0]) == 0:
-            raise ValueError("No overlapping el regions found.")
-        _, t_el_index, m_el_index = el_overlap
-
-        # Find indices of overlapping el region
-        el_indices_tstream = np.searchsorted(tstream.el, el_overlap)
-        el_indices_rfimask = np.searchsorted(el, el_overlap)
-        #el_indices_rfimask = np.searchsorted(rfimask.el, el_overlap)
-
-        # Find the overlapping ra indices
-        ra_overlap = np.intersect1d(tstream.ra, rfimask.ra, return_indices=True)
-
-        if len(ra_overlap[0]) == 0:
-            raise ValueError("No overlapping ra regions found.")
-        _, t_ra_index, m_ra_index = ra_overlap
-
-        # Find indices of overlapping ra region
-        ra_indices_tstream = np.searchsorted(tstream.ra, ra_overlap)
-        ra_indices_rfimask = np.searchsorted(rfimask.ra, ra_overlap)
-
-        # Broadcast mask taking into account overlapped el and ra indices
-        bcast_slice = [slice(None) if ax in m_axes else np.newaxis for ax in t_axes]
-        bcast_slice[t_axes.index("el")] = t_el_index - t_el_index[0]
-        bcast_slice[t_axes.index("ra")] = t_ra_index - t_ra_index[0]
-        bcast_slice = tuple(bcast_slice)
-
-        # Apply overlap indices to mask
-        mask_sliced = mask[:, m_ra_index, :][:, :, m_el_index]
+        if not isinstance(tstream, containers.RingMap):
+            raise TypeError(f"Require a containers.RingMap. Got {type(tstream)}.")
+        if not isinstance(rfimask, containers.LocalizedSiderealRFIMask):
+            raise TypeError(f"Require a LocalizedSiderealRFIMask. Got {type(rfimask)}.")
 
         if self.share == "all":
             tsc = tstream
@@ -2923,8 +2883,44 @@ class ApplyLocalizedRFIMask(task.SingleTask):
         else:  # "none"
             tsc = tstream.copy()
 
-        # Mask the data.
-        tsc.weight[:].local_array[:, :, t_ra_index, t_el_index] *= (~mask_sliced[bcast_slice]).astype(np.float32)
- 
-        return tsc
+        # Ensure we are frequency distributed
+        tstream.redistribute("freq")
 
+        # Get mask data and shape data
+        mask = rfimask.mask[:].view(np.ndarray)
+        nfreq, nra, nel = mask.shape
+        npol, _, _, _ = tstream.weight.shape
+
+        # Find the overlapping indices for freq, ra, and el
+        freq_overlap = np.intersect1d(tstream.freq, rfimask.freq, return_indices=True)
+        ra_overlap = np.intersect1d(tstream.ra, rfimask.ra, return_indices=True)
+        el_overlap = np.intersect1d(tstream.el, rfimask.el, return_indices=True)
+
+        # Validate that there are overlapping regions
+        if len(freq_overlap[0]) == 0:
+            raise ValueError("No overlapping freq regions found.")
+        if len(ra_overlap[0]) == 0:
+            raise ValueError("No overlapping ra regions found.")
+        if len(el_overlap[0]) == 0:
+            raise ValueError("No overlapping el regions found.")
+
+        # Get the indices corresponding to the overlapping regions
+        _, t_freq_index, m_freq_index = freq_overlap
+        _, t_ra_index, m_ra_index = ra_overlap
+        _, t_el_index, m_el_index = el_overlap
+
+        # Create the pol axis
+        pol_index = np.arange(npol)
+
+        # Reshape the mask to include a singleton polarization dimension
+        # This ensures compatibility with the weight array, which includes a polarization axis
+        mask = mask.reshape(1, nfreq, nra, nel)
+
+        # Mask the data.
+        tsc.weight[:].local_array[
+            np.ix_(pol_index, t_freq_index, t_ra_index, t_el_index)
+        ] *= (~mask[np.ix_([0], m_freq_index, m_ra_index, m_el_index)]).astype(
+            np.float32
+        )
+
+        return tsc

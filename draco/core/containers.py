@@ -3038,16 +3038,15 @@ def copy_datasets_filter(
             # Redistribute back to the original axis
             dest_dset.redistribute(original_ax_id)
 
-class LocalizedRFIMask(FreqContainer, TODContainer):
-    """ Container for holding a mask indicating channels 
-    that are free from RFI events. 
-    The data "frac" stores information about the proportion of subdata 
-    detected RFI, which is used to generate the mask.
-    Not pol sensitive.
 
+class LocalizedRFIMask(FreqContainer, TODContainer):
+    """Container for an RFI mask for each freq, el, and time sample.
+
+    The data frac_rfi stores information about the proportion of subdata
+    that detected RFI, which is used to generate the mask.
     """
 
-    _axes = ("freq", "el", "time",)
+    _axes = ("el",)
 
     _dataset_spec: ClassVar = {
         "mask": {
@@ -3057,33 +3056,39 @@ class LocalizedRFIMask(FreqContainer, TODContainer):
             "distributed": True,
             "distributed_axis": "freq",
         },
-
         "frac_rfi": {
             "axes": ["freq", "el", "time"],
             "dtype": np.float32,
             "initialise": False,
             "distributed": True,
             "distributed_axis": "freq",
-        }
+        },
     }
- 
+
     @property
     def mask(self):
+        """Get the mask dataset."""
         return self.datasets["mask"]
+
     @property
     def frac_rfi(self):
+        """Get the frac_rfi dataset."""
         return self.datasets["frac_rfi"]
+
+    @property
+    def el(self):
+        """Get the el axis."""
+        return self.index_map["el"]
+
 
 class LocalizedSiderealRFIMask(FreqContainer, SiderealContainer):
-    """ Container for holding a mask indicating channels 
-    that are free from RFI events. 
-    The data "frac" stores information about the proportion of subdata 
-    detected RFI, which is used to generate the mask.
-    Not pol sensitive.
+    """Container for an RFI mask for each freq, ra, and el sample.
 
+    The data frac_rfi stores information about the proportion of subdata
+    that detected RFI, which is used to generate the mask.
     """
 
-    _axes = ("freq", "ra", "el",)
+    _axes = ("el",)
 
     _dataset_spec: ClassVar = {
         "mask": {
@@ -3093,19 +3098,26 @@ class LocalizedSiderealRFIMask(FreqContainer, SiderealContainer):
             "distributed": True,
             "distributed_axis": "freq",
         },
-
         "frac_rfi": {
             "axes": ["freq", "ra", "el"],
             "dtype": np.float32,
             "initialise": False,
             "distributed": True,
             "distributed_axis": "freq",
-        }
+        },
     }
- 
+
     @property
     def mask(self):
+        """Get the mask dataset."""
         return self.datasets["mask"]
+
     @property
     def frac_rfi(self):
+        """Get the frac_rfi dataset."""
         return self.datasets["frac_rfi"]
+
+    @property
+    def el(self):
+        """Get the el axis."""
+        return self.index_map["el"]
