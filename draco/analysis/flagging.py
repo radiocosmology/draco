@@ -13,7 +13,6 @@ from typing import Union, overload
 import numpy as np
 import scipy.signal
 from caput import config, mpiarray, weighted_median
-from ch_util import ephemeris as ephem
 from cora.util import units
 from skimage.filters import apply_hysteresis_threshold
 
