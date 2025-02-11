@@ -15,7 +15,6 @@ import scipy.signal
 from caput import config, mpiarray, weighted_median
 from cora.util import units
 from skimage.filters import apply_hysteresis_threshold
-from ch_util import ephemeris as ephem
 
 from ..analysis import delay
 from ..core import containers, io, task
@@ -2704,6 +2703,19 @@ class SiderealMaskConversion(task.SingleTask):
     spread_size = config.Property(proptype=int, default=1)
     npix = config.Property(proptype=int, default=4096)
 
+    def setup(self, manager):
+        """Set the local observers position.
+
+        Parameters
+        ----------
+        manager : :class:`~caput.time.Observer`
+            An Observer object holding the geographic location of the telescope.
+            Note that :class:`~drift.core.TransitTelescope` instances are also
+            Observers.
+        """
+        # Need an Observer object holding the geographic location of the telescope.
+        self.observer = io.get_telescope(manager)
+
     def process(self, stream):
         """Produce a RFI mask.
 
@@ -2729,7 +2741,7 @@ class SiderealMaskConversion(task.SingleTask):
         nfreq, nel, ntime = mask.shape
 
         # Find closest ra indices
-        ra = ephem.unix_to_lsa(time)
+        ra = self.observer.unix_to_lsa(time)
         full_ra = np.linspace(0, 360, self.npix, endpoint=False)
         ra_closest_indices = np.abs(ra[:, None] - full_ra).argmin(axis=1)
 
