@@ -462,27 +462,10 @@ class CatalogPixelization(task.SingleTask):
 
         rm.redistribute("freq")
 
-        #pols = rm.index_map["pol"]
-        #if ("XY" in pols) or ("YX" in pols):
-        #    if ("XY" in pols) ^ ("YX" in pols):
-        #        raise ValueError(
-        #            "If cross-pols exist both XY and YX must be present." f"Got {pols}."
-        #        )
-        #    dpol = ["reXY", "imXY"]
-        #else:
-        #    dpol = []
-
-        #if "XX" in pols:
-        #    dpol = ["XX", *dpol]
-
-        #if "YY" in pols:
-        #    dpol = dpol.append("YY")
-
-        #dpol = np.array(dpol, dtype="U4")
-
         rm_out = containers.RingMap(
             attrs_from=rm,
             axes_from=rm,
+            pol=np.array(["N"]),
         )
 
         rm_out.redistribute("freq")
