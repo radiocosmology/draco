@@ -545,6 +545,9 @@ class DelayTransformBase(task.SingleTask):
 
         weight_mask = weight > 0
 
+        if not weight_mask.any():
+            return None
+
         non_zero_time = (
             weight_mask.mean(axis=-1).reshape(-1, ntime).mean(axis=0) > self.time_frac
         )
