@@ -611,7 +611,7 @@ class DetermineSourceTransit(task.SingleTask):
     freq = config.Property(proptype=float, default=600.)
     require_transit = config.Property(proptype=bool, default=True)
 
-    def setup(self, fluxcatalog):
+    def setup(self):
         """Set list of sources, sorted by flux in descending order."""
         self.source_list = sorted(
             self.source_list or sources.source_dictionary.keys(), #FIXME: Do we want to use this source dictionary?
