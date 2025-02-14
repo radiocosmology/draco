@@ -86,6 +86,8 @@ class LogLikePS(OptFunc):
     exact_hessian
         If set, use the exact Hessian for the calculation. Otherwise use the Fisher
         matrix in the same way as the original NRML methods.
+    bounds
+        Bounds on the minimisation parameters. Default is (1e-10, 1e10).
     """
 
     def __init__(
@@ -96,6 +98,7 @@ class LogLikePS(OptFunc):
         nsamp: int,
         fsel: np.ndarray | slice | list | None = None,
         exact_hessian: bool = True,
+        bounds: tuple = (1e-10, 1e10),
     ) -> None:
         if fsel is None:
             fsel = (MF != 0).any(axis=1)
@@ -109,6 +112,7 @@ class LogLikePS(OptFunc):
 
         self.nsamp = nsamp
         self.exact_hessian = exact_hessian
+        self._logbounds = tuple(sorted(np.log(x) for x in bounds))
 
     # Store the location we are calculating for.
     _s_a: np.ndarray | None = None
@@ -128,9 +132,11 @@ class LogLikePS(OptFunc):
         if np.array_equal(x, self._s_a):
             return False
 
-        self._s_a = x
+        # Enforce bounds on the parameters. Do this
+        # on the log values to avoid huge exponentials.
+        self._s_a = np.clip(x, *self._logbounds)
 
-        S = np.exp(x)
+        S = np.exp(self._s_a)
         dS = S
 
         # Compute the covariance and inverse covariance
@@ -279,6 +285,30 @@ class GaussianProcessPrior(OptFunc):
         else:
             self.Ci = la.inv(C + np.identity(N) * reg) / alpha**2
 
+    # Store the location we are calculating for.
+    _s_a: np.ndarray | None = None
+
+    def _precompute(self, x: np.ndarray) -> bool:
+        """Pre-compute matrices for the given value.
+
+        Parameters
+        ----------
+        x
+            The array of parameters in the optimization.
+
+        Returns
+        -------
+        True if a pre-computation was done, otherwise False.
+        """
+        if np.array_equal(x, self._s_a):
+            return False
+
+        self._s_a = x
+
+        self._Cix = self.Ci @ x
+
+        return True
+
     def value(self, x: np.ndarray) -> float:
         """Calculate the value of the gaussian process prior.
 
@@ -291,7 +321,9 @@ class GaussianProcessPrior(OptFunc):
         -------
         Value of the gaussian process prior for the given set of params.
         """
-        return 0.5 * float(x @ self.Ci @ x)
+        self._precompute(x)
+
+        return 0.5 * float(x @ self._Cix)
 
     def gradient(self, x: np.ndarray) -> np.ndarray:
         """Calculate the gradient of the gaussian process prior.
@@ -305,7 +337,9 @@ class GaussianProcessPrior(OptFunc):
         -------
         Gradient of the gaussian process prior for the given set of params.
         """
-        return self.Ci @ x
+        self._precompute(x)
+
+        return self._Cix
 
     def hessian(self, x: np.ndarray) -> np.ndarray:
         """Calculate the hessian of the gaussian process prior.
@@ -397,6 +431,7 @@ def delay_power_spectrum_maxpost(
     fsel: np.ndarray | None = None,
     maxiter: int = 30,
     tol: float = 1e-3,
+    bounds: tuple = (1e-15, 1e10),
 ):
     """Estimate the delay power spectrum with a maximum-likelihood estimator.
 
@@ -432,6 +467,8 @@ def delay_power_spectrum_maxpost(
         Maximum number of iterations to run of the solver.
     tol : float, optional
         The convergence tolerance for the optimization that is passed to scipy.optimize.minimize.
+    bounds : tuple, optional
+        Bounds on the minimisation paramaters. Default is (1e-15, 1e10).
 
     Returns
     -------
@@ -480,20 +517,14 @@ def delay_power_spectrum_maxpost(
 
     # Use the pseudo-inverse to give a starting point for the optimiser
     if initial_S is None:
-        # Reduce the initial guess by some small amount. This adds a
-        # penalty of a small number (<5) extra iterations, but seems to
-        # fix the issue of occasionally getting stuck in a local minimum
-        # very close to the initial guess with certain prior hyperparameters.
-        # My guess is that this pushes the high-power (low-delay) region
-        # away from it's actual value.
-        initial_S = 1e-1 * (data @ la.pinv(F.T, rtol=1e-3)).var(axis=0)
+        initial_S = (data @ la.pinv(F.T, rtol=1e-3)).var(axis=0)
 
     # We're minimizing over the log of the power spectrum
     lsi = np.log(initial_S)
 
     optfunc = AddFunctions(
         [
-            LogLikePS(X, F, Nm, nsamp, exact_hessian=True),
+            LogLikePS(X, F, Nm, nsamp, exact_hessian=True, bounds=bounds),
             GaussianProcessPrior(N, alpha=1.0, width=9, kernel="matern", nu=1.5),
         ]
     )
