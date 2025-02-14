@@ -1172,3 +1172,73 @@ class FlagAmplitude(task.SingleTask):
         gain.weight[:] *= flag.astype(gain.weight.dtype)
 
         return gain
+    
+
+class InterpolateGainOverFrequency(task.SingleTask):
+    """Replace gain at flagged frequencies with interpolated values.
+
+    Uses a gaussian process regression to perform the interpolation
+    with a Matern function describing the covariance between frequencies.
+
+    Attributes
+    ----------
+    interp_scale : float
+        Correlation length of the gain with frequency in MHz.
+    in_place: bool
+        Save the interpolated gains to the input container.
+    """
+
+    interp_scale = config.Property(proptype=float, default=30.0)
+    in_place = config.Property(proptype=bool, default=False)
+
+    def process(self, gain):
+        """Interpolate the gain over the frequency axis.
+
+        Parameters
+        ----------
+        gain : containers.StaticGainData
+            Complex gains at single time.
+
+        Returns
+        -------
+        gain : containers.StaticGainData
+            Complex gains with flagged frequencies (`weight = 0.0`)
+            replaced with interpolated values and `weight` dataset
+            updated to reflect the uncertainty on the interpolation.
+        """
+        # Redistribute over input
+        gain.redistribute("input")
+
+        # Deference datasets
+        g = gain.gain[:].local_array
+        w = gain.weight[:].local_array
+
+        # Determine flagged frequencies
+        flag = w > 0.0
+
+        # Interpolate the gain at non-flagged frequencies to the flagged frequencies
+        ginterp, winterp = cal_utils.interpolate_gain_quiet(
+            gain.freq[:], g, w, flag=flag, length_scale=self.interp_scale
+        )
+
+        if self.in_place:
+            out = gain
+        else:
+            out = containers.StaticGainData(
+                axes_from=gain,
+                attrs_from=gain,
+                distributed=gain.distributed,
+                comm=gain.comm,
+            )
+            out.add_dataset("weight")
+            out.redistribute("input")
+            gain.redistribute("freq")
+
+        # Replace the gain and weight datasets with the interpolated arrays
+        # Note that the gain and weight for non-flagged frequencies have not changed
+        out.gain[:] = ginterp
+        out.weight[:] = winterp
+
+        out.redistribute("freq")
+
+        return out
