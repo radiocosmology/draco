@@ -779,6 +779,7 @@ class HyFoReSBandpassHybridVis(DelayFilterHyFoReSBandpassHybridVis):
 
         return bp_gain_win
 
+
 class HyFoReSBandpassHybridVisMask(DelayFilterHyFoReSBandpassHybridVis):
     """Same as DelayFilterHyFoReSBandpassHybridVis but does not implement the Delay filter.
 
@@ -957,6 +958,7 @@ class HyFoReSBandpassHybridVisMask(DelayFilterHyFoReSBandpassHybridVis):
 
         return bp_gain_win
 
+
 class HyFoReSBandpassHybridVisMaskKeepSource(DelayFilterHyFoReSBandpassHybridVis):
     """Same as DelayFilterHyFoReSBandpassHybridVis but does not implement the Delay filter.
 
@@ -1036,8 +1038,12 @@ class HyFoReSBandpassHybridVisMaskKeepSource(DelayFilterHyFoReSBandpassHybridVis
         )  # generate a mask along the el axis to mask out aliased regions
 
         # Apply the pixel mask, keeping the point sources but not the sidelobes
-        post_vis *= ~np.logical_and(mask[:, :, np.newaxis, :, :], ~masks[:, :, np.newaxis, :, :])
-        vis *= ~np.logical_and(mask[:, :, np.newaxis, :, :], ~masks[:, :, np.newaxis, :, :])
+        post_vis *= ~np.logical_and(
+            mask[:, :, np.newaxis, :, :], ~masks[:, :, np.newaxis, :, :]
+        )
+        vis *= ~np.logical_and(
+            mask[:, :, np.newaxis, :, :], ~masks[:, :, np.newaxis, :, :]
+        )
 
         self.log.debug("Start computing the estimated gains.")
         t0 = time.time()
@@ -1138,6 +1144,7 @@ class HyFoReSBandpassHybridVisMaskKeepSource(DelayFilterHyFoReSBandpassHybridVis
         bp_gain_win.window[:] = W
 
         return bp_gain_win
+
 
 class DelayFilterHyFoReSBandpassHybridVisClean(task.SingleTask):
     """Second pipeline task of HyFoReS: Subtract foreground residuals using the estimated bandpass gains .
