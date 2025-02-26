@@ -429,7 +429,7 @@ def delay_power_spectrum_maxpost(
     initial_S: np.ndarray | None = None,
     window: str = "nuttall",
     fsel: np.ndarray | None = None,
-    maxiter: int = 30,
+    maxiter: int = 100,
     tol: float = 1e-3,
     bounds: tuple = (1e-15, 1e10),
 ):
@@ -464,15 +464,16 @@ def delay_power_spectrum_maxpost(
     fsel : np.ndarray[freq], optional
         Indices of channels that we have data at. By default assume all channels.
     maxiter : int, optional
-        Maximum number of iterations to run of the solver.
+        Maximum number of iterations to run of the solver. Default is 100.
     tol : float, optional
         The convergence tolerance for the optimization that is passed to scipy.optimize.minimize.
+        Default is 1e-3.
     bounds : tuple, optional
         Bounds on the minimisation paramaters. Default is (1e-15, 1e10).
 
     Returns
     -------
-    spec : list
+    samples : list
         List of spectrum samples.
     success : bool
         True if the solver successfully converged, False otherwise.
@@ -519,36 +520,34 @@ def delay_power_spectrum_maxpost(
     if initial_S is None:
         initial_S = (data @ la.pinv(F.T, rtol=1e-3)).var(axis=0)
 
-    # We're minimizing over the log of the power spectrum
-    lsi = np.log(initial_S)
+    # Create a list to store intermediate samples
+    # during the minimization routine. The first item
+    # will always be the initial guess
+    samples = [initial_S]
 
+    # Construct the optimisation function as the sum of the
+    # PS likelihood and a GP prior. The matern kernel is used
+    # as a prior to reduce over-smoothing.
     optfunc = AddFunctions(
         [
             LogLikePS(X, F, Nm, nsamp, exact_hessian=True, bounds=bounds),
-            GaussianProcessPrior(N, alpha=1.0, width=9, kernel="matern", nu=1.5),
+            GaussianProcessPrior(N, alpha=1.0, width=5, kernel="matern", nu=1.5),
         ]
     )
 
-    samples = []
-
-    # This callback is for getting the intermediate samples such that we can access
-    # convergence of the solution
-    def _get_intermediate(xk):
-        samples.append(np.exp(xk))
-
     try:
+        # Minimize over the log of the delay PS. Each PS sample
+        # (note the `exp`) is stored via the callback function.
         res = minimize(
             optfunc.value,
-            x0=lsi,
+            x0=np.log(initial_S),
             jac=optfunc.gradient,
             hess=optfunc.hessian,
             method="Newton-CG",
             options={"maxiter": maxiter, "xtol": tol},
-            callback=_get_intermediate,
+            callback=lambda xk: samples.append(np.exp(xk)),
         )
         success = res.success
-
-        print(res)
 
     # LinAlgError gets thrown for certain baselines in _precompute during a Cholesky decomposition
     # of the covariance matrix (used in likelihood computation) when the covariance matrix isn't
@@ -561,14 +560,9 @@ def delay_power_spectrum_maxpost(
     # np.exp() of the minimization parameter to get the delay spectrum. The ValueError gets thrown
     # again in the Cholesky decomposition when numpy runs a check_finite on the covariance (which
     # at that point contains infs/nans).
+    # NOTE: I think that this is fixed now, but I'm leaving these checks and this note here for the
+    # time being.
     except (la.LinAlgError, ValueError):
-        success = False
-
-    # In rare cases a LinAlgError can be thrown before the _get_intermediate callback is called in `minimize`.
-    # In this scenario, an empty `samples` is returned and this causes errors in the calling function.
-    # Add the initial guess to the samples list in this case and ensure success is set to False.
-    if len(samples) == 0:
-        samples.append(np.exp(lsi))
         success = False
 
     # NOTE: the final sample in samples is already the final result
