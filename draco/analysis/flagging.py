@@ -3024,7 +3024,7 @@ class SiderealMaskConversion(task.SingleTask):
 
         Returns
         -------
-            out : containers.LocalizedSiderealRFIMask
+        out : containers.LocalizedSiderealRFIMask
             Boolean mask that can be applied to a ringmap
             with the task `ApplyLocalizedRFIMask` to mask contaminated samples.
             Its axes are freq, ra, and el.
