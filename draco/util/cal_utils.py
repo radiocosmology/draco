@@ -1001,3 +1001,289 @@ class FitGaussAmpPolyPhase(FitPoly, FitAmpPhase):
             Number of degrees of freedom of the phase fit.
         """
         return self.ndof[..., 0]
+
+class FitPolyLogAmpPolyPhase(FitPoly, FitAmpPhase):
+    """Class that enables separate fits of a polynomial to log amplitude and phase."""
+
+    def __init__(self, poly_deg_amp=5, poly_deg_phi=5, *args, **kwargs):
+        """Instantiates a FitPolyLogAmpPolyPhase object.
+
+        Parameters
+        ----------
+        poly_deg_amp : int
+            Degree of the polynomial to fit to log amplitude.
+        poly_deg_phi : int
+            Degree of the polynomial to fit to phase.
+        """
+        super().__init__(
+            poly_deg_amp=poly_deg_amp, poly_deg_phi=poly_deg_phi, *args, **kwargs
+        )
+
+        self.poly_deg_amp = poly_deg_amp
+        self.poly_deg_phi = poly_deg_phi
+
+        self.npara = poly_deg_amp + 1
+        self.nparp = poly_deg_phi + 1
+
+    def _fit(
+        self,
+        ha,
+        resp,
+        resp_err,
+        width=None,
+        absolute_sigma=False,
+        moving_window=0.3,
+        niter=5,
+    ):
+        """Fit polynomial to log amplitude and polynomial to phase.
+
+        Use weighted least squares.  The initial errors on log amplitude
+        are set to `resp_err / abs(resp)`.  If the niter parameter is greater than 1,
+        then those errors will be updated with `resp_err / model_amp`, where `model_amp`
+        is the best-fit model for the amplitude from the previous iteration.  The errors
+        on the phase are set to `resp_err / model_amp` where `model_amp` is the best-fit
+        model for the amplitude from the log amplitude fit.
+
+        Parameters
+        ----------
+        ha : np.ndarray[nha,]
+            Hour angle in degrees.
+        resp : np.ndarray[nha,]
+            Measured response to the point source.  Complex valued.
+        resp_err : np.ndarray[nha,]
+            Error on the measured response.
+        width : float
+             Initial guess at the width (sigma) of the transit in degrees.
+        absolute_sigma : bool
+            Set to True if the errors provided are absolute.  Set to False if
+            the errors provided are relative, in which case the parameter covariance
+            will be scaled by the chi-squared per degree-of-freedom.
+        niter : int
+            Number of iterations for the log amplitude fit.
+        moving_window : float
+            Only fit hour angles within +/- window * width from the peak.
+            Note that the peak location is updated with each iteration.
+            Set to None to fit all hour angles where resp_err > 0.0.
+
+        Returns
+        -------
+        param : np.ndarray[nparam,]
+            Best-fit model parameters.
+        param_cov : np.ndarray[nparam, nparam]
+            Covariance of the best-fit model parameters.
+        chisq : np.ndarray[2,]
+            Chi-squared of the fit to amplitude and phase.
+        ndof : np.ndarray[2,]
+            Number of degrees of freedom of the fit to amplitude and phase.
+        """
+        min_nfit = min(self.npara, self.nparp) + 1
+
+        window = width * moving_window if (width and moving_window) else None
+
+        # Prepare amplitude data
+        model_amp = np.abs(resp)
+        w0 = tools.invert_no_zero(resp_err) ** 2
+
+        # Only perform fit if there is enough data.
+        this_flag = (model_amp > 0.0) & (w0 > 0.0)
+        ndata = int(np.sum(this_flag))
+        if ndata < min_nfit:
+            raise RuntimeError("Number of data points less than number of parameters.")
+
+        # Prepare amplitude data
+        ya = np.log(model_amp)
+
+        # Prepare phase data.
+        phi = np.angle(resp)
+        phi0 = phi[np.argmin(np.abs(ha))]
+
+        yp = phi - phi0
+        yp += (yp < -np.pi) * 2 * np.pi - (yp > np.pi) * 2 * np.pi
+        yp += phi0
+
+        # Calculate vandermonde matrix
+        A = self._vander(ha, self.poly_deg_amp)
+        center = 0.0
+        coeff = None
+
+        # Iterate to obtain model estimate for amplitude
+        for kk in range(niter):
+            wk = w0 * model_amp**2
+
+            if window is not None:
+                if kk > 0:
+                    center = self.peak(param=coeff)
+
+                if np.isnan(center):
+                    raise RuntimeError("No peak found.")
+
+                wk *= (np.abs(ha - center) <= window).astype(np.float64)
+
+                ndata = int(np.sum(wk > 0.0))
+                if ndata < min_nfit:
+                    raise RuntimeError(
+                        "Number of data points less than number of parameters."
+                    )
+
+            C = np.dot(A.T, wk[:, np.newaxis] * A)
+            coeff = lstsq(C, np.dot(A.T, wk * ya))[0]
+
+            model_amp = np.exp(np.dot(A, coeff))
+
+        # Compute final value for amplitude
+        center = self.peak(param=coeff)
+
+        if np.isnan(center):
+            raise RuntimeError("No peak found.")
+
+        wf = w0 * model_amp**2
+        if window is not None:
+            wf *= (np.abs(ha - center) <= window).astype(np.float64)
+
+            ndata = int(np.sum(wf > 0.0))
+            if ndata < min_nfit:
+                raise RuntimeError(
+                    "Number of data points less than number of parameters."
+                )
+
+        cova = inv(np.dot(A.T, wf[:, np.newaxis] * A))
+        coeffa = np.dot(cova, np.dot(A.T, wf * ya))
+
+        mamp = np.dot(A, coeffa)
+
+        # Compute final value for phase
+        A = self._vander(ha, self.poly_deg_phi)
+
+        covp = inv(np.dot(A.T, wf[:, np.newaxis] * A))
+        coeffp = np.dot(covp, np.dot(A.T, wf * yp))
+
+        mphi = np.dot(A, coeffp)
+
+        # Compute chisq per degree of freedom
+        ndofa = ndata - self.npara
+        ndofp = ndata - self.nparp
+
+        ndof = np.array([ndofa, ndofp])
+        chisq = np.array([np.sum(wf * (ya - mamp) ** 2), np.sum(wf * (yp - mphi) ** 2)])
+
+        # Scale the parameter covariance by chisq per degree of freedom.
+        # Equivalent to using RMS of the residuals to set the absolute error
+        # on the measurements.
+        if not absolute_sigma:
+            scale_factor = chisq * tools.invert_no_zero(ndof.astype(np.float32))
+            cova *= scale_factor[0]
+            covp *= scale_factor[1]
+
+        param = np.concatenate((coeffa, coeffp))
+
+        param_cov = np.zeros((self.nparam, self.nparam), dtype=np.float32)
+        param_cov[: self.npara, : self.npara] = cova
+        param_cov[self.npara :, self.npara :] = covp
+
+        return param, param_cov, chisq, ndof
+
+    def peak(self, param=None):
+        """Find the peak of the transit.
+
+        Parameters
+        ----------
+        param : np.ndarray[..., nparam]
+            Coefficients of the polynomial model for log amplitude.
+            Defaults to `self.param`.
+
+        Returns
+        -------
+        peak : np.ndarray[...]
+            Location of the maximum amplitude in degrees hour angle.
+            If the polynomial does not have a maximum, then NaN is returned.
+        """
+        if param is None:
+            param = self.param
+
+        der1 = self._deriv(param[..., : self.npara], m=1, axis=-1)
+        der2 = self._deriv(param[..., : self.npara], m=2, axis=-1)
+
+        shp = der1.shape[:-1]
+        peak = np.full(shp, np.nan, dtype=der1.dtype)
+
+        for ind in np.ndindex(*shp):
+            ider1 = der1[ind]
+
+            if np.any(~np.isfinite(ider1)):
+                continue
+
+            root = self._root(ider1)
+            xmax = np.real(
+                [
+                    rr
+                    for rr in root
+                    if (rr.imag == 0) and (self._eval(rr, der2[ind]) < 0.0)
+                ]
+            )
+
+            peak[ind] = xmax[np.argmin(np.abs(xmax))] if xmax.size > 0 else np.nan
+
+        return peak
+
+    def _model(self, ha, elementwise=False):
+        amp = self._fast_eval(
+            ha, self.param[..., : self.npara], elementwise=elementwise
+        )
+        phi = self._fast_eval(
+            ha, self.param[..., self.npara :], elementwise=elementwise
+        )
+
+        return np.exp(amp) * (np.cos(phi) + 1.0j * np.sin(phi))
+
+    def _jacobian_amp(self, ha, elementwise=False):
+        jac = self._vander(ha, self.poly_deg_amp)
+        if not elementwise:
+            jac = np.rollaxis(jac, -1)
+            if self.N is not None:
+                slc = (None,) * len(self.N)
+                jac = jac[slc]
+
+        return jac
+
+    def _jacobian_phi(self, ha, elementwise=False):
+        jac = self._vander(ha, self.poly_deg_phi)
+        if not elementwise:
+            jac = np.rollaxis(jac, -1)
+            if self.N is not None:
+                slc = (None,) * len(self.N)
+                jac = jac[slc]
+
+        return jac
+
+    @property
+    def ndofa(self):
+        """
+        Number of degrees of freedom for the amplitude fit.
+
+        Returns
+        -------
+        ndofa : np.ndarray[...]
+            Number of degrees of freedom of the amplitude fit.
+        """
+        return self.ndof[..., 0]
+
+    @property
+    def ndofp(self):
+        """
+        Number of degrees of freedom for the phase fit.
+
+        Returns
+        -------
+        ndofp : np.ndarray[...]
+            Number of degrees of freedom of the phase fit.
+        """
+        return self.ndof[..., 1]
+
+    @property
+    def parameter_names(self):
+        """Array of strings containing the name of the fit parameters."""
+        return np.array(
+            [f"{self.poly_type}_poly_amp_coeff{p}" for p in range(self.npara)]
+            + [f"{self.poly_type}_poly_phi_coeff{p}" for p in range(self.nparp)],
+            dtype=np.bytes_,
+        )
