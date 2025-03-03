@@ -1070,7 +1070,7 @@ class DelaySpectrumWienerEstimator(DelayGeneralContainerBase):
             t = self._cut_data(data, weight)
             if t is None:
                 continue
-            data, weight, nzf, _ = t
+            data, weight, nzf, nzt = t
 
             # Pass the delay power spectrum and frequency spectrum for each "baseline"
             # to the Wiener filtering routine.The delay power spectrum has been
@@ -1086,7 +1086,7 @@ class DelaySpectrumWienerEstimator(DelayGeneralContainerBase):
                 complex_timedomain=self.complex_timedomain,
             )
             # FFT-shift along the last axis
-            out_cont.spectrum[bi] = np.fft.fftshift(y_spec, axes=1)
+            out_cont.spectrum[bi, nzt] = np.fft.fftshift(y_spec, axes=1)
 
         return out_cont
 

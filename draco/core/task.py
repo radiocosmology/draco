@@ -217,8 +217,9 @@ class SingleTask(MPILoggedTask, pipeline.BasicContMixin):
 
     Attributes
     ----------
-    save : bool
-        Whether to save the output to disk or not.
+    save : list | bool
+        Whether to save the output to disk or not. Can be provided as a list
+        if multiple outputs are being handled. Default is False.
     attrs : dict, optional
         A mapping of attribute names and values to set in the `.attrs` at the root of
         the output container. String values will be formatted according to the standard
@@ -241,9 +242,10 @@ class SingleTask(MPILoggedTask, pipeline.BasicContMixin):
         Set a format for the tag attached to the output. This is a Python format string
         which can interpolate the variables listed under `attrs` above. For example a
         tag of "cat{count}" will generate catalogs with the tags "cat1", "cat2", etc.
-    output_name : string
+    output_name : list | string
         A python format string used to construct the filename. All variables given under
-        `attrs` above can be interpolated into the filename.
+        `attrs` above can be interpolated into the filename. Can be provided as a list
+        if multiple output are being handled.
         Valid identifiers are:
 
           - `count`: an integer giving which iteration of the task is this.
@@ -288,7 +290,9 @@ class SingleTask(MPILoggedTask, pipeline.BasicContMixin):
         length or optional arguments.
     """
 
-    save = config.Property(default=False, proptype=bool)
+    save = config.Property(
+        default=False, proptype=lambda x: x if isinstance(x, list) else bool(x)
+    )
 
     output_root = config.Property(default="", proptype=str)
     output_name = config.Property(
@@ -495,7 +499,12 @@ class SingleTask(MPILoggedTask, pipeline.BasicContMixin):
                 output._data._storage_root[ds].compression_opts = None
 
         # Routine to write output if needed.
-        if self.save:
+        if isinstance(self.save, list):
+            save = self.save[ii]
+        else:
+            save = self.save
+
+        if save:
             # add metadata to output
             metadata = {"versions": self.versions, "config": self.pipeline_config}
             for key, value in metadata.items():
@@ -504,7 +513,7 @@ class SingleTask(MPILoggedTask, pipeline.BasicContMixin):
             # Construct the filename
             name_parts = self._interpolation_dict(output, ii)
             if self.output_root != "":
-                self.log.warn("Use of `output_root` is deprecated.")
+                self.log.warning("Use of `output_root` is deprecated.")
                 name_parts["output_root"] = self.output_root
 
             if isinstance(self.output_name, list):

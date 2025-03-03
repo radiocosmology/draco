@@ -451,43 +451,6 @@ class MaskBadGains(task.SingleTask):
         return mask_cont
 
 
-class MaskBeamformedOutliers(task.SingleTask):
-    """Mask beamformed visibilities that deviate from our expectation for noise.
-
-    This is operating under the assumption that, after proper foreground filtering,
-    the beamformed visibilities should be consistent with noise.
-    """
-
-    def process(self, data, mask):
-        """Mask outlier beamformed visibilities.
-
-        Parameters
-        ----------
-        data : FormedBeam, FormedBeamHA, or RingMap
-            Beamformed visibilities.
-
-        mask : FormedBeamMask, FormedBeamHAMask, or RingMapMask
-            Container with a boolean mask where True indicates
-            a beamformed visibility that should be ignored.
-
-        Returns
-        -------
-        data : FormedBeam or RingMap
-            The input container with the weight dataset set to zero
-            for samples that were identified as outliers.
-        """
-        # Redistribute data over frequency
-        data.redistribute("freq")
-        mask.redistribute("freq")
-
-        # Multiply the weights by the inverse of the mask
-        flag = ~mask.mask[:].local_array
-
-        data.weight[:].local_array[:] *= flag.astype(np.float32)
-
-        return data
-
-
 class MaskBeamformedWeights(task.SingleTask):
     """Mask beamformed visibilities with anomalously large weights before stacking.
 
@@ -2276,6 +2239,108 @@ class ApplyTimeFreqMask(task.SingleTask):
         tsc.weight[:].local_array[:] *= (~mask[bcast_slice]).astype(np.float32)
 
         return tsc
+
+
+class ApplyGenericMask(task.SingleTask):
+    """Apply a mask to a dataset with arbitrary axes.
+
+    All of the mask axes must be present in the dataset, but
+    the dataset can have additional axes.
+
+    Assumes that a sample marked `True` in the mask dataset
+    should be flagged.
+    """
+
+    def process(self, data: containers.ContainerBase, mask: containers.ContainerBase):
+        """Apply the mask to the dataset weights.
+
+        Reorder the mask axes and add broadcasting axes if necessary.
+
+        Parameters
+        ----------
+        data
+            Any container with a frequency axis.
+        mask
+            Any container whose axes are a subset of the axes in data
+
+        Returns
+        -------
+        data
+            The input container with the weight dataset set to zero
+            for masked samples.
+        """
+        # Pull out the axes of each dataset
+        daxes = list(data.weight.attrs["axis"])
+        maxes = list(mask.mask.attrs["axis"])
+
+        # Make sure all the mask axes exist in the data
+        if any(ax not in daxes for ax in maxes):
+            missing_axes = [ax for ax in maxes if ax not in daxes]
+            raise NameError(
+                f"Mask has axes {missing_axes} which are not found in data."
+                f"\nData axes: {daxes}\nMask axes: {maxes}"
+            )
+
+        # Redistribute over frequency, assuming that all containers have
+        # a frequency axis
+        data.redistribute("freq")
+        mask.redistribute("freq")
+
+        # Rearrange the existing mask axes to match their order in the dataset
+        tinds = tuple(maxes.index(ax) for ax in daxes if ax in maxes)
+        mask = mask.mask[:].local_array.transpose(tinds)
+
+        # Add broadcasting axes now that mask axes are in the correct order
+        bcast_slobj = tuple(slice(None) if ax in maxes else np.newaxis for ax in daxes)
+
+        # Multiply the inverse mask into the weights
+        data.weight[:].local_array[:] *= (~mask[bcast_slobj]).astype(data.weight.dtype)
+
+        return data
+
+
+# Alias for backwards compatibility
+MaskBeamformedOutliers = ApplyGenericMask
+
+
+class CombineMasks(task.SingleTask):
+    """Combine an arbitrary number of masks (conservatively).
+
+    All of the given masks must be of the same type and that type must have a `mask` dataset.
+    Any flagged value in any of the provided masks will be flagged in the output mask.
+
+    Assumes that a sample marked `True` is flagged.
+    """
+
+    def process(self, masks: list[containers.ContainerBase]):
+        """Combine the given list of masks into a single mask.
+
+        Parameters
+        ----------
+        masks
+            A list of containers that all have the same type. The type
+            must have a `mask` dataset.
+
+        Returns
+        -------
+        combined_mask
+            A combined mask such that any flagged value in any of the
+            input masks is flagged in the output mask.
+        """
+        # Check that all types are the same.
+        if any(type(mask) is not type(masks[0]) for mask in masks[1:]):
+            raise TypeError(
+                "At least one type mismatch between masks. All masks must have the same type."
+            )
+
+        # Create combined output mask
+        combined_mask = masks[0].copy()
+
+        # Loop over masks "accumulating" each mask after the first.
+        for mask in masks[1:]:
+            combined_mask.mask[:] |= mask.mask[:]
+
+        return combined_mask
 
 
 class ApplyBaselineMask(task.SingleTask):
