@@ -619,7 +619,7 @@ class DetermineSourceTransit(task.SingleTask):
             reverse=True,
         )
 
-    def process(self, sstream, observer):
+    def process(self, sstream, manager):
         """Add attributes to container describing source transit contained within.
 
         Parameters
@@ -627,8 +627,8 @@ class DetermineSourceTransit(task.SingleTask):
         sstream : containers.SiderealStream, containers.TimeStream, or equivalent
             Container covering the source transit.
 
-        observer : caput.time.Observer object representing a local observer in
-            terms of coordinates, etc.
+        manager : drift.manager object which itself contains a Telescope object
+            that manages relative times etc.
 
         Returns
         -------
@@ -641,20 +641,20 @@ class DetermineSourceTransit(task.SingleTask):
             timestamp = sstream.time
         else:
             lsd = sstream.attrs.get("lsd", sstream.attrs.get("csd"))
-            timestamp = observer.lsd_to_unix(lsd + sstream.ra / 360.0)
+            timestamp = manager.telescope.lsd_to_unix(lsd + sstream.ra / 360.0)
 
         # Loop over sources and check if there is a transit within time range
         # covered by container.  If so, then add attributes describing that source
         # and break from the loop.
         contains_transit = False
         for src in self.source_list:
-            transit_time = observer.transit_times(
+            transit_time = manager.telescope.transit_times(
                 sources.source_dictionary[src], timestamp[0], timestamp[-1]
             )
             if transit_time.size > 0:
                 self.log.info(
                     "Data stream contains %s transit on LSD %d."
-                    % (src, observer.unix_to_lsd(transit_time[0]))
+                    % (src, manager.telescope.unix_to_lsd(transit_time[0]))
                 )
                 sstream.attrs["source_name"] = src
                 sstream.attrs["transit_time"] = transit_time[0]
