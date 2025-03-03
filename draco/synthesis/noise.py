@@ -74,19 +74,9 @@ class GaussianNoiseDataset(task.SingleTask, random.RandomTask):
             a Gaussian distributed noise realisation.
 
         """
-        _default_dataset = {
-            containers.TimeStream: "vis",
-            containers.SiderealStream: "vis",
-            containers.HybridVisMModes: "vis",
-            containers.RingMap: "map",
-            containers.GridBeam: "beam",
-            containers.TrackBeam: "beam",
-        }
         if self.dataset is None:
-            for cls, dataset in _default_dataset.items():
-                if isinstance(data, cls):
-                    dataset_name = dataset
-                    break
+            if isinstance(data, containers.DataWeightContainer):
+                dataset_name = data._data_dset_name
             else:
                 raise ValueError(
                     f"No default dataset known for {type(data)} container."
