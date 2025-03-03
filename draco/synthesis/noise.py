@@ -104,9 +104,8 @@ class GaussianNoiseDataset(task.SingleTask, random.RandomTask):
 
         # If requested, create a new output container
         if not self.in_place:
-            out = containers.empty_like(data)
+            out = data.copy()
             out.redistribute("freq")
-            out.weight[:].local_array[:] = data.weight[:].local_array.copy()
         else:
             out = data
 
