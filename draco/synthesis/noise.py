@@ -155,7 +155,6 @@ class MultipleGaussianNoiseDatasets(GaussianNoiseDataset):
             Any dataset which contains a vis and weight attribute.
         """
         self.data = data
-        self.data.redistribute("freq")
 
     def process(self):
         """Generate a noise realization.
