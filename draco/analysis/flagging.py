@@ -2986,6 +2986,9 @@ def destripe(x, w, axis=1):
 class SiderealMaskConversion(task.SingleTask):
     """Convert the axis of an RFI mask from time to ra.
 
+    The conversion is performed by mapping values between Unix time and LSA
+    using the geographic location of the telescope, as provided by the Observer object.
+
     Attributes
     ----------
     spread_size : int
