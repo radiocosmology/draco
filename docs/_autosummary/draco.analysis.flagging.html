@@ -1,0 +1,2432 @@
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" data-content_root="../">
+<head>
+  <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>draco.analysis.flagging &mdash; draco 0.0.1 documentation</title>
+      <link rel="stylesheet" type="text/css" href="../_static/pygments.css?v=b86133f3" />
+      <link rel="stylesheet" type="text/css" href="../_static/css/theme.css?v=e59714d7" />
+
+  
+      <script src="../_static/jquery.js?v=5d32c60e"></script>
+      <script src="../_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
+      <script src="../_static/documentation_options.js?v=d45e8c67"></script>
+      <script src="../_static/doctools.js?v=9bcbadda"></script>
+      <script src="../_static/sphinx_highlight.js?v=dc90522c"></script>
+      <script async="async" src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>
+    <script src="../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../genindex.html" />
+    <link rel="search" title="Search" href="../search.html" />
+    <link rel="next" title="draco.analysis.mapmaker" href="draco.analysis.mapmaker.html" />
+    <link rel="prev" title="draco.analysis.fgfilter" href="draco.analysis.fgfilter.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="../index.html" class="icon icon-home">
+            draco
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <ul class="current">
+<li class="toctree-l1"><a class="reference internal" href="../tutorial.html">Tutorial</a></li>
+<li class="toctree-l1 current"><a class="reference internal" href="../reference.html">API Reference</a><ul class="current">
+<li class="toctree-l2 current"><a class="reference internal" href="../reference.html#submodules">Submodules</a><ul class="current">
+<li class="toctree-l3 current"><a class="reference internal" href="draco.analysis.html">draco.analysis</a><ul class="current">
+<li class="toctree-l4"><a class="reference internal" href="draco.analysis.beamform.html">draco.analysis.beamform</a></li>
+<li class="toctree-l4"><a class="reference internal" href="draco.analysis.delay.html">draco.analysis.delay</a></li>
+<li class="toctree-l4"><a class="reference internal" href="draco.analysis.fgfilter.html">draco.analysis.fgfilter</a></li>
+<li class="toctree-l4 current"><a class="current reference internal" href="#">draco.analysis.flagging</a></li>
+<li class="toctree-l4"><a class="reference internal" href="draco.analysis.mapmaker.html">draco.analysis.mapmaker</a></li>
+<li class="toctree-l4"><a class="reference internal" href="draco.analysis.powerspectrum.html">draco.analysis.powerspectrum</a></li>
+<li class="toctree-l4"><a class="reference internal" href="draco.analysis.sensitivity.html">draco.analysis.sensitivity</a></li>
+<li class="toctree-l4"><a class="reference internal" href="draco.analysis.sidereal.html">draco.analysis.sidereal</a></li>
+<li class="toctree-l4"><a class="reference internal" href="draco.analysis.sourcestack.html">draco.analysis.sourcestack</a></li>
+<li class="toctree-l4"><a class="reference internal" href="draco.analysis.svdfilter.html">draco.analysis.svdfilter</a></li>
+<li class="toctree-l4"><a class="reference internal" href="draco.analysis.transform.html">draco.analysis.transform</a></li>
+</ul>
+</li>
+<li class="toctree-l3"><a class="reference internal" href="draco.core.html">draco.core</a></li>
+<li class="toctree-l3"><a class="reference internal" href="draco.synthesis.html">draco.synthesis</a></li>
+<li class="toctree-l3"><a class="reference internal" href="draco.util.html">draco.util</a></li>
+</ul>
+</li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="../dev.html">Development Guidelines</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../index.html">draco</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../index.html" class="icon icon-home" aria-label="Home"></a></li>
+          <li class="breadcrumb-item"><a href="../reference.html">API Reference</a></li>
+          <li class="breadcrumb-item"><a href="draco.analysis.html">draco.analysis</a></li>
+      <li class="breadcrumb-item active">draco.analysis.flagging</li>
+      <li class="wy-breadcrumbs-aside">
+            <a href="../_sources/_autosummary/draco.analysis.flagging.rst.txt" rel="nofollow"> View page source</a>
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <section id="module-draco.analysis.flagging">
+<span id="draco-analysis-flagging"></span><h1>draco.analysis.flagging<a class="headerlink" href="#module-draco.analysis.flagging" title="Link to this heading"></a></h1>
+<p>Tasks for flagging out bad or unwanted data.</p>
+<p>This includes data quality flagging on timestream data; sun excision on sidereal
+data; and pre-map making flagging on m-modes.</p>
+<p>The convention for flagging/masking is <cite>True</cite> for contaminated samples that should
+be excluded and <cite>False</cite> for clean samples.</p>
+<p class="rubric">Functions</p>
+<table class="autosummary longtable docutils align-default">
+<tbody>
+<tr class="row-odd"><td><p><a class="reference internal" href="#draco.analysis.flagging.complex_med" title="draco.analysis.flagging.complex_med"><code class="xref py py-obj docutils literal notranslate"><span class="pre">complex_med</span></code></a>(x, *args, **kwargs)</p></td>
+<td><p>Complex median, done by applying to the real/imag parts individually.</p></td>
+</tr>
+<tr class="row-even"><td><p><a class="reference internal" href="#draco.analysis.flagging.destripe" title="draco.analysis.flagging.destripe"><code class="xref py py-obj docutils literal notranslate"><span class="pre">destripe</span></code></a>(x, w[, axis])</p></td>
+<td><p>Subtract the median along a specified axis.</p></td>
+</tr>
+<tr class="row-odd"><td><p><a class="reference internal" href="#draco.analysis.flagging.inverse_binom_cdf_prob" title="draco.analysis.flagging.inverse_binom_cdf_prob"><code class="xref py py-obj docutils literal notranslate"><span class="pre">inverse_binom_cdf_prob</span></code></a>(k, N, F)</p></td>
+<td><p>Calculate the trial probability that gives the CDF.</p></td>
+</tr>
+<tr class="row-even"><td><p><a class="reference internal" href="#draco.analysis.flagging.mad" title="draco.analysis.flagging.mad"><code class="xref py py-obj docutils literal notranslate"><span class="pre">mad</span></code></a>(x, mask[, base_size, mad_size, debug, sigma])</p></td>
+<td><p>Calculate the MAD of freq-time data.</p></td>
+</tr>
+<tr class="row-odd"><td><p><a class="reference internal" href="#draco.analysis.flagging.medfilt" title="draco.analysis.flagging.medfilt"><code class="xref py py-obj docutils literal notranslate"><span class="pre">medfilt</span></code></a>(x, mask, size, *args)</p></td>
+<td><p>Apply a moving median filter to masked data.</p></td>
+</tr>
+<tr class="row-even"><td><p><a class="reference internal" href="#draco.analysis.flagging.p_to_sigma" title="draco.analysis.flagging.p_to_sigma"><code class="xref py py-obj docutils literal notranslate"><span class="pre">p_to_sigma</span></code></a>(p)</p></td>
+<td><p>Get the sigma exceeded by the tails of a Gaussian with probability p.</p></td>
+</tr>
+<tr class="row-odd"><td><p><a class="reference internal" href="#draco.analysis.flagging.sigma_to_p" title="draco.analysis.flagging.sigma_to_p"><code class="xref py py-obj docutils literal notranslate"><span class="pre">sigma_to_p</span></code></a>(sigma)</p></td>
+<td><p>Get the probability of an excursion larger than sigma for a Gaussian.</p></td>
+</tr>
+<tr class="row-even"><td><p><a class="reference internal" href="#draco.analysis.flagging.tv_channels_flag" title="draco.analysis.flagging.tv_channels_flag"><code class="xref py py-obj docutils literal notranslate"><span class="pre">tv_channels_flag</span></code></a>(x, freq[, sigma, f, debug])</p></td>
+<td><p>Perform a higher sensitivity flagging for the TV stations.</p></td>
+</tr>
+</tbody>
+</table>
+<p class="rubric">Classes</p>
+<table class="autosummary longtable docutils align-default">
+<tbody>
+<tr class="row-odd"><td><p><a class="reference internal" href="#draco.analysis.flagging.ApplyBaselineMask" title="draco.analysis.flagging.ApplyBaselineMask"><code class="xref py py-obj docutils literal notranslate"><span class="pre">ApplyBaselineMask</span></code></a>()</p></td>
+<td><p>Apply a distributed mask that varies across baselines.</p></td>
+</tr>
+<tr class="row-even"><td><p><a class="reference internal" href="#draco.analysis.flagging.ApplyGenericMask" title="draco.analysis.flagging.ApplyGenericMask"><code class="xref py py-obj docutils literal notranslate"><span class="pre">ApplyGenericMask</span></code></a>()</p></td>
+<td><p>Apply a mask to a dataset with arbitrary axes.</p></td>
+</tr>
+<tr class="row-odd"><td><p><a class="reference internal" href="#draco.analysis.flagging.ApplyLocalizedRFIMask" title="draco.analysis.flagging.ApplyLocalizedRFIMask"><code class="xref py py-obj docutils literal notranslate"><span class="pre">ApplyLocalizedRFIMask</span></code></a>()</p></td>
+<td><p>Apply a localised (el-sensitive) RFI mask to the data by zeroing the weights.</p></td>
+</tr>
+<tr class="row-even"><td><p><a class="reference internal" href="#draco.analysis.flagging.ApplyRFIMask" title="draco.analysis.flagging.ApplyRFIMask"><code class="xref py py-obj docutils literal notranslate"><span class="pre">ApplyRFIMask</span></code></a></p></td>
+<td><p>alias of <a class="reference internal" href="#draco.analysis.flagging.ApplyTimeFreqMask" title="draco.analysis.flagging.ApplyTimeFreqMask"><code class="xref py py-class docutils literal notranslate"><span class="pre">ApplyTimeFreqMask</span></code></a></p></td>
+</tr>
+<tr class="row-odd"><td><p><a class="reference internal" href="#draco.analysis.flagging.ApplyTimeFreqMask" title="draco.analysis.flagging.ApplyTimeFreqMask"><code class="xref py py-obj docutils literal notranslate"><span class="pre">ApplyTimeFreqMask</span></code></a>()</p></td>
+<td><p>Apply a time-frequency mask to the data.</p></td>
+</tr>
+<tr class="row-even"><td><p><a class="reference internal" href="#draco.analysis.flagging.BlendStack" title="draco.analysis.flagging.BlendStack"><code class="xref py py-obj docutils literal notranslate"><span class="pre">BlendStack</span></code></a>()</p></td>
+<td><p>Mix a small amount of a stack into data to regularise RFI gaps.</p></td>
+</tr>
+<tr class="row-odd"><td><p><a class="reference internal" href="#draco.analysis.flagging.CollapseBaselineMask" title="draco.analysis.flagging.CollapseBaselineMask"><code class="xref py py-obj docutils literal notranslate"><span class="pre">CollapseBaselineMask</span></code></a>()</p></td>
+<td><p>Collapse a baseline-dependent mask along the baseline axis.</p></td>
+</tr>
+<tr class="row-even"><td><p><a class="reference internal" href="#draco.analysis.flagging.CombineMasks" title="draco.analysis.flagging.CombineMasks"><code class="xref py py-obj docutils literal notranslate"><span class="pre">CombineMasks</span></code></a>()</p></td>
+<td><p>Combine an arbitrary number of masks (conservatively).</p></td>
+</tr>
+<tr class="row-odd"><td><p><a class="reference internal" href="#draco.analysis.flagging.DayMask" title="draco.analysis.flagging.DayMask"><code class="xref py py-obj docutils literal notranslate"><span class="pre">DayMask</span></code></a>()</p></td>
+<td><p>Crudely simulate a masking out of the daytime data.</p></td>
+</tr>
+<tr class="row-even"><td><p><a class="reference internal" href="#draco.analysis.flagging.FindBeamformedOutliers" title="draco.analysis.flagging.FindBeamformedOutliers"><code class="xref py py-obj docutils literal notranslate"><span class="pre">FindBeamformedOutliers</span></code></a>()</p></td>
+<td><p>Identify beamformed visibilities that deviate from our expectation for noise.</p></td>
+</tr>
+<tr class="row-odd"><td><p><a class="reference internal" href="#draco.analysis.flagging.MaskBadGains" title="draco.analysis.flagging.MaskBadGains"><code class="xref py py-obj docutils literal notranslate"><span class="pre">MaskBadGains</span></code></a>()</p></td>
+<td><p>Get a mask of regions with bad gain.</p></td>
+</tr>
+<tr class="row-even"><td><p><a class="reference internal" href="#draco.analysis.flagging.MaskBaselines" title="draco.analysis.flagging.MaskBaselines"><code class="xref py py-obj docutils literal notranslate"><span class="pre">MaskBaselines</span></code></a>()</p></td>
+<td><p>Mask out baselines from a dataset.</p></td>
+</tr>
+<tr class="row-odd"><td><p><a class="reference internal" href="#draco.analysis.flagging.MaskBeamformedOutliers" title="draco.analysis.flagging.MaskBeamformedOutliers"><code class="xref py py-obj docutils literal notranslate"><span class="pre">MaskBeamformedOutliers</span></code></a></p></td>
+<td><p>alias of <a class="reference internal" href="#draco.analysis.flagging.ApplyGenericMask" title="draco.analysis.flagging.ApplyGenericMask"><code class="xref py py-class docutils literal notranslate"><span class="pre">ApplyGenericMask</span></code></a></p></td>
+</tr>
+<tr class="row-even"><td><p><a class="reference internal" href="#draco.analysis.flagging.MaskBeamformedWeights" title="draco.analysis.flagging.MaskBeamformedWeights"><code class="xref py py-obj docutils literal notranslate"><span class="pre">MaskBeamformedWeights</span></code></a>()</p></td>
+<td><p>Mask beamformed visibilities with anomalously large weights before stacking.</p></td>
+</tr>
+<tr class="row-odd"><td><p><a class="reference internal" href="#draco.analysis.flagging.MaskData" title="draco.analysis.flagging.MaskData"><code class="xref py py-obj docutils literal notranslate"><span class="pre">MaskData</span></code></a></p></td>
+<td><p>alias of <a class="reference internal" href="#draco.analysis.flagging.MaskMModeData" title="draco.analysis.flagging.MaskMModeData"><code class="xref py py-class docutils literal notranslate"><span class="pre">MaskMModeData</span></code></a></p></td>
+</tr>
+<tr class="row-even"><td><p><a class="reference internal" href="#draco.analysis.flagging.MaskFreq" title="draco.analysis.flagging.MaskFreq"><code class="xref py py-obj docutils literal notranslate"><span class="pre">MaskFreq</span></code></a>()</p></td>
+<td><p>Make a mask for certain frequencies.</p></td>
+</tr>
+<tr class="row-odd"><td><p><a class="reference internal" href="#draco.analysis.flagging.MaskMModeData" title="draco.analysis.flagging.MaskMModeData"><code class="xref py py-obj docutils literal notranslate"><span class="pre">MaskMModeData</span></code></a>()</p></td>
+<td><p>Mask out mmode data ahead of map making.</p></td>
+</tr>
+<tr class="row-even"><td><p><a class="reference internal" href="#draco.analysis.flagging.RFIMask" title="draco.analysis.flagging.RFIMask"><code class="xref py py-obj docutils literal notranslate"><span class="pre">RFIMask</span></code></a>()</p></td>
+<td><p>Crappy RFI masking.</p></td>
+</tr>
+<tr class="row-odd"><td><p><a class="reference internal" href="#draco.analysis.flagging.RFIMaskChisqHighDelay" title="draco.analysis.flagging.RFIMaskChisqHighDelay"><code class="xref py py-obj docutils literal notranslate"><span class="pre">RFIMaskChisqHighDelay</span></code></a>()</p></td>
+<td><p>Mask frequencies and times with anomalous chi-squared test statistic.</p></td>
+</tr>
+<tr class="row-even"><td><p><a class="reference internal" href="#draco.analysis.flagging.RFISensitivityMask" title="draco.analysis.flagging.RFISensitivityMask"><code class="xref py py-obj docutils literal notranslate"><span class="pre">RFISensitivityMask</span></code></a>()</p></td>
+<td><p>Identify RFI as deviations in system sensitivity from expected radiometer noise.</p></td>
+</tr>
+<tr class="row-odd"><td><p><a class="reference internal" href="#draco.analysis.flagging.RFIStokesIMask" title="draco.analysis.flagging.RFIStokesIMask"><code class="xref py py-obj docutils literal notranslate"><span class="pre">RFIStokesIMask</span></code></a>()</p></td>
+<td><p>Two-stage RFI filter based on Stokes I visibilities.</p></td>
+</tr>
+<tr class="row-even"><td><p><a class="reference internal" href="#draco.analysis.flagging.RadiometerWeight" title="draco.analysis.flagging.RadiometerWeight"><code class="xref py py-obj docutils literal notranslate"><span class="pre">RadiometerWeight</span></code></a>()</p></td>
+<td><p>Update vis_weight according to the radiometer equation.</p></td>
+</tr>
+<tr class="row-odd"><td><p><a class="reference internal" href="#draco.analysis.flagging.ReduceMaskEl" title="draco.analysis.flagging.ReduceMaskEl"><code class="xref py py-obj docutils literal notranslate"><span class="pre">ReduceMaskEl</span></code></a>()</p></td>
+<td><p>Reduce the 'el' axis from input classes and produce corresponding reduced output classes.</p></td>
+</tr>
+<tr class="row-even"><td><p><a class="reference internal" href="#draco.analysis.flagging.SanitizeWeights" title="draco.analysis.flagging.SanitizeWeights"><code class="xref py py-obj docutils literal notranslate"><span class="pre">SanitizeWeights</span></code></a>()</p></td>
+<td><p>Flags weights outside of a valid range.</p></td>
+</tr>
+<tr class="row-odd"><td><p><a class="reference internal" href="#draco.analysis.flagging.SiderealMaskConversion" title="draco.analysis.flagging.SiderealMaskConversion"><code class="xref py py-obj docutils literal notranslate"><span class="pre">SiderealMaskConversion</span></code></a>()</p></td>
+<td><p>Convert the axis of an RFI mask from time to ra.</p></td>
+</tr>
+<tr class="row-even"><td><p><a class="reference internal" href="#draco.analysis.flagging.SmoothVisWeight" title="draco.analysis.flagging.SmoothVisWeight"><code class="xref py py-obj docutils literal notranslate"><span class="pre">SmoothVisWeight</span></code></a>()</p></td>
+<td><p>Smooth the visibility weights with a median filter.</p></td>
+</tr>
+<tr class="row-odd"><td><p><a class="reference internal" href="#draco.analysis.flagging.ThresholdVisWeightBaseline" title="draco.analysis.flagging.ThresholdVisWeightBaseline"><code class="xref py py-obj docutils literal notranslate"><span class="pre">ThresholdVisWeightBaseline</span></code></a>()</p></td>
+<td><p>Form a mask corresponding to weights that are below some threshold.</p></td>
+</tr>
+<tr class="row-even"><td><p><a class="reference internal" href="#draco.analysis.flagging.ThresholdVisWeightFrequency" title="draco.analysis.flagging.ThresholdVisWeightFrequency"><code class="xref py py-obj docutils literal notranslate"><span class="pre">ThresholdVisWeightFrequency</span></code></a>()</p></td>
+<td><p>Create a mask to remove all weights below a per-frequency threshold.</p></td>
+</tr>
+</tbody>
+</table>
+<dl class="py class">
+<dt class="sig sig-object py" id="draco.analysis.flagging.ApplyBaselineMask">
+<em class="property"><span class="k"><span class="pre">class</span></span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">draco.analysis.flagging.</span></span><span class="sig-name descname"><span class="pre">ApplyBaselineMask</span></span><a class="reference internal" href="../_modules/draco/analysis/flagging.html#ApplyBaselineMask"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#draco.analysis.flagging.ApplyBaselineMask" title="Link to this definition"></a></dt>
+<dd><p>Bases: <a class="reference internal" href="draco.core.task.html#draco.core.task.SingleTask" title="draco.core.task.SingleTask"><code class="xref py py-class docutils literal notranslate"><span class="pre">SingleTask</span></code></a></p>
+<p>Apply a distributed mask that varies across baselines.</p>
+<p>No broadcasting is done, so the data and mask should have the same
+axes. This shouldn’t be used for non-distributed time-freq masks.</p>
+<p>This task may produce output with shared datasets. Be warned that
+this can produce unexpected outputs if not properly taken into
+account.</p>
+<dl class="py attribute">
+<dt class="sig sig-object py" id="draco.analysis.flagging.ApplyBaselineMask.share">
+<span class="sig-name descname"><span class="pre">share</span></span><a class="headerlink" href="#draco.analysis.flagging.ApplyBaselineMask.share" title="Link to this definition"></a></dt>
+<dd><p>Which datasets should we share with the input. If “none” we create a
+full copy of the data, if “vis” or “map” we create a copy only of the modified
+weight dataset and the unmodified vis dataset is shared, if “all” we
+modify in place and return the input container.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>{“all”, “none”, “vis”, “map”}</p>
+</dd>
+</dl>
+</dd></dl>
+
+<p>Initialize pipeline task.</p>
+<p>May be overridden with no arguments.  Will be called after any
+<cite>config.Property</cite> attributes are set and after ‘input’ and ‘requires’
+keys are set up.</p>
+<dl class="py method">
+<dt class="sig sig-object py" id="draco.analysis.flagging.ApplyBaselineMask.process">
+<span class="sig-name descname"><span class="pre">process</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">data</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference internal" href="draco.core.containers.html#draco.core.containers.TimeStream" title="draco.core.containers.TimeStream"><span class="pre">TimeStream</span></a></span></em>, <em class="sig-param"><span class="n"><span class="pre">mask</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference internal" href="draco.core.containers.html#draco.core.containers.BaselineMask" title="draco.core.containers.BaselineMask"><span class="pre">BaselineMask</span></a></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><a class="reference internal" href="draco.core.containers.html#draco.core.containers.TimeStream" title="draco.core.containers.TimeStream"><span class="pre">TimeStream</span></a></span></span><a class="reference internal" href="../_modules/draco/analysis/flagging.html#ApplyBaselineMask.process"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#draco.analysis.flagging.ApplyBaselineMask.process" title="Link to this definition"></a></dt>
+<dt class="sig sig-object py">
+<span class="sig-name descname"><span class="pre">process</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">data</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference internal" href="draco.core.containers.html#draco.core.containers.SiderealStream" title="draco.core.containers.SiderealStream"><span class="pre">SiderealStream</span></a></span></em>, <em class="sig-param"><span class="n"><span class="pre">mask</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference internal" href="draco.core.containers.html#draco.core.containers.SiderealBaselineMask" title="draco.core.containers.SiderealBaselineMask"><span class="pre">SiderealBaselineMask</span></a></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><a class="reference internal" href="draco.core.containers.html#draco.core.containers.SiderealStream" title="draco.core.containers.SiderealStream"><span class="pre">SiderealStream</span></a></span></span></dt>
+<dd><p>Flag data by zeroing the weights.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>data</strong> – Data to apply mask to. Must have a stack axis</p></li>
+<li><p><strong>mask</strong> – A baseline-dependent mask</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p>The masked data. Masking is done in place.</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>data</p>
+</dd>
+</dl>
+</dd></dl>
+
+</dd></dl>
+
+<dl class="py class">
+<dt class="sig sig-object py" id="draco.analysis.flagging.ApplyGenericMask">
+<em class="property"><span class="k"><span class="pre">class</span></span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">draco.analysis.flagging.</span></span><span class="sig-name descname"><span class="pre">ApplyGenericMask</span></span><a class="reference internal" href="../_modules/draco/analysis/flagging.html#ApplyGenericMask"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#draco.analysis.flagging.ApplyGenericMask" title="Link to this definition"></a></dt>
+<dd><p>Bases: <a class="reference internal" href="draco.core.task.html#draco.core.task.SingleTask" title="draco.core.task.SingleTask"><code class="xref py py-class docutils literal notranslate"><span class="pre">SingleTask</span></code></a></p>
+<p>Apply a mask to a dataset with arbitrary axes.</p>
+<p>All of the mask axes must be present in the dataset, but
+the dataset can have additional axes.</p>
+<p>Assumes that a sample marked <cite>True</cite> in the mask dataset
+should be flagged.</p>
+<p>Initialize pipeline task.</p>
+<p>May be overridden with no arguments.  Will be called after any
+<cite>config.Property</cite> attributes are set and after ‘input’ and ‘requires’
+keys are set up.</p>
+<dl class="py method">
+<dt class="sig sig-object py" id="draco.analysis.flagging.ApplyGenericMask.process">
+<span class="sig-name descname"><span class="pre">process</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">data</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference internal" href="draco.core.containers.html#draco.core.containers.ContainerBase" title="draco.core.containers.ContainerBase"><span class="pre">ContainerBase</span></a></span></em>, <em class="sig-param"><span class="n"><span class="pre">mask</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference internal" href="draco.core.containers.html#draco.core.containers.ContainerBase" title="draco.core.containers.ContainerBase"><span class="pre">ContainerBase</span></a></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/draco/analysis/flagging.html#ApplyGenericMask.process"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#draco.analysis.flagging.ApplyGenericMask.process" title="Link to this definition"></a></dt>
+<dd><p>Apply the mask to the dataset weights.</p>
+<p>Reorder the mask axes and add broadcasting axes if necessary.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>data</strong> – Any container with a frequency axis.</p></li>
+<li><p><strong>mask</strong> – Any container whose axes are a subset of the axes in data</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p>The input container with the weight dataset set to zero
+for masked samples.</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>data</p>
+</dd>
+</dl>
+</dd></dl>
+
+</dd></dl>
+
+<dl class="py class">
+<dt class="sig sig-object py" id="draco.analysis.flagging.ApplyLocalizedRFIMask">
+<em class="property"><span class="k"><span class="pre">class</span></span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">draco.analysis.flagging.</span></span><span class="sig-name descname"><span class="pre">ApplyLocalizedRFIMask</span></span><a class="reference internal" href="../_modules/draco/analysis/flagging.html#ApplyLocalizedRFIMask"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#draco.analysis.flagging.ApplyLocalizedRFIMask" title="Link to this definition"></a></dt>
+<dd><p>Bases: <a class="reference internal" href="draco.core.task.html#draco.core.task.SingleTask" title="draco.core.task.SingleTask"><code class="xref py py-class docutils literal notranslate"><span class="pre">SingleTask</span></code></a></p>
+<p>Apply a localised (el-sensitive) RFI mask to the data by zeroing the weights.</p>
+<p>This class extends the class ApplyTimeFreqMask to include el in addition to freq and ra,
+and can be further extended for a new RingMap class (freq,el,time).
+Note that while the ra and el axes of the tstream and mask datasets do not need to be identical,
+they must have overlapping regions. However, their freq axes must be identical.</p>
+<dl class="py attribute">
+<dt class="sig sig-object py" id="draco.analysis.flagging.ApplyLocalizedRFIMask.share">
+<span class="sig-name descname"><span class="pre">share</span></span><a class="headerlink" href="#draco.analysis.flagging.ApplyLocalizedRFIMask.share" title="Link to this definition"></a></dt>
+<dd><p>Which datasets should we share with the input. If “none” we create a
+full copy of the data, if “map” we create a copy only of the modified
+weight dataset and the unmodified vis dataset is shared, if “all” we
+modify in place and return the input container.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>{“all”, “none”, “map”}</p>
+</dd>
+</dl>
+</dd></dl>
+
+<p>Initialize pipeline task.</p>
+<p>May be overridden with no arguments.  Will be called after any
+<cite>config.Property</cite> attributes are set and after ‘input’ and ‘requires’
+keys are set up.</p>
+<dl class="py method">
+<dt class="sig sig-object py" id="draco.analysis.flagging.ApplyLocalizedRFIMask.process">
+<span class="sig-name descname"><span class="pre">process</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">tstream</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">rfimask</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/draco/analysis/flagging.html#ApplyLocalizedRFIMask.process"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#draco.analysis.flagging.ApplyLocalizedRFIMask.process" title="Link to this definition"></a></dt>
+<dd><p>Apply the mask by zeroing the weights.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>tstream</strong> (<a class="reference internal" href="draco.core.containers.html#draco.core.containers.RingMap" title="draco.core.containers.RingMap"><em>containers.RingMap</em></a>) – A data container with axes (pol, freq, ra, el).</p></li>
+<li><p><strong>rfimask</strong> (<a class="reference internal" href="draco.core.containers.html#draco.core.containers.LocalizedSiderealRFIMask" title="draco.core.containers.LocalizedSiderealRFIMask"><em>containers.LocalizedSiderealRFIMask</em></a><em>(</em><em>freq</em><em>, </em><em>ra</em><em>, </em><em>el</em><em>)</em>) – An RFI mask with overlapping freq, ra and el regions with the tstream, containers.RingMap.</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p><strong>tstream</strong> – The masked RingMap with weights modified in overlapping regions. Note that the masking is done in place.</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p><a class="reference internal" href="draco.core.containers.html#draco.core.containers.RingMap" title="draco.core.containers.RingMap">containers.RingMap</a></p>
+</dd>
+</dl>
+</dd></dl>
+
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="draco.analysis.flagging.ApplyRFIMask">
+<span class="sig-prename descclassname"><span class="pre">draco.analysis.flagging.</span></span><span class="sig-name descname"><span class="pre">ApplyRFIMask</span></span><a class="headerlink" href="#draco.analysis.flagging.ApplyRFIMask" title="Link to this definition"></a></dt>
+<dd><p>alias of <a class="reference internal" href="#draco.analysis.flagging.ApplyTimeFreqMask" title="draco.analysis.flagging.ApplyTimeFreqMask"><code class="xref py py-class docutils literal notranslate"><span class="pre">ApplyTimeFreqMask</span></code></a></p>
+</dd></dl>
+
+<dl class="py class">
+<dt class="sig sig-object py" id="draco.analysis.flagging.ApplyTimeFreqMask">
+<em class="property"><span class="k"><span class="pre">class</span></span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">draco.analysis.flagging.</span></span><span class="sig-name descname"><span class="pre">ApplyTimeFreqMask</span></span><a class="reference internal" href="../_modules/draco/analysis/flagging.html#ApplyTimeFreqMask"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#draco.analysis.flagging.ApplyTimeFreqMask" title="Link to this definition"></a></dt>
+<dd><p>Bases: <a class="reference internal" href="draco.core.task.html#draco.core.task.SingleTask" title="draco.core.task.SingleTask"><code class="xref py py-class docutils literal notranslate"><span class="pre">SingleTask</span></code></a></p>
+<p>Apply a time-frequency mask to the data.</p>
+<p>Typically this is used to mask out all inputs at times and
+frequencies contaminated by RFI.</p>
+<p>This task may produce output with shared datasets. Be warned that
+this can produce unexpected outputs if not properly taken into
+account.</p>
+<dl class="py attribute">
+<dt class="sig sig-object py" id="draco.analysis.flagging.ApplyTimeFreqMask.share">
+<span class="sig-name descname"><span class="pre">share</span></span><a class="headerlink" href="#draco.analysis.flagging.ApplyTimeFreqMask.share" title="Link to this definition"></a></dt>
+<dd><p>Which datasets should we share with the input. If “none” we create a
+full copy of the data, if “vis” or “map” we create a copy only of the modified
+weight dataset and the unmodified vis dataset is shared, if “all” we
+modify in place and return the input container.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>{“all”, “none”, “vis”, “map”}</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="draco.analysis.flagging.ApplyTimeFreqMask.collapse_pol">
+<span class="sig-name descname"><span class="pre">collapse_pol</span></span><a class="headerlink" href="#draco.analysis.flagging.ApplyTimeFreqMask.collapse_pol" title="Link to this definition"></a></dt>
+<dd><p>Take the logical OR of the mask along the polarisation axis prior to applying
+it to the data.  In other words, mask a frequency and time in all polarisations
+if it was identified as contaminated in any polarisation.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>bool</p>
+</dd>
+</dl>
+</dd></dl>
+
+<p>Initialize pipeline task.</p>
+<p>May be overridden with no arguments.  Will be called after any
+<cite>config.Property</cite> attributes are set and after ‘input’ and ‘requires’
+keys are set up.</p>
+<dl class="py method">
+<dt class="sig sig-object py" id="draco.analysis.flagging.ApplyTimeFreqMask.process">
+<span class="sig-name descname"><span class="pre">process</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">tstream</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">rfimask</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/draco/analysis/flagging.html#ApplyTimeFreqMask.process"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#draco.analysis.flagging.ApplyTimeFreqMask.process" title="Link to this definition"></a></dt>
+<dd><p>Apply the mask by zeroing the weights.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>tstream</strong> (<em>timestream</em><em> or </em><em>sidereal stream</em>) – A timestream or sidereal stream like container. For example,
+<cite>containers.TimeStream</cite>, <cite>andata.CorrData</cite> or
+<cite>containers.SiderealStream</cite>.</p></li>
+<li><p><strong>rfimask</strong> (<a class="reference internal" href="draco.core.containers.html#draco.core.containers.RFIMask" title="draco.core.containers.RFIMask"><em>containers.RFIMask</em></a><em>, </em><a class="reference internal" href="draco.core.containers.html#draco.core.containers.RFIMaskByPol" title="draco.core.containers.RFIMaskByPol"><em>containers.RFIMaskByPol</em></a><em>,</em>) – containers.SiderealRFIMask, containers.SiderealRFIMaskByPol
+An RFI mask for the same period of time.</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p><strong>tstream</strong> – The masked timestream. Note that the masking is done in place.</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>timestream or sidereal stream</p>
+</dd>
+</dl>
+</dd></dl>
+
+</dd></dl>
+
+<dl class="py class">
+<dt class="sig sig-object py" id="draco.analysis.flagging.BlendStack">
+<em class="property"><span class="k"><span class="pre">class</span></span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">draco.analysis.flagging.</span></span><span class="sig-name descname"><span class="pre">BlendStack</span></span><a class="reference internal" href="../_modules/draco/analysis/flagging.html#BlendStack"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#draco.analysis.flagging.BlendStack" title="Link to this definition"></a></dt>
+<dd><p>Bases: <a class="reference internal" href="draco.core.task.html#draco.core.task.SingleTask" title="draco.core.task.SingleTask"><code class="xref py py-class docutils literal notranslate"><span class="pre">SingleTask</span></code></a></p>
+<p>Mix a small amount of a stack into data to regularise RFI gaps.</p>
+<p>This is designed to mix in a small amount of a stack into a day of data (which
+will have RFI masked gaps) to attempt to regularise operations which struggle to
+deal with time variable masks, e.g. <cite>DelaySpectrumEstimator</cite>.</p>
+<dl class="py attribute">
+<dt class="sig sig-object py" id="draco.analysis.flagging.BlendStack.frac">
+<span class="sig-name descname"><span class="pre">frac</span></span><a class="headerlink" href="#draco.analysis.flagging.BlendStack.frac" title="Link to this definition"></a></dt>
+<dd><p>The relative weight to give the stack in the average. This multiplies the
+weights already in the stack, and so it should be remembered that these may
+already be significantly higher than the single day weights.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>float, optional</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="draco.analysis.flagging.BlendStack.match_median">
+<span class="sig-name descname"><span class="pre">match_median</span></span><a class="headerlink" href="#draco.analysis.flagging.BlendStack.match_median" title="Link to this definition"></a></dt>
+<dd><p>Estimate the median in the time/RA direction from the common samples and use
+this to match any quasi time-independent bias of the data (e.g. cross talk).</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>bool, optional</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="draco.analysis.flagging.BlendStack.subtract">
+<span class="sig-name descname"><span class="pre">subtract</span></span><a class="headerlink" href="#draco.analysis.flagging.BlendStack.subtract" title="Link to this definition"></a></dt>
+<dd><p>Rather than taking an average, instead subtract out the blending stack
+from the input data in the common samples to calculate the difference
+between them. The interpretation of <cite>frac</cite> is a scaling of the inverse
+variance of the stack to an inverse variance of a prior on the
+difference, e.g. a <cite>frac = 1e-4</cite> means that we expect the standard
+deviation of the difference between the data and the stacked data to be
+100x larger than the noise of the stacked data.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>bool, optional</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="draco.analysis.flagging.BlendStack.mask_freq">
+<span class="sig-name descname"><span class="pre">mask_freq</span></span><a class="headerlink" href="#draco.analysis.flagging.BlendStack.mask_freq" title="Link to this definition"></a></dt>
+<dd><p>Maintain masking if a frequency is entirely flagged - i.e., even if
+blending data exists in those bands, do not blend.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>bool, optional</p>
+</dd>
+</dl>
+</dd></dl>
+
+<p>Initialize pipeline task.</p>
+<p>May be overridden with no arguments.  Will be called after any
+<cite>config.Property</cite> attributes are set and after ‘input’ and ‘requires’
+keys are set up.</p>
+<dl class="py method">
+<dt class="sig sig-object py" id="draco.analysis.flagging.BlendStack.process">
+<span class="sig-name descname"><span class="pre">process</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">data</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/draco/analysis/flagging.html#BlendStack.process"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#draco.analysis.flagging.BlendStack.process" title="Link to this definition"></a></dt>
+<dd><p>Blend a small amount of the stack into the incoming data.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>data</strong> (<a class="reference internal" href="draco.core.containers.html#draco.core.containers.VisContainer" title="draco.core.containers.VisContainer"><em>VisContainer</em></a>) – The data to be blended into. This is modified in place.</p>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p><strong>data_blend</strong> – The modified data. This is the same object as the input, and it has been
+modified in place.</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p><a class="reference internal" href="draco.core.containers.html#draco.core.containers.VisContainer" title="draco.core.containers.VisContainer">VisContainer</a></p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="draco.analysis.flagging.BlendStack.setup">
+<span class="sig-name descname"><span class="pre">setup</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">data_stack</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/draco/analysis/flagging.html#BlendStack.setup"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#draco.analysis.flagging.BlendStack.setup" title="Link to this definition"></a></dt>
+<dd><p>Set the stacked data.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>data_stack</strong> (<a class="reference internal" href="draco.core.containers.html#draco.core.containers.VisContainer" title="draco.core.containers.VisContainer"><em>VisContainer</em></a>) – Data stack to blend</p>
+</dd>
+</dl>
+</dd></dl>
+
+</dd></dl>
+
+<dl class="py class">
+<dt class="sig sig-object py" id="draco.analysis.flagging.CollapseBaselineMask">
+<em class="property"><span class="k"><span class="pre">class</span></span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">draco.analysis.flagging.</span></span><span class="sig-name descname"><span class="pre">CollapseBaselineMask</span></span><a class="reference internal" href="../_modules/draco/analysis/flagging.html#CollapseBaselineMask"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#draco.analysis.flagging.CollapseBaselineMask" title="Link to this definition"></a></dt>
+<dd><p>Bases: <a class="reference internal" href="draco.core.task.html#draco.core.task.SingleTask" title="draco.core.task.SingleTask"><code class="xref py py-class docutils literal notranslate"><span class="pre">SingleTask</span></code></a></p>
+<p>Collapse a baseline-dependent mask along the baseline axis.</p>
+<p>The output is a frequency/time mask that is True for any freq/time sample
+for which any baseline is masked in the input mask.</p>
+<p>Initialize pipeline task.</p>
+<p>May be overridden with no arguments.  Will be called after any
+<cite>config.Property</cite> attributes are set and after ‘input’ and ‘requires’
+keys are set up.</p>
+<dl class="py method">
+<dt class="sig sig-object py" id="draco.analysis.flagging.CollapseBaselineMask.process">
+<span class="sig-name descname"><span class="pre">process</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">baseline_mask</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference internal" href="draco.core.containers.html#draco.core.containers.BaselineMask" title="draco.core.containers.BaselineMask"><span class="pre">BaselineMask</span></a><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><a class="reference internal" href="draco.core.containers.html#draco.core.containers.SiderealBaselineMask" title="draco.core.containers.SiderealBaselineMask"><span class="pre">SiderealBaselineMask</span></a></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><a class="reference internal" href="draco.core.containers.html#draco.core.containers.RFIMask" title="draco.core.containers.RFIMask"><span class="pre">RFIMask</span></a><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><a class="reference internal" href="draco.core.containers.html#draco.core.containers.SiderealRFIMask" title="draco.core.containers.SiderealRFIMask"><span class="pre">SiderealRFIMask</span></a></span></span><a class="reference internal" href="../_modules/draco/analysis/flagging.html#CollapseBaselineMask.process"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#draco.analysis.flagging.CollapseBaselineMask.process" title="Link to this definition"></a></dt>
+<dd><p>Collapse input mask over baseline axis.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>baseline_mask</strong> (<cite>BaselineMask</cite> or <cite>SiderealBaselineMask</cite>) – Input baseline-dependent mask</p>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p><strong>mask_cont</strong> – Output baseline-independent mask.</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p><cite>RFIMask</cite> or <cite>SiderealRFIMask</cite></p>
+</dd>
+</dl>
+</dd></dl>
+
+</dd></dl>
+
+<dl class="py class">
+<dt class="sig sig-object py" id="draco.analysis.flagging.CombineMasks">
+<em class="property"><span class="k"><span class="pre">class</span></span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">draco.analysis.flagging.</span></span><span class="sig-name descname"><span class="pre">CombineMasks</span></span><a class="reference internal" href="../_modules/draco/analysis/flagging.html#CombineMasks"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#draco.analysis.flagging.CombineMasks" title="Link to this definition"></a></dt>
+<dd><p>Bases: <a class="reference internal" href="draco.core.task.html#draco.core.task.SingleTask" title="draco.core.task.SingleTask"><code class="xref py py-class docutils literal notranslate"><span class="pre">SingleTask</span></code></a></p>
+<p>Combine an arbitrary number of masks (conservatively).</p>
+<p>All of the given masks must be of the same type and that type must have a <cite>mask</cite> dataset.
+Any flagged value in any of the provided masks will be flagged in the output mask.</p>
+<p>Assumes that a sample marked <cite>True</cite> is flagged.</p>
+<p>Initialize pipeline task.</p>
+<p>May be overridden with no arguments.  Will be called after any
+<cite>config.Property</cite> attributes are set and after ‘input’ and ‘requires’
+keys are set up.</p>
+<dl class="py method">
+<dt class="sig sig-object py" id="draco.analysis.flagging.CombineMasks.process">
+<span class="sig-name descname"><span class="pre">process</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">masks</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">list</span><span class="p"><span class="pre">[</span></span><a class="reference internal" href="draco.core.containers.html#draco.core.containers.ContainerBase" title="draco.core.containers.ContainerBase"><span class="pre">ContainerBase</span></a><span class="p"><span class="pre">]</span></span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/draco/analysis/flagging.html#CombineMasks.process"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#draco.analysis.flagging.CombineMasks.process" title="Link to this definition"></a></dt>
+<dd><p>Combine the given list of masks into a single mask.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>masks</strong> – A list of containers that all have the same type. The type
+must have a <cite>mask</cite> dataset.</p>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p>A combined mask such that any flagged value in any of the
+input masks is flagged in the output mask.</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>combined_mask</p>
+</dd>
+</dl>
+</dd></dl>
+
+</dd></dl>
+
+<dl class="py class">
+<dt class="sig sig-object py" id="draco.analysis.flagging.DayMask">
+<em class="property"><span class="k"><span class="pre">class</span></span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">draco.analysis.flagging.</span></span><span class="sig-name descname"><span class="pre">DayMask</span></span><a class="reference internal" href="../_modules/draco/analysis/flagging.html#DayMask"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#draco.analysis.flagging.DayMask" title="Link to this definition"></a></dt>
+<dd><p>Bases: <a class="reference internal" href="draco.core.task.html#draco.core.task.SingleTask" title="draco.core.task.SingleTask"><code class="xref py py-class docutils literal notranslate"><span class="pre">SingleTask</span></code></a></p>
+<p>Crudely simulate a masking out of the daytime data.</p>
+<dl class="py attribute">
+<dt class="sig sig-object py">
+<span class="sig-name descname"><span class="pre">start,</span> <span class="pre">end</span></span></dt>
+<dd><p>Start and end of masked out region.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>float</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="draco.analysis.flagging.DayMask.width">
+<span class="sig-name descname"><span class="pre">width</span></span><a class="headerlink" href="#draco.analysis.flagging.DayMask.width" title="Link to this definition"></a></dt>
+<dd><p>Use a smooth transition of given width between the fully masked and
+unmasked data. This is interior to the region marked by start and end.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>float</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="draco.analysis.flagging.DayMask.zero_data">
+<span class="sig-name descname"><span class="pre">zero_data</span></span><a class="headerlink" href="#draco.analysis.flagging.DayMask.zero_data" title="Link to this definition"></a></dt>
+<dd><p>Zero the data in addition to modifying the noise weights
+(default is True).</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>bool, optional</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="draco.analysis.flagging.DayMask.remove_average">
+<span class="sig-name descname"><span class="pre">remove_average</span></span><a class="headerlink" href="#draco.analysis.flagging.DayMask.remove_average" title="Link to this definition"></a></dt>
+<dd><p>Estimate and remove the mean level from each visibilty. This estimate
+does not use data from the masked region.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>bool, optional</p>
+</dd>
+</dl>
+</dd></dl>
+
+<p>Initialize pipeline task.</p>
+<p>May be overridden with no arguments.  Will be called after any
+<cite>config.Property</cite> attributes are set and after ‘input’ and ‘requires’
+keys are set up.</p>
+<dl class="py method">
+<dt class="sig sig-object py" id="draco.analysis.flagging.DayMask.process">
+<span class="sig-name descname"><span class="pre">process</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">sstream</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/draco/analysis/flagging.html#DayMask.process"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#draco.analysis.flagging.DayMask.process" title="Link to this definition"></a></dt>
+<dd><p>Apply a day time mask.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>sstream</strong> (<a class="reference internal" href="draco.core.containers.html#draco.core.containers.SiderealStream" title="draco.core.containers.SiderealStream"><em>containers.SiderealStream</em></a>) – Unmasked sidereal stack.</p>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p><strong>mstream</strong> – Masked sidereal stream.</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p><a class="reference internal" href="draco.core.containers.html#draco.core.containers.SiderealStream" title="draco.core.containers.SiderealStream">containers.SiderealStream</a></p>
+</dd>
+</dl>
+</dd></dl>
+
+</dd></dl>
+
+<dl class="py class">
+<dt class="sig sig-object py" id="draco.analysis.flagging.FindBeamformedOutliers">
+<em class="property"><span class="k"><span class="pre">class</span></span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">draco.analysis.flagging.</span></span><span class="sig-name descname"><span class="pre">FindBeamformedOutliers</span></span><a class="reference internal" href="../_modules/draco/analysis/flagging.html#FindBeamformedOutliers"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#draco.analysis.flagging.FindBeamformedOutliers" title="Link to this definition"></a></dt>
+<dd><p>Bases: <a class="reference internal" href="draco.core.task.html#draco.core.task.SingleTask" title="draco.core.task.SingleTask"><code class="xref py py-class docutils literal notranslate"><span class="pre">SingleTask</span></code></a></p>
+<p>Identify beamformed visibilities that deviate from our expectation for noise.</p>
+<dl class="py attribute">
+<dt class="sig sig-object py" id="draco.analysis.flagging.FindBeamformedOutliers.nsigma">
+<span class="sig-name descname"><span class="pre">nsigma</span></span><a class="headerlink" href="#draco.analysis.flagging.FindBeamformedOutliers.nsigma" title="Link to this definition"></a></dt>
+<dd><p>Beamformed visibilities whose magnitude is greater than nsigma times
+the expected standard deviation of the noise, given by sqrt(1 / weight),
+will be masked.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>float</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="draco.analysis.flagging.FindBeamformedOutliers.window">
+<span class="sig-name descname"><span class="pre">window</span></span><a class="headerlink" href="#draco.analysis.flagging.FindBeamformedOutliers.window" title="Link to this definition"></a></dt>
+<dd><p>If provided, the outlier mask will be extended to cover neighboring pixels.
+This list provides the number of pixels in each dimension that a single
+outlier will mask.  Only supported for RingMap containers, where the list
+should be length 2 with [nra, nel], and FormedBeamHA containers, where the list
+should be length 1 with [nha,].</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>list of int</p>
+</dd>
+</dl>
+</dd></dl>
+
+<p>Initialize pipeline task.</p>
+<p>May be overridden with no arguments.  Will be called after any
+<cite>config.Property</cite> attributes are set and after ‘input’ and ‘requires’
+keys are set up.</p>
+<dl class="py method">
+<dt class="sig sig-object py" id="draco.analysis.flagging.FindBeamformedOutliers.process">
+<span class="sig-name descname"><span class="pre">process</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">data</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/draco/analysis/flagging.html#FindBeamformedOutliers.process"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#draco.analysis.flagging.FindBeamformedOutliers.process" title="Link to this definition"></a></dt>
+<dd><p>Create a mask that indicates outlier beamformed visibilities.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>data</strong> (<a class="reference internal" href="draco.core.containers.html#draco.core.containers.FormedBeam" title="draco.core.containers.FormedBeam"><em>FormedBeam</em></a><em>, </em><a class="reference internal" href="draco.core.containers.html#draco.core.containers.FormedBeamHA" title="draco.core.containers.FormedBeamHA"><em>FormedBeamHA</em></a><em>, or </em><a class="reference internal" href="draco.core.containers.html#draco.core.containers.RingMap" title="draco.core.containers.RingMap"><em>RingMap</em></a>) – Beamformed visibilities.</p>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p><strong>out</strong> – Container with a boolean mask where True indicates
+outlier beamformed visibilities.</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p><a class="reference internal" href="draco.core.containers.html#draco.core.containers.FormedBeamMask" title="draco.core.containers.FormedBeamMask">FormedBeamMask</a>, <a class="reference internal" href="draco.core.containers.html#draco.core.containers.FormedBeamHAMask" title="draco.core.containers.FormedBeamHAMask">FormedBeamHAMask</a>, or <a class="reference internal" href="draco.core.containers.html#draco.core.containers.RingMapMask" title="draco.core.containers.RingMapMask">RingMapMask</a></p>
+</dd>
+</dl>
+</dd></dl>
+
+</dd></dl>
+
+<dl class="py class">
+<dt class="sig sig-object py" id="draco.analysis.flagging.MaskBadGains">
+<em class="property"><span class="k"><span class="pre">class</span></span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">draco.analysis.flagging.</span></span><span class="sig-name descname"><span class="pre">MaskBadGains</span></span><a class="reference internal" href="../_modules/draco/analysis/flagging.html#MaskBadGains"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#draco.analysis.flagging.MaskBadGains" title="Link to this definition"></a></dt>
+<dd><p>Bases: <a class="reference internal" href="draco.core.task.html#draco.core.task.SingleTask" title="draco.core.task.SingleTask"><code class="xref py py-class docutils literal notranslate"><span class="pre">SingleTask</span></code></a></p>
+<p>Get a mask of regions with bad gain.</p>
+<p>Assumes that bad gains are set to 1.</p>
+<p>Initialize pipeline task.</p>
+<p>May be overridden with no arguments.  Will be called after any
+<cite>config.Property</cite> attributes are set and after ‘input’ and ‘requires’
+keys are set up.</p>
+<dl class="py method">
+<dt class="sig sig-object py" id="draco.analysis.flagging.MaskBadGains.process">
+<span class="sig-name descname"><span class="pre">process</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">data</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/draco/analysis/flagging.html#MaskBadGains.process"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#draco.analysis.flagging.MaskBadGains.process" title="Link to this definition"></a></dt>
+<dd><p>Generate a time-freq mask.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>data</strong> (<code class="xref py py-class docutils literal notranslate"><span class="pre">andata.Corrdata</span></code> or <code class="xref py py-class docutils literal notranslate"><span class="pre">container.ContainerBase</span></code> with a <cite>gain</cite> dataset) – Data containing the gains to be flagged. Must have a <cite>gain</cite> dataset.</p>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p><strong>mask</strong> – Time-freq mask</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>RFIMask container</p>
+</dd>
+</dl>
+</dd></dl>
+
+</dd></dl>
+
+<dl class="py class">
+<dt class="sig sig-object py" id="draco.analysis.flagging.MaskBaselines">
+<em class="property"><span class="k"><span class="pre">class</span></span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">draco.analysis.flagging.</span></span><span class="sig-name descname"><span class="pre">MaskBaselines</span></span><a class="reference internal" href="../_modules/draco/analysis/flagging.html#MaskBaselines"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#draco.analysis.flagging.MaskBaselines" title="Link to this definition"></a></dt>
+<dd><p>Bases: <a class="reference internal" href="draco.core.task.html#draco.core.task.SingleTask" title="draco.core.task.SingleTask"><code class="xref py py-class docutils literal notranslate"><span class="pre">SingleTask</span></code></a></p>
+<p>Mask out baselines from a dataset.</p>
+<p>This task may produce output with shared datasets. Be warned that
+this can produce unexpected outputs if not properly taken into
+account.</p>
+<dl class="py attribute">
+<dt class="sig sig-object py" id="draco.analysis.flagging.MaskBaselines.mask_long_ns">
+<span class="sig-name descname"><span class="pre">mask_long_ns</span></span><a class="headerlink" href="#draco.analysis.flagging.MaskBaselines.mask_long_ns" title="Link to this definition"></a></dt>
+<dd><p>Mask out baselines longer than a given distance in the N/S direction.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>float, optional</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="draco.analysis.flagging.MaskBaselines.mask_short">
+<span class="sig-name descname"><span class="pre">mask_short</span></span><a class="headerlink" href="#draco.analysis.flagging.MaskBaselines.mask_short" title="Link to this definition"></a></dt>
+<dd><p>Mask out baselines shorter than a given distance.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>float, optional</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="draco.analysis.flagging.MaskBaselines.mask_short_ew">
+<span class="sig-name descname"><span class="pre">mask_short_ew</span></span><a class="headerlink" href="#draco.analysis.flagging.MaskBaselines.mask_short_ew" title="Link to this definition"></a></dt>
+<dd><p>Mask out baselines shorter then a given distance in the East-West
+direction. Useful for masking out intra-cylinder baselines for
+North-South oriented cylindrical telescopes.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>float, optional</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="draco.analysis.flagging.MaskBaselines.mask_short_ns">
+<span class="sig-name descname"><span class="pre">mask_short_ns</span></span><a class="headerlink" href="#draco.analysis.flagging.MaskBaselines.mask_short_ns" title="Link to this definition"></a></dt>
+<dd><p>Mask out baselines shorter then a given distance in the North-South
+direction.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>float, optional</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="draco.analysis.flagging.MaskBaselines.missing_threshold">
+<span class="sig-name descname"><span class="pre">missing_threshold</span></span><a class="headerlink" href="#draco.analysis.flagging.MaskBaselines.missing_threshold" title="Link to this definition"></a></dt>
+<dd><p>Mask any baseline that is missing more than this fraction of samples. This is
+measured relative to other baselines.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>float, optional</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="draco.analysis.flagging.MaskBaselines.zero_data">
+<span class="sig-name descname"><span class="pre">zero_data</span></span><a class="headerlink" href="#draco.analysis.flagging.MaskBaselines.zero_data" title="Link to this definition"></a></dt>
+<dd><p>Zero the data in addition to modifying the noise weights
+(default is False).</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>bool, optional</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="draco.analysis.flagging.MaskBaselines.share">
+<span class="sig-name descname"><span class="pre">share</span></span><a class="headerlink" href="#draco.analysis.flagging.MaskBaselines.share" title="Link to this definition"></a></dt>
+<dd><p>Which datasets should we share with the input. If “none” we create a
+full copy of the data, if “vis” we create a copy only of the modified
+weight dataset and the unmodified vis dataset is shared, if “all” we
+modify in place and return the input container.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>{“all”, “none”, “vis”}</p>
+</dd>
+</dl>
+</dd></dl>
+
+<p>Initialize pipeline task.</p>
+<p>May be overridden with no arguments.  Will be called after any
+<cite>config.Property</cite> attributes are set and after ‘input’ and ‘requires’
+keys are set up.</p>
+<dl class="py method">
+<dt class="sig sig-object py" id="draco.analysis.flagging.MaskBaselines.process">
+<span class="sig-name descname"><span class="pre">process</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">ss</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/draco/analysis/flagging.html#MaskBaselines.process"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#draco.analysis.flagging.MaskBaselines.process" title="Link to this definition"></a></dt>
+<dd><p>Apply the mask to data.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>ss</strong> (<a class="reference internal" href="draco.core.containers.html#draco.core.containers.SiderealStream" title="draco.core.containers.SiderealStream"><em>SiderealStream</em></a><em> or </em><a class="reference internal" href="draco.core.containers.html#draco.core.containers.TimeStream" title="draco.core.containers.TimeStream"><em>TimeStream</em></a>) – Data to mask. Applied in place.</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="draco.analysis.flagging.MaskBaselines.setup">
+<span class="sig-name descname"><span class="pre">setup</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">telescope</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/draco/analysis/flagging.html#MaskBaselines.setup"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#draco.analysis.flagging.MaskBaselines.setup" title="Link to this definition"></a></dt>
+<dd><p>Set the telescope model.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>telescope</strong> (<em>TransitTelescope</em>) – The telescope object to use</p>
+</dd>
+</dl>
+</dd></dl>
+
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="draco.analysis.flagging.MaskBeamformedOutliers">
+<span class="sig-prename descclassname"><span class="pre">draco.analysis.flagging.</span></span><span class="sig-name descname"><span class="pre">MaskBeamformedOutliers</span></span><a class="headerlink" href="#draco.analysis.flagging.MaskBeamformedOutliers" title="Link to this definition"></a></dt>
+<dd><p>alias of <a class="reference internal" href="#draco.analysis.flagging.ApplyGenericMask" title="draco.analysis.flagging.ApplyGenericMask"><code class="xref py py-class docutils literal notranslate"><span class="pre">ApplyGenericMask</span></code></a></p>
+</dd></dl>
+
+<dl class="py class">
+<dt class="sig sig-object py" id="draco.analysis.flagging.MaskBeamformedWeights">
+<em class="property"><span class="k"><span class="pre">class</span></span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">draco.analysis.flagging.</span></span><span class="sig-name descname"><span class="pre">MaskBeamformedWeights</span></span><a class="reference internal" href="../_modules/draco/analysis/flagging.html#MaskBeamformedWeights"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#draco.analysis.flagging.MaskBeamformedWeights" title="Link to this definition"></a></dt>
+<dd><p>Bases: <a class="reference internal" href="draco.core.task.html#draco.core.task.SingleTask" title="draco.core.task.SingleTask"><code class="xref py py-class docutils literal notranslate"><span class="pre">SingleTask</span></code></a></p>
+<p>Mask beamformed visibilities with anomalously large weights before stacking.</p>
+<dl class="py attribute">
+<dt class="sig sig-object py" id="draco.analysis.flagging.MaskBeamformedWeights.nmed">
+<span class="sig-name descname"><span class="pre">nmed</span></span><a class="headerlink" href="#draco.analysis.flagging.MaskBeamformedWeights.nmed" title="Link to this definition"></a></dt>
+<dd><p>Any weight that is more than <cite>nmed</cite> times the median weight
+over all objects and frequencies will be set to zero.
+Default is 8.0.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>float</p>
+</dd>
+</dl>
+</dd></dl>
+
+<p>Initialize pipeline task.</p>
+<p>May be overridden with no arguments.  Will be called after any
+<cite>config.Property</cite> attributes are set and after ‘input’ and ‘requires’
+keys are set up.</p>
+<dl class="py method">
+<dt class="sig sig-object py" id="draco.analysis.flagging.MaskBeamformedWeights.process">
+<span class="sig-name descname"><span class="pre">process</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">data</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/draco/analysis/flagging.html#MaskBeamformedWeights.process"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#draco.analysis.flagging.MaskBeamformedWeights.process" title="Link to this definition"></a></dt>
+<dd><p>Mask large weights.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>data</strong> (<a class="reference internal" href="draco.core.containers.html#draco.core.containers.FormedBeam" title="draco.core.containers.FormedBeam"><em>FormedBeam</em></a>) – Beamformed visibilities.</p>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p><strong>data</strong> – The input container with the weight dataset set to zero
+if the weights exceed the threshold.</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p><a class="reference internal" href="draco.core.containers.html#draco.core.containers.FormedBeam" title="draco.core.containers.FormedBeam">FormedBeam</a></p>
+</dd>
+</dl>
+</dd></dl>
+
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="draco.analysis.flagging.MaskData">
+<span class="sig-prename descclassname"><span class="pre">draco.analysis.flagging.</span></span><span class="sig-name descname"><span class="pre">MaskData</span></span><a class="headerlink" href="#draco.analysis.flagging.MaskData" title="Link to this definition"></a></dt>
+<dd><p>alias of <a class="reference internal" href="#draco.analysis.flagging.MaskMModeData" title="draco.analysis.flagging.MaskMModeData"><code class="xref py py-class docutils literal notranslate"><span class="pre">MaskMModeData</span></code></a></p>
+</dd></dl>
+
+<dl class="py class">
+<dt class="sig sig-object py" id="draco.analysis.flagging.MaskFreq">
+<em class="property"><span class="k"><span class="pre">class</span></span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">draco.analysis.flagging.</span></span><span class="sig-name descname"><span class="pre">MaskFreq</span></span><a class="reference internal" href="../_modules/draco/analysis/flagging.html#MaskFreq"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#draco.analysis.flagging.MaskFreq" title="Link to this definition"></a></dt>
+<dd><p>Bases: <a class="reference internal" href="draco.core.task.html#draco.core.task.SingleTask" title="draco.core.task.SingleTask"><code class="xref py py-class docutils literal notranslate"><span class="pre">SingleTask</span></code></a></p>
+<p>Make a mask for certain frequencies.</p>
+<dl class="py attribute">
+<dt class="sig sig-object py" id="draco.analysis.flagging.MaskFreq.bad_freq_ind">
+<span class="sig-name descname"><span class="pre">bad_freq_ind</span></span><a class="headerlink" href="#draco.analysis.flagging.MaskFreq.bad_freq_ind" title="Link to this definition"></a></dt>
+<dd><p>A list containing frequencies to flag out. Each entry can either be an
+integer giving an individual frequency index to remove, or 2-tuples giving
+start and end indices of a range to flag (as with a standard slice, the end
+is <em>not</em> included.)</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>list, optional</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="draco.analysis.flagging.MaskFreq.factorize">
+<span class="sig-name descname"><span class="pre">factorize</span></span><a class="headerlink" href="#draco.analysis.flagging.MaskFreq.factorize" title="Link to this definition"></a></dt>
+<dd><p>Find the smallest factorizable mask of the time-frequency axis that covers all
+samples already flagged in the data.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>bool, optional</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="draco.analysis.flagging.MaskFreq.all_time">
+<span class="sig-name descname"><span class="pre">all_time</span></span><a class="headerlink" href="#draco.analysis.flagging.MaskFreq.all_time" title="Link to this definition"></a></dt>
+<dd><p>Only include frequencies where all time samples are present.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>bool, optional</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="draco.analysis.flagging.MaskFreq.mask_missing_data">
+<span class="sig-name descname"><span class="pre">mask_missing_data</span></span><a class="headerlink" href="#draco.analysis.flagging.MaskFreq.mask_missing_data" title="Link to this definition"></a></dt>
+<dd><p>Mask time-freq samples where some baselines (for visibily data) or
+polarisations/elevations (for ring map data) are missing.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>bool, optional</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="draco.analysis.flagging.MaskFreq.freq_frac">
+<span class="sig-name descname"><span class="pre">freq_frac</span></span><a class="headerlink" href="#draco.analysis.flagging.MaskFreq.freq_frac" title="Link to this definition"></a></dt>
+<dd><p>Fully mask any frequency where the fraction of unflagged samples
+is less than this value. Default is None.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>float, optional</p>
+</dd>
+</dl>
+</dd></dl>
+
+<p>Initialize pipeline task.</p>
+<p>May be overridden with no arguments.  Will be called after any
+<cite>config.Property</cite> attributes are set and after ‘input’ and ‘requires’
+keys are set up.</p>
+<dl class="py method">
+<dt class="sig sig-object py" id="draco.analysis.flagging.MaskFreq.process">
+<span class="sig-name descname"><span class="pre">process</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">data</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference internal" href="draco.core.containers.html#draco.core.containers.VisContainer" title="draco.core.containers.VisContainer"><span class="pre">VisContainer</span></a><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><a class="reference internal" href="draco.core.containers.html#draco.core.containers.RingMap" title="draco.core.containers.RingMap"><span class="pre">RingMap</span></a></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><a class="reference internal" href="draco.core.containers.html#draco.core.containers.RFIMask" title="draco.core.containers.RFIMask"><span class="pre">RFIMask</span></a><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><a class="reference internal" href="draco.core.containers.html#draco.core.containers.SiderealRFIMask" title="draco.core.containers.SiderealRFIMask"><span class="pre">SiderealRFIMask</span></a></span></span><a class="reference internal" href="../_modules/draco/analysis/flagging.html#MaskFreq.process"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#draco.analysis.flagging.MaskFreq.process" title="Link to this definition"></a></dt>
+<dd><p>Make the mask.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>data</strong> – The data to mask.</p>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p>Frequency mask container</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>mask_cont</p>
+</dd>
+</dl>
+</dd></dl>
+
+</dd></dl>
+
+<dl class="py class">
+<dt class="sig sig-object py" id="draco.analysis.flagging.MaskMModeData">
+<em class="property"><span class="k"><span class="pre">class</span></span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">draco.analysis.flagging.</span></span><span class="sig-name descname"><span class="pre">MaskMModeData</span></span><a class="reference internal" href="../_modules/draco/analysis/flagging.html#MaskMModeData"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#draco.analysis.flagging.MaskMModeData" title="Link to this definition"></a></dt>
+<dd><p>Bases: <a class="reference internal" href="draco.core.task.html#draco.core.task.SingleTask" title="draco.core.task.SingleTask"><code class="xref py py-class docutils literal notranslate"><span class="pre">SingleTask</span></code></a></p>
+<p>Mask out mmode data ahead of map making.</p>
+<dl class="py attribute">
+<dt class="sig sig-object py" id="draco.analysis.flagging.MaskMModeData.auto_correlations">
+<span class="sig-name descname"><span class="pre">auto_correlations</span></span><a class="headerlink" href="#draco.analysis.flagging.MaskMModeData.auto_correlations" title="Link to this definition"></a></dt>
+<dd><p>Exclude auto correlations if set (default=False).</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>bool</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="draco.analysis.flagging.MaskMModeData.m_zero">
+<span class="sig-name descname"><span class="pre">m_zero</span></span><a class="headerlink" href="#draco.analysis.flagging.MaskMModeData.m_zero" title="Link to this definition"></a></dt>
+<dd><p>Ignore the m=0 mode (default=False).</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>bool</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="draco.analysis.flagging.MaskMModeData.positive_m">
+<span class="sig-name descname"><span class="pre">positive_m</span></span><a class="headerlink" href="#draco.analysis.flagging.MaskMModeData.positive_m" title="Link to this definition"></a></dt>
+<dd><p>Include positive m-modes (default=True).</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>bool</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="draco.analysis.flagging.MaskMModeData.negative_m">
+<span class="sig-name descname"><span class="pre">negative_m</span></span><a class="headerlink" href="#draco.analysis.flagging.MaskMModeData.negative_m" title="Link to this definition"></a></dt>
+<dd><p>Include negative m-modes (default=True).</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>bool</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="draco.analysis.flagging.MaskMModeData.mask_low_m">
+<span class="sig-name descname"><span class="pre">mask_low_m</span></span><a class="headerlink" href="#draco.analysis.flagging.MaskMModeData.mask_low_m" title="Link to this definition"></a></dt>
+<dd><p>If set, mask out m’s lower than this threshold.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>int, optional</p>
+</dd>
+</dl>
+</dd></dl>
+
+<p>Initialize pipeline task.</p>
+<p>May be overridden with no arguments.  Will be called after any
+<cite>config.Property</cite> attributes are set and after ‘input’ and ‘requires’
+keys are set up.</p>
+<dl class="py method">
+<dt class="sig sig-object py" id="draco.analysis.flagging.MaskMModeData.process">
+<span class="sig-name descname"><span class="pre">process</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">mmodes</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/draco/analysis/flagging.html#MaskMModeData.process"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#draco.analysis.flagging.MaskMModeData.process" title="Link to this definition"></a></dt>
+<dd><p>Mask out unwanted datain the m-modes.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>mmodes</strong> (<a class="reference internal" href="draco.core.containers.html#draco.core.containers.MModes" title="draco.core.containers.MModes"><em>containers.MModes</em></a>) – Mmode container to mask</p>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p><strong>mmodes</strong> – Same object as input with masking applied</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p><a class="reference internal" href="draco.core.containers.html#draco.core.containers.MModes" title="draco.core.containers.MModes">containers.MModes</a></p>
+</dd>
+</dl>
+</dd></dl>
+
+</dd></dl>
+
+<dl class="py class">
+<dt class="sig sig-object py" id="draco.analysis.flagging.RFIMask">
+<em class="property"><span class="k"><span class="pre">class</span></span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">draco.analysis.flagging.</span></span><span class="sig-name descname"><span class="pre">RFIMask</span></span><a class="reference internal" href="../_modules/draco/analysis/flagging.html#RFIMask"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#draco.analysis.flagging.RFIMask" title="Link to this definition"></a></dt>
+<dd><p>Bases: <a class="reference internal" href="draco.core.task.html#draco.core.task.SingleTask" title="draco.core.task.SingleTask"><code class="xref py py-class docutils literal notranslate"><span class="pre">SingleTask</span></code></a></p>
+<p>Crappy RFI masking.</p>
+<dl class="py attribute">
+<dt class="sig sig-object py" id="draco.analysis.flagging.RFIMask.sigma">
+<span class="sig-name descname"><span class="pre">sigma</span></span><a class="headerlink" href="#draco.analysis.flagging.RFIMask.sigma" title="Link to this definition"></a></dt>
+<dd><p>The false positive rate of the flagger given as sigma value assuming
+the non-RFI samples are Gaussian.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>float, optional</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="draco.analysis.flagging.RFIMask.tv_fraction">
+<span class="sig-name descname"><span class="pre">tv_fraction</span></span><a class="headerlink" href="#draco.analysis.flagging.RFIMask.tv_fraction" title="Link to this definition"></a></dt>
+<dd><p>Number of bad samples in a digital TV channel that cause the whole
+channel to be flagged.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>float, optional</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="draco.analysis.flagging.RFIMask.stack_ind">
+<span class="sig-name descname"><span class="pre">stack_ind</span></span><a class="headerlink" href="#draco.analysis.flagging.RFIMask.stack_ind" title="Link to this definition"></a></dt>
+<dd><p>Which stack to process to derive flags for the whole dataset.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>int</p>
+</dd>
+</dl>
+</dd></dl>
+
+<p>Initialize pipeline task.</p>
+<p>May be overridden with no arguments.  Will be called after any
+<cite>config.Property</cite> attributes are set and after ‘input’ and ‘requires’
+keys are set up.</p>
+<dl class="py method">
+<dt class="sig sig-object py" id="draco.analysis.flagging.RFIMask.process">
+<span class="sig-name descname"><span class="pre">process</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">sstream</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference internal" href="draco.core.containers.html#draco.core.containers.SiderealStream" title="draco.core.containers.SiderealStream"><span class="pre">SiderealStream</span></a></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><a class="reference internal" href="draco.core.containers.html#draco.core.containers.SiderealRFIMask" title="draco.core.containers.SiderealRFIMask"><span class="pre">SiderealRFIMask</span></a></span></span><a class="reference internal" href="../_modules/draco/analysis/flagging.html#RFIMask.process"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#draco.analysis.flagging.RFIMask.process" title="Link to this definition"></a></dt>
+<dt class="sig sig-object py">
+<span class="sig-name descname"><span class="pre">process</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">sstream</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference internal" href="draco.core.containers.html#draco.core.containers.TimeStream" title="draco.core.containers.TimeStream"><span class="pre">TimeStream</span></a></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><a class="reference internal" href="draco.core.containers.html#draco.core.containers.RFIMask" title="draco.core.containers.RFIMask"><span class="pre">RFIMask</span></a></span></span></dt>
+<dd><p>Apply a day time mask.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>sstream</strong> – Unmasked sidereal or time stream visibility data.</p>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p>The derived RFI mask.</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>mask</p>
+</dd>
+</dl>
+</dd></dl>
+
+</dd></dl>
+
+<dl class="py class">
+<dt class="sig sig-object py" id="draco.analysis.flagging.RFIMaskChisqHighDelay">
+<em class="property"><span class="k"><span class="pre">class</span></span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">draco.analysis.flagging.</span></span><span class="sig-name descname"><span class="pre">RFIMaskChisqHighDelay</span></span><a class="reference internal" href="../_modules/draco/analysis/flagging.html#RFIMaskChisqHighDelay"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#draco.analysis.flagging.RFIMaskChisqHighDelay" title="Link to this definition"></a></dt>
+<dd><p>Bases: <a class="reference internal" href="draco.core.task.html#draco.core.task.SingleTask" title="draco.core.task.SingleTask"><code class="xref py py-class docutils literal notranslate"><span class="pre">SingleTask</span></code></a></p>
+<p>Mask frequencies and times with anomalous chi-squared test statistic.</p>
+<dl class="py attribute">
+<dt class="sig sig-object py" id="draco.analysis.flagging.RFIMaskChisqHighDelay.flag_ew">
+<span class="sig-name descname"><span class="pre">flag_ew</span></span><a class="headerlink" href="#draco.analysis.flagging.RFIMaskChisqHighDelay.flag_ew" title="Link to this definition"></a></dt>
+<dd><p>If the input container has an east-west baseline axis, then this
+flag will be applied to the weights before collapsing over that axis.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>array</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="draco.analysis.flagging.RFIMaskChisqHighDelay.reg_arpls">
+<span class="sig-name descname"><span class="pre">reg_arpls</span></span><a class="headerlink" href="#draco.analysis.flagging.RFIMaskChisqHighDelay.reg_arpls" title="Link to this definition"></a></dt>
+<dd><p>Smoothness regularisation used when estimating the baseline
+for flagging bad frequencies. Default is 1e5.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>float</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="draco.analysis.flagging.RFIMaskChisqHighDelay.nsigma_1d">
+<span class="sig-name descname"><span class="pre">nsigma_1d</span></span><a class="headerlink" href="#draco.analysis.flagging.RFIMaskChisqHighDelay.nsigma_1d" title="Link to this definition"></a></dt>
+<dd><p>Mask any frequency where the median over unmasked time samples
+deviates from the baseline by more than this number of
+median absolute deviations.  Default is 5.0.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>float</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="draco.analysis.flagging.RFIMaskChisqHighDelay.win_t">
+<span class="sig-name descname"><span class="pre">win_t</span></span><a class="headerlink" href="#draco.analysis.flagging.RFIMaskChisqHighDelay.win_t" title="Link to this definition"></a></dt>
+<dd><p>Size of the window (in number of time samples)
+used to compute a median filtered version of the test statistic.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>float</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="draco.analysis.flagging.RFIMaskChisqHighDelay.win_f">
+<span class="sig-name descname"><span class="pre">win_f</span></span><a class="headerlink" href="#draco.analysis.flagging.RFIMaskChisqHighDelay.win_f" title="Link to this definition"></a></dt>
+<dd><p>Size of the window (in number of frequency channels)
+used to compute a median filtered version of the test statistic.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>float</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="draco.analysis.flagging.RFIMaskChisqHighDelay.nsigma_2d">
+<span class="sig-name descname"><span class="pre">nsigma_2d</span></span><a class="headerlink" href="#draco.analysis.flagging.RFIMaskChisqHighDelay.nsigma_2d" title="Link to this definition"></a></dt>
+<dd><p>Mask any frequency and time where the absolute deviation
+from the median filtered version is greater than this number
+of expected standard deviations given the number of degrees
+of freedom (i.e., number of baselines).</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>float</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="draco.analysis.flagging.RFIMaskChisqHighDelay.estimate_var">
+<span class="sig-name descname"><span class="pre">estimate_var</span></span><a class="headerlink" href="#draco.analysis.flagging.RFIMaskChisqHighDelay.estimate_var" title="Link to this definition"></a></dt>
+<dd><p>Estimate the variance in the test statistic using the median
+absolute deviation over a region defined by the win_t and
+win_f parameters.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>bool</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="draco.analysis.flagging.RFIMaskChisqHighDelay.only_positive">
+<span class="sig-name descname"><span class="pre">only_positive</span></span><a class="headerlink" href="#draco.analysis.flagging.RFIMaskChisqHighDelay.only_positive" title="Link to this definition"></a></dt>
+<dd><p>Only mask large postive excursions in the test statistic,
+leaving large negative excursions unmasked.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>bool</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="draco.analysis.flagging.RFIMaskChisqHighDelay.separate_pol">
+<span class="sig-name descname"><span class="pre">separate_pol</span></span><a class="headerlink" href="#draco.analysis.flagging.RFIMaskChisqHighDelay.separate_pol" title="Link to this definition"></a></dt>
+<dd><p>If true, construct a mask for each pol separately.  If false, sum the
+chi-squared values over all polarisations and construct a single mask.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>bool</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="draco.analysis.flagging.RFIMaskChisqHighDelay.mask_type">
+<span class="sig-name descname"><span class="pre">mask_type</span></span><a class="headerlink" href="#draco.analysis.flagging.RFIMaskChisqHighDelay.mask_type" title="Link to this definition"></a></dt>
+<dd><p>Algorithm to use to generate the mask.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>{“mad”|”sumthreshold”}</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="draco.analysis.flagging.RFIMaskChisqHighDelay.niter">
+<span class="sig-name descname"><span class="pre">niter</span></span><a class="headerlink" href="#draco.analysis.flagging.RFIMaskChisqHighDelay.niter" title="Link to this definition"></a></dt>
+<dd><p>Number of iterations.  At each iterations the baseline and standard
+deviation are re-estimated using the mask from the previous iteration.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>int, optional</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="draco.analysis.flagging.RFIMaskChisqHighDelay.rho">
+<span class="sig-name descname"><span class="pre">rho</span></span><a class="headerlink" href="#draco.analysis.flagging.RFIMaskChisqHighDelay.rho" title="Link to this definition"></a></dt>
+<dd><p>Reduce the threshold by this factor at each iteration.  A value of 1
+will keep the threshold constant for all iterations.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>float, optional</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="draco.analysis.flagging.RFIMaskChisqHighDelay.max_m">
+<span class="sig-name descname"><span class="pre">max_m</span></span><a class="headerlink" href="#draco.analysis.flagging.RFIMaskChisqHighDelay.max_m" title="Link to this definition"></a></dt>
+<dd><p>Maximum size of the SumThreshold window to use.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>int, optional</p>
+</dd>
+</dl>
+</dd></dl>
+
+<p>Initialize pipeline task.</p>
+<p>May be overridden with no arguments.  Will be called after any
+<cite>config.Property</cite> attributes are set and after ‘input’ and ‘requires’
+keys are set up.</p>
+<dl class="py method">
+<dt class="sig sig-object py" id="draco.analysis.flagging.RFIMaskChisqHighDelay.mask_1d">
+<span class="sig-name descname"><span class="pre">mask_1d</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">y</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">m</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/draco/analysis/flagging.html#RFIMaskChisqHighDelay.mask_1d"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#draco.analysis.flagging.RFIMaskChisqHighDelay.mask_1d" title="Link to this definition"></a></dt>
+<dd><p>Mask frequency channels where median chi-squared deviates from neighbors.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>y</strong> (<em>np.ndarray</em><em>[</em><em>nfreq</em><em>, </em><em>ntime</em><em>]</em>) – Chi-squared per degree of freedom.</p></li>
+<li><p><strong>m</strong> (<em>np.ndarray</em><em>[</em><em>nfreq</em><em>, </em><em>ntime</em><em>]</em>) – Boolean mask that indicates which samples to ignore
+when calculating the median over time.</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p><strong>mask</strong> – Boolean mask that indicates frequency channels where
+the median chi-squared over time deviates significantly
+from that of the neighboring channels.</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>np.ndarray[nfreq]</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="draco.analysis.flagging.RFIMaskChisqHighDelay.mask_2d">
+<span class="sig-name descname"><span class="pre">mask_2d</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">y</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">w</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/draco/analysis/flagging.html#RFIMaskChisqHighDelay.mask_2d"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#draco.analysis.flagging.RFIMaskChisqHighDelay.mask_2d" title="Link to this definition"></a></dt>
+<dd><p>Mask frequencies and times where the chi-squared deviates from local median.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>y</strong> (<em>np.ndarray</em><em>[</em><em>nfreq</em><em>, </em><em>ntime</em><em>]</em>) – Chi-squared per degree of freedom.</p></li>
+<li><p><strong>w</strong> (<em>np.ndarray</em><em>[</em><em>nfreq</em><em>, </em><em>ntime</em><em>]</em>) – Inverse variance of the chi-squared per degree of freedom,
+with zero indicating previously masked samples.</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p><strong>mask</strong> – Boolean mask that indicates frequencies and times where
+chi-squared deviates significantly from the local median.</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>np.ndarray[nfreq]</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="draco.analysis.flagging.RFIMaskChisqHighDelay.mask_2d_sumthreshold">
+<span class="sig-name descname"><span class="pre">mask_2d_sumthreshold</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">y</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">w</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/draco/analysis/flagging.html#RFIMaskChisqHighDelay.mask_2d_sumthreshold"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#draco.analysis.flagging.RFIMaskChisqHighDelay.mask_2d_sumthreshold" title="Link to this definition"></a></dt>
+<dd><p>Iterative application of sumthreshold algorithm to mask large chi-squared.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>y</strong> (<em>np.ndarray</em><em>[</em><em>nfreq</em><em>, </em><em>ntime</em><em>]</em>) – Chi-squared per degree of freedom.</p></li>
+<li><p><strong>w</strong> (<em>np.ndarray</em><em>[</em><em>nfreq</em><em>, </em><em>ntime</em><em>]</em>) – Inverse variance of the chi-squared per degree of freedom,
+with zero indicating previously masked samples.</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p><strong>mask</strong> – Boolean mask that indicates frequencies and times where
+chi-squared deviates significantly from the local median.</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>np.ndarray[nfreq]</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="draco.analysis.flagging.RFIMaskChisqHighDelay.process">
+<span class="sig-name descname"><span class="pre">process</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">stream</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/draco/analysis/flagging.html#RFIMaskChisqHighDelay.process"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#draco.analysis.flagging.RFIMaskChisqHighDelay.process" title="Link to this definition"></a></dt>
+<dd><p>Generate a mask from the data.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>stream</strong> (<em>dcontainers.TimeStream</em><em> | </em><em>dcontainers.SiderealStream</em><em> |</em>) – dcontainers.HybridVisStream | dcontainers.RingMap
+Container holding a chi-squared test statistic in the visibility dataset.
+A weighted average will be taken over any axis that is not time/ra or frequency.</p>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p><strong>mask</strong> –    dcontainers.RFIMaskByPol | dcontainers.SiderealRFIMaskByPol
+Time-frequency mask, where values marked <cite>True</cite> are flagged.</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>dcontainers.RFIMask | dcontainers.SiderealRFIMask |</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="draco.analysis.flagging.RFIMaskChisqHighDelay.setup">
+<span class="sig-name descname"><span class="pre">setup</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">telescope</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/draco/analysis/flagging.html#RFIMaskChisqHighDelay.setup"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#draco.analysis.flagging.RFIMaskChisqHighDelay.setup" title="Link to this definition"></a></dt>
+<dd><p>Save telescope object for time calculations.</p>
+<p>Only used to convert (LSD, RA) to unix time when masking
+sidereal streams.  Not required when masking time streams.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>telescope</strong> (<em>TransitTelescope</em>) – Telescope object used for time calculations.</p>
+</dd>
+</dl>
+</dd></dl>
+
+</dd></dl>
+
+<dl class="py class">
+<dt class="sig sig-object py" id="draco.analysis.flagging.RFISensitivityMask">
+<em class="property"><span class="k"><span class="pre">class</span></span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">draco.analysis.flagging.</span></span><span class="sig-name descname"><span class="pre">RFISensitivityMask</span></span><a class="reference internal" href="../_modules/draco/analysis/flagging.html#RFISensitivityMask"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#draco.analysis.flagging.RFISensitivityMask" title="Link to this definition"></a></dt>
+<dd><p>Bases: <a class="reference internal" href="draco.core.task.html#draco.core.task.SingleTask" title="draco.core.task.SingleTask"><code class="xref py py-class docutils literal notranslate"><span class="pre">SingleTask</span></code></a></p>
+<p>Identify RFI as deviations in system sensitivity from expected radiometer noise.</p>
+<dl class="py attribute">
+<dt class="sig sig-object py" id="draco.analysis.flagging.RFISensitivityMask.mask_type">
+<span class="sig-name descname"><span class="pre">mask_type</span></span><a class="headerlink" href="#draco.analysis.flagging.RFISensitivityMask.mask_type" title="Link to this definition"></a></dt>
+<dd><p>One of ‘mad’, ‘sumthreshold’ or ‘combine’.
+Default is combine, which uses the sumthreshold everywhere
+except around the transits of the sun and bright point sources,
+where it applies the MAD mask to avoid masking out the transits.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>string, optional</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="draco.analysis.flagging.RFISensitivityMask.include_pol">
+<span class="sig-name descname"><span class="pre">include_pol</span></span><a class="headerlink" href="#draco.analysis.flagging.RFISensitivityMask.include_pol" title="Link to this definition"></a></dt>
+<dd><p>The list of polarisations to include. Default is to use all
+polarisations.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>list of strings, optional</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="draco.analysis.flagging.RFISensitivityMask.nsigma_1d">
+<span class="sig-name descname"><span class="pre">nsigma_1d</span></span><a class="headerlink" href="#draco.analysis.flagging.RFISensitivityMask.nsigma_1d" title="Link to this definition"></a></dt>
+<dd><p>Construct a static mask by identifying any frequency channel
+whose quantile over time deviates from the median over frequency
+by more than this number of median absolute deviations.
+Default: 5.0</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>float, optional</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="draco.analysis.flagging.RFISensitivityMask.quantile_1d">
+<span class="sig-name descname"><span class="pre">quantile_1d</span></span><a class="headerlink" href="#draco.analysis.flagging.RFISensitivityMask.quantile_1d" title="Link to this definition"></a></dt>
+<dd><p>The quantile to use along time to construct the static mask.
+Default: 0.15</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>float, optional</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="draco.analysis.flagging.RFISensitivityMask.win_f_1d">
+<span class="sig-name descname"><span class="pre">win_f_1d</span></span><a class="headerlink" href="#draco.analysis.flagging.RFISensitivityMask.win_f_1d" title="Link to this definition"></a></dt>
+<dd><p>Number of frequency channels used to calculate a rolling median
+and median absolute deviation for the staic mask.  Default: 191</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>int, optional</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="draco.analysis.flagging.RFISensitivityMask.nsigma">
+<span class="sig-name descname"><span class="pre">nsigma</span></span><a class="headerlink" href="#draco.analysis.flagging.RFISensitivityMask.nsigma" title="Link to this definition"></a></dt>
+<dd><p>The final threshold for the MAD, TV, and SumThreshold algorithms
+given as number of standard deviations.  Default: 5.0</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>float, optional</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="draco.analysis.flagging.RFISensitivityMask.niter">
+<span class="sig-name descname"><span class="pre">niter</span></span><a class="headerlink" href="#draco.analysis.flagging.RFISensitivityMask.niter" title="Link to this definition"></a></dt>
+<dd><p>Number of iterations.  At each iterations the baseline and standard
+deviation are re-estimated using the mask from the previous iteration.
+Default: 5</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>int, optional</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="draco.analysis.flagging.RFISensitivityMask.rho">
+<span class="sig-name descname"><span class="pre">rho</span></span><a class="headerlink" href="#draco.analysis.flagging.RFISensitivityMask.rho" title="Link to this definition"></a></dt>
+<dd><p>Reduce the threshold by this factor at each iteration.  A value of 1
+will keep the threshold constant for all iterations.  Default: 1.5</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>float, optional</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="draco.analysis.flagging.RFISensitivityMask.base_size">
+<span class="sig-name descname"><span class="pre">base_size</span></span><a class="headerlink" href="#draco.analysis.flagging.RFISensitivityMask.base_size" title="Link to this definition"></a></dt>
+<dd><p>The size of the region used to estimate the baseline, provided as
+(number of frequency channels, number of time samples).  Default: (37, 181)</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>[int, int]</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="draco.analysis.flagging.RFISensitivityMask.mad_size">
+<span class="sig-name descname"><span class="pre">mad_size</span></span><a class="headerlink" href="#draco.analysis.flagging.RFISensitivityMask.mad_size" title="Link to this definition"></a></dt>
+<dd><p>The size of the region used to estimate the standard deviation, provided
+(number of frequency channels, number of time samples).  Default: (101, 31)</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>[int, int]</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="draco.analysis.flagging.RFISensitivityMask.tv_fraction">
+<span class="sig-name descname"><span class="pre">tv_fraction</span></span><a class="headerlink" href="#draco.analysis.flagging.RFISensitivityMask.tv_fraction" title="Link to this definition"></a></dt>
+<dd><p>Fraction of bad samples in a digital TV channel that cause the whole
+channel to be flagged.  Default: 0.5</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>float, optional</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="draco.analysis.flagging.RFISensitivityMask.max_m">
+<span class="sig-name descname"><span class="pre">max_m</span></span><a class="headerlink" href="#draco.analysis.flagging.RFISensitivityMask.max_m" title="Link to this definition"></a></dt>
+<dd><p>Maximum size of the SumThreshold window to use.  Default: 64</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>int, optional</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="draco.analysis.flagging.RFISensitivityMask.sir">
+<span class="sig-name descname"><span class="pre">sir</span></span><a class="headerlink" href="#draco.analysis.flagging.RFISensitivityMask.sir" title="Link to this definition"></a></dt>
+<dd><p>Apply scale invariant rank (SIR) operator on top of final mask.
+Default: False</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>bool, optional</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="draco.analysis.flagging.RFISensitivityMask.eta">
+<span class="sig-name descname"><span class="pre">eta</span></span><a class="headerlink" href="#draco.analysis.flagging.RFISensitivityMask.eta" title="Link to this definition"></a></dt>
+<dd><p>Aggressiveness of the SIR operator.  With eta=0, no additional samples
+are flagged and with eta=1, all samples will be flagged.  Default: 0.2</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>float optional</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="draco.analysis.flagging.RFISensitivityMask.only_time">
+<span class="sig-name descname"><span class="pre">only_time</span></span><a class="headerlink" href="#draco.analysis.flagging.RFISensitivityMask.only_time" title="Link to this definition"></a></dt>
+<dd><p>Only apply the SIR operator along the time axis.  Default: False</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>bool, optinal</p>
+</dd>
+</dl>
+</dd></dl>
+
+<p>Initialize pipeline task.</p>
+<p>May be overridden with no arguments.  Will be called after any
+<cite>config.Property</cite> attributes are set and after ‘input’ and ‘requires’
+keys are set up.</p>
+<dl class="py method">
+<dt class="sig sig-object py" id="draco.analysis.flagging.RFISensitivityMask.process">
+<span class="sig-name descname"><span class="pre">process</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">sensitivity</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/draco/analysis/flagging.html#RFISensitivityMask.process"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#draco.analysis.flagging.RFISensitivityMask.process" title="Link to this definition"></a></dt>
+<dd><p>Derive an RFI mask from sensitivity data.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>sensitivity</strong> (<a class="reference internal" href="draco.core.containers.html#draco.core.containers.SystemSensitivity" title="draco.core.containers.SystemSensitivity"><em>containers.SystemSensitivity</em></a>) – Sensitivity data.</p>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p><strong>rfimask</strong> – RFI mask derived from sensitivity.</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p><a class="reference internal" href="draco.core.containers.html#draco.core.containers.RFIMask" title="draco.core.containers.RFIMask">containers.RFIMask</a></p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="draco.analysis.flagging.RFISensitivityMask.setup">
+<span class="sig-name descname"><span class="pre">setup</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="../_modules/draco/analysis/flagging.html#RFISensitivityMask.setup"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#draco.analysis.flagging.RFISensitivityMask.setup" title="Link to this definition"></a></dt>
+<dd><p>Define the threshold as a function of iteration.</p>
+</dd></dl>
+
+</dd></dl>
+
+<dl class="py class">
+<dt class="sig sig-object py" id="draco.analysis.flagging.RFIStokesIMask">
+<em class="property"><span class="k"><span class="pre">class</span></span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">draco.analysis.flagging.</span></span><span class="sig-name descname"><span class="pre">RFIStokesIMask</span></span><a class="reference internal" href="../_modules/draco/analysis/flagging.html#RFIStokesIMask"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#draco.analysis.flagging.RFIStokesIMask" title="Link to this definition"></a></dt>
+<dd><p>Bases: <a class="reference internal" href="draco.analysis.transform.html#draco.analysis.transform.ReduceVar" title="draco.analysis.transform.ReduceVar"><code class="xref py py-class docutils literal notranslate"><span class="pre">ReduceVar</span></code></a></p>
+<p>Two-stage RFI filter based on Stokes I visibilities.</p>
+<p>Tries to independently target transient and persistant RFI.</p>
+<p>Stage 1 is applied to each frequency independently. A high-pass
+filter is applied in RA to isolate transient RFI. The high-pass
+filtered visibilities are beamformed, and a MAD filter is applied
+to the resulting map. A time/RA sample is then flagged if some
+fraction of beams exceed the MAD threshold for that sample.</p>
+<p>Stage 2 is applied across frequencies. A low-pass filter is applied
+in RA to reduce transient sky sources. The average visibility power
+is taken over 2+ cylinder separation baselines to obtain a single
+1D array per frequency. These powers are gathered across all
+frequencies and a basic background subtraction is applied. Sumthreshold
+algorithm is then used for flagging, with a variance estimate used to
+boost the expected noise during the daytime and bright point source
+transits.</p>
+<dl class="py attribute">
+<dt class="sig sig-object py" id="draco.analysis.flagging.RFIStokesIMask.mad_base_size">
+<span class="sig-name descname"><span class="pre">mad_base_size</span></span><a class="headerlink" href="#draco.analysis.flagging.RFIStokesIMask.mad_base_size" title="Link to this definition"></a></dt>
+<dd><p>Median absolute deviations base window. Default is [1, 101].</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>list of int, optional</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="draco.analysis.flagging.RFIStokesIMask.mad_dev_size">
+<span class="sig-name descname"><span class="pre">mad_dev_size</span></span><a class="headerlink" href="#draco.analysis.flagging.RFIStokesIMask.mad_dev_size" title="Link to this definition"></a></dt>
+<dd><p>Median absolute deviation median deviation window.
+Default is [1, 51].</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>list of int, optional</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="draco.analysis.flagging.RFIStokesIMask.sigma_high">
+<span class="sig-name descname"><span class="pre">sigma_high</span></span><a class="headerlink" href="#draco.analysis.flagging.RFIStokesIMask.sigma_high" title="Link to this definition"></a></dt>
+<dd><p>Median absolute deviations sigma threshold. Default is 8.0.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>float, optional</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="draco.analysis.flagging.RFIStokesIMask.sigma_low">
+<span class="sig-name descname"><span class="pre">sigma_low</span></span><a class="headerlink" href="#draco.analysis.flagging.RFIStokesIMask.sigma_low" title="Link to this definition"></a></dt>
+<dd><p>Median absolute deviations low sigma threshold. A value above
+this threshold is masked only if it is either larger than <cite>sigma_high</cite>
+or it is larger than <cite>sigma_low</cite> AND connected to a region larger
+than <cite>sigma_high</cite>. Default is 2.0.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>float, optional</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="draco.analysis.flagging.RFIStokesIMask.frac_samples">
+<span class="sig-name descname"><span class="pre">frac_samples</span></span><a class="headerlink" href="#draco.analysis.flagging.RFIStokesIMask.frac_samples" title="Link to this definition"></a></dt>
+<dd><p>Fraction of flagged samples in map space above which the entire
+time sample will be flagged. Default is 0.01.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>float, optional</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="draco.analysis.flagging.RFIStokesIMask.max_m">
+<span class="sig-name descname"><span class="pre">max_m</span></span><a class="headerlink" href="#draco.analysis.flagging.RFIStokesIMask.max_m" title="Link to this definition"></a></dt>
+<dd><p>Maximum size of the SumThreshold window. Default is 64.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>int, optional</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="draco.analysis.flagging.RFIStokesIMask.nsigma">
+<span class="sig-name descname"><span class="pre">nsigma</span></span><a class="headerlink" href="#draco.analysis.flagging.RFIStokesIMask.nsigma" title="Link to this definition"></a></dt>
+<dd><p>Initial threshold for SumThreshold. Default is 5.0.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>float, optional</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="draco.analysis.flagging.RFIStokesIMask.solar_var_boost">
+<span class="sig-name descname"><span class="pre">solar_var_boost</span></span><a class="headerlink" href="#draco.analysis.flagging.RFIStokesIMask.solar_var_boost" title="Link to this definition"></a></dt>
+<dd><p>Variance boost during solar transit. Default is 1e4.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>float, optional</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="draco.analysis.flagging.RFIStokesIMask.bg_win_size">
+<span class="sig-name descname"><span class="pre">bg_win_size</span></span><a class="headerlink" href="#draco.analysis.flagging.RFIStokesIMask.bg_win_size" title="Link to this definition"></a></dt>
+<dd><p>The size of the window used to estimate the background sky, provided
+as (number of frequency channels, number of time samples).
+Default is [11, 3].</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>list, optional</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="draco.analysis.flagging.RFIStokesIMask.var_win_size">
+<span class="sig-name descname"><span class="pre">var_win_size</span></span><a class="headerlink" href="#draco.analysis.flagging.RFIStokesIMask.var_win_size" title="Link to this definition"></a></dt>
+<dd><p>The size of the window used when estimating the variance, provided
+as (number of frequency channels, number of time samples).
+Default is [3, 31].</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>list, optional</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="draco.analysis.flagging.RFIStokesIMask.lowpass_cutoff">
+<span class="sig-name descname"><span class="pre">lowpass_cutoff</span></span><a class="headerlink" href="#draco.analysis.flagging.RFIStokesIMask.lowpass_cutoff" title="Link to this definition"></a></dt>
+<dd><p>Angular cutoff of the ra lowpass filter. Default is 7.5, which
+corresponds to about 30 minutes of observation time.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>float, optional</p>
+</dd>
+</dl>
+</dd></dl>
+
+<p>Initialize pipeline task.</p>
+<p>May be overridden with no arguments.  Will be called after any
+<cite>config.Property</cite> attributes are set and after ‘input’ and ‘requires’
+keys are set up.</p>
+<dl class="py method">
+<dt class="sig sig-object py" id="draco.analysis.flagging.RFIStokesIMask.apply_filter">
+<em class="property"><span class="k"><span class="pre">static</span></span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">apply_filter</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">vis</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">weight</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">samples</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">fcut</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">type_</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'high'</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/draco/analysis/flagging.html#RFIStokesIMask.apply_filter"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#draco.analysis.flagging.RFIStokesIMask.apply_filter" title="Link to this definition"></a></dt>
+<dd><p>Apply a high-pass or low-pass mmode filter.</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="draco.analysis.flagging.RFIStokesIMask.mask_multi_channel">
+<span class="sig-name descname"><span class="pre">mask_multi_channel</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">power</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">mask</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">times</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/draco/analysis/flagging.html#RFIStokesIMask.mask_multi_channel"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#draco.analysis.flagging.RFIStokesIMask.mask_multi_channel" title="Link to this definition"></a></dt>
+<dd><p>Mask slow-moving narrow-band RFI.</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="draco.analysis.flagging.RFIStokesIMask.mask_single_channel">
+<span class="sig-name descname"><span class="pre">mask_single_channel</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">vis</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">weight</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">mask</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">freq</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">baselines</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">ra</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/draco/analysis/flagging.html#RFIStokesIMask.mask_single_channel"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#draco.analysis.flagging.RFIStokesIMask.mask_single_channel" title="Link to this definition"></a></dt>
+<dd><p>Mask scattered rfi.</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="draco.analysis.flagging.RFIStokesIMask.process">
+<span class="sig-name descname"><span class="pre">process</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">stream</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/draco/analysis/flagging.html#RFIStokesIMask.process"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#draco.analysis.flagging.RFIStokesIMask.process" title="Link to this definition"></a></dt>
+<dd><p>Make a mask from the data.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>stream</strong> (<em>dcontainers.TimeStream</em><em> | </em><em>dcontainers.SiderealStream</em>) – Data to use when masking. Axes should be frequency, stack,
+and time-like.</p>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p><ul class="simple">
+<li><p><strong>mask</strong> (<em>dcontainers.RFIMask | dcontainers.SiderealRFIMask</em>) – Time-frequency mask, where values marked <cite>True</cite> are flagged.</p></li>
+<li><p><strong>power</strong> (<em>dcontainers.TimeStream | dcontainers.SiderealStream</em>) – Time-frequency power metric used in second-stage flagging.</p></li>
+</ul>
+</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="draco.analysis.flagging.RFIStokesIMask.setup">
+<span class="sig-name descname"><span class="pre">setup</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">telescope</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/draco/analysis/flagging.html#RFIStokesIMask.setup"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#draco.analysis.flagging.RFIStokesIMask.setup" title="Link to this definition"></a></dt>
+<dd><p>Set up the baseline selections and ordering.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>telescope</strong> (<em>TransitTelescope</em>) – The telescope object to use</p>
+</dd>
+</dl>
+</dd></dl>
+
+</dd></dl>
+
+<dl class="py class">
+<dt class="sig sig-object py" id="draco.analysis.flagging.RadiometerWeight">
+<em class="property"><span class="k"><span class="pre">class</span></span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">draco.analysis.flagging.</span></span><span class="sig-name descname"><span class="pre">RadiometerWeight</span></span><a class="reference internal" href="../_modules/draco/analysis/flagging.html#RadiometerWeight"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#draco.analysis.flagging.RadiometerWeight" title="Link to this definition"></a></dt>
+<dd><p>Bases: <a class="reference internal" href="draco.core.task.html#draco.core.task.SingleTask" title="draco.core.task.SingleTask"><code class="xref py py-class docutils literal notranslate"><span class="pre">SingleTask</span></code></a></p>
+<p>Update vis_weight according to the radiometer equation.</p>
+<div class="math notranslate nohighlight">
+\[\text{weight}_{ij} = N_\text{samp} / V_{ii} V_{jj}\]</div>
+<dl class="py attribute">
+<dt class="sig sig-object py" id="draco.analysis.flagging.RadiometerWeight.replace">
+<span class="sig-name descname"><span class="pre">replace</span></span><a class="headerlink" href="#draco.analysis.flagging.RadiometerWeight.replace" title="Link to this definition"></a></dt>
+<dd><p>Replace any existing weights (default). If <cite>False</cite> then we multiply the
+existing weights by the radiometer values.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>bool, optional</p>
+</dd>
+</dl>
+</dd></dl>
+
+<p>Initialize pipeline task.</p>
+<p>May be overridden with no arguments.  Will be called after any
+<cite>config.Property</cite> attributes are set and after ‘input’ and ‘requires’
+keys are set up.</p>
+<dl class="py method">
+<dt class="sig sig-object py" id="draco.analysis.flagging.RadiometerWeight.process">
+<span class="sig-name descname"><span class="pre">process</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">stream</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/draco/analysis/flagging.html#RadiometerWeight.process"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#draco.analysis.flagging.RadiometerWeight.process" title="Link to this definition"></a></dt>
+<dd><p>Change the vis weight.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>stream</strong> (<a class="reference internal" href="draco.core.containers.html#draco.core.containers.SiderealStream" title="draco.core.containers.SiderealStream"><em>SiderealStream</em></a><em> or </em><a class="reference internal" href="draco.core.containers.html#draco.core.containers.TimeStream" title="draco.core.containers.TimeStream"><em>TimeStream</em></a>) – Data to be weighted. This is done in place.</p>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p><strong>stream</strong></p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p><a class="reference internal" href="draco.core.containers.html#draco.core.containers.SiderealStream" title="draco.core.containers.SiderealStream">SiderealStream</a> or <a class="reference internal" href="draco.core.containers.html#draco.core.containers.TimeStream" title="draco.core.containers.TimeStream">TimeStream</a></p>
+</dd>
+</dl>
+</dd></dl>
+
+</dd></dl>
+
+<dl class="py class">
+<dt class="sig sig-object py" id="draco.analysis.flagging.ReduceMaskEl">
+<em class="property"><span class="k"><span class="pre">class</span></span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">draco.analysis.flagging.</span></span><span class="sig-name descname"><span class="pre">ReduceMaskEl</span></span><a class="reference internal" href="../_modules/draco/analysis/flagging.html#ReduceMaskEl"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#draco.analysis.flagging.ReduceMaskEl" title="Link to this definition"></a></dt>
+<dd><p>Bases: <a class="reference internal" href="draco.core.task.html#draco.core.task.SingleTask" title="draco.core.task.SingleTask"><code class="xref py py-class docutils literal notranslate"><span class="pre">SingleTask</span></code></a></p>
+<p>Reduce the ‘el’ axis from input classes and produce corresponding reduced output classes.</p>
+<p>Reduction algorithm: If the number of True values in the mask along the el axis
+is higher than a given threshold, set the mask to True.</p>
+<dl class="py attribute">
+<dt class="sig sig-object py" id="draco.analysis.flagging.ReduceMaskEl.threshold">
+<span class="sig-name descname"><span class="pre">threshold</span></span><a class="headerlink" href="#draco.analysis.flagging.ReduceMaskEl.threshold" title="Link to this definition"></a></dt>
+<dd><dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>int</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py">
+<span class="sig-name descname"><span class="pre">This</span> <span class="pre">number</span> <span class="pre">determines</span> <span class="pre">the</span> <span class="pre">minimum</span> <span class="pre">number</span> <span class="pre">of</span> <span class="pre">detected</span> <span class="pre">RFI</span> <span class="pre">events</span> <span class="pre">along</span> <span class="pre">the</span> <span class="pre">el</span> <span class="pre">axis</span> <span class="pre">required</span> <span class="pre">for</span> <span class="pre">a</span> <span class="pre">data</span> <span class="pre">point</span></span></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py">
+<span class="sig-name descname"><span class="pre">to</span> <span class="pre">be</span> <span class="pre">included</span> <span class="pre">in</span> <span class="pre">the</span> <span class="pre">reduced</span> <span class="pre">mask.</span> <span class="pre">Default</span> <span class="pre">is</span> <span class="pre">1.</span></span></dt>
+<dd></dd></dl>
+
+<p>Initialize pipeline task.</p>
+<p>May be overridden with no arguments.  Will be called after any
+<cite>config.Property</cite> attributes are set and after ‘input’ and ‘requires’
+keys are set up.</p>
+<dl class="py method">
+<dt class="sig sig-object py" id="draco.analysis.flagging.ReduceMaskEl.process">
+<span class="sig-name descname"><span class="pre">process</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">rfimask</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/draco/analysis/flagging.html#ReduceMaskEl.process"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#draco.analysis.flagging.ReduceMaskEl.process" title="Link to this definition"></a></dt>
+<dd><p>Produce a RFI mask.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>rfimask</strong> (<a class="reference internal" href="draco.core.containers.html#draco.core.containers.LocalizedRFIMask" title="draco.core.containers.LocalizedRFIMask"><em>containers.LocalizedRFIMask</em></a><em>(</em><em>freq</em><em>, </em><em>el</em><em>, </em><em>time</em><em>) or </em><em>containers.SiderealLocalizedRFIMask</em><em>(</em><em>freq</em><em>, </em><em>ra</em><em>, </em><em>el</em><em>)</em>) – El-specific RFI mask indicating channels that are free from RFI events.</p>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p><strong>out</strong> – Non el-specific RFI mask indicating channels that are free from RFI events.</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p><a class="reference internal" href="draco.core.containers.html#draco.core.containers.RFIMask" title="draco.core.containers.RFIMask">containers.RFIMask</a>(freq, time) or <a class="reference internal" href="draco.core.containers.html#draco.core.containers.SiderealRFIMask" title="draco.core.containers.SiderealRFIMask">containers.SiderealRFIMask</a>(freq, ra)</p>
+</dd>
+</dl>
+</dd></dl>
+
+</dd></dl>
+
+<dl class="py class">
+<dt class="sig sig-object py" id="draco.analysis.flagging.SanitizeWeights">
+<em class="property"><span class="k"><span class="pre">class</span></span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">draco.analysis.flagging.</span></span><span class="sig-name descname"><span class="pre">SanitizeWeights</span></span><a class="reference internal" href="../_modules/draco/analysis/flagging.html#SanitizeWeights"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#draco.analysis.flagging.SanitizeWeights" title="Link to this definition"></a></dt>
+<dd><p>Bases: <a class="reference internal" href="draco.core.task.html#draco.core.task.SingleTask" title="draco.core.task.SingleTask"><code class="xref py py-class docutils literal notranslate"><span class="pre">SingleTask</span></code></a></p>
+<p>Flags weights outside of a valid range.</p>
+<p>Flags any weights above a max threshold and below a minimum threshold.
+Baseline dependent, so only some baselines may be flagged.</p>
+<dl class="py attribute">
+<dt class="sig sig-object py" id="draco.analysis.flagging.SanitizeWeights.max_thresh">
+<span class="sig-name descname"><span class="pre">max_thresh</span></span><a class="headerlink" href="#draco.analysis.flagging.SanitizeWeights.max_thresh" title="Link to this definition"></a></dt>
+<dd><p>largest value to keep</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>float</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="draco.analysis.flagging.SanitizeWeights.min_thresh">
+<span class="sig-name descname"><span class="pre">min_thresh</span></span><a class="headerlink" href="#draco.analysis.flagging.SanitizeWeights.min_thresh" title="Link to this definition"></a></dt>
+<dd><p>smallest value to keep</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>float</p>
+</dd>
+</dl>
+</dd></dl>
+
+<p>Initialize pipeline task.</p>
+<p>May be overridden with no arguments.  Will be called after any
+<cite>config.Property</cite> attributes are set and after ‘input’ and ‘requires’
+keys are set up.</p>
+<dl class="py method">
+<dt class="sig sig-object py" id="draco.analysis.flagging.SanitizeWeights.process">
+<span class="sig-name descname"><span class="pre">process</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">data</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/draco/analysis/flagging.html#SanitizeWeights.process"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#draco.analysis.flagging.SanitizeWeights.process" title="Link to this definition"></a></dt>
+<dd><p>Mask any weights outside of the threshold range.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>data</strong> (<code class="xref py py-class docutils literal notranslate"><span class="pre">andata.CorrData</span></code> or <code class="xref py py-class docutils literal notranslate"><span class="pre">containers.VisContainer</span></code> object) – Data containing the weights to be flagged</p>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p><strong>data</strong> – Data object with high/low weights masked in-place</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>same object as data</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="draco.analysis.flagging.SanitizeWeights.setup">
+<span class="sig-name descname"><span class="pre">setup</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="../_modules/draco/analysis/flagging.html#SanitizeWeights.setup"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#draco.analysis.flagging.SanitizeWeights.setup" title="Link to this definition"></a></dt>
+<dd><p>Validate the max and min values.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Raises<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>ValueError</strong> – if min_thresh is larger than max_thresh</p>
+</dd>
+</dl>
+</dd></dl>
+
+</dd></dl>
+
+<dl class="py class">
+<dt class="sig sig-object py" id="draco.analysis.flagging.SiderealMaskConversion">
+<em class="property"><span class="k"><span class="pre">class</span></span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">draco.analysis.flagging.</span></span><span class="sig-name descname"><span class="pre">SiderealMaskConversion</span></span><a class="reference internal" href="../_modules/draco/analysis/flagging.html#SiderealMaskConversion"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#draco.analysis.flagging.SiderealMaskConversion" title="Link to this definition"></a></dt>
+<dd><p>Bases: <a class="reference internal" href="draco.core.task.html#draco.core.task.SingleTask" title="draco.core.task.SingleTask"><code class="xref py py-class docutils literal notranslate"><span class="pre">SingleTask</span></code></a></p>
+<p>Convert the axis of an RFI mask from time to ra.</p>
+<p>The conversion is performed by mapping values between Unix time and LSA
+using the geographic location of the telescope, as provided by the Observer object.</p>
+<dl class="py attribute">
+<dt class="sig sig-object py" id="draco.analysis.flagging.SiderealMaskConversion.spread_size">
+<span class="sig-name descname"><span class="pre">spread_size</span></span><a class="headerlink" href="#draco.analysis.flagging.SiderealMaskConversion.spread_size" title="Link to this definition"></a></dt>
+<dd><p>The number of cells to flag before and after a detected true value. This ensures
+conservative flagging, preventing missed detections due to axis alignment issues.
+Default is 1.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>int</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="draco.analysis.flagging.SiderealMaskConversion.npix">
+<span class="sig-name descname"><span class="pre">npix</span></span><a class="headerlink" href="#draco.analysis.flagging.SiderealMaskConversion.npix" title="Link to this definition"></a></dt>
+<dd><dl class="simple">
+<dt>The number of pixels used to cover the full RA range from 0 to 360.</dt><dd><p>Defualt is 4096.</p>
+</dd>
+</dl>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>int</p>
+</dd>
+</dl>
+</dd></dl>
+
+<p>Initialize pipeline task.</p>
+<p>May be overridden with no arguments.  Will be called after any
+<cite>config.Property</cite> attributes are set and after ‘input’ and ‘requires’
+keys are set up.</p>
+<dl class="py method">
+<dt class="sig sig-object py" id="draco.analysis.flagging.SiderealMaskConversion.process">
+<span class="sig-name descname"><span class="pre">process</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">rfimask</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/draco/analysis/flagging.html#SiderealMaskConversion.process"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#draco.analysis.flagging.SiderealMaskConversion.process" title="Link to this definition"></a></dt>
+<dd><p>Produce a RFI mask.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>rfimask</strong> (<a class="reference internal" href="draco.core.containers.html#draco.core.containers.LocalizedRFIMask" title="draco.core.containers.LocalizedRFIMask"><em>containers.LocalizedRFIMask</em></a>) – Container for holding a mask indicating channels that are free from RFI events.
+Its axes are freq, el, and time.</p>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p><strong>out</strong> – Boolean mask that can be applied to a ringmap
+with the task <cite>ApplyLocalizedRFIMask</cite> to mask contaminated samples.
+Its axes are freq, ra, and el.</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p><a class="reference internal" href="draco.core.containers.html#draco.core.containers.LocalizedSiderealRFIMask" title="draco.core.containers.LocalizedSiderealRFIMask">containers.LocalizedSiderealRFIMask</a></p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="draco.analysis.flagging.SiderealMaskConversion.setup">
+<span class="sig-name descname"><span class="pre">setup</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">manager</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/draco/analysis/flagging.html#SiderealMaskConversion.setup"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#draco.analysis.flagging.SiderealMaskConversion.setup" title="Link to this definition"></a></dt>
+<dd><p>Set the local observers position.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>manager</strong> (<code class="xref py py-class docutils literal notranslate"><span class="pre">Observer</span></code>) – An Observer object holding the geographic location of the telescope.
+Note that <code class="xref py py-class docutils literal notranslate"><span class="pre">TransitTelescope</span></code> instances are also
+Observers.</p>
+</dd>
+</dl>
+</dd></dl>
+
+</dd></dl>
+
+<dl class="py class">
+<dt class="sig sig-object py" id="draco.analysis.flagging.SmoothVisWeight">
+<em class="property"><span class="k"><span class="pre">class</span></span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">draco.analysis.flagging.</span></span><span class="sig-name descname"><span class="pre">SmoothVisWeight</span></span><a class="reference internal" href="../_modules/draco/analysis/flagging.html#SmoothVisWeight"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#draco.analysis.flagging.SmoothVisWeight" title="Link to this definition"></a></dt>
+<dd><p>Bases: <a class="reference internal" href="draco.core.task.html#draco.core.task.SingleTask" title="draco.core.task.SingleTask"><code class="xref py py-class docutils literal notranslate"><span class="pre">SingleTask</span></code></a></p>
+<p>Smooth the visibility weights with a median filter.</p>
+<p>This is done in-place.</p>
+<dl class="py attribute">
+<dt class="sig sig-object py" id="draco.analysis.flagging.SmoothVisWeight.kernel_size">
+<span class="sig-name descname"><span class="pre">kernel_size</span></span><a class="headerlink" href="#draco.analysis.flagging.SmoothVisWeight.kernel_size" title="Link to this definition"></a></dt>
+<dd><p>Size of the kernel for the median filter in time points.
+Default is 31, corresponding to ~5 minutes window for 10s cadence data.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>int, optional</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="draco.analysis.flagging.SmoothVisWeight.mask_zeros">
+<span class="sig-name descname"><span class="pre">mask_zeros</span></span><a class="headerlink" href="#draco.analysis.flagging.SmoothVisWeight.mask_zeros" title="Link to this definition"></a></dt>
+<dd><p>Mask out zero-weight entries when taking the moving weighted median.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>bool, optional</p>
+</dd>
+</dl>
+</dd></dl>
+
+<p>Initialize pipeline task.</p>
+<p>May be overridden with no arguments.  Will be called after any
+<cite>config.Property</cite> attributes are set and after ‘input’ and ‘requires’
+keys are set up.</p>
+<dl class="py method">
+<dt class="sig sig-object py" id="draco.analysis.flagging.SmoothVisWeight.process">
+<span class="sig-name descname"><span class="pre">process</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">data</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference internal" href="draco.core.containers.html#draco.core.containers.TimeStream" title="draco.core.containers.TimeStream"><span class="pre">TimeStream</span></a></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><a class="reference internal" href="draco.core.containers.html#draco.core.containers.TimeStream" title="draco.core.containers.TimeStream"><span class="pre">TimeStream</span></a></span></span><a class="reference internal" href="../_modules/draco/analysis/flagging.html#SmoothVisWeight.process"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#draco.analysis.flagging.SmoothVisWeight.process" title="Link to this definition"></a></dt>
+<dd><p>Smooth the weights with a median filter.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>data</strong> – Data containing the weights to be smoothed</p>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p>Data object containing the same data as the input, but with the
+weights substituted by the smoothed ones.</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>data</p>
+</dd>
+</dl>
+</dd></dl>
+
+</dd></dl>
+
+<dl class="py class">
+<dt class="sig sig-object py" id="draco.analysis.flagging.ThresholdVisWeightBaseline">
+<em class="property"><span class="k"><span class="pre">class</span></span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">draco.analysis.flagging.</span></span><span class="sig-name descname"><span class="pre">ThresholdVisWeightBaseline</span></span><a class="reference internal" href="../_modules/draco/analysis/flagging.html#ThresholdVisWeightBaseline"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#draco.analysis.flagging.ThresholdVisWeightBaseline" title="Link to this definition"></a></dt>
+<dd><p>Bases: <a class="reference internal" href="draco.core.task.html#draco.core.task.SingleTask" title="draco.core.task.SingleTask"><code class="xref py py-class docutils literal notranslate"><span class="pre">SingleTask</span></code></a></p>
+<p>Form a mask corresponding to weights that are below some threshold.</p>
+<p>The threshold is determined as <cite>maximum(absolute_threshold,
+relative_threshold * average(weight))</cite> and is evaluated per product/stack
+entry. The user can specify whether to use a mean or median as the average,
+but note that the mean is much more likely to be biased by anomalously
+high- or low-weight samples (both of which are present in raw CHIME data).
+The user can also specify that weights below some threshold should not be
+considered when taking the average and constructing the mask (the default
+is to only ignore zero-weight samples).</p>
+<p>The task outputs a BaselineMask or SiderealBaselineMask depending on the
+input container.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>average_type</strong> (<em>string</em><em>, </em><em>optional</em>) – Type of average to use (“median” or “mean”). Default: “median”.</p></li>
+<li><p><strong>absolute_threshold</strong> (<em>float</em><em>, </em><em>optional</em>) – Any weights with values less than this number will be set to zero.
+Default: 1e-7.</p></li>
+<li><p><strong>relative_threshold</strong> (<em>float</em><em>, </em><em>optional</em>) – Any weights with values less than this number times the average weight
+will be set to zero. Default: 1e-6.</p></li>
+<li><p><strong>ignore_absolute_threshold</strong> (<em>float</em><em>, </em><em>optional</em>) – Any weights with values less than this number will be ignored when
+taking averages and constructing the mask. Default: 0.0.</p></li>
+<li><p><strong>pols_to_flag</strong> (<em>string</em><em>, </em><em>optional</em>) – Which polarizations to flag. “copol” only flags XX and YY baselines,
+while “all” flags everything. Default: “all”.</p></li>
+</ul>
+</dd>
+</dl>
+<p>Initialize pipeline task.</p>
+<p>May be overridden with no arguments.  Will be called after any
+<cite>config.Property</cite> attributes are set and after ‘input’ and ‘requires’
+keys are set up.</p>
+<dl class="py method">
+<dt class="sig sig-object py" id="draco.analysis.flagging.ThresholdVisWeightBaseline.process">
+<span class="sig-name descname"><span class="pre">process</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">stream</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><a class="reference internal" href="draco.core.containers.html#draco.core.containers.BaselineMask" title="draco.core.containers.BaselineMask"><span class="pre">BaselineMask</span></a><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><a class="reference internal" href="draco.core.containers.html#draco.core.containers.SiderealBaselineMask" title="draco.core.containers.SiderealBaselineMask"><span class="pre">SiderealBaselineMask</span></a></span></span><a class="reference internal" href="../_modules/draco/analysis/flagging.html#ThresholdVisWeightBaseline.process"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#draco.analysis.flagging.ThresholdVisWeightBaseline.process" title="Link to this definition"></a></dt>
+<dd><p>Construct baseline-dependent mask.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>stream</strong> (<cite>.core.container</cite> with <cite>weight</cite> attribute) – Input container whose weights are used to construct the mask.</p>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p><strong>out</strong> – The output baseline-dependent mask.</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p><cite>BaselineMask</cite> or <cite>SiderealBaselineMask</cite></p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="draco.analysis.flagging.ThresholdVisWeightBaseline.setup">
+<span class="sig-name descname"><span class="pre">setup</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">telescope</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/draco/analysis/flagging.html#ThresholdVisWeightBaseline.setup"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#draco.analysis.flagging.ThresholdVisWeightBaseline.setup" title="Link to this definition"></a></dt>
+<dd><p>Set the telescope model.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>telescope</strong> (<em>TransitTelescope</em>) – The telescope object to use</p>
+</dd>
+</dl>
+</dd></dl>
+
+</dd></dl>
+
+<dl class="py class">
+<dt class="sig sig-object py" id="draco.analysis.flagging.ThresholdVisWeightFrequency">
+<em class="property"><span class="k"><span class="pre">class</span></span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">draco.analysis.flagging.</span></span><span class="sig-name descname"><span class="pre">ThresholdVisWeightFrequency</span></span><a class="reference internal" href="../_modules/draco/analysis/flagging.html#ThresholdVisWeightFrequency"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#draco.analysis.flagging.ThresholdVisWeightFrequency" title="Link to this definition"></a></dt>
+<dd><p>Bases: <a class="reference internal" href="draco.core.task.html#draco.core.task.SingleTask" title="draco.core.task.SingleTask"><code class="xref py py-class docutils literal notranslate"><span class="pre">SingleTask</span></code></a></p>
+<p>Create a mask to remove all weights below a per-frequency threshold.</p>
+<p>A single relative threshold is set for each frequency along with an absolute
+minimum weight threshold. Masking is done relative to the mean baseline.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>absolute_threshold</strong> (<em>float</em>) – Any weights with values less than this number will be set to zero.</p></li>
+<li><p><strong>relative_threshold</strong> (<em>float</em>) – Any weights with values less than this number times the average weight
+will be set to zero.</p></li>
+</ul>
+</dd>
+</dl>
+<p>Initialize pipeline task.</p>
+<p>May be overridden with no arguments.  Will be called after any
+<cite>config.Property</cite> attributes are set and after ‘input’ and ‘requires’
+keys are set up.</p>
+<dl class="py method">
+<dt class="sig sig-object py" id="draco.analysis.flagging.ThresholdVisWeightFrequency.process">
+<span class="sig-name descname"><span class="pre">process</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">stream</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/draco/analysis/flagging.html#ThresholdVisWeightFrequency.process"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#draco.analysis.flagging.ThresholdVisWeightFrequency.process" title="Link to this definition"></a></dt>
+<dd><p>Make a baseline-independent mask.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>stream</strong> (<cite>.core.container</cite> with <cite>weight</cite> attribute) – Container to mask</p>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p><strong>out</strong> – RFIMask container with mask set</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>RFIMask container</p>
+</dd>
+</dl>
+</dd></dl>
+
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="draco.analysis.flagging.complex_med">
+<span class="sig-prename descclassname"><span class="pre">draco.analysis.flagging.</span></span><span class="sig-name descname"><span class="pre">complex_med</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">x</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">*</span></span><span class="n"><span class="pre">args</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">**</span></span><span class="n"><span class="pre">kwargs</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/draco/analysis/flagging.html#complex_med"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#draco.analysis.flagging.complex_med" title="Link to this definition"></a></dt>
+<dd><p>Complex median, done by applying to the real/imag parts individually.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>x</strong> (<em>np.ndarray</em>) – Array to apply to.</p></li>
+<li><p><strong>*args</strong> (<em>list</em><em>, </em><em>dict</em>) – Passed straight through to <cite>np.nanmedian</cite></p></li>
+<li><p><strong>**kwargs</strong> (<em>list</em><em>, </em><em>dict</em>) – Passed straight through to <cite>np.nanmedian</cite></p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p><strong>m</strong> – Median.</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>np.ndarray</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="draco.analysis.flagging.destripe">
+<span class="sig-prename descclassname"><span class="pre">draco.analysis.flagging.</span></span><span class="sig-name descname"><span class="pre">destripe</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">x</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">w</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">axis</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">1</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/draco/analysis/flagging.html#destripe"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#draco.analysis.flagging.destripe" title="Link to this definition"></a></dt>
+<dd><p>Subtract the median along a specified axis.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>x</strong> (<em>np.ndarray</em>) – Array to destripe.</p></li>
+<li><p><strong>w</strong> (<em>np.ndarray</em>) – Mask array for points to include (True) or ignore (False).</p></li>
+<li><p><strong>axis</strong> (<em>int</em><em>, </em><em>optional</em>) – Axis to apply destriping along.</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p><strong>y</strong> – Destriped array.</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>np.ndarray</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="draco.analysis.flagging.inverse_binom_cdf_prob">
+<span class="sig-prename descclassname"><span class="pre">draco.analysis.flagging.</span></span><span class="sig-name descname"><span class="pre">inverse_binom_cdf_prob</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">k</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">N</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">F</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/draco/analysis/flagging.html#inverse_binom_cdf_prob"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#draco.analysis.flagging.inverse_binom_cdf_prob" title="Link to this definition"></a></dt>
+<dd><p>Calculate the trial probability that gives the CDF.</p>
+<p>This gets the trial probability that gives an overall cumulative
+probability for Pr(X &lt;= k; N, p) = F</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>k</strong> (<em>int</em>) – Maximum number of successes.</p></li>
+<li><p><strong>N</strong> (<em>int</em>) – Total number of trials.</p></li>
+<li><p><strong>F</strong> (<em>float</em>) – The cumulative probability for (k, N).</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p><strong>p</strong> – The trial probability.</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>float</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="draco.analysis.flagging.mad">
+<span class="sig-prename descclassname"><span class="pre">draco.analysis.flagging.</span></span><span class="sig-name descname"><span class="pre">mad</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">x</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">mask</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">base_size</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">(11,</span> <span class="pre">3)</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">mad_size</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">(21,</span> <span class="pre">21)</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">debug</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">False</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">sigma</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">True</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/draco/analysis/flagging.html#mad"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#draco.analysis.flagging.mad" title="Link to this definition"></a></dt>
+<dd><p>Calculate the MAD of freq-time data.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>x</strong> (<em>np.ndarray</em>) – Data to filter.</p></li>
+<li><p><strong>mask</strong> (<em>np.ndarray</em>) – Initial mask.</p></li>
+<li><p><strong>base_size</strong> (<em>tuple</em>) – Size of the window to use in (freq, time) when
+estimating the baseline.</p></li>
+<li><p><strong>mad_size</strong> (<em>tuple</em>) – Size of the window to use in (freq, time) when
+estimating the MAD.</p></li>
+<li><p><strong>debug</strong> (<em>bool</em><em>, </em><em>optional</em>) – If True, return deviation and mad arrays as well</p></li>
+<li><p><strong>sigma</strong> (<em>bool</em><em>, </em><em>optional</em>) – Rescale the output into units of Gaussian sigmas.</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p><strong>mad</strong> – Size of deviation at each point in MAD units. This output may contain
+NaN’s for regions of missing data.</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>np.ndarray</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="draco.analysis.flagging.medfilt">
+<span class="sig-prename descclassname"><span class="pre">draco.analysis.flagging.</span></span><span class="sig-name descname"><span class="pre">medfilt</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">x</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">mask</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">size</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">*</span></span><span class="n"><span class="pre">args</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/draco/analysis/flagging.html#medfilt"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#draco.analysis.flagging.medfilt" title="Link to this definition"></a></dt>
+<dd><p>Apply a moving median filter to masked data.</p>
+<p>The application is done by iterative filling to
+overcome the fact we don’t have an actual implementation
+of a nanmedian.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>x</strong> (<em>np.ndarray</em>) – Data to filter.</p></li>
+<li><p><strong>mask</strong> (<em>np.ndarray</em>) – Mask of data to filter out.</p></li>
+<li><p><strong>size</strong> (<em>tuple</em>) – Size of the window in each dimension.</p></li>
+<li><p><strong>args</strong> (<em>optional</em>) – Additional arguments to pass to the moving weighted median</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p><strong>y</strong> – The masked data. Data within the mask is undefined.</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>np.ndarray</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="draco.analysis.flagging.p_to_sigma">
+<span class="sig-prename descclassname"><span class="pre">draco.analysis.flagging.</span></span><span class="sig-name descname"><span class="pre">p_to_sigma</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">p</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/draco/analysis/flagging.html#p_to_sigma"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#draco.analysis.flagging.p_to_sigma" title="Link to this definition"></a></dt>
+<dd><p>Get the sigma exceeded by the tails of a Gaussian with probability p.</p>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="draco.analysis.flagging.sigma_to_p">
+<span class="sig-prename descclassname"><span class="pre">draco.analysis.flagging.</span></span><span class="sig-name descname"><span class="pre">sigma_to_p</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">sigma</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/draco/analysis/flagging.html#sigma_to_p"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#draco.analysis.flagging.sigma_to_p" title="Link to this definition"></a></dt>
+<dd><p>Get the probability of an excursion larger than sigma for a Gaussian.</p>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="draco.analysis.flagging.tv_channels_flag">
+<span class="sig-prename descclassname"><span class="pre">draco.analysis.flagging.</span></span><span class="sig-name descname"><span class="pre">tv_channels_flag</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">x</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">freq</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">sigma</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">5</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">f</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">0.5</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">debug</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">False</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/draco/analysis/flagging.html#tv_channels_flag"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#draco.analysis.flagging.tv_channels_flag" title="Link to this definition"></a></dt>
+<dd><p>Perform a higher sensitivity flagging for the TV stations.</p>
+<p>This flags a whole TV station band if more than fraction f of the samples
+within a station band exceed a given threshold. The threshold is calculated
+by wanting a fixed false positive rate (as described by sigma) for fraction
+f of samples exceeding the threshold</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>x</strong> (<em>np.ndarray</em><em>[</em><em>freq</em><em>, </em><em>time</em><em>]</em>) – Deviations of data in sigma units.</p></li>
+<li><p><strong>freq</strong> (<em>np.ndarray</em><em>[</em><em>freq</em><em>]</em>) – Frequency of samples in MHz.</p></li>
+<li><p><strong>sigma</strong> (<em>float</em><em>, </em><em>optional</em>) – The probability of a false positive given as a sigma of a Gaussian.</p></li>
+<li><p><strong>f</strong> (<em>float</em><em>, </em><em>optional</em>) – Fraction of bad samples within each channel before flagging the whole
+thing.</p></li>
+<li><p><strong>debug</strong> (<em>bool</em><em>, </em><em>optional</em>) – Returns (mask, fraction) instead to give extra debugging info.</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p><strong>mask</strong> – Mask of the input data.</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>np.ndarray[bool]</p>
+</dd>
+</dl>
+</dd></dl>
+
+</section>
+
+
+           </div>
+          </div>
+          <footer><div class="rst-footer-buttons" role="navigation" aria-label="Footer">
+        <a href="draco.analysis.fgfilter.html" class="btn btn-neutral float-left" title="draco.analysis.fgfilter" accesskey="p" rel="prev"><span class="fa fa-arrow-circle-left" aria-hidden="true"></span> Previous</a>
+        <a href="draco.analysis.mapmaker.html" class="btn btn-neutral float-right" title="draco.analysis.mapmaker" accesskey="n" rel="next">Next <span class="fa fa-arrow-circle-right" aria-hidden="true"></span></a>
+    </div>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2016, Richard Shaw.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>
