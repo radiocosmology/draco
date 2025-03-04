@@ -1024,6 +1024,13 @@ class DelaySpectrumWienerEstimator(DelayGeneralContainerBase):
         # Save the frequency axis of the input data as an attribute in the output
         # container
         delay_spec.attrs["freq"] = ss.freq
+        
+        # Save the frequency tapering window name as an attribute in the output
+        # container. This is needed in the later stage to estimate effective bandwidth.
+        if self.apply_window:
+            delay_spec.attrs["window_los"] = self.window
+        else:    
+            delay_spec.attrs["window_los"] = "None"
 
         return delay_spec
 
