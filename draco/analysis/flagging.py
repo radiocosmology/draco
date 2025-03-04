@@ -3112,7 +3112,7 @@ class ReduceMaskEl(task.SingleTask):
 
         Returns
         -------
-            out : containers.RFIMask(freq, time) or containers.SiderealRFIMask(freq, ra)
+        out : containers.RFIMask(freq, time) or containers.SiderealRFIMask(freq, ra)
             Non el-specific RFI mask indicating channels that are free from RFI events.
 
         """
@@ -3158,6 +3158,8 @@ class ApplyLocalizedRFIMask(task.SingleTask):
 
     This class extends the class ApplyTimeFreqMask to include el in addition to freq and ra,
     and can be further extended for a new RingMap class (freq,el,time).
+    Note that while the ra and el axes of the tstream and mask datasets do not need to be identical,
+    they must have overlapping regions. However, their freq axes must be identical.
 
     Attributes
     ----------
