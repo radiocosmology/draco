@@ -1510,10 +1510,33 @@ class TimeStream(FreqContainer, VisContainer, TODContainer):
         return self.datasets["input_flags"]
 
 
-class Eigendecomposition(TimeStream):
-    """A container for holding the eigendecomposition of the N2 visibilities."""
+class EigenDecompBase(ContainerBase):
 
     _axes = ("ev",)
+
+    @property
+    def ev(self):
+        """Get the ev index map."""
+        return self.index_map["ev"]
+
+    @property
+    def evec(self):
+        """Get the evec dataset."""
+        return self.datasets["evec"]
+
+    @property
+    def eval(self):
+        """Get the eval dataset."""
+        return self.datasets["eval"]
+
+    @property
+    def erms(self):
+        """Get the erms dataset."""
+        return self.datasets["erms"]
+
+
+class TimeEigenDecomp(TimeStream, EigenDecompBase):
+    """Container for holding an eigendecomposition of N2 visibilities versus time."""
 
     _dataset_spec: ClassVar = {
         "evec": {
@@ -1539,25 +1562,33 @@ class Eigendecomposition(TimeStream):
         },
     }
 
-    @property
-    def ev(self):
-        """Get the ev index map."""
-        return self.index_map["ev"]
 
-    @property
-    def evec(self):
-        """Get the evec dataset."""
-        return self.datasets["evec"]
+class SiderealEigenDecomp(SiderealStream, EigenDecompBase):
+    """Container for holding an eigendecomposition of N2 visibilities versus RA."""
 
-    @property
-    def eval(self):
-        """Get the eval dataset."""
-        return self.datasets["eval"]
-
-    @property
-    def erms(self):
-        """Get the erms dataset."""
-        return self.datasets["erms"]
+    _dataset_spec: ClassVar = {
+        "evec": {
+            "axes": ["freq", "ev", "input", "ra"],
+            "dtype": np.complex64,
+            "initialise": True,
+            "distributed": True,
+            "distributed_axis": "freq",
+        },
+        "eval": {
+            "axes": ["freq", "ev", "ra"],
+            "dtype": np.float32,
+            "initialise": True,
+            "distributed": True,
+            "distributed_axis": "freq",
+        },
+        "erms": {
+            "axes": ["freq", "ra"],
+            "dtype": np.float32,
+            "initialise": True,
+            "distributed": True,
+            "distributed_axis": "freq",
+        },
+    }
 
 
 class GridBeam(FreqContainer, DataWeightContainer):

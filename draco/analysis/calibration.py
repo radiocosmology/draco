@@ -12,7 +12,7 @@ from ..ephem import coord, sources
 import json
 
 
-class PerformEigendecomposition(task.SingleTask):
+class PerformEigenDecomp(task.SingleTask):
     """Perform eigendecomposition of N2 visibility matrix.
 
     Short baselines can be excluded from the eigen-decomposition
@@ -121,11 +121,14 @@ class PerformEigendecomposition(task.SingleTask):
         ecalc = (ngood - self.rank, ngood - 1)
 
         # Create the output container
-        out = containers.Eigendecomposition(prod=prod, stack=stack,
-                                            ev=np.arange(nev, dtype=int),
-                                            axes_from=data, attrs_from=data,
-                                            distributed=data.distributed,
-                                            comm=data.comm)
+        if "ra" in data.index_map:
+            EigenDecomp = containers.SiderealEigenDecomp
+        else:
+            EigenDecomp = containers.TimeEigenDecomp
+
+        out = EigenDecomp(prod=prod, stack=stack, ev=np.arange(nev, dtype=int),
+                          axes_from=data, attrs_from=data,
+                          distributed=data.distributed, comm=data.comm)
 
         out.redistribute(dist_axis)
 
@@ -171,9 +174,9 @@ class PerformEigendecomposition(task.SingleTask):
 
                     evalue, evec = scipy.linalg.eigh(V, eigvals=ecalc, check_finite=False)
 
-                    low_rank_approx = np.matmul(evec, evalue * evec.T.conj())
+                    low_rank_approx = np.matmul(evec, evalue[:, np.newaxis] * evec.T.conj())
 
-                    v[baseline_mask] = low_rank_approx[baseline_mask]
+                    V[baseline_mask] = low_rank_approx[baseline_mask]
 
                 # Calculate all eigenvalues and eigenvectors
                 evalue, evec = scipy.linalg.eigh(V)
@@ -184,8 +187,9 @@ class PerformEigendecomposition(task.SingleTask):
 
                 # Save to output arrays
                 evalues[ff, :, tt] = evalue[:nev]
-                evecs[ff, :, :, tt][:, good_inputs] = evecs[:, :nev].T
                 erms[ff, tt] = np.std(evalue[self.max_ev_rms:])
+                for ee in range(nev):
+                    evecs[ff, ee, good_inputs, tt] = evec[:, ee]
 
         # Return output container
         out.redistribute("freq")
@@ -342,14 +346,22 @@ class EigenCalibration(task.SingleTask):
         )
 
         # Determine source coordinates
-        ttrans = self.telescope.transit_times(source_obj.skyfield, data.time[0])[0]
-        lsd = int(np.floor(self.telescope.unix_to_lsd(ttrans)))
+        if "ra" in data.index_map:
+            lsd = data.attrs["lsd"]
+            t0 = self.telescope.lsd_to_unix(lsd)
+            ttrans = self.telescope.transit_times(source_obj.skyfield, t0)[0]
+
+            ra = data.ra
+
+        else:
+            ttrans = self.telescope.transit_times(source_obj.skyfield, data.time[0])[0]
+            lsd = int(np.floor(self.telescope.unix_to_lsd(ttrans)))
+
+            ra = self.telescope.unix_to_lsa(data.time)
 
         src_ra, src_dec = self.telescope.object_coords(
             source_obj.skyfield, date=ttrans, deg=True
         )
-
-        ra = self.telescope.unix_to_lsa(data.time)
 
         ha = ra - src_ra
         ha = ((ha + 180.0) % 360.0) - 180.0
