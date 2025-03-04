@@ -36,6 +36,8 @@ Containers
 - :py:class:`FormedBeamHA`
 - :py:class:`FormedBeamMask`
 - :py:class:`FormedBeamHAMask`
+- :py:class:`LocalizedRFIMask`
+- :py:class:`LocalizedSiderealRFIMask`
 
 Container Base Classes
 ----------------------
@@ -3340,3 +3342,87 @@ def copy_datasets_filter(
         if isinstance(dest_dset, memh5.MemDatasetDistributed):
             # Redistribute back to the original axis
             dest_dset.redistribute(original_ax_id)
+
+
+class LocalizedRFIMask(FreqContainer, TODContainer):
+    """Container for an RFI mask for each freq, el, and time sample.
+
+    The data frac_rfi stores information about the proportion of subdata
+    that detected RFI, which is used to generate the mask.
+    """
+
+    _axes = ("el",)
+
+    _dataset_spec: ClassVar = {
+        "mask": {
+            "axes": ["freq", "el", "time"],
+            "dtype": bool,
+            "initialise": True,
+            "distributed": True,
+            "distributed_axis": "freq",
+        },
+        "frac_rfi": {
+            "axes": ["freq", "el", "time"],
+            "dtype": np.float32,
+            "initialise": False,
+            "distributed": True,
+            "distributed_axis": "freq",
+        },
+    }
+
+    @property
+    def mask(self):
+        """Get the mask dataset."""
+        return self.datasets["mask"]
+
+    @property
+    def frac_rfi(self):
+        """Get the frac_rfi dataset."""
+        return self.datasets["frac_rfi"]
+
+    @property
+    def el(self):
+        """Get the el axis."""
+        return self.index_map["el"]
+
+
+class LocalizedSiderealRFIMask(FreqContainer, SiderealContainer):
+    """Container for an RFI mask for each freq, ra, and el sample.
+
+    The data frac_rfi stores information about the proportion of subdata
+    that detected RFI, which is used to generate the mask.
+    """
+
+    _axes = ("el",)
+
+    _dataset_spec: ClassVar = {
+        "mask": {
+            "axes": ["freq", "ra", "el"],
+            "dtype": bool,
+            "initialise": True,
+            "distributed": True,
+            "distributed_axis": "freq",
+        },
+        "frac_rfi": {
+            "axes": ["freq", "ra", "el"],
+            "dtype": np.float32,
+            "initialise": False,
+            "distributed": True,
+            "distributed_axis": "freq",
+        },
+    }
+
+    @property
+    def mask(self):
+        """Get the mask dataset."""
+        return self.datasets["mask"]
+
+    @property
+    def frac_rfi(self):
+        """Get the frac_rfi dataset."""
+        return self.datasets["frac_rfi"]
+
+    @property
+    def el(self):
+        """Get the el axis."""
+        return self.index_map["el"]
