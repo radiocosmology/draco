@@ -1,10 +1,13 @@
 """Some utility functions for calibration"""
+
 from abc import ABCMeta, abstractmethod
 import logging
 
 import numpy as np
-from scipy.optimize import curve_fit
 import scipy.stats
+
+from scipy.optimize import curve_fit
+from scipy.linalg import lstsq, inv
 
 from . import tools
 
@@ -58,11 +61,13 @@ def estimate_directional_scale(z, c=2.1):
 
     return zmed, sa, sb
 
+
 def _sliding_window(arr, window):
     # Advanced numpy tricks
     shape = arr.shape[:-1] + (arr.shape[-1] - window + 1, window)
     strides = arr.strides + (arr.strides[-1],)
     return np.lib.stride_tricks.as_strided(arr, shape=shape, strides=strides)
+
 
 def flag_outliers(raw, flag, window=25, nsigma=5.0):
     """Flag outliers with respect to rolling median.
@@ -130,6 +135,7 @@ def flag_outliers(raw, flag, window=25, nsigma=5.0):
 
     return resid < (nsigma * sig)
 
+
 def _propagate_uncertainty(jac, cov, tval):
     """Propagate uncertainty on parameters to uncertainty on model prediction.
 
@@ -163,6 +169,7 @@ def _propagate_uncertainty(jac, cov, tval):
         tval = tval[(np.s_[...],) + (None,) * add_dim]
 
     return tval * np.sqrt(df2)
+
 
 def _correct_phase_wrap(ha):
     """Ensure hour angle is between -180 and 180 degrees.
@@ -602,7 +609,7 @@ class FitPoly(FitTransit):
             out = np.matmul(param, np.rollaxis(vander, -1))
 
         return np.squeeze(out, axis=-1) if np.isscalar(ha) else out
-    
+
 
 class FitAmpPhase(FitTransit):
     """Base class for fitting models to the amplitude and phase.
@@ -1001,6 +1008,7 @@ class FitGaussAmpPolyPhase(FitPoly, FitAmpPhase):
             Number of degrees of freedom of the phase fit.
         """
         return self.ndof[..., 0]
+
 
 class FitPolyLogAmpPolyPhase(FitPoly, FitAmpPhase):
     """Class that enables separate fits of a polynomial to log amplitude and phase."""

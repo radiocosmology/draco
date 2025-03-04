@@ -7,7 +7,7 @@ from caput import interferometry, mpiutil, config, mpiarray
 from ..core import task, io, containers
 from ..util import tools, cal_utils, fluxcat, _fast_tools
 
-from ..ephem import coord, sources
+from ..ephem import sources
 
 import json
 
@@ -51,7 +51,9 @@ class PerformEigenDecomp(task.SingleTask):
     max_ev_rms = config.Property(proptype=int, default=4)
     nev = config.Property(proptype=int)
 
-    mask_type = config.enum(["baseline", "baseline_copol", "diag", "diag_copol"], default="diag")
+    mask_type = config.enum(
+        ["baseline", "baseline_copol", "diag", "diag_copol"], default="diag"
+    )
     mask_threshold = config.Property(proptype=float, default=0.5)
     niter = config.Property(proptype=int, default=20)
     rank = config.Property(proptype=int, default=4)
@@ -69,7 +71,7 @@ class PerformEigenDecomp(task.SingleTask):
         self.telescope = io.get_telescope(manager)
 
     def process(self, data):
-        """ Perform the eigendecomposition.
+        """Perform the eigendecomposition.
 
         Parameters
         ----------
@@ -85,7 +87,9 @@ class PerformEigenDecomp(task.SingleTask):
 
         # Make sure we are dealing with N2 visibilities in upper triangle format
         if data.is_stacked:
-            raise RuntimeError("Cannot perform eigen-decomposition of stacked visibilities.")
+            raise RuntimeError(
+                "Cannot perform eigen-decomposition of stacked visibilities."
+            )
 
         ninput = data.input.size
         nprod = data.prod.size
@@ -94,8 +98,11 @@ class PerformEigenDecomp(task.SingleTask):
             raise RuntimeError("Must provide visibilities in upper triangle format.")
 
         # Determine the axis to distribute over
-        axis_size = {ax: data.index_map[ax].size for ax in data.vis.attrs["axis"]
-                    if ax not in ["prod", "stack"]}
+        axis_size = {
+            ax: data.index_map[ax].size
+            for ax in data.vis.attrs["axis"]
+            if ax not in ["prod", "stack"]
+        }
         dist_axis = max(axis_size, key=axis_size.get)
 
         # Extract visibilities and weights
@@ -105,7 +112,11 @@ class PerformEigenDecomp(task.SingleTask):
         weight = data.weight[:].local_array
 
         # Consult telescope instance on what inputs to ignore
-        tindex = np.array(tools.find_inputs(self.telescope.input_index, data.input, require_match=True))
+        tindex = np.array(
+            tools.find_inputs(
+                self.telescope.input_index, data.input, require_match=True
+            )
+        )
         input_flag = self.telescope.feedmask[(tindex, tindex)]
         good_inputs = np.flatnonzero(input_flag)
         ngood = good_inputs.size
@@ -126,9 +137,15 @@ class PerformEigenDecomp(task.SingleTask):
         else:
             EigenDecomp = containers.TimeEigenDecomp
 
-        out = EigenDecomp(prod=prod, stack=stack, ev=np.arange(nev, dtype=int),
-                          axes_from=data, attrs_from=data,
-                          distributed=data.distributed, comm=data.comm)
+        out = EigenDecomp(
+            prod=prod,
+            stack=stack,
+            ev=np.arange(nev, dtype=int),
+            axes_from=data,
+            attrs_from=data,
+            distributed=data.distributed,
+            comm=data.comm,
+        )
 
         out.redistribute(dist_axis)
 
@@ -172,9 +189,13 @@ class PerformEigenDecomp(task.SingleTask):
                 # Iterate, replacing with low-rank approximation
                 for ii in range(niter):
 
-                    evalue, evec = scipy.linalg.eigh(V, eigvals=ecalc, check_finite=False)
+                    evalue, evec = scipy.linalg.eigh(
+                        V, eigvals=ecalc, check_finite=False
+                    )
 
-                    low_rank_approx = np.matmul(evec, evalue[:, np.newaxis] * evec.T.conj())
+                    low_rank_approx = np.matmul(
+                        evec, evalue[:, np.newaxis] * evec.T.conj()
+                    )
 
                     V[baseline_mask] = low_rank_approx[baseline_mask]
 
@@ -187,7 +208,7 @@ class PerformEigenDecomp(task.SingleTask):
 
                 # Save to output arrays
                 evalues[ff, :, tt] = evalue[:nev]
-                erms[ff, tt] = np.std(evalue[self.max_ev_rms:])
+                erms[ff, tt] = np.std(evalue[self.max_ev_rms :])
                 for ee in range(nev):
                     evecs[ff, ee, good_inputs, tt] = evec[:, ee]
 
@@ -220,7 +241,9 @@ class PerformEigenDecomp(task.SingleTask):
         ngood = good_inputs.size
 
         # Find feeds in telescope instance
-        tel_index = np.array(tools.find_inputs(self.telescope.input_index, inputs, require_match=True))
+        tel_index = np.array(
+            tools.find_inputs(self.telescope.input_index, inputs, require_match=True)
+        )
 
         aa = tel_index[prod["input_a"]]
         bb = tel_index[prod["input_b"]]
@@ -228,21 +251,21 @@ class PerformEigenDecomp(task.SingleTask):
         # If requested, only mask copolar baselines.
         if "copol" in self.mask_type:
             pol = self.telescope.polarisation
-            mask = (pol[aa] == pol[bb])
+            mask = pol[aa] == pol[bb]
         else:
             mask = np.ones(nprod, dtype=bool)
 
         # Update mask to exclude short baselines.
         if "baseline" in self.mask_type:
             position = self.telescope.feedpositions
-            baseline = (position[aa, :] - position[bb, :])
-            dist = np.sqrt(np.sum(baseline ** 2, axis=-1))
+            baseline = position[aa, :] - position[bb, :]
+            dist = np.sqrt(np.sum(baseline**2, axis=-1))
 
-            mask &= (dist < self.mask_threshold)
+            mask &= dist < self.mask_threshold
 
         else:
             offset = np.abs(aa - bb)
-            mask &= (offset < self.mask_threshold)
+            mask &= offset < self.mask_threshold
 
         # Repackage
         M = np.zeros((ngood, ngood), dtype=np.complex64)
@@ -251,7 +274,6 @@ class PerformEigenDecomp(task.SingleTask):
         )
 
         return np.nonzero(M)
-
 
 
 class EigenCalibration(task.SingleTask):
@@ -384,8 +406,8 @@ class EigenCalibration(task.SingleTask):
         evec = data.datasets["evec"][:].local_array
         evalue = data.datasets["eval"][:].local_array
         erms = data.datasets["erms"][:].local_array
-        vis = data.datasets["vis"][:].local_array
-        weight = data.flags["vis_weight"][:].local_array
+        vis = data.vis[:].local_array
+        weight = data.weight[:].local_array
 
         # Check for negative autocorrelations (bug observed in older data)
         negative_auto = vis.real < 0.0
@@ -417,7 +439,7 @@ class EigenCalibration(task.SingleTask):
 
         # Determine index of the x and y pol feeds
         xfeeds = np.flatnonzero((self.telescope.polarisation == "X") & input_flags)
-        xfeeds = np.flatnonzero((self.telescope.polarisation == "Y") & input_flags)
+        yfeeds = np.flatnonzero((self.telescope.polarisation == "Y") & input_flags)
 
         nfeed = xfeeds.size + yfeeds.size
 
@@ -620,13 +642,14 @@ class DetermineSourceTransit(task.SingleTask):
     """
 
     source_list = config.Property(proptype=list, default=[])
-    freq = config.Property(proptype=float, default=600.)
+    freq = config.Property(proptype=float, default=600.0)
     require_transit = config.Property(proptype=bool, default=True)
 
     def setup(self):
         """Set list of sources, sorted by flux in descending order."""
         self.source_list = sorted(
-            self.source_list or sources.source_dictionary.keys(), #FIXME: Do we want to use this source dictionary?
+            self.source_list
+            or sources.source_dictionary.keys(),  # FIXME: Do we want to use this source dictionary?
             key=lambda src: fluxcat.FluxCatalog[src].predict_flux(self.freq),
             reverse=True,
         )
@@ -737,8 +760,24 @@ class TransitFit(task.SingleTask):
         proptype=(lambda x: x if x is None else float(x)), default=0.30
     )
 
-    def setup(self):
-        """Define model to fit to transit."""
+    # Turn off nan checking in base class, since we use nan
+    # to indicate missing data in the output container
+    nan_check = False
+    nan_skip = False
+    nan_dump = False
+
+    def setup(self, manager):
+        """Define model to fit to transit.
+
+        Parameters
+        ----------
+        manager : manager.ProductManager, optional
+            The telescope/manager used to determine
+            feed polarisation/position and perform
+            ephemeris calculations.
+        """
+        self.telescope = io.get_telescope(manager)
+
         self.fit_kwargs = {"absolute_sigma": self.absolute_sigma}
 
         if self.model == "gauss_amp_poly_phase":
@@ -765,7 +804,7 @@ class TransitFit(task.SingleTask):
                 "`gauss_amp_poly_phase` and `poly_log_amp_poly_phase`."
             )
 
-    def process(self, response, inputmap, guess_fwhm):
+    def process(self, response):
         """
         Fit model to the point source response for each feed and frequency.
 
@@ -774,14 +813,6 @@ class TransitFit(task.SingleTask):
         response : containers.SiderealStream
             SiderealStream covering the source transit.  Must contain
             `source_name` and `transit_time` attributes.
-        inputmap : list of CorrInput's
-            List describing the inputs as ordered in response.
-        guess_fwhm : function
-            A callable (function) that provides the FWHM of the primary beam.
-
-            Should have signature:
-
-            guess_fwhm(freq, pol="X", dec=None, sigma=False, voltage=False, seconds=False)
 
         Returns
         -------
@@ -796,12 +827,15 @@ class TransitFit(task.SingleTask):
 
         # Find the local frequencies
         freq = response.freq[response.vis[:].local_bounds]
+        wavelength = scipy.constants.c * 1e-6 / freq
 
         # Calculate the hour angle using the source and transit time saved to attributes
         source_obj = sources.source_dictionary[response.attrs["source_name"]]
         ttrans = response.attrs["transit_time"]
 
-        src_ra, src_dec = coord.object_coords(source_obj, date=ttrans, deg=True)
+        src_ra, src_dec = self.telescope.object_coords(
+            source_obj, date=ttrans, deg=True
+        )
 
         ha = response.ra[:] - src_ra
         ha = ((ha + 180.0) % 360.0) - 180.0
@@ -809,28 +843,22 @@ class TransitFit(task.SingleTask):
         # Determine the fit window
         input_flags = np.any(response.input_flags[:], axis=-1)
 
-        xfeeds = np.array(
-            [
-                idf
-                for idf, inp in enumerate(inputmap)
-                if input_flags[idf] and tools.is_array_x(inp)
-            ]
-        )
-        yfeeds = np.array(
-            [
-                idf
-                for idf, inp in enumerate(inputmap)
-                if input_flags[idf] and tools.is_array_y(inp)
-            ]
-        )
+        xfeeds = np.flatnonzero((self.telescope.polarisation == "X") & input_flags)
+        yfeeds = np.flatnonzero((self.telescope.polarisation == "Y") & input_flags)
 
         pol = {"X": xfeeds, "Y": yfeeds}
 
-        sigma = np.zeros((nfreq, ninput), dtype=np.float32)
-        for pstr, feed in pol.items():
-            sigma[:, feed] = guess_fwhm(
-                freq, pol=pstr, dec=np.radians(src_dec), sigma=True, voltage=True
-            )[:, np.newaxis]
+        # Initial guess for the beam width:
+        # - Assumes FWHM = lambda / D, as for a uniformly illuminated aperture.
+        # - Uses telescope `u_width` parameter to approximate the aperture diameter.
+        # - Converts FWHM to standard deviation (sigma) using a factor of 2.35482.
+        # - Applies a factor of sqrt(2) to convert from power to voltage.
+        # - Divides by cos(dec) to convert from degrees on sky to degrees hour angle.
+        sigma = np.degrees(
+            np.sqrt(2.0)
+            * wavelength
+            / (2.35482 * np.cos(np.radians(src_dec)) * self.telescope.u_width)
+        )
 
         # Dereference datasets
         vis = response.vis[:].local_array
@@ -841,7 +869,7 @@ class TransitFit(task.SingleTask):
         if self.nsigma is not None:
             err *= (
                 np.abs(ha[np.newaxis, np.newaxis, :])
-                <= (self.nsigma * sigma[:, :, np.newaxis])
+                <= (self.nsigma * sigma[:, np.newaxis, np.newaxis])
             ).astype(err.dtype)
 
         # Instantiate the model fitter
@@ -1028,7 +1056,19 @@ class FlagAmplitude(task.SingleTask):
     threshold_good_input = config.Property(proptype=float, default=0.80)
     valid_gains_frac_good_freq = config.Property(proptype=float, default=0.0)
 
-    def process(self, gain, inputmap):
+    def setup(self, manager):
+        """Define model to fit to transit.
+
+        Parameters
+        ----------
+        manager : manager.ProductManager, optional
+            The telescope/manager used to determine
+            feed polarisation/position and perform
+            ephemeris calculations.
+        """
+        self.telescope = io.get_telescope(manager)
+
+    def process(self, gain):
         """
         TODO: Move cal_utils.estimate_directional_scale and cal_utils.flag_outliers
         to somewhere in draco and import
@@ -1039,8 +1079,6 @@ class FlagAmplitude(task.SingleTask):
         ----------
         gain : containers.StaticGainData
             Gain derived from point source transit.
-        inputmap : list of CorrInput's
-            List describing the inputs as ordered in gain.
 
         Returns
         -------
@@ -1060,12 +1098,9 @@ class FlagAmplitude(task.SingleTask):
         amp = np.abs(gain.gain[:].local_array)
 
         # Determine x and y pol index
-        xfeeds = np.array(
-            [idf for idf, inp in enumerate(inputmap) if tools.is_array_x(inp)]
-        )
-        yfeeds = np.array(
-            [idf for idf, inp in enumerate(inputmap) if tools.is_array_y(inp)]
-        )
+        xfeeds = np.flatnonzero(self.telescope.polarisation == "X")
+        yfeeds = np.flatnonzero(self.telescope.polarisation == "Y")
+
         pol = [yfeeds, xfeeds]
         polstr = ["Y", "X"]
 
@@ -1184,7 +1219,7 @@ class FlagAmplitude(task.SingleTask):
         gain.weight[:] *= flag.astype(gain.weight.dtype)
 
         return gain
-    
+
 
 class InterpolateGainOverFrequency(task.SingleTask):
     """Replace gain at flagged frequencies with interpolated values.
