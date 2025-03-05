@@ -2657,19 +2657,25 @@ class BlendStack(task.SingleTask):
                 f"type(data_stack) (={type(self.data_stack)}"
             )
 
+        _supported_types = (
+            containers.SiderealStream,
+            containers.RingMap,
+            containers.HybridVisStream,
+        )
+
+        if not isinstance(data, _supported_types):
+            raise TypeError(
+                f"Only {_supported_types} are supported. "
+                f"Got data type {type(data)}."
+            )
+
         # Try and get both the stack and the incoming data to have the same
         # distribution
-        self.data_stack.redistribute(["freq", "time", "ra"])
-        data.redistribute(["freq", "time", "ra"])
+        self.data_stack.redistribute("freq")
+        data.redistribute("freq")
 
-        if isinstance(data, containers.SiderealStream):
-            dset_stack = self.data_stack.vis[:].local_array
-            dset = data.vis[:].local_array
-        else:
-            raise TypeError(
-                "Only SiderealStream's are currently supported. "
-                f"Got type(data) = {type(data)}"
-            )
+        dset_stack = self.data_stack.data[:].local_array
+        dset = data.data[:].local_array
 
         if dset_stack.shape != dset.shape:
             raise ValueError(
