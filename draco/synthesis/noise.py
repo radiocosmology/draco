@@ -135,15 +135,23 @@ class MultipleGaussianNoiseDatasets(GaussianNoiseDataset):
     niter = config.Property(proptype=int, default=1)
     in_place = False
 
-    def setup(self, data):
+    def setup(self, data1, data2=None):
         """Save the data as a class attribute.
+
+        If multiple input containers are provided, the class alternates between
+        them when generating the noise realization. This enables cross power
+        spectrum analysis.
 
         Parameters
         ----------
-        data : :class:`VisContainer`
+        data1 : :class:`VisContainer`
+            Any dataset which contains a vis and weight attribute.
+        data2 : :class:`VisContainer`
             Any dataset which contains a vis and weight attribute.
         """
-        self.data = data
+        self.data = [data1]
+        if data2 is not None:
+            self.data.append(data2)
 
     def process(self):
         """Generate a noise realization.
@@ -154,7 +162,7 @@ class MultipleGaussianNoiseDatasets(GaussianNoiseDataset):
         if self._count == self.niter:
             raise pipeline.PipelineStopIteration
 
-        return super().process(self.data)
+        return super().process(self.data[self._count % len(self.data)])
 
 
 class GaussianNoise(task.SingleTask, random.RandomTask):
