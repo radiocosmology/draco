@@ -10,7 +10,7 @@ using the variance of the noise estimate in the existing data.
 """
 
 import numpy as np
-from caput import config
+from caput import config, pipeline
 from caput.time import STELLAR_S
 
 from ..core import containers, io, task
@@ -56,6 +56,7 @@ class GaussianNoiseDataset(task.SingleTask, random.RandomTask):
     """
 
     dataset = config.Property(proptype=str, default=None)
+    in_place = config.Property(proptype=bool, default=True)
 
     def process(self, data):
         """Generates a Gaussian distributed noise dataset given the provided dataset's visibility weights.
@@ -73,19 +74,9 @@ class GaussianNoiseDataset(task.SingleTask, random.RandomTask):
             a Gaussian distributed noise realisation.
 
         """
-        _default_dataset = {
-            containers.TimeStream: "vis",
-            containers.SiderealStream: "vis",
-            containers.HybridVisMModes: "vis",
-            containers.RingMap: "map",
-            containers.GridBeam: "beam",
-            containers.TrackBeam: "beam",
-        }
         if self.dataset is None:
-            for cls, dataset in _default_dataset.items():
-                if isinstance(data, cls):
-                    dataset_name = dataset
-                    break
+            if isinstance(data, containers.DataWeightContainer):
+                dataset_name = data._data_dset_name
             else:
                 raise ValueError(
                     f"No default dataset known for {type(data)} container."
@@ -101,8 +92,15 @@ class GaussianNoiseDataset(task.SingleTask, random.RandomTask):
         # Distribute in something other than `stack`
         data.redistribute("freq")
 
+        # If requested, create a new output container
+        if not self.in_place:
+            out = data.copy()
+            out.redistribute("freq")
+        else:
+            out = data
+
         # Replace visibilities with noise
-        dset = data[dataset_name][:].local_array
+        dset = out[dataset_name][:].local_array
         weight = data.weight[:].local_array
         if np.iscomplexobj(dset):
             random.complex_normal(
@@ -123,6 +121,48 @@ class GaussianNoiseDataset(task.SingleTask, random.RandomTask):
                     dset[:, si].imag = 0.0
 
         return data
+
+
+class MultipleGaussianNoiseDatasets(GaussianNoiseDataset):
+    """Generates multiple Gaussian distributed noise datasets.
+
+    Attributes
+    ----------
+    niter : int
+        Number of Gaussian noise datasets to generate.
+    """
+
+    niter = config.Property(proptype=int, default=1)
+    in_place = False
+
+    def setup(self, data1, data2=None):
+        """Save the data as a class attribute.
+
+        If multiple input containers are provided, the class alternates between
+        them when generating the noise realization. This enables cross power
+        spectrum analysis.
+
+        Parameters
+        ----------
+        data1 : :class:`VisContainer`
+            Any dataset which contains a vis and weight attribute.
+        data2 : :class:`VisContainer`
+            Any dataset which contains a vis and weight attribute.
+        """
+        self.data = [data1]
+        if data2 is not None:
+            self.data.append(data2)
+
+    def process(self):
+        """Generate a noise realization.
+
+        The variance will be set to the inverse of the
+        weight dataset of the container provided on setup.
+        """
+        if self._count == self.niter:
+            raise pipeline.PipelineStopIteration
+
+        return super().process(self.data[self._count % len(self.data)])
 
 
 class GaussianNoise(task.SingleTask, random.RandomTask):
