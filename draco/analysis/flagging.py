@@ -2626,7 +2626,7 @@ class BlendStack(task.SingleTask):
 
         Parameters
         ----------
-        data_stack : VisContainer
+        data_stack : SiderealStream, RingMap,or HybridVisStream
             Data stack to blend
         """
         self.data_stack = data_stack
@@ -2636,12 +2636,12 @@ class BlendStack(task.SingleTask):
 
         Parameters
         ----------
-        data : VisContainer
+        data : SiderealStream, RingMap,or HybridVisStream
             The data to be blended into. This is modified in place.
 
         Returns
         -------
-        data_blend : VisContainer
+        data_blend : SiderealStream, RingMap,or HybridVisStream
             The modified data. This is the same object as the input, and it has been
             modified in place.
         """
@@ -2657,19 +2657,25 @@ class BlendStack(task.SingleTask):
                 f"type(data_stack) (={type(self.data_stack)}"
             )
 
+        _supported_types = (
+            containers.SiderealStream,
+            containers.RingMap,
+            containers.HybridVisStream,
+        )
+
+        if not isinstance(data, _supported_types):
+            raise TypeError(
+                f"Only {_supported_types} are supported. "
+                f"Got data type {type(data)}."
+            )
+
         # Try and get both the stack and the incoming data to have the same
         # distribution
-        self.data_stack.redistribute(["freq", "time", "ra"])
-        data.redistribute(["freq", "time", "ra"])
+        self.data_stack.redistribute("freq")
+        data.redistribute("freq")
 
-        if isinstance(data, containers.SiderealStream):
-            dset_stack = self.data_stack.vis[:].local_array
-            dset = data.vis[:].local_array
-        else:
-            raise TypeError(
-                "Only SiderealStream's are currently supported. "
-                f"Got type(data) = {type(data)}"
-            )
+        dset_stack = self.data_stack.data[:].local_array
+        dset = data.data[:].local_array
 
         if dset_stack.shape != dset.shape:
             raise ValueError(
@@ -2677,8 +2683,13 @@ class BlendStack(task.SingleTask):
                 f"data_stack ({dset_stack.shape})"
             )
 
-        weight_stack = self.data_stack.weight[:].local_array
-        weight = data.weight[:].local_array
+        # Add broadcast axes to the weight datasets
+        dax = list(data.data.attrs["axis"])
+        wax = list(data.weight.attrs["axis"])
+        slobj = tuple([slice(None) if ax in wax else np.newaxis for ax in dax])
+
+        weight_stack = self.data_stack.weight[:].local_array[slobj]
+        weight = data.weight[:].local_array[slobj]
 
         # Find the median offset between the stack and the daily data
         if self.match_median:
@@ -2686,34 +2697,50 @@ class BlendStack(task.SingleTask):
             # measured
             mask = ((weight[:] > 0) & (weight_stack[:] > 0)).astype(np.float32)
 
-            # Get the median of the stack in this common subset
-            stack_med_real = weighted_median.weighted_median(
-                np.ascontiguousarray(dset_stack.real), mask
-            )
-            stack_med_imag = weighted_median.weighted_median(
-                np.ascontiguousarray(dset_stack.imag), mask
-            )
+            # Move the time-like axis to the end
+            ind = dax.index("ra")
+            dss = np.moveaxis(dset_stack, ind, -1)
+            ds = np.moveaxis(dset, ind, -1)
+            mask = np.moveaxis(mask, ind, -1)
+            # Broadcast the mask against the datasets
+            mask = np.broadcast_to(mask, dss.shape).copy()
 
+            # Get the median of the real part of the data and the stack
+            stack_med_real = weighted_median.weighted_median(
+                np.ascontiguousarray(dss.real), mask
+            )
             # Get the median of the data in the common subset
             data_med_real = weighted_median.weighted_median(
-                np.ascontiguousarray(dset.real), mask
-            )
-            data_med_imag = weighted_median.weighted_median(
-                np.ascontiguousarray(dset.imag), mask
+                np.ascontiguousarray(ds.real), mask
             )
 
+            # If the data is complex, get the complex component too
+            if np.iscomplexobj(dss):
+                stack_med_imag = weighted_median.weighted_median(
+                    np.ascontiguousarray(dss.imag), mask
+                )
+
+                data_med_imag = weighted_median.weighted_median(
+                    np.ascontiguousarray(ds.imag), mask
+                )
+
             # Construct an offset to match the medians in the time/RA direction
-            stack_offset = (
-                (data_med_real - stack_med_real)
-                + 1.0j * (data_med_imag - stack_med_imag)
-            )[..., np.newaxis]
+            stack_offset = data_med_real - stack_med_real
+
+            # Add the complex component if it exists
+            if np.iscomplexobj(dss):
+                stack_offset = stack_offset + 1.0j * (data_med_imag - stack_med_imag)
+
+            # Move the axes back
+            stack_offset = np.moveaxis(stack_offset[..., np.newaxis], -1, ind)
 
         else:
             stack_offset = 0
 
         if self.mask_freq:
-            # Collapse the frequency selection over baselines and RA
-            fsel = np.any(weight, axis=(1, 2), keepdims=True)
+            # Collapse the frequency selection over other axes
+            axes = tuple((ii for ii, ax in enumerate(dax) if ax != "freq"))
+            fsel = np.any(weight, axis=axes, keepdims=True)
 
             # Apply the frequency selection to the stacked weights
             weight_stack *= fsel.astype(np.float64)
