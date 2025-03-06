@@ -1221,8 +1221,8 @@ def image_to_uv(data, ra, dec, window="tukey-0.5"):
         w_dec = tools.window_generalised(x_dec, window=window)
 
         # estimate the equivalent noise bandwidth for the tapering window
-        NEB_ra = noise_equivalent_bandwidth(ra.size,w_ra)
-        NEB_dec = noise_equivalent_bandwidth(dec.size,w_dec)
+        NEB_ra = noise_equivalent_bandwidth(ra.size,window)
+        NEB_dec = noise_equivalent_bandwidth(dec.size,window)
         taper_window = np.outer(w_ra[:, np.newaxis], w_dec[np.newaxis, :])
         data *= taper_window
         uv_map = np.fft.fftshift(np.fft.fft2(data))
