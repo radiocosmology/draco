@@ -1909,7 +1909,7 @@ class VisGridStream(FreqContainer, SiderealContainer, VisBase):
         "redundancy": {
             "axes": ["pol", "ew", "ns", "ra"],
             "dtype": np.int32,
-            "initialise": True,
+            "initialise": False,
             "distributed": False,
             "chunks": (1, 64, 1, 64, 128),
             "compression": COMPRESSION,
@@ -1920,7 +1920,10 @@ class VisGridStream(FreqContainer, SiderealContainer, VisBase):
     @property
     def redundancy(self):
         """Get the redundancy dataset."""
-        return self.datasets["redundancy"]
+        if "redundancy" in self.datasets:
+            return self.datasets["redundancy"]
+
+        raise KeyError("Dataset 'redundancy' not initialised.")
 
 
 class HybridVisStream(FreqContainer, SiderealContainer, VisBase):

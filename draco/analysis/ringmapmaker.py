@@ -41,12 +41,16 @@ class MakeVisGrid(task.SingleTask):
     Attributes
     ----------
     centered : bool
-        If set, place the zero NS separation at the center of the y-axis with
+        If True, place the zero NS separation at the center of the y-axis with
         the baselines given in ascending order. Otherwise the zero separation
-        is at position zero, and the baselines are in FFT order.
+        is at position zero, and the baselines are in FFT order.  Default is False.
+    save_redundancy : bool
+        If True, computes and stores the redundancy of each visibility.
+        Default is True.
     """
 
     centered = config.Property(proptype=bool, default=False)
+    save_redundancy = config.Property(proptype=bool, default=True)
 
     def setup(self, tel):
         """Set the Telescope instance to use.
@@ -128,40 +132,49 @@ class MakeVisGrid(task.SingleTask):
             attrs_from=sstream,
         )
 
+        # Calculate the redundancy
+        if self.save_redundancy:
+            redundancy = tools.calculate_redundancy(
+                sstream.input_flags[:],
+                sstream.index_map["prod"][:],
+                sstream.reverse_map["stack"]["stack"][:],
+                sstream.vis.shape[1],
+            )
+
+            grid.add_dataset("redundancy")
+
         # Redistribute over frequency
         sstream.redistribute("freq")
         grid.redistribute("freq")
 
-        # Calculate the redundancy
-        redundancy = tools.calculate_redundancy(
-            sstream.input_flags[:],
-            sstream.index_map["prod"][:],
-            sstream.reverse_map["stack"]["stack"][:],
-            sstream.vis.shape[1],
-        )
-
         # De-reference distributed arrays outside loop to save repeated MPI calls
         ssv = sstream.vis[:]
         ssw = sstream.weight[:]
-        gsv = grid.vis[:]
-        gsw = grid.weight[:]
-        gsr = grid.redundancy[:]
 
+        gsv = grid.vis[:]
         gsv[:] = 0.0
+
+        gsw = grid.weight[:]
         gsw[:] = 0.0
+
+        if self.save_redundancy:
+            gsr = grid.redundancy[:]
+            gsr[:] = 0
 
         # Unpack visibilities into new array
         for vis_ind, (p_ind, x_ind, y_ind) in enumerate(zip(pind, xind, yind)):
             # Different behavior for intracylinder and intercylinder baselines.
             gsv[p_ind, :, x_ind, ns_offset + y_ind, :] = ssv[:, vis_ind]
             gsw[p_ind, :, x_ind, ns_offset + y_ind, :] = ssw[:, vis_ind]
-            gsr[p_ind, x_ind, ns_offset - y_ind, :] = redundancy[vis_ind]
+            if self.save_redundancy:
+                gsr[p_ind, x_ind, ns_offset - y_ind, :] = redundancy[vis_ind]
 
             if x_ind == 0:
                 pc_ind = pconjmap[p_ind]
                 gsv[pc_ind, :, x_ind, ns_offset - y_ind, :] = ssv[:, vis_ind].conj()
                 gsw[pc_ind, :, x_ind, ns_offset - y_ind, :] = ssw[:, vis_ind]
-                gsr[pc_ind, x_ind, ns_offset - y_ind, :] = redundancy[vis_ind]
+                if self.save_redundancy:
+                    gsr[pc_ind, x_ind, ns_offset - y_ind, :] = redundancy[vis_ind]
 
         return grid
 
@@ -176,11 +189,9 @@ class BeamformNS(task.SingleTask):
     ----------
     npix : int
         Number of map pixels in the declination dimension.  Default is 512.
-
     span : float
         Span of map in the declination dimension. Value of 1.0 generates a map
         that spans from horizon-to-horizon.  Default is 1.0.
-
     weight : string
         How to weight the non-redundant baselines.  Options include:
             'natural' - each baseline weighted by its redundancy (default)
@@ -189,14 +200,14 @@ class BeamformNS(task.SingleTask):
         And any window function supported by drao.util.tools.window_generalised,
         such as 'hann', 'hanning', 'hamming', 'blackman', 'nuttall',
         'blackman_nuttall', 'blackman_harris' 'triangular', and 'tukey-0.X'.
-
     scaled : bool
         Scale the window to match the lowest frequency. This should make the
         beams more frequency independent.  Not supported for 'inverse_variance'
         and 'natural' weight.
-
     include_auto: bool
         Include autocorrelations in the calculation.  Default is False.
+    save_dirty_beam : bool
+        If True, computes and stores the dirty beam.  Default is False.
     """
 
     npix = config.Property(proptype=int, default=512)
@@ -223,7 +234,8 @@ class BeamformNS(task.SingleTask):
 
         gsv = gstream.vis[:].local_array
         gsw = gstream.weight[:].local_array
-        gsr = gstream.redundancy[:]
+        if self.weight == "natural":
+            gsr = gstream.redundancy[:]
 
         # Construct phase array
         el = self.span * np.linspace(-1.0, 1.0, self.npix)
