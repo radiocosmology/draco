@@ -623,6 +623,9 @@ class LoadFilesAndSelect(BaseLoadFiles):
         is provided, it is used to generate a key based on the file attributes.
         Otherwise, the index of the file in the list is used as the key.
         """
+        # Call the baseclass setup to resolve any selections
+        super().setup()
+
         self.collection = {}
         for ff, filename in enumerate(self.files):
             cont = self._load_file(filename)
