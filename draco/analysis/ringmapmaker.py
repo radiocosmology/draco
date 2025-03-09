@@ -148,13 +148,13 @@ class MakeVisGrid(task.SingleTask):
         grid.redistribute("freq")
 
         # De-reference distributed arrays outside loop to save repeated MPI calls
-        ssv = sstream.vis[:]
-        ssw = sstream.weight[:]
+        ssv = sstream.vis[:].local_array
+        ssw = sstream.weight[:].local_array
 
-        gsv = grid.vis[:]
+        gsv = grid.vis[:].local_array
         gsv[:] = 0.0
 
-        gsw = grid.weight[:]
+        gsw = grid.weight[:].local_array
         gsw[:] = 0.0
 
         if self.save_redundancy:
