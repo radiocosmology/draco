@@ -1165,8 +1165,12 @@ class RADependentWeights(task.SingleTask):
             )
             raise RuntimeError(msg)
 
+        # Ensure containers are distributed over the same axis
+        hybrid_vis.redistribute("freq")
+        ringmap.redistribute("freq")
+
         # Extract the variance of the hybrid visibilities from the weight dataset
-        var = tools.invert_no_zero(hybrid_vis.weight[:].view(np.ndarray))
+        var = tools.invert_no_zero(hybrid_vis.weight[:].local_array)
 
         # Calculate the time averaged variance
         var_time_avg = np.mean(var, axis=-1, keepdims=True)
@@ -1199,7 +1203,7 @@ class RADependentWeights(task.SingleTask):
         ) * tools.invert_no_zero(np.sum(weight_ew**2 * var, axis=-2))
 
         # Scale the ringmap weights by the RA dependence
-        ringmap.weight[:] *= ra_dependence[..., np.newaxis]
+        ringmap.weight[:].local_array[:] *= ra_dependence[..., np.newaxis]
 
         return ringmap
 
