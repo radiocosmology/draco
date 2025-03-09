@@ -167,7 +167,7 @@ class MakeVisGrid(task.SingleTask):
             gsv[p_ind, :, x_ind, ns_offset + y_ind, :] = ssv[:, vis_ind]
             gsw[p_ind, :, x_ind, ns_offset + y_ind, :] = ssw[:, vis_ind]
             if self.save_redundancy:
-                gsr[p_ind, x_ind, ns_offset - y_ind, :] = redundancy[vis_ind]
+                gsr[p_ind, x_ind, ns_offset + y_ind, :] = redundancy[vis_ind]
 
             if x_ind == 0:
                 pc_ind = pconjmap[p_ind]
