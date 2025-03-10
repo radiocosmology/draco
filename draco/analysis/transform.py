@@ -7,9 +7,10 @@ from typing import Optional, Union, overload
 
 import numpy as np
 import scipy.linalg as la
-from caput import config, mpiarray, pipeline
+from caput import config, mpiarray, mpiutil, pipeline
 from caput.tools import invert_no_zero
 from numpy.lib.recfunctions import structured_to_unstructured
+from scipy import fft as sfft
 
 from ..core import containers, io, task
 from ..util import regrid, tools
@@ -664,16 +665,19 @@ def _make_marray(ts, mmodes=None, mmax=None, dtype=None):
     mlim = min(N // 2, mmax)
     mlim_neg = N // 2 - 1 + N % 2 if mmax >= N // 2 else mmax
 
-    for i in range(ts.shape[0]):
-        m_fft = np.fft.fft(ts[i], axis=-1) / ts.shape[-1]
+    # Do the transform and move the M axis to the front
+    m_fft = sfft.fft(ts, axis=-1, workers=mpiutil.cpu_count()) / ts.shape[-1]
+    m_fft = np.moveaxis(m_fft, -1, 0)
 
-        # Loop and copy over positive and negative m's
-        # NOTE: this is done as a loop to try and save memory
-        for mi in range(mlim + 1):
-            mmodes[mi, 0, i] = m_fft[..., mi]
+    # Write the positive and negative m's
+    npos = mlim + 1
+    nneg = mlim_neg + 1
 
-        for mi in range(1, mlim_neg + 1):
-            mmodes[mi, 1, i] = m_fft[..., -mi].conj()
+    mmodes[:npos, 0] = m_fft[:npos]
+    mmodes[1:nneg, 1] = m_fft[-1:-nneg:-1]
+
+    # Conjugate and write in-place
+    np.conjugate(mmodes[1:nneg, 1], out=mmodes[1:nneg, 1])
 
     return mmodes
 
