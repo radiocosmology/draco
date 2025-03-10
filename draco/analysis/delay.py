@@ -1096,8 +1096,7 @@ class DelaySpectrumWienerEstimator(DelayGeneralContainerBase):
 
 
 class DelaySpectrumWienerEstimatorUpdatePowerSpectrum(DelaySpectrumWienerEstimator):
-    """Class to estimate the delay spectrum using Wiener filtering,
-    updating the delay power spectrum with each iteration.
+    """Class to estimate the delay spectrum using Wiener filtering.
 
     This class extends `DelaySpectrumWienerEstimator` by allowing the
     delay power spectrum (`dps`) to be updated with each call to `process`
