@@ -665,15 +665,19 @@ def _make_marray(ts, mmodes=None, mmax=None, dtype=None):
     mlim = min(N // 2, mmax)
     mlim_neg = N // 2 - 1 + N % 2 if mmax >= N // 2 else mmax
 
+    # Do the transform and move the M axis to the front
     m_fft = sfft.fft(ts, axis=-1, workers=mpiutil.cpu_count()) / ts.shape[-1]
-
-    # Move the M axis to the front
     m_fft = np.moveaxis(m_fft, -1, 0)
+
     # Write the positive and negative m's
-    mmodes[:, 0] = m_fft[: mlim + 1]
-    mmodes[:, 1] = m_fft[::-1][: mlim_neg + 1]
+    npos = mlim + 1
+    nneg = mlim_neg + 1
+
+    mmodes[:npos, 0] = m_fft[:npos]
+    mmodes[1:nneg, 1] = m_fft[-1:-nneg:-1]
+
     # Conjugate and write in-place
-    mmodes[:, 1] = np.conjugate(mmodes[:, 1], out=mmodes[:, 1])
+    np.conjugate(mmodes[1:nneg, 1], out=mmodes[1:nneg, 1])
 
     return mmodes
 
