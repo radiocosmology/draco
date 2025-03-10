@@ -599,6 +599,83 @@ class LoadFilesFromAttrs(BaseLoadFiles):
         return self._load_file(filename)
 
 
+class LoadFilesAndSelect(BaseLoadFiles):
+    """Load a collection of files on setup and select specific entries on process.
+
+    Attributes
+    ----------
+    files : list of str or str
+        A list of file paths or a glob pattern specifying the files to load.
+    key_format : str, optional
+        A format string used to generate keys for file selection.  Can reference
+        any variables contained in the attributes of the containers.  If `None`,
+        files are stored with numerical indices.
+    """
+
+    files = config.Property(proptype=_list_or_glob)
+    key_format = config.Property(proptype=str)
+
+    def setup(self):
+        """Load and store files in a dictionary.
+
+        This method iterates through the list of files, loads their contents,
+        and stores them in the `self.collection` dictionary. If `key_format`
+        is provided, it is used to generate a key based on the file attributes.
+        Otherwise, the index of the file in the list is used as the key.
+        """
+        # Call the baseclass setup to resolve any selections
+        super().setup()
+
+        self.collection = {}
+        for ff, filename in enumerate(self.files):
+            cont = self._load_file(filename)
+
+            if self.key_format is None:
+                self.collection[ff] = cont
+
+            else:
+                attrs = dict(cont.attrs)
+                key = self.key_format.format(**attrs)
+                self.collection[key] = cont
+
+    def process(self, incont):
+        """Select and return a file from the collection based on the input container.
+
+        If `key_format` is provided, the selection key is derived from the attributes
+        of the input container.  If the resulting key is not found in the collection,
+        a warning is logged, and `None` is returned.
+
+        If `key_format` is not provided, files are selected sequentially from
+        the collection, cycling back to the beginning if more input containers
+        are received than the number of available files.
+
+        Parameters
+        ----------
+        incont : memh5.BasicCont subclass
+            Container whose attributes are used to determine the selection key.
+
+        Returns
+        -------
+        outcont : memh5.BasicCont subclass or None
+            The selected file if found, otherwise `None`.
+        """
+        if self.key_format is None:
+            key = self._count % len(self.collection)
+            self.log.info(f"Selecting file in position {key}.")
+        else:
+            attrs = dict(incont.attrs)
+            key = self.key_format.format(**attrs)
+
+            if key not in self.collection:
+                self.log.warning(f"Could not find file with label {key}.")
+                return None
+
+            self.log.info(f"Selecting file with label {key}.")
+
+        # Return the file with the desired key
+        return self.collection[key]
+
+
 class FindFiles(pipeline.TaskBase):
     """Take a glob or list of files and pass on to other tasks.
 

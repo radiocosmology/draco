@@ -230,7 +230,10 @@ class AccumulateList(task.MPILoggedTask):
         items = self._items
         del self._items
 
-        return items
+        # If the group_size was set, then items will either be an empty list
+        # or an incomplete list (with the incorrect number of outputs), so
+        # in that case return None to prevent the pipeline from crashing.
+        return items if self.group_size is None else None
 
 
 class CheckMPIEnvironment(task.MPILoggedTask):

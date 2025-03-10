@@ -988,7 +988,7 @@ class DelaySpectrumWienerEstimator(DelayGeneralContainerBase):
     https://arxiv.org/abs/2202.01242, Eq. A6 for details.
     """
 
-    def setup(self, dps: containers.DelaySpectrum):
+    def setup(self, dps=None):
         """Set the delay power spectrum to use as the signal covariance.
 
         Parameters
@@ -1024,6 +1024,10 @@ class DelaySpectrumWienerEstimator(DelayGeneralContainerBase):
         # Save the frequency axis of the input data as an attribute in the output
         # container
         delay_spec.attrs["freq"] = ss.freq
+
+        # Save the frequency tapering window name as an attribute in the output
+        # container. This is needed in the later stage to estimate effective bandwidth.
+        delay_spec.attrs["window_los"] = self.window if self.apply_window else "None"
 
         return delay_spec
 
@@ -1089,6 +1093,34 @@ class DelaySpectrumWienerEstimator(DelayGeneralContainerBase):
             out_cont.spectrum[bi, nzt] = np.fft.fftshift(y_spec, axes=1)
 
         return out_cont
+
+
+class DelaySpectrumWienerEstimatorUpdatePowerSpectrum(DelaySpectrumWienerEstimator):
+    """Class to estimate the delay spectrum using Wiener filtering.
+
+    This class extends `DelaySpectrumWienerEstimator` by allowing the
+    delay power spectrum (`dps`) to be updated with each call to `process`
+    instead of being fixed at `setup`.  The updated `dps` is used to apply
+    the Wiener filter to the input frequency spectrum.
+    """
+
+    def process(self, ss, dps):
+        """Estimate the delay spectrum.
+
+        Parameters
+        ----------
+        ss : `containers.FreqContainer`
+            Data to transform. Must have a frequency axis.
+        dps : `containers.DelaySpectrum`
+            Delay power spectrum for signal part of Wiener filter.
+
+        Returns
+        -------
+        out_cont : `containers.DelayTransform` or `containers.DelaySpectrum`
+            Output delay spectrum or delay power spectrum.
+        """
+        self.dps = dps
+        return super().process(ss)
 
 
 # Aliases to support old names
