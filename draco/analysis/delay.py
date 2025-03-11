@@ -1,6 +1,6 @@
 """Delay space spectrum estimation and filtering."""
 
-from typing import Optional, TypeVar, Union
+from typing import TypeVar
 
 import numpy as np
 import scipy.linalg as la
@@ -512,7 +512,7 @@ class DelayTransformBase(task.SingleTask):
         raise NotImplementedError()
 
     def _calculate_delays(
-        self, ss: Union[FreqContainer, list[FreqContainer]]
+        self, ss: FreqContainer | list[FreqContainer]
     ) -> tuple[np.ndarray, np.ndarray]:
         """Calculate the grid of delays.
 
@@ -570,7 +570,7 @@ class DelayTransformBase(task.SingleTask):
         self,
         data: np.ndarray,
         weight: np.ndarray,
-    ) -> Optional[tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]]:
+    ) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray] | None:
         """Apply cuts on the data and weights and returned modified versions.
 
         Parameters
@@ -677,7 +677,7 @@ class DelayGibbsSamplerBase(DelayTransformBase, random.RandomTask):
         self,
         ss: FreqContainer,
         delays: np.ndarray,
-        coord_axes: Union[list[str], np.ndarray],
+        coord_axes: list[str] | np.ndarray,
     ) -> ContainerBase:
         """Create the output container for the delay power spectrum.
 
@@ -1482,7 +1482,7 @@ def fourier_matrix_c2c(N, fsel=None):
     return F
 
 
-def fourier_matrix(N: int, fsel: Optional[np.ndarray] = None) -> np.ndarray:
+def fourier_matrix(N: int, fsel: np.ndarray | None = None) -> np.ndarray:
     """Generate a Fourier matrix to represent a real to complex FFT.
 
     Parameters
@@ -1769,9 +1769,9 @@ def delay_spectrum_gibbs_cross(
     Ni: np.ndarray,
     initial_S: np.ndarray,
     window: str = "nuttall",
-    fsel: Optional[np.ndarray] = None,
+    fsel: np.ndarray | None = None,
     niter: int = 20,
-    rng: Optional[np.random.Generator] = None,
+    rng: np.random.Generator | None = None,
 ) -> list[np.ndarray]:
     """Estimate the delay power spectrum by Gibbs sampling.
 
@@ -2143,7 +2143,7 @@ def match_axes(dset1, dset2):
 def flatten_axes(
     dset: memh5.MemDatasetDistributed,
     axes_to_keep: list[str],
-    match_dset: Optional[memh5.MemDatasetDistributed] = None,
+    match_dset: memh5.MemDatasetDistributed | None = None,
 ) -> tuple[mpiarray.MPIArray, list[str]]:
     """Move the specified axes of the dataset to the back, and flatten all others.
 

@@ -27,7 +27,7 @@ import os.path
 import shutil
 import subprocess
 from functools import partial
-from typing import ClassVar, Optional, Union
+from typing import ClassVar
 
 import numpy as np
 from caput import config, fileformats, memh5, pipeline, truncate
@@ -39,7 +39,7 @@ from ..util.exception import ConfigError
 from . import task
 
 
-def _list_of_filelists(files: Union[list[str], list[list[str]]]) -> list[list[str]]:
+def _list_of_filelists(files: list[str] | list[list[str]]) -> list[list[str]]:
     """Take in a list of lists/glob patterns of filenames.
 
     Parameters
@@ -77,7 +77,7 @@ def _list_of_filelists(files: Union[list[str], list[list[str]]]) -> list[list[st
     return f2
 
 
-def _list_or_glob(files: Union[str, list[str]]) -> list[str]:
+def _list_or_glob(files: str | list[str]) -> list[str]:
     """Take in a list of lists/glob patterns of filenames.
 
     Parameters
@@ -126,7 +126,7 @@ def _list_or_glob(files: Union[str, list[str]]) -> list[str]:
     )
 
 
-def _list_of_filegroups(groups: Union[list[dict], dict]) -> list[dict]:
+def _list_of_filegroups(groups: list[dict] | dict) -> list[dict]:
     """Process a file group/groups.
 
     Parameters
@@ -426,7 +426,7 @@ class SelectionsMixin:
     def _parse_range(self, x):
         # Parse and validate a range type selection
 
-        if not isinstance(x, (list, tuple)) or len(x) > 3 or len(x) < 2:
+        if not isinstance(x, list | tuple) or len(x) > 3 or len(x) < 2:
             raise ValueError(
                 f"Range spec must be a length 2 or 3 list or tuple. Got {x}."
             )
@@ -440,7 +440,7 @@ class SelectionsMixin:
     def _parse_index(self, x, type_=object):
         # Parse and validate an index type selection
 
-        if not isinstance(x, (list, tuple)) or len(x) == 0:
+        if not isinstance(x, list | tuple) or len(x) == 0:
             raise ValueError(f"Index spec must be a non-empty list or tuple. Got {x}.")
 
         for v in x:
@@ -690,7 +690,7 @@ class FindFiles(pipeline.TaskBase):
 
     def setup(self):
         """Return list of files specified in the parameters."""
-        if not isinstance(self.files, (list, tuple)):
+        if not isinstance(self.files, list | tuple):
             raise RuntimeError("Argument must be list of files.")
 
         return self.files
@@ -715,7 +715,7 @@ class LoadFiles(LoadFilesFromParams):
         # Call the baseclass setup to resolve any selections
         super().setup()
 
-        if not isinstance(files, (list, tuple)):
+        if not isinstance(files, list | tuple):
             raise RuntimeError(f'Argument must be list of files. Got "{files}"')
 
         self.files = files
@@ -1149,7 +1149,7 @@ class ZipZarrContainers(task.SingleTask):
 class ZarrZipHandle:
     """A handle for keeping track of background Zarr-zipping job."""
 
-    def __init__(self, filename: str, handle: Optional[subprocess.Popen]):
+    def __init__(self, filename: str, handle: subprocess.Popen | None):
         self.filename = filename
         self.handle = handle
 
@@ -1232,7 +1232,7 @@ class SaveZarrZip(ZipZarrContainers):
 class WaitZarrZip(task.MPILoggedTask):
     """Collect Zarr-zipping jobs and wait for them to complete."""
 
-    _handles: Optional[list[ZarrZipHandle]] = None
+    _handles: list[ZarrZipHandle] | None = None
 
     def next(self, handle: ZarrZipHandle):
         """Receive the handles to wait on.
@@ -1324,8 +1324,8 @@ class SaveConfig(task.SingleTask):
 
 
 # Python types for objects convertible to beamtransfers or telescope instances
-BeamTransferConvertible = Union[manager.ProductManager, beamtransfer.BeamTransfer]
-TelescopeConvertible = Union[BeamTransferConvertible, telescope.TransitTelescope]
+BeamTransferConvertible = manager.ProductManager | beamtransfer.BeamTransfer
+TelescopeConvertible = BeamTransferConvertible | telescope.TransitTelescope
 
 
 def get_telescope(obj):
