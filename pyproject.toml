@@ -29,6 +29,7 @@ dependencies = [
     "driftscan @ git+https://github.com/radiocosmology/driftscan.git",
     "mpi4py",
     "numpy>=1.24",
+    "astropy>=6.1.6",
     "scikit-image",
     "scipy>=1.14",
     "skyfield",
