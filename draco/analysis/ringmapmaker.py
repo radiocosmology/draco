@@ -1214,13 +1214,13 @@ class RADependentWeights(task.SingleTask):
         return ringmap
 
 
-class ReconstructVisWeights(transform.CollateProducts):
+class ReconstructVisWeights(transform.TelescopeStreamMixIn, task.SingleTask):
     """Compute visibility weights that match hybrid beamformed visibility weights.
 
     This is useful for generating noise realizations of hybrid beamformed
-    visibilities that maintain proper correlation along the elevation axis.
-    It is a subclass of CollateProducts because it uses the same setup method
-    to create the approrpiate prod and stack axis from a telescope instance.
+    visibilities that maintain proper correlation along the el axis.  It uses
+    the setup method defined in TelescopeStreamMixIn to create the the appropriate
+    prod, stack, and reverse_stack axis from a telescope instance.
     """
 
     def process(self, hv):
@@ -1260,6 +1260,8 @@ class ReconstructVisWeights(transform.CollateProducts):
         # Determine the layout of the visibilities on the grid.
         xind, yind, min_xsep, min_ysep = find_grid_indices(self.telescope.baselines)
 
+        baseline_flag = np.abs(yind * min_ysep) <= (nsmax + 0.5 * min_ysep)
+
         # Determine north-south grid
         ny = 2 * np.abs(yind).max() + 1
         nspos = np.fft.fftfreq(ny, d=(1.0 / (ny * min_ysep)))
@@ -1280,11 +1282,14 @@ class ReconstructVisWeights(transform.CollateProducts):
         pol_lookup = {key: ind for ind, key in enumerate(hv.pol)}
 
         pol_remap = np.array([pol_lookup.get(pstr, -1) for pstr in polpair[pind]])
-        valid_pol = pol_remap >= 0
+        pol_flag = pol_remap >= 0
 
-        xind = xind[valid_pol]
-        yind = yind[valid_pol]
-        pind = pol_remap[valid_pol]
+        # Downselect the baselines to process
+        flag = pol_flag & baseline_flag
+
+        xind = xind[flag]
+        yind = yind[flag]
+        pind = pol_remap[flag]
 
         pconjmap = np.unique([pj + pi for pi, pj in pol], return_inverse=True)[1]
 
@@ -1313,12 +1318,14 @@ class ReconstructVisWeights(transform.CollateProducts):
             ss.vis.shape[1],
         )[:, 0]
 
+        nbaseline_valid = nbaseline[flag]
+
         # Place the redundancy onto a regular grid
         nbaseline_grid = np.zeros((npol, nx, ny), dtype=float)
-        nbaseline_grid[pind, xind, yind] = nbaseline[:]
+        nbaseline_grid[pind, xind, yind] = nbaseline_valid
 
         intra = np.flatnonzero(xind == 0)
-        nbaseline_grid[pconjmap[pind[intra]], 0, yind[intra]] = nbaseline[intra]
+        nbaseline_grid[pconjmap[pind[intra]], 0, -yind[intra]] = nbaseline_valid[intra]
 
         # Determine the wavelengths
         wavelength = scipy.constants.c * 1e-6 / ss.freq[ss.weight[:].local_bounds]
@@ -1330,7 +1337,7 @@ class ReconstructVisWeights(transform.CollateProducts):
 
         # Assume that the weight in the sidereal stream
         # scales with redundancy
-        wss[:] = np.where(valid_pol, nbaseline, 0.0)[np.newaxis, :, np.newaxis]
+        wss[:] = np.where(flag, nbaseline, 0.0)[np.newaxis, :, np.newaxis]
 
         # Dereference datasets in input container
         whv = hv.weight[:].local_array
@@ -1385,7 +1392,7 @@ class ReconstructVisWeights(transform.CollateProducts):
 
             w0 = noise_factor[:, :, np.newaxis] * whv[:, ff, :, :]
 
-            wss[ff][valid_pol] *= w0[pind, xind, :]
+            wss[ff][flag] *= w0[pind, xind, :]
 
         return ss
 

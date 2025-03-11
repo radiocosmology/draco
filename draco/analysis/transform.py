@@ -86,7 +86,58 @@ class FrequencyRebin(task.SingleTask):
         return sb
 
 
-class CollateProducts(task.SingleTask):
+class TelescopeStreamMixIn:
+    """A mixin providing functionality for creating telescope-defined sidereal streams.
+
+    This mixin is designed to be used with pipeline tasks that require certain
+    index maps in order to create SiderealStream containers compatible with the
+    baseline configuration provided in a telescope instance.
+    """
+
+    def setup(self, tel):
+        """Set up the telescope instance and precompute index maps.
+
+        Parameters
+        ----------
+        tel : TransitTelescope
+            The telescope instance to use to compute the prod, stack,
+            and reverse_stack index maps.
+        """
+        self.telescope = io.get_telescope(tel)
+
+        # Precalculate the stack properties
+        self.bt_stack = np.array(
+            [
+                (
+                    (tools.cmap(upp[0], upp[1], self.telescope.nfeed), 0)
+                    if upp[0] <= upp[1]
+                    else (tools.cmap(upp[1], upp[0], self.telescope.nfeed), 1)
+                )
+                for upp in self.telescope.uniquepairs
+            ],
+            dtype=[("prod", "<u4"), ("conjugate", "u1")],
+        )
+
+        # Construct the equivalent prod and stack index_map for the telescope instance
+        triu = np.triu_indices(self.telescope.nfeed)
+        dt_prod = np.dtype([("input_a", "<u2"), ("input_b", "<u2")])
+        self.bt_prod = np.array(triu).astype("<u2").T.copy().view(dt_prod).reshape(-1)
+
+        # Construct the equivalent reverse_map stack for the telescope instance.
+        # Note that we identify invalid products here using an index that is the
+        # size of the stack axis.
+        feedmask = self.telescope.feedmask[triu]
+
+        self.bt_rev = np.empty(
+            feedmask.size, dtype=[("stack", "<u4"), ("conjugate", "u1")]
+        )
+        self.bt_rev["stack"] = np.where(
+            feedmask, self.telescope.feedmap[triu], self.telescope.npairs
+        )
+        self.bt_rev["conjugate"] = np.where(feedmask, self.telescope.feedconj[triu], 0)
+
+
+class CollateProducts(TelescopeStreamMixIn, task.SingleTask):
     """Extract and order the correlation products for map-making.
 
     The task will take a sidereal task and format the products that are needed
@@ -120,40 +171,9 @@ class CollateProducts(task.SingleTask):
             Telescope object to use
         """
         if self.weight not in ["natural", "uniform", "inverse_variance"]:
-            KeyError(f"Do not recognize weight = {self.weight!s}")
+            raise KeyError(f"Do not recognize weight = {self.weight!s}")
 
-        self.telescope = io.get_telescope(tel)
-
-        # Precalculate the stack properties
-        self.bt_stack = np.array(
-            [
-                (
-                    (tools.cmap(upp[0], upp[1], self.telescope.nfeed), 0)
-                    if upp[0] <= upp[1]
-                    else (tools.cmap(upp[1], upp[0], self.telescope.nfeed), 1)
-                )
-                for upp in self.telescope.uniquepairs
-            ],
-            dtype=[("prod", "<u4"), ("conjugate", "u1")],
-        )
-
-        # Construct the equivalent prod and stack index_map for the telescope instance
-        triu = np.triu_indices(self.telescope.nfeed)
-        dt_prod = np.dtype([("input_a", "<u2"), ("input_b", "<u2")])
-        self.bt_prod = np.array(triu).astype("<u2").T.copy().view(dt_prod).reshape(-1)
-
-        # Construct the equivalent reverse_map stack for the telescope instance.
-        # Note that we identify invalid products here using an index that is the
-        # size of the stack axis.
-        feedmask = self.telescope.feedmask[triu]
-
-        self.bt_rev = np.empty(
-            feedmask.size, dtype=[("stack", "<u4"), ("conjugate", "u1")]
-        )
-        self.bt_rev["stack"] = np.where(
-            feedmask, self.telescope.feedmap[triu], self.telescope.npairs
-        )
-        self.bt_rev["conjugate"] = np.where(feedmask, self.telescope.feedconj[triu], 0)
+        super().setup(tel)
 
     @overload
     def process(self, ss: containers.SiderealStream) -> containers.SiderealStream: ...
