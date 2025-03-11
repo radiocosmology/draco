@@ -582,9 +582,7 @@ class MModeTransform(task.SingleTask):
             containers.SiderealStream: containers.MModes,
             containers.HybridVisStream: containers.HybridVisMModes,
         }
-
-        # Get the output container and figure out at which position is it's
-        # frequency axis
+        # Get the output container type
         out_cont = contmap[sstream.__class__]
 
         sstream.redistribute("freq")
@@ -678,21 +676,23 @@ def _make_marray(ts, mmodes=None, mmax=None, dtype=None):
 
     # Do the transform and move the M axis to the front. There's
     # a bug in `pyfftw` which causes an error if `ts.ndim - len(axes) >= 2`,
-    # so we have to flatten the other axes to get around that. This should
-    # still end up being noticeably faster than `numpy` or `scipy` ffts.
+    # so we have to flatten the other axes to get around that. This is
+    # still faster than `numpy` or `scipy` ffts.
     shp = ts.shape
-    m_fft = fftw.fft(ts.reshape(-1, shp[-1]), axes=-1).reshape(shp) / shp[-1]
+    m_fft = fftw.fft(ts.reshape(-1, shp[-1]), axes=-1).reshape(shp)
     m_fft = np.moveaxis(m_fft, -1, 0)
 
     # Write the positive and negative m's
     npos = mlim + 1
     nneg = mlim_neg + 1
 
-    mmodes[:npos, 0] = m_fft[:npos]
-    mmodes[1:nneg, 1] = m_fft[-1:-nneg:-1]
-
-    # Conjugate and write in-place
-    np.conjugate(mmodes[1:nneg, 1], out=mmodes[1:nneg, 1])
+    # Applying fft normalisation here is quite a bit
+    # faster than applying it directly to `m_fft`. It's
+    # not entirely clear why.
+    norm = tools.invert_no_zero(shp[-1])
+    mmodes[:npos, 0] = m_fft[:npos] * norm
+    # Take the conjugate of the negative modes
+    mmodes[1:nneg, 1] = m_fft[-1:-nneg:-1].conj() * norm
 
     return mmodes
 
