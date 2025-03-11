@@ -1219,7 +1219,7 @@ class ReconstructVisWeight(transform.TelescopeStreamMixIn, task.SingleTask):
 
     This is useful for generating noise realizations of hybrid beamformed
     visibilities that maintain proper correlation along the el axis.  It uses
-    the setup method defined in TelescopeStreamMixIn to create the the appropriate
+    the setup method defined in TelescopeStreamMixIn to create the appropriate
     prod, stack, and reverse_stack axis from a telescope instance.
     """
 
