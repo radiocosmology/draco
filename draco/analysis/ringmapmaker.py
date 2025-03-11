@@ -1228,15 +1228,15 @@ class ReconstructVisWeight(transform.TelescopeStreamMixIn, task.SingleTask):
 
         Parameters
         ----------
-        hv : HybridVisStream
+        hv : containers.HybridVisStream
             Hybrid beamformed visibilities with the desired weights.
 
         Returns
         -------
-        sstream : containers.SiderealStream
-            A sidereal stream whose visibilities are set to zero,
-            with weights  proportional to the baseline redundancy
-            and normalized to  reproduce the input weights after
+        ss : containers.SiderealStream
+            A sidereal stream with visibilities set to zero and
+            with weights proportional to the baseline redundancy
+            and normalized to reproduce the input weights after
             beamforming in the north-south direction.
         """
         # Extract parameters needed to calculate the window
