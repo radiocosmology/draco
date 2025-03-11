@@ -589,17 +589,20 @@ class MModeTransform(task.SingleTask):
 
         sstream.redistribute("freq")
 
+        svis = sstream.vis[:].local_array
+        sweight = sstream.weight[:].local_array
+
         # Sum the noise variance over time samples, this will become the noise
         # variance for the m-modes
         nra = sstream.weight.shape[-1]
         weight_sum = nra**2 * tools.invert_no_zero(
-            tools.invert_no_zero(sstream.weight[:]).sum(axis=-1)
+            tools.invert_no_zero(sweight).sum(axis=-1)
         )
 
         if self.telescope is not None:
             mmax = self.telescope.mmax
         else:
-            mmax = sstream.vis.shape[-1] // 2
+            mmax = svis.shape[-1] // 2
 
         # Create the container to store the modes in
         ma = out_cont(
@@ -610,14 +613,16 @@ class MModeTransform(task.SingleTask):
             comm=sstream.comm,
         )
         ma.redistribute("freq")
+        mvis = ma.vis[:].local_array
+        mweight = ma.weight[:].local_array
 
         # Generate the m-mode transform directly into the output container
         # NOTE: Need to zero fill as not every element gets set within _make_marray
-        ma.vis[:] = 0.0
-        _make_marray(sstream.vis[:].local_array, ma.vis[:].local_array)
+        mvis[:] = 0.0
+        _make_marray(svis, mvis)
 
         # Assign the weights into the container
-        ma.weight[:] = weight_sum[np.newaxis, np.newaxis, :, :]
+        mweight[:] = weight_sum[np.newaxis, np.newaxis, :, :]
 
         # Divide out the m-mode sinc-suppression caused by the rectangular integration window
         if self.remove_integration_window:
@@ -625,11 +630,11 @@ class MModeTransform(task.SingleTask):
             w = np.sinc(m / nra)
             inv_w = tools.invert_no_zero(w)
 
-            sl_vis = (slice(None),) + (np.newaxis,) * (len(ma.vis.shape) - 1)
-            ma.vis[:] *= inv_w[sl_vis]
+            sl_vis = (slice(None),) + (np.newaxis,) * (len(mvis.shape) - 1)
+            mvis[:] *= inv_w[sl_vis]
 
-            sl_weight = (slice(None),) + (np.newaxis,) * (len(ma.weight.shape) - 1)
-            ma.weight[:] *= w[sl_weight] ** 2
+            sl_weight = (slice(None),) + (np.newaxis,) * (len(mweight.shape) - 1)
+            mweight[:] *= w[sl_weight] ** 2
 
         return ma
 
