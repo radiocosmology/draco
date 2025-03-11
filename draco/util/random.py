@@ -4,7 +4,8 @@ import concurrent.futures
 import contextlib
 import os
 import zlib
-from typing import Callable, ClassVar, Optional
+from collections.abc import Callable
+from typing import ClassVar
 
 import numpy as np
 from caput import config
@@ -299,9 +300,9 @@ class MultithreadedRNG(np.random.Generator):
 
     def __init__(
         self,
-        seed: Optional[int] = None,
-        threads: Optional[int] = None,
-        bitgen: Optional[np.random.BitGenerator] = None,
+        seed: int | None = None,
+        threads: int | None = None,
+        bitgen: np.random.BitGenerator | None = None,
     ):
         if bitgen is None:
             bitgen = _default_bitgen

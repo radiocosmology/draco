@@ -51,7 +51,7 @@ class ApplyGain(task.SingleTask):
         gain.redistribute("freq")
 
         if tstream.is_stacked and not isinstance(
-            gain, (containers.CommonModeGainData, containers.CommonModeSiderealGainData)
+            gain, containers.CommonModeGainData | containers.CommonModeSiderealGainData
         ):
             raise ValueError(
                 f"Cannot apply input-dependent gains to stacked data: {tstream!s}"
@@ -68,12 +68,10 @@ class ApplyGain(task.SingleTask):
 
         elif isinstance(
             gain,
-            (
-                containers.GainData,
-                containers.SiderealGainData,
-                containers.CommonModeGainData,
-                containers.CommonModeSiderealGainData,
-            ),
+            containers.GainData
+            | containers.SiderealGainData
+            | containers.CommonModeGainData
+            | containers.CommonModeSiderealGainData,
         ):
             # Extract gain array
             gain_arr = gain.gain[:]
@@ -86,7 +84,7 @@ class ApplyGain(task.SingleTask):
 
             if isinstance(
                 gain,
-                (containers.SiderealGainData, containers.CommonModeSiderealGainData),
+                containers.SiderealGainData | containers.CommonModeSiderealGainData,
             ):
                 # Check that we are defined at the same RA samples
                 if (gain.ra != tstream.ra).any():
@@ -151,7 +149,7 @@ class ApplyGain(task.SingleTask):
                 tstream.vis[:], gvis, out=tstream.vis[:], prod_map=tstream.prod
             )
         elif isinstance(
-            gain, (containers.CommonModeGainData, containers.CommonModeSiderealGainData)
+            gain, containers.CommonModeGainData | containers.CommonModeSiderealGainData
         ):
             # Apply the gains to all 'prods/stacks' directly:
             tstream.vis[:] *= np.abs(gvis[:, np.newaxis, :]) ** 2
@@ -174,7 +172,7 @@ class ApplyGain(task.SingleTask):
                 tstream.weight[:], gweight, out=tstream.weight[:], prod_map=tstream.prod
             )
         elif isinstance(
-            gain, (containers.CommonModeGainData, containers.CommonModeSiderealGainData)
+            gain, containers.CommonModeGainData | containers.CommonModeSiderealGainData
         ):
             # Apply the gains to all 'prods/stacks' directly:
             tstream.weight[:] *= gweight[:, np.newaxis, :] ** 2

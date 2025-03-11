@@ -60,7 +60,7 @@ their own custom container types.
 """
 
 import inspect
-from typing import ClassVar, Optional, Union
+from typing import ClassVar
 
 import numpy as np
 from caput import memh5, mpiarray, tod
@@ -201,7 +201,7 @@ class ContainerBase(memh5.BasicCont):
                 copy_axis_attrs = False
 
                 # If axis is an integer, turn into an arange as a default definition
-                if isinstance(axis_map, (int, np.integer)):
+                if isinstance(axis_map, int | np.integer):
                     axis_map = np.arange(axis_map)
 
             # If no valid map provided in arguments copy from another object if set
@@ -643,8 +643,8 @@ class DataWeightContainer(ContainerBase):
     `_weight_dset_name`.
     """
 
-    _data_dset_name: Optional[str] = None
-    _weight_dset_name: Optional[str] = None
+    _data_dset_name: str | None = None
+    _weight_dset_name: str | None = None
 
     @property
     def data(self) -> memh5.MemDataset:
@@ -1023,7 +1023,7 @@ class MContainer(ContainerBase):
     _axes = ("m", "msign")
 
     def __init__(
-        self, mmax: Optional[int] = None, oddra: Optional[bool] = None, *args, **kwargs
+        self, mmax: int | None = None, oddra: bool | None = None, *args, **kwargs
     ):
         # Set up axes from passed arguments
         if mmax is not None:
@@ -2260,7 +2260,7 @@ class GainDataBase(DataWeightContainer):
         return self.datasets["gain"]
 
     @property
-    def weight(self) -> Optional[memh5.MemDataset]:
+    def weight(self) -> memh5.MemDataset | None:
         """The weights for each data point.
 
         Returns None is no weight dataset exists.
@@ -3216,9 +3216,9 @@ def empty_timestream(**kwargs):
 def copy_datasets_filter(
     source: ContainerBase,
     dest: ContainerBase,
-    axis: Union[str, list, tuple] = [],
-    selection: Union[np.ndarray, list, slice, dict] = {},
-    exclude_axes: Optional[list[str]] = None,
+    axis: str | list | tuple = [],
+    selection: np.ndarray | list | slice | dict = {},
+    exclude_axes: list[str] | None = None,
     copy_without_selection: bool = False,
 ):
     """Copy datasets while filtering a given axis.
