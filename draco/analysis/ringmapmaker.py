@@ -19,6 +19,7 @@ Tasks
     WienerRingMapMakerAnalytical
     WienerRingMapMakerExternal
     RADependentWeights
+    ReconstructVisWeight
 """
 
 import numpy as np

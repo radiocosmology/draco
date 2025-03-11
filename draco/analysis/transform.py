@@ -160,20 +160,7 @@ class CollateProducts(TelescopeStreamMixIn, task.SingleTask):
             'inverse_variance' - each baseline weighted by the weight attribute
     """
 
-    weight = config.Property(proptype=str, default="natural")
-
-    def setup(self, tel):
-        """Set the Telescope instance to use.
-
-        Parameters
-        ----------
-        tel : TransitTelescope
-            Telescope object to use
-        """
-        if self.weight not in ["natural", "uniform", "inverse_variance"]:
-            raise KeyError(f"Do not recognize weight = {self.weight!s}")
-
-        super().setup(tel)
+    weight = config.enum(["natural", "uniform", "inverse_variance"], default="natural")
 
     @overload
     def process(self, ss: containers.SiderealStream) -> containers.SiderealStream: ...
