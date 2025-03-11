@@ -4,7 +4,7 @@ from typing import Optional, TypeVar, Union
 
 import numpy as np
 import scipy.linalg as la
-from caput import config, memh5, mpiarray
+from caput import config, fftw, memh5, mpiarray
 from cora.util import units
 from numpy.lib.recfunctions import structured_to_unstructured
 
@@ -13,6 +13,7 @@ from draco.core.containers import ContainerBase, FreqContainer
 from ..core import containers, io, task
 from ..util import random, tools
 from .delayopt import delay_power_spectrum_maxpost
+from .transform import stokes_I
 
 
 class DelayFilter(task.SingleTask):
@@ -396,6 +397,7 @@ class DelayTransformBase(task.SingleTask):
             "nuttall",
             "blackman_nuttall",
             "blackman_harris",
+            "tukey-0.2",
         ],
         default="nuttall",
     )
@@ -964,11 +966,15 @@ class DelayPowerSpectrumStokesIEstimator(DelayGibbsSamplerBase):
 
         tel = self.telescope
 
-        # Construct the Stokes I vis, and transpose from [baseline, freq, ra] to
-        # [baseline, ra, freq].
+        # Construct the Stokes I vis
         data_view, weight_view, baselines = stokes_I(ss, tel)
-        data_view = data_view.transpose(0, 2, 1)
-        weight_view = weight_view.transpose(0, 2, 1)
+
+        # Distribute over baselines
+        data_view = data_view.redistribute(1)
+        weight_view = weight_view.redistribute(1)
+        # Reshape from [freq, baseline, ra] to [baseline, ra, freq]
+        data_view = np.moveaxis(data_view, 0, -1)
+        weight_view = np.moveaxis(weight_view, 0, -1)
 
         return data_view, weight_view, baselines
 
@@ -979,29 +985,34 @@ class DelayPowerSpectrumGeneralEstimator(
     """Class to measure delay power spectrum of general container via Gibbs sampling."""
 
 
-class DelaySpectrumWienerEstimator(DelayGeneralContainerBase):
-    """Class to measure delay spectrum of general container via Wiener filtering.
+class DelayTransformFFT(DelayGeneralContainerBase, DelayGibbsSamplerBase):
+    """Class to measure the delay spectrum of a general container via ifft.
 
-    The spectrum is calculated by applying a Wiener filter to the input frequency
-    spectrum, assuming an input model for the delay power spectrum of the signal and
-    that the noise power is described by the weights of the input container. See
-    https://arxiv.org/abs/2202.01242, Eq. A6 for details.
+    This class assumes that frequency spectrum gaps have been dealt with
+    in some way, so zero-weight frequencies are ignored.
     """
 
-    def setup(self, dps=None):
-        """Set the delay power spectrum to use as the signal covariance.
+    powerspectrum = config.Property(proptype=bool, default=False)
 
-        Parameters
-        ----------
-        dps : `containers.DelaySpectrum`
-            Delay power spectrum for signal part of Wiener filter.
-        """
-        self.dps = dps
+    def setup(self):
+        """Stop any frequency cut from being applied."""
+        self.log.info(
+            "Setting `freq_frac = -1.0` for FFT. "
+            "This means that _all_ frequencies will be "
+            "included in the delay transform, includeing "
+            "those which are masked."
+        )
+        self.freq_frac = -1.0
+
+        if self.powerspectrum:
+            # TODO: this seems to work, but I'm not sure if
+            # it's the correct way to do this
+            self._create_output = DelayGibbsSamplerBase()._create_output
 
     def _create_output(
         self, ss: FreqContainer, delays: np.ndarray, coord_axes: list[str]
     ) -> ContainerBase:
-        """Create the output container for the Wiener filtered data."""
+        """Create the output container for the delay transform."""
         # Initialise the spectrum container
         nbase = np.prod([len(ss.index_map[ax]) for ax in coord_axes])
         delay_spec = containers.DelayTransform(
@@ -1030,6 +1041,91 @@ class DelaySpectrumWienerEstimator(DelayGeneralContainerBase):
         delay_spec.attrs["window_los"] = self.window if self.apply_window else "None"
 
         return delay_spec
+
+    def _evaluate(self, data_view, weight_view, out_cont, delays, channel_ind):
+        """Estimate the delay spectrum via inverse FFT.
+
+        Parameters
+        ----------
+        data_view : `caput.mpiarray.MPIArray`
+            Data to transform.
+        weight_view : `caput.mpiarray.MPIArray`
+            Weights corresponding to `data_view`.
+        out_cont : `containers.DelayTransform` or `containers.DelaySpectrum`
+            Container for output delay spectrum or power spectrum.
+        delays
+            The delays to evaluate at.
+        channel_ind
+            The indices of the available frequency channels in the full set of channels.
+
+        Returns
+        -------
+        out_cont : `containers.DelaySpectrum`
+            Output delay spectrum.
+        """
+        nbase = out_cont.spectrum.global_shape[0]
+        ndelay = len(delays)
+
+        # Calculate the window function
+        if self.apply_window:
+            wx = np.arange(ndelay) / ndelay
+            window = tools.window_generalised(wx, window=self.window)
+            window = window[np.newaxis]
+
+        # Iterate over the combined baseline axis
+        for lbi, bi in out_cont.spectrum[:].enumerate(axis=0):
+            self.log.debug(
+                f"Estimating the delay spectrum of each baseline {bi}/{nbase} using "
+                "inverse FFT"
+            )
+
+            data = data_view.local_array[lbi]
+            weight = weight_view.local_array[lbi]
+
+            # Apply data cuts
+            t = self._cut_data(data, weight)
+            if t is None:
+                continue
+            data, _, _, nzt = t
+
+            # Apply the window if requested
+            if self.apply_window:
+                data *= window
+
+            # Take the inverse fourier transform
+            y_spec = fftw.ifft(data, axes=-1)
+            # fftshift over the transform axis
+            y_spec = np.fft.fftshift(y_spec, axes=-1)
+
+            if self.powerspectrum:
+                y_spec = np.var(y_spec, axis=0)
+                out_cont.spectrum[bi] = y_spec
+            else:
+                out_cont.spectrum[bi, nzt] = y_spec
+
+        return out_cont
+
+
+class DelaySpectrumWienerEstimator(DelayTransformFFT):
+    """Class to measure delay spectrum of general container via Wiener filtering.
+
+    The spectrum is calculated by applying a Wiener filter to the input frequency
+    spectrum, assuming an input model for the delay power spectrum of the signal and
+    that the noise power is described by the weights of the input container. See
+    https://arxiv.org/abs/2202.01242, Eq. A6 for details.
+    """
+
+    def setup(self, dps=None):
+        """Set the delay power spectrum to use as the signal covariance.
+
+        Parameters
+        ----------
+        dps : `containers.DelaySpectrum`
+            Delay power spectrum for signal part of Wiener filter.
+        """
+        self.dps = dps
+        if self.powerspectrum:
+            self._create_output = DelayGibbsSamplerBase()._create_output
 
     def _evaluate(self, data_view, weight_view, out_cont, delays, channel_ind):
         """Estimate the delay spectrum by Wiener filtering.
@@ -1089,8 +1185,14 @@ class DelaySpectrumWienerEstimator(DelayGeneralContainerBase):
                 fsel=channel_ind[nzf],
                 complex_timedomain=self.complex_timedomain,
             )
-            # FFT-shift along the last axis
-            out_cont.spectrum[bi, nzt] = np.fft.fftshift(y_spec, axes=1)
+            # fftshift over the transformed axis
+            y_spec = np.fft.fftshift(y_spec, axes=-1)
+
+            if self.powerspectrum:
+                y_spec = np.var(y_spec, axis=0)
+                out_cont.spectrum[bi] = y_spec
+            else:
+                out_cont.spectrum[bi, nzt] = y_spec
 
         return out_cont
 
@@ -1270,70 +1372,6 @@ class DelayCrossPowerSpectrumEstimator(
                 out_cont.datasets["spectrum_samples"][..., bi, :] = spec
 
         return out_cont
-
-
-def stokes_I(sstream, tel):
-    """Extract instrumental Stokes I from a time/sidereal stream.
-
-    Parameters
-    ----------
-    sstream : containers.SiderealStream, container.TimeStream
-        Stream of correlation data.
-    tel : TransitTelescope
-        Instance describing the telescope.
-
-    Returns
-    -------
-    vis_I : mpiarray.MPIArray[nbase, nfreq, ntime]
-        The instrumental Stokes I visibilities, distributed over baselines.
-    vis_weight : mpiarray.MPIArray[nbase, nfreq, ntime]
-        The weights for each visibility, distributed over baselines.
-    ubase : np.ndarray[nbase, 2]
-        Baseline vectors corresponding to output.
-    """
-    # Construct a complex number representing each baseline (used for determining
-    # unique baselines).
-    # NOTE: due to floating point precision, some baselines don't get matched as having
-    # the same lengths. To get around this, round all separations to 0.1 mm precision
-    bl_round = np.around(tel.baselines[:, 0] + 1.0j * tel.baselines[:, 1], 4)
-
-    # ==== Unpack into Stokes I
-    ubase, uinv, ucount = np.unique(bl_round, return_inverse=True, return_counts=True)
-    ubase = ubase.astype(np.complex128, copy=False).view(np.float64).reshape(-1, 2)
-    nbase = ubase.shape[0]
-
-    vis_shape = (nbase, sstream.vis.global_shape[0], sstream.vis.global_shape[2])
-    vis_I = mpiarray.zeros(vis_shape, dtype=sstream.vis.dtype, axis=1)
-    vis_weight = mpiarray.zeros(vis_shape, dtype=sstream.weight.dtype, axis=1)
-
-    # Iterate over products to construct the Stokes I vis
-    # TODO: this should be updated when driftscan gains a concept of polarisation
-    ssv = sstream.vis[:]
-    ssw = sstream.weight[:]
-
-    # Cache beamclass as it's regenerated every call
-    beamclass = tel.beamclass[:]
-    for ii, ui in enumerate(uinv):
-        # Skip if not all polarisations were included
-        if ucount[ui] < 4:
-            continue
-
-        fi, fj = tel.uniquepairs[ii]
-        bi, bj = beamclass[fi], beamclass[fj]
-
-        upi = tel.feedmap[fi, fj]
-
-        if upi == -1:
-            continue
-
-        if bi == bj:
-            vis_I[ui] += ssv[:, ii]
-            vis_weight[ui] += ssw[:, ii]
-
-    vis_I = vis_I.redistribute(axis=0)
-    vis_weight = vis_weight.redistribute(axis=0)
-
-    return vis_I, vis_weight, ubase
 
 
 def fourier_matrix_r2c(N, fsel=None):

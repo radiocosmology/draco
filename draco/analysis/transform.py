@@ -1117,6 +1117,124 @@ class SelectPol(task.SingleTask):
         return outcont
 
 
+class StokesIVis(task.SingleTask):
+    """Extract instrumental Stokes I from visibilities."""
+
+    def setup(self, telescope):
+        """Set the local observers.
+
+        Parameters
+        ----------
+        telescope : :class:`~caput.time.Observer`
+            An Observer object holding the geographic location of the telescope.
+            Note that :class:`~drift.core.TransitTelescope` instances are also
+            Observers.
+        """
+        self.telescope = io.get_telescope(telescope)
+
+    def process(self, data):
+        """Extract instrumental Stokes I.
+
+        This process will reduce the length of the baseline axis.
+
+        Parameters
+        ----------
+        data : containers.VisContainer
+            Container with visibilities and baselines matching
+            the telescope object.
+
+        Returns
+        -------
+        data : containers.VisContainer
+            Container with the same type as `data`, with polarised
+            baselines combined into Stokes I.
+        """
+        data.redistribute("freq")
+
+        # Get stokes I
+        vis, weight, baselines = stokes_I(data, self.telescope)
+
+        # Make the output container
+        # TODO: the axes for this container should probably
+        # be adjusted to make more sense
+        out = containers.empty_like(data, stack=baselines)
+        out.redistribute("freq")
+
+        out.vis[:] = vis.redistribute(0)
+        out.weight[:] = weight.redistribute(0)
+
+        return out
+
+
+def stokes_I(sstream, tel):
+    """Extract instrumental Stokes I from a time/sidereal stream.
+
+    Parameters
+    ----------
+    sstream : containers.SiderealStream, container.TimeStream
+        Stream of correlation data.
+    tel : TransitTelescope
+        Instance describing the telescope.
+
+    Returns
+    -------
+    vis_I : mpiarray.MPIArray[nbase, nfreq, ntime]
+        The instrumental Stokes I visibilities, distributed over baselines.
+    vis_weight : mpiarray.MPIArray[nbase, nfreq, ntime]
+        The weights for each visibility, distributed over baselines.
+    ubase : np.ndarray[nbase, 2]
+        Baseline vectors corresponding to output.
+    """
+    # Make sure the data is distributed in a reasonable way
+    sstream.redistribute("freq")
+    # Construct a complex number representing each baseline (used for determining
+    # unique baselines).
+    # Due to floating point precision, some baselines don't get matched as having
+    # the same lengths. To get around this, round all separations to 0.1 mm precision
+    bl_round = np.around(tel.baselines[:, 0] + 1.0j * tel.baselines[:, 1], 4)
+
+    # Map unique baseline lengths to each polarisation pair
+    ubase, uinv, ucount = np.unique(bl_round, return_inverse=True, return_counts=True)
+    ubase = ubase.astype(np.complex128, copy=False).view(np.float64).reshape(-1, 2)
+
+    # Construct the output arrays
+    new_shape = (
+        sstream.vis.global_shape[0],
+        ubase.shape[0],
+        sstream.vis.global_shape[2],
+    )
+    vis_I = mpiarray.zeros(new_shape, dtype=sstream.vis.dtype, axis=0)
+    vis_weight = mpiarray.zeros(new_shape, dtype=sstream.weight.dtype, axis=0)
+
+    # Find co-pol baselines (XX and YY)
+    pairs = tel.uniquepairs
+    pols = tel.polarisation[pairs]
+    is_copol = pols[:, 0] == pols[:, 1]
+
+    # Iterate over products to construct the Stokes I vis
+    ssv = sstream.vis[:]
+    ssw = sstream.weight[:]
+
+    for ii, ui in enumerate(uinv):
+        # Skip if not a co-pol baseline
+        if not is_copol[ii]:
+            continue
+
+        # Skip if not all polarisations are included
+        if ucount[ui] < 4:
+            continue
+
+        # Skip if there's a bad feed
+        if tel.feedmap[(*pairs[ii],)] == -1:
+            continue
+
+        # Accumulate the visibilities and weights
+        vis_I[:, ui] += ssv[:, ii]
+        vis_weight[:, ui] += ssw[:, ii]
+
+    return vis_I, vis_weight, ubase
+
+
 class TransformJanskyToKelvin(task.SingleTask):
     """Task to convert from Jy to Kelvin and vice-versa.
 
