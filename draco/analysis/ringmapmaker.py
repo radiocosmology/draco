@@ -1214,7 +1214,7 @@ class RADependentWeights(task.SingleTask):
         return ringmap
 
 
-class ReconstructVisWeights(transform.TelescopeStreamMixIn, task.SingleTask):
+class ReconstructVisWeight(transform.TelescopeStreamMixIn, task.SingleTask):
     """Compute visibility weights that match hybrid beamformed visibility weights.
 
     This is useful for generating noise realizations of hybrid beamformed
