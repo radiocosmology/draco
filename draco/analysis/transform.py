@@ -86,42 +86,23 @@ class FrequencyRebin(task.SingleTask):
         return sb
 
 
-class CollateProducts(task.SingleTask):
-    """Extract and order the correlation products for map-making.
+class TelescopeStreamMixIn:
+    """A mixin providing functionality for creating telescope-defined sidereal streams.
 
-    The task will take a sidereal task and format the products that are needed
-    or the map-making. It uses a BeamTransfer instance to figure out what these
-    products are, and how they should be ordered. It similarly selects only the
-    required frequencies.
-
-    It is important to note that while the input
-    :class:`~containers.SiderealStream` can contain more feeds and frequencies
-    than are contained in the BeamTransfers, the converse is not true. That is,
-    all the frequencies and feeds that are in the BeamTransfers must be found in
-    the timestream object.
-
-    Parameters
-    ----------
-    weight : string ('natural', 'uniform', or 'inverse_variance')
-        How to weight the redundant baselines when stacking:
-            'natural' - each baseline weighted by its redundancy (default)
-            'uniform' - each baseline given equal weight
-            'inverse_variance' - each baseline weighted by the weight attribute
+    This mixin is designed to be used with pipeline tasks that require certain
+    index maps in order to create SiderealStream containers compatible with the
+    baseline configuration provided in a telescope instance.
     """
 
-    weight = config.Property(proptype=str, default="natural")
-
     def setup(self, tel):
-        """Set the Telescope instance to use.
+        """Set up the telescope instance and precompute index maps.
 
         Parameters
         ----------
         tel : TransitTelescope
-            Telescope object to use
+            The telescope instance to use to compute the prod, stack,
+            and reverse_stack index maps.
         """
-        if self.weight not in ["natural", "uniform", "inverse_variance"]:
-            KeyError(f"Do not recognize weight = {self.weight!s}")
-
         self.telescope = io.get_telescope(tel)
 
         # Precalculate the stack properties
@@ -154,6 +135,32 @@ class CollateProducts(task.SingleTask):
             feedmask, self.telescope.feedmap[triu], self.telescope.npairs
         )
         self.bt_rev["conjugate"] = np.where(feedmask, self.telescope.feedconj[triu], 0)
+
+
+class CollateProducts(TelescopeStreamMixIn, task.SingleTask):
+    """Extract and order the correlation products for map-making.
+
+    The task will take a sidereal task and format the products that are needed
+    or the map-making. It uses a BeamTransfer instance to figure out what these
+    products are, and how they should be ordered. It similarly selects only the
+    required frequencies.
+
+    It is important to note that while the input
+    :class:`~containers.SiderealStream` can contain more feeds and frequencies
+    than are contained in the BeamTransfers, the converse is not true. That is,
+    all the frequencies and feeds that are in the BeamTransfers must be found in
+    the timestream object.
+
+    Parameters
+    ----------
+    weight : string ('natural', 'uniform', or 'inverse_variance')
+        How to weight the redundant baselines when stacking:
+            'natural' - each baseline weighted by its redundancy (default)
+            'uniform' - each baseline given equal weight
+            'inverse_variance' - each baseline weighted by the weight attribute
+    """
+
+    weight = config.enum(["natural", "uniform", "inverse_variance"], default="natural")
 
     @overload
     def process(self, ss: containers.SiderealStream) -> containers.SiderealStream: ...
