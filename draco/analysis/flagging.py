@@ -451,43 +451,6 @@ class MaskBadGains(task.SingleTask):
         return mask_cont
 
 
-class MaskBeamformedOutliers(task.SingleTask):
-    """Mask beamformed visibilities that deviate from our expectation for noise.
-
-    This is operating under the assumption that, after proper foreground filtering,
-    the beamformed visibilities should be consistent with noise.
-    """
-
-    def process(self, data, mask):
-        """Mask outlier beamformed visibilities.
-
-        Parameters
-        ----------
-        data : FormedBeam, FormedBeamHA, or RingMap
-            Beamformed visibilities.
-
-        mask : FormedBeamMask, FormedBeamHAMask, or RingMapMask
-            Container with a boolean mask where True indicates
-            a beamformed visibility that should be ignored.
-
-        Returns
-        -------
-        data : FormedBeam or RingMap
-            The input container with the weight dataset set to zero
-            for samples that were identified as outliers.
-        """
-        # Redistribute data over frequency
-        data.redistribute("freq")
-        mask.redistribute("freq")
-
-        # Multiply the weights by the inverse of the mask
-        flag = ~mask.mask[:].local_array
-
-        data.weight[:].local_array[:] *= flag.astype(np.float32)
-
-        return data
-
-
 class MaskBeamformedWeights(task.SingleTask):
     """Mask beamformed visibilities with anomalously large weights before stacking.
 
@@ -2259,8 +2222,7 @@ class ApplyTimeFreqMask(task.SingleTask):
         sf = tstream.weight.local_offset[t_ax]
         ef = sf + tstream.weight.local_shape[t_ax]
 
-        m_ax = m_axes.index("freq")
-        bcast_slice[m_ax] = slice(sf, ef)
+        bcast_slice[t_ax] = slice(sf, ef)
         bcast_slice = tuple(bcast_slice)
 
         # Create output container by copying based on share parameter
@@ -2277,6 +2239,108 @@ class ApplyTimeFreqMask(task.SingleTask):
         tsc.weight[:].local_array[:] *= (~mask[bcast_slice]).astype(np.float32)
 
         return tsc
+
+
+class ApplyGenericMask(task.SingleTask):
+    """Apply a mask to a dataset with arbitrary axes.
+
+    All of the mask axes must be present in the dataset, but
+    the dataset can have additional axes.
+
+    Assumes that a sample marked `True` in the mask dataset
+    should be flagged.
+    """
+
+    def process(self, data: containers.ContainerBase, mask: containers.ContainerBase):
+        """Apply the mask to the dataset weights.
+
+        Reorder the mask axes and add broadcasting axes if necessary.
+
+        Parameters
+        ----------
+        data
+            Any container with a frequency axis.
+        mask
+            Any container whose axes are a subset of the axes in data
+
+        Returns
+        -------
+        data
+            The input container with the weight dataset set to zero
+            for masked samples.
+        """
+        # Pull out the axes of each dataset
+        daxes = list(data.weight.attrs["axis"])
+        maxes = list(mask.mask.attrs["axis"])
+
+        # Make sure all the mask axes exist in the data
+        if any(ax not in daxes for ax in maxes):
+            missing_axes = [ax for ax in maxes if ax not in daxes]
+            raise NameError(
+                f"Mask has axes {missing_axes} which are not found in data."
+                f"\nData axes: {daxes}\nMask axes: {maxes}"
+            )
+
+        # Redistribute over frequency, assuming that all containers have
+        # a frequency axis
+        data.redistribute("freq")
+        mask.redistribute("freq")
+
+        # Rearrange the existing mask axes to match their order in the dataset
+        tinds = tuple(maxes.index(ax) for ax in daxes if ax in maxes)
+        mask = mask.mask[:].local_array.transpose(tinds)
+
+        # Add broadcasting axes now that mask axes are in the correct order
+        bcast_slobj = tuple(slice(None) if ax in maxes else np.newaxis for ax in daxes)
+
+        # Multiply the inverse mask into the weights
+        data.weight[:].local_array[:] *= (~mask[bcast_slobj]).astype(data.weight.dtype)
+
+        return data
+
+
+# Alias for backwards compatibility
+MaskBeamformedOutliers = ApplyGenericMask
+
+
+class CombineMasks(task.SingleTask):
+    """Combine an arbitrary number of masks (conservatively).
+
+    All of the given masks must be of the same type and that type must have a `mask` dataset.
+    Any flagged value in any of the provided masks will be flagged in the output mask.
+
+    Assumes that a sample marked `True` is flagged.
+    """
+
+    def process(self, masks: list[containers.ContainerBase]):
+        """Combine the given list of masks into a single mask.
+
+        Parameters
+        ----------
+        masks
+            A list of containers that all have the same type. The type
+            must have a `mask` dataset.
+
+        Returns
+        -------
+        combined_mask
+            A combined mask such that any flagged value in any of the
+            input masks is flagged in the output mask.
+        """
+        # Check that all types are the same.
+        if any(type(mask) is not type(masks[0]) for mask in masks[1:]):
+            raise TypeError(
+                "At least one type mismatch between masks. All masks must have the same type."
+            )
+
+        # Create combined output mask
+        combined_mask = masks[0].copy()
+
+        # Loop over masks "accumulating" each mask after the first.
+        for mask in masks[1:]:
+            combined_mask.mask[:] |= mask.mask[:]
+
+        return combined_mask
 
 
 class ApplyBaselineMask(task.SingleTask):
@@ -2562,7 +2626,7 @@ class BlendStack(task.SingleTask):
 
         Parameters
         ----------
-        data_stack : VisContainer
+        data_stack : SiderealStream, RingMap,or HybridVisStream
             Data stack to blend
         """
         self.data_stack = data_stack
@@ -2572,12 +2636,12 @@ class BlendStack(task.SingleTask):
 
         Parameters
         ----------
-        data : VisContainer
+        data : SiderealStream, RingMap,or HybridVisStream
             The data to be blended into. This is modified in place.
 
         Returns
         -------
-        data_blend : VisContainer
+        data_blend : SiderealStream, RingMap,or HybridVisStream
             The modified data. This is the same object as the input, and it has been
             modified in place.
         """
@@ -2593,19 +2657,25 @@ class BlendStack(task.SingleTask):
                 f"type(data_stack) (={type(self.data_stack)}"
             )
 
+        _supported_types = (
+            containers.SiderealStream,
+            containers.RingMap,
+            containers.HybridVisStream,
+        )
+
+        if not isinstance(data, _supported_types):
+            raise TypeError(
+                f"Only {_supported_types} are supported. "
+                f"Got data type {type(data)}."
+            )
+
         # Try and get both the stack and the incoming data to have the same
         # distribution
-        self.data_stack.redistribute(["freq", "time", "ra"])
-        data.redistribute(["freq", "time", "ra"])
+        self.data_stack.redistribute("freq")
+        data.redistribute("freq")
 
-        if isinstance(data, containers.SiderealStream):
-            dset_stack = self.data_stack.vis[:].local_array
-            dset = data.vis[:].local_array
-        else:
-            raise TypeError(
-                "Only SiderealStream's are currently supported. "
-                f"Got type(data) = {type(data)}"
-            )
+        dset_stack = self.data_stack.data[:].local_array
+        dset = data.data[:].local_array
 
         if dset_stack.shape != dset.shape:
             raise ValueError(
@@ -2613,8 +2683,13 @@ class BlendStack(task.SingleTask):
                 f"data_stack ({dset_stack.shape})"
             )
 
-        weight_stack = self.data_stack.weight[:].local_array
-        weight = data.weight[:].local_array
+        # Add broadcast axes to the weight datasets
+        dax = list(data.data.attrs["axis"])
+        wax = list(data.weight.attrs["axis"])
+        slobj = tuple([slice(None) if ax in wax else np.newaxis for ax in dax])
+
+        weight_stack = self.data_stack.weight[:].local_array[slobj]
+        weight = data.weight[:].local_array[slobj]
 
         # Find the median offset between the stack and the daily data
         if self.match_median:
@@ -2622,34 +2697,50 @@ class BlendStack(task.SingleTask):
             # measured
             mask = ((weight[:] > 0) & (weight_stack[:] > 0)).astype(np.float32)
 
-            # Get the median of the stack in this common subset
-            stack_med_real = weighted_median.weighted_median(
-                np.ascontiguousarray(dset_stack.real), mask
-            )
-            stack_med_imag = weighted_median.weighted_median(
-                np.ascontiguousarray(dset_stack.imag), mask
-            )
+            # Move the time-like axis to the end
+            ind = dax.index("ra")
+            dss = np.moveaxis(dset_stack, ind, -1)
+            ds = np.moveaxis(dset, ind, -1)
+            mask = np.moveaxis(mask, ind, -1)
+            # Broadcast the mask against the datasets
+            mask = np.broadcast_to(mask, dss.shape).copy()
 
+            # Get the median of the real part of the data and the stack
+            stack_med_real = weighted_median.weighted_median(
+                np.ascontiguousarray(dss.real), mask
+            )
             # Get the median of the data in the common subset
             data_med_real = weighted_median.weighted_median(
-                np.ascontiguousarray(dset.real), mask
-            )
-            data_med_imag = weighted_median.weighted_median(
-                np.ascontiguousarray(dset.imag), mask
+                np.ascontiguousarray(ds.real), mask
             )
 
+            # If the data is complex, get the complex component too
+            if np.iscomplexobj(dss):
+                stack_med_imag = weighted_median.weighted_median(
+                    np.ascontiguousarray(dss.imag), mask
+                )
+
+                data_med_imag = weighted_median.weighted_median(
+                    np.ascontiguousarray(ds.imag), mask
+                )
+
             # Construct an offset to match the medians in the time/RA direction
-            stack_offset = (
-                (data_med_real - stack_med_real)
-                + 1.0j * (data_med_imag - stack_med_imag)
-            )[..., np.newaxis]
+            stack_offset = data_med_real - stack_med_real
+
+            # Add the complex component if it exists
+            if np.iscomplexobj(dss):
+                stack_offset = stack_offset + 1.0j * (data_med_imag - stack_med_imag)
+
+            # Move the axes back
+            stack_offset = np.moveaxis(stack_offset[..., np.newaxis], -1, ind)
 
         else:
             stack_offset = 0
 
         if self.mask_freq:
-            # Collapse the frequency selection over baselines and RA
-            fsel = np.any(weight, axis=(1, 2), keepdims=True)
+            # Collapse the frequency selection over other axes
+            axes = tuple((ii for ii, ax in enumerate(dax) if ax != "freq"))
+            fsel = np.any(weight, axis=axes, keepdims=True)
 
             # Apply the frequency selection to the stacked weights
             weight_stack *= fsel.astype(np.float64)
@@ -2917,3 +3008,264 @@ def destripe(x, w, axis=1):
     bsel = tuple(bsel)
 
     return x - stripe[bsel]
+
+
+class SiderealMaskConversion(task.SingleTask):
+    """Convert the axis of an RFI mask from time to ra.
+
+    The conversion is performed by mapping values between Unix time and LSA
+    using the geographic location of the telescope, as provided by the Observer object.
+
+    Attributes
+    ----------
+    spread_size : int
+        The number of cells to flag before and after a detected true value. This ensures
+        conservative flagging, preventing missed detections due to axis alignment issues.
+        Default is 1.
+    npix : int
+        The number of pixels used to cover the full RA range from 0 to 360.
+         Defualt is 4096.
+    """
+
+    spread_size = config.Property(proptype=int, default=1)
+    npix = config.Property(proptype=int, default=4096)
+
+    def setup(self, manager):
+        """Set the local observers position.
+
+        Parameters
+        ----------
+        manager : :class:`~caput.time.Observer`
+            An Observer object holding the geographic location of the telescope.
+            Note that :class:`~drift.core.TransitTelescope` instances are also
+            Observers.
+        """
+        # Need an Observer object holding the geographic location of the telescope.
+        self.observer = io.get_telescope(manager)
+
+    def process(self, rfimask):
+        """Produce a RFI mask.
+
+        Parameters
+        ----------
+        rfimask : containers.LocalizedRFIMask
+            Container for holding a mask indicating channels that are free from RFI events.
+            Its axes are freq, el, and time.
+
+        Returns
+        -------
+        out : containers.LocalizedSiderealRFIMask
+            Boolean mask that can be applied to a ringmap
+            with the task `ApplyLocalizedRFIMask` to mask contaminated samples.
+            Its axes are freq, ra, and el.
+
+        """
+        # Extract mask/frac and axes data
+        mask = rfimask.mask[:]
+        freq = rfimask.freq[:]
+        time = rfimask.time[:]
+        el = rfimask.el[:]
+        nfreq, nel, ntime = mask.shape
+
+        # Find closest ra indices
+        ra = self.observer.unix_to_lsa(time)
+        full_ra = np.linspace(0, 360, self.npix, endpoint=False)
+        ra_closest_indices = np.abs(ra[:, None] - full_ra).argmin(axis=1)
+
+        # Make the new ra axis
+        min_index = np.min(ra_closest_indices)
+        max_index = np.max(ra_closest_indices)
+        new_ra = full_ra[min_index : max_index + 1]
+        nra = len(new_ra)
+
+        # Broadcast the mask data for corresponding cells
+        mask_adj = np.full((nfreq, nel, nra), False)
+        mask_adj[:, :, ra_closest_indices - min_index] = mask
+
+        # Falg before and after a given true value for conservative flagging
+        for repeat in range(self.spread_size):
+            mask_adj[:, :, :-1] |= mask_adj[:, :, 1:]
+            mask_adj[:, :, 1:] |= mask_adj[:, :, :-1]
+
+        # Save the adjusted mask to output container
+        mask_adj = np.transpose(mask_adj, (0, 2, 1))
+        out = containers.LocalizedSiderealRFIMask(freq=freq, ra=new_ra, el=el)
+        out.mask[:] = mask_adj
+
+        if rfimask.datasets.get("frac_rfi", None) is not None:
+            frac_rfi = rfimask.frac_rfi[:]
+            frac_rfi_adj = np.full((nfreq, nel, nra), 0.0)
+            frac_rfi_adj[:, :, ra_closest_indices - min_index] = frac_rfi
+
+            for repeat in range(self.spread_size):
+                frac_rfi_adj[:, :, :-1] = np.maximum(
+                    frac_rfi_adj[:, :, :-1], frac_rfi_adj[:, :, 1:]
+                )
+                frac_rfi_adj[:, :, 1:] = np.maximum(
+                    frac_rfi_adj[:, :, 1:], frac_rfi_adj[:, :, :-1]
+                )
+
+            frac_rfi_adj = np.transpose(frac_rfi_adj, (0, 2, 1))
+            out.add_dataset("frac_rfi")
+            out.frac_rfi[:] = frac_rfi_adj
+
+        # Return output container
+        return out
+
+
+class ReduceMaskEl(task.SingleTask):
+    """Reduce the 'el' axis from input classes and produce corresponding reduced output classes.
+
+    Reduction algorithm: If the number of True values in the mask along the el axis
+    is higher than a given threshold, set the mask to True.
+
+    Attributes
+    ----------
+    threshold : int
+    This number determines the minimum number of detected RFI events along the el axis required for a data point
+    to be included in the reduced mask. Default is 1.
+
+    """
+
+    threshold = config.Property(proptype=int, default=1)
+
+    def process(self, rfimask):
+        """Produce a RFI mask.
+
+        Parameters
+        ----------
+        rfimask : containers.LocalizedRFIMask(freq, el, time) or containers.SiderealLocalizedRFIMask(freq, ra, el)
+            El-specific RFI mask indicating channels that are free from RFI events.
+
+        Returns
+        -------
+        out : containers.RFIMask(freq, time) or containers.SiderealRFIMask(freq, ra)
+            Non el-specific RFI mask indicating channels that are free from RFI events.
+
+        """
+        # Validate inpput class
+        if (not isinstance(rfimask, containers.LocalizedRFIMask)) & (
+            not isinstance(rfimask, containers.LocalizedSiderealRFIMask)
+        ):
+            raise ValueError(
+                f"Input class must be LocalizedRFIMask or LocalizedSiderealRFIMask. Got {type(rfimask)}."
+            )
+
+        # Extract mask/frac and axes data
+        mask = rfimask.mask[:]
+        el_axis = list(rfimask.mask.attrs["axis"]).index("el")
+        freq = rfimask.freq[:]
+
+        # Apply reduction condition
+        reduced_mask = np.sum(mask, axis=el_axis) >= self.threshold
+
+        # Determine output class type
+        if isinstance(rfimask, containers.LocalizedRFIMask):
+            # LocalizedRFIMask(freq, el, time) -> RFIMask(freq, time)
+            time = rfimask.time[:]
+            output = containers.RFIMask(freq=freq, time=time)
+        elif isinstance(rfimask, containers.LocalizedSiderealRFIMask):
+            # LocalizedSiderealRFIMask(freq, ra, el)  -> SiderealRFIMask(freq, ra)
+            ra = rfimask.ra[:]
+            output = containers.SiderealRFIMask(freq=freq, ra=ra)
+
+        # The output RFI mask is not frequency distributed
+        arr = reduced_mask
+        arrdist = mpiarray.MPIArray.wrap(arr, axis=0)
+        final_mask = arrdist.allgather()
+
+        output.mask[:] = final_mask
+
+        # Return output container
+        return output
+
+
+class ApplyLocalizedRFIMask(task.SingleTask):
+    """Apply a localised (el-sensitive) RFI mask to the data by zeroing the weights.
+
+    This class extends the class ApplyTimeFreqMask to include el in addition to freq and ra,
+    and can be further extended for a new RingMap class (freq,el,time).
+    Note that while the ra and el axes of the tstream and mask datasets do not need to be identical,
+    they must have overlapping regions. However, their freq axes must be identical.
+
+    Attributes
+    ----------
+    share : {"all", "none", "map"}
+        Which datasets should we share with the input. If "none" we create a
+        full copy of the data, if "map" we create a copy only of the modified
+        weight dataset and the unmodified vis dataset is shared, if "all" we
+        modify in place and return the input container.
+    """
+
+    share = config.enum(["none", "map", "all"], default="all")
+
+    def process(self, tstream, rfimask):
+        """Apply the mask by zeroing the weights.
+
+        Parameters
+        ----------
+        tstream : containers.RingMap
+            A data container with axes (pol, freq, ra, el).
+        rfimask : containers.LocalizedSiderealRFIMask(freq, ra, el)
+            An RFI mask with overlapping freq, ra and el regions with the tstream, containers.RingMap.
+
+        Returns
+        -------
+        tstream : containers.RingMap
+            The masked RingMap with weights modified in overlapping regions. Note that the masking is done in place.
+        """
+        # Validate axes
+        if not isinstance(tstream, containers.RingMap):
+            raise TypeError(f"Require a containers.RingMap. Got {type(tstream)}.")
+        if not isinstance(rfimask, containers.LocalizedSiderealRFIMask):
+            raise TypeError(f"Require a LocalizedSiderealRFIMask. Got {type(rfimask)}.")
+
+        # Validate the frequency axis
+        if not np.array_equal(tstream.freq, rfimask.freq):
+            raise ValueError("timestream and mask data have different freq axes.")
+
+        if self.share == "all":
+            tsc = tstream
+        elif self.share == "map":
+            tsc = tstream.copy(shared=("map",))
+        else:  # "none"
+            tsc = tstream.copy()
+
+        # Ensure we are frequency distributed
+        tstream.redistribute("freq")
+
+        # Get mask data and shape data
+        mask = rfimask.mask[:].view(np.ndarray)
+        nfreq, nra, nel = mask.shape
+        npol, _, _, _ = tstream.weight.shape
+
+        # Find the overlapping indices for ra and el
+        ra_overlap = np.intersect1d(tstream.ra, rfimask.ra, return_indices=True)
+        el_overlap = np.intersect1d(tstream.el, rfimask.el, return_indices=True)
+
+        # Validate that there are overlapping regions
+        if len(ra_overlap[0]) == 0:
+            raise ValueError("No overlapping ra regions found.")
+        if len(el_overlap[0]) == 0:
+            raise ValueError("No overlapping el regions found.")
+
+        # Get the indices corresponding to the overlapping regions
+        _, t_ra_index, m_ra_index = ra_overlap
+        _, t_el_index, m_el_index = el_overlap
+
+        # Create the pol and freq axes
+        t_pol_index = np.arange(npol)
+        tm_freq_index = np.arange(nfreq)
+
+        # Reshape the mask to include a singleton polarization dimension
+        # This ensures compatibility with the weight array, which includes a polarization axis
+        mask = mask.reshape(1, nfreq, nra, nel)
+
+        # Mask the data.
+        tsc.weight[:].local_array[
+            np.ix_(t_pol_index, tm_freq_index, t_ra_index, t_el_index)
+        ] *= (~mask[np.ix_([0], tm_freq_index, m_ra_index, m_el_index)]).astype(
+            np.float32
+        )
+
+        return tsc

@@ -36,6 +36,8 @@ Containers
 - :py:class:`FormedBeamHA`
 - :py:class:`FormedBeamMask`
 - :py:class:`FormedBeamHAMask`
+- :py:class:`LocalizedRFIMask`
+- :py:class:`LocalizedSiderealRFIMask`
 
 Container Base Classes
 ----------------------
@@ -1134,7 +1136,7 @@ class SiderealStream(
             "distributed_axis": "freq",
             "compression": COMPRESSION,
             "compression_opts": COMPRESSION_OPTS,
-            "chunks": (64, 128, 128),
+            "chunks": (32, 512, 2048),
             "truncate": {
                 "weight_dataset": "vis_weight",
             },
@@ -1147,7 +1149,7 @@ class SiderealStream(
             "distributed_axis": "freq",
             "compression": COMPRESSION,
             "compression_opts": COMPRESSION_OPTS,
-            "chunks": (64, 128, 128),
+            "chunks": (32, 512, 2048),
             "truncate": True,
         },
         "input_flags": {
@@ -1171,7 +1173,7 @@ class SiderealStream(
             "distributed_axis": "freq",
             "compression": COMPRESSION,
             "compression_opts": COMPRESSION_OPTS,
-            "chunks": (3, 64, 128, 128),
+            "chunks": (1, 32, 512, 2048),
             "truncate": True,
         },
         "nsample": {
@@ -1182,7 +1184,7 @@ class SiderealStream(
             "distributed_axis": "freq",
             "compression": COMPRESSION,
             "compression_opts": COMPRESSION_OPTS,
-            "chunks": (64, 128, 128),
+            "chunks": (32, 512, 2048),
         },
         "effective_ra": {
             "axes": ["freq", "stack", "ra"],
@@ -1192,7 +1194,7 @@ class SiderealStream(
             "distributed_axis": "freq",
             "compression": COMPRESSION,
             "compression_opts": COMPRESSION_OPTS,
-            "chunks": (64, 128, 128),
+            "chunks": (32, 512, 2048),
             "truncate": True,
         },
     }
@@ -1907,7 +1909,7 @@ class VisGridStream(FreqContainer, SiderealContainer, VisBase):
         "redundancy": {
             "axes": ["pol", "ew", "ns", "ra"],
             "dtype": np.int32,
-            "initialise": True,
+            "initialise": False,
             "distributed": False,
             "chunks": (1, 64, 1, 64, 128),
             "compression": COMPRESSION,
@@ -1918,7 +1920,10 @@ class VisGridStream(FreqContainer, SiderealContainer, VisBase):
     @property
     def redundancy(self):
         """Get the redundancy dataset."""
-        return self.datasets["redundancy"]
+        if "redundancy" in self.datasets:
+            return self.datasets["redundancy"]
+
+        raise KeyError("Dataset 'redundancy' not initialised.")
 
 
 class HybridVisStream(FreqContainer, SiderealContainer, VisBase):
@@ -1958,6 +1963,16 @@ class HybridVisStream(FreqContainer, SiderealContainer, VisBase):
             "distributed": True,
             "distributed_axis": "freq",
             "chunks": (1, 32, 4, 2048),
+            "compression": COMPRESSION,
+            "compression_opts": COMPRESSION_OPTS,
+        },
+        "elevation_vis_weight": {
+            "axes": ["pol", "freq", "ew", "el", "ra"],
+            "dtype": np.float32,
+            "initialise": False,
+            "distributed": True,
+            "distributed_axis": "freq",
+            "chunks": (1, 32, 4, 512, 2048),
             "compression": COMPRESSION,
             "compression_opts": COMPRESSION_OPTS,
         },
@@ -2029,6 +2044,19 @@ class HybridVisStream(FreqContainer, SiderealContainer, VisBase):
                 "Requesting creation of complex-valued filter but "
                 "real filter already exists."
             )
+        if name == "vis_weight" and "elevation_vis_weight" in self.datasets:
+            raise RuntimeError(
+                "Requesting creation of elevation-independent weights but "
+                "elevation-dependent weights already exist."
+            )
+        if name == "elevation_vis_weight":
+            if "vis_weight" in self.datasets:
+                raise RuntimeError(
+                    "Requesting creation of elevation-dependent weights but "
+                    "elevation-independent weights already exist."
+                )
+            # Make this the default weight dataset
+            self._weight_dset_name = "elevation_vis_weight"
         return super().add_dataset(name)
 
     @property
@@ -2507,6 +2535,10 @@ class DelayTransform(DelayContainer):
             "initialise": True,
             "distributed": True,
             "distributed_axis": "baseline",
+            "compression": COMPRESSION,
+            "compression_opts": COMPRESSION_OPTS,
+            "chunks": (512, 2048, 32),
+            "truncate": True,
         }
     }
 
@@ -3536,3 +3568,87 @@ def copy_datasets_filter(
         if isinstance(dest_dset, memh5.MemDatasetDistributed):
             # Redistribute back to the original axis
             dest_dset.redistribute(original_ax_id)
+
+
+class LocalizedRFIMask(FreqContainer, TODContainer):
+    """Container for an RFI mask for each freq, el, and time sample.
+
+    The data frac_rfi stores information about the proportion of subdata
+    that detected RFI, which is used to generate the mask.
+    """
+
+    _axes = ("el",)
+
+    _dataset_spec: ClassVar = {
+        "mask": {
+            "axes": ["freq", "el", "time"],
+            "dtype": bool,
+            "initialise": True,
+            "distributed": True,
+            "distributed_axis": "freq",
+        },
+        "frac_rfi": {
+            "axes": ["freq", "el", "time"],
+            "dtype": np.float32,
+            "initialise": False,
+            "distributed": True,
+            "distributed_axis": "freq",
+        },
+    }
+
+    @property
+    def mask(self):
+        """Get the mask dataset."""
+        return self.datasets["mask"]
+
+    @property
+    def frac_rfi(self):
+        """Get the frac_rfi dataset."""
+        return self.datasets["frac_rfi"]
+
+    @property
+    def el(self):
+        """Get the el axis."""
+        return self.index_map["el"]
+
+
+class LocalizedSiderealRFIMask(FreqContainer, SiderealContainer):
+    """Container for an RFI mask for each freq, ra, and el sample.
+
+    The data frac_rfi stores information about the proportion of subdata
+    that detected RFI, which is used to generate the mask.
+    """
+
+    _axes = ("el",)
+
+    _dataset_spec: ClassVar = {
+        "mask": {
+            "axes": ["freq", "ra", "el"],
+            "dtype": bool,
+            "initialise": True,
+            "distributed": True,
+            "distributed_axis": "freq",
+        },
+        "frac_rfi": {
+            "axes": ["freq", "ra", "el"],
+            "dtype": np.float32,
+            "initialise": False,
+            "distributed": True,
+            "distributed_axis": "freq",
+        },
+    }
+
+    @property
+    def mask(self):
+        """Get the mask dataset."""
+        return self.datasets["mask"]
+
+    @property
+    def frac_rfi(self):
+        """Get the frac_rfi dataset."""
+        return self.datasets["frac_rfi"]
+
+    @property
+    def el(self):
+        """Get the el axis."""
+        return self.index_map["el"]

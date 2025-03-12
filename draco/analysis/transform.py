@@ -86,42 +86,23 @@ class FrequencyRebin(task.SingleTask):
         return sb
 
 
-class CollateProducts(task.SingleTask):
-    """Extract and order the correlation products for map-making.
+class TelescopeStreamMixIn:
+    """A mixin providing functionality for creating telescope-defined sidereal streams.
 
-    The task will take a sidereal task and format the products that are needed
-    or the map-making. It uses a BeamTransfer instance to figure out what these
-    products are, and how they should be ordered. It similarly selects only the
-    required frequencies.
-
-    It is important to note that while the input
-    :class:`~containers.SiderealStream` can contain more feeds and frequencies
-    than are contained in the BeamTransfers, the converse is not true. That is,
-    all the frequencies and feeds that are in the BeamTransfers must be found in
-    the timestream object.
-
-    Parameters
-    ----------
-    weight : string ('natural', 'uniform', or 'inverse_variance')
-        How to weight the redundant baselines when stacking:
-            'natural' - each baseline weighted by its redundancy (default)
-            'uniform' - each baseline given equal weight
-            'inverse_variance' - each baseline weighted by the weight attribute
+    This mixin is designed to be used with pipeline tasks that require certain
+    index maps in order to create SiderealStream containers compatible with the
+    baseline configuration provided in a telescope instance.
     """
 
-    weight = config.Property(proptype=str, default="natural")
-
     def setup(self, tel):
-        """Set the Telescope instance to use.
+        """Set up the telescope instance and precompute index maps.
 
         Parameters
         ----------
         tel : TransitTelescope
-            Telescope object to use
+            The telescope instance to use to compute the prod, stack,
+            and reverse_stack index maps.
         """
-        if self.weight not in ["natural", "uniform", "inverse_variance"]:
-            KeyError(f"Do not recognize weight = {self.weight!s}")
-
         self.telescope = io.get_telescope(tel)
 
         # Precalculate the stack properties
@@ -154,6 +135,32 @@ class CollateProducts(task.SingleTask):
             feedmask, self.telescope.feedmap[triu], self.telescope.npairs
         )
         self.bt_rev["conjugate"] = np.where(feedmask, self.telescope.feedconj[triu], 0)
+
+
+class CollateProducts(TelescopeStreamMixIn, task.SingleTask):
+    """Extract and order the correlation products for map-making.
+
+    The task will take a sidereal task and format the products that are needed
+    or the map-making. It uses a BeamTransfer instance to figure out what these
+    products are, and how they should be ordered. It similarly selects only the
+    required frequencies.
+
+    It is important to note that while the input
+    :class:`~containers.SiderealStream` can contain more feeds and frequencies
+    than are contained in the BeamTransfers, the converse is not true. That is,
+    all the frequencies and feeds that are in the BeamTransfers must be found in
+    the timestream object.
+
+    Parameters
+    ----------
+    weight : string ('natural', 'uniform', or 'inverse_variance')
+        How to weight the redundant baselines when stacking:
+            'natural' - each baseline weighted by its redundancy (default)
+            'uniform' - each baseline given equal weight
+            'inverse_variance' - each baseline weighted by the weight attribute
+    """
+
+    weight = config.enum(["natural", "uniform", "inverse_variance"], default="natural")
 
     @overload
     def process(self, ss: containers.SiderealStream) -> containers.SiderealStream: ...
@@ -488,6 +495,41 @@ class GenerateSubBands(SelectFreq):
         for key, default in self.default_parameters.items():
             value = kwargs[key] if key in kwargs else default
             setattr(self, key, value)
+
+
+class ElevationDependentHybridVisWeight(task.SingleTask):
+    """Add elevation dependence to hybrid visibility weights."""
+
+    def process(self, data: containers.HybridVisStream):
+        """Remove the weights dataset and broadcast to elevation weights.
+
+        Parameters
+        ----------
+        data
+            Hybrid visibilities with elevation-independent weights.
+
+        Returns
+        -------
+        data
+            Input container with different weights dataset
+        """
+        data.redistribute("freq")
+
+        # if elevation-dependent weights alread exist, this
+        # should be a no-op and just pass the dataset along
+        if "elevation_vis_weight" in data:
+            self.log.debug("Container already has the required dataset.")
+        else:
+            weights = data["vis_weight"][:].local_array
+            # Remove the reference to the vis_weight dataset
+            del data["vis_weight"]
+            # Add the new elevation-dependent weight dataset
+            data.add_dataset("elevation_vis_weight")
+            # Write the weights into the new dataset, broadcasting over
+            # the elevation axis
+            data.weight[:].local_array[:] = weights[..., np.newaxis, :]
+
+        return data
 
 
 class MModeTransform(task.SingleTask):
@@ -1062,6 +1104,124 @@ class SelectPol(task.SingleTask):
         return outcont
 
 
+class StokesIVis(task.SingleTask):
+    """Extract instrumental Stokes I from visibilities."""
+
+    def setup(self, telescope):
+        """Set the local observers.
+
+        Parameters
+        ----------
+        telescope : :class:`~caput.time.Observer`
+            An Observer object holding the geographic location of the telescope.
+            Note that :class:`~drift.core.TransitTelescope` instances are also
+            Observers.
+        """
+        self.telescope = io.get_telescope(telescope)
+
+    def process(self, data):
+        """Extract instrumental Stokes I.
+
+        This process will reduce the length of the baseline axis.
+
+        Parameters
+        ----------
+        data : containers.VisContainer
+            Container with visibilities and baselines matching
+            the telescope object.
+
+        Returns
+        -------
+        data : containers.VisContainer
+            Container with the same type as `data`, with polarised
+            baselines combined into Stokes I.
+        """
+        data.redistribute("freq")
+
+        # Get stokes I
+        vis, weight, baselines = stokes_I(data, self.telescope)
+
+        # Make the output container
+        # TODO: the axes for this container should probably
+        # be adjusted to make more sense
+        out = containers.empty_like(data, stack=baselines)
+        out.redistribute("freq")
+
+        out.vis[:] = vis.redistribute(0)
+        out.weight[:] = weight.redistribute(0)
+
+        return out
+
+
+def stokes_I(sstream, tel):
+    """Extract instrumental Stokes I from a time/sidereal stream.
+
+    Parameters
+    ----------
+    sstream : containers.SiderealStream, container.TimeStream
+        Stream of correlation data.
+    tel : TransitTelescope
+        Instance describing the telescope.
+
+    Returns
+    -------
+    vis_I : mpiarray.MPIArray[nbase, nfreq, ntime]
+        The instrumental Stokes I visibilities, distributed over baselines.
+    vis_weight : mpiarray.MPIArray[nbase, nfreq, ntime]
+        The weights for each visibility, distributed over baselines.
+    ubase : np.ndarray[nbase, 2]
+        Baseline vectors corresponding to output.
+    """
+    # Make sure the data is distributed in a reasonable way
+    sstream.redistribute("freq")
+    # Construct a complex number representing each baseline (used for determining
+    # unique baselines).
+    # Due to floating point precision, some baselines don't get matched as having
+    # the same lengths. To get around this, round all separations to 0.1 mm precision
+    bl_round = np.around(tel.baselines[:, 0] + 1.0j * tel.baselines[:, 1], 4)
+
+    # Map unique baseline lengths to each polarisation pair
+    ubase, uinv, ucount = np.unique(bl_round, return_inverse=True, return_counts=True)
+    ubase = ubase.astype(np.complex128, copy=False).view(np.float64).reshape(-1, 2)
+
+    # Construct the output arrays
+    new_shape = (
+        sstream.vis.global_shape[0],
+        ubase.shape[0],
+        sstream.vis.global_shape[2],
+    )
+    vis_I = mpiarray.zeros(new_shape, dtype=sstream.vis.dtype, axis=0)
+    vis_weight = mpiarray.zeros(new_shape, dtype=sstream.weight.dtype, axis=0)
+
+    # Find co-pol baselines (XX and YY)
+    pairs = tel.uniquepairs
+    pols = tel.polarisation[pairs]
+    is_copol = pols[:, 0] == pols[:, 1]
+
+    # Iterate over products to construct the Stokes I vis
+    ssv = sstream.vis[:]
+    ssw = sstream.weight[:]
+
+    for ii, ui in enumerate(uinv):
+        # Skip if not a co-pol baseline
+        if not is_copol[ii]:
+            continue
+
+        # Skip if not all polarisations are included
+        if ucount[ui] < 4:
+            continue
+
+        # Skip if there's a bad feed
+        if tel.feedmap[(*pairs[ii],)] == -1:
+            continue
+
+        # Accumulate the visibilities and weights
+        vis_I[:, ui] += ssv[:, ii]
+        vis_weight[:, ui] += ssw[:, ii]
+
+    return vis_I, vis_weight, ubase
+
+
 class TransformJanskyToKelvin(task.SingleTask):
     """Task to convert from Jy to Kelvin and vice-versa.
 
@@ -1221,7 +1381,7 @@ class MixData(task.SingleTask):
     This can generate arbitrary linear combinations of the data and weights for both
     `SiderealStream` and `RingMap` objects, and can be used for many purposes such as:
     adding together simulated timestreams, injecting signal into data, replacing weights
-    in simulated data with those from real data, etc.
+    in simulated data with those from real data, performing jackknifes, etc.
 
     All coefficients are applied naively to generate the final combinations, i.e. no
     normalisations or weighted summation is performed.
@@ -1229,16 +1389,24 @@ class MixData(task.SingleTask):
     Attributes
     ----------
     data_coeff : list
-        A list of coefficients to apply to the data dataset of each input containter to
+        A list of coefficients to apply to the data dataset of each input container to
         produce the final output. These are applied to either the `vis` or `map` dataset
         depending on the the type of the input container.
     weight_coeff : list
         Coefficient to be applied to each input containers weights to generate the
         output.
+    invert_weight : bool
+        Invert the weights to convert to variance prior to mixing.  Re-invert in the
+        final mixed data product to convert back to inverse variance.
+    require_nonzero_weight : bool
+        Set the weight to zero in the mixed data if the weight is zero in any of the
+        input data.
     """
 
     data_coeff = config.list_type(type_=float)
     weight_coeff = config.list_type(type_=float)
+    invert_weight = config.Property(proptype=bool, default=False)
+    require_nonzero_weight = config.Property(proptype=bool, default=False)
 
     mixed_data = None
 
@@ -1250,6 +1418,8 @@ class MixData(task.SingleTask):
             )
 
         self._data_ind = 0
+        self._tags = []
+        self._wfunc = tools.invert_no_zero if self.invert_weight else lambda x: x
 
     def process(self, data: Union[containers.SiderealStream, containers.RingMap]):
         """Add the input data into the mixed data output.
@@ -1259,17 +1429,6 @@ class MixData(task.SingleTask):
         data
             The data to be added into the mix.
         """
-
-        def _get_dset(data):
-            # Helpful routine to get the data dset depending on the type
-            if isinstance(data, containers.SiderealStream):
-                return data.vis
-
-            if isinstance(data, containers.RingMap):
-                return data.map
-
-            return None
-
         if self._data_ind >= len(self.data_coeff):
             raise RuntimeError(
                 "This task cannot accept more items than there are coefficents set."
@@ -1280,8 +1439,16 @@ class MixData(task.SingleTask):
             self.mixed_data.redistribute("freq")
 
             # Zero out data and weights
-            _get_dset(self.mixed_data)[:] = 0.0
+            self.mixed_data.data[:] = 0.0
             self.mixed_data.weight[:] = 0.0
+
+            if self.require_nonzero_weight:
+                self._flag = mpiarray.ones(
+                    self.mixed_data.weight.shape,
+                    axis=self.mixed_data.weight.distributed_axis,
+                    comm=self.mixed_data.comm,
+                    dtype=bool,
+                )
 
         # Validate the types are the same
         if type(self.mixed_data) is not type(data):
@@ -1292,19 +1459,32 @@ class MixData(task.SingleTask):
 
         data.redistribute("freq")
 
-        mixed_dset = _get_dset(self.mixed_data)[:]
-        data_dset = _get_dset(data)[:]
-
         # Validate the shapes match
-        if mixed_dset.shape != data_dset.shape:
+        if self.mixed_data.data.shape != data.data.shape:
             raise ValueError(
-                f"Size of data ({data_dset.shape}) must match "
-                f"data_stack ({mixed_dset.shape})"
+                f"Size of data ({data.data.shape}) must match "
+                f"data_stack ({self.mixed_data.data.shape})"
+            )
+
+        if self.mixed_data.weight.shape != data.weight.shape:
+            raise ValueError(
+                f"Size of data ({data.weight.shape}) must match "
+                f"data_stack ({self.mixed_data.weightshape})"
             )
 
         # Mix in the data and weights
-        mixed_dset[:] += self.data_coeff[self._data_ind] * data_dset[:]
-        self.mixed_data.weight[:] += self.weight_coeff[self._data_ind] * data.weight[:]
+        self.mixed_data.data[:] += self.data_coeff[self._data_ind] * data.data[:]
+        self.mixed_data.weight[:] += self.weight_coeff[self._data_ind] * self._wfunc(
+            data.weight[:]
+        )
+
+        # Update the flag
+        if self.require_nonzero_weight:
+            self._flag &= data.weight[:] > 0.0
+
+        # Save the tags
+        if "tag" in data.attrs:
+            self._tags.append(data.attrs["tag"])
 
         self._data_ind += 1
 
@@ -1327,7 +1507,31 @@ class MixData(task.SingleTask):
         data = self.mixed_data
         self.mixed_data = None
 
+        # Apply the logical AND of all flags
+        if self.require_nonzero_weight:
+            data.weight[:] *= self._flag.astype(data.weight.dtype)
+            self._flag = None
+
+        # Convert back to inverse variance
+        data.weight[:] = self._wfunc(data.weight[:])
+
+        # Combine the tags
+        data.attrs["tag"] = "_".join(self._tags)
+
         return data
+
+
+class Jackknife(MixData):
+    """Perform a jackknife of two datasets.
+
+    This is identical to MixData but sets the default config properties
+    to values appropriate for carrying out a jackknife of two datasets.
+    """
+
+    data_coeff = config.list_type(type_=float, default=[0.5, -0.5])
+    weight_coeff = config.list_type(type_=float, default=[0.25, 0.25])
+    invert_weight = config.Property(proptype=bool, default=True)
+    require_nonzero_weight = config.Property(proptype=bool, default=True)
 
 
 class Downselect(io.SelectionsMixin, task.SingleTask):

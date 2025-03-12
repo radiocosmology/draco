@@ -420,6 +420,9 @@ class DayenuDelayFilterHybridVis(task.SingleTask):
         is less than this fraction of the median value over all
         unmasked frequencies.  Default is 0.0 (i.e., do not mask
         frequencies with low attenuation).
+    apply_filter : bool
+        Apply the filter that was generated. If False, `save_filter`
+        must be True.
     save_filter : bool
         Save the filter that was applied to the output container.
     """
@@ -429,7 +432,15 @@ class DayenuDelayFilterHybridVis(task.SingleTask):
     epsilon = config.Property(proptype=np.atleast_1d, default=1e-12)
 
     atten_threshold = config.Property(proptype=float, default=0.0)
+    apply_filter = config.Property(proptype=bool, default=True)
     save_filter = config.Property(proptype=bool, default=False)
+
+    def setup(self):
+        """Check that `save_filter` and `apply_filter` are set."""
+        if not self.apply_filter and not self.save_filter:
+            raise RuntimeError(
+                "At least one of `save_filter` and `apply_filter` must be True."
+            )
 
     def process(self, stream):
         """Filter out delays from a SiderealStream or TimeStream.
@@ -452,6 +463,9 @@ class DayenuDelayFilterHybridVis(task.SingleTask):
                 stream.add_dataset("filter")
             stream.filter[:] = 0.0
 
+        if not self.apply_filter:
+            self.log.debug("Filter will be generated but not applied.")
+
         # Distribute over products
         stream.redistribute(["ra", "time"])
 
@@ -473,7 +487,6 @@ class DayenuDelayFilterHybridVis(task.SingleTask):
 
             flag = weight[..., tt] > 0.0
             flag = np.all(flag, axis=0, keepdims=True)
-            weight[..., tt] *= flag.astype(weight.dtype)
 
             for xx in range(new):
 
@@ -497,7 +510,8 @@ class DayenuDelayFilterHybridVis(task.SingleTask):
                     self.log.error(
                         f"Failed to converge while processing time {tt}: {exc}"
                     )
-                    weight[:, :, xx, tt] = 0.0
+                    if self.apply_filter:
+                        weight[:, :, xx, tt] = 0.0
                     continue
 
                 # Apply the filter
@@ -506,6 +520,10 @@ class DayenuDelayFilterHybridVis(task.SingleTask):
                     # Save the filter to the container
                     if self.save_filter:
                         filt[pp, :, :, xx, tt] = NF[0]
+
+                    if not self.apply_filter:
+                        # Skip the rest
+                        continue
 
                     # Grab datasets for this pol and ew baseline
                     tvis = np.ascontiguousarray(vis[pp, :, xx, :, tt])
@@ -532,6 +550,163 @@ class DayenuDelayFilterHybridVis(task.SingleTask):
         stream.redistribute("freq")
 
         return stream
+
+
+class ApplyDelayFilterHybridVis(task.SingleTask):
+    """Apply a previously saved filter to the hybrid beamformed visibilities.
+
+    This task takes a DAYENU filter saved in hybrid beamformed data and applies to
+    another hybrid beamformed visibilities. This task is used to apply the foreground
+    filter to the 21-cm simulation.
+
+    Attributes
+    ----------
+    atten_threshold : float
+        Mask any frequency where the diagonal element of the filter
+        is less than this fraction of the median value over all
+        unmasked frequencies.  Default is 0.0 (i.e., do not mask
+        frequencies with low attenuation).
+    """
+
+    atten_threshold = config.Property(proptype=float, default=0.0)
+
+    def process(self, hv, source):
+        """Apply the DAYENU filter to a HybridVisStream.
+
+        Parameters
+        ----------
+        hv: containers.HybridVisStream
+            The data the filter will be applied to.
+        source: containers.HybridVisStream
+            The filter of HybridVisStream to be applied.
+
+        Returns
+        -------
+        hv_filt: containers.HybridVisStream
+            The filtered dataset.
+        """
+        # Distribute over products
+        hv.redistribute(["ra", "time"])
+        source.redistribute(["ra", "time"])
+
+        # Validate that both hybrid beamformed visibilites match
+        if not np.array_equal(source.freq, hv.freq):
+            raise ValueError("Frequencies do not match for hybrid visibilities.")
+
+        if not np.array_equal(source.index_map["el"], hv.index_map["el"]):
+            raise ValueError("Elevations do not match for hybrid visibilities.")
+
+        if not np.array_equal(source.index_map["ew"], hv.index_map["ew"]):
+            raise ValueError("EW baselines do not match for hybrid visibilities.")
+
+        if not np.array_equal(source.index_map["pol"], hv.index_map["pol"]):
+            raise ValueError("Polarisations do not match for hybrid visibilities.")
+
+        if not np.array_equal(source.ra, hv.ra):
+            raise ValueError("Right Ascension do not match for hybrid visibilities.")
+
+        npol, nfreq, new, nel, ntime = hv.vis.local_shape
+
+        # Dereference the required datasets
+        vis = hv.vis[:].local_array
+        weight = hv.weight[:].local_array
+        filt = source.filter[:].local_array
+
+        # loop over products
+        for tt in range(ntime):
+            t0 = time.time()
+            self.log.debug(f"Filter time {tt} of {ntime}.")
+
+            for xx in range(new):
+
+                for pp in range(npol):
+
+                    flag = weight[pp, :, xx, tt] > 0.0
+
+                    # Skip fully masked samples
+                    if not np.any(flag):
+                        continue
+
+                    # Grab datasets for this pol and ew baseline
+                    tvis = np.ascontiguousarray(vis[pp, :, xx, :, tt])
+                    tvar = tools.invert_no_zero(weight[pp, :, xx, tt])
+
+                    # Grab the filter for this pol and ew baseline
+                    NF = np.ascontiguousarray(filt[pp, :, :, xx, tt])
+
+                    # Make sure that any frequencies unmasked during filter generation
+                    # are also unmasked in the data
+                    valid_freq_flag = np.any(np.abs(NF) > 0.0, axis=0)
+
+                    if not np.any(valid_freq_flag):
+                        # Skip samples where filter is entirely zero
+                        weight[pp, :, xx, tt] = 0.0
+                        continue
+
+                    missing_freq = np.flatnonzero(valid_freq_flag & ~flag)
+                    if missing_freq.size > 0:
+                        self.log.warning(
+                            "Missing the following frequencies that were "
+                            "assumed valid during filter generation: "
+                            f"{missing_freq}"
+                        )
+                        weight[pp, :, xx, tt] = 0.0
+                        continue
+
+                    # Apply the filter
+                    vis[pp, :, xx, :, tt] = np.matmul(NF, tvis)
+                    weight[pp, :, xx, tt] = tools.invert_no_zero(
+                        np.matmul(np.abs(NF) ** 2, tvar)
+                    )
+                    # Flag frequencies with large attenuation
+                    if self.atten_threshold > 0.0:
+                        diag = np.abs(np.diag(NF))
+                        nonzero_diag_flag = diag > 0.0
+                        if np.any(nonzero_diag_flag):
+                            med_diag = np.median(diag[nonzero_diag_flag])
+                            flag_low = diag > (self.atten_threshold * med_diag)
+                            weight[pp, :, xx, tt] *= flag_low.astype(weight.dtype)
+
+            self.log.debug(f"Took {time.time() - t0:0.3f} seconds in total.")
+
+        # Problems saving to disk when distributed over last axis
+        hv.redistribute("freq")
+
+        return hv
+
+
+class ApplyDelayFilterHybridVisSingleSource(ApplyDelayFilterHybridVis):
+    """Apply a previously saved filter to the hybrid beamformed visibilities.
+
+    This task differs from `ApplyDelayFilterHybridVis` in that it applies
+    a _single_ filter to multiple possible datasets.
+    """
+
+    def setup(self, source):
+        """Set the DAYENU filter to be applied to hybrid beamformed data.
+
+        Parameters
+        ----------
+        source: containers.HybridVisStream
+          The filter of HybridVisStream to be applied.
+        """
+        self.source = source
+
+    def process(self, hv):
+        """Apply the DAYENU filter to a HybridVisStream.
+
+        Parameters
+        ----------
+        hv: containers.HybridVisStream
+            The data the filter will be applied to.
+
+        Returns
+        -------
+        hv_filt: containers.HybridVisStream
+            The filtered dataset.
+        """
+        # Apply the previously saved filter to this dataset
+        return super().process(hv, self.source)
 
 
 class DayenuDelayFilterMap(task.SingleTask):

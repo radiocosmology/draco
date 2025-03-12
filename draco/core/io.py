@@ -561,6 +561,121 @@ class LoadFilesFromParams(BaseLoadFiles):
 LoadBasicCont = LoadFilesFromParams
 
 
+class LoadFilesFromAttrs(BaseLoadFiles):
+    """Load files from paths constructed using the attributes of another container.
+
+    This class enables the dynamic generation of file paths by formatting a specified
+    filename template with attributes from an input container.  It inherits from
+    `BaseLoadFiles` and provides functionality to load files into a container.
+
+    Attributes
+    ----------
+    filename : str
+        Template for the file path, which can include placeholders referencing attributes
+        in the input container.  For example: `rfi_mask_lsd_{lsd}.h5`.  The placeholders
+        will be replaced with corresponding attribute values from the input container.
+    """
+
+    filename = config.Property(proptype=str)
+
+    def process(self, incont):
+        """Load a file based on attributes from the input container.
+
+        Parameters
+        ----------
+        incont : subclass of `memh5.BasicCont`
+            Input container whose attributes are used to construct the file path.
+
+        Returns
+        -------
+        outcont : subclass of `memh5.BasicCont`
+            A container populated with data from the loaded file.
+        """
+        # Construct the filename from the attributes in the input container
+        attrs = dict(incont.attrs)
+        filename = self.filename.format(**attrs)
+
+        # Use the base class method to load the file
+        return self._load_file(filename)
+
+
+class LoadFilesAndSelect(BaseLoadFiles):
+    """Load a collection of files on setup and select specific entries on process.
+
+    Attributes
+    ----------
+    files : list of str or str
+        A list of file paths or a glob pattern specifying the files to load.
+    key_format : str, optional
+        A format string used to generate keys for file selection.  Can reference
+        any variables contained in the attributes of the containers.  If `None`,
+        files are stored with numerical indices.
+    """
+
+    files = config.Property(proptype=_list_or_glob)
+    key_format = config.Property(proptype=str)
+
+    def setup(self):
+        """Load and store files in a dictionary.
+
+        This method iterates through the list of files, loads their contents,
+        and stores them in the `self.collection` dictionary. If `key_format`
+        is provided, it is used to generate a key based on the file attributes.
+        Otherwise, the index of the file in the list is used as the key.
+        """
+        # Call the baseclass setup to resolve any selections
+        super().setup()
+
+        self.collection = {}
+        for ff, filename in enumerate(self.files):
+            cont = self._load_file(filename)
+
+            if self.key_format is None:
+                self.collection[ff] = cont
+
+            else:
+                attrs = dict(cont.attrs)
+                key = self.key_format.format(**attrs)
+                self.collection[key] = cont
+
+    def process(self, incont):
+        """Select and return a file from the collection based on the input container.
+
+        If `key_format` is provided, the selection key is derived from the attributes
+        of the input container.  If the resulting key is not found in the collection,
+        a warning is logged, and `None` is returned.
+
+        If `key_format` is not provided, files are selected sequentially from
+        the collection, cycling back to the beginning if more input containers
+        are received than the number of available files.
+
+        Parameters
+        ----------
+        incont : memh5.BasicCont subclass
+            Container whose attributes are used to determine the selection key.
+
+        Returns
+        -------
+        outcont : memh5.BasicCont subclass or None
+            The selected file if found, otherwise `None`.
+        """
+        if self.key_format is None:
+            key = self._count % len(self.collection)
+            self.log.info(f"Selecting file in position {key}.")
+        else:
+            attrs = dict(incont.attrs)
+            key = self.key_format.format(**attrs)
+
+            if key not in self.collection:
+                self.log.warning(f"Could not find file with label {key}.")
+                return None
+
+            self.log.info(f"Selecting file with label {key}.")
+
+        # Return the file with the desired key
+        return self.collection[key]
+
+
 class FindFiles(pipeline.TaskBase):
     """Take a glob or list of files and pass on to other tasks.
 
@@ -801,6 +916,56 @@ class Truncate(task.SingleTask):
 
         return params
 
+    def _get_weights(self, container, dset, wdset):
+        """Extract the weight dataset and broadcast agaonst the truncation dataset.
+
+        Parameters
+        ----------
+        container
+            Container class.
+        dset : str
+            Dataset name
+        wdset : str
+            Weight dataset name
+
+        Returns
+        -------
+        weight : np.ndarray
+            Array of weights to use in truncation. If `dset` is complex,
+            this is scaled by a factor of 2.
+
+        Raises
+        ------
+        KeyError
+            Raised if either `dset` or `wdset` does not exist.
+        ValueError
+            Raised if the weight dataset cannot be broadcast to
+            the shape of the dataset to be truncated.
+        """
+        # Try to get weights from an attribute first
+        if hasattr(container, wdset):
+            weight = getattr(container, wdset)
+        else:
+            weight = container[wdset]
+
+        data = container[dset]
+
+        if isinstance(weight, memh5.MemDataset):
+            # Add missing broadcast axes to the weights dataset
+            waxes = weight.attrs.get("axis", [])
+            daxes = data.attrs.get("axis", [])
+            # Add length-one axes
+            slobj = tuple(slice(None) if ax in waxes else np.newaxis for ax in daxes)
+            weight = weight[:][slobj]
+
+        # Broadcast `weight` against the shape of the truncation array
+        weight = np.broadcast_to(weight, data[:].shape).copy().reshape(-1)
+
+        if np.iscomplexobj(data):
+            weight *= 2.0
+
+        return weight
+
     def process(self, data):
         """Truncate the incoming data.
 
@@ -818,8 +983,6 @@ class Truncate(task.SingleTask):
 
         Raises
         ------
-        `caput.pipeline.PipelineRuntimeError`
-            If input data has mismatching dataset and weight array shapes.
         `config.CaputConfigError`
              If the input data container has no preset values and `fixed_precision` or
              `variance_increase` are not set in the config.
@@ -841,6 +1004,7 @@ class Truncate(task.SingleTask):
             # np.ndarray.reshape must be used with ndarrays
             # MPIArrays use MPIArray.reshape()
             val = np.ndarray.reshape(data[dset][:].view(np.ndarray), data[dset][:].size)
+
             if specs["weight_dataset"] is None:
                 if np.iscomplexobj(data[dset]):
                     data[dset][:].real = truncate.bit_truncate_relative(
@@ -854,31 +1018,24 @@ class Truncate(task.SingleTask):
                         val, specs["fixed_precision"]
                     ).reshape(old_shape)
             else:
-                invvar = (
-                    np.broadcast_to(
-                        data[specs["weight_dataset"]][:], data[dset][:].shape
-                    )
-                    .copy()
-                    .reshape(-1)
-                )
-                invvar *= (2.0 if np.iscomplexobj(data[dset]) else 1.0) / specs[
-                    "variance_increase"
-                ]
+                wdset = self._get_weights(data, dset, specs["weight_dataset"])
+                wdset /= specs["variance_increase"]
+
                 if np.iscomplexobj(data[dset]):
                     data[dset][:].real = truncate.bit_truncate_weights(
                         val.real,
-                        invvar,
+                        wdset,
                         specs["fixed_precision"],
                     ).reshape(old_shape)
                     data[dset][:].imag = truncate.bit_truncate_weights(
                         val.imag,
-                        invvar,
+                        wdset,
                         specs["fixed_precision"],
                     ).reshape(old_shape)
                 else:
                     data[dset][:] = truncate.bit_truncate_weights(
                         val,
-                        invvar,
+                        wdset,
                         specs["fixed_precision"],
                     ).reshape(old_shape)
 

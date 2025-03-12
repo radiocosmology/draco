@@ -19,6 +19,7 @@ Tasks
     WienerRingMapMakerAnalytical
     WienerRingMapMakerExternal
     RADependentWeights
+    ReconstructVisWeight
 """
 
 import numpy as np
@@ -29,6 +30,7 @@ from numpy.lib.recfunctions import structured_to_unstructured
 
 from ..core import containers, io, task
 from ..util import tools
+from ..util.exception import ConfigError
 from . import transform
 
 
@@ -41,12 +43,16 @@ class MakeVisGrid(task.SingleTask):
     Attributes
     ----------
     centered : bool
-        If set, place the zero NS separation at the center of the y-axis with
+        If True, place the zero NS separation at the center of the y-axis with
         the baselines given in ascending order. Otherwise the zero separation
-        is at position zero, and the baselines are in FFT order.
+        is at position zero, and the baselines are in FFT order.  Default is False.
+    save_redundancy : bool
+        If True, computes and stores the redundancy of each visibility.
+        Default is True.
     """
 
     centered = config.Property(proptype=bool, default=False)
+    save_redundancy = config.Property(proptype=bool, default=True)
 
     def setup(self, tel):
         """Set the Telescope instance to use.
@@ -128,40 +134,49 @@ class MakeVisGrid(task.SingleTask):
             attrs_from=sstream,
         )
 
+        # Calculate the redundancy
+        if self.save_redundancy:
+            redundancy = tools.calculate_redundancy(
+                sstream.input_flags[:],
+                sstream.index_map["prod"][:],
+                sstream.reverse_map["stack"]["stack"][:],
+                sstream.vis.shape[1],
+            )
+
+            grid.add_dataset("redundancy")
+
         # Redistribute over frequency
         sstream.redistribute("freq")
         grid.redistribute("freq")
 
-        # Calculate the redundancy
-        redundancy = tools.calculate_redundancy(
-            sstream.input_flags[:],
-            sstream.index_map["prod"][:],
-            sstream.reverse_map["stack"]["stack"][:],
-            sstream.vis.shape[1],
-        )
-
         # De-reference distributed arrays outside loop to save repeated MPI calls
-        ssv = sstream.vis[:]
-        ssw = sstream.weight[:]
-        gsv = grid.vis[:]
-        gsw = grid.weight[:]
-        gsr = grid.redundancy[:]
+        ssv = sstream.vis[:].local_array
+        ssw = sstream.weight[:].local_array
 
+        gsv = grid.vis[:].local_array
         gsv[:] = 0.0
+
+        gsw = grid.weight[:].local_array
         gsw[:] = 0.0
+
+        if self.save_redundancy:
+            gsr = grid.redundancy[:]
+            gsr[:] = 0
 
         # Unpack visibilities into new array
         for vis_ind, (p_ind, x_ind, y_ind) in enumerate(zip(pind, xind, yind)):
             # Different behavior for intracylinder and intercylinder baselines.
             gsv[p_ind, :, x_ind, ns_offset + y_ind, :] = ssv[:, vis_ind]
             gsw[p_ind, :, x_ind, ns_offset + y_ind, :] = ssw[:, vis_ind]
-            gsr[p_ind, x_ind, ns_offset - y_ind, :] = redundancy[vis_ind]
+            if self.save_redundancy:
+                gsr[p_ind, x_ind, ns_offset + y_ind, :] = redundancy[vis_ind]
 
             if x_ind == 0:
                 pc_ind = pconjmap[p_ind]
                 gsv[pc_ind, :, x_ind, ns_offset - y_ind, :] = ssv[:, vis_ind].conj()
                 gsw[pc_ind, :, x_ind, ns_offset - y_ind, :] = ssw[:, vis_ind]
-                gsr[pc_ind, x_ind, ns_offset - y_ind, :] = redundancy[vis_ind]
+                if self.save_redundancy:
+                    gsr[pc_ind, x_ind, ns_offset - y_ind, :] = redundancy[vis_ind]
 
         return grid
 
@@ -176,11 +191,9 @@ class BeamformNS(task.SingleTask):
     ----------
     npix : int
         Number of map pixels in the declination dimension.  Default is 512.
-
     span : float
         Span of map in the declination dimension. Value of 1.0 generates a map
         that spans from horizon-to-horizon.  Default is 1.0.
-
     weight : string
         How to weight the non-redundant baselines.  Options include:
             'natural' - each baseline weighted by its redundancy (default)
@@ -189,14 +202,14 @@ class BeamformNS(task.SingleTask):
         And any window function supported by drao.util.tools.window_generalised,
         such as 'hann', 'hanning', 'hamming', 'blackman', 'nuttall',
         'blackman_nuttall', 'blackman_harris' 'triangular', and 'tukey-0.X'.
-
     scaled : bool
         Scale the window to match the lowest frequency. This should make the
         beams more frequency independent.  Not supported for 'inverse_variance'
         and 'natural' weight.
-
     include_auto: bool
         Include autocorrelations in the calculation.  Default is False.
+    save_dirty_beam : bool
+        If True, computes and stores the dirty beam.  Default is False.
     """
 
     npix = config.Property(proptype=int, default=512)
@@ -223,7 +236,13 @@ class BeamformNS(task.SingleTask):
 
         gsv = gstream.vis[:].local_array
         gsw = gstream.weight[:].local_array
-        gsr = gstream.redundancy[:]
+        if self.weight == "natural":
+            if "redundancy" not in gstream.datasets:
+                raise ConfigError(
+                    "Must set save_redundancy = True for task "
+                    "MakeVisGrid in order to use a natural weight scheme."
+                )
+            gsr = gstream.redundancy[:]
 
         # Construct phase array
         el = self.span * np.linspace(-1.0, 1.0, self.npix)
@@ -1153,8 +1172,12 @@ class RADependentWeights(task.SingleTask):
             )
             raise RuntimeError(msg)
 
+        # Ensure containers are distributed over the same axis
+        hybrid_vis.redistribute("freq")
+        ringmap.redistribute("freq")
+
         # Extract the variance of the hybrid visibilities from the weight dataset
-        var = tools.invert_no_zero(hybrid_vis.weight[:].view(np.ndarray))
+        var = tools.invert_no_zero(hybrid_vis.weight[:].local_array)
 
         # Calculate the time averaged variance
         var_time_avg = np.mean(var, axis=-1, keepdims=True)
@@ -1187,9 +1210,192 @@ class RADependentWeights(task.SingleTask):
         ) * tools.invert_no_zero(np.sum(weight_ew**2 * var, axis=-2))
 
         # Scale the ringmap weights by the RA dependence
-        ringmap.weight[:] *= ra_dependence[..., np.newaxis]
+        ringmap.weight[:].local_array[:] *= ra_dependence[..., np.newaxis]
 
         return ringmap
+
+
+class ReconstructVisWeight(transform.TelescopeStreamMixIn, task.SingleTask):
+    """Compute visibility weights that match hybrid beamformed visibility weights.
+
+    This is useful for generating noise realizations of hybrid beamformed
+    visibilities that maintain proper correlation along the el axis.  It uses
+    the setup method defined in TelescopeStreamMixIn to create the appropriate
+    prod, stack, and reverse_stack axis from a telescope instance.
+    """
+
+    def process(self, hv):
+        """Create a sidereal stream with weights that will reproduce the input weights.
+
+        Parameters
+        ----------
+        hv : containers.HybridVisStream
+            Hybrid beamformed visibilities with the desired weights.
+
+        Returns
+        -------
+        ss : containers.SiderealStream
+            A sidereal stream with visibilities set to zero and
+            with weights proportional to the baseline redundancy
+            and normalized to reproduce the input weights after
+            beamforming in the north-south direction.
+        """
+        # Extract parameters needed to calculate the window
+        # function in the y direction
+        weight = hv.attrs["beamform_ns_weight"]
+        if weight == "inverse_variance":
+            raise ValueError("Weight scheme inverse_variance not supported.")
+
+        include_auto = hv.attrs["beamform_ns_include_auto"]
+        scaled = hv.attrs["beamform_ns_scaled"]
+        freqmin = hv.attrs["beamform_ns_freqmin"]
+        nsmax = hv.attrs["beamform_ns_nsmax"]
+
+        wvmin = scipy.constants.c * 1e-6 / freqmin
+
+        # Calculation the set of polarisations in the data, and which polarisation
+        # index every entry corresponds to
+        polpair = self.telescope.polarisation[self.telescope.uniquepairs].view("U2")
+        polpair, pind = np.unique(polpair, return_inverse=True)
+
+        # Determine the layout of the visibilities on the grid.
+        xind, yind, min_xsep, min_ysep = find_grid_indices(self.telescope.baselines)
+
+        baseline_flag = np.abs(yind * min_ysep) <= (nsmax + 0.5 * min_ysep)
+
+        # Determine north-south grid
+        ny = 2 * np.abs(yind).max() + 1
+        nspos = np.fft.fftfreq(ny, d=(1.0 / (ny * min_ysep)))
+
+        # Check that the input container has the same east-west grid
+        vis_pos_x = np.arange(np.max(np.abs(xind)) + 1) * min_xsep
+
+        ewpos = hv.index_map["ew"]
+        nx = ewpos.size
+
+        if not np.array_equal(vis_pos_x, ewpos):
+            raise RuntimeError("Downselected ew axis not currently supported.")
+
+        # Select the polarisations present in hvis
+        pol = hv.index_map["pol"]
+        npol = pol.size
+
+        pol_lookup = {key: ind for ind, key in enumerate(hv.pol)}
+
+        pol_remap = np.array([pol_lookup.get(pstr, -1) for pstr in polpair[pind]])
+        pol_flag = pol_remap >= 0
+
+        # Downselect the baselines to process
+        flag = pol_flag & baseline_flag
+
+        xind = xind[flag]
+        yind = yind[flag]
+        pind = pol_remap[flag]
+
+        pconjmap = np.unique([pj + pi for pi, pj in pol], return_inverse=True)[1]
+
+        # Create output container
+        ss = containers.SiderealStream(
+            axes_from=hv,
+            attrs_from=hv,
+            input=self.telescope.input_index,
+            prod=self.bt_prod,
+            stack=self.bt_stack,
+            reverse_map_stack=self.bt_rev,
+            distributed=hv.distributed,
+            comm=hv.comm,
+        )
+
+        hv.redistribute("freq")
+        ss.redistribute("freq")
+
+        # Assume that the noise variance scales with
+        # the redundancy of the baseline.
+        input_flags = np.all(self.telescope.feedmask, axis=-1, keepdims=True)
+        nbaseline = tools.calculate_redundancy(
+            input_flags,
+            ss.index_map["prod"],
+            ss.reverse_map["stack"]["stack"][:],
+            ss.vis.shape[1],
+        )[:, 0]
+
+        nbaseline_valid = nbaseline[flag]
+
+        # Place the redundancy onto a regular grid
+        nbaseline_grid = np.zeros((npol, nx, ny), dtype=float)
+        nbaseline_grid[pind, xind, yind] = nbaseline_valid
+
+        intra = np.flatnonzero(xind == 0)
+        nbaseline_grid[pconjmap[pind[intra]], 0, -yind[intra]] = nbaseline_valid[intra]
+
+        # Determine the wavelengths
+        wavelength = scipy.constants.c * 1e-6 / ss.freq[ss.weight[:].local_bounds]
+
+        # Initialize datasets in output container
+        ss.vis[:] = 0.0
+
+        wss = ss.weight[:].local_array
+
+        # Assume that the weight in the sidereal stream
+        # scales with redundancy
+        wss[:] = np.where(flag, nbaseline, 0.0)[np.newaxis, :, np.newaxis]
+
+        # Dereference datasets in input container
+        whv = hv.weight[:].local_array
+
+        # If natural weighting was used, then we can perform most of the
+        # calculation now, since it won't change with frequency
+        if weight == "natural":
+
+            window = nbaseline_grid.copy()
+
+            # Remove auto-correlations
+            if not include_auto:
+                window[:, 0, 0] = 0.0
+
+            # Normalize by sum of weights
+            norm = np.sum(window, axis=-1, keepdims=True)
+            window *= tools.invert_no_zero(norm)
+
+            # Conversion between weight in hybrid beamformed visibilities
+            # to weight in visibilities
+            noise_factor = np.sum(
+                window**2 * tools.invert_no_zero(nbaseline_grid), axis=-1
+            )
+
+        # Loop over local frequencies
+        for ff, wv in enumerate(wavelength):
+
+            # If natural weighting was not used, then caclulate the
+            # window function based on the frequency.
+            if weight != "natural":
+
+                vpos = nspos / wv
+                vmax = nsmax / wvmin if scaled else nsmax / wv
+
+                x = 0.5 * (vpos / vmax + 1)
+                window = np.ones((npol, nx, ny), dtype=float)
+                window *= tools.window_generalised(x, window=weight)
+
+                # Remove auto-correlations
+                if not include_auto:
+                    window[:, 0, 0] = 0.0
+
+                # Normalize by sum of weights
+                norm = np.sum(window, axis=-1, keepdims=True)
+                window *= tools.invert_no_zero(norm)
+
+                # Conversion between weight in hybrid beamformed visibilities
+                # to weight in visibilities
+                noise_factor = np.sum(
+                    window**2 * tools.invert_no_zero(nbaseline_grid), axis=-1
+                )
+
+            w0 = noise_factor[:, :, np.newaxis] * whv[:, ff, :, :]
+
+            wss[ff][flag] *= w0[pind, xind, :]
+
+        return ss
 
 
 def find_basis(baselines):

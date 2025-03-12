@@ -23,7 +23,7 @@ dynamic = ["readme", "version"]
 requires-python = ">=3.9"
 dependencies = [
     "caput @ git+https://github.com/radiocosmology/caput.git",
-    "caput[compression] @ git+https://github.com/radiocosmology/caput.git",
+    "caput[compression,fftw] @ git+https://github.com/radiocosmology/caput.git",
     "cora @ git+https://github.com/radiocosmology/cora.git",
     "cython>0.18",
     "driftscan @ git+https://github.com/radiocosmology/driftscan.git",
