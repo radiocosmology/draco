@@ -1421,7 +1421,12 @@ class MixData(task.SingleTask):
         self._tags = []
         self._wfunc = tools.invert_no_zero if self.invert_weight else lambda x: x
 
-    def process(self, data: containers.SiderealStream | containers.RingMap):
+    def process(
+        self,
+        data: (
+            containers.SiderealStream | containers.HybridVisStream | containers.RingMap
+        ),
+    ):
         """Add the input data into the mixed data output.
 
         Parameters
@@ -1488,7 +1493,9 @@ class MixData(task.SingleTask):
 
         self._data_ind += 1
 
-    def process_finish(self) -> containers.SiderealStream | containers.RingMap:
+    def _make_output(
+        self,
+    ) -> containers.SiderealStream | containers.HybridVisStream | containers.RingMap:
         """Return the container with the mixed inputs.
 
         Returns
@@ -1520,6 +1527,18 @@ class MixData(task.SingleTask):
 
         return data
 
+    def process_finish(
+        self,
+    ) -> containers.SiderealStream | containers.HybridVisStream | containers.RingMap:
+        """Return the container with the mixed inputs.
+
+        Returns
+        -------
+        mixed_data
+            The mixed data.
+        """
+        return self._make_output()
+
 
 class Jackknife(MixData):
     """Perform a jackknife of two datasets.
@@ -1532,6 +1551,39 @@ class Jackknife(MixData):
     weight_coeff = config.list_type(type_=float, default=[0.25, 0.25])
     invert_weight = config.Property(proptype=bool, default=True)
     require_nonzero_weight = config.Property(proptype=bool, default=True)
+
+
+class MixTwoDatasets(MixData):
+    """Mix two datasets in a single iteration."""
+
+    data_coeff = config.list_type(type_=float, length=2)
+    weight_coeff = config.list_type(type_=float, length=2)
+
+    def process(self, data1, data2):
+        """Combine the two datasets into mixed data output.
+
+        Parameters
+        ----------
+        data1 : containers.SiderealStream | containers.RingMap
+            First dataset to mix
+        data2 : containers.SiderealStream | containers.RingMap
+            Second dataset to mix
+        """
+        # Combine the two datasets
+        super().process(data1)
+        super().process(data2)
+
+        out = self._make_output()
+
+        # Reset data counter and tags
+        self._data_ind = 0
+        self._tags = []
+
+        return out
+
+    def process_finish(self):
+        """Overwrite `process_finish` to no-op."""
+        return
 
 
 class Downselect(io.SelectionsMixin, task.SingleTask):
