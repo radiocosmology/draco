@@ -234,9 +234,9 @@ class DelayTransformMapFFT(task.SingleTask):
 
                 # Estimate the equivalent noise bandwidth for the tapering window
                 # and store it as an attribute
-                #NEB_freq = noise_equivalent_bandwidth(w)
+                # NEB_freq = noise_equivalent_bandwidth(w)
                 delay_spectrum.attrs["window_los"] = self.window
-                #delay_spectrum.attrs["effective_bandwidth"] = NEB_freq
+                # delay_spectrum.attrs["effective_bandwidth"] = NEB_freq
 
                 # Now apply the tapering function to the data and
                 # take iFFT
@@ -246,7 +246,7 @@ class DelayTransformMapFFT(task.SingleTask):
             else:
                 yspec = np.fft.fftshift(np.fft.ifft(data, axis=-1), axes=-1)
                 delay_spectrum.attrs["window_los"] = "None"
-                #delay_spectrum.attrs["effective_bandwidth"] = 1.0
+                # delay_spectrum.attrs["effective_bandwidth"] = 1.0
 
             delay_spectrum.spectrum[bi] = yspec
 
@@ -451,14 +451,19 @@ class CrossPowerSpectrum3D(task.SingleTask):
         # this is the survey volume, corrected  for the
         # tapering window function used for FFT
         volume_cube = data_1.attrs["volume"]
-        if data_1.attrs['window_los'] is not None and data_2.attrs['window_los'] is not None:
-            if data_1.attrs['window_los'] != data_2.attrs['window_los']:
+        if (
+            data_1.attrs["window_los"] is not None
+            and data_2.attrs["window_los"] is not None
+        ):
+            if data_1.attrs["window_los"] != data_2.attrs["window_los"]:
                 raise ValueError("The windows applied to both data sets are different")
 
-            NEB_freq = noise_equivalent_bandwidth(delay.size, data_1.attrs['window_los'])
+            NEB_freq = noise_equivalent_bandwidth(
+                delay.size, data_1.attrs["window_los"]
+            )
         else:
             NEB_freq = 1
-        
+
         # NEB_freq = data_1.attrs["effective_bandwidth"]
         NEB_ra = data_1.attrs["effective_ra"]
         NEB_dec = data_1.attrs["effective_dec"]
@@ -1122,7 +1127,7 @@ def noise_equivalent_bandwidth(N, window):
     Parameters
     ----------
     N: int
-     Size of the window   
+     Size of the window
     window : array_like
         A 1-Dimenaional array like.
 
@@ -1133,8 +1138,8 @@ def noise_equivalent_bandwidth(N, window):
     fsel = np.arange(N)
     x = fsel / N
     w = tools.window_generalised(x, window=window)
-    
-    return np.sum(w) ** 2 / (np.sum(w ** 2) * len(w))
+
+    return np.sum(w) ** 2 / (np.sum(w**2) * len(w))
 
 
 def get_fourier_modes(ra, dec, delays, redshift):
@@ -1221,8 +1226,8 @@ def image_to_uv(data, ra, dec, window="tukey-0.5"):
         w_dec = tools.window_generalised(x_dec, window=window)
 
         # estimate the equivalent noise bandwidth for the tapering window
-        NEB_ra = noise_equivalent_bandwidth(ra.size,window)
-        NEB_dec = noise_equivalent_bandwidth(dec.size,window)
+        NEB_ra = noise_equivalent_bandwidth(ra.size, window)
+        NEB_dec = noise_equivalent_bandwidth(dec.size, window)
         taper_window = np.outer(w_ra[:, np.newaxis], w_dec[np.newaxis, :])
         data *= taper_window
         uv_map = np.fft.fftshift(np.fft.fft2(data))

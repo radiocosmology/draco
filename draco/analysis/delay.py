@@ -1035,12 +1035,12 @@ class DelayTransformFFT(DelayGeneralContainerBase, DelayGibbsSamplerBase):
         # Save the frequency axis of the input data as an attribute in the output
         # container
         delay_spec.attrs["freq"] = ss.freq
-        
+
         # Save the frequency tapering window name as an attribute in the output
         # container. This is needed in the later stage to estimate effective bandwidth.
         if self.apply_window:
             delay_spec.attrs["window_los"] = self.window
-        else:    
+        else:
             delay_spec.attrs["window_los"] = "None"
 
         # Save the frequency tapering window name as an attribute in the output
@@ -1089,18 +1089,25 @@ class DelayTransformFFT(DelayGeneralContainerBase, DelayGibbsSamplerBase):
             data = data_view.local_array[lbi]
             weight = weight_view.local_array[lbi]
 
+            # Apply the window if requested
+            if self.apply_window:
+                data *= window
+
             # Apply data cuts
             t = self._cut_data(data, weight)
             if t is None:
                 continue
             data, _, _, nzt = t
 
-            # Apply the window if requested
-            if self.apply_window:
-                data *= window
-
             # Take the inverse fourier transform
-            y_spec = fftw.ifft(data, axes=-1)
+            # Note fftw only supports complex to
+            # complex transform. For real value ringmap
+            # use numpy fft
+            if data.dtype is complex:
+                y_spec = fftw.ifft(data, axes=-1)
+            else:
+                y_spec = np.fft.ifft(data, axis=-1)
+
             # fftshift over the transform axis
             y_spec = np.fft.fftshift(y_spec, axes=-1)
 
