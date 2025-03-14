@@ -263,9 +263,7 @@ class BeamformNS(task.SingleTask):
         freq = gstream.freq
 
         # Get the largest baseline present across all nodes while accounting for masking
-        baselines_present = (
-            np.moveaxis(gsw.view(np.ndarray), -2, 0).reshape(len(nspos), -1) > 0
-        ).any(axis=1)
+        baselines_present = np.any(gsw > 0, axis=(0, 1, 2, 4))
         nsmax_local = (
             np.abs(nspos[baselines_present]).max()
             if baselines_present.sum() > 0
@@ -282,19 +280,22 @@ class BeamformNS(task.SingleTask):
         hv.attrs["beamform_ns_freqmin"] = freq.min()
         hv.attrs["beamform_ns_nsmax"] = nsmax
 
+        # precompute a phase array
+        phase = 2.0 * np.pi * nspos[np.newaxis] * el[:, np.newaxis]
+
         # Loop over local frequencies and fill ring map
         for lfi, fi in gstream.vis[:].enumerate(1):
             # Get the current frequency and wavelength
             fr = freq[fi]
-            wv = scipy.constants.c * 1e-6 / fr
+            iwv = (fr * 1e6) / scipy.constants.c
 
-            vpos = nspos / wv
+            vpos = nspos * iwv
 
             if self.scaled:
-                wvmin = scipy.constants.c * 1e-6 / freq.min()
-                vmax = nsmax / wvmin
+                iwvmin = (freq.min() * 1e6) / scipy.constants.c
+                vmax = nsmax * iwvmin
             else:
-                vmax = nsmax / wv
+                vmax = nsmax * iwv
 
             if self.weight == "inverse_variance":
                 gw = gsw[:, lfi].copy()
@@ -320,12 +321,11 @@ class BeamformNS(task.SingleTask):
 
             # Create array that will be used for the inverse
             # discrete Fourier transform in y-direction
-            phase = 2.0 * np.pi * nspos[np.newaxis, :] * el[:, np.newaxis] / wv
-            F = np.exp(-1.0j * phase)
+            F = np.exp(-1.0j * phase * iwv)
 
             # Calculate the hybrid visibilities
-            gv = gsv[:, lfi].view(np.ndarray)
-            hvv[:, lfi] = np.matmul(F, gw * gv)
+            gv = gsv[:, lfi]
+            np.matmul(F, gv * gw, out=hvv[:, lfi])
 
             # Calculate the dirty beam
             if self.save_dirty_beam:

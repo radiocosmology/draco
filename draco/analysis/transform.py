@@ -7,7 +7,7 @@ from typing import overload
 
 import numpy as np
 import scipy.linalg as la
-from caput import config, mpiarray, pipeline
+from caput import config, fftw, mpiarray, pipeline
 from caput.tools import invert_no_zero
 from numpy.lib.recfunctions import structured_to_unstructured
 
@@ -582,24 +582,25 @@ class MModeTransform(task.SingleTask):
             containers.SiderealStream: containers.MModes,
             containers.HybridVisStream: containers.HybridVisMModes,
         }
-
-        # Get the output container and figure out at which position is it's
-        # frequency axis
+        # Get the output container type
         out_cont = contmap[sstream.__class__]
 
         sstream.redistribute("freq")
+
+        svis = sstream.vis[:].local_array
+        sweight = sstream.weight[:].local_array
 
         # Sum the noise variance over time samples, this will become the noise
         # variance for the m-modes
         nra = sstream.weight.shape[-1]
         weight_sum = nra**2 * tools.invert_no_zero(
-            tools.invert_no_zero(sstream.weight[:]).sum(axis=-1)
+            tools.invert_no_zero(sweight).sum(axis=-1)
         )
 
         if self.telescope is not None:
             mmax = self.telescope.mmax
         else:
-            mmax = sstream.vis.shape[-1] // 2
+            mmax = svis.shape[-1] // 2
 
         # Create the container to store the modes in
         ma = out_cont(
@@ -610,14 +611,16 @@ class MModeTransform(task.SingleTask):
             comm=sstream.comm,
         )
         ma.redistribute("freq")
+        mvis = ma.vis[:].local_array
+        mweight = ma.weight[:].local_array
 
         # Generate the m-mode transform directly into the output container
         # NOTE: Need to zero fill as not every element gets set within _make_marray
-        ma.vis[:] = 0.0
-        _make_marray(sstream.vis[:].local_array, ma.vis[:].local_array)
+        mvis[:] = 0.0
+        _make_marray(svis, mvis)
 
         # Assign the weights into the container
-        ma.weight[:] = weight_sum[np.newaxis, np.newaxis, :, :]
+        mweight[:] = weight_sum[np.newaxis, np.newaxis, :, :]
 
         # Divide out the m-mode sinc-suppression caused by the rectangular integration window
         if self.remove_integration_window:
@@ -625,11 +628,11 @@ class MModeTransform(task.SingleTask):
             w = np.sinc(m / nra)
             inv_w = tools.invert_no_zero(w)
 
-            sl_vis = (slice(None),) + (np.newaxis,) * (len(ma.vis.shape) - 1)
-            ma.vis[:] *= inv_w[sl_vis]
+            sl_vis = (slice(None),) + (np.newaxis,) * (len(mvis.shape) - 1)
+            mvis[:] *= inv_w[sl_vis]
 
-            sl_weight = (slice(None),) + (np.newaxis,) * (len(ma.weight.shape) - 1)
-            ma.weight[:] *= w[sl_weight] ** 2
+            sl_weight = (slice(None),) + (np.newaxis,) * (len(mweight.shape) - 1)
+            mweight[:] *= w[sl_weight] ** 2
 
         return ma
 
@@ -671,16 +674,25 @@ def _make_marray(ts, mmodes=None, mmax=None, dtype=None):
     mlim = min(N // 2, mmax)
     mlim_neg = N // 2 - 1 + N % 2 if mmax >= N // 2 else mmax
 
-    for i in range(ts.shape[0]):
-        m_fft = np.fft.fft(ts[i], axis=-1) / ts.shape[-1]
+    # Do the transform and move the M axis to the front. There's
+    # a bug in `pyfftw` which causes an error if `ts.ndim - len(axes) >= 2`,
+    # so we have to flatten the other axes to get around that. This is
+    # still faster than `numpy` or `scipy` ffts.
+    shp = ts.shape
+    m_fft = fftw.fft(ts.reshape(-1, shp[-1]), axes=-1).reshape(shp)
+    m_fft = np.moveaxis(m_fft, -1, 0)
 
-        # Loop and copy over positive and negative m's
-        # NOTE: this is done as a loop to try and save memory
-        for mi in range(mlim + 1):
-            mmodes[mi, 0, i] = m_fft[..., mi]
+    # Write the positive and negative m's
+    npos = mlim + 1
+    nneg = mlim_neg + 1
 
-        for mi in range(1, mlim_neg + 1):
-            mmodes[mi, 1, i] = m_fft[..., -mi].conj()
+    # Applying fft normalisation here is quite a bit
+    # faster than applying it directly to `m_fft`. It's
+    # not entirely clear why.
+    norm = tools.invert_no_zero(shp[-1])
+    mmodes[:npos, 0] = m_fft[:npos] * norm
+    # Take the conjugate of the negative modes
+    mmodes[1:nneg, 1] = m_fft[-1:-nneg:-1].conj() * norm
 
     return mmodes
 
