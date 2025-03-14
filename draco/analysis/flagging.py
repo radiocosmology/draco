@@ -8,7 +8,7 @@ be excluded and `False` for clean samples.
 """
 
 import warnings
-from typing import Union, overload
+from typing import overload
 
 import numpy as np
 from caput import config, mpiarray, weighted_median
@@ -809,7 +809,7 @@ class ThresholdVisWeightBaseline(task.SingleTask):
     def process(
         self,
         stream,
-    ) -> Union[containers.BaselineMask, containers.SiderealBaselineMask]:
+    ) -> containers.BaselineMask | containers.SiderealBaselineMask:
         """Construct baseline-dependent mask.
 
         Parameters
@@ -913,8 +913,8 @@ class CollapseBaselineMask(task.SingleTask):
 
     def process(
         self,
-        baseline_mask: Union[containers.BaselineMask, containers.SiderealBaselineMask],
-    ) -> Union[containers.RFIMask, containers.SiderealRFIMask]:
+        baseline_mask: containers.BaselineMask | containers.SiderealBaselineMask,
+    ) -> containers.RFIMask | containers.SiderealRFIMask:
         """Collapse input mask over baseline axis.
 
         Parameters
@@ -2038,8 +2038,8 @@ class RFIMask(task.SingleTask):
     def process(self, sstream: containers.TimeStream) -> containers.RFIMask: ...
 
     def process(
-        self, sstream: Union[containers.TimeStream, containers.SiderealStream]
-    ) -> Union[containers.RFIMask, containers.SiderealRFIMask]:
+        self, sstream: containers.TimeStream | containers.SiderealStream
+    ) -> containers.RFIMask | containers.SiderealRFIMask:
         """Apply a day time mask.
 
         Parameters
@@ -2156,7 +2156,7 @@ class ApplyTimeFreqMask(task.SingleTask):
         tstream : timestream or sidereal stream
             The masked timestream. Note that the masking is done in place.
         """
-        if isinstance(rfimask, (containers.RFIMask, containers.RFIMaskByPol)):
+        if isinstance(rfimask, containers.RFIMask | containers.RFIMaskByPol):
             if not hasattr(tstream, "time"):
                 raise TypeError(
                     f"Expected a timestream like type. Got {type(tstream)}."
@@ -2166,7 +2166,7 @@ class ApplyTimeFreqMask(task.SingleTask):
                 raise ValueError("timestream and mask data have different time axes.")
 
         elif isinstance(
-            rfimask, (containers.SiderealRFIMask, containers.SiderealRFIMaskByPol)
+            rfimask, containers.SiderealRFIMask | containers.SiderealRFIMaskByPol
         ):
             if not hasattr(tstream, "ra"):
                 raise TypeError(
@@ -2196,7 +2196,7 @@ class ApplyTimeFreqMask(task.SingleTask):
 
         # Deal with the polarisation axis
         if isinstance(
-            rfimask, (containers.RFIMaskByPol, containers.SiderealRFIMaskByPol)
+            rfimask, containers.RFIMaskByPol | containers.SiderealRFIMaskByPol
         ):
 
             if self.collapse_pol or "pol" not in t_axes:
@@ -2465,8 +2465,8 @@ class MaskFreq(task.SingleTask):
     freq_frac = config.Property(proptype=float, default=None)
 
     def process(
-        self, data: Union[containers.VisContainer, containers.RingMap]
-    ) -> Union[containers.RFIMask, containers.SiderealRFIMask]:
+        self, data: containers.VisContainer | containers.RingMap
+    ) -> containers.RFIMask | containers.SiderealRFIMask:
         """Make the mask.
 
         Parameters
@@ -2545,7 +2545,7 @@ class MaskFreq(task.SingleTask):
             if isinstance(s, int):
                 if s < nfreq:
                     mask[s] = True
-            elif isinstance(s, (tuple, list)) and len(s) == 2:
+            elif isinstance(s, tuple | list) and len(s) == 2:
                 mask[s[0] : s[1]] = True
             else:
                 raise ValueError(

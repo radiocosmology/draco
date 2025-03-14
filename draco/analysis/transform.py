@@ -3,7 +3,7 @@
 This includes grouping frequencies and products to performing the m-mode transform.
 """
 
-from typing import Optional, Union, overload
+from typing import overload
 
 import numpy as np
 import scipy.linalg as la
@@ -550,7 +550,7 @@ class MModeTransform(task.SingleTask):
 
     remove_integration_window = config.Property(proptype=bool, default=False)
 
-    def setup(self, manager: Optional[io.TelescopeConvertible] = None):
+    def setup(self, manager: io.TelescopeConvertible | None = None):
         """Set the telescope instance if a manager object is given.
 
         This is used to set the `mmax` used in the transform.
@@ -1421,7 +1421,7 @@ class MixData(task.SingleTask):
         self._tags = []
         self._wfunc = tools.invert_no_zero if self.invert_weight else lambda x: x
 
-    def process(self, data: Union[containers.SiderealStream, containers.RingMap]):
+    def process(self, data: containers.SiderealStream | containers.RingMap):
         """Add the input data into the mixed data output.
 
         Parameters
@@ -1488,7 +1488,7 @@ class MixData(task.SingleTask):
 
         self._data_ind += 1
 
-    def process_finish(self) -> Union[containers.SiderealStream, containers.RingMap]:
+    def process_finish(self) -> containers.SiderealStream | containers.RingMap:
         """Return the container with the mixed inputs.
 
         Returns

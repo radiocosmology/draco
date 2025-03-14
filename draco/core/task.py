@@ -3,7 +3,6 @@
 import logging
 import os
 from inspect import getfullargspec
-from typing import Optional
 
 import numpy as np
 from caput import config, fileformats, memh5, pipeline
@@ -450,7 +449,7 @@ class SingleTask(MPILoggedTask, pipeline.BasicContMixin):
 
         return output
 
-    def _save_output(self, output: memh5.MemDiskGroup, ii: int = 0) -> Optional[str]:
+    def _save_output(self, output: memh5.MemDiskGroup, ii: int = 0) -> str | None:
         """Save the output and return the file path if it was saved."""
         if output is None:
             return None
@@ -625,7 +624,7 @@ class SingleTask(MPILoggedTask, pipeline.BasicContMixin):
                         found = True
                         break
 
-            elif isinstance(n, (memh5.MemGroup, memh5.MemDiskGroup)):
+            elif isinstance(n, memh5.MemGroup | memh5.MemDiskGroup):
                 for item in n.values():
                     stack.append(item)
 

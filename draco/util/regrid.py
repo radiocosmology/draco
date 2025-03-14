@@ -4,8 +4,6 @@ This is described in some detail in `doclib:173
 <http://bao.chimenet.ca/doc/cgi-bin/general/documents/display?Id=173>`_.
 """
 
-from typing import Union
-
 import numpy as np
 import scipy.linalg as la
 import scipy.sparse as ss
@@ -215,7 +213,7 @@ def rebin_matrix(tra: np.ndarray, ra: np.ndarray, width_t: float = 0) -> np.ndar
 
 
 def grad_1d(
-    x: np.ndarray, si: np.ndarray, mask: np.ndarray, period: Union[float, None] = None
+    x: np.ndarray, si: np.ndarray, mask: np.ndarray, period: float | None = None
 ) -> np.ndarray:
     """Gradient with boundary samples wrapped.
 
@@ -279,8 +277,8 @@ def taylor_coeff(
     M: int,
     Ni: np.ndarray,
     Si: float,
-    period: Union[float, None] = None,
-    xc: Union[np.ndarray, None] = None,
+    period: float | None = None,
+    xc: np.ndarray | None = None,
 ) -> list[ss.csr_array]:
     """Return a set of sparse matrices that estimates expansion coefficients.
 
