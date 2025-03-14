@@ -3253,7 +3253,7 @@ def copy_datasets_filter(
     # Resolve the selections and axes, removing any that aren't needed
     if not isinstance(selection, dict):
         # Assume we just want to apply this selection to all listed axes
-        selection =  dict.fromkeys(axis, selection)
+        selection = dict.fromkeys(axis, selection)
 
     if not axis:
         axis = set(selection.keys())

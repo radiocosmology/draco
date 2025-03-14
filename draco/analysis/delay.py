@@ -1081,12 +1081,12 @@ class DelayTransformFFT(DelayGeneralContainerBase, DelayGibbsSamplerBase):
 
             data = data_view.local_array[lbi]
             weight = weight_view.local_array[lbi]
-            
+
             # Apply the window if requested
             # Do this before applying data cut
             # as that will change the data shape
             if self.apply_window:
-                data *= window            
+                data *= window
 
             # Apply data cuts
             t = self._cut_data(data, weight)
