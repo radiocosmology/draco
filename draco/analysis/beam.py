@@ -85,7 +85,7 @@ class CreateBeamStream(task.SingleTask):
         # Map the RAs
         ha = beam.phi
         ra_beam = (ha + 360.0) % 360.0
-        nra = int(round(360.0 / np.abs(ha[1] - ha[0])))
+        nra = round(360.0 / np.abs(ha[1] - ha[0]))
         delta_ra = 360.0 / nra
 
         map_ra = np.rint(ra_beam / delta_ra).astype(int)
