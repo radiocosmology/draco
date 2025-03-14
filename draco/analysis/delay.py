@@ -1098,7 +1098,7 @@ class DelayTransformFFT(DelayGeneralContainerBase, DelayGibbsSamplerBase):
             # Note fftw only supports complex to
             # complex transform. For real value ringmap
             # use numpy fft.
-            if data.dtype is complex:
+            if np.iscomplexobj(data):
                 y_spec = fftw.ifft(data, axes=-1)
             else:
                 y_spec = np.fft.ifft(data, axis=-1)
