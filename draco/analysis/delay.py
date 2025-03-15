@@ -1038,6 +1038,13 @@ class DelayTransformFFT(DelayGeneralContainerBase, DelayGibbsSamplerBase):
 
         # Save the frequency tapering window name as an attribute in the output
         # container. This is needed in the later stage to estimate effective bandwidth.
+        if self.apply_window:
+            delay_spec.attrs["window_los"] = self.window
+        else:
+            delay_spec.attrs["window_los"] = "None"
+
+        # Save the frequency tapering window name as an attribute in the output
+        # container. This is needed in the later stage to estimate effective bandwidth.
         delay_spec.attrs["window_los"] = self.window if self.apply_window else "None"
 
         return delay_spec
@@ -1082,18 +1089,25 @@ class DelayTransformFFT(DelayGeneralContainerBase, DelayGibbsSamplerBase):
             data = data_view.local_array[lbi]
             weight = weight_view.local_array[lbi]
 
+            # Apply the window if requested
+            if self.apply_window:
+                data *= window
+
             # Apply data cuts
             t = self._cut_data(data, weight)
             if t is None:
                 continue
             data, _, _, nzt = t
 
-            # Apply the window if requested
-            if self.apply_window:
-                data *= window
-
             # Take the inverse fourier transform
-            y_spec = fftw.ifft(data, axes=-1)
+            # Note fftw only supports complex to
+            # complex transform. For real value ringmap
+            # use numpy fft
+            if np.iscomplexobj(data):
+                y_spec = fftw.ifft(data, axes=-1)
+            else:
+                y_spec = np.fft.ifft(data, axis=-1)
+
             # fftshift over the transform axis
             y_spec = np.fft.fftshift(y_spec, axes=-1)
 
@@ -1185,6 +1199,7 @@ class DelaySpectrumWienerEstimator(DelayTransformFFT):
                 fsel=channel_ind[nzf],
                 complex_timedomain=self.complex_timedomain,
             )
+
             # fftshift over the transformed axis
             y_spec = np.fft.fftshift(y_spec, axes=-1)
 
@@ -1193,6 +1208,9 @@ class DelaySpectrumWienerEstimator(DelayTransformFFT):
                 out_cont.spectrum[bi] = y_spec
             else:
                 out_cont.spectrum[bi, nzt] = y_spec
+
+            # FFT-shift along the last axis
+            out_cont.spectrum[bi, nzt] = np.fft.fftshift(y_spec, axes=1)
 
         return out_cont
 
@@ -1350,7 +1368,7 @@ class DelayCrossPowerSpectrumEstimator(
             t = self._cut_data(data, weight)
             if t is None:
                 continue
-            data, weight, nzf, _ = t
+            data, weight, nzf, nzt_ = t
 
             spec = delay_spectrum_gibbs_cross(
                 data,
