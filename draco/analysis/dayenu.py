@@ -555,7 +555,11 @@ class DayenuDelayFilterHybridVis(task.SingleTask):
 class ApplyDelayFilterHybridVis(task.SingleTask):
     """Apply a previously saved filter to the hybrid beamformed visibilities.
 
+<<<<<<< HEAD
     This task takes a DAYENU filter saved in hybrid beamformed data and applies to
+=======
+    This task take a DAYENU filter saved in hybrid beamformed data and apply to
+>>>>>>> c5cc2fe (update master)
     another hybrid beamformed visibilities. This task is used to apply the foreground
     filter to the 21-cm simulation.
 
@@ -570,19 +574,38 @@ class ApplyDelayFilterHybridVis(task.SingleTask):
 
     atten_threshold = config.Property(proptype=float, default=0.0)
 
+<<<<<<< HEAD
     def process(self, hv, source):
+=======
+    def setup(self, ss):
+        """Set the DAYENU filter to be applied to hybrid beamformed data.
+
+        Parameters
+        ----------
+        ss: containers.HybridVisStream
+          The filter of HybridVisStream to be applied.
+        """
+        self.sstream = ss
+
+    def process(self, hv):
+>>>>>>> c5cc2fe (update master)
         """Apply the DAYENU filter to a HybridVisStream.
 
         Parameters
         ----------
         hv: containers.HybridVisStream
+<<<<<<< HEAD
             The data the filter will be applied to.
         source: containers.HybridVisStream
             The filter of HybridVisStream to be applied.
+=======
+         The data the filter will be applied to.
+>>>>>>> c5cc2fe (update master)
 
         Returns
         -------
         hv_filt: containers.HybridVisStream
+<<<<<<< HEAD
             The filtered dataset.
         """
         # Distribute over products
@@ -603,6 +626,28 @@ class ApplyDelayFilterHybridVis(task.SingleTask):
             raise ValueError("Polarisations do not match for hybrid visibilities.")
 
         if not np.array_equal(source.ra, hv.ra):
+=======
+          The filtered dataset.
+        """
+        # Distribute over products
+        hv.redistribute(["ra", "time"])
+        self.sstream.redistribute(["ra", "time"])
+
+        # Validate that the hybrid beamformed visibilites match
+        if not np.array_equal(self.stream.freq, hv.freq):
+            raise ValueError("Frequencies do not match for hybrid visibilities.")
+
+        if not np.array_equal(self.stream.index_map["el"], hv.index_map["el"]):
+            raise ValueError("Elevations do not match for hybrid visibilities.")
+
+        if not np.array_equal(self.stream.index_map["ew"], hv.index_map["ew"]):
+            raise ValueError("EW baselines do not match for hybrid visibilities.")
+
+        if not np.array_equal(self.stream.index_map["pol"], hv.index_map["pol"]):
+            raise ValueError("Polarisations do not match for hybrid visibilities.")
+
+        if not np.array_equal(self.stream.ra, hv.ra):
+>>>>>>> c5cc2fe (update master)
             raise ValueError("Right Ascension do not match for hybrid visibilities.")
 
         npol, nfreq, new, nel, ntime = hv.vis.local_shape
@@ -610,11 +655,16 @@ class ApplyDelayFilterHybridVis(task.SingleTask):
         # Dereference the required datasets
         vis = hv.vis[:].local_array
         weight = hv.weight[:].local_array
+<<<<<<< HEAD
         filt = source.filter[:].local_array
+=======
+        filt = self.sstream.filter[:].local_array
+>>>>>>> c5cc2fe (update master)
 
         # loop over products
         for tt in range(ntime):
             t0 = time.time()
+<<<<<<< HEAD
             self.log.debug(f"Filter time {tt} of {ntime}.")
 
             for xx in range(new):
@@ -627,6 +677,13 @@ class ApplyDelayFilterHybridVis(task.SingleTask):
                     if not np.any(flag):
                         continue
 
+=======
+
+            for xx in range(new):
+                self.log.debug(f"Filter time {tt} of {ntime}, baseline {xx} of {new}.")
+
+                for pp in range(npol):
+>>>>>>> c5cc2fe (update master)
                     # Grab datasets for this pol and ew baseline
                     tvis = np.ascontiguousarray(vis[pp, :, xx, :, tt])
                     tvar = tools.invert_no_zero(weight[pp, :, xx, tt])
@@ -634,6 +691,7 @@ class ApplyDelayFilterHybridVis(task.SingleTask):
                     # Grab the filter for this pol and ew baseline
                     NF = np.ascontiguousarray(filt[pp, :, :, xx, tt])
 
+<<<<<<< HEAD
                     # Make sure that any frequencies unmasked during filter generation
                     # are also unmasked in the data
                     valid_freq_flag = np.any(np.abs(NF) > 0.0, axis=0)
@@ -653,6 +711,8 @@ class ApplyDelayFilterHybridVis(task.SingleTask):
                         weight[pp, :, xx, tt] = 0.0
                         continue
 
+=======
+>>>>>>> c5cc2fe (update master)
                     # Apply the filter
                     vis[pp, :, xx, :, tt] = np.matmul(NF, tvis)
                     weight[pp, :, xx, tt] = tools.invert_no_zero(
@@ -661,11 +721,17 @@ class ApplyDelayFilterHybridVis(task.SingleTask):
                     # Flag frequencies with large attenuation
                     if self.atten_threshold > 0.0:
                         diag = np.abs(np.diag(NF))
+<<<<<<< HEAD
                         nonzero_diag_flag = diag > 0.0
                         if np.any(nonzero_diag_flag):
                             med_diag = np.median(diag[nonzero_diag_flag])
                             flag_low = diag > (self.atten_threshold * med_diag)
                             weight[pp, :, xx, tt] *= flag_low.astype(weight.dtype)
+=======
+                        med_diag = np.median(diag[diag > 0.0])
+                        flag_low = diag > (self.atten_threshold * med_diag)
+                        weight[pp, :, xx, tt] *= flag_low.astype(weight.dtype)
+>>>>>>> c5cc2fe (update master)
 
             self.log.debug(f"Took {time.time() - t0:0.3f} seconds in total.")
 
@@ -675,6 +741,7 @@ class ApplyDelayFilterHybridVis(task.SingleTask):
         return hv
 
 
+<<<<<<< HEAD
 class ApplyDelayFilterHybridVisSingleSource(ApplyDelayFilterHybridVis):
     """Apply a previously saved filter to the hybrid beamformed visibilities.
 
@@ -709,6 +776,8 @@ class ApplyDelayFilterHybridVisSingleSource(ApplyDelayFilterHybridVis):
         return super().process(hv, self.source)
 
 
+=======
+>>>>>>> c5cc2fe (update master)
 class DayenuDelayFilterMap(task.SingleTask):
     """Apply a DAYENU high-pass delay filter to ringmap data.
 

@@ -1103,7 +1103,7 @@ class DelayTransformFFT(DelayGeneralContainerBase, DelayGibbsSamplerBase):
             # Note fftw only supports complex to
             # complex transform. For real value ringmap
             # use numpy fft
-            if data.dtype is complex:
+            if np.iscomplexobj(data):
                 y_spec = fftw.ifft(data, axes=-1)
             else:
                 y_spec = np.fft.ifft(data, axis=-1)
@@ -1199,6 +1199,7 @@ class DelaySpectrumWienerEstimator(DelayTransformFFT):
                 fsel=channel_ind[nzf],
                 complex_timedomain=self.complex_timedomain,
             )
+<<<<<<< HEAD
             # fftshift over the transformed axis
             y_spec = np.fft.fftshift(y_spec, axes=-1)
 
@@ -1207,6 +1208,10 @@ class DelaySpectrumWienerEstimator(DelayTransformFFT):
                 out_cont.spectrum[bi] = y_spec
             else:
                 out_cont.spectrum[bi, nzt] = y_spec
+=======
+            # FFT-shift along the last axis
+            out_cont.spectrum[bi,nzt] = np.fft.fftshift(y_spec, axes=1)
+>>>>>>> c5cc2fe (update master)
 
         return out_cont
 
@@ -1364,7 +1369,7 @@ class DelayCrossPowerSpectrumEstimator(
             t = self._cut_data(data, weight)
             if t is None:
                 continue
-            data, weight, nzf, _ = t
+            data, weight, nzf, nzt_ = t
 
             spec = delay_spectrum_gibbs_cross(
                 data,
