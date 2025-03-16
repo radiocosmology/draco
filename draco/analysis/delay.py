@@ -1368,7 +1368,7 @@ class DelayCrossPowerSpectrumEstimator(
             t = self._cut_data(data, weight)
             if t is None:
                 continue
-            data, weight, nzf, nzt_ = t
+            data, weight, nzf, _ = t
 
             spec = delay_spectrum_gibbs_cross(
                 data,
