@@ -152,6 +152,17 @@ class SpatialTransformDelayMap(task.SingleTask):
     ew_max = config.Property(proptype=float, default=50.0)
     ns_bl = config.Property(proptype=float, default=60.0)
 
+    def setup(self, telescope):
+        """Set the telescope needed to get the latitude of the telescope.
+
+        Parameters
+        ----------
+        telescope : TransitTelescope
+            The telescope object to use
+        """
+        self.tel = io.get_telescope(telescope)
+        self.cosmology = get_cosmo()
+        
     def process(self, ds):
         """Estimate the spatial transform of the delay map.
 
@@ -177,9 +188,9 @@ class SpatialTransformDelayMap(task.SingleTask):
         el = ds.index_map["el"]
         pol = ds.index_map["pol"]
         ra = ds.index_map["sample"]  # deg
-        dec = sza2dec(el)  # deg
+        dec = self.tel.latitude + np.degrees(np.arcsin(el))  # deg
         freq = ds.attrs["freq"]  # MHz
-        wl = C / (freq * 1e6)  # wavelength in meter
+        wl = units.c / (freq * 1e6)  # wavelength in meter, speed of light is in meter.
 
         # Unpack the baseline axis of the delay spectrum
         # and reshape it as (pol,delay,ra,el)
@@ -192,35 +203,36 @@ class SpatialTransformDelayMap(task.SingleTask):
         data_view = data_view.redistribute(axis=1)
 
         # Estimate the Fourier modes
-        nu_c = freq[int(freq.size / 2.0)]  # central freq of the band
-        redshift = f21 / nu_c - 1  # redshift at the center of the band
-        kx, ky, u, v, k_parallel = get_fourier_modes(ra, dec, delay * 1e-6, redshift)
+        nu_c = freq[int(freq.size / 2.0)]  # central freq of the band in MHz.
+        redshift = units.nu21 / nu_c - 1  # redshift at the center of the band, 21cm freq in MHz.
+        kx, ky, u, v, k_parallel = get_fourier_modes(ra, dec, delay * 1e-6, redshift, 
+                                                    self.cosmology)
 
         # Estimate the uv-mask
         uv_mask = spatial_mask(
-            kx, ky, self.ew_min, self.ew_max, self.ns_bl, wl.min(), wl.max(), redshift
+            kx, ky, self.ew_min, self.ew_max, self.ns_bl, wl.min(), wl.max(), redshift,
+            self.cosmology
         )
 
         # Estimate the volume of the cube
-        vol_cube = vol_normalization(ra, dec, freq, redshift)
+        vol_cube = vol_normalization(ra, dec, freq, redshift, self.cosmology)
 
         # Initialise the spatial transformed data cube container
         vis_cube = containers.SpatialDelayCube(
-            pol=pol, delay=delay, kx=kx, ky=ky, attrs_from=ds
+            u=u, v=v, attrs_from=ds,axes_from=ds, cosmology = self.cosmology
         )
         vis_cube.redistribute("delay")
-        vis_cube.data_tau_uv[:] = 0.0
+        vis_cube.data[:] = 0.0
+        vis_cube.kx[:] = kx
+        vis_cube.ky[:] = ky
+        vis_cube.uv_mask[:] = uv_mask
+        vis_cube.k_parallel[:] = k_parallel
 
         # Save the central freq of the band and the
         # corresponding redshift and the cube volume in the attrs
         vis_cube.attrs["freq_center"] = nu_c
         vis_cube.attrs["redshift"] = redshift
         vis_cube.attrs["volume"] = vol_cube
-
-        # Create index map for (u,v) coordinates and k_parallel
-        fourier_axes = ["u", "v", "k_parallel", "uv_mask"]
-        for ff in fourier_axes:
-            vis_cube.create_index_map(ff, locals()[ff])
 
         # Save the spatial window as an attribute
         if self.apply_spatial_window:
@@ -233,7 +245,7 @@ class SpatialTransformDelayMap(task.SingleTask):
         for pp, psr in enumerate(pol):
             self.log.debug(f"Estimating spatial FFT for pol: {psr}")
             # loop over delays
-            for lde, de in vis_cube.data_tau_uv[:].enumerate(axis=1):
+            for lde, de in vis_cube.data[:].enumerate(axis=1):
                 slc = (pp, lde, slice(None), slice(None))
                 data = np.ascontiguousarray(data_view.local_array[slc])
                 data_uv, NEB_ra, NEB_dec = image_to_uv(
@@ -242,7 +254,7 @@ class SpatialTransformDelayMap(task.SingleTask):
                     dec=dec,
                     window=self.spatial_window if self.apply_spatial_window else None,
                 )
-                vis_cube.data_tau_uv[pp, de] = data_uv
+                vis_cube.data[pp, de] = data_uv
 
         # save the equivalent noise bandwidth for the
         # spatial tapering window as an attribute
@@ -250,7 +262,7 @@ class SpatialTransformDelayMap(task.SingleTask):
         vis_cube.attrs["effective_dec"] = NEB_dec
 
         return vis_cube
-
+        
 
 class CrossPowerSpectrum3D(task.SingleTask):
     """Estimate the 3D cross power spectrum of two data cubes .
@@ -262,74 +274,64 @@ class CrossPowerSpectrum3D(task.SingleTask):
 
     """
 
-    def process(self, data_1, data_2):
+    def process(self, vis_1, vis_2):
         """Estimate the cross power spectrum of two data cubes.
 
         Parameters
         ----------
-        data_1 : containers.SpatialDelayCube
+        vis_1 : containers.SpatialDelayCube
           The 1st data cube in fourier domain.
-        data_2 : containers.SpatialDelayCube
+        vis_2 : containers.SpatialDelayCube
           The 2nd data cube in fourier domain.
 
         Returns
         -------
-        cross_ps : containers.Powerspec3D
+        cross_ps : containers.PowerSpectrum3D
            The 3D cross power spectum.
         """
         # Validate the shapes of two data cubes match
-        if data_1.data_tau_uv.shape != data_2.data_tau_uv.shape:
+        if vis_1.data.shape != vis_2.data.shape:
             raise ValueError(
-                f"Size of data_1 ({data_1.shape}) must match "
-                f"data_2 ({data_2.shape})"
+                f"Size of data_1 ({vis_1.data.shape}) must match "
+                f"data_2 ({vis_2.data.shape})"
             )
 
         # Validate the types are the same
-        if type(data_1) is not type(data_2):
+        if type(vis_1) is not type(vis_2):
             raise TypeError(
-                f"type(data_1) (={type(data_1)}) must match "
-                f"type(data_2) (={type(data_2)})"
+                f"type(vis_1) (={type(vis_1)}) must match "
+                f"type(vis_2) (={type(vis_2)})"
             )
 
-        data_1.redistribute("delay")
-        data_2.redistribute("delay")
+        vis_1.redistribute("delay")
+        vis_2.redistribute("delay")
 
         # Extract required data axes
-        delay = data_1.index_map["delay"]  # micro-sec
-        kx = data_1.index_map["kx"]  # Mpc^-1
-        ky = data_1.index_map["ky"]  # Mpc^-1
-        pol = data_1.index_map["pol"]
-
-        # Dereference the required datasets and
-        vis_cube_1 = data_1.data_tau_uv[:].local_array
-        vis_cube_2 = data_2.data_tau_uv[:].local_array
-
+        pol = vis_1.index_map["pol"]
+        
         # Compute power spectrum normalization factor
         # this is the survey volume, corrected  for the
         # tapering window function used for FFT
-        volume_cube = data_1.attrs["volume"]
-        if (
-            data_1.attrs["window_los"] != "None"
-            and data_2.attrs["window_los"] != "None"
-        ):
-            if data_1.attrs["window_los"] != data_2.attrs["window_los"]:
+        volume_cube = vis_1.attrs["volume"]
+        if vis_1.attrs['window_los'] != "None" and vis_2.attrs['window_los'] != "None":
+            if vis_1.attrs['window_los'] != vis_2.attrs['window_los']:
                 raise ValueError("The windows applied to both data sets are different")
 
-            NEB_freq = noise_equivalent_bandwidth(
-                delay.size, data_1.attrs["window_los"]
-            )
+            NEB_freq = noise_equivalent_bandwidth(vis_1.index_map["delay"].size, 
+                                                  vis_1.attrs['window_los'])
+            vis_1.attrs["effective_bandwidth"] = NEB_freq
         else:
             NEB_freq = 1
-
-        # NEB_freq = data_1.attrs["effective_bandwidth"]
-        NEB_ra = data_1.attrs["effective_ra"]
-        NEB_dec = data_1.attrs["effective_dec"]
+        
+        NEB_ra = vis_1.attrs["effective_ra"]
+        NEB_dec = vis_1.attrs["effective_dec"]
         NEB = 1 / (NEB_freq * NEB_ra * NEB_dec)
         ps_norm = volume_cube * NEB
 
         # Initialise the 3D power spectrum container
-        ps_cube = containers.Powerspec3D(
-            pol=np.array(pol), delay=delay, kx=kx, ky=ky, attrs_from=data_1
+        ps_cube = containers.PowerSpectrum3D(
+            copy_from=vis_1, cosmology = vis_1.cosmology
+            
         )
         ps_cube.redistribute("delay")
         ps_cube.ps3D[:] = 0.0
@@ -337,12 +339,17 @@ class CrossPowerSpectrum3D(task.SingleTask):
         # Save the power spectrum normalization factor in the attrs
         ps_cube.attrs["ps_norm"] = ps_norm
 
-        # Create index map for (u,v) coordinates,k_parallel axis
-        # and uv-mask
-        fourier_axes = ["u", "v", "k_parallel", "uv_mask"]
-        for ax in fourier_axes:
-            ps_cube.create_index_map(ax, data_1.index_map[ax])
-
+        # Save the lsds of p0 and p1 in the attrs
+        # This will help to know quickly how many nights
+        # go into power spectrum estimation
+        if 'lsd' in vis_1.attrs and 'lsd' in vis_2.attrs:
+            ps_cube.attrs["lsd_p0"] = vis_1.attrs['lsd']
+            ps_cube.attrs["lsd_p1"] = vis_2.attrs['lsd']
+        
+        # Dereference the required datasets and
+        vis_1 = vis_1.data[:].local_array
+        vis_2 = vis_2.data[:].local_array
+        
         # Estimate the cross power spectrum
         for pp, psr in enumerate(pol):
             self.log.debug(f"Estimating power spectrum for pol: {psr}")
@@ -350,8 +357,8 @@ class CrossPowerSpectrum3D(task.SingleTask):
 
             for lde, de in ps_cube.ps3D[:].enumerate(axis=1):
                 slc = (pol_id, lde, slice(None), slice(None))
-                cube_1 = np.ascontiguousarray(vis_cube_1[slc])
-                cube_2 = np.ascontiguousarray(vis_cube_2[slc])
+                cube_1 = np.ascontiguousarray(vis_1[slc])
+                cube_2 = np.ascontiguousarray(vis_2[slc])
                 ps_cube.ps3D[pp, de] = get_3D_ps(
                     cube_1, cube_2, vol_norm_factor=ps_norm
                 )
@@ -372,7 +379,7 @@ class AutoPowerSpectrum3D(CrossPowerSpectrum3D):
 
         Returns
         -------
-        auto_ps : containers.Powerspec3D
+        auto_ps : containers.PowerSpectrum3D
            The 3D auto power spectum.
         """
         return super().process(data, data)
@@ -410,52 +417,50 @@ class CylindricalPowerSpectrum2D(task.SingleTask):
 
         Parameters
         ----------
-        weight : `containers.Powerspec3D`
+        weight : `containers.PowerSpectrum3D`
             weight power spectrum estimated from many
             noise simulation to be used as inverse variance weight.
             Note this is variance, we need to take inverse of this
             to have inverse variance weight.
         """
-        if weight is not None:
-            self.weight = weight
-        else:
-            self.weight = None
-
+        self.weight = weight
+        
     def process(self, ps):
         """Estimate the cylindrically averaged power spectrum.
 
         Parameters
         ----------
-        ps : containers.Powerspec3D
+        ps : containers.PowerSpectrum3D
           The 3D power spectrum cube.
 
         Returns
         -------
-        cross_ps : containers.Powerspec2D
+        cross_ps : containers.PowerSpectrum2D
            The 2D power spectum.
         """
-        if not isinstance(ps, containers.Powerspec3D):
+        if not isinstance(ps, containers.PowerSpectrum3D):
             raise ValueError(
-                f"Input container must be instance of Powerspec3D (received {ps.__class__})"
+                f"Input container must be instance of PowerSpectrum3D (received {ps.__class__})"
             )
 
         ps.redistribute("delay")
-
+        
         # Extract required data axes
         pol = ps.index_map["pol"]
-        kpar = ps.index_map["k_parallel"]
+        delay = ps.delay[:]
+        kpar = ps.k_parallel[:]
         u = ps.index_map["u"]
         v = ps.index_map["v"]
-        uv_mask = ps.index_map["uv_mask"]
+        uv_mask = ps.uv_mask[:]
         redshift = ps.attrs["redshift"]
         nu_c = ps.attrs["freq_center"]
-        wl = C / (nu_c * 1e6)  # m
+        wl = units.c / (nu_c * 1e6)  # m
 
         # find out the kperp bins
         u_min_lambda = self.bl_min / wl
         u_max_lambda = self.bl_max / wl
-        kperp_min = u_to_kperp(u_min_lambda, redshift)
-        kperp_max = u_to_kperp(u_max_lambda, redshift)
+        kperp_min = u_to_kperp(u_min_lambda, redshift, ps.cosmology)
+        kperp_max = u_to_kperp(u_max_lambda, redshift, ps.cosmology)
 
         if self.logbins_2D:
             kperp = np.logspace(np.log10(kperp_min), np.log10(kperp_max), self.Nbins_2D)
@@ -477,12 +482,15 @@ class CylindricalPowerSpectrum2D(task.SingleTask):
             weight = tools.invert_no_zero(self.weight.ps3D[:].local_array)
 
         # Define the 2D power spectrum container
-        pspec_2D = containers.Powerspec2D(
-            pol=pol, kpar=kpar, kperp=kperp_cent, attrs_from=ps
+        pspec_2D = containers.PowerSpectrum2D(
+            pol=pol,delay=delay, kperp=kperp_cent, 
+            attrs_from=ps, cosmology=ps.cosmology
         )
-        pspec_2D.redistribute("kpar")
+        pspec_2D.redistribute("delay")
         pspec_2D.ps2D[:] = 0.0
-
+        pspec_2D.k_parallel[:] = kpar
+        pspec_2D.kperp[:] = kperp_cent
+        
         # save the delay cut value in attrs
         pspec_2D.attrs["delay_cut"] = self.delay_cut
 
@@ -515,7 +523,7 @@ class CylindricalPowerSpectrum2D(task.SingleTask):
                 )
 
                 # Cylindrical 2D power spectrum
-                pspec_2D.ps2D[pp, de], pspec_2D.ps2D_weight[pp, de] = get_2d_ps(
+                pspec_2D.ps2D[pp, de], pspec_2D.weight[pp, de] = get_2d_ps(
                     ps3D_flat[mask_flat],
                     weight=weight_flat[mask_flat]
                     ** 2,  # square the weight for inverse variance weighted avg of power spectrum
@@ -523,6 +531,7 @@ class CylindricalPowerSpectrum2D(task.SingleTask):
                     uu=uu[mask_flat],
                     vv=vv[mask_flat],
                     redshift=redshift,
+                    cosmo = ps.cosmology
                 )
 
         # Generate the signal window mask corresponding to the delay cut
@@ -530,13 +539,13 @@ class CylindricalPowerSpectrum2D(task.SingleTask):
         # Instead, we save this as a dataset in the container, which can
         # be applied during plotting
         pspec_2D.redistribute("pol")
-        pspec_2D.signal_mask[:] = True
+        pspec_2D.mask[:] = True
 
         if self.delay_cut > 0.0:
             kpar_lim = delays_to_kpara(self.delay_cut, redshift)
             ibins = np.where((kpar > -kpar_lim) & (kpar < kpar_lim))
             for ii, jj in enumerate(pol):
-                pspec_2D.signal_mask[ii, ibins, :] = False
+                pspec_2D.mask[ii, ibins, :] = False
 
         return pspec_2D
 
@@ -564,32 +573,34 @@ class SphericalPowerSpectrum2Dto1D(task.SingleTask):
 
         Parameters
         ----------
-        ps2D : containers.Powerspec2D
+        ps2D : containers.PowerSpectrum2D
           The 2D cylindrically averaged power spectrum.
 
         Returns
         -------
-        ps1D : containers.Powerspec1D
+        ps1D : containers.PowerSpectrum1D
            The 1D power spectum.
         """
-        if not isinstance(ps2D, containers.Powerspec2D):
+        if not isinstance(ps2D, containers.PowerSpectrum2D):
             raise ValueError(
-                f"Input container must be instance of Powerspec2D (received {ps2D.__class__})"
+                f"Input container must be instance of PowerSpectrum2D (received {ps2D.__class__})"
             )
         ps2D.redistribute("pol")
 
         # Extract required data axes
-        pol = ps2D.pol
-        kpar = ps2D.kpar
-        kperp = ps2D.kperp
+        pol = ps2D.index_map["pol"]
+        kpar = ps2D.k_parallel[:]
+        kperp = ps2D.kperp[:]
 
         # Dereference the required datasets
         ps_2D = ps2D.ps2D[:].local_array
-        mask_2D = ps2D.signal_mask[:].local_array
-        weight_2D = ps2D.ps2D_weight[:].local_array
+        mask_2D = ps2D.mask[:].local_array
+        weight_2D = ps2D.weight[:].local_array
 
         # Define the 1D power spectrum container
-        pspec_1D = containers.Powerspec1D(pol=pol, k=self.Nbins_3D - 1, attrs_from=ps2D)
+        pspec_1D = containers.PowerSpectrum1D(pol=pol,k=self.Nbins_3D - 1,
+                                    attrs_from=ps2D,
+                                    cosmology=ps2D.cosmology)
         pspec_1D.redistribute("pol")
         pspec_1D.ps1D[:] = 0.0
 
@@ -600,8 +611,8 @@ class SphericalPowerSpectrum2Dto1D(task.SingleTask):
             (
                 pspec_1D.k1D[psr],
                 pspec_1D.ps1D[psr],
-                pspec_1D.ps1D_error[psr],
-                pspec_1D.ps1D_var[psr],
+                pspec_1D.samp_var[psr],
+                pspec_1D.var[psr],
             ) = get_1d_ps(
                 ps_2D[pp],
                 kperp,
@@ -650,45 +661,42 @@ class SphericalPowerSpectrum3Dto1D(task.SingleTask):
 
         Parameters
         ----------
-        weight : `containers.Powerspec3D`
+        weight : `containers.PowerSpectrum3D`
             weight power spectrum estimated from many
             noise simulation to be used as inverse variance weight.
             Note this is variance, we need to take inverse of this
             to have inverse variance weight.
         """
-        if weight is not None:
-            self.weight = weight
-        else:
-            self.weight = None
+        self.weight = weight
 
     def process(self, ps):
         """Estimate the spherically averaged power spectrum.
 
         Parameters
         ----------
-        ps : containers.Powerspec3D
+        ps : containers.PowerSpectrum3D
           The 3D power spectrum cube.
 
         Returns
         -------
-        ps1D : containers.Powerspec1D
+        ps1D : containers.PowerSpectrum1D
            The 1D power spectum.
         """
-        if not isinstance(ps, containers.Powerspec3D):
+        if not isinstance(ps, containers.PowerSpectrum3D):
             raise ValueError(
-                f"Input container must be instance of Powerspec2D (received {ps.__class__})"
+                f"Input container must be instance of PowerSpectrum3D (received {ps.__class__})"
             )
         ps.redistribute("pol")
 
         # Extract required data axes
         pol = ps.index_map["pol"]
-        kpar = ps.index_map["k_parallel"]
+        kpar = ps.k_parallel[:]
         u = ps.index_map["u"]
         v = ps.index_map["v"]
-        uv_mask = ps.index_map["uv_mask"]
+        uv_mask = ps.uv_mask[:]
         redshift = ps.attrs["redshift"]
         nu_c = ps.attrs["freq_center"]
-        wl = C / (nu_c * 1e6)  # m
+        wl = units.c / (nu_c * 1e6)  # m
 
         #  find out the kperp bins
         u_min_lambda = self.bl_min / wl
@@ -706,7 +714,8 @@ class SphericalPowerSpectrum3Dto1D(task.SingleTask):
             weight = tools.invert_no_zero(self.weight.ps3D[:].local_array)
 
         # Define the 1D power spectrum container
-        pspec_1D = containers.Powerspec1D(pol=pol, k=self.Nbins_3D - 1, attrs_from=ps)
+        pspec_1D = containers.PowerSpectrum1D(k=self.Nbins_3D - 1,
+                                   axes_from=ps,attrs_from=ps,cosmology=ps.cosmology)
         pspec_1D.redistribute("pol")
         pspec_1D.ps1D[:] = 0.0
 
@@ -750,15 +759,15 @@ class SphericalPowerSpectrum3Dto1D(task.SingleTask):
             weight_flat = np.array(weight_flat).reshape(kpar.size, -1)
 
             # convert to Fourier modes and estimate kperp
-            ku = u_to_kperp(uu_flat, redshift)  # convert the u-array to fourier modes
-            kv = u_to_kperp(vv_flat, redshift)  # convert the v-array to fourier modes
+            ku = u_to_kperp(uu_flat, redshift,ps.cosmology)  # convert the u-array to fourier modes
+            kv = u_to_kperp(vv_flat, redshift,ps.cosmology)  # convert the v-array to fourier modes
             kperp = np.sqrt(ku**2 + kv**2)
 
             # Generate the signal window mask corresponding to the delay cut
             signal_mask = np.ones_like(ps3D_flat, dtype=bool)
 
             if self.delay_cut > 0.0:
-                kpar_lim = delays_to_kpara(self.delay_cut, redshift)
+                kpar_lim = delays_to_kpara(self.delay_cut, redshift,ps.cosmology)
                 ibins = np.where((kpar > -kpar_lim) & (kpar < kpar_lim))
                 signal_mask[ibins, :] = False
 
@@ -766,8 +775,8 @@ class SphericalPowerSpectrum3Dto1D(task.SingleTask):
             (
                 pspec_1D.k1D[pp],
                 pspec_1D.ps1D[pp],
-                pspec_1D.ps1D_error[pp],
-                pspec_1D.ps1D_var[pp],
+                pspec_1D.samp_var[pp],
+                pspec_1D.var[pp],
             ) = get_1d_ps(
                 ps3D_flat,
                 kperp,
@@ -812,39 +821,51 @@ def z2f(z):
     return f21 / (z + 1)
 
 
-def dRperp_dtheta(z):
-    """Conversion factor from angular size (radian) to transverse comoving distance (Mpc) at a specific redshift: [Mpc / radians].
+
+def dRperp_dtheta(z, cosmo=None):
+    """Conversion factor from angular size (radian) to transverse comoving distance (Mpc/h) at a specific redshift: [h^-1 Mpc / radians].
 
     Parameters
     ----------
     z : float
      redshift
+    cosmo: Cosmology object
+        Default is cora.util.Cosmology() default. 
 
     Returns
     -------
-    comoving transverse distance: float. unit in Mpc
+    comoving transverse distance: float. unit in [h^-1 Mpc].
     """
-    return cosmo.comoving_transverse_distance(z).value
+    if cosmo is None:
+        cosmo= get_cosmo()
+    return cosmo.comoving_distance(z)
 
 
-def dRpara_df(z):
-    """Conversion from frequency bandwidth to radial comoving distance at a specific redshift: [Mpc / Hz].
+def dRpara_df(z, cosmo=None):
+    """Conversion from frequency bandwidth to radial comoving distance at a specific redshift: [h^-1 Mpc / Hz].
 
     Parameters
     ----------
     z : float
      redshift
+    cosmo: Cosmology object
+        Default is cora.util.Cosmology() default.      
 
     Returns
     -------
-    Radial comoving distance: float. unit in Mpc
+    Radial comoving distance: float. unit in [h^-1 Mpc]
     """
+    if cosmo is None:
+        cosmo= get_cosmo()
+
+    H_z = cosmo.H(z) * (cosmo._unit_distance  / 1000.0 ) # H(z) in unit [(km . h) / (Mpc . sec)]
+    
     # Eqn A9 of Liu,A 2014A
-    return (1 + z) ** 2.0 / cosmo.H(z).value * (C / 1e3) / (f21 * 1e6)
+    return (1 + z) ** 2.0 / H_z * (units.c / 1e3) / (units.nu21 * 1e6) 
 
 
-def delays_to_kpara(delay, z):
-    """Conver delay in sec unit to k_parallel (comoving 1./Mpc along line of sight).
+def delays_to_kpara(delay, z, cosmo=None):
+    """Conver delay in sec unit to k_parallel (comoving h/Mpc along line of sight).
 
     Parameters
     ----------
@@ -852,42 +873,51 @@ def delays_to_kpara(delay, z):
       The inteferometric delay observed in units second.
     z : float
       The redshift of the expected 21cm emission.
-
+    cosmo: Cosmology object
+        Default is cora.util.Cosmology() default. 
+        
     Returns
     -------
     kparr : np.array
        The spatial fluctuation scale parallel to the line of sight probed by
-       the input delay (eta).unit [1/Mpc]
+       the input delay (eta). Unit: [h/Mpc]
     """
+        
     # Eqn A10 of Liu,A 2014A
-    return (delay * 2 * np.pi) / dRpara_df(z)
+    return (delay * 2 * np.pi) / dRpara_df(z, cosmo=cosmo)
 
 
-def kpara_to_delay(kpara, z):
-    """Convert k_parallel (comoving 1/Mpc along line of sight) to delay in sec.
+def kpara_to_delay(kpara, z,  cosmo=None):
+    """Convert k_parallel (comoving h/Mpc along line of sight) to delay in sec.
 
     Parameters
     ----------
     kpara : np.array
-      The spatial fluctuation scale parallel to the line of sight in unit 1/Mpc.
+      The spatial fluctuation scale parallel to the line of sight in unit [h/Mpc].
     z : float
         The redshift of the expected 21cm emission.
-
+    cosmo: Cosmology object
+        Default is cora.util.Cosmology() default.
+        
     Returns
     -------
     delay : np.array
       The inteferometric delay in unit second
       which probes the spatial scale given by kparr.
     """
+    if cosmo is None:
+        cosmo= get_cosmo()
+        
     # Eqn A10 of Liu,A 2014A
-    return kpara * dRpara_df(z) / (2 * np.pi)
+    return kpara * dRpara_df(z, cosmo=cosmo) / (2 * np.pi)
 
 
 def u_to_kperp(
     u,
     z,
+    cosmo=None
 ):
-    """Convert baseline length u to k_perpendicular in unit [1/Mpc].
+    """Convert baseline length u to k_perpendicular in unit [h/Mpc].
 
     Parameters
     ----------
@@ -895,27 +925,34 @@ def u_to_kperp(
         The baseline separation of two interferometric antennas in units of wavelength
     z : float
         The redshift of the expected 21cm emission.
-
+    cosmo: Cosmology object
+        Default is cora.util.Cosmology() default.
+        
     Returns
     -------
     kperp : np.array
         The spatial fluctuation scale perpendicular to the line of sight
-        probed by the baseline length u.
+        probed by the baseline length u. Unit: [h/Mpc].
     """
+    if cosmo is None:
+        cosmo= get_cosmo()
+        
     # Eqn A10 of Liu,A 2014A
-    return 2 * np.pi * u / dRperp_dtheta(z)
+    return 2 * np.pi * u / dRperp_dtheta(z, cosmo=cosmo)
 
 
-def kperp_to_u(kperp, z):
+def kperp_to_u(kperp, z,  cosmo=None):
     """Convert comsological k_perpendicular to baseline length u (wavelength unit).
 
     Parameters
     ----------
     kperp : np.array
-      The spatial fluctuation scale perpendicular to the line of sight. unit 1/Mpc
+      The spatial fluctuation scale perpendicular to the line of sight. Unit: [h/Mpc]
     z : float
         The redshift of the expected 21cm emission.
-
+    cosmo: Cosmology object
+        Default is cora.util.Cosmology() default.
+        
     Returns
     -------
     u : np.array
@@ -923,8 +960,11 @@ def kperp_to_u(kperp, z):
      wavelength which probes the spatial scale given by kperp.
 
     """
+    if cosmo is None:
+        cosmo= get_cosmo()
+        
     # Eqn A10 of Liu,A 2014A
-    return kperp * dRperp_dtheta(z) / (2 * np.pi)
+    return kperp * dRperp_dtheta(z, cosmo=cosmo) / (2 * np.pi)
 
 
 def jy_per_beam_to_kelvin(freq, bl_length):
@@ -959,22 +999,6 @@ def jy_per_beam_to_kelvin(freq, bl_length):
     return wl**2 * Jy / (2 * kB * omega_psf_sr)
 
 
-def sza2dec(sza):
-    """Convert sza to declination.
-
-    Parameters
-    ----------
-    sza: np.ndarray[el]
-      sin(zenith angle) or el.
-
-    Returns
-    -------
-    dec: np.ndarray[nel]
-      declination in degree.
-    """
-    return _LAT_LON["chime"][0] + np.degrees(np.arcsin(sza))
-
-
 def noise_equivalent_bandwidth(N, window):
     """Calculate the relative equivalent noise bandwidth of window function.
 
@@ -999,7 +1023,7 @@ def noise_equivalent_bandwidth(N, window):
     return np.sum(w) ** 2 / (np.sum(w**2) * len(w))
 
 
-def get_fourier_modes(ra, dec, delays, redshift):
+def get_fourier_modes(ra, dec, delays, redshift, cosmo=None):
     """Compute the spatial and line-of-sight Fourier modes.
 
     Parameters
@@ -1012,20 +1036,25 @@ def get_fourier_modes(ra, dec, delays, redshift):
       The delay axis in second unit.
     redshift : float
       redshift at the centre of the band.
+    cosmo: Cosmology object
+        Default is cora.util.Cosmology() default.  
 
     Returns
     -------
     kx : np.array[nra]
-      The Fourier modes conjugate to RA axis, unit Mpc^-1.
+      The Fourier modes conjugate to RA axis, unit [h/Mpc].
     ky : np.array[ndec]
-      The Fourier modes conjugate to DEC axis, unit Mpc^-1.
+      The Fourier modes conjugate to DEC axis, unit [h/Mpc].
     u : np.array[nra]
       gridded u-coordinates
     v : np.array[nel]
       gridded v-coordinates
     k_parallel : np.array[ndelay]
-      The Fourier modes conjugate to frequency axis, unit Mpc^-1.
+      The Fourier modes conjugate to frequency axis, unit [h/Mpc].
     """
+    if cosmo is None:
+        cosmo= get_cosmo()
+        
     nra = ra.size
     ndec = dec.size
 
@@ -1033,7 +1062,7 @@ def get_fourier_modes(ra, dec, delays, redshift):
     res_ra_radian = np.deg2rad(np.mean(np.diff(ra)))
     res_dec_radian = np.deg2rad(np.mean(np.diff(dec)))
 
-    DMz = dRperp_dtheta(redshift)  # in Mpc
+    DMz = dRperp_dtheta(redshift, cosmo=cosmo)  # in [h^-1 Mpc]
 
     # Convert the RA and DEC resolution to Mpc unit
     d_RA_Mpc = DMz * res_ra_radian
@@ -1096,7 +1125,7 @@ def image_to_uv(data, ra, dec, window="tukey-0.5"):
     return uv_map * FT_norm, NEB_ra, NEB_dec
 
 
-def vol_normalization(ra, dec, freq, redshift):
+def vol_normalization(ra, dec, freq, redshift, cosmo=None):
     """Estimate the volume normalization factor for the power spectrum.
 
     Parameters
@@ -1109,12 +1138,17 @@ def vol_normalization(ra, dec, freq, redshift):
       The freq array in MHz.
     redshift : float
       redshift at the centre of the band.
-
+    cosmo: Cosmology object
+        Default is cora.util.Cosmology() default. 
+        
     Returns
     -------
     norm : float
       The  Ppower spectrum normalization factor in Mpc^3 unit
     """
+    if cosmo is None:
+        cosmo= get_cosmo()
+        
     nra = ra.size
     ndec = dec.size
     nfreq = freq.size
@@ -1124,17 +1158,17 @@ def vol_normalization(ra, dec, freq, redshift):
     res_dec_radian = np.deg2rad(np.mean(np.diff(dec)))
 
     # Comoving distance
-    DMz = dRperp_dtheta(redshift)  # in Mpc
+    DMz = dRperp_dtheta(redshift, cosmo=cosmo)  # in [h^-1 Mpc]
 
     # Convert the RA and DEC resolution to Mpc unit
     dx_Mpc = DMz * res_ra_radian
     dy_Mpc = DMz * res_dec_radian
-    Lx = nra * dx_Mpc  # survey length along RA [Mpc]
-    Ly = ndec * dy_Mpc  # survey length along DEC [Mpc]
+    Lx = nra * dx_Mpc  # survey length along RA [h^-1 Mpc]
+    Ly = ndec * dy_Mpc  # survey length along DEC [h^-1 Mpc]
 
     ## Along line-of-sight direction
     chan_width = np.abs(np.diff(freq)).mean() * 1e6  # channel width in Hz
-    dz_Mpc = dRpara_df(redshift) * chan_width  # Mpc
+    dz_Mpc = dRpara_df(redshift, cosmo=cosmo) * chan_width  # [h^-1 Mpc]
     Lz = dz_Mpc * nfreq  # survey length along line-of-sight [Mpc]
 
     return Lx * Ly * Lz
@@ -1160,7 +1194,7 @@ def nanaverage(d, w, axis=None):
     return np.nansum(d * w, axis=axis) / np.nansum(w, axis=axis)
 
 
-def spatial_mask(k_x, k_y, ew_min, ew_max, ns_bl, wl_min, wl_max, redshift):
+def spatial_mask(k_x, k_y, ew_min, ew_max, ns_bl, wl_min, wl_max, redshift, cosmo=None):
     """Estimate the mask in [u,v] or [kx,ky] domain.
 
     This will generate a mask in uv-domain, which is True
@@ -1190,12 +1224,17 @@ def spatial_mask(k_x, k_y, ew_min, ew_max, ns_bl, wl_min, wl_max, redshift):
       maximum wavelength in meter.
     redshift: float
        redshift at the center of the band.
-
+    cosmo: Cosmology object
+        Default is cora.util.Cosmology() default. 
+        
     Returns
     -------
     fourier_mask : np.ndarray[u,v]
       The  fourier mask in [u,v] or [kx,ky] domain
     """
+    if cosmo is None:
+        cosmo = get_cosmo()
+        
     # Estimate the uv-range
     ux_min = ew_min / wl_max
     ux_max = ew_max / wl_min
@@ -1203,11 +1242,11 @@ def spatial_mask(k_x, k_y, ew_min, ew_max, ns_bl, wl_min, wl_max, redshift):
     vy_max = abs(vy_min)
 
     # Convert the uv_range to kx,ky modes
-    kx_min = u_to_kperp(ux_min, redshift)
-    kx_max = u_to_kperp(ux_max, redshift)
+    kx_min = u_to_kperp(ux_min, redshift, cosmo=cosmo)
+    kx_max = u_to_kperp(ux_max, redshift, cosmo=cosmo)
 
-    ky_min = u_to_kperp(vy_min, redshift)
-    ky_max = u_to_kperp(vy_max, redshift)
+    ky_min = u_to_kperp(vy_min, redshift, cosmo=cosmo)
+    ky_max = u_to_kperp(vy_max, redshift, cosmo=cosmo)
 
     # Mask along kx direction
     zone_x1 = (k_x >= kx_min) & (k_x <= kx_max)
@@ -1221,7 +1260,6 @@ def spatial_mask(k_x, k_y, ew_min, ew_max, ns_bl, wl_min, wl_max, redshift):
 
     # Now take the product of kx and ky mask and return it
     return zone_x[:, None] * zone_y[None, :]
-
 
 def get_3D_ps(data_cube_1, data_cube_2, vol_norm_factor):
     """Estimate the cross power spectrum of two data cubes.
@@ -1294,7 +1332,7 @@ def reshape_data_cube(data_cube, u, v, bl_min, bl_max):
     return ft_cube, uu.flatten(), vv.flatten()
 
 
-def get_2d_ps(ps_cube, weight, kperp_bins, uu, vv, redshift):
+def get_2d_ps(ps_cube, weight, kperp_bins, uu, vv, redshift, cosmo=None):
     """Estimate the cylindrically averaged 2D power spectrum.
 
     Parameters
@@ -1313,7 +1351,9 @@ def get_2d_ps(ps_cube, weight, kperp_bins, uu, vv, redshift):
       The flatten v-coordinate in wavelength.
     redshift : float
       The redshift corresponding to the band center.
-
+    cosmo: Cosmology object
+        Default is cora.util.Cosmology() default. 
+        
     Returns
     -------
     ps_2D : np.ndarray[kperp]
@@ -1323,12 +1363,15 @@ def get_2d_ps(ps_cube, weight, kperp_bins, uu, vv, redshift):
       The binned  weight along k_perp (cylindrical binning).
 
     """
+    if cosmo is None:
+        cosmo= get_cosmo()
+        
     # Weight for inverse variance weighted avg
     w = weight
 
     # Find the bin indices and determine which radial bin each cell lies in.
-    ku = u_to_kperp(uu, redshift)  # convert the u-array to fourier modes
-    kv = u_to_kperp(vv, redshift)  # convert the v-array to fourier modes
+    ku = u_to_kperp(uu, redshift, cosmo = cosmo)  # convert the u-array to fourier modes
+    kv = u_to_kperp(vv, redshift, cosmo = cosmo)  # convert the v-array to fourier modes
     ru = np.sqrt(ku**2 + kv**2)
 
     # Digitize the bins
@@ -1380,12 +1423,15 @@ def get_1d_ps(
 
     Returns
     -------
-    k1d : np.array[Nbins_3d]
+    k1d: np.array[Nbins_3d]
       The K-values corresponding to the bin center
-    ps_3D : np.array[Nbins_3d]
+    ps_3D: np.array[Nbins_3d]
      The spherically avg power spectrum.
-    ps_3D_err : np.array[Nbins_3d]
+    ps_3D_err: np.array[Nbins_3d]
       The error in the PS (sample variance)
+    variance: np.array[Nbins_3d]
+      The variance in the power spectrum
+      estimated from thermal noise.
     """
     # Estimate the 1D k-modes
     kpp, kll = np.meshgrid(k_perp, k_para)
@@ -1442,3 +1488,4 @@ def get_1d_ps(
     variance = np.array(variance)
 
     return k3D, ps_3D, ps_3D_err, variance
+
