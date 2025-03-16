@@ -1212,9 +1212,6 @@ class DelaySpectrumWienerEstimator(DelayTransformFFT):
             else:
                 out_cont.spectrum[bi, nzt] = y_spec
 
-            # FFT-shift along the last axis
-            out_cont.spectrum[bi, nzt] = np.fft.fftshift(y_spec, axes=1)
-
         return out_cont
 
 
