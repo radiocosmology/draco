@@ -1,24 +1,20 @@
 """Power spectrum estimation from ringmap."""
 
 import numpy as np
-from astropy.cosmology import Planck15
 from caput import config, mpiarray
 from cora.util import units
-
+from cora.util.cosmology import Cosmology
 from draco.analysis.delay import flatten_axes
 from draco.core import containers, io, task
 from draco.util import tools
+from draco.analysis.ringmapmaker import find_grid_indices
+from functools import cache
 
-f21 = units.nu21  # 21cm line frequency in MHz
-C = units.c  # Speed of light in m/s
-# We are setting cosmology to Planck2015 result
-# one can use Planck2018 too
-cosmo = Planck15
 
-# Lat/Lon of CHIME
-_LAT_LON = {
-    "chime": [49.3207125, -119.623670],
-}
+@cache
+def get_cosmo(*args, **kwargs):
+    # get default Cosmology object from cora.util
+    return Cosmology(*args, **kwargs)
 
 
 class TransformJyPerBeamToKelvin(task.SingleTask):
@@ -90,7 +86,7 @@ class TransformJyPerBeamToKelvin(task.SingleTask):
         out_map.weight[:] = 0.0
 
         # store the map after applying the conversion factor
-        out_map.map[:] = (
+        out_map.map[:].local_array[:] = (
             rm.map[:].local_array
             * factor[np.newaxis, np.newaxis, :, np.newaxis, np.newaxis]
         )
@@ -102,7 +98,6 @@ class TransformJyPerBeamToKelvin(task.SingleTask):
         return out_map
 
     def _get_max_baseline(self):
-        from draco.analysis.ringmapmaker import find_grid_indices
 
         prod = self.telescope.prodstack
         baselines = (
@@ -113,144 +108,6 @@ class TransformJyPerBeamToKelvin(task.SingleTask):
         baslines = baselines[xind <= self.ncyl]
         bl = np.sqrt(np.sum(baslines**2, axis=-1))
         return bl.max()
-
-
-class DelayTransformMapFFT(task.SingleTask):
-    """Transform the ringmap from frequency to delay domain.
-
-    This transforms the ringmap from frequency to delay domain by doing simple FFT.
-    This will only work when the map is foreground filtered and close to noise.
-    Otherwise  FFT along frequency axis will leak foreground power to high delays
-    due to the presence of RFI masked missing data along frequency.
-
-    The delay spectrum  output is indexed by a `baseline` axis. This
-    axis is the composite axis of all the axes in the container except the frequency
-    axis and the ra axis. These constituent axes are included in the index map,
-    and their order is given by the `baseline_axes` attribute.
-
-    Attributes
-    ----------
-    apply_pixel_mask : bool, optional
-        If true, apply the pixel mask to the data, which is stored
-        in the weight dataset. Default: False.
-    apply_window : bool, optional
-        Whether to apply apodisation to frequency axis. Default: True.
-    window : window available in :func:`draco.util.tools.window_generalised()`, optional
-        Apodisation to perform on frequency axis. Default: 'nuttall'.
-    """
-
-    apply_pixel_mask = config.Property(proptype=bool, default=False)
-    apply_window = config.Property(proptype=bool, default=True)
-    window = config.enum(
-        [
-            "uniform",
-            "hann",
-            "hanning",
-            "hamming",
-            "blackman",
-            "nuttall",
-            "blackman_nuttall",
-            "blackman_harris",
-        ],
-        default="nuttall",
-    )
-
-    def process(self, rm):
-        """Estimate the delay spectrum of the ringmap.
-
-        Parameters
-        ----------
-        rm : containers.RingMap
-            Data for which to estimate the power spectrum.
-
-        Returns
-        -------
-        delay spectrum : containers.DelayTransform
-        """
-        rm.redistribute("freq")
-
-        if not isinstance(rm, containers.RingMap):
-            raise ValueError(
-                f"Input container must be instance of RingMap (received {rm.__class__})"
-            )
-
-        freq_spacing = np.abs(np.diff(rm.freq[:])).mean()
-        ndelay = len(rm.freq)
-
-        # Compute delays in micro-sec
-        self.delays = np.fft.fftshift(np.fft.fftfreq(ndelay, d=freq_spacing))
-
-        # Get relevant views of data and weights, and create output container.
-        # Find the relevant axis positions
-        data_view, bl_axes = flatten_axes(rm.map, ["ra", "freq"])
-        weight_view, _ = flatten_axes(rm.weight, ["ra", "freq"], match_dset=rm.map)
-
-        # baseline axis
-        bl = np.prod([len(rm.index_map[ax]) for ax in bl_axes])
-
-        # Initialise the spectrum container
-        delay_spectrum = containers.DelayTransform(
-            baseline=bl,
-            sample=rm.index_map["ra"],
-            delay=self.delays,
-            attrs_from=rm,
-        )
-
-        delay_spectrum.redistribute("baseline")
-        delay_spectrum.spectrum[:] = 0.0
-
-        # Copy the index maps for all the flattened axes into the output container, and
-        # write out their order into an attribute so we can reconstruct this easily
-        # when loading in the spectrum
-        for ax in bl_axes:
-            delay_spectrum.create_index_map(ax, rm.index_map[ax])
-        delay_spectrum.attrs["baseline_axes"] = bl_axes
-
-        # Save the frequency axis of the input data as an attribute in the output
-        # container
-        delay_spectrum.attrs["freq"] = rm.freq
-
-        # Do delay transform
-        for lbi, bi in delay_spectrum.spectrum[:].enumerate(axis=0):
-            self.log.debug(
-                f"Estimating the delay spectrum of each baseline {bi}/{bl} by FFT "
-            )
-
-            # Get the local selections
-            data = data_view.local_array[lbi]
-            weight = weight_view.local_array[lbi]
-
-            # Apply the pixel mask stored in weight to the data
-            # This is needed before taking FFT for spatial pixel mask
-            if self.apply_pixel_mask:
-                pixel_mask = np.where(weight > 0.0, 1.0, weight)
-                data *= pixel_mask
-
-            # Do FFT along freq
-            if self.apply_window:
-                fsel = np.arange(ndelay)
-                x = fsel / ndelay
-                w = tools.window_generalised(x, window=self.window)
-
-                # Estimate the equivalent noise bandwidth for the tapering window
-                # and store it as an attribute
-                # NEB_freq = noise_equivalent_bandwidth(w)
-                delay_spectrum.attrs["window_los"] = self.window
-                # delay_spectrum.attrs["effective_bandwidth"] = NEB_freq
-
-                # Now apply the tapering function to the data and
-                # take iFFT
-                w = w[np.newaxis, :]
-                yspec = np.fft.fftshift(np.fft.ifft(data * w, axis=-1), axes=-1)
-
-            else:
-                yspec = np.fft.fftshift(np.fft.ifft(data, axis=-1), axes=-1)
-                delay_spectrum.attrs["window_los"] = "None"
-                # delay_spectrum.attrs["effective_bandwidth"] = 1.0
-
-            delay_spectrum.spectrum[bi] = yspec
-
-        return delay_spectrum
 
 
 class SpatialTransformDelayMap(task.SingleTask):
