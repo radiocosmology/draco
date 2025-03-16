@@ -1090,6 +1090,8 @@ class DelayTransformFFT(DelayGeneralContainerBase, DelayGibbsSamplerBase):
             weight = weight_view.local_array[lbi]
 
             # Apply the window if requested
+            # Do this before applying data cut
+            # as that will change the data shape
             if self.apply_window:
                 data *= window
 
@@ -1099,10 +1101,11 @@ class DelayTransformFFT(DelayGeneralContainerBase, DelayGibbsSamplerBase):
                 continue
             data, _, _, nzt = t
 
-            # Take the inverse fourier transform
+            # Take the inverse Fourier transform
             # Note fftw only supports complex to
             # complex transform. For real value ringmap
-            # use numpy fft
+            # use numpy fft.
+
             if np.iscomplexobj(data):
                 y_spec = fftw.ifft(data, axes=-1)
             else:
