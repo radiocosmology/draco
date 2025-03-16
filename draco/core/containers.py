@@ -60,13 +60,13 @@ their own custom container types.
 """
 
 import inspect
-from typing import ClassVar, Optional, Union
+from typing import ClassVar
 
 import numpy as np
 from caput import memh5, mpiarray, tod
+from cora.util.cosmology import Cosmology
 
 from ..util import tools
-from cora.util.cosmology import Cosmology
 
 # Try to import bitshuffle to set the default compression options
 try:
@@ -2577,7 +2577,7 @@ class CosmologyContainer(ContainerBase):
         *must* get set via `attrs_from`.
     """
 
-    def __init__(self, cosmology: Union[Cosmology, dict, None] = None, *args, **kwargs):
+    def __init__(self, cosmology: Cosmology | dict | None = None, *args, **kwargs):
         super().__init__(*args, **kwargs)
 
         cosmo_dict = self._resolve_args(cosmology, **kwargs)
@@ -2585,8 +2585,8 @@ class CosmologyContainer(ContainerBase):
 
     @staticmethod
     def _resolve_args(
-        cosmology: Union[Cosmology, dict, None] = None,
-        attrs_from: Optional[ContainerBase] = None,
+        cosmology: Cosmology | dict | None = None,
+        attrs_from: ContainerBase | None = None,
         **kwargs,
     ):
         """Try and extract a Cosmology dict representation from the parameters.
@@ -2599,7 +2599,7 @@ class CosmologyContainer(ContainerBase):
                 cosmology = attrs_from.attrs["cosmology"]
             else:
                 raise ValueError("A cosmology must be supplied.")
-        elif not isinstance(cosmology, (Cosmology, dict)):
+        elif not isinstance(cosmology, (Cosmology | dict)):
             raise TypeError("cosmology argument must be a Cosmology instance.")
 
         if isinstance(cosmology, Cosmology):
@@ -2612,7 +2612,6 @@ class CosmologyContainer(ContainerBase):
     @property
     def cosmology(self):
         """The background cosmology."""
-
         if self._cosmology_instance is None:
             self._cosmology_instance = Cosmology(**self.attrs["cosmology"])
 
