@@ -1,19 +1,20 @@
 """Power spectrum estimation from ringmap."""
 
+from functools import cache
+
 import numpy as np
 from caput import config, mpiarray
 from cora.util import units
 from cora.util.cosmology import Cosmology
-from draco.analysis.delay import flatten_axes
+
+from draco.analysis.ringmapmaker import find_grid_indices
 from draco.core import containers, io, task
 from draco.util import tools
-from draco.analysis.ringmapmaker import find_grid_indices
-from functools import cache
 
 
 @cache
 def get_cosmo(*args, **kwargs):
-    # get default Cosmology object from cora.util
+    """Get the default cosmology from cora."""
     return Cosmology(*args, **kwargs)
 
 
@@ -802,7 +803,7 @@ def f2z(freq):
     -------
     redshift: float
     """
-    return f21 / freq - 1
+    return units.nu21 / freq - 1
 
 
 def z2f(z):
@@ -818,7 +819,7 @@ def z2f(z):
     frequency: float
        frequency in MHz
     """
-    return f21 / (z + 1)
+    return units.nu21 / (z + 1)
 
 
 
@@ -882,7 +883,6 @@ def delays_to_kpara(delay, z, cosmo=None):
        The spatial fluctuation scale parallel to the line of sight probed by
        the input delay (eta). Unit: [h/Mpc]
     """
-        
     # Eqn A10 of Liu,A 2014A
     return (delay * 2 * np.pi) / dRpara_df(z, cosmo=cosmo)
 
