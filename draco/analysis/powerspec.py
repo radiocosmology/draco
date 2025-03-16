@@ -452,8 +452,8 @@ class CrossPowerSpectrum3D(task.SingleTask):
         # tapering window function used for FFT
         volume_cube = data_1.attrs["volume"]
         if (
-            data_1.attrs["window_los"] is not None
-            and data_2.attrs["window_los"] is not None
+            data_1.attrs["window_los"] != "None"
+            and data_2.attrs["window_los"] != "None"
         ):
             if data_1.attrs["window_los"] != data_2.attrs["window_los"]:
                 raise ValueError("The windows applied to both data sets are different")

@@ -66,6 +66,7 @@ import numpy as np
 from caput import memh5, mpiarray, tod
 
 from ..util import tools
+from cora.signal.lsscontainers import CosmologyContainer
 
 # Try to import bitshuffle to set the default compression options
 try:
@@ -2566,50 +2567,69 @@ class DelayTransform(DelayContainer):
         return self.attrs["freq"]
 
 
-class SpatialDelayCube(ContainerBase):
-    """Container for a data in (delays,kx,ky) domain."""
+class SpatialDelayCube(CosmologyContainer, DelayContainer):
+    """Container for a data in (pol,delays,u,v) domain."""
 
-    _axes = ("pol", "delay", "kx", "ky")
+    _axes = ("pol", "u", "v")
 
     _dataset_spec: ClassVar = {
-        "data_tau_uv": {
-            "axes": ["pol", "delay", "kx", "ky"],
+        "data": {
+            "axes": ["pol", "delay", "u", "v"],
             "dtype": np.complex128,
             "initialise": True,
             "distributed": True,
             "distributed_axis": "delay",
-        }
+        },
+        "kx": {
+            "axes": ["u"],
+            "dtype": np.float64,
+            "initialise": True,
+            "distributed": False,
+        },
+        "ky": {
+            "axes": ["v"],
+            "dtype": np.float64,
+            "initialise": True,
+            "distributed": False,
+        },
+        "k_parallel": {
+            "axes": ["delay"],
+            "dtype": np.float64,
+            "initialise": True,
+            "distributed": False,
+        },
+        "uv_mask": {
+            "axes": ["u", "v"],
+            "dtype": bool,
+            "initialise": True,
+            "distributed": False,
+        },
     }
 
     @property
-    def data_tau_uv(self):
+    def data(self):
         """Get the spatial data cube."""
-        return self.datasets["data_tau_uv"]
+        return self.datasets["data"]
 
     @property
-    def pol(self):
-        """Get the pol axis."""
-        return self.index_map["pol"]
+    def kx(self):
+        """Get the kx axis."""
+        return self.datasets["kx"]
+
+    @property
+    def ky(self):
+        """Get the ky axis."""
+        return self.datasets["ky"]
 
     @property
     def k_parallel(self):
         """Get the k_parallel axis."""
-        return self.index_map["k_parallel"]
-
-    @property
-    def u(self):
-        """Get the u coord axis."""
-        return self.index_map["u"]
-
-    @property
-    def v(self):
-        """Get the v coord axis."""
-        return self.index_map["v"]
+        return self.datasets["k_parallel"]
 
     @property
     def uv_mask(self):
         """Get the uv-domain mask."""
-        return self.index_map["uv_mask"]
+        return self.datasets["uv_mask"]
 
     @property
     def redshift(self):
@@ -2622,15 +2642,13 @@ class SpatialDelayCube(ContainerBase):
         return self.attrs["freq_center"]
 
 
-class Powerspec3D(ContainerBase):
+class PowerSpectrum3D(SpatialDelayCube):
     """Container for a 3D power spectrum."""
-
-    _axes = ("pol", "delay", "kx", "ky")
 
     _dataset_spec: ClassVar = {
         "ps3D": {
-            "axes": ["pol", "delay", "kx", "ky"],
-            "dtype": float,
+            "axes": ["pol", "delay", "u", "v"],
+            "dtype": np.float64,
             "initialise": True,
             "distributed": True,
             "distributed_axis": "delay",
@@ -2643,55 +2661,47 @@ class Powerspec3D(ContainerBase):
         return self.datasets["ps3D"]
 
     @property
-    def pol(self):
-        """Get the pol axis."""
-        return self.index_map["pol"]
-
-    @property
-    def k_parallel(self):
-        """Get the k_parallel axis."""
-        return self.index_map["k_parallel"]
-
-    @property
-    def u(self):
-        """Get the u coord axis."""
-        return self.index_map["u"]
-
-    @property
-    def v(self):
-        """Get the v coord axis."""
-        return self.index_map["v"]
-
-    @property
     def ps_norm(self):
         """Get the power spectrum normalizaiton attrs."""
         return self.attrs["ps_norm"]
 
 
-class Powerspec2D(ContainerBase):
+class PowerSpectrum2D(CosmologyContainer):
     """Container for a 2D cylindrically averaged  power spectrum."""
 
-    _axes = ("pol", "kpar", "kperp")
+    _axes = ("pol", "delay", "kperp")
 
     _dataset_spec: ClassVar = {
         "ps2D": {
-            "axes": ["pol", "kpar", "kperp"],
+            "axes": ["pol", "delay", "kperp"],
             "dtype": np.float64,
             "initialise": True,
             "distributed": True,
-            "distributed_axis": "kpar",
+            "distributed_axis": "delay",
         },
-        "ps2D_weight": {
-            "axes": ["pol", "kpar", "kperp"],
+        "weight": {
+            "axes": ["pol", "delay", "kperp"],
             "dtype": np.float64,
             "initialise": True,
             "distributed": True,
         },
-        "signal_mask": {
-            "axes": ["pol", "kpar", "kperp"],
+        "mask": {
+            "axes": ["pol", "delay", "kperp"],
             "dtype": bool,
             "initialise": True,
             "distributed": True,
+        },
+        "k_parallel": {
+            "axes": ["delay"],
+            "dtype": np.float64,
+            "initialise": True,
+            "distributed": False,
+        },
+        "kperp": {
+            "axes": ["kperp"],
+            "dtype": np.float64,
+            "initialise": True,
+            "distributed": False,
         },
     }
 
@@ -2701,29 +2711,24 @@ class Powerspec2D(ContainerBase):
         return self.datasets["ps2D"]
 
     @property
-    def ps2D_weight(self):
+    def weight(self):
         """Get the 2D weight dataset."""
-        return self.datasets["ps2D_weight"]
+        return self.datasets["weight"]
 
     @property
-    def signal_mask(self):
+    def mask(self):
         """Get the 2D signal window dataset."""
-        return self.datasets["signal_mask"]
+        return self.datasets["mask"]
 
     @property
-    def pol(self):
-        """Get the pol axis."""
-        return self.index_map["pol"]
-
-    @property
-    def kpar(self):
-        """Get the kpar axis."""
-        return self.index_map["kpar"]
+    def k_parallel(self):
+        """Get the k_parallel axis."""
+        return self.datasets["k_parallel"]
 
     @property
     def kperp(self):
         """Get the kprep axis."""
-        return self.index_map["kperp"]
+        return self.datasets["kperp"]
 
     @property
     def delay_cut(self):
@@ -2731,7 +2736,7 @@ class Powerspec2D(ContainerBase):
         return self.attrs["delay_cut"]
 
 
-class Powerspec1D(ContainerBase):
+class PowerSpectrum1D(CosmologyContainer):
     """Container for a 1D power spectrum."""
 
     _axes = ("pol", "k")
@@ -2743,13 +2748,13 @@ class Powerspec1D(ContainerBase):
             "initialise": True,
             "distributed": True,
         },
-        "ps1D_error": {
+        "samp_var": {
             "axes": ["pol", "k"],
             "dtype": np.float64,
             "initialise": True,
             "distributed": True,
         },
-        "ps1D_var": {
+        "var": {
             "axes": ["pol", "k"],
             "dtype": np.float64,
             "initialise": True,
@@ -2769,24 +2774,19 @@ class Powerspec1D(ContainerBase):
         return self.datasets["ps1D"]
 
     @property
-    def ps1D_error(self):
+    def samp_var(self):
         """Get the 1D power spectrum error dataset."""
-        return self.datasets["ps1D_error"]
+        return self.datasets["samp_var"]
 
     @property
-    def ps1D_var(self):
+    def var(self):
         """Get the 1D power spectrum var dataset."""
-        return self.datasets["ps1D_var"]
+        return self.datasets["var"]
 
     @property
     def k1D(self):
         """Get the k1D dataset."""
         return self.datasets["k1D"]
-
-    @property
-    def pol(self):
-        """Get the pol axis."""
-        return self.index_map["pol"]
 
 
 class WaveletSpectrum(FreqContainer, DelayContainer, DataWeightContainer):
