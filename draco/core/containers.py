@@ -2540,7 +2540,14 @@ class DelayTransform(DelayContainer):
             "compression_opts": COMPRESSION_OPTS,
             "chunks": (512, 2048, 32),
             "truncate": True,
-        }
+        },
+        "spectrum_mask": {
+            "axes": ["baseline", "sample"],
+            "dtype": bool,
+            "initialise": False,
+            "distributed": True,
+            "distributed_axis": "baseline",
+        },
     }
 
     def __init__(self, weight_boost=1.0, *args, **kwargs):
