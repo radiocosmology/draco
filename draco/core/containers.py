@@ -2720,31 +2720,31 @@ class PowerSpectrum3D(SpatialDelayCube):
 class PowerSpectrum2D(CosmologyContainer):
     """Container for a 2D cylindrically averaged  power spectrum."""
 
-    _axes = ("pol", "delay", "kperp")
+    _axes = ("pol", "delay", "uv_dist")
 
     _dataset_spec: ClassVar = {
         "spectrum": {
-            "axes": ["pol", "delay", "kperp"],
+            "axes": ["pol", "delay", "uv_dist"],
             "dtype": np.float64,
             "initialise": True,
             "distributed": True,
             "distributed_axis": "delay",
         },
         "weight": {
-            "axes": ["pol", "delay", "kperp"],
+            "axes": ["pol", "delay", "uv_dist"],
             "dtype": np.float64,
             "initialise": True,
             "distributed": True,
         },
         "neff": {
-            "axes": ["pol", "delay", "kperp"],
+            "axes": ["pol", "delay", "uv_dist"],
             "dtype": np.float64,
             "initialise": True,
             "distributed": True,
             "distributed_axis": "delay",
         },
         "mask": {
-            "axes": ["pol", "delay", "kperp"],
+            "axes": ["pol", "delay", "uv_dist"],
             "dtype": bool,
             "initialise": True,
             "distributed": True,
@@ -2756,7 +2756,7 @@ class PowerSpectrum2D(CosmologyContainer):
             "distributed": False,
         },
         "kperp": {
-            "axes": ["kperp"],
+            "axes": ["uv_dist"],
             "dtype": np.float64,
             "initialise": True,
             "distributed": False,

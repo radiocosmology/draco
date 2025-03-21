@@ -479,6 +479,7 @@ class CylindricalPowerSpectrum2D(task.SingleTask):
 
         # Take the center of the kperp bins
         kperp_cent = 0.5 * (kperp[1:] + kperp[:-1])
+        uv_dist = kperp_to_u(kperp_cent, redshift, ps.cosmology)
 
         # Dereference the required datasets
         ps_3D = ps.spectrum[:].local_array
@@ -497,7 +498,7 @@ class CylindricalPowerSpectrum2D(task.SingleTask):
         pspec_2D = containers.PowerSpectrum2D(
             pol=pol,
             delay=delay,
-            kperp=kperp_cent,
+            uv_dist=uv_dist,
             attrs_from=ps,
             cosmology=ps.cosmology,
         )
