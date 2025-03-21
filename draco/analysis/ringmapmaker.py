@@ -210,6 +210,10 @@ class BeamformNS(task.SingleTask):
         Include autocorrelations in the calculation.  Default is False.
     save_dirty_beam : bool
         If True, computes and stores the dirty beam.  Default is False.
+    precision : int
+        Floating point precision to use when applying the beamforming
+        matrix. Using 32-bit precision results in a 2-3x reduction in
+        runtime, at the cost of potential numerical errors. Default is 64.
     """
 
     npix = config.Property(proptype=int, default=512)
@@ -218,6 +222,7 @@ class BeamformNS(task.SingleTask):
     scaled = config.Property(proptype=bool, default=False)
     include_auto = config.Property(proptype=bool, default=False)
     save_dirty_beam = config.Property(proptype=bool, default=False)
+    precision = config.enum([32, 64], default=64)
 
     def process(self, gstream):
         """Computes the ringmap.
@@ -263,9 +268,7 @@ class BeamformNS(task.SingleTask):
         freq = gstream.freq
 
         # Get the largest baseline present across all nodes while accounting for masking
-        baselines_present = (
-            np.moveaxis(gsw.view(np.ndarray), -2, 0).reshape(len(nspos), -1) > 0
-        ).any(axis=1)
+        baselines_present = np.any(gsw > 0, axis=(0, 1, 2, 4))
         nsmax_local = (
             np.abs(nspos[baselines_present]).max()
             if baselines_present.sum() > 0
@@ -282,19 +285,28 @@ class BeamformNS(task.SingleTask):
         hv.attrs["beamform_ns_freqmin"] = freq.min()
         hv.attrs["beamform_ns_nsmax"] = nsmax
 
+        # choose the precision which will be used in `matmul`
+        complex_dtype = np.dtype(f"complex{2*self.precision:.0f}")
+        real_dtype = np.dtype(f"float{self.precision:.0f}")
+
+        # precompute a phase array
+        phase = (2.0 * np.pi * nspos[np.newaxis] * el[:, np.newaxis]).astype(
+            complex_dtype
+        )
+
         # Loop over local frequencies and fill ring map
         for lfi, fi in gstream.vis[:].enumerate(1):
             # Get the current frequency and wavelength
             fr = freq[fi]
-            wv = scipy.constants.c * 1e-6 / fr
+            iwv = (fr * 1e6) / scipy.constants.c
 
-            vpos = nspos / wv
+            vpos = nspos * iwv
 
             if self.scaled:
-                wvmin = scipy.constants.c * 1e-6 / freq.min()
-                vmax = nsmax / wvmin
+                iwvmin = (freq.min() * 1e6) / scipy.constants.c
+                vmax = nsmax * iwvmin
             else:
-                vmax = nsmax / wv
+                vmax = nsmax * iwv
 
             if self.weight == "inverse_variance":
                 gw = gsw[:, lfi].copy()
@@ -302,7 +314,9 @@ class BeamformNS(task.SingleTask):
                 gw = gsr.astype(np.float32)
             else:
                 x = 0.5 * (vpos / vmax + 1)
-                ns_weight = tools.window_generalised(x, window=self.weight)
+                ns_weight = tools.window_generalised(x, window=self.weight).astype(
+                    real_dtype
+                )
                 gw = (gsw[:, lfi] > 0) * ns_weight[
                     np.newaxis, np.newaxis, :, np.newaxis
                 ]
@@ -320,12 +334,11 @@ class BeamformNS(task.SingleTask):
 
             # Create array that will be used for the inverse
             # discrete Fourier transform in y-direction
-            phase = 2.0 * np.pi * nspos[np.newaxis, :] * el[:, np.newaxis] / wv
-            F = np.exp(-1.0j * phase)
+            F = np.exp(-1.0j * phase * iwv)
 
             # Calculate the hybrid visibilities
-            gv = gsv[:, lfi].view(np.ndarray)
-            hvv[:, lfi] = np.matmul(F, gw * gv)
+            gv = gsv[:, lfi]
+            np.matmul(F, gv * gw, out=hvv[:, lfi])
 
             # Calculate the dirty beam
             if self.save_dirty_beam:
