@@ -2082,7 +2082,7 @@ def null_delay_filter(
         raise ValueError(f"Filter type must be one of [high, low]. Got {type_}")
 
     # Construct the window function
-    x = (freq - freq.min()) / freq.ptp()
+    x = (freq - freq.min()) / np.ptp(freq)
     w = tools.window_generalised(x, window="nuttall")
 
     delay = np.linspace(-delay_cut, delay_cut, num_delay)
