@@ -2643,7 +2643,7 @@ class SpatialDelayCube(CosmologyContainer, DelayContainer):
             "initialise": True,
             "distributed": False,
         },
-        "k_parallel": {
+        "kpara": {
             "axes": ["delay"],
             "dtype": np.float64,
             "initialise": True,
@@ -2673,9 +2673,9 @@ class SpatialDelayCube(CosmologyContainer, DelayContainer):
         return self.datasets["ky"]
 
     @property
-    def k_parallel(self):
+    def kpara(self):
         """Get the k_parallel axis."""
-        return self.datasets["k_parallel"]
+        return self.datasets["kpara"]
 
     @property
     def uv_mask(self):
@@ -2697,7 +2697,7 @@ class PowerSpectrum3D(SpatialDelayCube):
     """Container for a 3D power spectrum."""
 
     _dataset_spec: ClassVar = {
-        "ps3D": {
+        "spectrum": {
             "axes": ["pol", "delay", "u", "v"],
             "dtype": np.float64,
             "initialise": True,
@@ -2707,9 +2707,9 @@ class PowerSpectrum3D(SpatialDelayCube):
     }
 
     @property
-    def ps3D(self):
+    def spectrum(self):
         """Get the 3D power spectrum."""
-        return self.datasets["ps3D"]
+        return self.datasets["spectrum"]
 
     @property
     def ps_norm(self):
@@ -2723,7 +2723,7 @@ class PowerSpectrum2D(CosmologyContainer):
     _axes = ("pol", "delay", "kperp")
 
     _dataset_spec: ClassVar = {
-        "ps2D": {
+        "spectrum": {
             "axes": ["pol", "delay", "kperp"],
             "dtype": np.float64,
             "initialise": True,
@@ -2736,13 +2736,20 @@ class PowerSpectrum2D(CosmologyContainer):
             "initialise": True,
             "distributed": True,
         },
+        "neff": {
+            "axes": ["pol", "delay", "kperp"],
+            "dtype": np.float64,
+            "initialise": True,
+            "distributed": True,
+            "distributed_axis": "delay",
+        },
         "mask": {
             "axes": ["pol", "delay", "kperp"],
             "dtype": bool,
             "initialise": True,
             "distributed": True,
         },
-        "k_parallel": {
+        "kpara": {
             "axes": ["delay"],
             "dtype": np.float64,
             "initialise": True,
@@ -2757,9 +2764,9 @@ class PowerSpectrum2D(CosmologyContainer):
     }
 
     @property
-    def ps2D(self):
+    def spectrum(self):
         """Get the 2D power spectrum dataset."""
-        return self.datasets["ps2D"]
+        return self.datasets["spectrum"]
 
     @property
     def weight(self):
@@ -2767,14 +2774,19 @@ class PowerSpectrum2D(CosmologyContainer):
         return self.datasets["weight"]
 
     @property
+    def neff(self):
+        """Get the effective number of modes dataset."""
+        return self.datasets["neff"]
+
+    @property
     def mask(self):
         """Get the 2D signal window dataset."""
         return self.datasets["mask"]
 
     @property
-    def k_parallel(self):
+    def kpara(self):
         """Get the k_parallel axis."""
-        return self.datasets["k_parallel"]
+        return self.datasets["kpara"]
 
     @property
     def kperp(self):
@@ -2793,7 +2805,7 @@ class PowerSpectrum1D(CosmologyContainer):
     _axes = ("pol", "k")
 
     _dataset_spec: ClassVar = {
-        "ps1D": {
+        "spectrum": {
             "axes": ["pol", "k"],
             "dtype": np.float64,
             "initialise": True,
@@ -2811,6 +2823,12 @@ class PowerSpectrum1D(CosmologyContainer):
             "initialise": True,
             "distributed": True,
         },
+        "neff": {
+            "axes": ["pol", "k"],
+            "dtype": np.float64,
+            "initialise": True,
+            "distributed": True,
+        },
         "k1D": {
             "axes": ["pol", "k"],
             "dtype": np.float64,
@@ -2820,9 +2838,9 @@ class PowerSpectrum1D(CosmologyContainer):
     }
 
     @property
-    def ps1D(self):
+    def spectrum(self):
         """Get the 1D power spectrum dataset."""
-        return self.datasets["ps1D"]
+        return self.datasets["spectrum"]
 
     @property
     def samp_var(self):
@@ -2833,6 +2851,11 @@ class PowerSpectrum1D(CosmologyContainer):
     def var(self):
         """Get the 1D power spectrum var dataset."""
         return self.datasets["var"]
+
+    @property
+    def neff(self):
+        """Get the 1D power spectrum var dataset."""
+        return self.datasets["neff"]
 
     @property
     def k1D(self):

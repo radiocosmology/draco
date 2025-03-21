@@ -27,9 +27,8 @@ class TransformJyPerBeamToKelvin(task.SingleTask):
 
     Attributes
     ----------
-    convert_Jy_per_beam_to_K : bool
-        If True, apply a Jansky per beam to Kelvin conversion factor. If False apply a Kelvin to
-        Jansky per beam conversion.
+    in_place : bool
+        If True, modify in place and return the input container.
     ncyl : int
       number of cylinders to include in the maximum baseline estimate
       Note that, this should be equal to the numbers used to make the actual map.
@@ -37,6 +36,7 @@ class TransformJyPerBeamToKelvin(task.SingleTask):
       ncyl = 0 means that map is made with intracylinder baselines only.
     """
 
+    in_place = config.Property(proptype=bool, default=True)
     ncyl = config.Property(proptype=int, default=3)
 
     def setup(self, telescope):
@@ -82,18 +82,18 @@ class TransformJyPerBeamToKelvin(task.SingleTask):
         factor = jy_per_beam_to_kelvin(local_freq, self.bl_max)
 
         # Genearate an output container
-        out_map = containers.empty_like(rm)
-        out_map.map[:] = 0.0
-        out_map.weight[:] = 0.0
+        if self.in_place:
+            out_map = rm
+        else:
+            out_map = rm.copy()
 
         # store the map after applying the conversion factor
-        out_map.map[:].local_array[:] = (
-            rm.map[:].local_array
-            * factor[np.newaxis, np.newaxis, :, np.newaxis, np.newaxis]
-        )
-        out_map.weight[:] = (
-            rm.weight[:].local_array
-            * factor[np.newaxis, :, np.newaxis, np.newaxis] ** 2
+        out_map.map[:].local_array[:] *= factor[
+            np.newaxis, np.newaxis, :, np.newaxis, np.newaxis
+        ]
+
+        out_map.weight[:] *= (
+            tools.invert_no_zero(factor[np.newaxis, :, np.newaxis, np.newaxis]) ** 2
         )
 
         return out_map
@@ -149,8 +149,8 @@ class SpatialTransformDelayMap(task.SingleTask):
         ],
         default="tukey-0.5",
     )
-    ew_min = config.Property(proptype=float, default=9.0)
-    ew_max = config.Property(proptype=float, default=50.0)
+    ew_min = config.Property(proptype=float, default=14.0)
+    ew_max = config.Property(proptype=float, default=76.0)
     ns_bl = config.Property(proptype=float, default=60.0)
 
     def setup(self, telescope):
@@ -208,7 +208,7 @@ class SpatialTransformDelayMap(task.SingleTask):
         redshift = (
             units.nu21 / nu_c - 1
         )  # redshift at the center of the band, 21cm freq in MHz.
-        kx, ky, u, v, k_parallel = get_fourier_modes(
+        kx, ky, u, v, kpara = get_fourier_modes(
             ra, dec, delay * 1e-6, redshift, self.cosmology
         )
 
@@ -237,7 +237,7 @@ class SpatialTransformDelayMap(task.SingleTask):
         vis_cube.kx[:] = kx
         vis_cube.ky[:] = ky
         vis_cube.uv_mask[:] = uv_mask
-        vis_cube.k_parallel[:] = k_parallel
+        vis_cube.kpara[:] = kpara
 
         # Save the central freq of the band and the
         # corresponding redshift and the cube volume in the attrs
@@ -343,7 +343,7 @@ class CrossPowerSpectrum3D(task.SingleTask):
         # Initialise the 3D power spectrum container
         ps_cube = containers.PowerSpectrum3D(copy_from=vis_1, cosmology=vis_1.cosmology)
         ps_cube.redistribute("delay")
-        ps_cube.ps3D[:] = 0.0
+        ps_cube.spectrum[:] = 0.0
 
         # Save the power spectrum normalization factor in the attrs
         ps_cube.attrs["ps_norm"] = ps_norm
@@ -364,11 +364,11 @@ class CrossPowerSpectrum3D(task.SingleTask):
             self.log.debug(f"Estimating power spectrum for pol: {psr}")
             pol_id = list(pol).index(psr)
 
-            for lde, de in ps_cube.ps3D[:].enumerate(axis=1):
+            for lde, de in ps_cube.spectrum[:].enumerate(axis=1):
                 slc = (pol_id, lde, slice(None), slice(None))
                 cube_1 = np.ascontiguousarray(vis_1[slc])
                 cube_2 = np.ascontiguousarray(vis_2[slc])
-                ps_cube.ps3D[pp, de] = get_3D_ps(
+                ps_cube.spectrum[pp, de] = get_3D_ps(
                     cube_1, cube_2, vol_norm_factor=ps_norm
                 )
 
@@ -403,9 +403,9 @@ class CylindricalPowerSpectrum2D(task.SingleTask):
     Attributes
     ----------
     bl_min : float
-       The minimum baseline length in meter to include in power spectrum binning. Default: 14.0m
+       The minimum baseline length in meter to include in power spectrum binning. Default: 20.0m
     bl_max : float
-       The minimum baseline length in meter to include in power spectrum binning. Default: 60.0m
+       The minimum baseline length in meter to include in power spectrum binning. Default: 66.0m
     Nbins_2D : int
        The number of bins in 2D cylindrical binning. Default: 35
     logbins_2D : bool, optional
@@ -415,8 +415,8 @@ class CylindricalPowerSpectrum2D(task.SingleTask):
         This is same for both polarization. Default: 300.0e-9
     """
 
-    bl_min = config.Property(proptype=float, default=14.0)
-    bl_max = config.Property(proptype=float, default=60.0)
+    bl_min = config.Property(proptype=float, default=20.0)
+    bl_max = config.Property(proptype=float, default=66.0)
     Nbins_2D = config.Property(proptype=int, default=35)
     logbins_2D = config.Property(proptype=bool, default=False)
     delay_cut = config.Property(proptype=float, default=300.0e-9)
@@ -427,10 +427,11 @@ class CylindricalPowerSpectrum2D(task.SingleTask):
         Parameters
         ----------
         weight : `containers.PowerSpectrum3D`
-            weight power spectrum estimated from many
+            Weight power spectrum estimated from many
             noise simulation to be used as inverse variance weight.
-            Note this is variance, we need to take inverse of this
-            to have inverse variance weight.
+            Note this is sigma, estimated by taking 1sigma of many noise powerspectrum.
+            We need to take inverse of this
+            to get inverse variance weight.
         """
         self.weight = weight
 
@@ -457,7 +458,7 @@ class CylindricalPowerSpectrum2D(task.SingleTask):
         # Extract required data axes
         pol = ps.index_map["pol"]
         delay = ps.delay[:]
-        kpar = ps.k_parallel[:]
+        kpara = ps.kpara[:]
         u = ps.index_map["u"]
         v = ps.index_map["v"]
         uv_mask = ps.uv_mask[:]
@@ -480,15 +481,17 @@ class CylindricalPowerSpectrum2D(task.SingleTask):
         kperp_cent = 0.5 * (kperp[1:] + kperp[:-1])
 
         # Dereference the required datasets
-        ps_3D = ps.ps3D[:].local_array
+        ps_3D = ps.spectrum[:].local_array
 
         if self.weight is None:
             weight = np.ones_like(ps_3D)
         else:
-            # input weight is variance and we are taking the
-            # inverse to have a inverse variance weight
+            # input weight is sigma and we are taking the
+            # inverse of the square of it to have a inverse
+            # variance weight.
+
             self.weight.redistribute("delay")
-            weight = tools.invert_no_zero(self.weight.ps3D[:].local_array)
+            weight = tools.invert_no_zero(self.weight.spectrum[:].local_array[:] ** 2)
 
         # Define the 2D power spectrum container
         pspec_2D = containers.PowerSpectrum2D(
@@ -499,8 +502,8 @@ class CylindricalPowerSpectrum2D(task.SingleTask):
             cosmology=ps.cosmology,
         )
         pspec_2D.redistribute("delay")
-        pspec_2D.ps2D[:] = 0.0
-        pspec_2D.k_parallel[:] = kpar
+        pspec_2D.spectrum[:] = 0.0
+        pspec_2D.kpara[:] = kpara
         pspec_2D.kperp[:] = kperp_cent
 
         # save the delay cut value in attrs
@@ -511,7 +514,7 @@ class CylindricalPowerSpectrum2D(task.SingleTask):
             self.log.debug(f"Estimating 2D power spectrum for pol: {psr}")
 
             # loop over k_parallel axis
-            for lde, de in pspec_2D.ps2D[:].enumerate(axis=1):
+            for lde, de in pspec_2D.spectrum[:].enumerate(axis=1):
                 slc = (pp, lde, slice(None), slice(None))
                 data = np.ascontiguousarray(ps_3D[slc])
                 W = np.ascontiguousarray(weight[slc])
@@ -535,10 +538,13 @@ class CylindricalPowerSpectrum2D(task.SingleTask):
                 )
 
                 # Cylindrical 2D power spectrum
-                pspec_2D.ps2D[pp, de], pspec_2D.weight[pp, de] = get_2d_ps(
+                (
+                    pspec_2D.spectrum[pp, de],
+                    pspec_2D.weight[pp, de],
+                    pspec_2D.neff[pp, de],
+                ) = get_2d_ps(
                     ps3D_flat[mask_flat],
-                    weight=weight_flat[mask_flat]
-                    ** 2,  # square the weight for inverse variance weighted avg of power spectrum
+                    weight=weight_flat[mask_flat],
                     kperp_bins=kperp,
                     uu=uu[mask_flat],
                     vv=vv[mask_flat],
@@ -555,7 +561,7 @@ class CylindricalPowerSpectrum2D(task.SingleTask):
 
         if self.delay_cut > 0.0:
             kpar_lim = delays_to_kpara(self.delay_cut, redshift)
-            ibins = np.where((kpar > -kpar_lim) & (kpar < kpar_lim))
+            ibins = np.where((kpara > -kpar_lim) & (kpara < kpar_lim))
             for ii, jj in enumerate(pol):
                 pspec_2D.mask[ii, ibins, :] = False
 
@@ -571,13 +577,13 @@ class SphericalPowerSpectrum2Dto1D(task.SingleTask):
     Attributes
     ----------
     Nbins_3D : int
-       The number of bins in 3D spherical binning. Default: 9
+       The number of bins in 3D spherical binning. Default: 8
     logbins_3D : bool, optional
         If True, use logarithmic binning in cylindrical averaging. Default: False
 
     """
 
-    Nbins_3D = config.Property(proptype=int, default=9)
+    Nbins_3D = config.Property(proptype=int, default=8)
     logbins_3D = config.Property(proptype=bool, default=True)
 
     def process(self, ps2D):
@@ -601,11 +607,11 @@ class SphericalPowerSpectrum2Dto1D(task.SingleTask):
 
         # Extract required data axes
         pol = ps2D.index_map["pol"]
-        kpar = ps2D.k_parallel[:]
+        kpara = ps2D.kpara[:]
         kperp = ps2D.kperp[:]
 
         # Dereference the required datasets
-        ps_2D = ps2D.ps2D[:].local_array
+        ps_2D = ps2D.spectrum[:].local_array
         mask_2D = ps2D.mask[:].local_array
         weight_2D = ps2D.weight[:].local_array
 
@@ -614,21 +620,22 @@ class SphericalPowerSpectrum2Dto1D(task.SingleTask):
             pol=pol, k=self.Nbins_3D - 1, attrs_from=ps2D, cosmology=ps2D.cosmology
         )
         pspec_1D.redistribute("pol")
-        pspec_1D.ps1D[:] = 0.0
+        pspec_1D.spectrum[:] = 0.0
 
         # loop over polarization
-        for pp, psr in pspec_1D.ps1D[:].enumerate(axis=0):
+        for pp, psr in pspec_1D.spectrum[:].enumerate(axis=0):
             self.log.debug(f"Estimating 1D power spectrum for pol: {pol[psr]}")
 
             (
                 pspec_1D.k1D[psr],
-                pspec_1D.ps1D[psr],
+                pspec_1D.spectrum[psr],
                 pspec_1D.samp_var[psr],
                 pspec_1D.var[psr],
+                pspec_1D.neff[psr],
             ) = get_1d_ps(
                 ps_2D[pp],
                 kperp,
-                kpar,
+                kpara,
                 signal_window=mask_2D[pp],
                 Nbins_3D=self.Nbins_3D,
                 weight_cube=weight_2D[pp],
@@ -650,11 +657,11 @@ class SphericalPowerSpectrum3Dto1D(task.SingleTask):
     Attributes
     ----------
     bl_min : float
-       The minimum baseline length in meter to include in power spectrum binning. Default: 14.0
+       The minimum baseline length in meter to include in power spectrum binning. Default: 20.0
     bl_max : float
-       The minimum baseline length in meter to include in power spectrum binning. Default: 60.0
+       The minimum baseline length in meter to include in power spectrum binning. Default: 66.0
     Nbins_3D : int
-       The number of bins in 3D spherical binning. Default: 9
+       The number of bins in 3D spherical binning. Default: 8
     logbins_3D : bool, optional
         If True, use logarithmic binning in cylindrical averaging. Default: False
     delay_cut : float
@@ -662,8 +669,8 @@ class SphericalPowerSpectrum3Dto1D(task.SingleTask):
         This is same for both polarization. Default: 300.0e-9
     """
 
-    bl_min = config.Property(proptype=float, default=14.0)
-    bl_max = config.Property(proptype=float, default=60.0)
+    bl_min = config.Property(proptype=float, default=20.0)
+    bl_max = config.Property(proptype=float, default=66.0)
     Nbins_3D = config.Property(proptype=int, default=9)
     logbins_3D = config.Property(proptype=bool, default=True)
     delay_cut = config.Property(proptype=float, default=300.0e-9)
@@ -702,7 +709,7 @@ class SphericalPowerSpectrum3Dto1D(task.SingleTask):
 
         # Extract required data axes
         pol = ps.index_map["pol"]
-        kpar = ps.k_parallel[:]
+        kpara = ps.kpara[:]
         u = ps.index_map["u"]
         v = ps.index_map["v"]
         uv_mask = ps.uv_mask[:]
@@ -715,32 +722,34 @@ class SphericalPowerSpectrum3Dto1D(task.SingleTask):
         u_max_lambda = self.bl_max / wl
 
         # Dereference the required datasets
-        ps_3D = ps.ps3D[:].local_array
+        ps_3D = ps.spectrum[:].local_array
 
         if self.weight is None:
             weight = np.ones_like(ps_3D)
         else:
-            # input weight is variance and we are taking the
-            # inverse to have a inverse variance weight
+            # input weight is sigma and we are taking the
+            # inverse of the square of it to have a
+            # inverse variance weight.
+
             self.weight.redistribute("pol")
-            weight = tools.invert_no_zero(self.weight.ps3D[:].local_array)
+            weight = tools.invert_no_zero(self.weight.spectrum[:].local_array[:] ** 2)
 
         # Define the 1D power spectrum container
         pspec_1D = containers.PowerSpectrum1D(
             k=self.Nbins_3D - 1, axes_from=ps, attrs_from=ps, cosmology=ps.cosmology
         )
         pspec_1D.redistribute("pol")
-        pspec_1D.ps1D[:] = 0.0
+        pspec_1D.spectrum[:] = 0.0
 
         # loop over polarization
-        for pp, psr in pspec_1D.ps1D[:].enumerate(axis=0):
+        for pp, psr in pspec_1D.spectrum[:].enumerate(axis=0):
             self.log.debug(f"Estimating 1D power spectrum for pol: {pol[psr]}")
 
             ps3D_flat = []
             weight_flat = []
 
             # loop over k_parallel axis
-            for lde, de in enumerate(kpar):
+            for lde, de in enumerate(kpara):
                 slc = (pp, lde, slice(None), slice(None))
                 data = np.ascontiguousarray(ps_3D[slc])
                 W = np.ascontiguousarray(weight[slc])
@@ -768,8 +777,8 @@ class SphericalPowerSpectrum3Dto1D(task.SingleTask):
             vv_flat = vv_flat[m_flat]
 
             # Reshape the array of shape [ndelay,nvis]
-            ps3D_flat = np.array(ps3D_flat).reshape(kpar.size, -1)
-            weight_flat = np.array(weight_flat).reshape(kpar.size, -1)
+            ps3D_flat = np.array(ps3D_flat).reshape(kpara.size, -1)
+            weight_flat = np.array(weight_flat).reshape(kpara.size, -1)
 
             # convert to Fourier modes and estimate kperp
             ku = u_to_kperp(
@@ -785,23 +794,23 @@ class SphericalPowerSpectrum3Dto1D(task.SingleTask):
 
             if self.delay_cut > 0.0:
                 kpar_lim = delays_to_kpara(self.delay_cut, redshift, ps.cosmology)
-                ibins = np.where((kpar > -kpar_lim) & (kpar < kpar_lim))
+                ibins = np.where((kpara > -kpar_lim) & (kpara < kpar_lim))
                 signal_mask[ibins, :] = False
 
             # Estimate the 1D power spectrum
             (
                 pspec_1D.k1D[pp],
-                pspec_1D.ps1D[pp],
+                pspec_1D.spectrum[pp],
                 pspec_1D.samp_var[pp],
                 pspec_1D.var[pp],
+                pspec_1D.neff[pp],
             ) = get_1d_ps(
                 ps3D_flat,
                 kperp,
-                kpar,
+                kpara,
                 signal_window=signal_mask,
                 Nbins_3D=self.Nbins_3D,
-                weight_cube=weight_flat
-                ** 2,  # square the weight for inverse variance weighted avg of power spectrum
+                weight_cube=weight_flat,
                 logbins_3D=self.logbins_3D,
             )
         return pspec_1D
@@ -896,7 +905,7 @@ def delays_to_kpara(delay, z, cosmo=None):
 
     Returns
     -------
-    kparr : np.array
+    kpara : np.array
        The spatial fluctuation scale parallel to the line of sight probed by
        the input delay (eta). Unit: [h/Mpc]
     """
@@ -920,7 +929,7 @@ def kpara_to_delay(kpara, z, cosmo=None):
     -------
     delay : np.array
       The inteferometric delay in unit second
-      which probes the spatial scale given by kparr.
+      which probes the spatial scale given by kpara.
     """
     if cosmo is None:
         cosmo = get_cosmo()
@@ -1062,7 +1071,7 @@ def get_fourier_modes(ra, dec, delays, redshift, cosmo=None):
       gridded u-coordinates
     v : np.array[nel]
       gridded v-coordinates
-    k_parallel : np.array[ndelay]
+    kpara : np.array[ndelay]
       The Fourier modes conjugate to frequency axis, unit [h/Mpc].
     """
     if cosmo is None:
@@ -1078,7 +1087,7 @@ def get_fourier_modes(ra, dec, delays, redshift, cosmo=None):
     DMz = dRperp_dtheta(redshift, cosmo=cosmo)  # in [h^-1 Mpc]
 
     # Convert the RA and DEC resolution to Mpc unit
-    d_RA_Mpc = DMz * res_ra_radian
+    d_RA_Mpc = DMz * res_ra_radian * np.mean(np.cos(np.deg2rad(dec)))
     d_DEC_Mpc = DMz * res_dec_radian
 
     # Estimate the spatial Fourier modes
@@ -1090,9 +1099,9 @@ def get_fourier_modes(ra, dec, delays, redshift, cosmo=None):
     v = kperp_to_u(k_y, redshift)
 
     # Estimate the line-of-sight Fourier modes
-    k_para = delays_to_kpara(delays, redshift)
+    kpara = delays_to_kpara(delays, redshift)
 
-    return k_x, k_y, u, v, k_para
+    return k_x, k_y, u, v, kpara
 
 
 def image_to_uv(data, ra, dec, window="tukey-0.5"):
@@ -1174,7 +1183,7 @@ def vol_normalization(ra, dec, freq, redshift, cosmo=None):
     DMz = dRperp_dtheta(redshift, cosmo=cosmo)  # in [h^-1 Mpc]
 
     # Convert the RA and DEC resolution to Mpc unit
-    dx_Mpc = DMz * res_ra_radian
+    dx_Mpc = DMz * res_ra_radian * np.mean(np.cos(np.deg2rad(dec)))
     dy_Mpc = DMz * res_dec_radian
     Lx = nra * dx_Mpc  # survey length along RA [h^-1 Mpc]
     Ly = ndec * dy_Mpc  # survey length along DEC [h^-1 Mpc]
@@ -1204,7 +1213,7 @@ def nanaverage(d, w, axis=None):
     d_avg : np.ndarray
      The weighted average.
     """
-    return np.nansum(d * w, axis=axis) / np.nansum(w, axis=axis)
+    return np.sum(d * w, axis=axis, where=~np.isnan(d)) / np.sum(w, axis=axis)
 
 
 def spatial_mask(k_x, k_y, ew_min, ew_max, ns_bl, wl_min, wl_max, redshift, cosmo=None):
@@ -1341,9 +1350,9 @@ def reshape_data_cube(data_cube, u, v, bl_min, bl_max):
     bl_idx = (g_ru >= bl_min) & (g_ru <= bl_max)
     uu = g_uu[bl_idx]
     vv = g_vv[bl_idx]
-    ft_cube = data_cube[bl_idx].flatten()
+    ft_cube = data_cube[bl_idx]
 
-    return ft_cube, uu.flatten(), vv.flatten()
+    return ft_cube, uu, vv
 
 
 def get_2d_ps(ps_cube, weight, kperp_bins, uu, vv, redshift, cosmo=None):
@@ -1372,10 +1381,10 @@ def get_2d_ps(ps_cube, weight, kperp_bins, uu, vv, redshift, cosmo=None):
     -------
     ps_2D : np.ndarray[kperp]
       The  binned  power along k_perp (cylindrical binning).
-
     ps_2D_w : np.ndarray[kperp]
       The binned  weight along k_perp (cylindrical binning).
-
+    n_eff : np.ndarray[kperp]
+       The effective number of modes present in each bin.
     """
     if cosmo is None:
         cosmo = get_cosmo()
@@ -1394,23 +1403,25 @@ def get_2d_ps(ps_cube, weight, kperp_bins, uu, vv, redshift, cosmo=None):
     # Define empty list to store the binned 2D PS
     ps_2D = []
     ps_2D_w = []
+    n_eff = []
 
     # Now bin in 2D ##
     with np.errstate(divide="ignore", invalid="ignore"):
         for i in np.arange(len(kperp_bins) - 1) + 1:
-            p = np.nansum(w[bin_indx == i] * ps_cube[bin_indx == i]) / np.sum(
+            p = np.sum(w[bin_indx == i] * ps_cube[bin_indx == i]) / np.sum(
                 w[bin_indx == i]
             )
             ps_2D.append(p)
             ps_2D_w.append(np.sum(w[bin_indx == i]))
+            n_eff.append(np.sum(w[bin_indx == i]) ** 2 / np.sum(w[bin_indx == i] ** 2))
 
-    return np.array(ps_2D), np.array(ps_2D_w)
+    return np.array(ps_2D), np.array(ps_2D_w), np.array(n_eff)
 
 
 def get_1d_ps(
     ps_2D,
-    k_perp,
-    k_para,
+    kperp,
+    kpara,
     weight_cube,
     signal_window=None,
     Nbins_3D=10,
@@ -1420,15 +1431,15 @@ def get_1d_ps(
 
     Parameters
     ----------
-    ps_2D :  np.ndarray[kpar,kperp]
+    ps_2D :  np.ndarray[kpara,kperp]
      The cylindrically averaged 2D power spectrum.
-    k_perp : np.array[kperp]
+    kperp : np.array[kperp]
      The k_perp array after cylindrically binning.
-    k_para : np.array[kpar]
+    kpara : np.array[kpara]
      The k_parallel array.
-    weight_cube :  np.ndarray[kpar,kperp]
+    weight_cube :  np.ndarray[kpara,kperp]
       The weight array to use during spherical averaging.
-    signal_window :  np.ndarray[kpar,kperp]
+    signal_window :  np.ndarray[kpara,kperp]
       The signal window mask.
     Nbins_3D : int
       The number of 3D bins
@@ -1446,9 +1457,11 @@ def get_1d_ps(
     variance: np.array[Nbins_3d]
       The variance in the power spectrum
       estimated from thermal noise.
+    n_eff: np.array[Nbins_3d]
+      Effective number of modes in each bin.
     """
     # Estimate the 1D k-modes
-    kpp, kll = np.meshgrid(k_perp, k_para)
+    kpp, kll = np.meshgrid(kperp, kpara)
     k = np.sqrt(kpp**2 + kll**2)
 
     # apply the window mask
@@ -1481,11 +1494,13 @@ def get_1d_ps(
     ps_3D_err = []
     k3D = []
     variance = []
+    n_eff = []
+
     # Average the modes falls in each bin
     with np.errstate(divide="ignore", invalid="ignore"):
         for i in np.arange(len(kbins) - 1) + 1:
             w_b = w1D[indices == i]
-            p = np.nansum(w_b * p1D[indices == i]) / np.sum(w_b)
+            p = np.sum(w_b * p1D[indices == i]) / np.sum(w_b)
             p_err = np.sqrt(np.sum(w_b**2 * p**2) / np.sum(w_b) ** 2)
             k_mean_b = nanaverage(k1D[indices == i], w_b)
             k3D.append(k_mean_b)
@@ -1494,11 +1509,13 @@ def get_1d_ps(
             ps_3D.append(p)
             ps_3D_err.append(p_err)
             variance.append(var)
+            n_eff.append(np.sum(w_b) ** 2 / np.sum(w_b**2))
 
     # convert the list to array
     k3D = np.array(k3D)
     ps_3D = np.array(ps_3D)
     ps_3D_err = np.array(ps_3D_err)
     variance = np.array(variance)
+    n_eff = np.array(n_eff)
 
-    return k3D, ps_3D, ps_3D_err, variance
+    return k3D, ps_3D, ps_3D_err, variance, n_eff
