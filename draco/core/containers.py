@@ -2618,19 +2618,12 @@ class CosmologyContainer(ContainerBase):
         return self._cosmology_instance
 
 
-class SpatialDelayCube(CosmologyContainer, DelayContainer):
-    """Container for a data in (pol,delays,u,v) domain."""
+class Fourier3DContainer(CosmologyContainer, DelayContainer):
+    """A base container with Fourier axes, (pol,delay,u,v)."""
 
     _axes = ("pol", "u", "v")
 
     _dataset_spec: ClassVar = {
-        "data": {
-            "axes": ["pol", "delay", "u", "v"],
-            "dtype": np.complex128,
-            "initialise": True,
-            "distributed": True,
-            "distributed_axis": "delay",
-        },
         "kx": {
             "axes": ["u"],
             "dtype": np.float64,
@@ -2656,11 +2649,6 @@ class SpatialDelayCube(CosmologyContainer, DelayContainer):
             "distributed": False,
         },
     }
-
-    @property
-    def data(self):
-        """Get the spatial data cube."""
-        return self.datasets["data"]
 
     @property
     def kx(self):
@@ -2693,7 +2681,26 @@ class SpatialDelayCube(CosmologyContainer, DelayContainer):
         return self.attrs["freq_center"]
 
 
-class PowerSpectrum3D(SpatialDelayCube):
+class SpatialDelayCube(Fourier3DContainer):
+    """Container for a data in (pol,delays,u,v) domain."""
+
+    _dataset_spec: ClassVar = {
+        "data": {
+            "axes": ["pol", "delay", "u", "v"],
+            "dtype": np.complex128,
+            "initialise": True,
+            "distributed": True,
+            "distributed_axis": "delay",
+        },
+    }
+
+    @property
+    def data(self):
+        """Get the spatial data cube."""
+        return self.datasets["data"]
+
+
+class PowerSpectrum3D(Fourier3DContainer):
     """Container for a 3D power spectrum."""
 
     _dataset_spec: ClassVar = {
