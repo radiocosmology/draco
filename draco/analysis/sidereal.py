@@ -710,12 +710,6 @@ class RebinGradientCorrection(task.SingleTask):
             if not np.any(weight[fi]):
                 continue
 
-            # We need to track the full time mask applied to each
-            # baseline. Because the `effective_ra` dataset is baseline
-            # dependent, the gradient could end up producing a slightly
-            # baseline dependent mask
-            fmask = np.zeros(weight.shape[-1], dtype=bool)
-
             for vi in range(vis.shape[1]):
                 # Skip if entire baseline is masked
                 if not np.any(weight[fi, vi]):
@@ -724,18 +718,19 @@ class RebinGradientCorrection(task.SingleTask):
                 # Depends on whether the effective ra has baseline dependence
                 rra = ref_ra[fi, vi] if ref_ra.ndim > 1 else ref_ra
                 # Calculate the vis gradient at the reference RA points
-                mask = ref_weight[fi, vi] == 0.0
-                grad, mask = regrid.grad_1d(ref_vis[fi, vi], rra, mask, period=360.0)
+                ref_mask = ref_weight[fi, vi] == 0.0
+                grad, ref_mask = regrid.grad_1d(
+                    ref_vis[fi, vi], rra, ref_mask, period=360.0
+                )
 
                 # Apply the correction to estimate the sample value at the
-                # RA bin centre
-                vis[fi, vi] -= grad * (era[fi, vi] - sstream.ra)
+                # RA bin centre. Ensure that values that are masked in the
+                # original dataset do not get shifted if the reference
+                # dataset has a different mask
+                sel = weight[fi, vi] > 0.0
+                vis[fi, vi] -= grad * sel * (era[fi, vi] - sstream.ra)
                 # Keep track of the time mask being applied
-                fmask |= mask
-
-            # Zero any weights that could not be corrected for at least
-            # one baseline
-            weight[fi] *= (~fmask).astype(weight.dtype)[np.newaxis]
+                weight[fi, vi] *= (~ref_mask).astype(weight.dtype)
 
         # Delete the effective ra dataset since it is not needed anymore
         del sstream["effective_ra"]
