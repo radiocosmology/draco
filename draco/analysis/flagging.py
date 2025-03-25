@@ -1078,14 +1078,13 @@ class RFIStokesIMask(transform.ReduceVar):
         fsel = stream.vis[:].local_bounds
         freq = stream.freq[fsel]
 
-        # Get stokes I and redistribute over frequency. Axes are rearranged
-        # in order (baseline, freq, time)
+        # Get stokes I
         vis, weight, baselines = transform.stokes_I(stream, self.telescope)
-        vis = vis.redistribute(1).local_array
-        weight = weight.redistribute(1).local_array
+        vis = vis.local_array
+        weight = weight.local_array
 
-        # Set up the initial mask
-        mask = np.all(weight == 0, axis=0)
+        # Set up the initial mask, reducing over baselines
+        mask = np.all(weight == 0, axis=1)
         mask |= self._static_rfi_mask_hook(freq, times[0])[:, np.newaxis]
         self.log.debug(f"{100.0 * mask.mean():.2f}% of data initially flagged.")
 
@@ -1134,10 +1133,10 @@ class RFIStokesIMask(transform.ReduceVar):
         # Choose baselines which should not contain much sky structure
         bl_sel = baselines[:, 0] > 2.0 * self.telescope.u_width
         # Set up an array to store mean power from non-sky sources
-        power = np.zeros_like(weight[0], dtype=np.float64)
+        power = np.zeros_like(weight[:, 0], dtype=np.float64)
 
         # Iterate over frequencies
-        for fsel in range(vis.shape[1]):
+        for fsel in range(vis.shape[0]):
             if np.all(mask[fsel]):
                 # Frequency is already masked
                 continue
@@ -1146,7 +1145,7 @@ class RFIStokesIMask(transform.ReduceVar):
             # similar to an impulse function in time, so its fourier transform
             # should extend to high m
             v_hpf = self.apply_filter(
-                vis[:, fsel], weight[:, fsel], ra, hpf_cut[fsel], type_="high"
+                vis[fsel], weight[fsel], ra, hpf_cut[fsel], type_="high"
             )
 
             # MAD filter flags scattered emission after beamforming
@@ -1165,7 +1164,7 @@ class RFIStokesIMask(transform.ReduceVar):
             # Apply a low pass filter
             lp_win = (mean_flagged < 0.5)[np.newaxis]
             v_lpf = self.apply_filter(
-                vis[:, fsel], weight[:, fsel] * lp_win, ra, lpf_cut[fsel], type_="low"
+                vis[fsel], weight[fsel] * lp_win, ra, lpf_cut[fsel], type_="low"
             )
 
             # Take the average over selected baselines
