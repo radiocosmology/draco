@@ -1177,9 +1177,9 @@ def stokes_I(sstream, tel):
 
     Returns
     -------
-    vis_I : mpiarray.MPIArray[nbase, nfreq, ntime]
+    vis_I : mpiarray.MPIArray[nfreq, nbase, ntime]
         The instrumental Stokes I visibilities, distributed over baselines.
-    vis_weight : mpiarray.MPIArray[nbase, nfreq, ntime]
+    vis_weight : mpiarray.MPIArray[nfreq, nbase, ntime]
         The weights for each visibility, distributed over baselines.
     ubase : np.ndarray[nbase, 2]
         Baseline vectors corresponding to output.
@@ -1211,8 +1211,8 @@ def stokes_I(sstream, tel):
     is_copol = pols[:, 0] == pols[:, 1]
 
     # Iterate over products to construct the Stokes I vis
-    ssv = sstream.vis[:]
-    ssw = sstream.weight[:]
+    ssv = sstream.vis[:].local_array
+    ssw = sstream.weight[:].local_array
 
     for ii, ui in enumerate(uinv):
         # Skip if not a co-pol baseline
