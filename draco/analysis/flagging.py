@@ -16,7 +16,7 @@ from cora.util import units
 from scipy.signal import convolve, firwin, oaconvolve
 from skimage.filters import apply_hysteresis_threshold
 
-from ..analysis import delay, transform
+from ..analysis import transform
 from ..core import containers, io, task
 from ..util import rfi, tools
 
@@ -1080,7 +1080,7 @@ class RFIStokesIMask(transform.ReduceVar):
 
         # Get stokes I and redistribute over frequency. Axes are rearranged
         # in order (baseline, freq, time)
-        vis, weight, baselines = delay.stokes_I(stream, self.telescope)
+        vis, weight, baselines = transform.stokes_I(stream, self.telescope)
         vis = vis.redistribute(1).local_array
         weight = weight.redistribute(1).local_array
 
