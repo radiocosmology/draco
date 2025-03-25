@@ -2,6 +2,7 @@
 
 import numpy as np
 from caput import config
+from caput.tools import invert_no_zero
 
 from ..core import containers, task
 
@@ -92,3 +93,71 @@ class QuadraticPSEstimation(task.SingleTask):
         ps.C_inv[:] = fisher.reshape(nperp, npar, nperp, npar)
 
         return ps
+
+
+class EstimateVariance(task.SingleTask):
+
+    axis = config.Property(proptype=str, default="freq")
+    dataset = config.Property(proptype=str, default="map")
+    expand_pol = config.Property(proptype=bool, default=True)
+
+    def process(self, data0, data1=None):
+
+        # make sure we are not distributed over the axis to measure variance on
+        if data0.distributed and data0[self.dataset].distributed_axis != self.axis:
+            data0.redistribute(self.axis)
+
+        # get a reference to the first dataset and its weights
+        m0 = data0[self.dataset][:]
+        w0 = data0.weight[:]
+
+        if data1 is None:
+            m1, w1 = m0, w0
+        else:
+            if data1.distributed and data1[self.dataset].distributed_axis != self.axis:
+                data1.redistribute(self.axis)
+            m1 = data1[self.dataset][:]
+            w1 = data1.weight[:]
+
+        if m0.shape != w0.shape:
+            # hopefully this works in most cases...
+            m0, m1 = np.squeeze(m0), np.squeeze(m1)
+
+        # get axis index to take sums over
+        ax = list(data0.weight.attrs["axis"]).index(self.axis)
+
+        # first estimate the mean map in each partition
+        mu0, mu1 = np.sum(m0 * w0, axis=ax) * invert_no_zero(np.sum(w0, axis=ax)), np.sum(m1 * w1, axis=ax) * invert_no_zero(np.sum(w1, axis=ax))
+        # then estimate the cross-variance
+        wx = np.sqrt(w0 * w1)
+        wx *= np.expand_dims(invert_no_zero(np.sum(wx, axis=ax)), axis=ax)
+        var = np.sum(m0 * m1 * wx, axis=ax) - np.sum(m0 * wx, axis=ax) * mu1 - np.sum(m1 * wx, axis=ax) * mu0 + mu0 * mu1
+
+        pax = None
+        if self.expand_pol:
+            try:
+                pax = list(data0.weight.attrs["axis"]).index("pol")
+            except ValueError:
+                self.log.warning("Estimating the variance across polarisations was requested but there is no polarisation axis. Skipping.")
+        if pax is not None:
+            # reverse the pol axis to take cross-variance
+            rs = [slice(None, None, None)] * len(w0.shape)
+            rs[pax] = slice(None, None, -1)
+            rs = tuple(rs)
+
+            # compute the cross-pol variance
+            wx = np.sqrt(w0 * w1[rs])
+            wx *= np.expand_dims(invert_no_zero(np.sum(wx, axis=ax)), axis=ax)
+            var_xpol = np.sum(m0 * m1[rs] * wx, axis=ax) - np.sum(m0 * wx, axis=ax) * mu1[rs] - np.sum(m1[rs] * wx, axis=ax) * mu0 + mu0 * mu1[rs]
+
+        # save both polarisations separately
+        new_ax = {self.axis: np.mean(data0.freq)}
+        if pax is not None:
+            new_ax["pol"] = np.array([p + p for p in data0.pol] + [data0.pol[0] + data0.pol[1], data0.pol[1] + data0.pol[0]])
+        new_cont = containers.empty_like(data0, **new_ax)
+        if pax is not None:
+            new_cont[self.dataset][:] = np.concatenate((var, var_xpol), axis=pax)
+        else:
+            new_cont[self.dataset][:] = var
+
+        return new_cont
