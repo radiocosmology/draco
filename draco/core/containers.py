@@ -64,6 +64,7 @@ from typing import ClassVar
 
 import numpy as np
 from caput import memh5, mpiarray, tod
+from cora.util.cosmology import Cosmology
 
 from ..util import tools
 
@@ -2564,6 +2565,309 @@ class DelayTransform(DelayContainer):
     def freq(self):
         """Get the frequency axis of the input data."""
         return self.attrs["freq"]
+
+
+class CosmologyContainer(ContainerBase):
+    """A baseclass for a container that is referenced to a background Cosmology.
+
+    Parameters
+    ----------
+    cosmology
+        An explicit cosmology instance or dict representation. If not set, the cosmology
+        *must* get set via `attrs_from`.
+    """
+
+    def __init__(self, cosmology: Cosmology | dict | None = None, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+
+        cosmo_dict = self._resolve_args(cosmology, **kwargs)
+        self.attrs["cosmology"] = cosmo_dict
+
+    @staticmethod
+    def _resolve_args(
+        cosmology: Cosmology | dict | None = None,
+        attrs_from: ContainerBase | None = None,
+        **kwargs,
+    ):
+        """Try and extract a Cosmology dict representation from the parameters.
+
+        Useful as subclasses sometimes need access *before* the full class is setup.
+        """
+        # Insert the Cosmological parameters
+        if cosmology is None:
+            if attrs_from is not None and "cosmology" in attrs_from.attrs:
+                cosmology = attrs_from.attrs["cosmology"]
+            else:
+                raise ValueError("A cosmology must be supplied.")
+        elif not isinstance(cosmology, (Cosmology | dict)):
+            raise TypeError("cosmology argument must be a Cosmology instance.")
+
+        if isinstance(cosmology, Cosmology):
+            cosmology = cosmology.to_dict()
+
+        return cosmology
+
+    _cosmology_instance = None
+
+    @property
+    def cosmology(self):
+        """The background cosmology."""
+        if self._cosmology_instance is None:
+            self._cosmology_instance = Cosmology(**self.attrs["cosmology"])
+
+        return self._cosmology_instance
+
+
+class Fourier3DContainer(CosmologyContainer, DelayContainer):
+    """A base container with Fourier axes, (pol,delay,u,v)."""
+
+    _axes = ("pol", "u", "v")
+
+    _dataset_spec: ClassVar = {
+        "kx": {
+            "axes": ["u"],
+            "dtype": np.float64,
+            "initialise": True,
+            "distributed": False,
+        },
+        "ky": {
+            "axes": ["v"],
+            "dtype": np.float64,
+            "initialise": True,
+            "distributed": False,
+        },
+        "kpara": {
+            "axes": ["delay"],
+            "dtype": np.float64,
+            "initialise": True,
+            "distributed": False,
+        },
+        "uv_mask": {
+            "axes": ["u", "v"],
+            "dtype": bool,
+            "initialise": True,
+            "distributed": False,
+        },
+    }
+
+    @property
+    def kx(self):
+        """Get the kx axis."""
+        return self.datasets["kx"]
+
+    @property
+    def ky(self):
+        """Get the ky axis."""
+        return self.datasets["ky"]
+
+    @property
+    def kpara(self):
+        """Get the k_parallel axis."""
+        return self.datasets["kpara"]
+
+    @property
+    def uv_mask(self):
+        """Get the uv-domain mask."""
+        return self.datasets["uv_mask"]
+
+    @property
+    def redshift(self):
+        """Get the redshift attrs."""
+        return self.attrs["redshift"]
+
+    @property
+    def freq_center(self):
+        """Get the central frequency attrs."""
+        return self.attrs["freq_center"]
+
+
+class SpatialDelayCube(Fourier3DContainer):
+    """Container for a data in (pol,delays,u,v) domain."""
+
+    _dataset_spec: ClassVar = {
+        "vis": {
+            "axes": ["pol", "delay", "u", "v"],
+            "dtype": np.complex128,
+            "initialise": True,
+            "distributed": True,
+            "distributed_axis": "delay",
+        },
+    }
+
+    @property
+    def vis(self):
+        """Get the spatial data cube."""
+        return self.datasets["vis"]
+
+
+class PowerSpectrum3D(Fourier3DContainer):
+    """Container for a 3D power spectrum."""
+
+    _dataset_spec: ClassVar = {
+        "spectrum": {
+            "axes": ["pol", "delay", "u", "v"],
+            "dtype": np.float64,
+            "initialise": True,
+            "distributed": True,
+            "distributed_axis": "delay",
+        }
+    }
+
+    @property
+    def spectrum(self):
+        """Get the 3D power spectrum."""
+        return self.datasets["spectrum"]
+
+    @property
+    def ps_norm(self):
+        """Get the power spectrum normalizaiton attrs."""
+        return self.attrs["ps_norm"]
+
+
+class PowerSpectrum2D(CosmologyContainer):
+    """Container for a 2D cylindrically averaged  power spectrum."""
+
+    _axes = ("pol", "delay", "uv_dist")
+
+    _dataset_spec: ClassVar = {
+        "spectrum": {
+            "axes": ["pol", "delay", "uv_dist"],
+            "dtype": np.float64,
+            "initialise": True,
+            "distributed": True,
+            "distributed_axis": "delay",
+        },
+        "weight": {
+            "axes": ["pol", "delay", "uv_dist"],
+            "dtype": np.float64,
+            "initialise": True,
+            "distributed": True,
+        },
+        "neff": {
+            "axes": ["pol", "delay", "uv_dist"],
+            "dtype": np.float64,
+            "initialise": True,
+            "distributed": True,
+            "distributed_axis": "delay",
+        },
+        "mask": {
+            "axes": ["pol", "delay", "uv_dist"],
+            "dtype": bool,
+            "initialise": True,
+            "distributed": True,
+        },
+        "kpara": {
+            "axes": ["delay"],
+            "dtype": np.float64,
+            "initialise": True,
+            "distributed": False,
+        },
+        "kperp": {
+            "axes": ["uv_dist"],
+            "dtype": np.float64,
+            "initialise": True,
+            "distributed": False,
+        },
+    }
+
+    @property
+    def spectrum(self):
+        """Get the 2D power spectrum dataset."""
+        return self.datasets["spectrum"]
+
+    @property
+    def weight(self):
+        """Get the 2D weight dataset."""
+        return self.datasets["weight"]
+
+    @property
+    def neff(self):
+        """Get the effective number of modes dataset."""
+        return self.datasets["neff"]
+
+    @property
+    def mask(self):
+        """Get the 2D signal window dataset."""
+        return self.datasets["mask"]
+
+    @property
+    def kpara(self):
+        """Get the k_parallel axis."""
+        return self.datasets["kpara"]
+
+    @property
+    def kperp(self):
+        """Get the kprep axis."""
+        return self.datasets["kperp"]
+
+    @property
+    def delay_cut(self):
+        """Get the delay cutoff value."""
+        return self.attrs["delay_cut"]
+
+
+class PowerSpectrum1D(CosmologyContainer):
+    """Container for a 1D power spectrum."""
+
+    _axes = ("pol", "k")
+
+    _dataset_spec: ClassVar = {
+        "spectrum": {
+            "axes": ["pol", "k"],
+            "dtype": np.float64,
+            "initialise": True,
+            "distributed": True,
+        },
+        "samp_var": {
+            "axes": ["pol", "k"],
+            "dtype": np.float64,
+            "initialise": True,
+            "distributed": True,
+        },
+        "var": {
+            "axes": ["pol", "k"],
+            "dtype": np.float64,
+            "initialise": True,
+            "distributed": True,
+        },
+        "neff": {
+            "axes": ["pol", "k"],
+            "dtype": np.float64,
+            "initialise": True,
+            "distributed": True,
+        },
+        "k1D": {
+            "axes": ["pol", "k"],
+            "dtype": np.float64,
+            "initialise": True,
+            "distributed": True,
+        },
+    }
+
+    @property
+    def spectrum(self):
+        """Get the 1D power spectrum dataset."""
+        return self.datasets["spectrum"]
+
+    @property
+    def samp_var(self):
+        """Get the 1D power spectrum error dataset."""
+        return self.datasets["samp_var"]
+
+    @property
+    def var(self):
+        """Get the 1D power spectrum var dataset."""
+        return self.datasets["var"]
+
+    @property
+    def neff(self):
+        """Get the 1D power spectrum var dataset."""
+        return self.datasets["neff"]
+
+    @property
+    def k1D(self):
+        """Get the k1D dataset."""
+        return self.datasets["k1D"]
 
 
 class WaveletSpectrum(FreqContainer, DelayContainer, DataWeightContainer):
