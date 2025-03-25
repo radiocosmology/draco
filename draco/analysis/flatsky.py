@@ -105,3 +105,74 @@ def _ps2corr(Cl, lmax, theta):
             ((2 * ell + 1) * Cl[:lmax + 1])[:, np.newaxis] * Pl,
         axis=0
     ) / np.pi / 4
+
+
+def _tile_patches(nside, dec_range):
+    # tile the sky using HEALpix
+    print(f"Resolution: {np.degrees(hp.nside2resol(nside))} deg")
+    npatch = hp.nside2npix(nside)
+    print(f"Num pix: {npatch}")
+
+    # each HEALpix cell will be center of a flat patch
+    patch_center = np.array(hp.pix2ang(nside, np.arange(npatch), lonlat=True))
+
+    # only keep those in the given range
+    patch_sel = np.where((patch_center[1] > dec_range[0]) & (patch_center[1] < dec_range[1]))[0]
+
+    # return an array as (npatch, theta, phi)
+    return np.concatenate(
+        (patch_center[1][patch_sel, np.newaxis], patch_center[0][patch_sel, np.newaxis]),
+        axis=1
+    )
+
+
+def _flat_grid(patch_width, nx, ny=None):
+    """expect patch_width in radians"""
+    if ny is None:
+        ny = nx
+
+    tx, ty = np.meshgrid(
+        (np.arange(nx) - nx // 2) * patch_width / nx,
+        (np.arange(ny) - ny // 2) * patch_width / ny
+    )
+
+    # return an array as (npix, theta, phi)
+    return np.concatenate(
+        ((np.pi / 2 - ty).flatten()[:, np.newaxis], tx.flatten()[:, np.newaxis]),
+        axis=1,
+    )
+
+
+def _rotate_patch_grid(flat_grid, rot):
+    """flat grid is expected in (theta, phi) polar coord"""
+    vec_grid = coord.sph_to_cart(flat_grid)
+    rmat = np.dot(
+        # azimuth rotation
+        np.array([
+            [np.cos(rot[1]), -np.sin(rot[1]), 0.],
+            [np.sin(rot[1]), np.cos(rot[1]), 0.],
+            [0., 0., 1.],
+
+        ]),
+        # polar rotation first
+        np.array([
+            [np.cos(rot[0]), 0., -np.sin(rot[0])],
+            [0., 1., 0.],
+            [np.sin(rot[0]), 0., np.cos(rot[0])],
+        ]),
+    )
+    rot_grid = np.matmul(rmat[np.newaxis, ...], vec_grid[:, :, np.newaxis])[..., 0]
+    return coord.cart_to_sph(rot_grid)[:, 1:]
+
+
+def _project_on_patch(alm, grid, lmax=None, epsilon=1e-9, nthreads=16):
+    if lmax is None:
+        lmax = hp.Alm.getlmax(alm.size)
+    return sht.synthesis_general(
+        alm=alm,
+        loc=grid,
+        spin=0,
+        lmax=lmax,
+        epsilon=epsilon,
+        nthreads=nthreads,
+    )
