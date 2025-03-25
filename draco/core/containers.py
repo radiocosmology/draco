@@ -2685,7 +2685,7 @@ class SpatialDelayCube(Fourier3DContainer):
     """Container for a data in (pol,delays,u,v) domain."""
 
     _dataset_spec: ClassVar = {
-        "data": {
+        "vis": {
             "axes": ["pol", "delay", "u", "v"],
             "dtype": np.complex128,
             "initialise": True,
@@ -2695,9 +2695,9 @@ class SpatialDelayCube(Fourier3DContainer):
     }
 
     @property
-    def data(self):
+    def vis(self):
         """Get the spatial data cube."""
-        return self.datasets["data"]
+        return self.datasets["vis"]
 
 
 class PowerSpectrum3D(Fourier3DContainer):

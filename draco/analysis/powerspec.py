@@ -233,7 +233,7 @@ class SpatialTransformDelayMap(task.SingleTask):
             u=u, v=v, attrs_from=ds, axes_from=ds, cosmology=self.cosmology
         )
         vis_cube.redistribute("delay")
-        vis_cube.data[:] = 0.0
+        vis_cube.vis[:] = 0.0
         vis_cube.kx[:] = kx
         vis_cube.ky[:] = ky
         vis_cube.uv_mask[:] = uv_mask
@@ -256,7 +256,7 @@ class SpatialTransformDelayMap(task.SingleTask):
         for pp, psr in enumerate(pol):
             self.log.debug(f"Estimating spatial FFT for pol: {psr}")
             # loop over delays
-            for lde, de in vis_cube.data[:].enumerate(axis=1):
+            for lde, de in vis_cube.vis[:].enumerate(axis=1):
                 slc = (pp, lde, slice(None), slice(None))
                 data = np.ascontiguousarray(data_view.local_array[slc])
                 data_uv, NEB_ra, NEB_dec = image_to_uv(
@@ -265,7 +265,7 @@ class SpatialTransformDelayMap(task.SingleTask):
                     dec=dec,
                     window=self.spatial_window if self.apply_spatial_window else None,
                 )
-                vis_cube.data[pp, de] = data_uv
+                vis_cube.vis[pp, de] = data_uv
 
         # save the equivalent noise bandwidth for the
         # spatial tapering window as an attribute
@@ -301,10 +301,10 @@ class CrossPowerSpectrum3D(task.SingleTask):
            The 3D cross power spectum.
         """
         # Validate the shapes of two data cubes match
-        if vis_1.data.shape != vis_2.data.shape:
+        if vis_1.vis.shape != vis_2.vis.shape:
             raise ValueError(
-                f"Size of data_1 ({vis_1.data.shape}) must match "
-                f"data_2 ({vis_2.data.shape})"
+                f"Size of data_1 ({vis_1.vis.shape}) must match "
+                f"data_2 ({vis_2.vis.shape})"
             )
 
         # Validate the types are the same
@@ -356,8 +356,8 @@ class CrossPowerSpectrum3D(task.SingleTask):
             ps_cube.attrs["lsd_p1"] = vis_2.attrs["lsd"]
 
         # Dereference the required datasets and
-        vis_1 = vis_1.data[:].local_array
-        vis_2 = vis_2.data[:].local_array
+        vis_1 = vis_1.vis[:].local_array
+        vis_2 = vis_2.vis[:].local_array
 
         # Estimate the cross power spectrum
         for pp, psr in enumerate(pol):
