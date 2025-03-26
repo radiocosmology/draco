@@ -101,23 +101,25 @@ class EstimateVariance(task.SingleTask):
     dataset = config.Property(proptype=str, default="map")
     expand_pol = config.Property(proptype=bool, default=True)
 
-    def process(self, data0, data1=None):
+    def process(self, data0)#, data1):
+
+        data1 = None
 
         # make sure we are not distributed over the axis to measure variance on
         if data0.distributed and data0[self.dataset].distributed_axis != self.axis:
-            data0.redistribute(self.axis)
+            data0.redistribute(np.argmax(data0[self.dataset].shape))
 
         # get a reference to the first dataset and its weights
-        m0 = data0[self.dataset][:]
-        w0 = data0.weight[:]
+        m0 = data0[self.dataset][:].local_array
+        w0 = data0.weight[:].local_array
 
         if data1 is None:
             m1, w1 = m0, w0
         else:
             if data1.distributed and data1[self.dataset].distributed_axis != self.axis:
-                data1.redistribute(self.axis)
-            m1 = data1[self.dataset][:]
-            w1 = data1.weight[:]
+                data1.redistribute(np.argmax(data0[self.dataset].shape))
+            m1 = data1[self.dataset][:].local_array
+            w1 = data1.weight[:].local_array
 
         if m0.shape != w0.shape:
             # hopefully this works in most cases...
@@ -144,20 +146,21 @@ class EstimateVariance(task.SingleTask):
             rs = [slice(None, None, None)] * len(w0.shape)
             rs[pax] = slice(None, None, -1)
             rs = tuple(rs)
+            rs_nof = rs[:ax] + rs[ax+1:]
 
             # compute the cross-pol variance
             wx = np.sqrt(w0 * w1[rs])
             wx *= np.expand_dims(invert_no_zero(np.sum(wx, axis=ax)), axis=ax)
-            var_xpol = np.sum(m0 * m1[rs] * wx, axis=ax) - np.sum(m0 * wx, axis=ax) * mu1[rs] - np.sum(m1[rs] * wx, axis=ax) * mu0 + mu0 * mu1[rs]
+            var_xpol = np.sum(m0 * m1[rs] * wx, axis=ax) - np.sum(m0 * wx, axis=ax) * mu1[rs_nof] - np.sum(m1[rs] * wx, axis=ax) * mu0 + mu0 * mu1[rs_nof]
 
         # save both polarisations separately
-        new_ax = {self.axis: np.mean(data0.freq)}
+        new_ax = {self.axis: np.array([np.mean(data0.freq)])}
         if pax is not None:
             new_ax["pol"] = np.array([p + p for p in data0.pol] + [data0.pol[0] + data0.pol[1], data0.pol[1] + data0.pol[0]])
         new_cont = containers.empty_like(data0, **new_ax)
         if pax is not None:
-            new_cont[self.dataset][:] = np.concatenate((var, var_xpol), axis=pax)
+            new_cont[self.dataset][:] = np.concatenate((var, var_xpol), axis=pax).reshape(new_cont[self.dataset].local_shape)
         else:
-            new_cont[self.dataset][:] = var
+            new_cont[self.dataset][:] = var.reshape(new_cont[self.dataset].local_shape)
 
         return new_cont
