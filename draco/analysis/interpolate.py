@@ -47,17 +47,29 @@ class DPSSInpaint(task.SingleTask):
     cutoff_frac : float
         Fraction of the cutoff used when re-flagging inpainted
         samples. Default is 1.0.
+    full_variance
+        Compute the proper variance for the filtered data. If False,
+        use the scaled mean over the interpolation axis. Default is True.
+    var_boost
+        If `full_variance` is False, scale the mean variance by this factor.
+        Default is 1.0.
     copy : bool
         If true, copy the container instead of inpainting in-place.
     """
 
     axis = config.enum(["freq", "ra"], default="freq")
     iter_axes = config.Property(proptype=list, default=["stack", "el"])
+
     centres = config.Property(proptype=list)
     halfwidths = config.Property(proptype=list)
     snr_cov = config.Property(proptype=float, default=1.0e-3)
+
     flag_above_cutoff = config.Property(proptype=bool, default=True)
     cutoff_frac = config.Property(proptype=float, default=1.0)
+
+    full_variance = config.Property(proptype=bool, default=True)
+    var_boost = config.Property(proptype=float, default=1.0)
+
     copy = config.Property(proptype=bool, default=True)
 
     def setup(self, mask=None):
@@ -146,7 +158,15 @@ class DPSSInpaint(task.SingleTask):
             M = wobs[ii] > 0
             W = mobs if self.mask is not None else M
 
-            vinp[ii], winp[ii] = dpss.inpaint(vobs[ii], wobs[ii], A, W, self.snr_cov)
+            vinp[ii], winp[ii] = dpss.inpaint(
+                vobs[ii],
+                wobs[ii],
+                A,
+                W,
+                Si=self.snr_cov,
+                full_variance=self.full_variance,
+                var_boost=self.var_boost,
+            )
 
             # Re-flag gaps above the cutoff width
             if self.flag_above_cutoff:

@@ -152,8 +152,13 @@ def project(x: np.ndarray, Ni: np.ndarray, A: np.ndarray) -> np.ndarray:
 
 
 def solve(
-    xp: np.ndarray, Ni: np.ndarray, A: np.ndarray, Si: float = 1e-3
-) -> list[np.ndarray, np.ndarray]:
+    xp: np.ndarray,
+    Ni: np.ndarray,
+    A: np.ndarray,
+    Si: float = 1e-3,
+    full_variance: bool = True,
+    var_boost: float = 1.0,
+) -> tuple[np.ndarray, np.ndarray]:
     """Apply the inpainting operator to data.
 
     Returns the inpainted data and corresponding inverse
@@ -174,6 +179,12 @@ def solve(
         signal variance in a Wiener filter. The default value
         of 1e-3 seems to work quite well, so it should be
         changed with caution.
+    full_variance
+        Compute the proper variance for the filtered data. If False,
+        use the scaled mean over the interpolation axis. Default is True.
+    var_boost
+        If `full_variance` is False, scale the mean variance by this factor.
+        Default is 1.0.
 
     Returns
     -------
@@ -213,6 +224,7 @@ def solve(
 
         # Make the covariance matrix
         Ci = ATNi @ A
+
         # Add a diagonal regulariser to the covariance.
         # In a weiner filter, this is the signal covariance.
         # Use einsum trick to get a view of the diagonal.
@@ -225,28 +237,37 @@ def solve(
         # Solve for the data projection coefficient
         b[ii] = la.cho_solve(CiL, xp[ii], check_finite=False)
 
-        # Solve for beta part of the the inpainting operator
-        # F = A (Si^{-1} + A^{H} Ni A)^{-1} A^{H} Ni
-        # where F = A @ beta
-        # Only save the diagonal component of the resulting
-        # covariance. This can be done faster using a fancy
-        # einsum than by doing the individual matrix mults,
-        # but it's still the slowest step here so it might
-        # be worth writing some custom cython or numba
-        beta = la.cho_solve(CiL, ATNi, check_finite=False)
+        if full_variance:
+            # Solve for beta part of the the inpainting operator
+            # F = A (Si^{-1} + A^{H} Ni A)^{-1} A^{H} Ni
+            # where F = A @ beta
+            # Only save the diagonal component of the resulting
+            # covariance. This can be done faster using a fancy
+            # einsum than by doing the individual matrix mults,
+            # but it's still the slowest step here so it might
+            # be worth writing some custom cython or numba
+            beta = la.cho_solve(CiL, ATNi, check_finite=False)
 
-        betaT = beta.T.conj()
-        N_ii = invert_no_zero(Ni_ii)
-        var = np.einsum("ik,kj,j,jm,mi->i", A, beta, N_ii, betaT, AT, optimize="greedy")
+            betaT = beta.T.conj()
+            N_ii = invert_no_zero(Ni_ii)
+            var = np.einsum(
+                "ik,kj,j,jm,mi->i", A, beta, N_ii, betaT, AT, optimize="greedy"
+            )
 
-        # Save out the inverse variance weights. Technically,
-        # we should be making the full covariance matrix,
-        # inverting that, then taking the resuling diagonal,
-        # but that isn't computationally feasible
-        Ni[ii] = invert_no_zero(var)
+            # Save out the inverse variance weights. Technically,
+            # we should be making the full covariance matrix,
+            # inverting that, then taking the resuling diagonal,
+            # but that isn't computationally feasible
+            Ni[ii] = invert_no_zero(var)
 
     # Construct the interpolated data
     x = A @ np.moveaxis(b[inv], -1, si)
+
+    # The full variance is expensive to compute, so instead use
+    # a constant estimate. This generally isn't recommended.
+    if not full_variance:
+        # Just used the scaled average over the interpolation axis
+        Ni[:] = np.mean(Ni, axis=1, keepdims=True) * invert_no_zero(var_boost)
 
     return x, np.moveaxis(Ni[inv], -1, si)
 
@@ -353,8 +374,14 @@ def flag_above_cutoff(W: np.ndarray, fc: float) -> np.ndarray:
 
 
 def filter(
-    x: np.ndarray, Ni: np.ndarray, A: np.ndarray, W: np.ndarray, Si: float = 1e-3
-) -> np.ndarray:
+    x: np.ndarray,
+    Ni: np.ndarray,
+    A: np.ndarray,
+    W: np.ndarray,
+    Si: float = 1e-3,
+    full_variance: bool = True,
+    var_boost: float = 1.0,
+) -> tuple[np.ndarray, np.ndarray]:
     """Filter using a DPSS basis over the first axis.
 
     Parameters
@@ -373,6 +400,12 @@ def filter(
         signal variance in a Wiener filter. The default value
         of 1e-3 seems to work quite well, so it should be
         changed with caution.
+    full_variance
+        Compute the proper variance for the filtered data. If False,
+        use the scaled mean over the interpolation axis. Default is True.
+    var_boost
+        If `full_variance` is False, scale the mean variance by this factor.
+        Default is 1.0.
 
     Returns
     -------
@@ -389,7 +422,9 @@ def filter(
     # Make the data projection
     xp = project(x - xhat, Ni, A)
     # Make the inpainted data
-    xfilt, wfilt = solve(xp, Ni, A, Si)
+    xfilt, wfilt = solve(
+        xp, Ni, A, Si=Si, full_variance=full_variance, var_boost=var_boost
+    )
 
     # Interpolate and accumulate variances
     wfilt = accumulate_variance(Ni, wfilt, W)
@@ -401,8 +436,14 @@ def filter(
 
 
 def inpaint(
-    x: np.ndarray, Ni: np.ndarray, A: np.ndarray, W: np.ndarray, Si: float = 1e-3
-) -> np.ndarray:
+    x: np.ndarray,
+    Ni: np.ndarray,
+    A: np.ndarray,
+    W: np.ndarray,
+    Si: float = 1e-3,
+    full_variance: bool = True,
+    var_boost: float = 1.0,
+) -> tuple[np.ndarray, np.ndarray]:
     """Inpaint using a DPSS basis over the first axis.
 
     Parameters
@@ -421,6 +462,12 @@ def inpaint(
         signal variance in a Wiener filter. The default value
         of 1e-3 seems to work quite well, so it should be
         changed with caution.
+    full_variance
+        Compute the proper variance for the filtered data. If False,
+        use the scaled mean over the interpolation axis. Default is True.
+    var_boost
+        If `full_variance` is False, scale the mean variance by this factor.
+        Default is 1.0.
 
     Returns
     -------
@@ -431,7 +478,9 @@ def inpaint(
         Inpainted inverse variance weights. Samples where `W` is True
         are not changed from the input data.
     """
-    xinp, winp = filter(x, Ni, A, W, Si)
+    xinp, winp = filter(
+        x, Ni, A, W, Si=Si, full_variance=full_variance, var_boost=var_boost
+    )
 
     xinp[W] = x[W]
     winp[W] = Ni[W]
