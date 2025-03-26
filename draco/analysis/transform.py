@@ -1228,8 +1228,8 @@ def stokes_I(sstream, tel):
             continue
 
         # Accumulate the visibilities and weights
-        vis_I[:, ui] += ssv[:, ii]
-        vis_weight[:, ui] += ssw[:, ii]
+        vis_I.local_array[:, ui] += ssv[:, ii]
+        vis_weight.local_array[:, ui] += ssw[:, ii]
 
     return vis_I, vis_weight, ubase
 
