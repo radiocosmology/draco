@@ -120,7 +120,7 @@ class GaussianNoiseDataset(task.SingleTask, random.RandomTask):
                     dset[:, si].real *= 2**0.5
                     dset[:, si].imag = 0.0
 
-        return data
+        return out
 
 
 class MultipleGaussianNoiseDatasets(GaussianNoiseDataset):
