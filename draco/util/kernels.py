@@ -1,8 +1,7 @@
 """Routines for creating kernel/covariance matrices."""
 
-from warnings import warn
-
 import numpy as np
+from scipy import linalg as la
 from scipy.spatial.distance import cdist
 
 
@@ -20,6 +19,8 @@ def get_kernel(name: str, **kernel_params):
         "gaussian": gaussian_kernel,
         "rational": rational_kernel,
         "matern": matern_kernel,
+        "lanczos": lanczos_kernel,
+        "periodic": periodic_kernel,
         "moving_average": moving_average_inverse_kernel,
     }
 
@@ -41,90 +42,21 @@ def get_kernel(name: str, **kernel_params):
                 f"Got kernel with shape {kernel.shape}."
             )
 
-        N = kernel_params["width"]
-        M = kernel.shape[0]
-        K = np.ones((N, M), dtype=kernel.dtype)
-
-        for i in range(N):
-            K[i, : M - i] = kernel.diagonal(i)
-
-        kernel = K
+        tol = kernel_params.get("tol")
+        args = {"tol": tol} if tol is not None else {}
+        kernel = convert_band_diagonal(kernel, **args)
 
     return kernel
 
 
-def _warn_unused_kwargs(kwargs):
-    """Warn if any unused arguments."""
-    if len(kwargs):
-        warn(f"Unused keyword arguments: {kwargs}.")
+# =======
+# Kernels
+# =======
 
 
-def squared_difference_kernel(N: int | tuple, width: int | tuple) -> np.ndarray:
-    """Create a distance matrix for a kernel using squared difference.
-
-    N : int | tuple
-        Number of samples over which to generate the kernel.
-        If this is a length-2 tuple, assume that this is a
-        correlation between two different sets of indices.
-    width : int | tuple
-        Width of the kernel along each axis. For a gaussian,
-        this is the standard deviation.
-
-    Returns
-    -------
-    diff : np.ndarray
-        Array of normalized distances.
-    """
-    # If only a single integer is provided, assume
-    # a square covariance matrix
-    if isinstance(N, int):
-        N = (N, N)
-
-    if isinstance(width, int):
-        width = (width, width)
-
-    if len(N) != 2 or len(width) != 2:
-        raise ValueError(f"Invalid parameters. Got N={N} and width={width}.")
-
-    i0 = np.arange(N[0]) / width[0]
-    i1 = np.arange(N[1]) / width[1]
-
-    return np.subtract.outer(i0, i1) ** 2
-
-
-def euclidean_difference_kernel(N: int | tuple, width: int | tuple) -> np.ndarray:
-    """Create a distance matrix for a kernel using euclidean difference.
-
-    N : int | tuple
-        Number of samples over which to generate the kernel.
-        If this is a length-2 tuple, assume that this is a
-        correlation between two different sets of indices.
-    width : int | tuple
-        Width of the kernel along each axis. For a gaussian,
-        this is the standard deviation.
-
-    Returns
-    -------
-    diff : np.ndarray
-        Array of normalized distances.
-    """
-    if isinstance(N, int):
-        N = (N, N)
-
-    if isinstance(width, int):
-        width = (width, width)
-
-    if len(N) != 2 or len(width) != 2:
-        raise ValueError(f"Invalid parameters. Got N={N} and width={width}.")
-
-    # The extra axis is required to use `cdist`
-    i0 = np.arange(N[0])[:, np.newaxis] / width[0]
-    i1 = np.arange(N[1])[:, np.newaxis] / width[1]
-
-    return cdist(i0, i1, metric="euclidean")
-
-
-def gaussian_kernel(N: int | tuple, width: int | tuple, alpha: float, **kwargs):
+def gaussian_kernel(
+    N: int | tuple | np.ndarray, width: int | float | tuple, alpha: float, **kwargs
+):
     """Return a gaussian kernel.
 
     Parameters
@@ -153,7 +85,11 @@ def gaussian_kernel(N: int | tuple, width: int | tuple, alpha: float, **kwargs):
 
 
 def rational_kernel(
-    N: int | tuple, width: int | tuple, alpha: float, a: float, **kwargs
+    N: int | tuple | np.ndarray,
+    width: int | float | tuple,
+    alpha: float,
+    a: float,
+    **kwargs,
 ) -> np.ndarray:
     """Return a rational kernel.
 
@@ -185,7 +121,11 @@ def rational_kernel(
 
 
 def matern_kernel(
-    N: int | float, width: int | float, alpha: float, nu: float, **kwargs
+    N: int | tuple | np.ndarray,
+    width: int | float | tuple,
+    alpha: float,
+    nu: float,
+    **kwargs,
 ) -> np.ndarray:
     """Return a matern kernel.
 
@@ -222,13 +162,105 @@ def matern_kernel(
     dist = euclidean_difference_kernel(N, width)
 
     if nu == 1.5:
-        C = np.sqrt(3) * dist
-        C = (1.0 + C) * np.exp(-C)
+        dist *= np.sqrt(3)
+        C = 1.0 + dist
+        C *= np.exp(-dist)
     elif nu == 2.5:
-        C = np.sqrt(5) * dist
-        C = (1.0 + C + C**2 / 3.0) * np.exp(-C)
+        dist *= np.sqrt(5)
+        C = 1.0 + dist + dist**2 / 3.0
+        C *= np.exp(-dist)
 
-    return (alpha**2) * C
+    # Scale
+    C *= alpha**2
+
+    return C
+
+
+def periodic_kernel(
+    N: int | tuple | np.ndarray,
+    width: int | float | tuple,
+    alpha: float,
+    p: float,
+    **kwargs,
+) -> np.ndarray:
+    """Return a periodic kernel, aka Exp-Sine-Squared.
+
+    Parameters
+    ----------
+    N
+        Number of samples over which to generate the kernel.
+        If this is a length-2 tuple, assume that this is a
+        correlation between two different sets of indices.
+    width
+        Width of the kernel.
+    alpha
+        Square root of the kernel variance.
+    p
+        Periodicity of the kernel.
+    kwargs : dict
+        Unused keyword arguemnts, required for compatibilty
+        when calling with `get_kernel`.
+
+    Returns
+    -------
+    C : np.ndarray
+        Periodic covariance matrix of shape (N[0], N[1]). If
+        N is an integer, the covariance is square with shape (N, N).
+    """
+    dist = euclidean_difference_kernel(N, width)
+
+    C = np.sin(np.pi * dist / p)
+    C = np.exp(-2 * C**2)
+
+    # Scale
+    C *= alpha**2
+
+    return C
+
+
+def lanczos_kernel(
+    N: int | tuple | np.ndarray, width: int | float | tuple, alpha: float, **kwargs
+) -> np.ndarray:
+    """Return a lanczos kernel.
+
+    Parameters
+    ----------
+    N
+        Number of samples over which to generate the kernel.
+        If this is a length-2 tuple, assume that this is a
+        correlation between two different sets of indices.
+    width
+        Width of the kernel.
+    alpha
+        Square root of the kernel variance.
+    kwargs
+        Unused keyword arguemnts, required for compatibilty
+        when calling with `get_kernel`.
+
+    Returns
+    -------
+    C
+        Lanczos covariance matrix of shape (N[0], N[1]). If
+        N is an integer, the covariance is square with shape (N, N).
+    """
+    dist = euclidean_difference_kernel(N, width)
+
+    # Figure out the width and sample spacing used
+    # in order to create the lengthened sinc window
+    xi = N[0] if isinstance(N, tuple) else N
+    dxi = np.median(np.abs(np.diff(xi))) if isinstance(xi, np.ndarray) else 1.0
+
+    a = width[0] if isinstance(width, tuple) else width
+    a /= dxi
+
+    C = np.where(
+        abs(dist) < 1.0, np.sinc(dist * a / np.pi) * np.sinc(dist / np.pi), 0.0
+    )
+
+    # Scale
+    C *= alpha**2
+
+    return C
 
 
 def moving_average_inverse_kernel(
@@ -274,3 +306,227 @@ def moving_average_inverse_kernel(
     IW = np.identity(N) - W
 
     return alpha * (IW.T @ IW)
+
+
+# ==================
+# Distance functions
+# ==================
+
+
+def squared_difference_kernel(
+    N: int | tuple | np.ndarray, width: int | float | tuple
+) -> np.ndarray:
+    """Create a distance matrix for a kernel using squared difference.
+
+    N : int | tuple
+        Number of samples over which to generate the kernel.
+        If this is a length-2 tuple, assume that this is a
+        correlation between two different sets of indices.
+    width : int | tuple
+        Width of the kernel along each axis. For a gaussian,
+        this is the standard deviation.
+
+    Returns
+    -------
+    diff : np.ndarray
+        Array of normalized distances.
+    """
+    # If only a single integer is provided, assume
+    # a square covariance matrix
+    if isinstance(N, int | np.ndarray):
+        N = (N, N)
+
+    if isinstance(width, int | float):
+        width = (width, width)
+
+    if len(N) != 2 or len(width) != 2:
+        raise ValueError(f"Invalid parameters. Got N={N} and width={width}.")
+
+    i0 = np.arange(N[0]) if isinstance(N[0], int) else N[0]
+    i1 = np.arange(N[1]) if isinstance(N[1], int) else N[1]
+
+    i0 = i0 / width[0]
+    i1 = i1 / width[1]
+
+    return np.subtract.outer(i0, i1) ** 2
+
+
+def euclidean_difference_kernel(
+    N: int | tuple | np.ndarray, width: int | float | tuple
+) -> np.ndarray:
+    """Create a distance matrix for a kernel using euclidean difference.
+
+    N : int | tuple
+        Number of samples over which to generate the kernel.
+        If this is a length-2 tuple, assume that this is a
+        correlation between two different sets of indices.
+    width : int | tuple
+        Width of the kernel along each axis. For a gaussian,
+        this is the standard deviation.
+
+    Returns
+    -------
+    diff : np.ndarray
+        Array of normalized distances.
+    """
+    if isinstance(N, int | np.ndarray):
+        N = (N, N)
+
+    if isinstance(width, int | float):
+        width = (width, width)
+
+    if len(N) != 2 or len(width) != 2:
+        raise ValueError(f"Invalid parameters. Got N={N} and width={width}.")
+
+    i0 = np.arange(N[0]) if isinstance(N[0], int) else N[0]
+    i1 = np.arange(N[1]) if isinstance(N[1], int) else N[1]
+
+    i0 = i0 / width[0]
+    i1 = i1 / width[1]
+
+    return cdist(i0[:, np.newaxis], i1[:, np.newaxis], metric="euclidean")
+
+
+# =========
+# Utilities
+# =========
+
+
+def is_hermitian_positive_definite(x: np.ndarray) -> bool:
+    """Check if a matrix is Hermitian positive-definite.
+
+    Parameters
+    ----------
+    x
+        Array to check.
+
+    Returns
+    -------
+    result
+        True if `x` is hermitian positive-definite
+    """
+    if not la.ishermitian(x):
+        return False
+
+    try:
+        la.cholesky(x, lower=False)
+    except la.LinAlgError:
+        return False
+
+    return True
+
+
+def convert_band_diagonal(
+    x: np.ndarray, tol: float = 1.0e-8, which: str = "full"
+) -> np.ndarray:
+    """Convert a full band diagonal kernel into just the lower band.
+
+    Used to feed into `la.solveh_banded.`
+
+    Parameters
+    ----------
+    x
+        `n x n` symmetric band-diagonal matrix
+    tol
+        Smallest value to consider when finding the
+        band edge. Default is 1.0e-5.
+    which
+        Which band to extract. Options are
+        {"lower", "upper", "full"}. Default is "full".
+
+    Returns
+    -------
+    xb
+        Band diagonal matrix of shape (n,u+l+1), (n,u+1), or (n,l+1)
+    """
+    if which == "full":
+        return _bd_sym(x, tol)
+    if which in {"upper", "lower"}:
+        return _bd_sym_ul(x, tol, lower=which == "lower")
+
+    raise ValueError(
+        f"Got invalid argument `which`={which}. "
+        "Only `full`, `upper`, or `lower` are accepted."
+    )
+
+
+def _bd_ul(x: np.ndarray, tol: float) -> np.ndarray:
+    """Band-diagonal matrix of size u+l+1."""
+    start, end = _get_band_inds(x, tol)
+
+    N = x.shape[-1]
+    M = np.max(end - start)
+    banded = np.zeros((M, N), dtype=x.dtype)
+
+    for ii, (si, ei) in enumerate(zip(start, end)):
+        # Construct a slice to deal with edges where
+        # the band does not extend the full bandwidth
+        if si == 0:
+            sl = slice(M + si - ei, M)
+        elif ei == N:
+            sl = slice(0, ei - si)
+        else:
+            sl = slice(None)
+
+        banded[sl, ii] = x[si:ei, ii]
+
+    return banded
+
+
+def _bd_sym(x: np.ndarray, tol: float) -> np.ndarray:
+    """Full band of a symmetric band-diagonal matrix."""
+    N = x.shape[0]
+    M = np.sum(x > tol, axis=-1).max() // 2 + 1
+
+    banded = np.zeros((2 * M - 1, N), dtype=x.dtype)
+
+    banded[M - 1 :] = _bd_sym_ul(x, tol, lower=True)
+    banded[: M - 1] = _bd_sym_ul(x, tol, lower=False)[1:]
+
+    return banded
+
+
+def _bd_sym_ul(x: np.ndarray, tol: float, lower: bool = False) -> np.ndarray:
+    """Upper or lower band of a symmetric band-diagonal matrix.
+
+    Should be symmetric positive-definite.
+    """
+    N = x.shape[0]
+    M = np.sum(x > tol, axis=-1).max() // 2 + 1
+
+    banded = np.zeros((M, N), dtype=x.dtype)
+
+    for ii in range(M):
+        if lower:
+            banded[ii, : N - ii] = x.diagonal(ii)
+        else:
+            banded[-ii, ii:] = x.diagonal(-ii)
+
+    return banded
+
+
+def _get_band_inds(R: np.ndarray, tol: float = 1.0e-4) -> tuple:
+    """Get the indices of the band edge for a band diagonal matrix.
+
+    Parameters
+    ----------
+    R
+        Band diagonal matrix
+    tol
+        Cutoff threshold to consider values to be
+        outside of the main band.
+
+    Returns
+    -------
+    start_ind : np.ndarray[int]
+        left indices of the band.
+    end_ind : np.ndarray[int]
+        right indices of the band.
+    """
+    u = abs(R) > tol
+
+    start_ind = np.argmax(u, axis=-1)
+    end_ind = R.shape[-1] - np.argmax(u[..., ::-1], axis=-1)
+    end_ind[~np.any(u, axis=-1)] = 0
+
+    return start_ind.astype(np.int32), end_ind.astype(np.int32)
