@@ -59,7 +59,9 @@ def _warn_unused_kwargs(kwargs):
         warn(f"Unused keyword arguments: {kwargs}.")
 
 
-def squared_difference_kernel(N: int | tuple, width: int | tuple) -> np.ndarray:
+def squared_difference_kernel(
+    N: int | tuple | np.ndarray, width: int | float | tuple
+) -> np.ndarray:
     """Create a distance matrix for a kernel using squared difference.
 
     N : int | tuple
@@ -77,22 +79,27 @@ def squared_difference_kernel(N: int | tuple, width: int | tuple) -> np.ndarray:
     """
     # If only a single integer is provided, assume
     # a square covariance matrix
-    if isinstance(N, int):
+    if isinstance(N, int | np.ndarray):
         N = (N, N)
 
-    if isinstance(width, int):
+    if isinstance(width, int | float):
         width = (width, width)
 
     if len(N) != 2 or len(width) != 2:
         raise ValueError(f"Invalid parameters. Got N={N} and width={width}.")
 
-    i0 = np.arange(N[0]) / width[0]
-    i1 = np.arange(N[1]) / width[1]
+    i0 = np.arange(N[0]) if isinstance(N[0], int) else N[0]
+    i1 = np.arange(N[1]) if isinstance(N[1], int) else N[1]
+
+    i0 = i0 / width[0]
+    i1 = i1 / width[1]
 
     return np.subtract.outer(i0, i1) ** 2
 
 
-def euclidean_difference_kernel(N: int | tuple, width: int | tuple) -> np.ndarray:
+def euclidean_difference_kernel(
+    N: int | tuple | np.ndarray, width: int | float | tuple
+) -> np.ndarray:
     """Create a distance matrix for a kernel using euclidean difference.
 
     N : int | tuple
@@ -108,23 +115,27 @@ def euclidean_difference_kernel(N: int | tuple, width: int | tuple) -> np.ndarra
     diff : np.ndarray
         Array of normalized distances.
     """
-    if isinstance(N, int):
+    if isinstance(N, int | np.ndarray):
         N = (N, N)
 
-    if isinstance(width, int):
+    if isinstance(width, int | float):
         width = (width, width)
 
     if len(N) != 2 or len(width) != 2:
         raise ValueError(f"Invalid parameters. Got N={N} and width={width}.")
 
-    # The extra axis is required to use `cdist`
-    i0 = np.arange(N[0])[:, np.newaxis] / width[0]
-    i1 = np.arange(N[1])[:, np.newaxis] / width[1]
+    i0 = np.arange(N[0]) if isinstance(N[0], int) else N[0]
+    i1 = np.arange(N[1]) if isinstance(N[1], int) else N[1]
 
-    return cdist(i0, i1, metric="euclidean")
+    i0 = i0 / width[0]
+    i1 = i1 / width[1]
+
+    return cdist(i0[:, np.newaxis], i1[:, np.newaxis], metric="euclidean")
 
 
-def gaussian_kernel(N: int | tuple, width: int | tuple, alpha: float, **kwargs):
+def gaussian_kernel(
+    N: int | tuple | np.ndarray, width: int | float | tuple, alpha: float, **kwargs
+):
     """Return a gaussian kernel.
 
     Parameters
@@ -153,7 +164,11 @@ def gaussian_kernel(N: int | tuple, width: int | tuple, alpha: float, **kwargs):
 
 
 def rational_kernel(
-    N: int | tuple, width: int | tuple, alpha: float, a: float, **kwargs
+    N: int | tuple | np.ndarray,
+    width: int | float | tuple,
+    alpha: float,
+    a: float,
+    **kwargs,
 ) -> np.ndarray:
     """Return a rational kernel.
 
@@ -185,7 +200,11 @@ def rational_kernel(
 
 
 def matern_kernel(
-    N: int | float, width: int | float, alpha: float, nu: float, **kwargs
+    N: int | tuple | np.ndarray,
+    width: int | float | tuple,
+    alpha: float,
+    nu: float,
+    **kwargs,
 ) -> np.ndarray:
     """Return a matern kernel.
 
