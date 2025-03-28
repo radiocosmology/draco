@@ -1,8 +1,7 @@
 """Routines for creating kernel/covariance matrices."""
 
-from warnings import warn
-
 import numpy as np
+from scipy import linalg as la
 from scipy.spatial.distance import cdist
 
 
@@ -20,6 +19,7 @@ def get_kernel(name: str, **kernel_params):
         "gaussian": gaussian_kernel,
         "rational": rational_kernel,
         "matern": matern_kernel,
+        "lanczos": lanczos_kernel,
         "moving_average": moving_average_inverse_kernel,
     }
 
@@ -41,25 +41,16 @@ def get_kernel(name: str, **kernel_params):
                 f"Got kernel with shape {kernel.shape}."
             )
 
-        N = kernel_params["width"]
-        M = kernel.shape[0]
-        K = np.ones((N, M), dtype=kernel.dtype)
-
-        for i in range(N):
-            K[i, : M - i] = kernel.diagonal(i)
-
-        kernel = K
+        tol = kernel_params.get("tol")
+        args = {"tol": tol} if tol is not None else {}
+        kernel = get_band_diagonal(kernel, **args)
 
     return kernel
 
 
-def _warn_unused_kwargs(kwargs):
-    """Warn if any unused arguments."""
-    if len(kwargs):
-        warn(f"Unused keyword arguments: {kwargs}.")
-
-
-def squared_difference_kernel(N: int | tuple, width: int | tuple) -> np.ndarray:
+def squared_difference_kernel(
+    N: int | tuple | np.ndarray, width: int | float | tuple
+) -> np.ndarray:
     """Create a distance matrix for a kernel using squared difference.
 
     N : int | tuple
@@ -77,22 +68,27 @@ def squared_difference_kernel(N: int | tuple, width: int | tuple) -> np.ndarray:
     """
     # If only a single integer is provided, assume
     # a square covariance matrix
-    if isinstance(N, int):
+    if isinstance(N, int | np.ndarray):
         N = (N, N)
 
-    if isinstance(width, int):
+    if isinstance(width, int | float):
         width = (width, width)
 
     if len(N) != 2 or len(width) != 2:
         raise ValueError(f"Invalid parameters. Got N={N} and width={width}.")
 
-    i0 = np.arange(N[0]) / width[0]
-    i1 = np.arange(N[1]) / width[1]
+    i0 = np.arange(N[0]) if isinstance(N[0], int) else N[0]
+    i1 = np.arange(N[1]) if isinstance(N[1], int) else N[1]
+
+    i0 = i0 / width[0]
+    i1 = i1 / width[1]
 
     return np.subtract.outer(i0, i1) ** 2
 
 
-def euclidean_difference_kernel(N: int | tuple, width: int | tuple) -> np.ndarray:
+def euclidean_difference_kernel(
+    N: int | tuple | np.ndarray, width: int | float | tuple
+) -> np.ndarray:
     """Create a distance matrix for a kernel using euclidean difference.
 
     N : int | tuple
@@ -108,23 +104,27 @@ def euclidean_difference_kernel(N: int | tuple, width: int | tuple) -> np.ndarra
     diff : np.ndarray
         Array of normalized distances.
     """
-    if isinstance(N, int):
+    if isinstance(N, int | np.ndarray):
         N = (N, N)
 
-    if isinstance(width, int):
+    if isinstance(width, int | float):
         width = (width, width)
 
     if len(N) != 2 or len(width) != 2:
         raise ValueError(f"Invalid parameters. Got N={N} and width={width}.")
 
-    # The extra axis is required to use `cdist`
-    i0 = np.arange(N[0])[:, np.newaxis] / width[0]
-    i1 = np.arange(N[1])[:, np.newaxis] / width[1]
+    i0 = np.arange(N[0]) if isinstance(N[0], int) else N[0]
+    i1 = np.arange(N[1]) if isinstance(N[1], int) else N[1]
 
-    return cdist(i0, i1, metric="euclidean")
+    i0 = i0 / width[0]
+    i1 = i1 / width[1]
+
+    return cdist(i0[:, np.newaxis], i1[:, np.newaxis], metric="euclidean")
 
 
-def gaussian_kernel(N: int | tuple, width: int | tuple, alpha: float, **kwargs):
+def gaussian_kernel(
+    N: int | tuple | np.ndarray, width: int | float | tuple, alpha: float, **kwargs
+):
     """Return a gaussian kernel.
 
     Parameters
@@ -153,7 +153,11 @@ def gaussian_kernel(N: int | tuple, width: int | tuple, alpha: float, **kwargs):
 
 
 def rational_kernel(
-    N: int | tuple, width: int | tuple, alpha: float, a: float, **kwargs
+    N: int | tuple | np.ndarray,
+    width: int | float | tuple,
+    alpha: float,
+    a: float,
+    **kwargs,
 ) -> np.ndarray:
     """Return a rational kernel.
 
@@ -185,7 +189,11 @@ def rational_kernel(
 
 
 def matern_kernel(
-    N: int | float, width: int | float, alpha: float, nu: float, **kwargs
+    N: int | tuple | np.ndarray,
+    width: int | float | tuple,
+    alpha: float,
+    nu: float,
+    **kwargs,
 ) -> np.ndarray:
     """Return a matern kernel.
 
@@ -222,13 +230,63 @@ def matern_kernel(
     dist = euclidean_difference_kernel(N, width)
 
     if nu == 1.5:
-        C = np.sqrt(3) * dist
-        C = (1.0 + C) * np.exp(-C)
+        dist *= np.sqrt(3)
+        C = 1.0 + dist
+        C *= np.exp(-dist)
     elif nu == 2.5:
-        C = np.sqrt(5) * dist
-        C = (1.0 + C + C**2 / 3.0) * np.exp(-C)
+        dist *= np.sqrt(5)
+        C = 1.0 + dist + dist**2 / 3.0
+        C *= np.exp(-dist)
 
-    return (alpha**2) * C
+    # Scale
+    C *= alpha**2
+
+    return C
+
+
+def lanczos_kernel(
+    N: int | tuple | np.ndarray, width: int | float | tuple, alpha: float, **kwargs
+) -> np.ndarray:
+    """Return a lanczos kernel.
+
+    Parameters
+    ----------
+    N
+        Number of samples over which to generate the kernel.
+        If this is a length-2 tuple, assume that this is a
+        correlation between two different sets of indices.
+    width
+        Width of the kernel.
+    alpha
+        Square root of the kernel variance.
+    kwargs
+        Unused keyword arguemnts, required for compatibilty
+        when calling with `get_kernel`.
+
+    Returns
+    -------
+    C
+        Lanczos covariance matrix of shape (N[0], N[1]). If
+        N is an integer, the covariance is square with shape (N, N).
+    """
+    dist = euclidean_difference_kernel(N, width)
+
+    # Figure out the width and sample spacing used
+    # in order to create the lengthened sinc window
+    xi = N[0] if isinstance(N, tuple) else N
+    dxi = np.median(np.abs(np.diff(xi))) if isinstance(xi, np.ndarray) else 1.0
+
+    a = width[0] if isinstance(width, tuple) else width
+    a /= dxi
+
+    C = np.where(
+        abs(dist) < 1.0, np.sinc(dist * a / np.pi) * np.sinc(dist / np.pi), 0.0
+    )
+
+    # Scale
+    C *= alpha**2
+
+    return C
 
 
 def moving_average_inverse_kernel(
@@ -274,3 +332,82 @@ def moving_average_inverse_kernel(
     IW = np.identity(N) - W
 
     return alpha * (IW.T @ IW)
+
+
+def get_band_diagonal(
+    x: np.ndarray, tol: float = 1.0e-4, which: str = "full"
+) -> np.ndarray:
+    """Convert a full band diagonal kernel into just the lower band.
+
+    Used to feed into `la.solveh_banded.`
+
+    Parameters
+    ----------
+    x
+        `n x n` symmetric band-diagonal matrix
+    tol
+        Smallest value to consider when finding the
+        band edge. Default is 1.0e-5.
+    which
+        Which band to extract. Options are
+        {"lower", "upper", "full"}. Default is "full".
+
+    Returns
+    -------
+    xb
+        `n x k` lower band of `x`.
+    """
+    N = x.shape[0]
+    M = np.sum(x > tol, axis=-1).max() // 2 + 1
+
+    if which == "full":
+        idx = range(-M, M)
+    elif which == "lower":
+        idx = range(0, M)
+    elif which == "upper":
+        idx = range(-M + 1, 1)
+    else:
+        raise TypeError(
+            f"Got invalid argument for `which`: {which}. "
+            "Options are [`lower`, `upper`, `full`]."
+        )
+
+    banded = np.zeros((len(idx), N), dtype=x.dtype)
+
+    for i in idx:
+        if i >= 0:
+            banded[i, : N - i] = x.diagonal(i)
+        else:
+            banded[i, -i:] = x.diagonal(i)
+
+    # Correct for indexing
+    if which == "full":
+        banded = np.fft.fftshift(banded, axes=0)
+    elif which == "upper":
+        banded = np.roll(banded, shift=-1, axis=0)
+
+    return banded
+
+
+def is_hermitian_positive_definite(x: np.ndarray) -> bool:
+    """Check if a matrix is Hermitian positive-definite.
+
+    Parameters
+    ----------
+    x
+        Array to check.
+
+    Returns
+    -------
+    result
+        True if `x` is hermitian positive-definite
+    """
+    if not la.ishermitian(x):
+        return False
+
+    try:
+        la.cholesky(x, lower=False)
+    except la.LinAlgError:
+        return False
+
+    return True
