@@ -1,44 +1,35 @@
 """Implement HyFoReS to correct bandpass gains.
 
- HyFoReS, example given for estimating baseline independent gains. The actual code estimates gains for each baseline.
+Two tasks are needed.
+The first task should be chosen from one of the options below.
 
- Pipeline task 1: DelayFilterHyFoReSBandpassHybridVis
+DelayFilterHyFoReSBandpassHybridVis :
+    Estimate bandpass gains and their window matrix from unfiltered hybrid vis.
 
- inputs: vis, filter
+DelayFilterHyFoReSBandpassHybridVisMask :
+    Same as the previous task but adding a pixel mask to mask sidelobes.
 
- step 1: get estimated signal (apply delay filter to vis): loop over pol, ew, time: post_vis[pol, :, ew, :, time] = filter[pol, :, :, ew, time].dot(vis[pol, :, ew, :, time]) --> distributed time axes work independently
+HyFoReSBandpassHybridVis :
+    Same as the first task but does not implement the delay filter.
+    This allows RA median subtraction before HyFoReS.
+    Namely, having a separate task to delay filter hybrid vis.
+    Then apply RA median subtraction, followed by HyFoReS.
 
- step 2: estimate bandpass gains:
-                               Both numerator and denominator are 0 if the freq channel is masked
-                               Numerator:   loop over pol, freq: yN[pol, freq] = vis[pol, freq,...].vdot(post_vis[pol, freq,...]) --> sum over distributed time axes
-                               Denominator: loop over pol, freq: yD[pol, freq] = vis[pol, freq,...].vdot(vis[pol, freq,...])      --> sum over distributed time axes
-                               Estimated g: y[:, :] = yN[:,:]/yN[:,:]
+HyFoReSBandpassHybridVisMask :
+    This task does not implement the delay filter.
+    Otherwise same as DelayFilterHyFoReSBandpassHybridVisMask.
 
- step 3: compute the window matrix:
-                               Numerator: loop over pol N[pol, :, :] = sum over ew, time: vis[pol,:, ew, :, time].conj().dot(vis[pol,:, ew, :, time].T())*filter[pol,:,:,ew, time] # the last product is element-wise product --> sum over distributed time axes
-                                                  # this can be computed under the pol loop of the previous step
-                               Dominator: loop over pol, freq_1: D[pol, freq_1] = vis[pol, freq_1, ...].vdot(vis[pol, freq_1, ...]) --> sum over distributed time axes # note this is the same as yD above, do so no need to compute again
-                               Window:    loop over pol, freq_1: W[pol,freq_1,:] = N[pol, freq_1, :]/D[pol, freq_1]
+HyFoReSBandpassHybridVisMaskKeepSource :
+    This task masks source sidelobes but keeps their mainlobes.
+    Otherwise same as HyFoReSBandpassHybridVisMask.
+    The files to construct the mask are provided as the inputs.
 
- outputs: the estimated gains and window (new container required)
+The second task is DelayFilterHyFoReSBandpassHybridVisClean.
+It compensates the bandpass window and subtracts the residual gain errors.
 
-
- Pipeline task 2: DelayFilterHyFoReSBandpassHybridVisClean
-
- inputs: vis, filter, estimate gains and window
-
- step 4: pseudo-invert the window:
-                               Singular values:  loop over pol: u[pol], s_val[pol], vh[pol] = LA.svd(W[pol,:,:]) # need the singular value to determine the pseduo-inverse cut off: cut_off = 3e-2 by default
-                               Pseudo-inverse:   loop over pol: W_pinv[pol,:,:], rank[pol] = LA.pinv(W[pol,:,:], atol = cut_off, return_rank = True) # return rank should be Nfreq - Nfreq_mask - Nfreq_delay_cut
-                               Unwindowed gains: loop over pol: g[pol, :] = W_pinv[pol,:,:].dot(y[pol, :])
-
- step 5: subtract foregrounds:
-                               cleaned vis: loop over pol, ew, time: vis_cleaned[pol, :, ew, :, time] = post_vis[pol, :, ew, :, time] - filter[pol, :, :, ew, time].dot(np.diag(g[pol,:]).dot(vis[pol, :, ew, :, time])) --> distributed time axes work independently
-                               # post_vis[pol, :, ew, :, time] is computed the same way as step 1
-
-output: cleaned vis
-
-Required Draco containers: VisBandpassWindowBaseline, VisBandpassCompensateBaseline
+Currently, the best choice to run HyFoReSBandpassHybridVisMaskKeepSource.
+Then run DelayFilterHyFoReSBandpassHybridVisClean.
+Contact Haochen for an example config file.
 """
 
 import time
@@ -57,12 +48,13 @@ from ..util import tools
 
 
 class DelayFilterHyFoReSBandpassHybridVis(task.SingleTask):
-    """Apply HyFoReS to estimate bandpass gains and compute their window matrix from unfiltered hybrid beam formed visibilities.
+    """Estimate bandpass gains and their window matrix from unfiltered hybrid vis.
 
-    Fixed the issue of noise bias in gain estimation.
-    This task builds on ApplyDelayFilterHybridVis. HyFoReS uses the unfiltered visibilities
-    as estimated foregrounds and use the delay filtered visibilities as estimated signals. It
-    cross correlates the two to estimate the bandpass errors in the postfiltered data.
+    HyFoReS uses the unfiltered visibilities as estimated foregrounds and use the
+    delay filtered visibilities as estimated signals. It cross correlates the two
+    to estimate the bandpass errors in the postfiltered data.
+
+    This implementation fixed the issue of noise bias in gain estimation.
 
     Attributes
     ----------
@@ -94,7 +86,7 @@ class DelayFilterHyFoReSBandpassHybridVis(task.SingleTask):
         self.min_ysep = min_ysep
 
     def process(self, hv, source):
-        """First apply the DAYENU filter to a HybridVisStream. Then use HyFoReS to estimate the bandpass errors and compute their window matrix.
+        """Apply the DAYENU filter and then HyFoReS.
 
         Parameters
         ----------
@@ -137,7 +129,7 @@ class DelayFilterHyFoReSBandpassHybridVis(task.SingleTask):
         weight = hv.weight[:].local_array.copy()
         filt = source.filter[:].local_array
 
-        # create an empty dataset to store the post filtered visibilities
+        # create an empty dataset to store the post filtered vis.
         # Keeping vis as the unfiltered visibilities.
         post_vis = np.zeros_like(vis)
 
@@ -151,11 +143,8 @@ class DelayFilterHyFoReSBandpassHybridVis(task.SingleTask):
 
                 for pp in range(npol):
 
-                    flag = (
-                        weight[pp, :, xx, tt] > 0.0
-                    )  ### N:so this is how to tell a frequency is flagged or not
+                    flag = weight[pp, :, xx, tt] > 0.0
 
-                    # N:Skip fully masked samples ### no frequency is available --> skip (cond 1/3)
                     if not np.any(flag):
                         continue
 
@@ -195,14 +184,14 @@ class DelayFilterHyFoReSBandpassHybridVis(task.SingleTask):
                             flag_low = diag > (self.atten_threshold * med_diag)
                             weight[pp, :, xx, tt] *= flag_low.astype(
                                 weight.dtype
-                            )  ### this masking is only done on the weight
+                            )  # this masking is only done on the weight
                             # Now apply this masking to the filtered visibilities as well
                             atten_mask = flag_low.astype(vis.dtype)
                             post_vis[pp, :, xx, :, tt] *= atten_mask[:, np.newaxis]
 
             self.log.debug(f"Took {time.time() - t0:0.3f} seconds in total.")
 
-        # Now implement HyFoReS step 2 and 3 in the comments
+        # Now estimate bandpass gains and their window
         # First create variable to store values
 
         yN = np.zeros(
@@ -222,12 +211,13 @@ class DelayFilterHyFoReSBandpassHybridVis(task.SingleTask):
         self.log.debug("Start computing the estimated gains.")
         t0 = time.time()
         for pp in range(npol):
-            # step 2
+
             for ff in range(nfreq):
 
                 for xx in range(new):
                     # grab datasets
-                    tvis = np.ascontiguousarray(vis[pp, ff, xx, ...])  # original data
+                    # original data
+                    tvis = np.ascontiguousarray(vis[pp, ff, xx, ...])
                     tpost_vis = np.ascontiguousarray(
                         post_vis[pp, ff, xx, ...]
                     )  # estimated signal
@@ -239,7 +229,7 @@ class DelayFilterHyFoReSBandpassHybridVis(task.SingleTask):
                         tpost_vis * weight_mask[np.newaxis, :] * el_mask[:, np.newaxis]
                     )  # apply weight and liasing mask to estimated signal
 
-                    # masked foreground template = original data - estimated signal (filtered data)
+                    # masked foreground template = original data - estimated signal
                     tfg_temp_mask = (
                         tvis * weight_mask[np.newaxis, :] * el_mask[:, np.newaxis]
                         - tpost_vis_masked
@@ -262,7 +252,7 @@ class DelayFilterHyFoReSBandpassHybridVis(task.SingleTask):
         self.log.debug("Start computing the window.")
         t0 = time.time()
         for pp in range(npol):
-            # step 3
+
             for xx in range(new):
                 for tt in range(ntime):
                     # grab datasets
@@ -272,7 +262,7 @@ class DelayFilterHyFoReSBandpassHybridVis(task.SingleTask):
                     sg_f_l = np.ascontiguousarray(
                         post_vis[pp, :, xx, :, tt]
                     )  # estimated signal
-                    filt_f_f = np.ascontiguousarray(filt[pp, :, :, xx, tt])  # filter
+                    filt_f_f = np.ascontiguousarray(filt[pp, :, :, xx, tt])
 
                     weight_mask_N = (
                         weight[pp, :, xx, tt] > 0.0
@@ -286,7 +276,6 @@ class DelayFilterHyFoReSBandpassHybridVis(task.SingleTask):
                     )
 
                     N[pp, xx, :, :] += np.matmul(np.conj(fg_f_l), fg_f_l.T) * filt_f_f
-                    # the line above does vis[pp,:, xx, :, tt].conj().dot(vis[pp,:, xx, :, tt].T())*filt[pp,:,:,xx, tt]
 
                 self.log.debug(
                     f"Window summed for Polarization {pp} of {npol} and East-West baseline {xx} of {new}."
@@ -320,12 +309,14 @@ class DelayFilterHyFoReSBandpassHybridVis(task.SingleTask):
         return bp_gain_win
 
     def aliased_el_mask(self, hv):
-        """Return a mask for the el axis to mask out zenith angles beyond the aliased horizon. Computed using the maximum frequency in the hybrid beamformed visibilities.
+        """Return a mask for the el axis to mask zenith angles beyond the aliased horizon.
+
+        Computed using the maximum frequency in the hybrid beamformed visibilities.
 
         Parameters
         ----------
         hv: HybridVisStream
-            Input container for which we want to provide a aliased region mask along the el axis
+            Input container for which we will provide a aliased region mask along the el axis
 
         Returns
         -------
@@ -359,10 +350,6 @@ class DelayFilterHyFoReSBandpassHybridVis(task.SingleTask):
 class DelayFilterHyFoReSBandpassHybridVisMask(DelayFilterHyFoReSBandpassHybridVis):
     """Same as DelayFilterHyFoReSBandpassHybridVis but adding a pixel mask.
 
-    This task builds on ApplyDelayFilterHybridVis. HyFoReS uses the unfiltered visibilities
-    as estimated foregrounds and use the delay filtered visibilities as estimated signals. It
-    cross correlates the two to estimate the bandpass errors in the postfiltered data.
-
     Attributes
     ----------
     atten_threshold : float
@@ -376,7 +363,7 @@ class DelayFilterHyFoReSBandpassHybridVisMask(DelayFilterHyFoReSBandpassHybridVi
     atten_threshold = config.Property(proptype=float, default=0.0)
 
     def process(self, hv, source, maskf):
-        """First apply the DAYENU filter to a HybridVisStream. Then use HyFoReS to estimate the bandpass errors and compute their window matrix.
+        """Apply the pixel mask, DAYENU filter, and HyFoReS.
 
         Parameters
         ----------
@@ -385,7 +372,7 @@ class DelayFilterHyFoReSBandpassHybridVisMask(DelayFilterHyFoReSBandpassHybridVi
         source: containers.HybridVisStream
             The filter of HybridVisStream to be applied.
         maskf: containers.RingMapMask
-            A pixel track mask file to mask out bright sidelobes that could bias gain estimation.
+            A pixel track mask to mask out sidelobes that could bias gain estimation.
 
         Returns
         -------
@@ -438,11 +425,8 @@ class DelayFilterHyFoReSBandpassHybridVisMask(DelayFilterHyFoReSBandpassHybridVi
 
                 for pp in range(npol):
 
-                    flag = (
-                        weight[pp, :, xx, tt] > 0.0
-                    )  ### N:so this is how to tell a frequency is flagged or not
+                    flag = weight[pp, :, xx, tt] > 0.0
 
-                    # N:Skip fully masked samples ### no frequency is available --> skip (cond 1/3)
                     if not np.any(flag):
                         continue
 
@@ -482,14 +466,14 @@ class DelayFilterHyFoReSBandpassHybridVisMask(DelayFilterHyFoReSBandpassHybridVi
                             flag_low = diag > (self.atten_threshold * med_diag)
                             weight[pp, :, xx, tt] *= flag_low.astype(
                                 weight.dtype
-                            )  ### this masking is only done on the weight
+                            )  # this masking is only done on the weight
                             # Now apply this masking to the filtered visibilities as well
                             atten_mask = flag_low.astype(vis.dtype)
                             post_vis[pp, :, xx, :, tt] *= atten_mask[:, np.newaxis]
 
             self.log.debug(f"Took {time.time() - t0:0.3f} seconds in total.")
 
-        # Now implement HyFoReS step 2 and 3 in the comments
+        # Now compute the gains and their window
         # First create variable to store values
 
         yN = np.zeros(
@@ -513,7 +497,7 @@ class DelayFilterHyFoReSBandpassHybridVisMask(DelayFilterHyFoReSBandpassHybridVi
         self.log.debug("Start computing the estimated gains.")
         t0 = time.time()
         for pp in range(npol):
-            # step 2
+
             for ff in range(nfreq):
 
                 for xx in range(new):
@@ -530,11 +514,11 @@ class DelayFilterHyFoReSBandpassHybridVisMask(DelayFilterHyFoReSBandpassHybridVi
                         tpost_vis * weight_mask[np.newaxis, :] * el_mask[:, np.newaxis]
                     )  # apply weight and liasing mask to estimated signal
 
-                    # masked foreground template = original data - estimated signal (filtered data)
+                    # masked foreground template = original data - estimated signal
                     tfg_temp_mask = (
                         tvis * weight_mask[np.newaxis, :] * el_mask[:, np.newaxis]
                         - tpost_vis_masked
-                    )  #
+                    )
 
                     yN[pp, xx, ff] = np.vdot(
                         tfg_temp_mask, tpost_vis_masked
@@ -577,7 +561,6 @@ class DelayFilterHyFoReSBandpassHybridVisMask(DelayFilterHyFoReSBandpassHybridVi
                     )
 
                     N[pp, xx, :, :] += np.matmul(np.conj(fg_f_l), fg_f_l.T) * filt_f_f
-                    # the line above does vis[pp,:, xx, :, tt].conj().dot(vis[pp,:, xx, :, tt].T())*filt[pp,:,:,xx, tt]
 
                 self.log.debug(
                     f"Window summed for Polarization {pp} of {npol} and East-West baseline {xx} of {new}."
@@ -612,13 +595,9 @@ class DelayFilterHyFoReSBandpassHybridVisMask(DelayFilterHyFoReSBandpassHybridVi
 
 
 class HyFoReSBandpassHybridVis(DelayFilterHyFoReSBandpassHybridVis):
-    """Same as DelayFilterHyFoReSBandpassHybridVis but does not implement the Delay filter.
+    """Same as DelayFilterHyFoReSBandpassHybridVis just without the Delay filter.
 
     It relies on an external step to perform the delay transform to get the estimated vis.
-    Fixed the issue of noise bias in gain estimation.
-    This task builds on ApplyDelayFilterHybridVis. HyFoReS uses the unfiltered visibilities
-    as estimated foregrounds and use the delay filtered visibilities as estimated signals. It
-    cross correlates the two to estimate the bandpass errors in the postfiltered data.
 
     Attributes
     ----------
@@ -633,7 +612,7 @@ class HyFoReSBandpassHybridVis(DelayFilterHyFoReSBandpassHybridVis):
     atten_threshold = config.Property(proptype=float, default=0.0)
 
     def process(self, hv, pf_hv):
-        """Uses HyFoReS to estimate the bandpass errors and compute their window matrix.
+        """Uses HyFoReS to estimate the bandpass errors and their window matrix.
 
         Parameters
         ----------
@@ -647,7 +626,6 @@ class HyFoReSBandpassHybridVis(DelayFilterHyFoReSBandpassHybridVis):
         gain_window: containers.VisBandpassWindow
             Estimated bandpass gains and their window matrix.
         """
-        # First apply the DEYANU filter
         # Distribute over products
         hv.redistribute(["ra", "time"])
         pf_hv.redistribute(["ra", "time"])
@@ -661,9 +639,6 @@ class HyFoReSBandpassHybridVis(DelayFilterHyFoReSBandpassHybridVis):
         weight = pf_hv.weight[:].local_array.copy()
         # TODO: consider the effect of crosstalk subtraction on the window
         filt = hv.filter[:].local_array.copy()
-
-        # Now implement HyFoReS step 2 and 3 in the comments
-        # First create variable to store values
 
         yN = np.zeros(
             (npol, new, nfreq), dtype=np.complex128
@@ -682,7 +657,7 @@ class HyFoReSBandpassHybridVis(DelayFilterHyFoReSBandpassHybridVis):
         self.log.debug("Start computing the estimated gains.")
         t0 = time.time()
         for pp in range(npol):
-            # step 2
+
             for ff in range(nfreq):
 
                 for xx in range(new):
@@ -699,11 +674,11 @@ class HyFoReSBandpassHybridVis(DelayFilterHyFoReSBandpassHybridVis):
                         tpost_vis * weight_mask[np.newaxis, :] * el_mask[:, np.newaxis]
                     )  # apply weight and liasing mask to estimated signal
 
-                    # masked foreground template = original data - estimated signal (filtered data)
+                    # masked foreground template = original data - estimated signal
                     tfg_temp_mask = (
                         tvis * weight_mask[np.newaxis, :] * el_mask[:, np.newaxis]
                         - tpost_vis_masked
-                    )  #
+                    )
 
                     yN[pp, xx, ff] = np.vdot(
                         tfg_temp_mask, tpost_vis_masked
@@ -732,7 +707,7 @@ class HyFoReSBandpassHybridVis(DelayFilterHyFoReSBandpassHybridVis):
                     sg_f_l = np.ascontiguousarray(
                         post_vis[pp, :, xx, :, tt]
                     )  # estimated signal
-                    filt_f_f = np.ascontiguousarray(filt[pp, :, :, xx, tt])  # filter
+                    filt_f_f = np.ascontiguousarray(filt[pp, :, :, xx, tt])
 
                     weight_mask_N = (
                         weight[pp, :, xx, tt] > 0.0
@@ -746,7 +721,6 @@ class HyFoReSBandpassHybridVis(DelayFilterHyFoReSBandpassHybridVis):
                     )
 
                     N[pp, xx, :, :] += np.matmul(np.conj(fg_f_l), fg_f_l.T) * filt_f_f
-                    # the line above does vis[pp,:, xx, :, tt].conj().dot(vis[pp,:, xx, :, tt].T())*filt[pp,:,:,xx, tt]
 
                 self.log.debug(
                     f"Window summed for Polarization {pp} of {npol} and East-West baseline {xx} of {new}."
@@ -781,13 +755,9 @@ class HyFoReSBandpassHybridVis(DelayFilterHyFoReSBandpassHybridVis):
 
 
 class HyFoReSBandpassHybridVisMask(DelayFilterHyFoReSBandpassHybridVis):
-    """Same as DelayFilterHyFoReSBandpassHybridVis but does not implement the Delay filter.
+    """Same as DelayFilterHyFoReSBandpassHybridVisMask but without the Delay filter.
 
     It relies on an external step to perform the delay transform to get the estimated vis.
-    Fixed the issue of noise bias in gain estimation.
-    This task builds on ApplyDelayFilterHybridVis. HyFoReS uses the unfiltered visibilities
-    as estimated foregrounds and use the delay filtered visibilities as estimated signals. It
-    cross correlates the two to estimate the bandpass errors in the postfiltered data.
 
     Attributes
     ----------
@@ -802,7 +772,7 @@ class HyFoReSBandpassHybridVisMask(DelayFilterHyFoReSBandpassHybridVis):
     atten_threshold = config.Property(proptype=float, default=0.0)
 
     def process(self, hv, pf_hv, maskf):
-        """Uses HyFoReS to estimate the bandpass errors and compute their window matrix.
+        """Uses HyFoReS to estimate the bandpass errors and their window matrix.
 
         Parameters
         ----------
@@ -811,14 +781,13 @@ class HyFoReSBandpassHybridVisMask(DelayFilterHyFoReSBandpassHybridVis):
         pf_hv: containers.HybridVisStream
             Post-filtered and crosstalk corrected data.
         maskf: containers.RingMapMask
-            A pixel track mask file to mask out bright sidelobes that could bias gain estimation.
+            A pixel track mask to mask out sidelobes that could bias gain estimation.
 
         Returns
         -------
         gain_window: containers.VisBandpassWindow
             Estimated bandpass gains and their window matrix.
         """
-        # First apply the DEYANU filter
         # Distribute over products
         hv.redistribute(["ra", "time"])
         pf_hv.redistribute(["ra", "time"])
@@ -836,9 +805,6 @@ class HyFoReSBandpassHybridVisMask(DelayFilterHyFoReSBandpassHybridVis):
         weight = pf_hv.weight[:].local_array.copy()
         # TODO: consider the effect of crosstalk subtraction on the window
         filt = hv.filter[:].local_array.copy()
-
-        # Now implement HyFoReS step 2 and 3 in the comments
-        # First create variable to store values
 
         yN = np.zeros(
             (npol, new, nfreq), dtype=np.complex128
@@ -878,11 +844,11 @@ class HyFoReSBandpassHybridVisMask(DelayFilterHyFoReSBandpassHybridVis):
                         tpost_vis * weight_mask[np.newaxis, :] * el_mask[:, np.newaxis]
                     )  # apply weight and liasing mask to estimated signal
 
-                    # masked foreground template = original data - estimated signal (filtered data)
+                    # masked foreground template = original data - estimated signal
                     tfg_temp_mask = (
                         tvis * weight_mask[np.newaxis, :] * el_mask[:, np.newaxis]
                         - tpost_vis_masked
-                    )  #
+                    )
 
                     yN[pp, xx, ff] = np.vdot(
                         tfg_temp_mask, tpost_vis_masked
@@ -901,7 +867,7 @@ class HyFoReSBandpassHybridVisMask(DelayFilterHyFoReSBandpassHybridVis):
         self.log.debug("Start computing the window.")
         t0 = time.time()
         for pp in range(npol):
-            # step 3
+
             for xx in range(new):
                 for tt in range(ntime):
                     # grab datasets
@@ -911,7 +877,7 @@ class HyFoReSBandpassHybridVisMask(DelayFilterHyFoReSBandpassHybridVis):
                     sg_f_l = np.ascontiguousarray(
                         post_vis[pp, :, xx, :, tt]
                     )  # estimated signal
-                    filt_f_f = np.ascontiguousarray(filt[pp, :, :, xx, tt])  # filter
+                    filt_f_f = np.ascontiguousarray(filt[pp, :, :, xx, tt])
 
                     weight_mask_N = (
                         weight[pp, :, xx, tt] > 0.0
@@ -925,7 +891,6 @@ class HyFoReSBandpassHybridVisMask(DelayFilterHyFoReSBandpassHybridVis):
                     )
 
                     N[pp, xx, :, :] += np.matmul(np.conj(fg_f_l), fg_f_l.T) * filt_f_f
-                    # the line above does vis[pp,:, xx, :, tt].conj().dot(vis[pp,:, xx, :, tt].T())*filt[pp,:,:,xx, tt]
 
                 self.log.debug(
                     f"Window summed for Polarization {pp} of {npol} and East-West baseline {xx} of {new}."
@@ -960,13 +925,11 @@ class HyFoReSBandpassHybridVisMask(DelayFilterHyFoReSBandpassHybridVis):
 
 
 class HyFoReSBandpassHybridVisMaskKeepSource(DelayFilterHyFoReSBandpassHybridVis):
-    """Same as DelayFilterHyFoReSBandpassHybridVis but does not implement the Delay filter.
+    """Same as HyFoReSBandpassHybridVisMask but uses a different pixel mask.
+
+    The mask here only masks out sources' sidelobes but keeps their main lobes.
 
     It relies on an external step to perform the delay transform to get the estimated vis.
-    Fixed the issue of noise bias in gain estimation.
-    This task builds on ApplyDelayFilterHybridVis. HyFoReS uses the unfiltered visibilities
-    as estimated foregrounds and use the delay filtered visibilities as estimated signals. It
-    cross correlates the two to estimate the bandpass errors in the postfiltered data.
 
     Attributes
     ----------
@@ -981,7 +944,7 @@ class HyFoReSBandpassHybridVisMaskKeepSource(DelayFilterHyFoReSBandpassHybridVis
     atten_threshold = config.Property(proptype=float, default=0.0)
 
     def process(self, hv, pf_hv, maskf, masksf):
-        """Uses HyFoReS to estimate the bandpass errors and compute their window matrix.
+        """Uses HyFoReS to estimate the bandpass errors and their window matrix.
 
         Parameters
         ----------
@@ -990,16 +953,15 @@ class HyFoReSBandpassHybridVisMaskKeepSource(DelayFilterHyFoReSBandpassHybridVis
         pf_hv: containers.HybridVisStream
             Post-filtered and crosstalk corrected data.
         maskf: containers.RingMapMask
-            A pixel track mask file to mask out bright sidelobes that could bias gain estimation.
+            A pixel track mask to mask out sidelobes that could bias gain estimation.
         masksf: containers.RingMapMask
-            A pixel transit mask file to mask out bright point sources.
+            A pixel transit mask to keep sources' main lobes.
 
         Returns
         -------
         gain_window: containers.VisBandpassWindow
             Estimated bandpass gains and their window matrix.
         """
-        # First apply the DEYANU filter
         # Distribute over products
         hv.redistribute(["ra", "time"])
         pf_hv.redistribute(["ra", "time"])
@@ -1020,9 +982,6 @@ class HyFoReSBandpassHybridVisMaskKeepSource(DelayFilterHyFoReSBandpassHybridVis
         # TODO: consider the effect of crosstalk subtraction on the window
         filt = hv.filter[:].local_array.copy()
 
-        # Now implement HyFoReS step 2 and 3 in the comments
-        # First create variable to store values
-
         yN = np.zeros(
             (npol, new, nfreq), dtype=np.complex128
         )  # numerator of the estimated gains
@@ -1037,7 +996,7 @@ class HyFoReSBandpassHybridVisMaskKeepSource(DelayFilterHyFoReSBandpassHybridVis
             hv
         )  # generate a mask along the el axis to mask out aliased regions
 
-        # Apply the pixel mask, keeping the point sources but not the sidelobes
+        # Apply the pixel mask, keeping the main lobes but not the sidelobes
         post_vis *= ~np.logical_and(
             mask[:, :, np.newaxis, :, :], ~masks[:, :, np.newaxis, :, :]
         )
@@ -1048,7 +1007,7 @@ class HyFoReSBandpassHybridVisMaskKeepSource(DelayFilterHyFoReSBandpassHybridVis
         self.log.debug("Start computing the estimated gains.")
         t0 = time.time()
         for pp in range(npol):
-            # step 2
+
             for ff in range(nfreq):
 
                 for xx in range(new):
@@ -1065,11 +1024,11 @@ class HyFoReSBandpassHybridVisMaskKeepSource(DelayFilterHyFoReSBandpassHybridVis
                         tpost_vis * weight_mask[np.newaxis, :] * el_mask[:, np.newaxis]
                     )  # apply weight and liasing mask to estimated signal
 
-                    # masked foreground template = original data - estimated signal (filtered data)
+                    # masked foreground template = original data - estimated signal
                     tfg_temp_mask = (
                         tvis * weight_mask[np.newaxis, :] * el_mask[:, np.newaxis]
                         - tpost_vis_masked
-                    )  #
+                    )
 
                     yN[pp, xx, ff] = np.vdot(
                         tfg_temp_mask, tpost_vis_masked
@@ -1088,7 +1047,7 @@ class HyFoReSBandpassHybridVisMaskKeepSource(DelayFilterHyFoReSBandpassHybridVis
         self.log.debug("Start computing the window.")
         t0 = time.time()
         for pp in range(npol):
-            # step 3
+
             for xx in range(new):
                 for tt in range(ntime):
                     # grab datasets
@@ -1098,7 +1057,7 @@ class HyFoReSBandpassHybridVisMaskKeepSource(DelayFilterHyFoReSBandpassHybridVis
                     sg_f_l = np.ascontiguousarray(
                         post_vis[pp, :, xx, :, tt]
                     )  # estimated signal
-                    filt_f_f = np.ascontiguousarray(filt[pp, :, :, xx, tt])  # filter
+                    filt_f_f = np.ascontiguousarray(filt[pp, :, :, xx, tt])
 
                     weight_mask_N = (
                         weight[pp, :, xx, tt] > 0.0
@@ -1112,7 +1071,6 @@ class HyFoReSBandpassHybridVisMaskKeepSource(DelayFilterHyFoReSBandpassHybridVis
                     )
 
                     N[pp, xx, :, :] += np.matmul(np.conj(fg_f_l), fg_f_l.T) * filt_f_f
-                    # the line above does vis[pp,:, xx, :, tt].conj().dot(vis[pp,:, xx, :, tt].T())*filt[pp,:,:,xx, tt]
 
                 self.log.debug(
                     f"Window summed for Polarization {pp} of {npol} and East-West baseline {xx} of {new}."
@@ -1147,7 +1105,7 @@ class HyFoReSBandpassHybridVisMaskKeepSource(DelayFilterHyFoReSBandpassHybridVis
 
 
 class DelayFilterHyFoReSBandpassHybridVisClean(task.SingleTask):
-    """Second pipeline task of HyFoReS: Subtract foreground residuals using the estimated bandpass gains .
+    """Compensates bandpass gain windows and subtracts foreground residuals.
 
     This task first compensates the bandpass window to obtain the unwindowed
     bandpass gains and then subtracts foreground residuals in the DAYENU-
@@ -1172,7 +1130,7 @@ class DelayFilterHyFoReSBandpassHybridVisClean(task.SingleTask):
     atten_threshold = config.Property(proptype=float, default=0.0)
 
     def process(self, hv, source, bp):
-        """First compensate for the bandpass estimate window.Then subtract foreground residuals in the NAYENU-filtered visibilities due to bandpass gains.
+        """Compensates the bandpass window and subtracts foreground residuals.
 
         Parameters
         ----------
@@ -1215,11 +1173,6 @@ class DelayFilterHyFoReSBandpassHybridVisClean(task.SingleTask):
 
         npol, nfreq, new, nel, ntime = hv.vis.local_shape
 
-        # Step 4
-        # step 4: pseudo-invert the window:
-        # Singular values:  loop over pol: u[pol], s_val[pol], vh[pol] = LA.svd(W[pol,:,:]) # need the singular value to determine the pseduo-inverse cut off: cut_off = 3e-2 by default
-        # Pseudo-inverse:   loop over pol: W_pinv[pol,:,:], rank[pol] = LA.pinv(W[pol,:,:], atol = cut_off, return_rank = True) # return rank should be Nfreq - Nfreq_mask - Nfreq_delay_cut
-        # Unwindowed gains: loop over pol: g[pol, :] = W_pinv[pol,:,:].dot(y[pol, :])
         # Compensate the window for the estimated bandpass gains
         y = bp.bandpass[:]
         W = bp.window[:]
@@ -1251,7 +1204,9 @@ class DelayFilterHyFoReSBandpassHybridVisClean(task.SingleTask):
 
             self.log.debug("Gain window compensated")
 
-        # put unwinded bandpass gains in a container. This container is not needed in later pipeline tasks. Save for debug purposes only.
+        # Put unwinded bandpass gains in a container.
+        # This container is not needed in later pipeline tasks.
+        # Save for debugging purposes only.
         comp_bandpass = containers.VisBandpassCompensateBaseline(
             pol=hv.pol,
             ew=hv.ew,
@@ -1262,13 +1217,7 @@ class DelayFilterHyFoReSBandpassHybridVisClean(task.SingleTask):
         comp_bandpass.attrs["rank"] = rank
         comp_bandpass.attrs["cutoff"] = self.cutoff
 
-        # Step 5
-        # get estimated signal (apply delay filter to vis): loop over pol, ew, time: post_vis[pol, :, ew, :, time] = filter[pol, :, :, ew, time].dot(vis[pol, :, ew, :, time]) --> distributed time axes work independently
-        # cleaned vis: loop over pol, ew, time: vis_cleaned[pol, :, ew, :, time] = post_vis[pol, :, ew, :, time] - filter[pol, :, :, ew, time].dot(np.diag(g[pol,:]).dot(vis[pol, :, ew, :, time])) --> distributed time axes work independently
-        # two lines together: vis_cleaned[pol, :, ew, :, time] = np.dot(filter[pol, :, :, ew, time], np.dot(np.eye(nfreq) - np.diag(np.real(g[pol,:])), vis[pol, :, ew, :, time]))
-        # Dereference the required datasets ### N:dereference means accessing the stored value where a pointer is pointing to. Q:why is a pointer involved?
-
-        # the following code will modify both vis and weight (foreground filtering and gain corrections)
+        # Apply the DAYENU filter
         vis = hv.vis[:].local_array
         weight = hv.weight[:].local_array
         filt = source.filter[:].local_array
@@ -1282,21 +1231,14 @@ class DelayFilterHyFoReSBandpassHybridVisClean(task.SingleTask):
 
                 for pp in range(npol):
 
-                    flag = (
-                        weight[pp, :, xx, tt] > 0.0
-                    )  ### N:so this is how to tell is a frequency is flagged or not
+                    flag = weight[pp, :, xx, tt] > 0.0
 
-                    # N:Skip fully masked samples ### no frequency is available --> skip (cond 1/3)
                     if not np.any(flag):
                         continue
 
                     # Grab datasets for this pol and ew baseline
-                    tvis = np.ascontiguousarray(
-                        vis[pp, :, xx, :, tt]
-                    )  ### N:ensures an array is stored in contiguous memory, following the C-order (row-major) layout. This is to make sure looping over the column index is fast.
-                    tvar = tools.invert_no_zero(
-                        weight[pp, :, xx, tt]
-                    )  ### inverse of the weight is variance (keep zeros zeros). Looks like the variance is taken over DEC or el.
+                    tvis = np.ascontiguousarray(vis[pp, :, xx, :, tt])
+                    tvar = tools.invert_no_zero(weight[pp, :, xx, tt])
 
                     # Grab the filter for this pol and ew baseline
                     NF = np.ascontiguousarray(filt[pp, :, :, xx, tt])
@@ -1305,16 +1247,12 @@ class DelayFilterHyFoReSBandpassHybridVisClean(task.SingleTask):
                     # are also unmasked in the data
                     valid_freq_flag = np.any(np.abs(NF) > 0.0, axis=0)
 
-                    if not np.any(
-                        valid_freq_flag
-                    ):  ### if the filter is entirely zero --> skip (cond 2/3)
+                    if not np.any(valid_freq_flag):
                         # Skip samples where filter is entirely zero
                         weight[pp, :, xx, tt] = 0.0
                         continue
 
-                    missing_freq = np.flatnonzero(
-                        valid_freq_flag & ~flag
-                    )  ### find the indices of frequencies needed by the delay filter but missing from the unfiltered data --> skip (cond 3/3)
+                    missing_freq = np.flatnonzero(valid_freq_flag & ~flag)
                     if missing_freq.size > 0:
                         self.log.warning(
                             "Missing the following frequencies that were "
@@ -1324,10 +1262,10 @@ class DelayFilterHyFoReSBandpassHybridVisClean(task.SingleTask):
                         weight[pp, :, xx, tt] = 0.0
                         continue
 
-                    # Implement Step 5
+                    # Subtract foreground residuals
                     diag_m = 1 - g[pp, xx, :]
                     vis[pp, :, xx, :, tt] = np.matmul(NF, diag_m[:, np.newaxis] * tvis)
-                    # variance multiples with the filter value squared
+                    # Variance multiples with the filter value squared
                     weight[pp, :, xx, tt] = tools.invert_no_zero(
                         np.matmul(np.abs(NF) ** 2, (np.abs(diag_m[:]) ** 2) * tvar)
                     )
@@ -1340,7 +1278,7 @@ class DelayFilterHyFoReSBandpassHybridVisClean(task.SingleTask):
                             flag_low = diag > (self.atten_threshold * med_diag)
                             weight[pp, :, xx, tt] *= flag_low.astype(
                                 weight.dtype
-                            )  ### this masking is only done on the weight
+                            )  # This masking is only done on the weight
 
             self.log.debug(f"Took {time.time() - t0:0.3f} seconds in total.")
 
