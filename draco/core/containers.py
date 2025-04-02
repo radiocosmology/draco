@@ -3683,7 +3683,7 @@ class LocalizedRFIMask(FreqContainer, TODContainer):
             "distributed_axis": "freq",
         },
     }
-    
+
     @property
     def mask(self):
         """Get the mask dataset."""
@@ -3740,7 +3740,7 @@ class LocalizedSiderealRFIMask(FreqContainer, SiderealContainer):
     def el(self):
         """Get the el axis."""
         return self.index_map["el"]
-    
+
 
 class VisBandpassWindow(FreqContainer):
     """Container for bandpass gains and their window estimated by running bandpass HyFoReS on hybrid beam-formed visibilities."""
@@ -3867,7 +3867,7 @@ class VisBandpassCompensateBaseline(VisBandpassCompensate):
         """Get the sval dataset."""
         return self.datasets["sval"]
 
-    
+
 class VisBandpassWindowBaselineRA(SiderealContainer, VisBandpassWindowBaseline):
     """Container for bandpass gains and their window estimated by running bandpass HyFoReS on hybrid beam-formed visibilities."""
 
