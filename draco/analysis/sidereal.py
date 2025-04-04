@@ -17,7 +17,8 @@ from caput import config, mpiarray, tod
 from cora.util import units
 
 from ..core import containers, io, task
-from ..util import regrid, tools
+from ..util import gaussian_process, regrid, tools
+from .interpolate import _inv_move_front, _move_front
 from .transform import Regridder
 
 
@@ -163,12 +164,6 @@ class SiderealRegridder(Regridder):
 
     Attributes
     ----------
-    samples : int
-        Number of samples across the sidereal day.
-    lanczos_width : int
-        Width of the Lanczos interpolation kernel.
-    snr_cov: float
-        Ratio of signal covariance to noise covariance (used for Wiener filter).
     down_mix: bool
         Down mix the visibility prior to interpolation using the fringe rate
         of a source at zenith.  This is un-done after the interpolation.
@@ -194,7 +189,7 @@ class SiderealRegridder(Regridder):
 
         Parameters
         ----------
-        data : containers.TimeStream
+        data : containers.TimeStream | containers.SiderealStream
             Timestream data for the day (must have a `LSD` attribute).
 
         Returns
@@ -202,34 +197,49 @@ class SiderealRegridder(Regridder):
         sdata : containers.SiderealStream
             The regularly gridded sidereal timestream.
         """
-        self.log.info("Regridding LSD:%i", data.attrs["lsd"])
+        self.log.info(f"Regridding LSD:{data.attrs['lsd']}")
 
         # Redistribute if needed too
         data.redistribute("freq")
-
-        sfreq = data.vis.local_offset[0]
-        efreq = sfreq + data.vis.local_shape[0]
-        freq = data.freq[sfreq:efreq]
-
-        # Convert data timestamps into LSDs
-        timestamp_lsd = self.observer.unix_to_lsd(data.time)
 
         # Fetch which LSD this is to set bounds
         self.start = data.attrs["lsd"]
         self.end = self.start + 1
 
+        # Get the source samples, depending on the input type
+        if "time" in data.index_map:
+            # Convert data timestamps into LSDs
+            source_samples = self.observer.unix_to_lsd(data.time)
+        elif "ra" in data.index_map:
+            # Convert data ra samples into LSDs
+            source_samples = self.start + data.ra / 360.0
+        else:
+            raise TypeError(
+                f"Invalid input data container {data.__class__.__name__}. "
+                "Expected container with a `time` or an `ra` axis."
+            )
+
+        # This regridder only supports visibilities and their
+        # corresponding weights. Make sure this is logged.
+        for name in data.datasets.keys():
+            if name not in {"vis", "vis_weight"}:
+                self.log.info(
+                    f"Skipping dataset `{name}` - only `vis` and `vis_weight` are supported."
+                )
+
         # Get view of data
-        weight = data.weight[:].view(np.ndarray)
-        vis_data = data.vis[:].view(np.ndarray)
+        weight = data.weight[:].local_array
+        vis_data = data.vis[:].local_array
 
         # Mix down
         if self.down_mix:
             self.log.info("Downmixing before regridding.")
-            phase = self._get_phase(freq, data.prodstack, timestamp_lsd)
+            freq = data.freq[data.vis[:].local_bounds]
+            phase = self._get_phase(freq, data.prodstack, source_samples)
             vis_data *= phase
 
         # perform regridding
-        new_grid, sts, ni = self._regrid(vis_data, weight, timestamp_lsd)
+        new_grid, sts, ni = self._regrid(vis_data, weight, source_samples)
 
         # Mix back up
         if self.down_mix:
@@ -237,16 +247,17 @@ class SiderealRegridder(Regridder):
             sts *= phase
             ni *= (np.abs(phase) > 0.0).astype(ni.dtype)
 
-        # Wrap to produce MPIArray
-        sts = mpiarray.MPIArray.wrap(sts, axis=0)
-        ni = mpiarray.MPIArray.wrap(ni, axis=0)
+        # Wait here for all processes to be done
+        self.comm.Barrier()
 
         # FYI this whole process creates an extra copy of the sidereal stack.
         # This could probably be optimised out with a little work.
-        sdata = containers.SiderealStream(axes_from=data, ra=self.samples)
+        sdata = containers.SiderealStream(
+            attrs_from=data, axes_from=data, ra=self.samples
+        )
         sdata.redistribute("freq")
-        sdata.vis[:] = sts
-        sdata.weight[:] = ni
+        sdata.vis[:].local_array[:] = sts
+        sdata.weight[:].local_array[:] = ni
         sdata.attrs["lsd"] = self.start
         sdata.attrs["tag"] = f"lsd_{self.start:.0f}"
 
@@ -276,6 +287,74 @@ class SiderealRegridder(Regridder):
         return mask * np.exp(
             -1.0j * omega[:, :, np.newaxis] * dphi[np.newaxis, np.newaxis, :]
         )
+
+
+class SiderealRegridderGP(SiderealRegridder):
+    r"""Regrid onto the sidereal day using Gaussian Process Regression.
+
+    Attributes
+    ----------
+    mask_cutoff : float
+        Absolute distance (in number of samples) from `n`\th nearest input
+        sample to keep interpolated output samples. Default is 1.7.
+    mask_cutoff_partition : int
+        Propagate `mask_cutoff` to `n`\th closest sample, where `n` is
+        zero-indexed. This value is given as an input to `np.partition`.
+        Default is 1.
+    """
+
+    mask_cutoff = config.Property(proptype=float, default=1.7)
+    mask_cutoff_partition = config.Property(proptype=int, default=1)
+
+    def _regrid(self, vis, weight, times):
+        # Create a regular grid, padded at either end to supress interpolation issues
+        pad = 5 * self.kernel_width
+        grid = np.arange(-pad, self.samples + pad, dtype=np.float64) / self.samples
+
+        # Remove the csd offset in the source samples. This is
+        # required for the kernels to be properly normalized.
+        times -= self.start
+
+        # Reshape the vis and weight arrays, moving frequency and
+        # time-like axes to the front and flattening remaining axes
+        # NOTE: at the moment, this just supports regridding visibilities
+        # and weights, and it doesn't support `HybridVisStream` axes. The
+        # latter should be fairly straightforward to add, wheras it would
+        # take some thought to support additional datasets (`dirty_beam`,
+        # `filter`, etc...).
+        vx = _move_front(vis, (0, -1), vis.shape)
+        wx = _move_front(weight, (0, -1), weight.shape)
+
+        # Define the kernel parameters
+        kernel_spec = {
+            "name": "matern",
+            "width": self.kernel_width,
+            "alpha": 1.0,
+            "nu": 2.5,
+            "epsilon": self.epsilon,
+        }
+
+        # Resample
+        vout, wout = gaussian_process.resample(
+            vx,
+            wx,
+            xi=times,
+            xo=grid,
+            cutoff_dist=self.mask_cutoff,
+            cutoff_partition=self.mask_cutoff_partition,
+            kernel_spec=kernel_spec,
+        )
+
+        # Move the arrays back to the correct shape and trim padding
+        grid = grid[pad:-pad].copy()
+        vout = _inv_move_front(
+            vout[:, pad:-pad], (0, -1), (*vis.shape[:-1], self.samples)
+        )
+        wout = _inv_move_front(
+            wout[:, pad:-pad], (0, -1), (*weight.shape[:-1], self.samples)
+        )
+
+        return grid, vout, wout
 
 
 def _search_nearest(x, xeval):
