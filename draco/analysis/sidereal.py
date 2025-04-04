@@ -17,7 +17,7 @@ from caput import config, mpiarray, tod
 from cora.util import units
 
 from ..core import containers, io, task
-from ..util import regrid, tools
+from ..util import gpr, kernels, regrid, tools
 from .transform import Regridder
 
 
@@ -202,14 +202,10 @@ class SiderealRegridder(Regridder):
         sdata : containers.SiderealStream
             The regularly gridded sidereal timestream.
         """
-        self.log.info("Regridding LSD:%i", data.attrs["lsd"])
+        self.log.info(f"Regridding LSD:{data.attrs['lsd']}")
 
         # Redistribute if needed too
         data.redistribute("freq")
-
-        sfreq = data.vis.local_offset[0]
-        efreq = sfreq + data.vis.local_shape[0]
-        freq = data.freq[sfreq:efreq]
 
         # Convert data timestamps into LSDs
         timestamp_lsd = self.observer.unix_to_lsd(data.time)
@@ -219,12 +215,13 @@ class SiderealRegridder(Regridder):
         self.end = self.start + 1
 
         # Get view of data
-        weight = data.weight[:].view(np.ndarray)
-        vis_data = data.vis[:].view(np.ndarray)
+        weight = data.weight[:].local_array
+        vis_data = data.vis[:].local_array
 
         # Mix down
         if self.down_mix:
             self.log.info("Downmixing before regridding.")
+            freq = data.freq[data.vis[:].local_bounds]
             phase = self._get_phase(freq, data.prodstack, timestamp_lsd)
             vis_data *= phase
 
@@ -237,16 +234,12 @@ class SiderealRegridder(Regridder):
             sts *= phase
             ni *= (np.abs(phase) > 0.0).astype(ni.dtype)
 
-        # Wrap to produce MPIArray
-        sts = mpiarray.MPIArray.wrap(sts, axis=0)
-        ni = mpiarray.MPIArray.wrap(ni, axis=0)
-
         # FYI this whole process creates an extra copy of the sidereal stack.
         # This could probably be optimised out with a little work.
         sdata = containers.SiderealStream(axes_from=data, ra=self.samples)
         sdata.redistribute("freq")
-        sdata.vis[:] = sts
-        sdata.weight[:] = ni
+        sdata.vis[:].local_array[:] = sts
+        sdata.weight[:].local_array[:] = ni
         sdata.attrs["lsd"] = self.start
         sdata.attrs["tag"] = f"lsd_{self.start:.0f}"
 
@@ -276,6 +269,46 @@ class SiderealRegridder(Regridder):
         return mask * np.exp(
             -1.0j * omega[:, :, np.newaxis] * dphi[np.newaxis, np.newaxis, :]
         )
+
+
+class SiderealRegridderGPR(SiderealRegridder):
+    """Regrid onto the sidereal day using Gaussian Process Regression."""
+
+    def _regrid(self, vis, weight, times):
+        """Regrid."""
+        pad = 5 * self.lanczos_width
+        grid = np.arange(-pad, self.samples + pad, dtype=np.float64) / self.samples
+
+        # Remove the offset in the time samples
+        times = times - np.round(times, decimals=0)[0]
+
+        # Get the kernel width in samples
+        kernel_width = self.lanczos_width * np.median(abs(np.diff(grid)))
+
+        # Make the interpolation kernels
+        # TODO: maybe move this to a gpr file
+        kernel_ts = kernels.matern_kernel(times, kernel_width, 1.0, 1.5)
+        # Add a small variance to the diagonal of the kernel
+        np.einsum("ii->i", kernel_ts)[:] += self.snr_cov
+        # Get the kernel to interpolate into RA
+        kernel_ra = kernels.matern_kernel((grid, times), kernel_width, 1.0, 1.5)
+
+        # Reshape the vis and weight arrays
+        # TODO: use the tools in `analysis.interpolate` to do this
+        # TODO: maybe make a class in `interpolate` to do part of this?
+        shp = (vis.shape[0], vis.shape[-1])
+        vis = np.moveaxis(vis, -1, 1).reshape(*shp, -1)
+        weight = np.moveaxis(weight, -1, 1).reshape(*shp, -1)
+
+        # Do the interpolation
+        vout, wout = gpr.simple_regression(vis, weight, kernel_ts, kernel_ra)
+
+        # Move the arrays back to the correct shape
+        # TODO: undo the reshape
+        vout = np.moveaxis(vout, -1, -2)[..., pad:-pad]
+        wout = np.moveaxis(wout, -1, -2)[..., pad:-pad]
+
+        return grid, vout, wout
 
 
 def _search_nearest(x, xeval):
