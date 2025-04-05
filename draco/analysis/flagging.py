@@ -2132,7 +2132,7 @@ class ApplyTimeFreqMask(task.SingleTask):
         Take the logical OR of the mask along the polarisation axis prior to applying
         it to the data.  In other words, mask a frequency and time in all polarisations
         if it was identified as contaminated in any polarisation.
-    match_time : bool, optional
+    match_axes : bool, optional
         If True (default), the rfimask and tstream must have identical time-like axis.
         Otherwise, the mask is applied only to the overlapping region of the time-like axis.
         Non-overlapping regions remain unchanged. Samples must still have the same RA or
