@@ -248,7 +248,7 @@ class SiderealRegridder(Regridder):
         sdata.vis[:] = sts
         sdata.weight[:] = ni
         sdata.attrs["lsd"] = self.start
-        sdata.attrs["tag"] = f"lsd_{self.start:d}"
+        sdata.attrs["tag"] = f"lsd_{self.start:.0f}"
 
         return sdata
 
