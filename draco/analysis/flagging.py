@@ -2132,10 +2132,16 @@ class ApplyTimeFreqMask(task.SingleTask):
         Take the logical OR of the mask along the polarisation axis prior to applying
         it to the data.  In other words, mask a frequency and time in all polarisations
         if it was identified as contaminated in any polarisation.
+    match_axes : bool, optional
+        If True (default), the rfimask and tstream must have identical time-like axis.
+        Otherwise, the mask is applied only to the overlapping region of the time-like axis.
+        Non-overlapping regions remain unchanged. Samples must still have the same RA or
+        timestamp values in overlapping regions.
     """
 
     share = config.enum(["none", "vis", "map", "all"], default="all")
     collapse_pol = config.Property(proptype=bool, default=False)
+    match_axes = config.Property(proptype=bool, default=True)
 
     def process(self, tstream, rfimask):
         """Apply the mask by zeroing the weights.
@@ -2160,9 +2166,9 @@ class ApplyTimeFreqMask(task.SingleTask):
                 raise TypeError(
                     f"Expected a timestream like type. Got {type(tstream)}."
                 )
-            # Validate the time axes match
-            if not np.array_equal(tstream.time, rfimask.time):
-                raise ValueError("timestream and mask data have different time axes.")
+            timelike_ax = "time"
+            timelike_data = tstream.time
+            timelike_mask = rfimask.time
 
         elif isinstance(
             rfimask, containers.SiderealRFIMask | containers.SiderealRFIMaskByPol
@@ -2171,9 +2177,9 @@ class ApplyTimeFreqMask(task.SingleTask):
                 raise TypeError(
                     f"Expected a sidereal stream like type. Got {type(tstream)}."
                 )
-            # Validate the RA axes match
-            if not np.array_equal(tstream.ra, rfimask.ra):
-                raise ValueError("timestream and mask data have different RA axes.")
+            timelike_ax = "ra"
+            timelike_data = tstream.ra
+            timelike_mask = rfimask.ra
 
         else:
             raise TypeError(
@@ -2184,6 +2190,27 @@ class ApplyTimeFreqMask(task.SingleTask):
         if not np.array_equal(tstream.freq, rfimask.freq):
             raise ValueError("timestream and mask data have different freq axes.")
 
+        # Validate the time-like axis
+        if self.match_axes:
+            if not np.array_equal(timelike_data, timelike_mask):
+                raise ValueError(
+                    "timestream and mask data have different time-like axes."
+                )
+            # Index the entire arrays
+            data_sel = slice(None)
+            mask_sel = slice(None)
+        else:
+            # Get the samples in `data` which exist in `mask`
+            data_sel = np.isin(timelike_data, timelike_mask)
+            # Get the samples in `mask` which exist in `data`
+            mask_sel = np.isin(timelike_mask, timelike_data)
+
+            if not np.any(data_sel):
+                raise ValueError(
+                    "No overlapping samples found in timelike axis."
+                    f"Data axis: {timelike_data}\nMask axis: {timelike_mask}"
+                )
+
         # Ensure we are frequency distributed
         tstream.redistribute("freq")
 
@@ -2191,6 +2218,7 @@ class ApplyTimeFreqMask(task.SingleTask):
         t_axes = list(tstream.weight.attrs["axis"])
         m_axes = list(rfimask.mask.attrs["axis"])
 
+        # Get mask data and shape data
         mask = rfimask.mask[:]
 
         # Deal with the polarisation axis
@@ -2214,14 +2242,18 @@ class ApplyTimeFreqMask(task.SingleTask):
 
         # Create a slice that broadcasts the mask to the final shape
         bcast_slice = [slice(None) if ax in m_axes else np.newaxis for ax in t_axes]
+        # Create a slice that selects indices to write to
+        inp_slice = [slice(None) for _ in t_axes]
 
         # RFI Mask is not distributed, so we need to cut out the frequencies
         # that are local for the tstream
-        t_ax = t_axes.index("freq")
-        sf = tstream.weight.local_offset[t_ax]
-        ef = sf + tstream.weight.local_shape[t_ax]
+        bcast_slice[t_axes.index("freq")] = tstream.weight[:].local_bounds
+        # Index the overlapping parts of the time-like axis
+        inp_slice[t_axes.index(timelike_ax)] = data_sel
+        bcast_slice[t_axes.index(timelike_ax)] = mask_sel
 
-        bcast_slice[t_ax] = slice(sf, ef)
+        # Convert the finalised slices to tuples
+        inp_slice = tuple(inp_slice)
         bcast_slice = tuple(bcast_slice)
 
         # Create output container by copying based on share parameter
@@ -2234,8 +2266,8 @@ class ApplyTimeFreqMask(task.SingleTask):
         else:  # self.share == "none"
             tsc = tstream.copy()
 
-        # Mask the data.
-        tsc.weight[:].local_array[:] *= (~mask[bcast_slice]).astype(np.float32)
+        # Mask the data
+        tsc.weight[:].local_array[inp_slice] *= ~mask[bcast_slice]
 
         return tsc
 
