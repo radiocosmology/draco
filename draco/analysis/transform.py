@@ -856,21 +856,27 @@ class Regridder(task.SingleTask):
         Start of the interpolated samples.
     end: float
         End of the interpolated samples.
-    lanczos_width : int
-        Width of the Lanczos interpolation kernel.
+    kernel_width : int
+        Width of the interpolation kernel. NOTE: This was formally called
+        `lanczos_width`.
     snr_cov: float
         Ratio of signal covariance to noise covariance (used for Wiener filter).
     mask_zero_weight: bool
         Mask the output noise weights at frequencies where the weights were
         zero for all time samples.
+    lanczos_width : int
+        Width of the interpolation kernel. This is a deprecated property which
+        has been replaced with `kernel_width`, and will not do anything.
     """
 
     samples = config.Property(proptype=int, default=1024)
     start = config.Property(proptype=float)
     end = config.Property(proptype=float)
-    lanczos_width = config.Property(proptype=int, default=5)
+    kernel_width = config.Property(proptype=int, default=5)
     snr_cov = config.Property(proptype=float, default=1e-8)
     mask_zero_weight = config.Property(proptype=bool, default=False)
+
+    lanczos_width = config.Property(proptype=int, default=None, deprecated=True)
 
     def setup(self, observer):
         """Set the local observers position.
@@ -936,7 +942,7 @@ class Regridder(task.SingleTask):
 
     def _regrid(self, vis_data, weight, times):
         # Create a regular grid, padded at either end to supress interpolation issues
-        pad = 5 * self.lanczos_width
+        pad = 5 * self.kernel_width
         interp_grid = (
             np.arange(-pad, self.samples + pad, dtype=np.float64) / self.samples
         )
@@ -945,7 +951,7 @@ class Regridder(task.SingleTask):
 
         # Construct regridding matrix for reverse problem
         lzf = regrid.lanczos_forward_matrix(
-            interp_grid, times, self.lanczos_width
+            interp_grid, times, self.kernel_width
         ).T.copy()
 
         # Reshape data
@@ -956,7 +962,7 @@ class Regridder(task.SingleTask):
         Si = np.ones_like(interp_grid) * self.snr_cov
 
         # Calculate the interpolated data and a noise weight at the points in the padded grid
-        sts, ni = regrid.band_wiener(lzf, nr, Si, vr, 2 * self.lanczos_width - 1)
+        sts, ni = regrid.band_wiener(lzf, nr, Si, vr, 2 * self.kernel_width - 1)
 
         # Throw away the padded ends
         sts = sts[:, pad:-pad].copy()
