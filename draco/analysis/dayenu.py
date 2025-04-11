@@ -569,6 +569,8 @@ class ApplyDelayFilterHybridVis(task.SingleTask):
     """
 
     atten_threshold = config.Property(proptype=float, default=0.0)
+    copy_weight = config.Property(proptype=bool, default=False)
+    copy_tag = config.Property(proptype=bool, default=False)
 
     def process(self, hv, source):
         """Apply the DAYENU filter to a HybridVisStream.
@@ -588,6 +590,10 @@ class ApplyDelayFilterHybridVis(task.SingleTask):
         # Distribute over products
         hv.redistribute(["ra", "time"])
         source.redistribute(["ra", "time"])
+
+        # If requested, copy over the tag
+        if self.copy_tag:
+            hv.attrs["tag"] = source.attrs["tag"]
 
         # Validate that both hybrid beamformed visibilites match
         if not np.array_equal(source.freq, hv.freq):
@@ -629,7 +635,6 @@ class ApplyDelayFilterHybridVis(task.SingleTask):
 
                     # Grab datasets for this pol and ew baseline
                     tvis = np.ascontiguousarray(vis[pp, :, xx, :, tt])
-                    tvar = tools.invert_no_zero(weight[pp, :, xx, tt])
 
                     # Grab the filter for this pol and ew baseline
                     NF = np.ascontiguousarray(filt[pp, :, :, xx, tt])
@@ -655,19 +660,29 @@ class ApplyDelayFilterHybridVis(task.SingleTask):
 
                     # Apply the filter
                     vis[pp, :, xx, :, tt] = np.matmul(NF, tvis)
-                    weight[pp, :, xx, tt] = tools.invert_no_zero(
-                        np.matmul(np.abs(NF) ** 2, tvar)
-                    )
-                    # Flag frequencies with large attenuation
-                    if self.atten_threshold > 0.0:
-                        diag = np.abs(np.diag(NF))
-                        nonzero_diag_flag = diag > 0.0
-                        if np.any(nonzero_diag_flag):
-                            med_diag = np.median(diag[nonzero_diag_flag])
-                            flag_low = diag > (self.atten_threshold * med_diag)
-                            weight[pp, :, xx, tt] *= flag_low.astype(weight.dtype)
+
+                    # Propagate the weights through the filter
+                    if not self.copy_weight:
+                        tvar = tools.invert_no_zero(weight[pp, :, xx, tt])
+
+                        weight[pp, :, xx, tt] = tools.invert_no_zero(
+                            np.matmul(np.abs(NF) ** 2, tvar)
+                        )
+
+                        # Flag frequencies with large attenuation
+                        if self.atten_threshold > 0.0:
+                            diag = np.abs(np.diag(NF))
+                            nonzero_diag_flag = diag > 0.0
+                            if np.any(nonzero_diag_flag):
+                                med_diag = np.median(diag[nonzero_diag_flag])
+                                flag_low = diag > (self.atten_threshold * med_diag)
+                                weight[pp, :, xx, tt] *= flag_low.astype(weight.dtype)
 
             self.log.debug(f"Took {time.time() - t0:0.3f} seconds in total.")
+
+        # If requested copy over the weight dataset
+        if self.copy_weight:
+            weight[:] = source.weight[:].local_array.copy()
 
         # Problems saving to disk when distributed over last axis
         hv.redistribute("freq")

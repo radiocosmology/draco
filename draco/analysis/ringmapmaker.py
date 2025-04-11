@@ -541,6 +541,8 @@ class DeconvolveHybridMBase(task.SingleTask):
     ----------
     exclude_intracyl : bool
         Exclude intracylinder baselines from the calculation.
+    only_filter : bool
+        Do not attempt to deconvolve the instrument transfer function.
     save_dirty_beam : bool
         Create a `dirty_beam` dataset in the output container that contains
         the synthesized beam in the EW direction at each declination.
@@ -563,6 +565,7 @@ class DeconvolveHybridMBase(task.SingleTask):
     """
 
     exclude_intracyl = config.Property(proptype=bool, default=False)
+    only_filter = config.Property(proptype=bool, default=False)
     save_dirty_beam = config.Property(proptype=bool, default=False)
 
     window_type = config.enum(
@@ -716,13 +719,15 @@ class DeconvolveHybridMBase(task.SingleTask):
             # Get the EW weights using method defined by subclass
             weight = self._get_weight(inv_var) * (inv_var > 0.0)
 
-            # Get the regularisation term, exact prescription is defined by subclass
-            epsilon = self._get_regularisation(freq, m)
-
             # Calculate the normalization
             sum_weight = (weight * np.abs(bvf) ** 2).sum(axis=(1, -2))
 
-            C_inv = epsilon + sum_weight
+            # Get the regularisation term, exact prescription is defined by subclass
+            if not self.only_filter:
+                epsilon = self._get_regularisation(freq, m)
+                C_inv = epsilon + sum_weight
+            else:
+                C_inv = 1.0
 
             # Solve for the sky m-modes
             map_m = (
@@ -735,7 +740,12 @@ class DeconvolveHybridMBase(task.SingleTask):
             dirty_beam_m = winf * sum_weight * tools.invert_no_zero(C_inv)
 
             # Calculate the point source normalization (dirty beam at transit)
-            norm = tools.invert_no_zero(dirty_beam_m.mean(axis=0))[:, np.newaxis, :]
+            if not self.only_filter:
+                norm = tools.invert_no_zero(dirty_beam_m.mean(axis=0))[:, np.newaxis, :]
+            else:
+                norm = np.full(
+                    dirty_beam_m.shape[1:], nra**2, dtype=dirty_beam_m.dtype
+                )[:, np.newaxis, :]
 
             # Fill in the ringmap
             rmm[0, :, lfi] = (
