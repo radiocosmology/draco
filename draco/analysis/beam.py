@@ -18,6 +18,7 @@ import numpy as np
 import scipy.constants
 from caput import interferometry
 
+from .ringmapmaker import find_grid_indices
 from ..core import containers, io, task
 from ..util import tools
 
@@ -253,5 +254,123 @@ class CreateBeamStreamFromTelescope(CreateBeamStream):
                     bjj = bii
 
                 beam[ff, pp, 0] = np.sum(bii * bjj.conjugate(), axis=1).reshape(shp)
+
+        return out
+
+
+class ApplyWindowNS(task.SingleTask):
+    """Apply a window as a function of north-south baseline to a primary beam model.
+
+    This task takes a `HybridVisStream` representing the telescope's primary beam
+    response, performs a Fourier transform along the elevation direction, applies a
+    window as a function of north-south baseline, and finally performs an inverse
+    transform back to beamformed space.   This corresponds to convolving the hybrid
+    beamformed visibilities in the elevation direction with the north-south synthesized
+    beam of the data.  It is useful, for example, when computing normalization
+    factors for power spectrum estimation.
+
+    The operation can be done in-place or return a new output, depending on the
+    `in_place` configuration property.
+
+    The window is specified in the attributes of the input container, which should be
+    copied from the data by the `CreateBeamStream` or `CreateBeamStreamFromTelescope`
+    tasks.
+    """
+
+    in_place = config.Property(proptype=bool, default=False)
+
+    def setup(self, telescope: io.TelescopeConvertible):
+        """Set the telescope object.
+
+        Parameters
+        ----------
+        telescope
+            The telescope object to use.
+        """
+        self.telescope = io.get_telescope(telescope)
+
+    def process(self, data):
+        """Fourier transform to NS baseline, apply window, transform back to elevation.
+
+        Parameters
+        ----------
+        data : HybridVisStream
+            HybridVisStream reperesentation of a beam model, created with either
+            the CreateBeamStream or CreateBeamStreamFromTelescope task.
+        """
+        # Extract parameters needed to calculate the window
+        # function in the y direction
+        weight = data.attrs["beamform_ns_weight"]
+        if weight in ["inverse_variance", "natural"]:
+            raise ValueError(
+                "Do not support inverse_variance or natural weight scheme."
+            )
+
+        include_auto = data.attrs["beamform_ns_include_auto"]
+        scaled = data.attrs["beamform_ns_scaled"]
+        freqmin = data.attrs["beamform_ns_freqmin"]
+        nsmax = data.attrs["beamform_ns_nsmax"]
+
+        iwvmin = (freqmin * 1e6) / scipy.constants.c
+
+        # Determine the layout of the visibilities on the grid.
+        xind, yind, min_xsep, min_ysep = find_grid_indices(self.telescope.baselines)
+
+        # Determine north-south grid
+        ny = 2 * np.abs(yind).max() + 1
+        nspos = np.fft.fftfreq(ny, d=(1.0 / (ny * min_ysep)))
+
+        # Extract axes and dimensions
+        data.redistribute("freq")
+
+        npol, nfreq, nx, nel, nra = data.vis.local_shape
+
+        freq = data.freq[data.vis[:].local_bounds]
+        inverse_wavelength = (freq * 1e6) / scipy.constants.c
+
+        el = data.index_map["el"]
+
+        # Create output container
+        if self.in_place:
+            out = data
+        else:
+            out = data.copy()
+            out.redistribute("freq")
+
+        # Dereference local arrays
+        hvis = data.vis[:].local_array
+        ohvis = out.vis[:].local_array
+
+        # Precompute a phase array
+        phase = 2.0 * np.pi * nspos[np.newaxis, :] * el[:, np.newaxis]
+
+        # Loop over frequencies
+        for fi, iwv in enumerate(inverse_wavelength):
+
+            vpos = nspos * iwv
+            vmax = nsmax * iwvmin if scaled else nsmax * iwv
+
+            x = 0.5 * (vpos / vmax + 1)
+            window = np.ones((npol, nx, ny, 1), dtype=float)
+            window *= tools.window_generalised(x, window=weight)[:, np.newaxis]
+
+            # Remove auto-correlations
+            if not include_auto:
+                window[:, 0, 0, 0] = 0.0
+
+            # Normalize by sum of weights
+            norm = np.sum(window, axis=-2, keepdims=True)
+            window *= tools.invert_no_zero(norm)
+
+            # Create array that will be used for the inverse
+            # discrete Fourier transform in y-direction
+            F = np.exp(-1.0j * phase * iwv) / np.sqrt(nel)
+
+            # Create the array that will Fourier transform,
+            # apply the window, and then inverse Fourier transform
+            A = F @ (window * F.T.conj())
+
+            # Perform the convolution
+            np.matmul(A, hvis[:, ff].copy(), out=ohvis[:, ff])
 
         return out
