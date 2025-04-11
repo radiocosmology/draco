@@ -297,6 +297,11 @@ class ApplyWindowNS(task.SingleTask):
         data : HybridVisStream
             HybridVisStream reperesentation of a beam model, created with either
             the CreateBeamStream or CreateBeamStreamFromTelescope task.
+
+        Returns
+        -------
+        out : HybridVisStream
+            Beam model convolved with the north-south synthesized beam response.
         """
         # Extract parameters needed to calculate the window
         # function in the y direction

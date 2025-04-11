@@ -566,6 +566,13 @@ class ApplyDelayFilterHybridVis(task.SingleTask):
         is less than this fraction of the median value over all
         unmasked frequencies.  Default is 0.0 (i.e., do not mask
         frequencies with low attenuation).
+    copy_weight : bool
+        If True, do not apply the filter to the weight dataset. Instead,
+        copy it directly  from the container used to retrieve the filter.
+        Default is False.
+    copy_tag : bool
+        If True, copy the tag from the container where the filter
+        was obtained.  Default is False.
     """
 
     atten_threshold = config.Property(proptype=float, default=0.0)
