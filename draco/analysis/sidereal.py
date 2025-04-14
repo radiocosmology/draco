@@ -502,12 +502,12 @@ class SiderealRebinner(SiderealRegridder):
 
         Parameters
         ----------
-        data : containers.TimeStream
+        data : containers.TimeStream | containers.SiderealStream | containers.HybridVisStream
             Timestream data for the day (must have a `LSD` attribute).
 
         Returns
         -------
-        sdata : containers.SiderealStream
+        sdata : containers.SiderealStream | containers.HybridVisStream
             The regularly gridded sidereal timestream.
         """
         import scipy.sparse as ss
@@ -519,6 +519,7 @@ class SiderealRebinner(SiderealRegridder):
         # Determine output container based on input container
         container_map = {
             containers.TimeStream: containers.SiderealStream,
+            containers.SiderealStream: containers.SiderealStream,
             containers.HybridVisStream: containers.HybridVisStream,
         }
 
