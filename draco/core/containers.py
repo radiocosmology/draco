@@ -1295,9 +1295,6 @@ class RFIMask(FreqContainer, TODContainer):
 
     The mask is `True` for contaminated samples that should be excluded, and
     `False` for clean samples.
-
-    The data frac_rfi stores information about the proportion of subdata
-    that detected RFI, which is used to generate the mask.
     """
 
     _dataset_spec: ClassVar = {
@@ -1307,25 +1304,13 @@ class RFIMask(FreqContainer, TODContainer):
             "initialise": True,
             "distributed": False,
             "distributed_axis": "freq",
-        },
-        "frac_rfi": {
-            "axes": ["freq", "time"],
-            "dtype": np.float32,
-            "initialise": False,
-            "distributed": False,
-            "distributed_axis": "freq",
-        },
+        }
     }
 
     @property
     def mask(self):
         """Get the mask dataset."""
         return self.datasets["mask"]
-
-    @property
-    def frac_rfi(self):
-        """Get the frac_rfi dataset."""
-        return self.datasets["frac_rfi"]
 
 
 class RFIMaskByPol(RFIMask):
