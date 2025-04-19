@@ -3479,7 +3479,7 @@ class AlignMaskTime(task.SingleTask):
         # Build index arrays for broadcasting
         freq_idx = np.arange(nfreq_local)[:, None, None]
         el_idx = np.arange(nel)[None, :, None]
-        new_time_idx = nearest_indices[None, None, :]
+        new_time_idx = nearest_indices[None, None, :] - nearest_indices[0]
 
         # Initialize and store adjusted mask
         mask_adj = np.full((nfreq_local, nel, nnew_time), False)
