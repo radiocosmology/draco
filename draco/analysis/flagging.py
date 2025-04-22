@@ -3446,7 +3446,7 @@ class AlignMaskTime(task.SingleTask):
         # The size of the local freq axis
         nfreq_local = mask.shape[0]
 
-        # Reshape the mask so that the mask data has the same shape regardless its container type
+        # Reshape the mask so that the mask data has the same shape regardless of its container type
         mask = mask.reshape(nfreq_local, nel, ntime)
 
         # Determine valid time range in the mask
