@@ -3405,7 +3405,12 @@ class AlignMaskTime(task.SingleTask):
         tstream : containers.TimeStream, SystemSensitivity, etc.
             A time-like data container that provides the target time axis.
         """
+    try:
         self.target_time = tstream.time[:]
+    except AttributeError as exc:
+        raise TypeError(
+            f"Expected a dataset with a time axis. Got {tstream.__class__.__name__} instead."
+        ) from exc
 
     def process(self, rfimask):
         """Align the RFI mask's time axis to match the target dataset.
