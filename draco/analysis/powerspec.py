@@ -344,7 +344,9 @@ class CrossPowerSpectrum3D(task.SingleTask):
         ps_norm = volume_cube * NEB
 
         # Initialise the 3D power spectrum container
-        ps_cube = containers.PowerSpectrum3D(pol=pol, axes_from=vis_1, attrs_from=vis_1, cosmology=vis_1.cosmology)
+        ps_cube = containers.PowerSpectrum3D(
+            pol=pol, axes_from=vis_1, attrs_from=vis_1, cosmology=vis_1.cosmology
+        )
         ps_cube.redistribute("delay")
         ps_cube.spectrum[:] = 0.0
 
@@ -372,12 +374,13 @@ class CrossPowerSpectrum3D(task.SingleTask):
 
         # Estimate the cross power spectrum
         for pp, pstr in enumerate(pol):
-            pstr_1, pstr_2 = pstr.split('-')
+            pstr_1, pstr_2 = pstr.split("-")
             pid_1 = pol_1.index(pstr_1)
             pid_2 = pol_2.index(pstr_2)
 
-            self.log.debug("Estimating power spectrum for pol: "
-                           f"{pstr} ({pid_1} x {pid_2})")
+            self.log.debug(
+                "Estimating power spectrum for pol: " f"{pstr} ({pid_1} x {pid_2})"
+            )
 
             pspec[pp] = ps_norm * (vis_1[pid_1] * vis_2[pid_2].conj()).real
 
