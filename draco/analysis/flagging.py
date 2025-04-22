@@ -3515,7 +3515,7 @@ class AlignMaskTime(task.SingleTask):
             frac_rfi = frac_rfi.reshape(nfreq_local, nel, ntime)
 
             # Initialize and store adjusted mask
-            frac_rfi_adj = np.full((nfreq_local, nel, nnew_time), 0.0)
+            frac_rfi_adj = np.zeros((nfreq_local, nel, nnew_time))
             np.maximum.at(
                 frac_rfi_adj,
                 (freq_idx, el_idx, new_time_idx),
