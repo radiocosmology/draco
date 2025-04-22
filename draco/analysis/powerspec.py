@@ -92,7 +92,7 @@ class TransformJyPerBeamToKelvin(task.SingleTask):
             np.newaxis, np.newaxis, :, np.newaxis, np.newaxis
         ]
 
-        out_map.weight[:] *= (
+        out_map.weight[:].local_array[:] *= (
             tools.invert_no_zero(factor[np.newaxis, :, np.newaxis, np.newaxis]) ** 2
         )
 
