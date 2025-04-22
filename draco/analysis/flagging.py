@@ -3441,7 +3441,7 @@ class AlignMaskTime(task.SingleTask):
         ntime = len(mask_time)
 
         # Get the mask data
-        mask = rfimask.mask.local_data if rfimask.mask.distributed else rfimask.mask[:]
+        mask = rfimask.mask[:].local_array if rfimask.mask.distributed else rfimask.mask[:]
 
         # The size of the local freq axis
         nfreq_local = mask.shape[0]
