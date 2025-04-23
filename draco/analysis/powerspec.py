@@ -317,8 +317,11 @@ class CrossPowerSpectrum3D(task.SingleTask):
         vis_1.redistribute("delay")
         vis_2.redistribute("delay")
 
-        # Extract required data axes
-        pol = vis_1.index_map["pol"]
+        # Calculate polarisation pairs
+        pol_1 = list(vis_1.index_map["pol"])
+        pol_2 = list(vis_2.index_map["pol"])
+
+        pol = np.array(["-".join([p1, p2]) for p1 in pol_1 for p2 in pol_2])
 
         # Compute power spectrum normalization factor
         # this is the survey volume, corrected  for the
@@ -341,9 +344,14 @@ class CrossPowerSpectrum3D(task.SingleTask):
         ps_norm = volume_cube * NEB
 
         # Initialise the 3D power spectrum container
-        ps_cube = containers.PowerSpectrum3D(copy_from=vis_1, cosmology=vis_1.cosmology)
+        ps_cube = containers.PowerSpectrum3D(
+            pol=pol, axes_from=vis_1, attrs_from=vis_1, cosmology=vis_1.cosmology
+        )
         ps_cube.redistribute("delay")
         ps_cube.spectrum[:] = 0.0
+
+        for dset in ["kx", "ky", "kpara", "uv_mask"]:
+            ps_cube.datasets[dset][:] = vis_1.datasets[dset][:].copy()
 
         # Save the power spectrum normalization factor in the attrs
         ps_cube.attrs["ps_norm"] = ps_norm
@@ -355,22 +363,26 @@ class CrossPowerSpectrum3D(task.SingleTask):
             ps_cube.attrs["lsd_p0"] = vis_1.attrs["lsd"]
             ps_cube.attrs["lsd_p1"] = vis_2.attrs["lsd"]
 
+        # Create an appropriate tag
+        ps_cube.attrs["tag"] = "_x_".join([vis_1.attrs["tag"], vis_2.attrs["tag"]])
+
         # Dereference the required datasets and
         vis_1 = vis_1.vis[:].local_array
         vis_2 = vis_2.vis[:].local_array
 
-        # Estimate the cross power spectrum
-        for pp, psr in enumerate(pol):
-            self.log.debug(f"Estimating power spectrum for pol: {psr}")
-            pol_id = list(pol).index(psr)
+        pspec = ps_cube.spectrum[:].local_array
 
-            for lde, de in ps_cube.spectrum[:].enumerate(axis=1):
-                slc = (pol_id, lde, slice(None), slice(None))
-                cube_1 = np.ascontiguousarray(vis_1[slc])
-                cube_2 = np.ascontiguousarray(vis_2[slc])
-                ps_cube.spectrum[pp, de] = get_3D_ps(
-                    cube_1, cube_2, vol_norm_factor=ps_norm
-                )
+        # Estimate the cross power spectrum
+        for pp, pstr in enumerate(pol):
+            pstr_1, pstr_2 = pstr.split("-")
+            pid_1 = pol_1.index(pstr_1)
+            pid_2 = pol_2.index(pstr_2)
+
+            self.log.debug(
+                "Estimating power spectrum for pol: " f"{pstr} ({pid_1} x {pid_2})"
+            )
+
+            pspec[pp] = ps_norm * (vis_1[pid_1] * vis_2[pid_2].conj()).real
 
         return ps_cube
 
