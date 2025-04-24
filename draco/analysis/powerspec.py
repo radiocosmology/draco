@@ -382,7 +382,7 @@ class CrossPowerSpectrum3D(task.SingleTask):
                 "Estimating power spectrum for pol: " f"{pstr} ({pid_1} x {pid_2})"
             )
 
-            pspec[pp] = ps_norm * (vis_1[pid_1] * vis_2[pid_2].conj()).real
+            pspec[pp] = ps_norm * (vis_1[pid_1] * vis_2[pid_2].conj())
 
         return ps_cube
 
@@ -574,7 +574,7 @@ class CylindricalPowerSpectrum2D(task.SingleTask):
 
         if self.delay_cut > 0.0:
             kpar_lim = delays_to_kpara(self.delay_cut, redshift)
-            ibins = np.where((kpara > -kpar_lim) & (kpara < kpar_lim))
+            ibins = np.where(kpara < kpar_lim) # throw away negative kpara modes, which are just complex conugate of the positive modes.
             for ii, jj in enumerate(pol):
                 pspec_2D.mask[ii, ibins, :] = False
 
@@ -807,7 +807,7 @@ class SphericalPowerSpectrum3Dto1D(task.SingleTask):
 
             if self.delay_cut > 0.0:
                 kpar_lim = delays_to_kpara(self.delay_cut, redshift, ps.cosmology)
-                ibins = np.where((kpara > -kpar_lim) & (kpara < kpar_lim))
+                ibins = np.where(kpara < kpar_lim) # throw away the negative kpara modes, which are just complex conjugate of the positive modes.
                 signal_mask[ibins, :] = False
 
             # Estimate the 1D power spectrum
