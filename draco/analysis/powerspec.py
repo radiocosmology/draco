@@ -574,7 +574,9 @@ class CylindricalPowerSpectrum2D(task.SingleTask):
 
         if self.delay_cut > 0.0:
             kpar_lim = delays_to_kpara(self.delay_cut, redshift)
-            ibins = np.where(kpara < kpar_lim) # throw away negative kpara modes too, which are just complex conugate of the positive modes.
+            ibins = np.where(
+                kpara < kpar_lim
+            )  # throw away negative kpara modes too, which are just complex conugate of the positive modes.
             for ii, jj in enumerate(pol):
                 pspec_2D.mask[ii, ibins, :] = False
 
@@ -807,7 +809,9 @@ class SphericalPowerSpectrum3Dto1D(task.SingleTask):
 
             if self.delay_cut > 0.0:
                 kpar_lim = delays_to_kpara(self.delay_cut, redshift, ps.cosmology)
-                ibins = np.where(kpara < kpar_lim) # throw away the negative kpara modes too, which are just complex conjugate of the positive modes.
+                ibins = np.where(
+                    kpara < kpar_lim
+                )  # throw away the negative kpara modes too, which are just complex conjugate of the positive modes.
                 signal_mask[ibins, :] = False
 
             # Estimate the 1D power spectrum
