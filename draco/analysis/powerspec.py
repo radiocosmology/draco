@@ -497,14 +497,16 @@ class CylindricalPowerSpectrum2D(task.SingleTask):
         ps_3D = ps.spectrum[:].local_array
 
         if self.weight is None:
-            weight = np.ones_like(ps_3D)
+            weight = np.ones(ps_3D.shape, dtype=float)
         else:
             # input weight is sigma and we are taking the
             # inverse of the square of it to have a inverse
             # variance weight.
 
             self.weight.redistribute("delay")
-            weight = tools.invert_no_zero(self.weight.spectrum[:].local_array[:] ** 2)
+            weight = tools.invert_no_zero(
+                np.abs(self.weight.spectrum[:].local_array[:]) ** 2
+            )
 
         # Define the 2D power spectrum container
         pspec_2D = containers.PowerSpectrum2D(
@@ -740,14 +742,16 @@ class SphericalPowerSpectrum3Dto1D(task.SingleTask):
         ps_3D = ps.spectrum[:].local_array
 
         if self.weight is None:
-            weight = np.ones_like(ps_3D)
+            weight = np.ones(ps_3D.shape, dtype=float)
         else:
             # input weight is sigma and we are taking the
             # inverse of the square of it to have a
             # inverse variance weight.
 
             self.weight.redistribute("pol")
-            weight = tools.invert_no_zero(self.weight.spectrum[:].local_array[:] ** 2)
+            weight = tools.invert_no_zero(
+                np.abs(self.weight.spectrum[:].local_array[:]) ** 2
+            )
 
         # Define the 1D power spectrum container
         pspec_1D = containers.PowerSpectrum1D(
@@ -1518,7 +1522,7 @@ def get_1d_ps(
         for i in np.arange(len(kbins) - 1) + 1:
             w_b = w1D[indices == i]
             p = np.sum(w_b * p1D[indices == i]) / np.sum(w_b)
-            p_err = np.sqrt(np.sum(w_b**2 * p**2) / np.sum(w_b) ** 2)
+            p_err = np.sqrt(np.sum(w_b**2 * np.abs(p) ** 2) / np.sum(w_b) ** 2)
             k_mean_b = nanaverage(k1D[indices == i], w_b)
             k3D.append(k_mean_b)
             var = 1 / np.sum(w_b)
