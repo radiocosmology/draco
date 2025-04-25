@@ -92,7 +92,7 @@ class TransformJyPerBeamToKelvin(task.SingleTask):
             np.newaxis, np.newaxis, :, np.newaxis, np.newaxis
         ]
 
-        out_map.weight[:] *= (
+        out_map.weight[:].local_array[:] *= (
             tools.invert_no_zero(factor[np.newaxis, :, np.newaxis, np.newaxis]) ** 2
         )
 
@@ -382,7 +382,7 @@ class CrossPowerSpectrum3D(task.SingleTask):
                 "Estimating power spectrum for pol: " f"{pstr} ({pid_1} x {pid_2})"
             )
 
-            pspec[pp] = ps_norm * (vis_1[pid_1] * vis_2[pid_2].conj()).real
+            pspec[pp] = ps_norm * (vis_1[pid_1] * vis_2[pid_2].conj())
 
         return ps_cube
 
@@ -497,14 +497,16 @@ class CylindricalPowerSpectrum2D(task.SingleTask):
         ps_3D = ps.spectrum[:].local_array
 
         if self.weight is None:
-            weight = np.ones_like(ps_3D)
+            weight = np.ones(ps_3D.shape, dtype=float)
         else:
             # input weight is sigma and we are taking the
             # inverse of the square of it to have a inverse
             # variance weight.
 
             self.weight.redistribute("delay")
-            weight = tools.invert_no_zero(self.weight.spectrum[:].local_array[:] ** 2)
+            weight = tools.invert_no_zero(
+                np.abs(self.weight.spectrum[:].local_array[:]) ** 2
+            )
 
         # Define the 2D power spectrum container
         pspec_2D = containers.PowerSpectrum2D(
@@ -574,7 +576,9 @@ class CylindricalPowerSpectrum2D(task.SingleTask):
 
         if self.delay_cut > 0.0:
             kpar_lim = delays_to_kpara(self.delay_cut, redshift)
-            ibins = np.where((kpara > -kpar_lim) & (kpara < kpar_lim))
+            ibins = np.where(
+                kpara < kpar_lim
+            )  # throw away negative kpara modes too, which are just complex conugate of the positive modes.
             for ii, jj in enumerate(pol):
                 pspec_2D.mask[ii, ibins, :] = False
 
@@ -738,14 +742,16 @@ class SphericalPowerSpectrum3Dto1D(task.SingleTask):
         ps_3D = ps.spectrum[:].local_array
 
         if self.weight is None:
-            weight = np.ones_like(ps_3D)
+            weight = np.ones(ps_3D.shape, dtype=float)
         else:
             # input weight is sigma and we are taking the
             # inverse of the square of it to have a
             # inverse variance weight.
 
             self.weight.redistribute("pol")
-            weight = tools.invert_no_zero(self.weight.spectrum[:].local_array[:] ** 2)
+            weight = tools.invert_no_zero(
+                np.abs(self.weight.spectrum[:].local_array[:]) ** 2
+            )
 
         # Define the 1D power spectrum container
         pspec_1D = containers.PowerSpectrum1D(
@@ -807,7 +813,9 @@ class SphericalPowerSpectrum3Dto1D(task.SingleTask):
 
             if self.delay_cut > 0.0:
                 kpar_lim = delays_to_kpara(self.delay_cut, redshift, ps.cosmology)
-                ibins = np.where((kpara > -kpar_lim) & (kpara < kpar_lim))
+                ibins = np.where(
+                    kpara < kpar_lim
+                )  # throw away the negative kpara modes too, which are just complex conjugate of the positive modes.
                 signal_mask[ibins, :] = False
 
             # Estimate the 1D power spectrum
@@ -1514,7 +1522,7 @@ def get_1d_ps(
         for i in np.arange(len(kbins) - 1) + 1:
             w_b = w1D[indices == i]
             p = np.sum(w_b * p1D[indices == i]) / np.sum(w_b)
-            p_err = np.sqrt(np.sum(w_b**2 * p**2) / np.sum(w_b) ** 2)
+            p_err = np.sqrt(np.sum(w_b**2 * np.abs(p) ** 2) / np.sum(w_b) ** 2)
             k_mean_b = nanaverage(k1D[indices == i], w_b)
             k3D.append(k_mean_b)
             var = 1 / np.sum(w_b)

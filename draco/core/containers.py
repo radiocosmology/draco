@@ -2713,7 +2713,7 @@ class PowerSpectrum3D(Fourier3DContainer):
     _dataset_spec: ClassVar = {
         "spectrum": {
             "axes": ["pol", "delay", "u", "v"],
-            "dtype": np.float64,
+            "dtype": np.complex128,
             "initialise": True,
             "distributed": True,
             "distributed_axis": "delay",
@@ -2739,7 +2739,7 @@ class PowerSpectrum2D(CosmologyContainer):
     _dataset_spec: ClassVar = {
         "spectrum": {
             "axes": ["pol", "delay", "uv_dist"],
-            "dtype": np.float64,
+            "dtype": np.complex128,
             "initialise": True,
             "distributed": True,
             "distributed_axis": "delay",
@@ -2821,7 +2821,7 @@ class PowerSpectrum1D(CosmologyContainer):
     _dataset_spec: ClassVar = {
         "spectrum": {
             "axes": ["pol", "k"],
-            "dtype": np.float64,
+            "dtype": np.complex128,
             "initialise": True,
             "distributed": True,
         },
