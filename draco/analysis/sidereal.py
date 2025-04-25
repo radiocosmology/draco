@@ -19,7 +19,7 @@ from cora.util import units
 from ..core import containers, io, task
 from ..util import gaussian_process, regrid, tools
 from .interpolate import _inv_move_front, _move_front
-from .transform import Regridder
+from .transform import LanczosRegridder
 
 
 class SiderealGrouper(task.SingleTask):
@@ -155,7 +155,7 @@ class SiderealGrouper(task.SingleTask):
         return ts
 
 
-class SiderealRegridder(Regridder):
+class SiderealRegridder(LanczosRegridder):
     """Take a sidereal days worth of data, and put onto a regular grid.
 
     Uses a maximum-likelihood inverse of a Lanczos interpolation to do the
@@ -170,19 +170,6 @@ class SiderealRegridder(Regridder):
     """
 
     down_mix = config.Property(proptype=bool, default=False)
-
-    def setup(self, manager):
-        """Set the local observers position.
-
-        Parameters
-        ----------
-        manager : :class:`~caput.time.Observer`
-            An Observer object holding the geographic location of the telescope.
-            Note that :class:`~drift.core.TransitTelescope` instances are also
-            Observers.
-        """
-        # Need an Observer object holding the geographic location of the telescope.
-        self.observer = io.get_telescope(manager)
 
     def process(self, data):
         """Regrid the sidereal day.
