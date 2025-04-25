@@ -849,8 +849,8 @@ def _unpack_marray(mmodes, n=None):
     return marray
 
 
-class Regridder(task.SingleTask):
-    """Interpolate time-ordered data onto a regular grid.
+class LanczosRegridder(task.SingleTask):
+    """Interpolate the time-like axis of a dataset onto a regular grid.
 
     Uses a maximum-likelihood inverse of a Lanczos interpolation to do the
     regridding. This gives a reasonably local regridding, that is pretty well
@@ -891,7 +891,7 @@ class Regridder(task.SingleTask):
             Note that :class:`~drift.core.TransitTelescope` instances are also
             Observers.
         """
-        self.observer = observer
+        self.observer = io.get_telescope(observer)
 
     def process(self, data):
         """Regrid visibility data in the time direction.
@@ -982,6 +982,10 @@ class Regridder(task.SingleTask):
             ni *= w_mask[..., np.newaxis]
 
         return interp_grid, sts, ni
+
+
+# Alias for compatibility
+Regridder = LanczosRegridder
 
 
 class ShiftRA(task.SingleTask):
