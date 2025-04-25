@@ -541,7 +541,7 @@ class DeconvolveHybridMBase(task.SingleTask):
     ----------
     exclude_intracyl : bool
         Exclude intracylinder baselines from the calculation.
-    only_filter : bool
+    skip_deconvolution : bool
         Do not attempt to deconvolve the instrument transfer function.
     save_dirty_beam : bool
         Create a `dirty_beam` dataset in the output container that contains
@@ -565,7 +565,7 @@ class DeconvolveHybridMBase(task.SingleTask):
     """
 
     exclude_intracyl = config.Property(proptype=bool, default=False)
-    only_filter = config.Property(proptype=bool, default=False)
+    skip_deconvolution = config.Property(proptype=bool, default=False)
     save_dirty_beam = config.Property(proptype=bool, default=False)
 
     window_type = config.enum(
@@ -723,7 +723,7 @@ class DeconvolveHybridMBase(task.SingleTask):
             sum_weight = (weight * np.abs(bvf) ** 2).sum(axis=(1, -2))
 
             # Get the regularisation term, exact prescription is defined by subclass
-            if not self.only_filter:
+            if not self.skip_deconvolution:
                 epsilon = self._get_regularisation(freq, m)
                 C_inv = epsilon + sum_weight
             else:
@@ -740,7 +740,7 @@ class DeconvolveHybridMBase(task.SingleTask):
             dirty_beam_m = winf * sum_weight * tools.invert_no_zero(C_inv)
 
             # Calculate the point source normalization (dirty beam at transit)
-            if not self.only_filter:
+            if not self.skip_deconvolution:
                 norm = tools.invert_no_zero(dirty_beam_m.mean(axis=0))[:, np.newaxis, :]
             else:
                 norm = np.full(
