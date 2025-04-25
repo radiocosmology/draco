@@ -1598,7 +1598,8 @@ class HealpixBeamForm(task.SingleTask):
         for lfi, _ in mv.enumerate(axis=0):
             for pi in range(mv.shape[1]):
                 mv[lfi, pi] = healpy.smoothing(
-                    mv[lfi, pi], fwhm=np.radians(self.fwhm), verbose=False
+                    mv[lfi, pi],
+                    fwhm=np.radians(self.fwhm),
                 )
 
     def process(self, catalog: containers.SourceCatalog) -> containers.FormedBeam:

@@ -302,7 +302,8 @@ class ResizeSelectionFunctionMap(task.SingleTask):
                 old_nside = selfunc.nside
                 smoothing_fwhm = hp.nside2resol(old_nside)
                 new_selfunc_map_local[:][fi, 0] = hp.smoothing(
-                    new_selfunc_map_local[:][fi, 0], fwhm=smoothing_fwhm, verbose=False
+                    new_selfunc_map_local[:][fi, 0],
+                    fwhm=smoothing_fwhm,
                 )
 
             new_selfunc_map_local[:][fi, 0][new_selfunc_map_local[:][fi, 0][:] < 0] = 0
