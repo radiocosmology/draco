@@ -689,7 +689,7 @@ class ApplyDelayFilterHybridVis(task.SingleTask):
 
         # If requested copy over the weight dataset
         if self.copy_weight:
-            weight[:] = source.weight[:].local_array.copy()
+            weight[:] = source.weight[:].local_array
 
         # Problems saving to disk when distributed over last axis
         hv.redistribute("freq")
