@@ -541,6 +541,12 @@ class DeconvolveHybridMBase(task.SingleTask):
     ----------
     exclude_intracyl : bool
         Exclude intracylinder baselines from the calculation.
+    skip_deconvolution : bool
+        Do not attempt to deconvolve the instrument transfer function.
+    reference_declination : float, optional
+        Declination at which to set the flux normalization if `skip_deconvolution` is True.
+        A source transiting at this declination will have a peak value equal to its flux.
+        If `None` (default), the zenith is used.
     save_dirty_beam : bool
         Create a `dirty_beam` dataset in the output container that contains
         the synthesized beam in the EW direction at each declination.
@@ -563,6 +569,8 @@ class DeconvolveHybridMBase(task.SingleTask):
     """
 
     exclude_intracyl = config.Property(proptype=bool, default=False)
+    skip_deconvolution = config.Property(proptype=bool, default=False)
+    reference_declination = config.Property(proptype=float, default=None)
     save_dirty_beam = config.Property(proptype=bool, default=False)
 
     window_type = config.enum(
@@ -585,7 +593,8 @@ class DeconvolveHybridMBase(task.SingleTask):
     def setup(self, manager: io.TelescopeConvertible = None):
         """Set the telescope instance if a manager object is given.
 
-        The telescope instance is only needed if window_type is not "none".
+        The telescope instance is only needed if window_type is not "none"
+        or if reference_declination is not None.
 
         Parameters
         ----------
@@ -689,6 +698,17 @@ class DeconvolveHybridMBase(task.SingleTask):
         else:
             window = np.ones(nfreq, dtype=np.float32)
 
+        # Determine index closest to the reference declination
+        if self.skip_deconvolution:
+            el = rm.index_map["el"]
+            if self.reference_declination is None:
+                iref = np.argmin(np.abs(el))
+                self.log.info("Normalizing the map to zenith.")
+            else:
+                dec = np.degrees(np.arcsin(el)) + self.telescope.latitude
+                iref = np.argmin(np.abs(dec - self.reference_declination))
+                self.log.info(f"Normalizing the map to Decl. = {dec[iref]:0.2f} deg.")
+
         # Dereference datasets
         hv = hybrid_vis_m.vis[:].view(np.ndarray)
         hw = hybrid_vis_m.weight[:].view(np.ndarray)
@@ -716,13 +736,15 @@ class DeconvolveHybridMBase(task.SingleTask):
             # Get the EW weights using method defined by subclass
             weight = self._get_weight(inv_var) * (inv_var > 0.0)
 
-            # Get the regularisation term, exact prescription is defined by subclass
-            epsilon = self._get_regularisation(freq, m)
-
             # Calculate the normalization
             sum_weight = (weight * np.abs(bvf) ** 2).sum(axis=(1, -2))
 
-            C_inv = epsilon + sum_weight
+            # Get the regularisation term, exact prescription is defined by subclass
+            if not self.skip_deconvolution:
+                epsilon = self._get_regularisation(freq, m)
+                C_inv = epsilon + sum_weight
+            else:
+                C_inv = 1.0
 
             # Solve for the sky m-modes
             map_m = (
@@ -736,6 +758,8 @@ class DeconvolveHybridMBase(task.SingleTask):
 
             # Calculate the point source normalization (dirty beam at transit)
             norm = tools.invert_no_zero(dirty_beam_m.mean(axis=0))[:, np.newaxis, :]
+            if self.skip_deconvolution:
+                norm = norm[:, :, iref, np.newaxis]
 
             # Fill in the ringmap
             rmm[0, :, lfi] = (
