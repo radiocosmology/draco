@@ -1,9 +1,9 @@
 """Sensitivity Analysis Tasks."""
 
 import numpy as np
-from caput import config
+from caput import config, task
 
-from ..core import containers, io, task
+from ..core import containers, io
 from ..util import tools
 
 

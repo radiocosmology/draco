@@ -1,9 +1,9 @@
 """Power spectrum estimation code."""
 
 import numpy as np
-from caput import config
+from caput import config, task
 
-from ..core import containers, task
+from ..core import containers
 
 
 class QuadraticPSEstimation(task.SingleTask):
