@@ -12,13 +12,13 @@ import warnings
 from typing import ClassVar, overload
 
 import numpy as np
-from caput import config, mpiarray, weighted_median
+from caput import config, mpiarray, task, weighted_median
 from cora.util import units
 from scipy.signal import convolve, firwin, oaconvolve
 from skimage.filters import apply_hysteresis_threshold
 
 from ..analysis import transform
-from ..core import containers, io, task
+from ..core import containers, io
 from ..util import rfi, tools
 
 
