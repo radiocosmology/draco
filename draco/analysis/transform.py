@@ -7,11 +7,11 @@ from typing import overload
 
 import numpy as np
 import scipy.linalg as la
-from caput import config, fftw, mpiarray, pipeline
+from caput import config, fftw, mpiarray, pipeline, task
 from caput.tools import invert_no_zero
 from numpy.lib.recfunctions import structured_to_unstructured
 
-from ..core import containers, io, task
+from ..core import containers, io
 from ..util import regrid, tools
 
 

@@ -6,9 +6,9 @@ import numpy as np
 import pywt
 import scipy.fft as fft
 import scipy.linalg as la
-from caput import config, mpiutil
+from caput import config, mpiutil, task
 
-from ..core import containers, task
+from ..core import containers
 from ..util import _fast_tools
 from .delay import flatten_axes
 

@@ -16,9 +16,9 @@ Tasks
 
 import numpy as np
 import scipy.constants
-from caput import interferometry
+from caput import interferometry, task
 
-from ..core import containers, io, task
+from ..core import containers, io
 from ..util import tools
 
 

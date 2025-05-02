@@ -24,11 +24,11 @@ Tasks
 
 import numpy as np
 import scipy.constants
-from caput import config
+from caput import config, task
 from mpi4py import MPI
 from numpy.lib.recfunctions import structured_to_unstructured
 
-from ..core import containers, io, task
+from ..core import containers, io
 from ..util import tools
 from ..util.exception import ConfigError
 from . import transform

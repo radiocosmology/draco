@@ -1,9 +1,9 @@
 """Tasks for foreground filtering data."""
 
 import numpy as np
-from caput import config
+from caput import config, task
 
-from ..core import containers, io, task
+from ..core import containers, io
 
 
 class _ProjectFilterBase(task.SingleTask):
