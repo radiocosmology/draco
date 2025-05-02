@@ -1,9 +1,9 @@
 """Map making from driftscan data using the m-mode formalism."""
 
 import numpy as np
-from caput import config, mpiarray
+from caput import config, mpiarray, task
 
-from ..core import containers, io, task
+from ..core import containers, io
 from ..util import tools
 
 

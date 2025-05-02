@@ -2,9 +2,9 @@
 
 import numpy as np
 from caput import config, memh5, pipeline
+from caput.task import SingleTask
 
 from ..core.containers import SiderealStream
-from ..core.task import SingleTask
 from . import random
 
 

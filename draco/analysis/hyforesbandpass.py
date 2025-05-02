@@ -35,7 +35,7 @@ Contact Haochen for an example config file.
 import time
 
 import numpy as np
-from caput import config
+from caput import config, task
 from cora.util import units
 from mpi4py import MPI
 from scipy import linalg as la
@@ -43,7 +43,7 @@ from scipy import linalg as la
 from draco.analysis.ringmapmaker import find_grid_indices
 from draco.core import containers
 
-from ..core import io, task
+from ..core import io
 from ..util import tools
 
 
