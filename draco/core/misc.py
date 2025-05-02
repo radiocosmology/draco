@@ -5,17 +5,16 @@ appropriate module, or enough related tasks end up in here such that they can
 all be moved out into their own module.
 """
 
-import os
-
-import h5py
 import numpy as np
-from caput import config, mpiutil, weighted_median
+from caput import config
+from caput.algorithms import weighted_median
+from caput.pipeline import tasklib
 
-from ..core import containers, io, task
+from ..core import containers
 from ..util import tools
 
 
-class ApplyGain(task.SingleTask):
+class ApplyGain(tasklib.base.ContainerTask):
     """Apply a set of gains to a timestream or sidereal stack.
 
     Attributes

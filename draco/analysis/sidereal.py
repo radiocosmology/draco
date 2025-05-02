@@ -13,16 +13,18 @@ import inspect
 
 import numpy as np
 import scipy.linalg as la
-from caput import config, mpiarray, tod
+from caput import config, mpiarray
+from caput.pipeline import tasklib
+from caput.containers import tod
 from cora.util import units
 
-from ..core import containers, io, task
+from ..core import containers, io
 from ..util import gaussian_process, regrid, tools
 from .interpolate import _inv_move_front, _move_front
 from .transform import LanczosRegridder
 
 
-class SiderealGrouper(task.SingleTask):
+class SiderealGrouper(tasklib.base.ContainerTask):
     """Group individual timestreams together into whole Sidereal days.
 
     Attributes
@@ -729,7 +731,7 @@ class SiderealRebinner(SiderealRegridder):
         return sdata
 
 
-class RebinGradientCorrection(task.SingleTask):
+class RebinGradientCorrection(tasklib.base.ContainerTask):
     """Apply a linear gradient correction to shift RA samples to bin centres.
 
     Requires a sidereal day with full sidereal coverage to calculate a local
@@ -829,7 +831,7 @@ class RebinGradientCorrection(task.SingleTask):
         return sstream
 
 
-class SiderealStacker(task.SingleTask):
+class SiderealStacker(tasklib.base.ContainerTask):
     """Take in a set of sidereal days, and stack them up.
 
     Also computes the variance over sideral days using an
@@ -1077,7 +1079,7 @@ class SiderealStacker(task.SingleTask):
         return self.stack
 
 
-class SiderealStackerMatch(task.SingleTask):
+class SiderealStackerMatch(tasklib.base.ContainerTask):
     """Take in a set of sidereal days, and stack them up.
 
     This treats the time average of each input sidereal stream as an extra source of

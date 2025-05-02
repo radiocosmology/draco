@@ -4,14 +4,16 @@ from functools import cache
 
 import numpy as np
 import scipy.linalg
+
 from caput import config, mpiarray
+from caput.pipeline import tasklib
 from cora.util import units
 from cora.util.cosmology import Cosmology
 
 from draco.analysis.delay import flatten_axes
 from draco.analysis.ringmapmaker import find_grid_indices
 from draco.analysis.transform import ReduceChisq
-from draco.core import containers, io, task
+from draco.core import containers, io
 from draco.util import tools
 
 
@@ -21,7 +23,7 @@ def get_cosmo(*args, **kwargs):
     return Cosmology(*args, **kwargs)
 
 
-class TransformJyPerBeamToKelvin(task.SingleTask):
+class TransformJyPerBeamToKelvin(tasklib.base.ContainerTask):
     """Transform the ringmap in unit Jy/beam to Kelvin unit.
 
     This estimates the PSF solid angle (in sr unit) using the maximum baseline
@@ -115,7 +117,7 @@ class TransformJyPerBeamToKelvin(task.SingleTask):
         return bl.max()
 
 
-class ConstructWienerDelayTransform(task.SingleTask):
+class ConstructWienerDelayTransform(tasklib.base.ContainerTask):
     """Construct a Wiener filter that transforms maps from frequency into delay space.
 
     This task builds a projection operator that transforms frequency-domain maps
@@ -371,7 +373,7 @@ class ConstructWienerDelayTransform(task.SingleTask):
         return tools.window_generalised(x, window=self.window)
 
 
-class ApplyWienerDelayTransform(task.SingleTask):
+class ApplyWienerDelayTransform(tasklib.base.ContainerTask):
     """Apply a precomputed Wiener filter to project a ringmap into delay space.
 
     This task uses a projection operator created by `ConstructWienerDelayTransform`
@@ -481,7 +483,7 @@ class ReduceExcessScatter(ReduceChisq):
         return np.sqrt(v), num
 
 
-class ScaleDelayTransform(task.SingleTask):
+class ScaleDelayTransform(tasklib.base.ContainerTask):
     """Apply a scaled factor to the  delay spectrum.
 
     This task uses a scale factor and multiply that factor to
@@ -540,7 +542,7 @@ class ScaleDelayTransform(task.SingleTask):
         return out_ds
 
 
-class SpatialTransformDelayMap(task.SingleTask):
+class SpatialTransformDelayMap(tasklib.base.ContainerTask):
     """Spatial transform the delay map from (RA,DEC) to (u,v) domain.
 
     This transforms the delay data cube to spatial (u,v) domain
@@ -707,7 +709,7 @@ class SpatialTransformDelayMap(task.SingleTask):
         return vis_cube
 
 
-class CrossPowerSpectrum3D(task.SingleTask):
+class CrossPowerSpectrum3D(tasklib.base.ContainerTask):
     """Estimate the 3D cross power spectrum of two data cubes.
 
     This estimates the 3D cross power spectrum of two data cubes by taking the
@@ -837,7 +839,7 @@ class AutoPowerSpectrum3D(CrossPowerSpectrum3D):
         return super().process(data, data)
 
 
-class CylindricalPowerSpectrum2D(task.SingleTask):
+class CylindricalPowerSpectrum2D(tasklib.base.ContainerTask):
     """Estimate the cylindrically averaged 2D power spectrum.
 
     This estimates the cylindrically averaged 2D power spectrum from a
@@ -1020,7 +1022,7 @@ class CylindricalPowerSpectrum2D(task.SingleTask):
         return pspec_2D
 
 
-class SphericalPowerSpectrum2Dto1D(task.SingleTask):
+class SphericalPowerSpectrum2Dto1D(tasklib.base.ContainerTask):
     """Estimate the spherically averaged 1D power spectrum.
 
     This estimates the spherically averaged 1D power spectrum from a
@@ -1116,7 +1118,7 @@ class SphericalPowerSpectrum2Dto1D(task.SingleTask):
         return pspec_1D
 
 
-class SphericalPowerSpectrum3Dto1D(task.SingleTask):
+class SphericalPowerSpectrum3Dto1D(tasklib.base.ContainerTask):
     """Estimate the spherically averaged 1D power spectrum.
 
     This estimates the spherically averaged 1D power spectrum from a

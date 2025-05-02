@@ -3,14 +3,14 @@
 import healpy
 import numpy as np
 import scipy.interpolate
-from caput import config, interferometry
+from caput import config, interferometry, task
 from caput import time as ctime
 from cora.util import units
 from skyfield.api import Angle, Star
 
 from draco.analysis.sidereal import _search_nearest
 
-from ..core import containers, io, task
+from ..core import containers, io
 from ..util._fast_tools import beamform
 from ..util.tools import (
     baseline_vector,

@@ -2,8 +2,9 @@
 
 import numpy as np
 import scipy.constants
+from caput import task
 
-from ..core import io, task
+from ..core import io
 
 
 class Mix(task.SingleTask):
