@@ -1,11 +1,11 @@
 """Source Stack Analysis Tasks."""
 
 import numpy as np
-from caput import config, pipeline
+from caput import config, pipeline, task
 from cora.util import units
 from mpi4py import MPI
 
-from ..core import containers, task
+from ..core import containers
 from ..util.random import RandomTask
 from ..util.tools import invert_no_zero
 

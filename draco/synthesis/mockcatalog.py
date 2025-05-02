@@ -87,11 +87,11 @@ Below is an example workflow:
 import healpy as hp
 import numpy as np
 import scipy.stats
-from caput import config, mpiarray, mpiutil
+from caput import config, mpiarray, mpiutil, task
 from cora.util import units
 from mpi4py import MPI
 
-from ..core import containers, task
+from ..core import containers
 from ..util import random, tools
 
 # Constants
