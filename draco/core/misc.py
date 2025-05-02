@@ -6,9 +6,9 @@ all be moved out into their own module.
 """
 
 import numpy as np
-from caput import config
+from caput import config, task
 
-from ..core import containers, task
+from ..core import containers
 from ..util import tools
 
 
