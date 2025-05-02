@@ -4,11 +4,11 @@ from typing import TypeVar
 
 import numpy as np
 import scipy.linalg as la
-from caput import config, fftw, memh5, mpiarray
+from caput import config, fftw, memh5, mpiarray, task
 from cora.util import units
 from numpy.lib.recfunctions import structured_to_unstructured
 
-from ..core import containers, io, task
+from ..core import containers, io
 from ..util import random, tools
 from .delayopt import delay_power_spectrum_maxpost
 

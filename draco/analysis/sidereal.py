@@ -13,10 +13,10 @@ import inspect
 
 import numpy as np
 import scipy.linalg as la
-from caput import config, mpiarray, tod
+from caput import config, mpiarray, task, tod
 from cora.util import units
 
-from ..core import containers, io, task
+from ..core import containers, io
 from ..util import regrid, tools
 from .transform import Regridder
 

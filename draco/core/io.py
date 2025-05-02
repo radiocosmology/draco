@@ -30,13 +30,12 @@ from functools import partial
 from typing import ClassVar
 
 import numpy as np
-from caput import config, fileformats, memh5, pipeline, truncate
+from caput import config, fileformats, memh5, pipeline, task, truncate
 from cora.util import units
 from drift.core import beamtransfer, manager, telescope
 from yaml import dump as yamldump
 
 from ..util.exception import ConfigError
-from . import task
 
 
 def _list_of_filelists(files: list[str] | list[list[str]]) -> list[list[str]]:

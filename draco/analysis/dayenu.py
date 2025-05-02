@@ -7,11 +7,11 @@ import time
 
 import numpy as np
 import scipy.interpolate
-from caput import config
+from caput import config, task
 from cora.util import units
 from mpi4py import MPI
 
-from ..core import containers, io, task
+from ..core import containers, io
 from ..util import tools
 from . import transform
 

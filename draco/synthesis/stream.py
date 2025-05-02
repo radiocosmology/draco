@@ -9,10 +9,10 @@ a set of time stream files with :class:`MakeTimeStream`.
 import inspect
 
 import numpy as np
-from caput import config, mpiarray, mpiutil, pipeline, tools
+from caput import config, mpiarray, mpiutil, pipeline, task, tools
 from cora.util import hputil
 
-from ..core import containers, io, task
+from ..core import containers, io
 from ..util import regrid
 
 
