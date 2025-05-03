@@ -70,13 +70,6 @@ extensions = [
         extra_compile_args=[*FAST_MATH_ARGS, *OMP_ARGS],
         extra_link_args=[*FAST_MATH_ARGS, *OMP_ARGS],
     ),
-    Extension(
-        "draco.util.truncate",
-        ["draco/util/truncate.pyx"],
-        include_dirs=[np.get_include()],
-        extra_compile_args=OMP_ARGS,
-        extra_link_args=OMP_ARGS,
-    ),
 ]
 
 setup(
