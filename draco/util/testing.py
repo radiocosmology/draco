@@ -1,11 +1,11 @@
 """draco test utils."""
 
 import numpy as np
-from caput import config, memh5, pipeline
+from caput import config, memh5, pipeline, random
 from caput.task import SingleTask
+from caput.task.random import RandomTask
 
 from ..core.containers import SiderealStream
-from . import random
 
 
 class DummyTask(SingleTask):
@@ -112,7 +112,7 @@ def mock_freq_data(
     return data, weights
 
 
-class RandomFreqData(random.RandomTask):
+class RandomFreqData(RandomTask):
     """Generate a random sidereal stream with structure in delay.
 
     Attributes
