@@ -10,14 +10,16 @@ using the variance of the noise estimate in the existing data.
 """
 
 import numpy as np
-from caput import config, pipeline, task
+from caput import config, pipeline, random
+from caput.task import SingleTask
+from caput.task.random import RandomTask
 from caput.time import STELLAR_S
 
 from ..core import containers, io
-from ..util import random, tools
+from ..util import tools
 
 
-class ReceiverTemperature(task.SingleTask):
+class ReceiverTemperature(SingleTask):
     """Add a basic receiver temperature term into the data.
 
     This class adds in an uncorrelated, frequency and time independent receiver
@@ -44,7 +46,7 @@ class ReceiverTemperature(task.SingleTask):
         return data
 
 
-class GaussianNoiseDataset(task.SingleTask, random.RandomTask):
+class GaussianNoiseDataset(SingleTask, RandomTask):
     """Generates a Gaussian distributed noise dataset using the noise estimates of an existing dataset.
 
     Attributes
@@ -174,7 +176,7 @@ class MultipleGaussianNoiseDatasets(
     """Generates multiple Gaussian distributed noise datasets."""
 
 
-class GaussianNoise(task.SingleTask, random.RandomTask):
+class GaussianNoise(SingleTask, RandomTask):
     """Add Gaussian distributed noise to a visibility dataset.
 
     Note that this is an approximation to the actual noise distribution good only
@@ -283,7 +285,7 @@ class GaussianNoise(task.SingleTask, random.RandomTask):
         return data
 
 
-class SampleNoise(task.SingleTask, random.RandomTask):
+class SampleNoise(SingleTask, RandomTask):
     """Add properly distributed noise to a visibility dataset.
 
     This task draws properly (complex Wishart) distributed samples from an input
@@ -375,7 +377,7 @@ class SampleNoise(task.SingleTask, random.RandomTask):
         return data_exp
 
 
-class FreqCorrelatedNoise(task.SingleTask, random.RandomTask):
+class FreqCorrelatedNoise(SingleTask, RandomTask):
     """Generate frequency-correlated noise using Cholesky factors.
 
     This task uses precomputed Cholesky decompositions of the frequency-frequency
