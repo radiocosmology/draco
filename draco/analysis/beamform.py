@@ -1522,16 +1522,6 @@ class FitBeamFormed(BeamFormExternalMixin, task.SingleTask):
                     XT * (w * b)[..., np.newaxis, :], axis=-1, keepdims=True
                 )
 
-                self.log.info(
-                    f"proj_wb: {proj_wb.shape} "
-                    f"XT: {XT.shape} "
-                    f"X: {X.shape} "
-                    f"w: {w.shape} "
-                    f"b: {b.shape} "
-                    f"A: {A.shape} "
-                    f"sigma: {sigma.shape}"
-                )
-
                 coeff = np.linalg.solve(A, proj_wb)[..., 0]
                 cov = np.linalg.solve(A, np.eye(2))
 
