@@ -2375,6 +2375,9 @@ class GeneralCombineMasks(task.SingleTask):
         if any(type(mask) is not type(masks[0]) for mask in masks[1:]):
             raise TypeError("All input masks must be of the same container type.")
 
+        for mask in masks:
+            mask.redistribute("freq")
+
         # Assign variables A, B, C, ..., one per mask
         namespace = {
             chr(ord("A") + i): mask.datasets[self._dataset_name][:]
@@ -2387,7 +2390,8 @@ class GeneralCombineMasks(task.SingleTask):
 
         # Create a copy and set the result
         combined_mask = masks[0].copy()
-        combined_mask.mask[:] = result
+        combined_mask.redistribute("freq")
+        combined_mask.datasets[self._dataset_name][:] = result
 
         return combined_mask
 
