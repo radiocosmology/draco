@@ -17,6 +17,7 @@ Containers
 - :py:class:`HybridVisMModes`
 - :py:class:`RingMap`
 - :py:class:`RingMapMask`
+- :py:class:`RingMapTaper`
 - :py:class:`CommonModeGainData`
 - :py:class:`CommonModeSiderealGainData`
 - :py:class:`GainData`
@@ -2245,6 +2246,27 @@ class RingMapMask(FreqContainer, SiderealContainer):
         return self.datasets["mask"]
 
 
+class RingMapTaper(FreqContainer, SiderealContainer):
+    """Container for a smooth transition from good to bad ringmap pixels."""
+
+    _axes = ("pol", "el")
+
+    _dataset_spec: ClassVar = {
+        "taper": {
+            "axes": ["pol", "freq", "ra", "el"],
+            "dtype": float,
+            "initialise": True,
+            "distributed": True,
+            "distributed_axis": "freq",
+        }
+    }
+
+    @property
+    def taper(self):
+        """Get the mask dataset."""
+        return self.datasets["taper"]
+
+
 class GainDataBase(DataWeightContainer):
     """A container interface for gain-like data.
 
@@ -3940,3 +3962,43 @@ class VisBandpassCompensateBaselineRA(SiderealContainer, VisBandpassCompensateBa
     def rank(self):
         """Get the sval dataset."""
         return self.datasets["rank"]
+
+
+class HorizonLimit(ContainerBase):
+    """Container holding the altitude of the horizon as a function of azimuth."""
+
+    _axes = ("azimuth",)
+
+    _dataset_spec: ClassVar = {
+        "altitude": {
+            "axes": ["azimuth"],
+            "dtype": float,
+            "initialise": True,
+            "distributed": False,
+        }
+    }
+
+    def get_horizon_limit(self, az):
+        """Interpolate the horizon altitude at a given azimuth.
+
+        Parameters
+        ----------
+        az : float or ndarray
+            Azimuth angle in degrees at which to evaluate the horizon limit.
+
+        Returns
+        -------
+        alt : float or ndarray
+            Interpolated horizon altitude(s) in degrees.
+        """
+        return np.interp(az, self.azimuth, self.altitude, period=360.0)
+
+    @property
+    def azimuth(self):
+        """Get the index map containing the azimuth angle (in degrees)."""
+        return self.index_map["azimuth"]
+
+    @property
+    def altitude(self):
+        """Get the dataset containing the altitude (in degrees)."""
+        return self.datasets["altitude"]

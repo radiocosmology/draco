@@ -2334,44 +2334,251 @@ class ApplyGenericMask(task.SingleTask):
 MaskBeamformedOutliers = ApplyGenericMask
 
 
-class CombineMasks(task.SingleTask):
-    """Combine an arbitrary number of masks (conservatively).
+class GeneralCombineMasks(task.SingleTask):
+    """Combine multiple masks using a user-specified logical expression.
 
-    All of the given masks must be of the same type and that type must have a `mask` dataset.
-    Any flagged value in any of the provided masks will be flagged in the output mask.
+    The input is a list of containers with `mask` datasets. Each mask is assigned
+    a variable name (`A`, `B`, `C`, ..., `Z`) in the order they appear. The logical
+    combination is defined using a Python expression involving those variables.
 
-    Assumes that a sample marked `True` is flagged.
+    For example, if `masks = [m1, m2]`, then the expression
+    `"A & ~B"` would keep values that are masked in `m1` and not in `m2`.
+
+    Attributes
+    ----------
+    expression : str
+        A Python expression combining the mask variables. Variables must be uppercase
+        letters `A`, `B`, ..., matching the order of the input masks.
+        The expression must evaluate to a boolean array of the same shape.
     """
 
+    expression = config.Property(proptype=str)
+
+    _dataset_name = "mask"
+
     def process(self, masks: list[containers.ContainerBase]):
-        """Combine the given list of masks into a single mask.
+        """Combine the given list of masks using the logical expression.
 
         Parameters
         ----------
-        masks
-            A list of containers that all have the same type. The type
-            must have a `mask` dataset.
+        masks : list of containers.ContainerBase
+            A list of containers with a `mask` dataset, all of the same type and shape.
 
         Returns
         -------
-        combined_mask
-            A combined mask such that any flagged value in any of the
-            input masks is flagged in the output mask.
+        combined_mask : containers.ContainerBase
+            A new container of the same type with the result of the logical combination.
         """
-        # Check that all types are the same.
+        if len(masks) > 26:
+            raise ValueError("Too many masks: only A-Z are supported (max 26).")
+
         if any(type(mask) is not type(masks[0]) for mask in masks[1:]):
-            raise TypeError(
-                "At least one type mismatch between masks. All masks must have the same type."
-            )
+            raise TypeError("All input masks must be of the same container type.")
 
-        # Create combined output mask
+        # Assign variables A, B, C, ..., one per mask
+        namespace = {
+            chr(ord("A") + i): mask.datasets[self._dataset_name][:]
+            for i, mask in enumerate(masks)
+        }
+
+        # Evaluate the logical expression
+        self.log.info(f"Evaluating mask combination expression: '{self.expression}'")
+        result = eval(self.expression, {}, namespace)
+
+        # Create a copy and set the result
         combined_mask = masks[0].copy()
-
-        # Loop over masks "accumulating" each mask after the first.
-        for mask in masks[1:]:
-            combined_mask.mask[:] |= mask.mask[:]
+        combined_mask.mask[:] = result
 
         return combined_mask
+
+
+class CombineMasks(GeneralCombineMasks):
+    """Combine an arbitrary number of masks conservatively (logical OR)."""
+
+    def process(self, masks: list[containers.ContainerBase]):
+        """Construct the logical OR of all masks.
+
+        Parameters
+        ----------
+        masks : list of containers.ContainerBase
+            A list of containers with a `mask` dataset, all of the same type and shape.
+
+        Returns
+        -------
+        combined_mask : containers.ContainerBase
+            A new container of the same type containing the logical OR of all masks.
+        """
+        # Construct expression: A | B | C ...
+        self.expression = " | ".join([chr(ord("A") + i) for i in range(len(masks))])
+        return super().process(masks)
+
+
+class ApplyTaper(task.SingleTask):
+    """Apply a taper to a dataset with arbitrary axes.
+
+    All of the taper axes must be present in the dataset, but
+    the dataset can have additional axes.
+
+    Attributes
+    ----------
+    update_weight : bool
+        If set to True, the taper will be applied to the
+        weight dataset using the standard equation for
+        propagation of uncertainty.
+    """
+
+    update_weight = config.Property(proptype=bool, default=False)
+
+    def process(self, data: containers.ContainerBase, taper: containers.ContainerBase):
+        """Apply the taper to the dataset weights.
+
+        Reorder the taper axes and add broadcasting axes if necessary.
+
+        Parameters
+        ----------
+        data : containers.DataWeightContainer
+            A container with `data` and `weight` properties.
+            Both the data and weight must include a `freq` axis,
+            and must contain all axes present in the taper.
+        taper : containers.ContainerBase
+            Any container that has a `taper` property that has
+            a `freq` axis and whose othes axes are a subset of
+            those in the data.
+
+        Returns
+        -------
+        data : containers.DataWeightContainer
+            The input container, with the `data` property scaled by the taper,
+            and optionally the `weight` scaled appropriately.
+        """
+        # Pull out the axes of each dataset
+        daxes = list(data.data.attrs["axis"])
+        waxes = list(data.weight.attrs["axis"])
+        taxes = list(taper.taper.attrs["axis"])
+
+        # Make sure all the taper axes exist in the data
+        for name, axes in [("data", daxes), ("weight", waxes)]:
+            if any(ax not in axes for ax in taxes):
+                missing_axes = [ax for ax in taxes if ax not in axes]
+                raise NameError(
+                    f"Taper has axes {missing_axes} which are not found in {name}.\n"
+                    f"{name} axes: {axes}\ntaper axes: {taxes}"
+                )
+
+        # Redistribute over frequency, assuming that all containers have
+        # a frequency axis
+        data.redistribute("freq")
+        taper.redistribute("freq")
+
+        # Rearrange the existing taper axes to match their order in the dataset
+        tinds = tuple(taxes.index(ax) for ax in daxes if ax in taxes)
+        taper = taper.taper[:].local_array.transpose(tinds)
+
+        # Add broadcasting axes now that taper axes are in the correct order
+        dbcast = tuple(slice(None) if ax in taxes else np.newaxis for ax in daxes)
+        wbcast = tuple(slice(None) if ax in taxes else np.newaxis for ax in waxes)
+
+        # Multiply the data by the taper
+        data.data[:].local_array[:] *= taper[dbcast]
+
+        # Optionally update the weights
+        if self.update_weight:
+            data.weight[:].local_array[:] *= tools.invert_no_zero(taper[wbcast]) ** 2
+
+        return data
+
+
+class GeneralCombineTapers(GeneralCombineMasks):
+    """Combine multiple taper functions using a user-defined expression.
+
+    This is a subclass of `GeneralCombineMasks` that operates on the `taper`
+    dataset rather than `mask`. Each input taper is assigned a variable
+    (`A`, `B`, `C`, ..., `Z`) in the order they appear. The combination is
+    defined by the `expression` property, which is evaluated using standard
+    Python syntax.
+
+    For example, an expression like `"A * B"` multiplies two taper functions
+    elementwise.
+
+    Attributes
+    ----------
+    expression : str
+        A Python expression combining the taper datasets from each input
+        container using variable names `A`, `B`, etc.
+    """
+
+    _dataset_name = "taper"
+
+
+class CombineTapers(GeneralCombineTapers):
+    """Combine an arbitrary number of tapers conservatively (multiply)."""
+
+    def process(self, tapers: list[containers.ContainerBase]):
+        """Construct the product of all tapers.
+
+        Parameters
+        ----------
+        tapers : list of containers.ContainerBase
+            A list of containers with a `taper` dataset, all of the same type and shape.
+
+        Returns
+        -------
+        combined_taper : containers.ContainerBase
+            A new container of the same type containing the product of all tapers.
+        """
+        # Construct expression: A * B * C ...
+        self.expression = " * ".join([chr(ord("A") + i) for i in range(len(tapers))])
+        return super().process(tapers)
+
+
+class MaskFromTaper(task.SingleTask):
+    """Generate a binary mask from a taper.
+
+    This task constructs a `RingMapMask` by thresholding a `RingMapTaper`.
+    The resulting mask is `True` where the taper is either less than 1.0
+    or equal to 0.0, depending on the `outer` parameter.
+
+    Attributes
+    ----------
+    outer : bool
+        If True, mask all samples within the outer boundary of the taper
+        (i.e., where the taper is < 1).  If False, mask all samples
+        within the inner boundary of the taper is (i.e., where the taper is 0).
+    """
+
+    outer = config.Property(proptype=bool, default=False)
+
+    def process(self, taper):
+        """Generate the mask from the taper.
+
+        Parameters
+        ----------
+        taper : containers.RingMapTaper
+            The taper used to generate the mask.
+
+        Returns
+        -------
+        out : containers.RingMapMask
+            The boolean mask that indicates where the taper is
+            less than 1 (outer = True) or zero (outer = False).
+        """
+        taper.redistribute("freq")
+
+        out = containers.RingMapMask(
+            axes_from=taper,
+            attrs_from=taper,
+            distributed=taper.distributed,
+            comm=taper.comm,
+        )
+
+        out.redistribute("freq")
+
+        if self.outer:
+            out.mask[:] = taper.taper[:] < 1.0
+        else:
+            out.mask[:] = taper.taper[:] == 0.0
+
+        return out
 
 
 class ApplyBaselineMask(task.SingleTask):
