@@ -1,9 +1,4 @@
-"""Miscellaneous pipeline tasks with no where better to go.
-
-Tasks should be proactively moved out of here when there is a thematically
-appropriate module, or enough related tasks end up in here such that they can
-all be moved out into their own module.
-"""
+"""Tasks for data calibration."""
 
 import numpy as np
 from caput import config, task
