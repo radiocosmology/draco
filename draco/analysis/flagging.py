@@ -18,7 +18,8 @@ import numpy.typing as npt
 from caput import config, mpiarray
 from caput.algorithms import weighted_median, fft
 from caput.pipeline import tasklib
-from cora.util import units
+from caput.astro import constants
+
 from scipy.signal import convolve
 from scipy.spatial.distance import cdist
 from skimage.filters import apply_hysteresis_threshold
@@ -1195,7 +1196,7 @@ class RFITransientVisMask(RFIVisMask):
         ra = np.unwrap(self.telescope.unix_to_lsa(times), period=360.0) * np.pi / 180.0
         # Get the per-frequency high-pass and low-pass cuts
         dec = np.deg2rad(self.telescope.latitude)
-        lambda_inv = freq[:, np.newaxis] * 1e6 / units.c
+        lambda_inv = freq[:, np.newaxis] * 1e6 / constants.c
 
         # Maximum cut per frequency
         hpf_cut = lambda_inv * baselines[:, 0].max() / np.cos(dec)

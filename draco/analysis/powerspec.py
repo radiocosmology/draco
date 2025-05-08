@@ -7,7 +7,7 @@ import scipy.linalg
 
 from caput import config, mpiarray
 from caput.pipeline import tasklib
-from cora.util import units
+from caput.astro import constants
 from cora.util.cosmology import Cosmology
 
 from draco.analysis.delay import flatten_axes
@@ -622,7 +622,7 @@ class SpatialTransformDelayMap(tasklib.base.ContainerTask):
         ra = ds.index_map["sample"]  # deg
         dec = self.tel.latitude + np.degrees(np.arcsin(el))  # deg
         freq = ds.attrs["freq"]  # MHz
-        wl = units.c / (freq * 1e6)  # wavelength in meter, speed of light is in meter.
+        wl = constants.c / (freq * 1e6)  # wavelength in meter, speed of light is in meter.
 
         # Unpack the baseline axis of the delay spectrum
         # and reshape it as (pol,delay,ra,el)
@@ -640,7 +640,7 @@ class SpatialTransformDelayMap(tasklib.base.ContainerTask):
         # Estimate the Fourier modes
         nu_c = freq[int(freq.size / 2.0)]  # central freq of the band in MHz.
         redshift = (
-            units.nu21 / nu_c - 1
+            constants.nu21 / nu_c - 1
         )  # redshift at the center of the band, 21cm freq in MHz.
         kx, ky, u, v, kpara = get_fourier_modes(
             ra, dec, delay * 1e-6, redshift, self.cosmology
@@ -913,7 +913,7 @@ class CylindricalPowerSpectrum2D(tasklib.base.ContainerTask):
         uv_mask = ps.uv_mask[:]
         redshift = ps.attrs["redshift"]
         nu_c = ps.attrs["freq_center"]
-        wl = units.c / (nu_c * 1e6)  # m
+        wl = constants.c / (nu_c * 1e6)  # m
 
         # find out the kperp bins
         u_min_lambda = self.bl_min / wl
@@ -1192,7 +1192,7 @@ class SphericalPowerSpectrum3Dto1D(tasklib.base.ContainerTask):
         uv_mask = ps.uv_mask[:]
         redshift = ps.attrs["redshift"]
         nu_c = ps.attrs["freq_center"]
-        wl = units.c / (nu_c * 1e6)  # m
+        wl = constants.c / (nu_c * 1e6)  # m
 
         #  find out the kperp bins
         u_min_lambda = self.bl_min / wl
@@ -1309,7 +1309,7 @@ def f2z(freq):
     -------
     redshift : float
     """
-    return units.nu21 / freq - 1
+    return constants.nu21 / freq - 1
 
 
 def z2f(z):
@@ -1325,7 +1325,7 @@ def z2f(z):
     frequency: float
         Frequency in MHz.
     """
-    return units.nu21 / (z + 1)
+    return constants.nu21 / (z + 1)
 
 
 def dRperp_dtheta(z, cosmo=None):
@@ -1371,7 +1371,7 @@ def dRpara_df(z, cosmo=None):
     )  # H(z) in unit [(km . h) / (Mpc . sec)]
 
     # Eqn A9 of Liu,A 2014A
-    return (1 + z) ** 2.0 / H_z * (units.c / 1e3) / (units.nu21 * 1e6)
+    return (1 + z) ** 2.0 / H_z * (constants.c / 1e3) / (constants.nu21 * 1e6)
 
 
 def delays_to_kpara(delay, z, cosmo=None):
@@ -1491,7 +1491,7 @@ def jy_per_beam_to_kelvin(freq, bl_length):
         The conversion factor from Jy/beam to Kelvin.
     """
     Jy = 1.0e-26  # W m^-2 Hz^-1
-    wl = units.c / (freq * 1e6)  # freq of the map in MHz
+    wl = constants.c / (freq * 1e6)  # freq of the map in MHz
 
     # Estimate the PSF area, assuming a Gaussian PSF, based on max baseline
     # Bmaj=Bmin= PSF_arcsec; beam_area = (pi * Bmaj * Bmin)/(4 * log(2))
@@ -1500,7 +1500,7 @@ def jy_per_beam_to_kelvin(freq, bl_length):
     omega_psf = (np.pi * PSF**2) / (4 * np.log(2))
     omega_psf_sr = omega_psf * (np.pi / 180.0) ** 2  # convert the PSF area to sr
 
-    kB = units.k_B  # Boltzmann Const in J/k (1.38 * 10-23)
+    kB = constants.k_B  # Boltzmann Const in J/k (1.38 * 10-23)
     return wl**2 * Jy / (2 * kB * omega_psf_sr)
 
 
