@@ -1809,7 +1809,7 @@ class MixTwoDatasets(MixData):
         return
 
 
-class Downselect(io.SelectionsMixin, task.SingleTask):
+class Downselect(task.io.SelectionsMixin, task.SingleTask):
     """Apply axis selections to a container.
 
     Apply slice or `np.take` operations across multiple axes of a container.
