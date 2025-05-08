@@ -1,8 +1,7 @@
 """Tasks to do data interpolation/inpainting."""
 
 import numpy as np
-from caput import config, mpiutil, task
-from cora.util import units
+from caput import config, mpiutil, task, units
 
 from ..core import io
 from ..util import dpss
