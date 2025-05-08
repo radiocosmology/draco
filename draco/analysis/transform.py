@@ -8,6 +8,7 @@ from typing import overload
 import numpy as np
 import scipy.linalg as la
 from caput import config, fftw, mpiarray, pipeline, task
+from caput.containers import copy_datasets_filter
 from caput.tools import invert_no_zero
 from numpy.lib.recfunctions import structured_to_unstructured
 
@@ -318,9 +319,7 @@ class CollateProducts(TelescopeStreamMixIn, task.SingleTask):
         sp.weight[:] = counter**2 * tools.invert_no_zero(sp.weight[:])
 
         # Copy over any additional datasets that need to be frequency filtered
-        containers.copy_datasets_filter(
-            ss, sp, "freq", freq_ind, ["input", "prod", "stack"]
-        )
+        copy_datasets_filter(ss, sp, "freq", freq_ind, ["input", "prod", "stack"])
 
         # Switch back to frequency distribution. This will have minimal
         # cost if we are already distributed in frequency
@@ -416,7 +415,7 @@ class SelectFreq(task.SingleTask):
         # Copy over datasets. If the dataset has a frequency axis,
         # then we only copy over the subset.
         if isinstance(data, containers.ContainerBase):
-            containers.copy_datasets_filter(
+            copy_datasets_filter(
                 data, newdata, "freq", newindex, copy_without_selection=True
             )
         else:
@@ -1817,7 +1816,7 @@ class MixTwoDatasets(MixData):
         return
 
 
-class Downselect(io.SelectionsMixin, task.SingleTask):
+class Downselect(task.io.SelectionsMixin, task.SingleTask):
     """Apply axis selections to a container.
 
     Apply slice or `np.take` operations across multiple axes of a container.
@@ -1869,7 +1868,7 @@ class Downselect(io.SelectionsMixin, task.SingleTask):
         out = data.__class__(
             axes_from=data, attrs_from=data, skip_datasets=True, **output_axes
         )
-        containers.copy_datasets_filter(data, out, selection=sel)
+        copy_datasets_filter(data, out, selection=sel)
 
         return out
 

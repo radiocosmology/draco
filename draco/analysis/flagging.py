@@ -12,8 +12,7 @@ import warnings
 from typing import ClassVar, overload
 
 import numpy as np
-from caput import config, mpiarray, task, weighted_median
-from cora.util import units
+from caput import config, mpiarray, task, units, weighted_median
 from scipy.signal import convolve, firwin, oaconvolve
 from scipy.spatial.distance import cdist
 from skimage.filters import apply_hysteresis_threshold
