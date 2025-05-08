@@ -6,10 +6,7 @@ from typing import TypeVar
 
 import numpy as np
 import scipy.linalg as la
-from caput import config, fftw, memh5, mpiarray, random
-from caput.task import SingleTask
-from caput.task.random import RandomTask
-from cora.util import units
+from caput import config, fftw, memh5, mpiarray, random, task, units
 from numpy.lib.recfunctions import structured_to_unstructured
 
 from ..core import containers, io
@@ -25,7 +22,7 @@ FreqContainerType = TypeVar("FreqContainerType", bound=containers.FreqContainer)
 # ---------------------
 
 
-class DelayFilter(SingleTask):
+class DelayFilter(task.SingleTask):
     """Remove delays less than a given threshold.
 
     This is performed by projecting the data onto the null space that is orthogonal
@@ -150,7 +147,7 @@ class DelayFilter(SingleTask):
         return ss
 
 
-class DelayFilterBase(SingleTask):
+class DelayFilterBase(task.SingleTask):
     """Remove delays less than a given threshold.
 
     This is performed by projecting the data onto the null space that is orthogonal
@@ -341,7 +338,7 @@ class DelayFilterBase(SingleTask):
 # -----------------------------
 
 
-class DelayTransformBase(SingleTask):
+class DelayTransformBase(task.SingleTask):
     """Base class for transforming from frequency to delay (non-functional).
 
     Attributes
@@ -1055,7 +1052,7 @@ class DelaySpectrumWienerFilterIteratePS(DelaySpectrumWienerFilter):
 # -------------------------------------------------------------
 
 
-class DelaySpectrumToPowerSpectrum(SingleTask):
+class DelaySpectrumToPowerSpectrum(task.SingleTask):
     """Compute a delay power spectrum from a delay spectrum."""
 
     def process(self, dspec: containers.DelayTransform) -> containers.DelaySpectrum:
@@ -1212,7 +1209,7 @@ class DelayPowerSpectrumBase(DelayPowerSpectrumContainerMixin, DelayTransformBas
         raise NotImplementedError()
 
 
-class DelayPowerSpectrumGibbs(DelayPowerSpectrumBase, RandomTask):
+class DelayPowerSpectrumGibbs(DelayPowerSpectrumBase, task.random.RandomTask):
     """Use a Gibbs sampler to estimate the delay power spectrum.
 
     The spectrum returned is the median of the final half of the
@@ -1298,7 +1295,7 @@ class DelayPowerSpectrumNRML(DelayPowerSpectrumBase):
         return spec, samples, success
 
 
-class DelayCrossPowerSpectrumEstimator(DelayPowerSpectrumGibbs, RandomTask):
+class DelayCrossPowerSpectrumEstimator(DelayPowerSpectrumGibbs, task.random.RandomTask):
     """A delay cross power spectrum estimator.
 
     This takes multiple compatible `FreqContainer`s as inputs and will return a

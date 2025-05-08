@@ -16,7 +16,7 @@ import scipy.linalg as la
 from caput import config, mpiarray
 from caput.pipeline import tasklib
 from caput.containers import tod
-from cora.util import units
+from caput.astro import constants
 
 from ..core import containers, io
 from ..util import gaussian_process, regrid, tools
@@ -263,7 +263,7 @@ class SiderealRegridder(LanczosRegridder):
         ]
 
         # Calculate the fringe rate assuming that ha = 0.0 and dec = lat
-        lmbda = units.c / (freq * 1e6)
+        lmbda = constants.c / (freq * 1e6)
         u = self.observer.baselines[np.newaxis, :, 0] / lmbda[:, np.newaxis]
 
         omega = -2.0 * np.pi * u * np.cos(np.radians(self.observer.latitude))
