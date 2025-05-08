@@ -1051,34 +1051,53 @@ class ShiftRA(task.SingleTask):
 
 
 class SelectPol(task.SingleTask):
-    """Extract a subset of polarisations, including Stokes parameters.
+    """Extract a subset of Stokes parameters from beamformed data.
 
-    This currently only extracts Stokes I.
+    Supports extraction of Stokes I, Q, U, and V from beamformed data for
+    linear polarisations (XX, YY, reXY, imXY). Assumes beamformed data are
+    already calibrated and normalized.
 
     Attributes
     ----------
-    pol : list
-        Polarisations to extract. Only Stokes I extraction is supported (i.e. `pol =
-        ["I"]`).
+    pol : list of str
+            List of Stokes parameters to extract.
+            Must be a subset of ['I', 'Q', 'U', 'V'].
     """
 
     pol = config.Property(proptype=list)
 
-    def process(self, polcont):
-        """Extract the specified polarisation from the input.
+    def setup(self):
+        """Check that the requested polarisations are valid."""
+        self.P = {
+            "I": {"XX": 1, "YY": 1},
+            "Q": {"XX": 1, "YY": -1},
+            "U": {"reXY": 1},
+            "V": {"imXY": 1},
+        }
 
-        This will combine polarisation pairs to get instrumental Stokes polarisations if
-        requested.
+        missing_pol = [pstr for pstr in self.pol if pstr not in self.P]
+        if missing_pol:
+            raise ValueError(
+                f"Do not support the selection of {missing_pol}.  "
+                f"Available options include {list(self.P.keys())}."
+            )
+
+        if len(set(self.pol)) != len(self.pol):
+            raise ValueError("Duplicate Stokes parameters requested in `pol`.")
+
+    def process(self, polcont):
+        """Extract the requested Stokes parameters from the input container.
 
         Parameters
         ----------
         polcont : ContainerBase
-            A container with a polarisation axis.
+            A container with a 'pol' axis containing linear polarisation data
+            (e.g., XX, YY, reXY, imXY).
 
         Returns
         -------
-        selectedpolcont : same as polcont
-            A new container with the selected polarisation.
+        outcont : same type as polcont
+            A new container containing only the requested Stokes parameters.
         """
         polcont.redistribute("freq")
 
@@ -1087,31 +1106,207 @@ class SelectPol(task.SingleTask):
                 f"Container of type {type(polcont)} does not have a pol axis."
             )
 
-        if len(self.pol) != 1 or self.pol[0] != "I":
-            raise NotImplementedError("Only selecting stokes I is currently working.")
+        input_pol = list(polcont.index_map["pol"])
 
+        # First, make sure that we have all of the input polarisations we require
+        # to construct the selected polarisations.
+        required_pol = [pol for pstr in self.pol for pol in self.P[pstr]]
+        missing_pol = [pol for pol in np.unique(required_pol) if pol not in input_pol]
+        if len(missing_pol) > 0:
+            raise ValueError(
+                f"Missing the following polarisations {missing_pol}, "
+                f"which are needed to construct {self.pol}."
+            )
+
+        # Identify the "data" and "weight" dataset
+        data_dset_name = getattr(polcont, "_data_dset_name", None)
+        weight_dset_name = getattr(polcont, "_weight_dset_name", None)
+
+        # Create the output container
         outcont = containers.empty_like(polcont, pol=np.array(self.pol))
+
+        for name in polcont.datasets.keys():
+            if name not in outcont.datasets:
+                outcont.add_dataset(name)
+
         outcont.redistribute("freq")
 
-        # Get the locations of the XX and YY components
-        XX_ind = list(polcont.index_map["pol"]).index("XX")
-        YY_ind = list(polcont.index_map["pol"]).index("YY")
+        # Create a function that generates the appropriate slices
+        def make_slice(index, axis_pos):
+            return (slice(None),) * axis_pos + (index,)
 
+        # Loop over datasets
         for name, dset in polcont.datasets.items():
+
             out_dset = outcont.datasets[name]
+
             if "pol" not in dset.attrs["axis"]:
+                # No polarisation axis, directly copy over dataset
                 out_dset[:] = dset[:]
-            else:
-                pol_axis_pos = list(dset.attrs["axis"]).index("pol")
+                continue
 
-                sl = tuple([slice(None)] * pol_axis_pos)
-                out_dset[(*sl, 0)] = dset[(*sl, XX_ind)]
-                out_dset[(*sl, 0)] += dset[(*sl, YY_ind)]
+            # Polarisation axis present, initialize output dataset to zero
+            out_dset[:] = 0
 
-                if np.issubdtype(out_dset.dtype, np.integer):
-                    out_dset[:] //= 2
+            pol_axis_pos = list(dset.attrs["axis"]).index("pol")
+
+            # If this is the weight dataset, keep track of where it is
+            # non-zero across all of the summed polarisations.
+            if name == weight_dset_name:
+                flag = mpiarray.ones(out_dset[:].global_shape, out_dset[:].axis)
+
+            # Loop over output polarisations
+            for oo, po in enumerate(self.pol):
+
+                oslc = make_slice(oo, pol_axis_pos)
+                pol_to_sum = self.P[po]
+                nsum = len(pol_to_sum)
+
+                # Loop over the input polarisations that we need to sum
+                for pi, sign in pol_to_sum.items():
+
+                    ii = input_pol.index(pi)
+                    islc = make_slice(ii, pol_axis_pos)
+
+                    if name == data_dset_name:
+                        # This is the primary data product, where we would like
+                        # to account for the sign.
+                        out_dset[oslc] += sign * dset[islc]
+
+                    elif name == weight_dset_name:
+                        # Keep track of what samples have non-zero weight
+                        # across all input polarisations.
+                        flag[oslc] &= dset[islc] > 0.0
+
+                        # Invert weights so that we properly propagate the variance.
+                        out_dset[oslc] += tools.invert_no_zero(dset[islc])
+
+                    elif np.issubdtype(out_dset.dtype, np.bool_):
+                        # All cases of boolean datasets with a polarisation axis
+                        # are masks, where a True value indicates a masked sample.
+                        # In this case, we will combine the masks, so that if any
+                        # of the input polarisations are masked then the output
+                        # polarisation is also masked.
+                        out_dset[oslc] |= dset[islc]
+
+                    else:
+                        # For all other datasets, we will simply take the average
+                        out_dset[oslc] += dset[islc]
+
+                # Normalize the output based on how many polarisations were summed
+                if name == weight_dset_name:
+                    out_dset[oslc] = (
+                        flag * nsum**2 * tools.invert_no_zero(out_dset[oslc])
+                    )
+
+                elif np.issubdtype(out_dset.dtype, np.integer):
+                    out_dset[oslc] //= nsum
+
+                elif np.issubdtype(out_dset.dtype, np.bool_):
+                    pass
+
                 else:
-                    out_dset[:] *= 0.5
+                    out_dset[oslc] /= nsum
+
+        return outcont
+
+
+class PolWeightedAverage(task.SingleTask):
+    """Compute an optimally weighted pseudo-Stokes I from XX and YY polarisations.
+
+    This computes a weighted average:
+        data_I = (w_XX * d_XX + w_YY * d_YY) / (w_XX + w_YY)
+        weight_I = w_XX + w_YY
+
+    Requires the input container to be a subclass of DataWeightContainer and to
+    contain both XX and YY polarisations.
+    """
+
+    def process(self, polcont):
+        """Compute pseudo-Stokes I from XX and YY.
+
+        Parameters
+        ----------
+        polcont : DataWeightContainer
+            A container with weight dataset and a 'pol' axis containing XX and YY.
+
+        Returns
+        -------
+        outcont : same type as polcont
+            A container with a single polarisation axis labeled 'I'.
+        """
+        # Check input container
+        if not hasattr(polcont, "_weight_dset_name"):
+            raise TypeError(
+                "Input must be a subclass of DataWeightContainer with defined weight datasets."
+            )
+
+        if "pol" not in polcont.axes:
+            raise ValueError(
+                f"Input container of type {type(polcont)} does not have a 'pol' axis."
+            )
+
+        input_pol = list(polcont.index_map["pol"])
+        if "XX" not in input_pol or "YY" not in input_pol:
+            raise ValueError("Input must contain both 'XX' and 'YY' polarisations.")
+
+        ixx = input_pol.index("XX")
+        iyy = input_pol.index("YY")
+
+        if iyy > ixx:
+            start = ixx
+            stride = iyy - ixx
+        else:
+            start = iyy
+            stride = ixx - iyy
+
+        pol_slice = slice(start, start + stride + 1, stride)
+
+        def make_pol_slice(axis_names):
+            axis = list(axis_names).index("pol")
+            slc = (slice(None),) * axis + (pol_slice,)
+            return axis, slc
+
+        # Create output container
+        outcont = containers.empty_like(polcont, pol=np.array(["I"]))
+
+        for name in polcont.datasets.keys():
+            if name not in outcont.datasets:
+                outcont.add_dataset(name)
+
+        polcont.redistribute("freq")
+        outcont.redistribute("freq")
+
+        # Extract the weights dataset for the XX and YY polarisation.
+        # Save their sum to the output container.
+        waxis = polcont.weight.attrs["axis"]
+        wpax, wslc = make_pol_slice(waxis)
+
+        weight = polcont.weight[wslc]
+        outcont.weight[:] = np.sum(weight, axis=wpax, keepdims=True)
+        norm = tools.invert_no_zero(outcont.weight[:])
+
+        # Loop over all other datasets
+        for name, dset in polcont.datasets.items():
+
+            # Already dealt with weights
+            if name == polcont._weight_dset_name:
+                continue
+
+            # If the dataset does not have a pol axis, then just
+            # copy it over directly and continue.
+            if "pol" not in dset.attrs["axis"]:
+                outcont.datasets[name][:] = dset[:]
+                continue
+
+            # Make the weights broadcastable against this dataset
+            pax, dslc = make_pol_slice(dset.attrs["axis"])
+            wexp = tools.broadcast_weights(waxis, dset.attrs["axis"])
+
+            # Take the weighted average
+            outcont.datasets[name][:] = (
+                np.sum(weight[wexp] * dset[dslc], axis=pax, keepdims=True) * norm[wexp]
+            )
 
         return outcont
 
@@ -1407,6 +1602,9 @@ class MixData(task.SingleTask):
     weight_coeff : list
         Coefficient to be applied to each input containers weights to generate the
         output.
+    tag_coeff : list
+        Boolean array indicating which input containers tags should be used to generate
+        the output tag.
     invert_weight : bool
         Invert the weights to convert to variance prior to mixing.  Re-invert in the
         final mixed data product to convert back to inverse variance.
@@ -1417,6 +1615,7 @@ class MixData(task.SingleTask):
 
     data_coeff = config.list_type(type_=float)
     weight_coeff = config.list_type(type_=float)
+    tag_coeff = config.list_type(type_=bool)
     invert_weight = config.Property(proptype=bool, default=False)
     require_nonzero_weight = config.Property(proptype=bool, default=False)
 
@@ -1490,17 +1689,22 @@ class MixData(task.SingleTask):
             )
 
         # Mix in the data and weights
-        self.mixed_data.data[:] += self.data_coeff[self._data_ind] * data.data[:]
-        self.mixed_data.weight[:] += self.weight_coeff[self._data_ind] * self._wfunc(
-            data.weight[:]
-        )
+        dco = self.data_coeff[self._data_ind]
+        if dco != 0.0:
+            self.mixed_data.data[:] += dco * data.data[:]
 
-        # Update the flag
-        if self.require_nonzero_weight:
-            self._flag &= data.weight[:] > 0.0
+        wco = self.weight_coeff[self._data_ind]
+        if wco != 0.0:
+            self.mixed_data.weight[:] += wco * self._wfunc(data.weight[:])
+
+            # Update the flag
+            if self.require_nonzero_weight:
+                self._flag &= data.weight[:] > 0.0
 
         # Save the tags
-        if "tag" in data.attrs:
+        if "tag" in data.attrs and (
+            self.tag_coeff is None or self.tag_coeff[self._data_ind]
+        ):
             self._tags.append(data.attrs["tag"])
 
         self._data_ind += 1
@@ -1561,6 +1765,7 @@ class Jackknife(MixData):
 
     data_coeff = config.list_type(type_=float, default=[0.5, -0.5])
     weight_coeff = config.list_type(type_=float, default=[0.25, 0.25])
+    tag_coeff = config.list_type(type_=bool, default=[True, True])
     invert_weight = config.Property(proptype=bool, default=True)
     require_nonzero_weight = config.Property(proptype=bool, default=True)
 
@@ -1570,6 +1775,7 @@ class MixTwoDatasets(MixData):
 
     data_coeff = config.list_type(type_=float, length=2)
     weight_coeff = config.list_type(type_=float, length=2)
+    tag_coeff = config.list_type(type_=bool, length=2)
 
     def process(self, data1, data2):
         """Combine the two datasets into mixed data output.
