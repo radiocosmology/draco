@@ -7,8 +7,9 @@ The convention for flagging/masking is `True` for contaminated samples that shou
 be excluded and `False` for clean samples.
 """
 
+import re
 import warnings
-from typing import overload
+from typing import ClassVar, overload
 
 import numpy as np
 from caput import config, mpiarray, weighted_median
@@ -2355,6 +2356,7 @@ class GeneralCombineMasks(task.SingleTask):
     expression = config.Property(proptype=str)
 
     _dataset_name = "mask"
+    _operators: ClassVar[set[str]] = set("&|~^()")
 
     def process(self, masks: list[containers.ContainerBase]):
         """Combine the given list of masks using the logical expression.
@@ -2375,6 +2377,14 @@ class GeneralCombineMasks(task.SingleTask):
         if any(type(mask) is not type(masks[0]) for mask in masks[1:]):
             raise TypeError("All input masks must be of the same container type.")
 
+        # Check the expression only contains valid characters
+        pattern = self._build_allowed_pattern()
+        if not re.match(pattern, self.expression):
+            raise ValueError(
+                f"Invalid expression: '{self.expression}'. Allowed characters: "
+                f"A-Z, digits, whitespace, and {''.join(sorted(self._operators))}"
+            )
+
         for mask in masks:
             mask.redistribute("freq")
 
@@ -2386,7 +2396,7 @@ class GeneralCombineMasks(task.SingleTask):
 
         # Evaluate the logical expression
         self.log.info(f"Evaluating mask combination expression: '{self.expression}'")
-        result = eval(self.expression, {}, namespace)
+        result = eval(self.expression, locals=namespace)
 
         # Create a copy and set the result
         combined_mask = masks[0].copy()
@@ -2394,6 +2404,14 @@ class GeneralCombineMasks(task.SingleTask):
         combined_mask.datasets[self._dataset_name][:] = result
 
         return combined_mask
+
+    def _build_allowed_pattern(self):
+        """Build a regex pattern for allowed expressions."""
+        # Escape special regex characters if needed
+        escaped_ops = [re.escape(op) for op in self._operators]
+        ops_pattern = "".join(escaped_ops)
+        # A-Z letters, digits, and whitespace are always allowed
+        return f"^[A-Z0-9\s{ops_pattern}]+$"
 
 
 class CombineMasks(GeneralCombineMasks):
@@ -2512,6 +2530,7 @@ class GeneralCombineTapers(GeneralCombineMasks):
     """
 
     _dataset_name = "taper"
+    _operators: ClassVar[set[str]] = set("+-*/")
 
 
 class CombineTapers(GeneralCombineTapers):
