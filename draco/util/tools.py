@@ -170,6 +170,43 @@ def find_inputs(input_index, inputs, require_match=False):
     )
 
 
+def broadcast_weights(waxis_names, daxis_names):
+    """Return a tuple of slices that broadcasts a weight array to match a data array.
+
+    Parameters
+    ----------
+    waxis_names : list of str
+        Axis names in the weight array.
+    daxis_names : list of str
+        Axis names in the data array.
+
+    Returns
+    -------
+    match_slice : tuple
+        Tuple that can be used to slice weight so it broadcasts with data.
+
+    Raises
+    ------
+    ValueError
+        If weight axes are not a subset of data axes, or are not in correct order.
+    """
+    # Ensure all weight axes are in data axes
+    if not set(waxis_names).issubset(daxis_names):
+        extra = set(waxis_names) - set(daxis_names)
+        raise ValueError(f"Weight has axes not found in data: {extra}")
+
+    # Ensure the common axes are in the correct order
+    filtered_names = [ax for ax in daxis_names if ax in waxis_names]
+    if not np.array_equal(filtered_names, waxis_names):
+        raise ValueError(
+            f"Weight axes {waxis_names} do not appear in data axes {daxis_names} "
+            f"in the correct order."
+        )
+
+    # Return slice that expands weight to broadcast shape of data
+    return tuple(slice(None) if ax in waxis_names else None for ax in daxis_names)
+
+
 def apply_gain(vis, gain, axis=1, out=None, prod_map=None):
     """Apply per input gains to a set of visibilities packed in upper triangular format.
 
