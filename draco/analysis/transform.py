@@ -1274,6 +1274,7 @@ class PolWeightedAverage(task.SingleTask):
             if name not in outcont.datasets:
                 outcont.add_dataset(name)
 
+        polcont.redistribute("freq")
         outcont.redistribute("freq")
 
         # Extract the weights dataset for the XX and YY polarisation.
