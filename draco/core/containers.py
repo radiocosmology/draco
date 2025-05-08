@@ -3681,6 +3681,10 @@ class LocalizedRFIMask(FreqContainer, TODContainer):
             "initialise": False,
             "distributed": True,
             "distributed_axis": "freq",
+            "compression": COMPRESSION,
+            "compression_opts": COMPRESSION_OPTS,
+            "chunks": (64, 128, 512),
+            "truncate": True,
         },
     }
 
@@ -3723,6 +3727,10 @@ class LocalizedSiderealRFIMask(FreqContainer, SiderealContainer):
             "initialise": False,
             "distributed": True,
             "distributed_axis": "freq",
+            "compression": COMPRESSION,
+            "compression_opts": COMPRESSION_OPTS,
+            "chunks": (64, 512, 128),
+            "truncate": True,
         },
     }
 
