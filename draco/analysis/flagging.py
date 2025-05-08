@@ -2530,7 +2530,7 @@ class GeneralCombineTapers(GeneralCombineMasks):
     """
 
     _dataset_name = "taper"
-    _operators: ClassVar[set[str]] = set("+-*/")
+    _operators: ClassVar[set[str]] = set("+-*/()")
 
 
 class CombineTapers(GeneralCombineTapers):
