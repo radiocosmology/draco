@@ -3,9 +3,10 @@
 import healpy
 import numpy as np
 import scipy.interpolate
-from caput import config, interferometry, task
+from caput import config, task
 from caput import time as ctime
 from cora.util import units
+from drift.util import interferometry
 from skyfield.api import Angle, Star
 
 from draco.analysis.sidereal import _search_nearest

@@ -10,16 +10,14 @@ using the variance of the noise estimate in the existing data.
 """
 
 import numpy as np
-from caput import config, pipeline, random
-from caput.task import SingleTask
-from caput.task.random import RandomTask
+from caput import config, pipeline, random, task
 from caput.time import STELLAR_S
 
 from ..core import containers, io
 from ..util import tools
 
 
-class ReceiverTemperature(SingleTask):
+class ReceiverTemperature(task.SingleTask):
     """Add a basic receiver temperature term into the data.
 
     This class adds in an uncorrelated, frequency and time independent receiver
@@ -46,7 +44,7 @@ class ReceiverTemperature(SingleTask):
         return data
 
 
-class GaussianNoiseDataset(SingleTask, RandomTask):
+class GaussianNoiseDataset(task.SingleTask, task.random.RandomTask):
     """Generates a Gaussian distributed noise dataset using the noise estimates of an existing dataset.
 
     Attributes
@@ -167,7 +165,7 @@ class MultipleGaussianNoiseDatasets(GaussianNoiseDataset):
         return super().process(self.data[self._count % len(self.data)])
 
 
-class GaussianNoise(SingleTask, RandomTask):
+class GaussianNoise(task.SingleTask, task.random.RandomTask):
     """Add Gaussian distributed noise to a visibility dataset.
 
     Note that this is an approximation to the actual noise distribution good only
@@ -276,7 +274,7 @@ class GaussianNoise(SingleTask, RandomTask):
         return data
 
 
-class SampleNoise(SingleTask, RandomTask):
+class SampleNoise(task.SingleTask, task.random.RandomTask):
     """Add properly distributed noise to a visibility dataset.
 
     This task draws properly (complex Wishart) distributed samples from an input

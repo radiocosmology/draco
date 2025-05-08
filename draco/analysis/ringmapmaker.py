@@ -30,7 +30,6 @@ from numpy.lib.recfunctions import structured_to_unstructured
 
 from ..core import containers, io
 from ..util import tools
-from ..util.exception import ConfigError
 from . import transform
 
 
@@ -243,7 +242,7 @@ class BeamformNS(task.SingleTask):
         gsw = gstream.weight[:].local_array
         if self.weight == "natural":
             if "redundancy" not in gstream.datasets:
-                raise ConfigError(
+                raise RuntimeError(
                     "Must set save_redundancy = True for task "
                     "MakeVisGrid in order to use a natural weight scheme."
                 )

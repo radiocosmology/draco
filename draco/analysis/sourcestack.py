@@ -6,7 +6,6 @@ from cora.util import units
 from mpi4py import MPI
 
 from ..core import containers
-from ..util.random import RandomTask
 from ..util.tools import invert_no_zero
 
 # Constants
@@ -196,7 +195,7 @@ class SourceStack(task.SingleTask):
         return stack
 
 
-class RandomSubset(task.SingleTask, RandomTask):
+class RandomSubset(task.SingleTask, task.random.RandomTask):
     """Take a large mock catalog and draw `number` catalogs of a given `size`.
 
     Attributes
