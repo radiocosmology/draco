@@ -35,8 +35,7 @@ Contact Haochen for an example config file.
 import time
 
 import numpy as np
-from caput import config, task
-from cora.util import units
+from caput import config, task, units
 from mpi4py import MPI
 from scipy import linalg as la
 

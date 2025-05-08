@@ -1,14 +1,12 @@
 """Tasks for reading and writing specific container types."""
 
 import numpy as np
-from caput import config, pipeline
-from caput.task import MPILoggedTask, SingleTask
+from caput import config, pipeline, task, units
 from caput.task.io import list_of_filegroups
-from cora.util import units
 from drift.core import beamtransfer, manager, telescope
 
 
-class LoadMaps(MPILoggedTask):
+class LoadMaps(task.MPILoggedTask):
     """Load a series of maps from files given in the tasks parameters.
 
     Maps are given as one, or a list of `File Groups` (see
@@ -74,7 +72,7 @@ class LoadMaps(MPILoggedTask):
         return map_stack
 
 
-class LoadFITSCatalog(SingleTask):
+class LoadFITSCatalog(task.SingleTask):
     """Load an SDSS-style FITS source catalog.
 
     Catalogs are given as one, or a list of `File Groups` (see
