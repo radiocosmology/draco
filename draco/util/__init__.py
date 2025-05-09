@@ -2,12 +2,11 @@
 .. autosummary::
     :toctree:
 
-    exception
+    interferometry
     random
     regrid
     rfi
     testing
     tools
-    truncate
 
 """
