@@ -3,8 +3,7 @@
 from functools import cache
 
 import numpy as np
-from caput import config, mpiarray, task
-from cora.util import units
+from caput import config, mpiarray, task, units
 from cora.util.cosmology import Cosmology
 
 from draco.analysis.ringmapmaker import find_grid_indices

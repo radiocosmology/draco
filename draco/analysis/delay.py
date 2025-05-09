@@ -4,8 +4,7 @@ from typing import TypeVar
 
 import numpy as np
 import scipy.linalg as la
-from caput import config, fftw, memh5, mpiarray, random, task
-from cora.util import units
+from caput import config, fftw, memh5, mpiarray, random, task, units
 from numpy.lib.recfunctions import structured_to_unstructured
 
 from ..core import containers, io

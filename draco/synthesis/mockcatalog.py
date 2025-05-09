@@ -87,8 +87,7 @@ Below is an example workflow:
 import healpy as hp
 import numpy as np
 import scipy.stats
-from caput import config, mpiarray, mpiutil, task
-from cora.util import units
+from caput import config, mpiarray, mpiutil, task, units
 from mpi4py import MPI
 
 from ..core import containers

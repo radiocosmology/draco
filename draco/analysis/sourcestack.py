@@ -1,8 +1,7 @@
 """Source Stack Analysis Tasks."""
 
 import numpy as np
-from caput import config, pipeline, task
-from cora.util import units
+from caput import config, pipeline, task, units
 from mpi4py import MPI
 
 from ..core import containers
