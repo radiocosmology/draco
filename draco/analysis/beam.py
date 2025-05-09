@@ -17,10 +17,9 @@ Tasks
 import numpy as np
 import scipy.constants
 from caput import task
-from drift.util import interferometry
 
 from ..core import containers, io
-from ..util import tools
+from ..util import interferometry, tools
 
 
 class CreateBeamStream(task.SingleTask):
