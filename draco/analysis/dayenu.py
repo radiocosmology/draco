@@ -458,9 +458,11 @@ class DayenuDelayFilterHybridVis(task.SingleTask):
         # Create a filter dataset
         if self.save_filter:
             if np.any(np.abs(self.tauc) > 0.0):
-                stream.add_dataset("complex_filter")
+                if "complex_filter" not in stream.datasets:
+                    stream.add_dataset("complex_filter")
             else:
-                stream.add_dataset("filter")
+                if "filter" not in stream.datasets:
+                    stream.add_dataset("filter")
             stream.filter[:] = 0.0
 
         if not self.apply_filter:

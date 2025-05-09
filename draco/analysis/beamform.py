@@ -1518,8 +1518,11 @@ class FitBeamFormed(BeamFormExternalMixin, task.SingleTask):
                 A = np.matmul(XT, w[..., np.newaxis] * X) + np.eye(2) * self.epsilon
 
                 # Solve for the parameters and their covariance
-                proj_wb = np.sum(XT * (w * b)[..., np.newaxis, :], axis=-1)
-                coeff = np.linalg.solve(A, proj_wb)
+                proj_wb = np.sum(
+                    XT * (w * b)[..., np.newaxis, :], axis=-1, keepdims=True
+                )
+
+                coeff = np.linalg.solve(A, proj_wb)[..., 0]
                 cov = np.linalg.solve(A, np.eye(2))
 
                 # Save to output container
@@ -1598,8 +1601,7 @@ class HealpixBeamForm(task.SingleTask):
         for lfi, _ in mv.enumerate(axis=0):
             for pi in range(mv.shape[1]):
                 mv[lfi, pi] = healpy.smoothing(
-                    mv[lfi, pi],
-                    fwhm=np.radians(self.fwhm),
+                    mv[lfi, pi], fwhm=np.radians(self.fwhm), verbose=False
                 )
 
     def process(self, catalog: containers.SourceCatalog) -> containers.FormedBeam:
