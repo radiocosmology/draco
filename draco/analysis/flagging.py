@@ -17,6 +17,7 @@ from cora.util import units
 from scipy.signal import convolve, firwin, oaconvolve
 from scipy.spatial.distance import cdist
 from skimage.filters import apply_hysteresis_threshold
+
 from ..analysis import transform
 from ..analysis.sidereal import _search_nearest
 from ..core import containers, io, task
@@ -3400,6 +3401,7 @@ class InterpolateRFIMaskNearest(task.SingleTask):
 
     def setup(self, tstream):
         """Set the target time axis from the data container.
+
         This sets the reference time axis to which the RFI mask will be aligned.
 
         Parameters
