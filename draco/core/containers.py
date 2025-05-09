@@ -2266,6 +2266,11 @@ class RingMapTaper(FreqContainer, SiderealContainer):
         """Get the mask dataset."""
         return self.datasets["taper"]
 
+    @property
+    def weight(self):
+        """Map weight to taper so that it can easily be updated with masks."""
+        return self.datasets["taper"]
+
 
 class GainDataBase(DataWeightContainer):
     """A container interface for gain-like data.
