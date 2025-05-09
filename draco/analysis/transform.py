@@ -1153,7 +1153,12 @@ class SelectPol(task.SingleTask):
             # If this is the weight dataset, keep track of where it is
             # non-zero across all of the summed polarisations.
             if name == weight_dset_name:
-                flag = mpiarray.ones(out_dset[:].global_shape, out_dset[:].axis)
+                flag = mpiarray.ones(
+                    out_dset[:].global_shape,
+                    axis=out_dset[:].axis,
+                    dtype=bool,
+                    comm=outcont.comm,
+                )
 
             # Loop over output polarisations
             for oo, po in enumerate(self.pol):
@@ -1196,7 +1201,7 @@ class SelectPol(task.SingleTask):
                 # Normalize the output based on how many polarisations were summed
                 if name == weight_dset_name:
                     out_dset[oslc] = (
-                        flag * nsum**2 * tools.invert_no_zero(out_dset[oslc])
+                        flag[oslc] * nsum**2 * tools.invert_no_zero(out_dset[oslc])
                     )
 
                 elif np.issubdtype(out_dset.dtype, np.integer):
