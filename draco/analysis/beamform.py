@@ -10,6 +10,7 @@ from skyfield.api import Angle, Star
 from draco.analysis.sidereal import _search_nearest
 
 from ..core import containers, io
+from ..util import interferometry
 from ..util._fast_tools import beamform
 from ..util.tools import (
     baseline_vector,
