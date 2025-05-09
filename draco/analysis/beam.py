@@ -16,10 +16,10 @@ Tasks
 
 import numpy as np
 import scipy.constants
-from caput import interferometry
+from caput import task
 
-from ..core import containers, io, task
-from ..util import tools
+from ..core import containers, io
+from ..util import interferometry, tools
 
 
 class CreateBeamStream(task.SingleTask):
