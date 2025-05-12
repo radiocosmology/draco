@@ -15,9 +15,11 @@ import numpy as np
 from caput import config, mpiarray, weighted_median
 from cora.util import units
 from scipy.signal import convolve, firwin, oaconvolve
+from scipy.spatial.distance import cdist
 from skimage.filters import apply_hysteresis_threshold
 
 from ..analysis import transform
+from ..analysis.sidereal import _search_nearest
 from ..core import containers, io, task
 from ..util import rfi, tools
 
@@ -3369,6 +3371,153 @@ class SiderealMaskConversion(task.SingleTask):
             frac_rfi_adj = np.transpose(frac_rfi_adj, (0, 2, 1))
             out.add_dataset("frac_rfi")
             out.frac_rfi[:] = frac_rfi_adj
+
+        # Return output container
+        return out
+
+
+class InterpolateRFIMaskNearest(task.SingleTask):
+    """Align the time axis of an RFI mask to a target data stream.
+
+    This task adjusts the time axis of an RFI mask to match the time axis of
+    a target dataset such as a TimeStream or SystemSensitivity. This is useful
+    when the original mask and the target data stream do not have exactly matching
+    time axes.
+
+    The alignment is performed using nearest-interpolation in time, and the RFI mask
+    is expanded along the time axis based on its spread_size to ensure conservative flagging.
+
+    Attributes
+    ----------
+    spread_size : float
+        Time spreading factor for conservative flagging. Each flagged time sample
+        is expanded to neighboring target time values that fall within spread_size
+        times the time resolution of the input mask. If the time axes of the input mask
+        and target align exactly, spreading is automatically disabled by setting this
+        to zero. Default is 1.0.
+    """
+
+    spread_size = config.Property(proptype=float, default=1.0)
+
+    def setup(self, tstream):
+        """Set the target time axis from the data container.
+
+        This sets the reference time axis to which the RFI mask will be aligned.
+
+        Parameters
+        ----------
+        tstream : containers.TimeStream, SystemSensitivity, etc.
+            A time-like data container that provides the target time axis.
+        """
+        # Set up target time
+        try:
+            self.target_time = tstream.time[:]
+        except AttributeError as exc:
+            raise TypeError(
+                f"Expected a dataset with a time axis. Got {tstream.__class__.__name__} instead."
+            ) from exc
+
+    def process(self, rfimask):
+        """Align the RFI mask's time axis to match the target dataset.
+
+        Parameters
+        ----------
+        rfimask : containers.LocalizedRFIMask or containers.RFIMask
+            The original RFI mask to be realigned.
+
+        Returns
+        -------
+        out : containers.RFIMask or containers.LocalizedRFIMask
+            The RFI mask with its time axis aligned to the reference time axis.
+        """
+        # Validate the mask data type
+        if not isinstance(rfimask, containers.LocalizedRFIMask | containers.RFIMask):
+            raise ValueError(
+                f"Input must be an instance of RFIMask or LocalizedRFIMask, got {type(rfimask)}."
+            )
+
+        # Ensure frequency axis is distributed
+        rfimask.redistribute("freq")
+
+        # Extract time
+        mask_time = rfimask.time[:]
+
+        # Get the mask data (locally or globally depending on distribution)
+        mask = (
+            rfimask.mask[:].local_array if rfimask.mask.distributed else rfimask.mask[:]
+        )
+
+        # Move the time axis to the front
+        mask = np.moveaxis(mask, -1, 0).astype(np.float32)
+
+        # Determine valid time range in the target time
+        start = _search_nearest(self.target_time[:], mask_time[0])
+        end = _search_nearest(self.target_time[:], mask_time[-1])
+        valid_target_range = slice(start, end + 1)
+
+        # The new time axis of the adjusted mask
+        new_time = self.target_time[valid_target_range]
+
+        # Nearest-interpolation
+        nearest_indices = _search_nearest(mask_time, new_time)
+
+        # Compute pairwise time distances between new_time and matched mask_time values
+        dist = cdist(
+            new_time[:, np.newaxis],
+            mask_time[nearest_indices, np.newaxis],
+            metric="euclidean",
+        )
+
+        # Disable spreading if time axes match exactly
+        if np.sum(np.diag(dist) == 0):
+            self.spread_factor = 0
+
+        # Create a time window mask around each matched time sample
+        window = np.abs(dist) <= self.spread_size * np.median(
+            np.abs(np.diff(mask_time[:]))
+        )
+
+        # Apply the spreading window to the nearest-mapped mask
+        mask_adj = (window @ mask[nearest_indices]) > 0
+
+        # Move the time axis back
+        mask_adj = np.moveaxis(mask_adj, 0, -1)
+
+        # Create output container
+        freq = rfimask.freq[:]
+        if isinstance(rfimask, containers.LocalizedRFIMask):
+            el = rfimask.el[:]
+            out = containers.LocalizedRFIMask(
+                freq=freq, time=new_time, el=el, attrs_from=rfimask
+            )
+        else:
+            out = containers.RFIMask(freq=freq, time=new_time, attrs_from=rfimask)
+
+        # Assign the new mask
+        if rfimask.mask.distributed:
+            out.mask[:].local_array[:] = mask_adj
+        else:
+            out.mask[:] = mask_adj
+
+        # Handle optional frac_rfi dataset if it exists
+        if rfimask.datasets.get("frac_rfi", None) is not None:
+
+            # Extract frac_rfi data
+            frac_rfi = (
+                rfimask.frac_rfi.local_data
+                if rfimask.mask.distributed
+                else rfimask.frac_rfi[:]
+            )
+            frac_rfi = np.moveaxis(frac_rfi, -1, 0).astype(np.float32)
+
+            frac_rfi_adj = window @ frac_rfi[nearest_indices]
+            frac_rfi_adj = np.moveaxis(frac_rfi_adj, 0, -1)
+
+            out.add_dataset("frac_rfi")
+            if rfimask.mask.distributed:
+                out.frac_rfi[:].local_array[:] = frac_rfi_adj
+            else:
+                out.frac_rfi[:] = frac_rfi_adj
 
         # Return output container
         return out
