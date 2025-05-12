@@ -4,12 +4,11 @@ from typing import TypeVar
 
 import numpy as np
 import scipy.linalg as la
-from caput import config, fftw, memh5, mpiarray
-from cora.util import units
+from caput import config, fftw, memh5, mpiarray, random, task, units
 from numpy.lib.recfunctions import structured_to_unstructured
 
-from ..core import containers, io, task
-from ..util import random, tools
+from ..core import containers, io
+from ..util import tools
 from .delayopt import delay_power_spectrum_maxpost
 
 # A specific subclass of a FreqContainer
@@ -1202,7 +1201,7 @@ class DelayPowerSpectrumBase(DelayPowerSpectrumContainerMixin, DelayTransformBas
         raise NotImplementedError()
 
 
-class DelayPowerSpectrumGibbs(DelayPowerSpectrumBase, random.RandomTask):
+class DelayPowerSpectrumGibbs(DelayPowerSpectrumBase, task.random.RandomTask):
     """Use a Gibbs sampler to estimate the delay power spectrum.
 
     The spectrum returned is the median of the final half of the
@@ -1276,7 +1275,7 @@ class DelayPowerSpectrumNRML(DelayPowerSpectrumBase):
         return spec, samples, success
 
 
-class DelayCrossPowerSpectrumEstimator(DelayPowerSpectrumGibbs, random.RandomTask):
+class DelayCrossPowerSpectrumEstimator(DelayPowerSpectrumGibbs, task.random.RandomTask):
     """A delay cross power spectrum estimator.
 
     This takes multiple compatible `FreqContainer`s as inputs and will return a

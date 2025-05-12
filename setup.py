@@ -27,13 +27,6 @@ extensions = [
         extra_compile_args=omp_args,
         extra_link_args=omp_args,
     ),
-    Extension(
-        "draco.util.truncate",
-        ["draco/util/truncate.pyx"],
-        include_dirs=[np.get_include()],
-        extra_compile_args=omp_args,
-        extra_link_args=omp_args,
-    ),
 ]
 
 setup(
