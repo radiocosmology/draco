@@ -24,8 +24,8 @@ extensions = [
         "draco.util._fast_tools",
         ["draco/util/_fast_tools.pyx"],
         include_dirs=[np.get_include()],
-        extra_compile_args=omp_args,
-        extra_link_args=omp_args,
+        extra_compile_args=["-O3", "-ffast-math", *omp_args],
+        extra_link_args=["-O3", "-ffast-math", *omp_args],
     ),
     Extension(
         "draco.util.truncate",
