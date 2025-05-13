@@ -2398,7 +2398,7 @@ class GeneralCombineMasks(task.SingleTask):
 
         # Evaluate the logical expression
         self.log.info(f"Evaluating mask combination expression: '{self.expression}'")
-        result = eval(self.expression, locals=namespace)
+        result = eval(self.expression, {}, namespace)
 
         # Create a copy and set the result
         combined_mask = masks[0].copy()
@@ -2413,7 +2413,7 @@ class GeneralCombineMasks(task.SingleTask):
         escaped_ops = [re.escape(op) for op in self._operators]
         ops_pattern = "".join(escaped_ops)
         # A-Z letters, digits, and whitespace are always allowed
-        return f"^[A-Z0-9\s{ops_pattern}]+$"
+        return rf"^[A-Z0-9\s{ops_pattern}]+$"
 
 
 class CombineMasks(GeneralCombineMasks):
