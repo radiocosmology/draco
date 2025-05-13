@@ -423,8 +423,8 @@ class DayenuDelayFilterHybridVis(task.SingleTask):
     apply_filter : bool
         Apply the filter that was generated. If False, `save_filter`
         must be True.
-    save_filter : bool
-        Save the filter that was applied to the output container.
+    calculate_cov : bool
+        Calculate the frequency-frequency noise covariance due to filtering.
     """
 
     tauw = config.Property(proptype=np.atleast_1d, default=0.4)
@@ -434,6 +434,8 @@ class DayenuDelayFilterHybridVis(task.SingleTask):
     atten_threshold = config.Property(proptype=float, default=0.0)
     apply_filter = config.Property(proptype=bool, default=True)
     save_filter = config.Property(proptype=bool, default=False)
+
+    calculate_cov = config.Property(proptype=bool, default=False)
 
     def setup(self):
         """Check that `save_filter` and `apply_filter` are set."""
@@ -465,6 +467,15 @@ class DayenuDelayFilterHybridVis(task.SingleTask):
                     stream.add_dataset("filter")
             stream.filter[:] = 0.0
 
+        if self.calculate_cov:
+            if np.any(np.abs(self.tauc) > 0.0):
+                if "complex_freq_cov" not in stream.datasets:
+                    stream.add_dataset("complex_freq_cov")
+            else:
+                if "freq_cov" not in stream.datasets:
+                    stream.add_dataset("freq_cov")
+            stream.freq_cov[:] = 0.0
+
         if not self.apply_filter:
             self.log.debug("Filter will be generated but not applied.")
 
@@ -481,6 +492,8 @@ class DayenuDelayFilterHybridVis(task.SingleTask):
         weight = stream.weight[:].local_array
         if self.save_filter:
             filt = stream.filter[:].local_array
+        if self.calculate_cov:
+            freq_cov = stream.freq_cov[:].local_array
 
         # Loop over products
         for tt in range(ntime):
@@ -537,6 +550,11 @@ class DayenuDelayFilterHybridVis(task.SingleTask):
                         np.matmul(np.abs(NF[0]) ** 2, tvar)
                     )
 
+                    if self.calculate_cov:
+                        freq_cov[pp, :, :, xx, tt] = np.matmul(
+                            NF[0] * tvar, NF[0].T.conj()
+                        )
+
                     # Flag frequencies with large attenuation
                     if self.atten_threshold > 0.0:
                         diag = np.abs(np.diag(NF[0]))
@@ -568,6 +586,8 @@ class ApplyDelayFilterHybridVis(task.SingleTask):
         is less than this fraction of the median value over all
         unmasked frequencies.  Default is 0.0 (i.e., do not mask
         frequencies with low attenuation).
+    calculate_cov : bool
+        Calculate the frequency-frequency noise covariance due to filtering.
     copy_weight : bool
         If True, do not apply the filter to the weight dataset. Instead,
         copy it directly  from the container used to retrieve the filter.
@@ -578,6 +598,8 @@ class ApplyDelayFilterHybridVis(task.SingleTask):
     """
 
     atten_threshold = config.Property(proptype=float, default=0.0)
+    calculate_cov = config.Property(proptype=bool, default=False)
+
     copy_weight = config.Property(proptype=bool, default=False)
     copy_tag = config.Property(proptype=bool, default=False)
 
@@ -596,14 +618,6 @@ class ApplyDelayFilterHybridVis(task.SingleTask):
         hv_filt: containers.HybridVisStream
             The filtered dataset.
         """
-        # Distribute over products
-        hv.redistribute(["ra", "time"])
-        source.redistribute(["ra", "time"])
-
-        # If requested, copy over the tag
-        if self.copy_tag:
-            hv.attrs["tag"] = source.attrs["tag"]
-
         # Validate that both hybrid beamformed visibilites match
         if not np.array_equal(source.freq, hv.freq):
             raise ValueError("Frequencies do not match for hybrid visibilities.")
@@ -620,12 +634,32 @@ class ApplyDelayFilterHybridVis(task.SingleTask):
         if not np.array_equal(source.ra, hv.ra):
             raise ValueError("Right Ascension do not match for hybrid visibilities.")
 
+        # If requested, copy over the tag
+        if self.copy_tag:
+            hv.attrs["tag"] = source.attrs["tag"]
+
+        # Create the covariance dataset if requested
+        if self.calculate_cov:
+            if np.iscomplexobj(source.filter[:].local_array):
+                if "complex_cov" not in hv.datasets:
+                    hv.add_dataset("complex_freq_cov")
+            else:
+                if "cov" not in hv.datasets:
+                    hv.add_dataset("freq_cov")
+            hv.freq_cov[:] = 0.0
+
+        # Distribute over products
+        hv.redistribute(["ra", "time"])
+        source.redistribute(["ra", "time"])
+
         npol, nfreq, new, nel, ntime = hv.vis.local_shape
 
         # Dereference the required datasets
         vis = hv.vis[:].local_array
         weight = hv.weight[:].local_array
         filt = source.filter[:].local_array
+        if self.calculate_cov:
+            freq_cov = hv.freq_cov[:].local_array
 
         # loop over products
         for tt in range(ntime):
@@ -678,6 +712,11 @@ class ApplyDelayFilterHybridVis(task.SingleTask):
                             np.matmul(np.abs(NF) ** 2, tvar)
                         )
 
+                        if self.calculate_cov:
+                            freq_cov[pp, :, :, xx, tt] = np.matmul(
+                                NF * tvar, NF.T.conj()
+                            )
+
                         # Flag frequencies with large attenuation
                         if self.atten_threshold > 0.0:
                             diag = np.abs(np.diag(NF))
@@ -692,6 +731,9 @@ class ApplyDelayFilterHybridVis(task.SingleTask):
         # If requested copy over the weight dataset
         if self.copy_weight:
             weight[:] = source.weight[:].local_array
+
+            if self.calculate_cov:
+                freq_cov[:] = source.freq_cov[:].local_array
 
         # Problems saving to disk when distributed over last axis
         hv.redistribute("freq")

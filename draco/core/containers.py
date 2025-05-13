@@ -1928,7 +1928,96 @@ class VisGridStream(FreqContainer, SiderealContainer, VisBase):
         raise KeyError("Dataset 'redundancy' not initialised.")
 
 
-class HybridVisStream(FreqContainer, SiderealContainer, VisBase):
+class FilterFreqContainer(ContainerBase):
+    """Base container for data that has undergone filtering along the frequency axis.
+
+    This container behaves like a standard `ContainerBase`, but is tailored for
+    datasets where a frequency-domain filter has been applied. It defines a
+    `freq_sum` axis by default and provides additional logic to manage mutually
+    exclusive filter and frequency covariance datasets.
+
+    Expected Datasets:
+    ------------------
+    - `filter` or `complex_filter`
+      Real or complex filter applied in the frequency domain.
+    - `freq_cov` or `complex_freq_cov`:
+      Real or complex covariance matrix in the frequency domain.
+    """
+
+    _axes = ("freq_sum",)
+
+    def __init__(self, *args, **kwargs):
+
+        for ax in ["freq_sum"]:
+
+            if ax not in kwargs:
+                if "axes_from" in kwargs and ax in kwargs["axes_from"].index_map:
+                    kwargs[ax] = kwargs["axes_from"].index_map[ax]
+                elif "freq" in kwargs:
+                    kwargs[ax] = kwargs["freq"]
+                elif "axes_from" in kwargs and "freq" in kwargs["axes_from"].index_map:
+                    kwargs[ax] = kwargs["axes_from"].index_map["freq"]
+            else:
+                raise RuntimeError(f"Must provide {ax} or freq axis.")
+
+        super().__init__(*args, **kwargs)
+
+    def add_dataset(self, name):
+        """Ensure that multiple filters and covariances are not created."""
+        if name == "filter" and "complex_filter" in self.datasets:
+            raise RuntimeError(
+                "Requesting creation of real-valued filter but "
+                "complex filter already exists."
+            )
+        if name == "complex_filter" and "filter" in self.datasets:
+            raise RuntimeError(
+                "Requesting creation of complex-valued filter but "
+                "real filter already exists."
+            )
+        if name == "freq_cov" and "complex_freq_cov" in self.datasets:
+            raise RuntimeError(
+                "Requesting creation of real-valued freq_cov but "
+                "complex_freq_cov already exists."
+            )
+        if name == "complex_freq_cov" and "freq_cov" in self.datasets:
+            raise RuntimeError(
+                "Requesting creation of complex_freq_cov but "
+                "real-valued freq_cov already exists."
+            )
+        return super().add_dataset(name)
+
+    @property
+    def filter(self):
+        """Return the filter dataset, if available."""
+        if "filter" in self.datasets:
+            return self.datasets["filter"]
+        if "complex_filter" in self.datasets:
+            return self.datasets["complex_filter"]
+
+        raise KeyError("Dataset 'filter' not initialised.")
+
+    @property
+    def freq_cov(self):
+        """Return the freq_cov dataset, if available."""
+        if "freq_cov" in self.datasets:
+            return self.datasets["freq_cov"]
+        if "complex_freq_cov" in self.datasets:
+            return self.datasets["complex_freq_cov"]
+
+        raise KeyError("Dataset 'freq_cov' not initialised.")
+
+    @property
+    def swapped_freq_cov_axis(self):
+        """Return the axis names of the freq_cov dataset with freq <--> freq_sum.
+
+        This is useful for broadcasting the weight dataset when propagating the
+        covariance matrix through linear operators.
+        """
+        swap = {"freq": "freq_sum", "freq_sum": "freq"}
+        return np.array([swap.get(ax, ax) for ax in self.freq_cov.attrs["axis"]])
+
+
+class HybridVisStream(FilterFreqContainer, FreqContainer, SiderealContainer, VisBase):
     """Visibilities beamformed only in the NS direction.
 
     This container has visibilities beam formed only in the NS direction to give a
@@ -2018,34 +2107,30 @@ class HybridVisStream(FreqContainer, SiderealContainer, VisBase):
             "compression": COMPRESSION,
             "compression_opts": COMPRESSION_OPTS,
         },
+        "freq_cov": {
+            "axes": ["pol", "freq", "freq_sum", "ew", "ra"],
+            "dtype": np.float32,
+            "initialise": False,
+            "distributed": True,
+            "distributed_axis": "freq",
+            "chunks": (1, 32, 96, 4, 2048),
+            "compression": COMPRESSION,
+            "compression_opts": COMPRESSION_OPTS,
+        },
+        "complex_freq_cov": {
+            "axes": ["pol", "freq", "freq_sum", "ew", "ra"],
+            "dtype": np.complex64,
+            "initialise": False,
+            "distributed": True,
+            "distributed_axis": "freq",
+            "chunks": (1, 32, 96, 4, 2048),
+            "compression": COMPRESSION,
+            "compression_opts": COMPRESSION_OPTS,
+        },
     }
 
-    def __init__(self, *args, **kwargs):
-
-        if "freq_sum" not in kwargs:
-            if "axes_from" in kwargs and "freq_sum" in kwargs["axes_from"].index_map:
-                kwargs["freq_sum"] = kwargs["axes_from"].index_map["freq_sum"]
-            elif "freq" in kwargs:
-                kwargs["freq_sum"] = kwargs["freq"]
-            elif "axes_from" in kwargs and "freq" in kwargs["axes_from"].index_map:
-                kwargs["freq_sum"] = kwargs["axes_from"].index_map["freq"]
-            else:
-                raise RuntimeError("Must provide freq_sum or freq axis.")
-
-        super().__init__(*args, **kwargs)
-
     def add_dataset(self, name):
-        """Override base class to first check that multiple filters are not created."""
-        if name == "filter" and "complex_filter" in self.datasets:
-            raise RuntimeError(
-                "Requesting creation of real-valued filter but "
-                "complex filter already exists."
-            )
-        if name == "complex_filter" and "filter" in self.datasets:
-            raise RuntimeError(
-                "Requesting creation of complex-valued filter but "
-                "real filter already exists."
-            )
+        """Override base class to deal with elevation dependent vis weight."""
         if name == "vis_weight" and "elevation_vis_weight" in self.datasets:
             raise RuntimeError(
                 "Requesting creation of elevation-independent weights but "
@@ -2060,16 +2145,6 @@ class HybridVisStream(FreqContainer, SiderealContainer, VisBase):
             # Make this the default weight dataset
             self._weight_dset_name = "elevation_vis_weight"
         return super().add_dataset(name)
-
-    @property
-    def filter(self):
-        """Return the filter dataset, if available."""
-        if "filter" in self.datasets:
-            return self.datasets["filter"]
-        if "complex_filter" in self.datasets:
-            return self.datasets["complex_filter"]
-
-        raise KeyError("Dataset 'filter' not initialised.")
 
     @property
     def dirty_beam(self):
@@ -2130,7 +2205,9 @@ class HybridVisMModes(FreqContainer, MContainer, VisBase):
     }
 
 
-class RingMap(FreqContainer, SiderealContainer, DataWeightContainer):
+class RingMap(
+    FilterFreqContainer, FreqContainer, SiderealContainer, DataWeightContainer
+):
     """Container for holding multifrequency ring maps.
 
     The maps are packed in format `[freq, pol, ra, EW beam, el]` where
@@ -2193,6 +2270,46 @@ class RingMap(FreqContainer, SiderealContainer, DataWeightContainer):
             "compression": COMPRESSION,
             "compression_opts": COMPRESSION_OPTS,
             "truncate": True,
+        },
+        "filter": {
+            "axes": ["pol", "freq", "freq_sum", "ra"],
+            "dtype": np.float64,
+            "initialise": False,
+            "distributed": True,
+            "distributed_axis": "freq",
+            "chunks": (1, 64, 64, 256),
+            "compression": COMPRESSION,
+            "compression_opts": COMPRESSION_OPTS,
+        },
+        "complex_filter": {
+            "axes": ["pol", "freq", "freq_sum", "ra"],
+            "dtype": np.complex128,
+            "initialise": False,
+            "distributed": True,
+            "distributed_axis": "freq",
+            "chunks": (1, 64, 64, 256),
+            "compression": COMPRESSION,
+            "compression_opts": COMPRESSION_OPTS,
+        },
+        "freq_cov": {
+            "axes": ["pol", "freq", "freq_sum", "ra"],
+            "dtype": np.float32,
+            "initialise": False,
+            "distributed": True,
+            "distributed_axis": "freq",
+            "chunks": (1, 64, 64, 256),
+            "compression": COMPRESSION,
+            "compression_opts": COMPRESSION_OPTS,
+        },
+        "complex_freq_cov": {
+            "axes": ["pol", "freq", "freq_sum", "ra"],
+            "dtype": np.complex64,
+            "initialise": False,
+            "distributed": True,
+            "distributed_axis": "freq",
+            "chunks": (1, 64, 64, 256),
+            "compression": COMPRESSION,
+            "compression_opts": COMPRESSION_OPTS,
         },
     }
 

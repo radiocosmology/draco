@@ -1209,6 +1209,24 @@ class RADependentWeights(task.SingleTask):
             )
             raise RuntimeError(msg)
 
+        # Create a filter dataset if one exists in hybrid visibilities
+        save_filter = False
+        for dset in ["filter", "complex_filter"]:
+            if dset in hybrid_vis:
+                ringmap.add_dataset(dset)
+                ringmap[dset][:] = 0.0
+                save_filter = True
+
+        # Create a freq_cov dataset if one exists in hybrid visibilities,
+        # so long as we did not use inverse variance weights (not currently supported)
+        save_cov = False
+        if weight_scheme != "inverse_variance":
+            for dset in ["freq_cov", "complex_freq_cov"]:
+                if dset in hybrid_vis:
+                    ringmap.add_dataset(dset)
+                    ringmap[dset][:] = 0.0
+                    save_cov = True
+
         # Ensure containers are distributed over the same axis
         hybrid_vis.redistribute("freq")
         ringmap.redistribute("freq")
@@ -1248,6 +1266,24 @@ class RADependentWeights(task.SingleTask):
 
         # Scale the ringmap weights by the RA dependence
         ringmap.weight[:].local_array[:] *= ra_dependence[..., np.newaxis]
+
+        # Average the filter
+        if save_filter:
+            filt = hybrid_vis.filter[:].local_array
+
+            sum_wew = np.sum(weight_ew, axis=-2, keepdims=True)
+            wew = (weight_ew * tools.invert_no_zero(sum_wew))[:, :, np.newaxis]
+            ringmap.filter[:].local_array[:] = np.sum(wew * filt, axis=-2)
+
+        # Average the freq-freq covariance
+        if save_cov:
+            cov = hybrid_vis.freq_cov[:].local_array
+
+            # if we are using uniform or natural weighting this is simple
+            wew = np.squeeze(weight_ew)
+            wew2 = wew[:, np.newaxis] ** 2 * tools.invert_no_zero(np.sum(wew) ** 2)
+
+            ringmap.freq_cov[:].local_array[:] = np.sum(wew2 * cov, axis=-2)
 
         return ringmap
 
