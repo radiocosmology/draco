@@ -111,6 +111,178 @@ class TransformJyPerBeamToKelvin(task.SingleTask):
         return bl.max()
 
 
+class WienerDelayTransformMap(task.SingleTask):
+    """Perform a Wiener-filtered delay transform of a foreground-filtered ringmap.
+
+    This task estimates the delay-domain representation of a filtered and masked
+    ringmap using a Wiener filter derived from simulations of the expected 21 cm
+    signal. It accounts for missing frequency channels and spectral filtering by
+    constructing and applying a model-aware projection and weighting scheme.
+
+    The transform uses an empirically estimated signal covariance from simulations,
+    and the frequency-frequency noise covariance matrix that is tracked during
+    sidereal stacking. Calculation of the signal covariance assumes that the statistics
+    of the signal are stationary as a function of RA.  The adjoint of the filter times
+    the discrete fourier transform operator is used to project from frequency
+    to delay space, while the Wiener filter suppresses poorly constrained or
+    noise-dominated modes.
+    """
+
+    def process(self, data, sim):
+        """Estimate the Wiener-filtered delay spectrum of the ringmap.
+
+        Parameters
+        ----------
+        data : containers.RingMap
+            The ringmap to delay transform.  Must contain both
+            filter and freq_cov datasets.
+        sim : containers.RingMap
+            Simulated maps used to estimate the signal covariance.
+            Do not add noise to these maps.  Do not apply the filter.
+
+        Returns
+        -------
+        delay_map : containers.DelayTransform
+            A container holding the delay-domain representation of the input maps.
+            Each delay spectrum is computed per-pixel using a Wiener filter that
+            combines the simulation-derived signal covariance with an estimate of
+            the frequency-frequency noise covariance in each sky pixel.
+        """
+        # Redistribute over elevation
+        data.redistribute("el")
+        sim.redistribute("el")
+
+        # Determine the shape of the input datasets
+        npol, nfreq, nra, nel_local = data.weight.local_shape
+        nel = data.index_map["el"].size
+
+        diag = (slice(None), np.arange(nfreq), np.arange(nfreq))
+
+        # Compute delays in micro-sec
+        freq = data.freq
+        dfreq = np.median(np.abs(np.diff(freq)))
+
+        tau = np.fft.fftshift(np.fft.fftfreq(nfreq, d=dfreq))
+
+        # Create the array that we will populate
+        spectrum = np.zeros((npol, nel_local, nra, nfreq), dtype=np.complex128)
+
+        # Construct the operator that performs a discrete fourier transform
+        # from the delay domain to the frequency domain.  Also construct the
+        # adjoint operator which performs the inverse fourier transform
+        # from frequency to delay
+        F = np.exp(2.0j * np.pi * np.outer(freq, tau)) / np.sqrt(nfreq)  # freq, delay
+        FT = F.T.conj()  # delay, freq
+
+        # Extract the ringmap and the weights.
+        # Zero out any ringmap data where the weights are zero.
+        wall = data.weight[:].local_array
+        flag = wall > 0.0
+
+        dall = data.map[0].local_array * flag
+
+        # Extract the ringmap for the signal simulation
+        sall = sim.map[0].local_array
+
+        # Loop over polarisations
+        for pp in range(npol):
+
+            # The filter and freq_cov datasets do not have an elevation axis.
+            # Perform an allgather to acquire the entire dataset on every rank.
+            # Shape (ra, freq, freq)
+            M = data.freq_cov[pp].allgather().transpose(2, 0, 1)
+            K = data.filter[pp].allgather().transpose(2, 0, 1)
+
+            # Extract the diagonal of the noise covariance
+            # Shape (ra, freq)
+            Mdiag = M[diag]
+
+            # Loop over elevations
+            for ee in range(nel_local):
+
+                # Maps for this frequency and polarisation
+                # Shape (ra, freq)
+                d = dall[pp, :, :, ee].T
+                w = wall[pp, :, :, ee].T
+                s = sall[pp, :, :, ee].T
+
+                # Create factor that scales the noise covariance from
+                # hybrid visibilities to map space by setting the diagonal
+                # equal to the inverse of the weight dataset.  Also applies
+                # any mask present in the weights to the noise covariance.
+                r_noise = np.sqrt(tools.invert_no_zero(w * Mdiag))
+                r_noise_2 = r_noise[:, :, np.newaxis] * r_noise[:, np.newaxis, :]
+
+                # Noise covariance in filtered frequency domain
+                # Shape (ra, freq, freq)
+                N = M * r_noise_2
+
+                # Mask out missing frequencies in the filter
+                mask = w > 0.0
+                H = mask[:, :, np.newaxis] * K
+                HT = H.transpose(0, 2, 1).conj()
+
+                # Construct the adjoint operator that projects from
+                # the filtered frequency domain to the delay domain
+                # Shape (ra, delay, freq)
+                RT = FT @ HT
+
+                # Signal covariance in frequency domain
+                # Shape (freq, freq)
+                FSFT = s.T @ s / nra
+
+                # Signal covariance in filtered frequency domain
+                # Shape (ra, freq, freq)
+                RSRT = H @ FSFT @ HT
+
+                # Signal covariance in delay domain
+                # Shape (delay, delay)
+                S = FT @ FSFT @ F
+
+                # Covariance (signal + noise) in filtered frequency domain
+                # Shape (ra, freq, freq)
+                A = RSRT + N
+
+                # Weight the data by the inverse covariance
+                # Shape (ra, freq, 1)
+                wd = np.linalg.solve(A, d[:, :, np.newaxis])
+
+                # Apply adjoint operator to project to delay domain
+                # Shape (ra, delay, 1)
+                fwd = RT @ wd
+
+                # Weight data by signal covariance
+                spectrum[pp, ee] = (S[np.newaxis, ...] @ fwd)[..., 0]
+
+        # Create the output container
+        out = containers.DelayTransform(
+            baseline=npol * nel,
+            sample=data.index_map["ra"],
+            delay=tau,
+            attrs_from=data,
+        )
+        out.redistribute("delay")
+
+        # Copy the index maps for all the flattened axes into the output container, and
+        # write out their order into an attribute so we can reconstruct this easily
+        # when loading in the spectrum
+        bl_axes = np.array(["pol", "el"])
+        for ax in bl_axes:
+            out.create_index_map(ax, data.index_map[ax])
+        out.attrs["baseline_axes"] = bl_axes
+
+        # Populate the spectrum dataset.  The spectrum array is currently
+        # distributed over el.  Since the pol and el axis have been combined in
+        # the output container, we need to redistribute over delay and then flatten.
+        oshp = (npol * nel, nra, None)
+        out.spectrum[:] = (
+            mpiarray.MPIArray.wrap(spectrum, axis=1).redistribute(3).reshape(*oshp)
+        )
+
+        # Return the output container
+        return out
+
+
 class SpatialTransformDelayMap(task.SingleTask):
     """Spatial transform the delay map from (RA,DEC) to (u,v) domain.
 
