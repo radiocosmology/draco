@@ -200,7 +200,7 @@ class WienerDelayTransformMap(task.SingleTask):
             # Loop over elevations
             for ee in range(nel_local):
 
-                # Maps for this frequency and polarisation
+                # Extract maps for this polarisation and elevation
                 # Shape (ra, freq)
                 d = dall[pp, :, :, ee].T
                 w = wall[pp, :, :, ee].T
@@ -231,7 +231,7 @@ class WienerDelayTransformMap(task.SingleTask):
                 # Shape (freq, freq)
                 FSFT = s.T @ s / nra
 
-                # Signal covariance in filtered frequency domain
+                # Signal covariance in masked, filtered frequency domain
                 # Shape (ra, freq, freq)
                 RSRT = H @ FSFT @ HT
 
@@ -239,7 +239,7 @@ class WienerDelayTransformMap(task.SingleTask):
                 # Shape (delay, delay)
                 S = FT @ FSFT @ F
 
-                # Covariance (signal + noise) in filtered frequency domain
+                # Covariance (signal + noise) in masked, filtered frequency domain
                 # Shape (ra, freq, freq)
                 A = RSRT + N
 
