@@ -546,9 +546,13 @@ class MModeTransform(task.SingleTask):
         Deconvolve the effect of the finite width of the RA integration (presuming it
         was a rectangular integration window). This is applied to both the visibilities
         and the weights.
+    use_fftw : bool
+        If True, then use fftW to do the Fourier Transform, else use
+        numpy fft. Default is True.
     """
 
     remove_integration_window = config.Property(proptype=bool, default=False)
+    use_fftw = config.Property(proptype=bool, default=True)
 
     def setup(self, manager: io.TelescopeConvertible | None = None):
         """Set the telescope instance if a manager object is given.
@@ -617,7 +621,7 @@ class MModeTransform(task.SingleTask):
         # Generate the m-mode transform directly into the output container
         # NOTE: Need to zero fill as not every element gets set within _make_marray
         mvis[:] = 0.0
-        _make_marray(svis, mvis)
+        _make_marray(svis, mvis, mmax=None, dtype=None, use_fftw=self.use_fftw)
 
         # Assign the weights into the container
         mweight[:] = weight_sum[np.newaxis, np.newaxis, :, :]
@@ -637,7 +641,7 @@ class MModeTransform(task.SingleTask):
         return ma
 
 
-def _make_marray(ts, mmodes=None, mmax=None, dtype=None):
+def _make_marray(ts, mmodes=None, mmax=None, dtype=None, use_fftw=True):
     """Make an m-mode array from a sidereal stream.
 
     This will loop over the first axis of `ts` to avoid needing a lot of memory for
@@ -679,7 +683,11 @@ def _make_marray(ts, mmodes=None, mmax=None, dtype=None):
     # so we have to flatten the other axes to get around that. This is
     # still faster than `numpy` or `scipy` ffts.
     shp = ts.shape
-    m_fft = fftw.fft(ts.reshape(-1, shp[-1]), axes=-1).reshape(shp)
+    if use_fftw:
+        m_fft = fftw.fft(ts.reshape(-1, shp[-1]), axes=-1).reshape(shp)
+    else:
+        m_fft = np.fft.fft(ts.reshape(-1, shp[-1]), axis=-1).reshape(shp)
+
     m_fft = np.moveaxis(m_fft, -1, 0)
 
     # Write the positive and negative m's
