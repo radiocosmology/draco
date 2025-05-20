@@ -9,7 +9,7 @@ Interferometry
 """
 
 import numpy as np
-from caput.coordinates.sphcoords import projected_distance
+from caput.coordinates.spherical import projected_distance
 
 
 def fringestop_phase(ha, lat, dec, u, v, w=0.0):
