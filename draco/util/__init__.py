@@ -1,12 +1,15 @@
-"""
+"""draco.util.
+
+Modules
+=======
 .. autosummary::
     :toctree:
 
+    dpss
     interferometry
-    random
+    kernels
     regrid
     rfi
     testing
     tools
-
 """
