@@ -190,7 +190,7 @@ class PerformEigenDecomp(task.SingleTask):
                 for ii in range(niter):
 
                     evalue, evec = scipy.linalg.eigh(
-                        V, eigvals=ecalc, check_finite=False
+                        V, subset_by_index=ecalc, check_finite=False
                     )
 
                     low_rank_approx = np.matmul(
