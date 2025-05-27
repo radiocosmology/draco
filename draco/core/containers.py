@@ -2024,7 +2024,7 @@ class HybridVisStream(FilterFreqContainer, FreqContainer, SiderealContainer, Vis
     grid in elevation.
     """
 
-    _axes = ("pol", "ew", "el", "freq_sum")
+    _axes = ("pol", "ew", "el")
 
     _dataset_spec: ClassVar = {
         "vis": {
@@ -2109,7 +2109,7 @@ class HybridVisStream(FilterFreqContainer, FreqContainer, SiderealContainer, Vis
         },
         "freq_cov": {
             "axes": ["pol", "freq", "freq_sum", "ew", "ra"],
-            "dtype": np.float32,
+            "dtype": np.float64,
             "initialise": False,
             "distributed": True,
             "distributed_axis": "freq",
@@ -2119,7 +2119,7 @@ class HybridVisStream(FilterFreqContainer, FreqContainer, SiderealContainer, Vis
         },
         "complex_freq_cov": {
             "axes": ["pol", "freq", "freq_sum", "ew", "ra"],
-            "dtype": np.complex64,
+            "dtype": np.complex128,
             "initialise": False,
             "distributed": True,
             "distributed_axis": "freq",
@@ -2260,6 +2260,17 @@ class RingMap(
             "compression_opts": COMPRESSION_OPTS,
             "truncate": True,
         },
+        "dirty_beam_power": {
+            "axes": ["beam", "pol", "freq", "el"],
+            "dtype": np.float64,
+            "initialise": False,
+            "distributed": True,
+            "distributed_axis": "freq",
+            "chunks": (1, 1, 128, 128),
+            "compression": COMPRESSION,
+            "compression_opts": COMPRESSION_OPTS,
+            "truncate": True,
+        },
         "rms": {
             "axes": ["pol", "freq", "ra"],
             "dtype": np.float64,
@@ -2293,7 +2304,7 @@ class RingMap(
         },
         "freq_cov": {
             "axes": ["pol", "freq", "freq_sum", "ra"],
-            "dtype": np.float32,
+            "dtype": np.float64,
             "initialise": False,
             "distributed": True,
             "distributed_axis": "freq",
@@ -2303,7 +2314,7 @@ class RingMap(
         },
         "complex_freq_cov": {
             "axes": ["pol", "freq", "freq_sum", "ra"],
-            "dtype": np.complex64,
+            "dtype": np.complex128,
             "initialise": False,
             "distributed": True,
             "distributed_axis": "freq",
@@ -2338,8 +2349,13 @@ class RingMap(
 
     @property
     def dirty_beam(self):
-        """Get the dirty beam dataset."""
+        """Get the dirty_beam dataset."""
         return self.datasets["dirty_beam"]
+
+    @property
+    def dirty_beam_power(self):
+        """Get the dirty_beam_power dataset."""
+        return self.datasets["dirty_beam_power"]
 
 
 class RingMapMask(FreqContainer, SiderealContainer):
@@ -2685,6 +2701,17 @@ class DelayTransform(DelayContainer):
             "chunks": (512, 2048, 32),
             "truncate": True,
         },
+        "weight": {
+            "axes": ["baseline", "sample", "delay"],
+            "dtype": np.float32,
+            "initialise": False,
+            "distributed": True,
+            "distributed_axis": "baseline",
+            "compression": COMPRESSION,
+            "compression_opts": COMPRESSION_OPTS,
+            "chunks": (512, 2048, 32),
+            "truncate": True,
+        },
         "spectrum_mask": {
             "axes": ["baseline", "sample"],
             "dtype": bool,
@@ -2704,6 +2731,11 @@ class DelayTransform(DelayContainer):
         return self.datasets["spectrum"]
 
     @property
+    def weight(self):
+        """Get the spectrum dataset."""
+        return self.datasets["weight"]
+
+    @property
     def weight_boost(self):
         """Get the weight boost factor.
 
@@ -2716,6 +2748,27 @@ class DelayTransform(DelayContainer):
     def freq(self):
         """Get the frequency axis of the input data."""
         return self.attrs["freq"]
+
+
+class DelayTransformOperator(DelayContainer, FreqContainer, SiderealContainer):
+    """Wiener filter that transforms each pixel from frequency to delay."""
+
+    _axes = ("pol", "el")
+
+    _dataset_spec: ClassVar = {
+        "filter": {
+            "axes": ["pol", "ra", "el", "delay", "freq"],
+            "dtype": np.complex64,
+            "initialise": True,
+            "distributed": True,
+            "distributed_axis": "el",
+        }
+    }
+
+    @property
+    def filter(self):
+        """Get the mask dataset."""
+        return self.datasets["filter"]
 
 
 class CosmologyContainer(ContainerBase):

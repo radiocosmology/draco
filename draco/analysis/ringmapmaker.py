@@ -678,6 +678,7 @@ class DeconvolveHybridMBase(task.SingleTask):
             distributed=hybrid_vis_m.distributed,
             comm=hybrid_vis_m.comm,
         )
+        rm.add_dataset("dirty_beam_power")
         if self.save_dirty_beam:
             rm.add_dataset("dirty_beam")
 
@@ -718,6 +719,7 @@ class DeconvolveHybridMBase(task.SingleTask):
 
         rmm = rm.map[:]
         rmw = rm.weight[:]
+        rmbp = rm.dirty_beam_power[:]
         if self.save_dirty_beam:
             rmb = rm.dirty_beam[:]
 
@@ -770,13 +772,17 @@ class DeconvolveHybridMBase(task.SingleTask):
             )
 
             # Fill in the dirty beam
-            if self.save_dirty_beam:
-                rmb[0, :, lfi] = (
-                    np.fft.irfft(
+            dirty_beam_ra = (
+                np.fft.irfft(
                         dirty_beam_m.transpose(1, 2, 0), axis=-1, n=nra
                     ).transpose(0, 2, 1)
                     * norm
                 )
+
+            rmbp[0, :, lfi] = np.sum(dirty_beam_ra ** 2, axis=1) / nra
+
+            if self.save_dirty_beam:
+                rmb[0, :, lfi] = dirty_beam_ra
 
             # Calculate the expected map noise by propagating the uncertainty on the m's
             # We use an unusual order of operations here to prevent floating point
