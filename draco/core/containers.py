@@ -2405,6 +2405,69 @@ class RingMapTaper(FreqContainer, SiderealContainer):
         return self.datasets["taper"]
 
 
+class FreqNoiseModel(FilterFreqContainer, FreqContainer, SiderealContainer):
+    """Container storing Cholesky factors of frequency-frequency noise covariance.
+
+    This container is intended for generating noise realizations in visibility space
+    that include the desired correlations as a function of freq and el.  This is
+    typically used to populate a VisGridStream container with synthetic noise having
+    a specific spectral structure.
+    """
+
+    _axes = ("pol", "ew", "ns")
+
+    _dataset_spec: ClassVar = {
+        "redundancy": {
+            "axes": ["pol", "ew", "ns"],
+            "dtype": np.int32,
+            "initialise": True,
+            "distributed": False,
+            "chunks": (1, 1, 128),
+            "compression": COMPRESSION,
+            "compression_opts": COMPRESSION_OPTS,
+        },
+        "weight": {
+            "axes": ["pol", "freq", "ew", "ra"],
+            "dtype": np.float32,
+            "initialise": True,
+            "distributed": True,
+            "chunks": (1, 64, 1, 2048),
+            "compression": COMPRESSION,
+            "compression_opts": COMPRESSION_OPTS,
+        },
+        "freq_cov": {
+            "axes": ["pol", "ew", "ra", "freq", "freq_sum"],
+            "dtype": np.float64,
+            "initialise": False,
+            "distributed": True,
+            "distributed_axis": "ra",
+            "chunks": (1, 1, 2048, 64, 64),
+            "compression": COMPRESSION,
+            "compression_opts": COMPRESSION_OPTS,
+        },
+        "complex_freq_cov": {
+            "axes": ["pol", "ew", "ra", "freq", "freq_sum"],
+            "dtype": np.complex128,
+            "initialise": False,
+            "distributed": True,
+            "distributed_axis": "ra",
+            "chunks": (1, 1, 2048, 64, 64),
+            "compression": COMPRESSION,
+            "compression_opts": COMPRESSION_OPTS,
+        },
+    }
+
+    @property
+    def redundancy(self):
+        """Get the redundancy dataset."""
+        return self.datasets["redundancy"]
+
+    @property
+    def weight(self):
+        """Get the weight dataset."""
+        return self.datasets["weight"]
+
+
 class GainDataBase(DataWeightContainer):
     """A container interface for gain-like data.
 

@@ -381,7 +381,14 @@ class FreqCorrelatedNoise(task.SingleTask, random.RandomTask):
     This task uses precomputed Cholesky decompositions of the frequency-frequency
     noise covariance (stored in a FreqNoiseModel container) to simulate
     a noise realization into a VisGridStream container.
+
+    Attributes
+    ----------
+    save_redundancy : bool
+        If True, save the redundancy of each visibility.  Default is False.
     """
+
+    save_redundancy = config.Property(proptype=bool, default=False)
 
     def process(self, noise_model):
         """Simulate noise into a VisGridStream container.
@@ -405,6 +412,10 @@ class FreqCorrelatedNoise(task.SingleTask, random.RandomTask):
             comm=noise_model.comm,
         )
         out.redistribute("ra")
+
+        if self.save_redundancy:
+            out.add_dataset("redundancy")
+            out.redundancy[:] = noise_model.redundancy[:][..., np.newaxis]
 
         # Compute the redundancy factor that determines how the noise depends
         # on north-south baseline distance
