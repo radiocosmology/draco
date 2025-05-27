@@ -88,7 +88,8 @@ class MakeVisGrid(task.SingleTask):
 
         # Calculation the set of polarisations in the data, and which polarisation
         # index every entry corresponds to
-        polpair = self.telescope.polarisation[self.telescope.uniquepairs].view("U2")
+        polprod = self.telescope.polarisation[self.telescope.uniquepairs]
+        polpair = np.char.add(polprod[:, 0], polprod[:, 1])
         pol, pind = np.unique(polpair, return_inverse=True)
 
         if len(pol) != 4:
@@ -1373,7 +1374,8 @@ class ReconstructVisNoiseBase(transform.TelescopeStreamMixIn, task.SingleTask):
         """
         # Determine the set of polarisation pairs in the telescope,
         # and which polarisation pair every baseline corresponds to.
-        polpair = self.telescope.polarisation[self.telescope.uniquepairs].view("U2")
+        polprod = self.telescope.polarisation[self.telescope.uniquepairs]
+        polpair = np.char.add(polprod[:, 0], polprod[:, 1])
         polpair, pind = np.unique(polpair, return_inverse=True)
 
         # Downselect to only the polarisations present in hv
@@ -1385,9 +1387,7 @@ class ReconstructVisNoiseBase(transform.TelescopeStreamMixIn, task.SingleTask):
         pol_flag = pol_remap >= 0
 
         # Determine the layout of the visibilities on the grid
-        xind, yind, min_xsep, min_ysep = tools.find_grid_indices(
-            self.telescope.baselines
-        )
+        xind, yind, min_xsep, min_ysep = find_grid_indices(self.telescope.baselines)
         baseline_flag = np.abs(yind * min_ysep) <= (self.nsmax + 0.5 * min_ysep)
 
         # Determine north-south grid
