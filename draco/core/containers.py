@@ -2767,7 +2767,7 @@ class DelayTransformOperator(DelayContainer, FreqContainer, SiderealContainer):
 
     @property
     def filter(self):
-        """Get the mask dataset."""
+        """Get the filter dataset."""
         return self.datasets["filter"]
 
 

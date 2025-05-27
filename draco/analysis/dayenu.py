@@ -423,6 +423,8 @@ class DayenuDelayFilterHybridVis(task.SingleTask):
     apply_filter : bool
         Apply the filter that was generated. If False, `save_filter`
         must be True.
+    save_filter : bool
+        Save the filter that was applied to the output container.
     calculate_cov : bool
         Calculate the frequency-frequency noise covariance due to filtering.
     """
