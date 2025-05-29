@@ -72,7 +72,7 @@ def band_wiener(R, Ni, Si, y, bw):
         Ni_ki = Ni[ki].astype(np.float64)
 
         # Calculate the Wiener noise weighting (i.e. inverse covariance)
-        Ci = _fast_tools._band_wiener_covariance(R, Ni_ki, start_ind, end_ind, bw)
+        Ci = _fast_tools._linear_covariance_banded(R, Ni_ki, start_ind, end_ind, bw)
 
         # Set the noise estimate before adding in the signal contribution. This avoids
         # the issue that the inverse-noise estimate becomes non-zero even when the data
