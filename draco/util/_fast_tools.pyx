@@ -24,19 +24,19 @@ cdef extern from "complex.h" nogil:
 cdef inline int int_max(int a, int b) nogil: return a if a >= b else b
 
 
-# A routine for quickly calculating the noise part of the banded
-# covariance matrix for the Wiener filter.
+# Diagonal covariance propagation for banded linear operations
 @cython.wraparound(False)
 @cython.boundscheck(False)
-cpdef _band_wiener_covariance(double [:, ::1] Rn, double [::1] Ni,
-                              int[::1] start_ind, int[::1] end_ind, int bw):
-
+cpdef _linear_covariance_banded(
+    double [:, ::1] Rn,
+    double [::1] Ni,
+    int[::1] start_ind,
+    int[::1] end_ind,
+    int bw,
+):
     cdef double [:, ::1] Ci = np.zeros((bw+1, Rn.shape[0]), dtype=np.float64)
-
     cdef int alpha, beta, betap, j, alpha_start, si, ei
-
     cdef double t
-
     cdef int N = Rn.shape[0]
 
     # Loop over the band array indices to generate each one (opposite
