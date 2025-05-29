@@ -24,19 +24,48 @@ cdef extern from "complex.h" nogil:
 cdef inline int int_max(int a, int b) nogil: return a if a >= b else b
 
 
-# A routine for quickly calculating the noise part of the banded
-# covariance matrix for the Wiener filter.
+# Fast banded matrix multiplication
 @cython.wraparound(False)
 @cython.boundscheck(False)
-cpdef _band_wiener_covariance(double [:, ::1] Rn, double [::1] Ni,
-                              int[::1] start_ind, int[::1] end_ind, int bw):
-
-    cdef double [:, ::1] Ci = np.zeros((bw+1, Rn.shape[0]), dtype=np.float64)
-
-    cdef int alpha, beta, betap, j, alpha_start, si, ei
-
+cpdef _matmul_banded(
+    double [:, ::1] A,
+    double[::1] x,
+    int[::1] start_ind,
+    int[::1] end_ind,
+):
+    cdef int beta, j, si, ei
     cdef double t
+    cdef int N = A.shape[0]
 
+    cdef double[::1] out = np.zeros(N, dtype=np.float64)
+
+    for beta in prange(N, nogil=True):
+        si = start_ind[beta]
+        ei = end_ind[beta]
+
+        t = 0.0
+
+        for j in range(si, ei):
+            t = t + A[beta, j] * x[j]
+
+        out[beta] = t
+
+    return np.asarray(out)
+
+
+# Band-diagonal covariance propagation for banded linear operations
+@cython.wraparound(False)
+@cython.boundscheck(False)
+cpdef _linear_covariance_banded(
+    double [:, ::1] Rn,
+    double [::1] Ni,
+    int[::1] start_ind,
+    int[::1] end_ind,
+    int bw,
+):
+    cdef double [:, ::1] Ci = np.zeros((bw+1, Rn.shape[0]), dtype=np.float64)
+    cdef int alpha, beta, betap, j, alpha_start, si, ei
+    cdef double t
     cdef int N = Rn.shape[0]
 
     # Loop over the band array indices to generate each one (opposite
