@@ -643,10 +643,10 @@ class ApplyDelayFilterHybridVis(task.SingleTask):
         # Create the covariance dataset if requested
         if self.calculate_cov:
             if np.iscomplexobj(source.filter[:].local_array):
-                if "complex_cov" not in hv.datasets:
+                if "complex_freq_cov" not in hv.datasets:
                     hv.add_dataset("complex_freq_cov")
             else:
-                if "cov" not in hv.datasets:
+                if "freq_cov" not in hv.datasets:
                     hv.add_dataset("freq_cov")
             hv.freq_cov[:] = 0.0
 
