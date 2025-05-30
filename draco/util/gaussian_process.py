@@ -3,22 +3,21 @@
 import numpy as np
 import scipy.linalg as la
 from caput.tools import invert_no_zero
-from scipy.spatial.distance import cdist
 
 from . import _fast_tools, kernels
 from .dpss import _dtype_to_real
 
 
 def resample(
-    data: np.ndarray,
-    weight: np.ndarray,
-    xi: np.ndarray,
-    xo: np.ndarray,
+    data: np.ndarray[np.floating | np.complexfloating],
+    weight: np.ndarray[np.floating],
+    xi: np.ndarray[np.number],
+    xo: np.ndarray[np.number],
     cutoff_dist: float = 1.0,
     cutoff_partition: int = 0,
     kernel_spec: list | tuple | dict = {},
-) -> tuple[np.ndarray, np.ndarray]:
-    """Resample a dataset using gaussian process regression.
+) -> tuple[np.ndarray[np.floating | np.complexfloating], np.ndarray[np.floating]]:
+    """Resample a dataset using a GP kernel.
 
     Parameters
     ----------
@@ -50,13 +49,10 @@ def resample(
         Resampled weight array.
     """
     # Get the kernels based on the kernel parameters
-    Ki, Ks = _combine_kernels_from_specs((xo, xi), kernel_spec)
+    Ki, Ks = _combine_gp_kernels_from_specs((xo, xi), kernel_spec)
 
-    # Flag samples depending on how far we want to interpolate. A target
-    # sample must be both `kwidth - 1` samples from an unflagged input
-    # sample on either side, and `cutoff_dist` samples from the `nth`
-    # nearest unflagged input sample, where `n` is `cutoff_partition`
-    # Pull `kwidth` from the kernel spec
+    # Select the samples to interpolate to. The kernel width is required,
+    # so extract the widest kernel from the spec(s).
     ks = [kernel_spec] if isinstance(kernel_spec, dict) else kernel_spec
     kwidth = 0.0
     for spec in ks:
@@ -64,49 +60,46 @@ def resample(
             kwidth = kw
 
     inp_mask = ~np.all(weight == 0, axis=-1)
-    tsamp = flag_abs_dist(xi, xo, inp_mask, cutoff_dist, cutoff_partition)
-    tsamp &= flag_sample_dist(xi, xo, inp_mask, int(kwidth - 1))
+    xm = _select_interp_samples(xi, xo, inp_mask, kwidth, cutoff_dist, cutoff_partition)
 
-    xout, wout = interpolate_unweighted(data, weight, Ki, Ks, tsamp=tsamp)
-
-    return xout, wout
+    return interpolate_unweighted(data, weight, Ki, Ks, interp_samples=xm)
 
 
 def interpolate_unweighted(
-    data: np.ndarray,
-    weight: np.ndarray,
-    K: np.ndarray,
-    Kstar: np.ndarray,
-    tsamp: np.ndarray | None = None,
-) -> tuple[np.ndarray, np.ndarray]:
-    """Interpolate an input array assuming no noise.
+    data: np.ndarray[np.floating | np.complexfloating],
+    weight: np.ndarray[np.floating],
+    K: np.ndarray[np.floating],
+    Kstar: np.ndarray[np.floating],
+    interp_samples: np.ndarray[bool] | None = None,
+) -> tuple[np.ndarray[np.floating | np.complexfloating], np.ndarray[np.floating]]:
+    """Interpolate data using a GP kernel, assuming the signal is noise-free.
 
     Iterate the first axis and interpolate the second.
 
     Parameters
     ----------
     data
-        Data array. Iterate over the first axis and interpolate over the second.
+        Signal array. Iterate over the first axis and interpolate over the second.
     weight
-        Weight array, with the same first two axes and `data`.
+        Inverse-variance weight array, with the same first two axes as `data`.
     K
         Source samples kernel.
     Kstar
         Projection kernel.
-    tsamp
+    interp_samples
         Boolean array corresponding to a subset of the target samples
         onto which the data is projected. This is equivalent
         to masking certain samples after interpolating, but provides a
         performance improvement because there are fewer unnecessary
-        operations. If None, interpolate onto all projection samples.
+        operations. If None, interpolate onto all samples.
         Default is None.
 
     Returns
     -------
     xout
-        Interpolated data array.
+        Interpolated signal.
     woud
-        Interpolated weight array.
+        Interpolated inverse-variance weights.
     """
     # Figure out which banded solver to use
     _solveh = kernels.is_hermitian_positive_definite(K)
@@ -122,10 +115,11 @@ def interpolate_unweighted(
         return la.solve_banded((ndiag, ndiag), ab, b, check_finite=False)
 
     # Make the output masking array
-    if tsamp is None:
-        tsamp = [slice(None)] * data.shape[0]
+    if interp_samples is None:
+        interp_samples = [slice(None)] * data.shape[0]
 
-    # Use real views for `solve`, even if data is complex
+    # If the signal is complex, interpolate the real and imaginary
+    # components independently, assuming the same error
     data_dtype = data.dtype
     interp_dtype = _dtype_to_real(data_dtype)
 
@@ -138,7 +132,7 @@ def interpolate_unweighted(
     for ii in range(data.shape[0]):
         # Get the target sample mask and skip if all
         # samples are ignored
-        mt = tsamp[ii]
+        mt = interp_samples[ii]
 
         if not isinstance(mt, slice) and not np.any(mt):
             continue
@@ -206,9 +200,14 @@ def interpolate_unweighted(
     return xout, wout
 
 
-def flag_abs_dist(
-    xi: np.ndarray, xo: np.ndarray, mask: np.ndarray, cutoff: float, partition: int = 0
-) -> np.ndarray:
+def _select_interp_samples(
+    xi: np.ndarray[np.number],
+    xo: np.ndarray[np.number],
+    mask: np.ndarray[bool],
+    kwidth: int,
+    cutoff: float,
+    partition: int = 0,
+) -> np.ndarray[bool]:
     """Mask output samples which are more than some distance from input samples.
 
     Parameters
@@ -220,61 +219,15 @@ def flag_abs_dist(
     mask
         Mask corresponding to measured samples. `True` values are assumed
         to be unflagged.
+    kwidth
+        Width of the interpolating kernel. Select only samples
     cutoff
-        Flag any output sample which is farther (in number of _input_ samples)
-        away from the `n`th nearest unflagged input sample than this value.
+        Select only output samples closer (in number of _input_ samples)
+        than this value to the `n`th nearest unflagged input sample.
     partition
         `n`th closest sample to consider when applying cutoff. This is fed into
         `np.partition`. A value of `0` is relative to the nearest sample. Default
         is 0.
-
-    Returns
-    -------
-    out
-        Mask with flagged samples set to `False`
-    """
-    dist = cdist(xo[:, np.newaxis], xi[:, np.newaxis], metric="euclidean")
-    # Divide by the sample width to get the distance in number of input samples
-    dist /= np.median(np.abs(np.diff(xi)))
-
-    out = np.empty((mask.shape[0], xo.shape[0]), dtype=bool)
-
-    # Iterate over the first axis of `mask`
-    for ii in range(mask.shape[0]):
-        mi = mask[ii]
-
-        if not np.any(mi):
-            out[ii] = False
-            continue
-
-        out[ii] = np.partition(dist[:, mi], partition, axis=-1)[:, partition] < cutoff
-
-    return out
-
-
-def flag_sample_dist(
-    xi: np.ndarray, xo: np.ndarray, mask: np.ndarray, cutoff: float
-) -> np.ndarray:
-    """Mask output samples which are more than some distance from input samples.
-
-    Unlike `flag_abs_dist`, this requires an output sample to be within a
-    certain distance of unflagged input samples both before _and_ after the
-    output sample. The result is a slightly more aggressive mask which does
-    a better job at suppressing interpolation errors at the edge of wide
-    masked bands.
-
-    Parameters
-    ----------
-    xi
-        Samples where data points have been measured
-    xo
-        Samples we want to interpolate onto
-    mask
-        Mask corresponding to measured samples. `True` values are assumed
-        to be unflagged.
-    cutoff
-        Flag any output sample which is farther (in number of _input_ samples)
-        away from the `n`th nearest unflagged input sample than this value.
 
     Returns
     -------
@@ -287,6 +240,8 @@ def flag_sample_dist(
 
     out = np.empty((mask.shape[0], xo.shape[0]), dtype=bool)
 
+    kw_cutoff = kwidth - 1
+
     # Iterate over the first axis of `mask`
     for ii in range(mask.shape[0]):
         mi = mask[ii]
@@ -297,17 +252,18 @@ def flag_sample_dist(
 
         dmi = dist[:, mi]
 
-        pdist = np.min(dmi, axis=-1, where=dmi > 0, initial=cutoff)
-        ndist = np.max(dmi, axis=-1, where=dmi < 0, initial=-cutoff)
+        pdist = np.min(dmi, axis=-1, where=dmi > 0, initial=kw_cutoff)
+        ndist = np.max(dmi, axis=-1, where=dmi < 0, initial=-kw_cutoff)
 
-        out[ii] = np.maximum(pdist, np.abs(ndist)) < cutoff
+        out[ii] = np.maximum(pdist, abs(ndist)) < kw_cutoff
+        out[ii] &= np.partition(abs(dmi), partition, axis=-1)[:, partition] < cutoff
 
     return out
 
 
-def _combine_kernels_from_specs(
+def _combine_gp_kernels_from_specs(
     samples: tuple, kernel_params: list[dict] | tuple[dict] | dict
-) -> tuple[np.ndarray, np.ndarray] | tuple[None, None]:
+) -> tuple[np.ndarray[np.floating], np.ndarray[np.floating]] | tuple[None, None]:
     """Helper to combine multiple kernels from different specs."""
     kernel_params = (
         [kernel_params]
@@ -324,7 +280,7 @@ def _combine_kernels_from_specs(
         # the combined kernel
         var = kspec.pop("svar", 0.0)
         # Build each individual kernel
-        ki, ks = _build_kernel_from_spec(samples, kspec)
+        ki, ks = _build_gp_kernels_from_spec(samples, kspec)
 
         if Ki is None:
             Ki = ki
@@ -342,7 +298,9 @@ def _combine_kernels_from_specs(
     return Ki, Ks
 
 
-def _build_kernel_from_spec(samples: tuple, kernel_spec) -> np.ndarray:
+def _build_gp_kernels_from_spec(
+    samples: tuple, kernel_spec: dict
+) -> tuple[np.ndarray[np.floating], np.ndarray[np.floating]]:
     """Build a single kernel from a spec dictionary."""
     # Do not modify the input spec dict
     kernel_spec = kernel_spec.copy()
