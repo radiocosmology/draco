@@ -1218,6 +1218,9 @@ class SelectPol(task.SingleTask):
                 elif np.issubdtype(out_dset.dtype, np.bool_):
                     pass
 
+                elif "freq_cov" in name:
+                    out_dset[oslc] /= nsum**2
+
                 else:
                     out_dset[oslc] /= nsum
 

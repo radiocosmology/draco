@@ -2606,6 +2606,97 @@ class MaskFromTaper(task.SingleTask):
         return out
 
 
+class TaperDelayTransform(task.SingleTask):
+    """Apply a taper or mask to a DelayTransform container.
+
+    This task applies a frequency-collapsed taper or mask to the delay-domain
+    representation of ringmaps. Because DelayTransform containers are indexed
+    over (baseline_axes, sample, delay), the taper or mask must first be averaged
+    or collapsed over frequency and then reshaped to align with the baseline axes.
+    This operation is necessary due to the mismatch between the frequency-dependent
+    structure of the taper/mask and the frequency-transformed delay axis.
+
+    Attributes
+    ----------
+    update_weight : bool
+        If True, update the weights to account for the applied taper. This multiplies
+        the weights by 1 / taper^2 in all unmasked regions.
+    """
+
+    update_weight = config.Property(proptype=bool, default=False)
+
+    def process(
+        self,
+        data: containers.DelayTransform,
+        apply: containers.RingMapTaper | containers.RingMapMask,
+    ):
+        """Apply the taper or mask to the DelayTransform container.
+
+        Parameters
+        ----------
+        data : containers.DelayTransform
+            The dataset to be modified in-place. Must contain a 'spectrum'
+            dataset with shape (..., sample, delay), where 'sample'
+            corresponds to RA, and a 'weight' dataset of the same shape.
+        apply : RingMapTaper or RingMapMask
+            A container providing the taper or mask to apply. For a
+            RingMapTaper, the taper will be averaged over frequency. For a
+            RingMapMask, pixels that are good in all frequency channels will
+            be treated as 1.0 and others as 0.0.
+
+        Returns
+        -------
+        data : containers.DelayTransform
+            The input DelayTransform container with 'spectrum' and optionally
+            'weight' modified in-place.
+        """
+        # Distribute over the sample/ra axis
+        data.redistribute("sample")
+        apply.redistribute("ra")
+
+        # Collapse the taper/mask over the frequency axis
+        # Resulting array will have shape (pol, el, ra)
+        if isinstance(apply, containers.RingMapTaper):
+            taper = np.mean(apply.taper[:].local_array, axis=1).transpose(0, 2, 1)
+        else:
+            taper = np.all(~apply.mask[:].local_array, axis=1).transpose(0, 2, 1)
+
+        npol, nel, nra = taper.shape
+
+        # Check that the axes match
+        for dax, tax in [("sample", "ra"), ("el", "el")]:
+            if not np.array_equal(data.index_map[dax], apply.index_map[tax]):
+                raise ValueError(
+                    f"Mismatch between {dax} axis of delay transform and {tax} axis of taper/mask."
+                )
+
+        # Reformat the taper into a shape that can be broadcasted against the delay transform
+        bax = data.attrs["baseline_axes"]
+        shp = (*[data.index_map[ax].size for ax in bax], nra)
+        bcast = tuple([slice(None) if ax in ["pol", "el"] else None for ax in bax])
+
+        taper_expanded = np.ones(shp, dtype=float)
+        taper_expanded *= taper[bcast].astype(float)
+
+        taper_collapsed = taper_expanded.reshape(-1, nra, 1)
+
+        # Multiply the delay transform by the taper/mask
+        data.spectrum[:].local_array[:] *= taper_collapsed
+
+        # Optionally update the weights
+        if self.update_weight:
+            if "weight" in data.datasets:
+                data.weight[:].local_array[:] *= (
+                    tools.invert_no_zero(taper_collapsed) ** 2
+                )
+            else:
+                self.log.warning(
+                    "Delay transform does not contain a weight dataset.  Skipping application of mask/taper."
+                )
+
+        return data
+
+
 class ApplyBaselineMask(task.SingleTask):
     """Apply a distributed mask that varies across baselines.
 
