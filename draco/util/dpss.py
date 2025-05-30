@@ -482,7 +482,7 @@ def atleast_Nd(x: np.ndarray, N: int, lax: int = -1):
     add = (..., *newdims, *slobj)
     inv = (..., *(0 for _ in newdims), *slobj)
 
-    return x[add], inv
+    return x[add], np.s_[inv]
 
 
 def _check_shape(x: np.ndarray, A: np.ndarray, copy: bool = False):
