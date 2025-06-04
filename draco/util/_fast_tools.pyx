@@ -24,7 +24,35 @@ cdef extern from "complex.h" nogil:
 cdef inline int int_max(int a, int b) nogil: return a if a >= b else b
 
 
-# Diagonal covariance propagation for banded linear operations
+# Fast banded matrix multiplication
+@cython.wraparound(False)
+@cython.boundscheck(False)
+cpdef _matmul_banded(
+    double [:, ::1] A,
+    double[::1] x,
+    int[::1] start_ind,
+    int[::1] end_ind,
+):
+    cdef double[::1] out = np.zeros(A.shape[0], dtype=np.float64)
+    cdef int beta, j, si, ei
+    cdef double t
+    cdef int N = A.shape[0]
+
+    for beta in prange(N, nogil=True):
+        si = start_ind[beta]
+        ei = end_ind[beta]
+
+        t = 0.0
+
+        for j in range(si, ei):
+            t = t + A[beta, j] * x[j]
+
+        out[beta] = t
+
+    return np.asarray(out)
+
+
+# Band-diagonal covariance propagation for banded linear operations
 @cython.wraparound(False)
 @cython.boundscheck(False)
 cpdef _linear_covariance_banded(
