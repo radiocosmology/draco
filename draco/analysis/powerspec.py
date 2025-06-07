@@ -3,6 +3,7 @@
 from functools import cache
 
 import numpy as np
+import scipy.linalg
 from caput import config, mpiarray
 from cora.util import units
 from cora.util.cosmology import Cosmology
@@ -133,10 +134,6 @@ class ConstructWienerDelayTransform(task.SingleTask):
         Inverse coherence scale (in MHz) used to apply an exponential decay
         to the signal power in delay space.  A value of 0 results in a constant
         prior as a function of delay.
-    rcond : float
-        Cutoff for small singular values when calculating the psuedo-inverse
-        of the covariance matrix. Singular values less than or equal to
-        rcond * largest_singular_value are set to zero.
     window : str
         Name of the apodization window to apply along the frequency axis.
         Use "uniform" for no windowing (default).
@@ -152,7 +149,6 @@ class ConstructWienerDelayTransform(task.SingleTask):
 
     prior_amp = config.Property(proptype=float, default=2.8e-5)
     prior_scale = config.Property(proptype=float, default=0.0)
-    rcond = config.Property(proptype=float, default=1.0e-15)
 
     window = config.enum(
         [
@@ -289,8 +285,25 @@ class ConstructWienerDelayTransform(task.SingleTask):
 
                 # Determine inverse covariance
                 # Shape (ra, freq, freq)
-                mask_outer = mask[:, :, np.newaxis] & mask[:, np.newaxis, :]
-                A_inv = np.linalg.pinv(A, rcond=self.rcond, hermitian=True) * mask_outer
+                A_inv = np.zeros_like(A)
+                for rr in range(nra):
+                    valid = np.flatnonzero(mask[rr])
+
+                    if valid.size == 0:
+                        continue
+
+                    valid_2d = np.ix_(valid, valid)
+                    A_sub = A[rr][valid_2d]
+
+                    cfactor = scipy.linalg.cho_factor(
+                        A_sub, overwrite_a=True, check_finite=False
+                    )
+                    A_inv[rr][valid_2d] = scipy.linalg.cho_solve(
+                        cfactor,
+                        np.eye(valid.size),
+                        overwrite_b=True,
+                        check_finite=False,
+                    )
 
                 # Construct the adjoint operator that projects from
                 # the filtered frequency domain to the delay domain
