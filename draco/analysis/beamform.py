@@ -953,9 +953,12 @@ class RingMapBeamForm(task.SingleTask):
 
         src_ra, src_dec = self._process_catalog(catalog)
 
+        # Get the pixel indices
+        ra_ind, el_ind, src_ind = self._source_ind(src_ra, src_dec)
+
         # Container to hold the formed beams
         formed_beam = containers.FormedBeam(
-            object_id=catalog.index_map["object_id"],
+            object_id=catalog.index_map["object_id"][src_ind],
             axes_from=ringmap,
             attrs_from=catalog,
             distributed=True,
@@ -966,19 +969,16 @@ class RingMapBeamForm(task.SingleTask):
         formed_beam.weight[:] = 0.0
 
         # Copy catalog information
-        formed_beam["position"][:] = catalog["position"][:]
+        formed_beam["position"][:] = catalog["position"][src_ind]
         if "redshift" in catalog:
             formed_beam.add_dataset("redshift")
-            formed_beam["redshift"][:] = catalog["redshift"][:]
+            formed_beam["redshift"][:] = catalog["redshift"][src_ind]
 
         # Ensure containers are distributed in frequency
         formed_beam.redistribute("freq")
         ringmap.redistribute("freq")
 
         has_weight = "weight" in ringmap.datasets
-
-        # Get the pixel indices
-        ra_ind, za_ind = self._source_ind(src_ra, src_dec)
 
         # Dereference the datasets
         fbb = formed_beam.beam[:]
@@ -988,9 +988,9 @@ class RingMapBeamForm(task.SingleTask):
 
         # Loop over sources and extract the polarised pencil beams containing them from
         # the ringmaps
-        for si, (ri, zi) in enumerate(zip(ra_ind, za_ind)):
-            fbb[si] = rmm[0, :, :, ri, zi]
-            fbw[si] = rmw[:, :, ri, zi] if has_weight else rmw[:, :, ri]
+        for si, (ri, ei) in enumerate(zip(ra_ind, el_ind)):
+            fbb[si] = rmm[0, :, :, ri, ei]
+            fbw[si] = rmw[:, :, ri, ei] if has_weight else rmw[:, :, ri]
 
         return formed_beam
 
@@ -1026,25 +1026,69 @@ class RingMapBeamForm(task.SingleTask):
 
     def _source_ind(
         self, src_ra: np.ndarray, src_dec: np.ndarray
-    ) -> tuple[np.ndarray, np.ndarray]:
-        """Get the RA/ZA ringmap pixel indices of the sources."""
-        # Get the grid size of the map in RA and sin(ZA)
-        dra = np.median(np.abs(np.diff(self.ringmap.index_map["ra"])))
-        dza = np.median(np.abs(np.diff(self.ringmap.index_map["el"])))
-        za_min = self.ringmap.index_map["el"][:].min()
+    ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+        """Find the indices of the pixels nearest to an array of source coordinates.
+
+        Given arrays of source right ascensions and declinations, this method finds
+        the indices into the RA and elevation axis of a ringmap corresponding to the
+        nearest pixels.  It excludes any sources that fall outside the ringmap.
+
+        Parameters
+        ----------
+        src_ra : np.ndarray[nsource,]
+            Source right ascensions in degrees.
+        src_dec : np.ndarray[nsource,]
+            Source declinations in degrees.
+
+        Returns
+        -------
+        ra_ind : np.ndarray[nvalid,]
+            Indices into the RA axis corresponding to the nearest pixel
+            for valid sources.
+        el_ind : np.ndarray[nvalid,]
+            Indices into the elevation axis corresponding to the nearest pixel
+            for valid sources.
+        src_ind : np.ndarray[nvalid,]
+            Indices of the sources that fall within the map's RA and elevation range.
+        """
+        src_el = np.sin(np.radians(src_dec - self.telescope.latitude))
+
+        # Get the map grid in RA and sin(ZA)
+        ra = self.ringmap.index_map["ra"]
+        el = self.ringmap.index_map["el"]
+
+        delta_ra = np.median(np.abs(np.diff(ra)))
+        delta_el = np.median(np.abs(np.diff(el)))
 
         # Get the source indices in RA
         # NOTE: that we need to take into account that sources might be less than 360
         # deg, but still closer to ind=0
-        max_ra_ind = len(self.ringmap.ra) - 1
-        ra_ind = (np.rint(src_ra / dra) % max_ra_ind).astype(np.int64)
+        ra_ind = _search_nearest(np.append(ra, 360.0 + ra[0]), src_ra) % ra.size
+
+        ra_sep = src_ra - ra[ra_ind]
+        ra_sep = (ra_sep + 180.0) % 360.0 - 180.0
 
         # Get the indices for the ZA direction
-        za_ind = np.rint(
-            (np.sin(np.radians(src_dec - self.telescope.latitude)) - za_min) / dza
-        ).astype(np.int64)
+        el_ind = _search_nearest(el, src_el)
 
-        return ra_ind, za_ind
+        el_sep = src_el - el[el_ind]
+
+        # Make sure no source are outside of the range covered by the map
+        src_flag = (np.abs(ra_sep) > (0.5 * delta_ra)) | (
+            np.abs(el_sep) > (0.5 * delta_el)
+        )
+
+        if np.any(src_flag):
+            self.log.info(
+                f"There are {np.sum(src_flag)} (of {src_flag.size}) "
+                "sources outside of the RA and Declination range covered by the map."
+            )
+
+        src_ind = np.flatnonzero(~src_flag)
+        ra_ind = ra_ind[src_ind]
+        el_ind = el_ind[src_ind]
+
+        return ra_ind, el_ind, src_ind
 
 
 class RingMapStack2D(RingMapBeamForm):
@@ -1094,7 +1138,10 @@ class RingMapStack2D(RingMapBeamForm):
         src_z = catalog["redshift"]["z"]
 
         # Get the pixel indices
-        ra_ind, za_ind = self._source_ind(src_ra, src_dec)
+        ra_ind, el_ind, src_ind = self._source_ind(src_ra, src_dec)
+
+        # Exclude sources outside of the map
+        src_z = src_z[src_ind]
 
         # Ensure containers are distributed in frequency
         ringmap.redistribute("freq")
@@ -1110,6 +1157,19 @@ class RingMapStack2D(RingMapBeamForm):
             ringmap.weight[:].local_array
             if "weight" in ringmap.datasets
             else invert_no_zero(ringmap.rms[:].local_array) ** 2
+        )
+
+        # RA and EL grid info
+        ra = ringmap.index_map["ra"]
+        el = ringmap.index_map["el"]
+        nra = ra.size
+        nel = el.size
+
+        # Determine if the RA axis wraps around from 360 to 0 deg
+        dra = np.median(np.abs(np.diff(ra)))
+        tol = dra / 100.0
+        ra_wraps = np.isclose(ra[-1] + dra, 360.0, atol=tol) and np.isclose(
+            ra[0], 0.0, atol=tol
         )
 
         # Calculate the frequencies bins to use
@@ -1136,8 +1196,8 @@ class RingMapStack2D(RingMapBeamForm):
 
         # Loop over sources and extract the polarised pencil beams containing them from
         # the ringmaps
-        for si, (ri, zi, z) in enumerate(zip(ra_ind, za_ind, src_z)):
-            source_freq = 1420.406 / (1 + z)
+        for si, (ri, ei, z) in enumerate(zip(ra_ind, el_ind, src_z)):
+            source_freq = NU21 / (1 + z)
 
             if source_freq > global_fmax or source_freq < global_fmin:
                 continue
@@ -1145,13 +1205,42 @@ class RingMapStack2D(RingMapBeamForm):
             # Get bin indices
             bin_ind = np.digitize(local_freq - source_freq, bin_edges)
 
-            # Get the slices to extract the enclosing angular region
-            ri_slice = slice(ri - self.num_ra, ri + self.num_ra + 1)
-            zi_slice = slice(zi - self.num_dec, zi + self.num_dec + 1)
+            # Get the el slice to extract the enclosing angular region
+            estart, estop = ei - self.num_dec, ei + self.num_dec + 1
+            ei_start, ei_stop = max(estart, 0), min(estop, nel)
 
-            b = rmm[0, :, :, ri_slice, zi_slice]
-            w = rmw[:, :, ri_slice, np.newaxis]
+            ei_slice = slice(ei_start, ei_stop)
+            ei_out = slice(max(0, -estart), self.num_dec * 2 + 1 - max(0, estop - nel))
 
+            # Get the ra slice to extract the enclosing angular region
+            rstart, rstop = ri - self.num_ra, ri + self.num_ra + 1
+
+            if ra_wraps and ((rstart < 0) or (rstop > nra)):
+                # The source is near one of the ends of the RA axis,
+                # so we will need to wrap around.  Do this by creating
+                # two slices, one at each end, and concatenating them.
+                ri_slice = [slice((nra + rstart) % nra, nra), slice(0, rstop % nra)]
+                ri_out = slice(None)
+
+                b = np.concatenate(
+                    tuple(rmm[0, :, :, slc, ei_slice] for slc in ri_slice), axis=2
+                )
+                w = np.concatenate(
+                    tuple(rmw[:, :, slc, ei_slice] for slc in ri_slice), axis=2
+                )
+
+            else:
+                ri_start, ri_stop = max(rstart, 0), min(rstop, nra)
+                ri_slice = slice(ri_start, ri_stop)
+
+                ri_out = slice(
+                    max(0, -rstart), self.num_ra * 2 + 1 - max(0, rstop - nra)
+                )
+
+                b = rmm[0, :, :, ri_slice, ei_slice]
+                w = rmw[:, :, ri_slice, ei_slice]
+
+            # Determine the weight that is given to this source
             if self.weight == "patch":
                 # Replace the weights with the variance of the patch
                 w = (w != 0) * invert_no_zero(b.var(axis=(2, 3)))[
@@ -1159,14 +1248,14 @@ class RingMapStack2D(RingMapBeamForm):
                 ]
             elif self.weight == "dec":
                 # w = (w != 0) * invert_no_zero(b.var(axis=2))[:, :, np.newaxis, :]
-                w = (w != 0) * w_global[:, :, np.newaxis, zi_slice]
+                w = (w != 0) * w_global[:, :, np.newaxis, ei_slice]
 
             bw = b * w
 
             # TODO: this is probably slow so should be moved into Cython
             for lfi, bi in enumerate(bin_ind):
-                wstack[bi] += bw[:, lfi]
-                weight[bi] += w[:, lfi]
+                wstack[bi, :, ri_out, ei_out] += bw[:, lfi]
+                weight[bi, :, ri_out, ei_out] += w[:, lfi]
 
         # Arrays to reduce the data into
         wstack_all = np.zeros_like(wstack)
