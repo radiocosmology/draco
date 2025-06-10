@@ -540,8 +540,13 @@ class DeconvolveHybridMBase(task.SingleTask):
 
     Attributes
     ----------
+    exclude_cyl : list of int
+        Exclude these cylinder separations from the calculation;
+        0 is intra-cylinder baselines, 1 is one-cylinder separation
+        baselines, etc.
     exclude_intracyl : bool
         Exclude intracylinder baselines from the calculation.
+        Depracated, use exclude_cyl = [0] instead.
     skip_deconvolution : bool
         Do not attempt to deconvolve the instrument transfer function.
     reference_declination : float, optional
@@ -569,6 +574,7 @@ class DeconvolveHybridMBase(task.SingleTask):
         Only relevant if the window_type parameter is provided.
     """
 
+    exclude_cyl = config.list_type(int, maxlength=3, default=[])
     exclude_intracyl = config.Property(proptype=bool, default=False)
     skip_deconvolution = config.Property(proptype=bool, default=False)
     reference_declination = config.Property(proptype=float, default=None)
@@ -609,6 +615,13 @@ class DeconvolveHybridMBase(task.SingleTask):
             raise RuntimeError("Must provide manager object if applying window.")
         else:
             self.telescope = None
+
+        # If exclude_intracyl was set, then add intracylinder baselines
+        # to the exculde_cyl attribute used by the process method.
+        if self.exclude_intracyl:
+            self.exclude_cyl = [*self.exclude_cyl, 0]
+
+        self.exclude_cyl = sorted(set(self.exclude_cyl))
 
     def process(
         self,
@@ -687,7 +700,7 @@ class DeconvolveHybridMBase(task.SingleTask):
         rm.redistribute("freq")
 
         # Add attributes describing the EW weighting scheme
-        rm.attrs["exclude_intracyl"] = self.exclude_intracyl
+        rm.attrs["exclude_cyl"] = self.exclude_cyl
         if hasattr(self, "weight_ew"):
             rm.attrs["weight_ew"] = self.weight_ew
 
@@ -733,7 +746,7 @@ class DeconvolveHybridMBase(task.SingleTask):
 
             winf = window[lfi]
 
-            # Make copy here because we will modify weights if exclude_intracyl is set
+            # Make copy here because we will modify weights if exclude_cyl is set
             inv_var = hw[find][..., np.newaxis].copy()
 
             # Get the EW weights using method defined by subclass
@@ -836,8 +849,15 @@ class DeconvolveHybridMBase(task.SingleTask):
         # Extract the axes that we will need from the input container
         freq = hybrid_vis_m.freq
         m = hybrid_vis_m.index_map["m"]
-        ew = hybrid_vis_m.index_map["ew"]
         el = hybrid_vis_m.index_map["el"]
+
+        ew = np.array(
+            [
+                x
+                for i, x in enumerate(hybrid_vis_m.index_map["ew"])
+                if i not in self.exclude_cyl
+            ]
+        )
 
         # If the window is frequency dependent, then we will only
         # need the frequencies local to this node.
@@ -856,7 +876,7 @@ class DeconvolveHybridMBase(task.SingleTask):
 
         max_ew = ews[-1] + 0.5 * (ews[-1] - ews[-2])
 
-        if self.exclude_intracyl:
+        if np.min(ews) > 0.0:
             # If we are excluding intra-cylinder baselines, then the window should
             # smoothly transition to zero as m decreases towards the minimum m
             # measured by the shortest inter-cylinder baseline.
@@ -1089,8 +1109,8 @@ class TikhonovRingMapMaker(DeconvolveHybridMBase):
             expand[-2] = slice(None)
             weight_ew = weight_ew[tuple(expand)]
 
-        if self.exclude_intracyl:
-            weight_ew[..., 0, :] = 0.0
+        for cyl in self.exclude_cyl:
+            weight_ew[..., cyl, :] = 0.0
 
         return weight_ew * tools.invert_no_zero(
             np.sum(weight_ew, axis=-2, keepdims=True)
@@ -1160,8 +1180,8 @@ class WienerRingMapMaker(DeconvolveHybridMBase):
 
     def _get_weight(self, inv_var):
         weight_ew = inv_var
-        if self.exclude_intracyl:
-            weight_ew[..., 0, :] = 0.0
+        for cyl in self.exclude_cyl:
+            weight_ew[..., cyl, :] = 0.0
 
         return weight_ew
 
@@ -1205,12 +1225,12 @@ class RADependentWeights(task.SingleTask):
             by an RA dependent factor determined from hybrid_vis.
         """
         # Determine how the EW baselines were averaged in the ringmap maker
-        exclude_intracyl = ringmap.attrs.get("exclude_intracyl", None)
+        exclude_cyl = ringmap.attrs.get("exclude_cyl", None)
         weight_scheme = ringmap.attrs.get("weight_ew", None)
 
-        if (exclude_intracyl is None) or (weight_scheme is None):
+        if (exclude_cyl is None) or (weight_scheme is None):
             msg = (
-                "The ring map maker must save `weight_ew` and `exclude_intracyl` "
+                "The ring map maker must save `weight_ew` and `exclude_cyl` "
                 "config parameters to the container attributes in order to "
                 "reconstruct the RA dependence of the noise."
             )
@@ -1260,8 +1280,8 @@ class RADependentWeights(task.SingleTask):
             expand[-2] = slice(None)
             weight_ew = weight_ew[tuple(expand)]
 
-        if exclude_intracyl:
-            weight_ew[..., 0, :] = 0.0
+        for cyl in exclude_cyl:
+            weight_ew[..., cyl, :] = 0.0
 
         # Use the baseline averaged variance divided by the baseline averaged,
         # time averaged variance as an approximatation for the RA dependence of
