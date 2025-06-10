@@ -1103,6 +1103,7 @@ class RingMapStack2D(RingMapBeamForm):
         stack.
     freq_width : float
         Length of frequency interval either side of source to use in MHz.
+        If set to zero, then will default to use the ringmaps native resolution.
     weight : {"patch", "dec", "enum"}
         How to weight the data. If `"input"` the data is weighted on a pixel by pixel
         basis according to the input data. If `"patch"` then the inverse of the
@@ -1113,7 +1114,7 @@ class RingMapStack2D(RingMapBeamForm):
     num_ra = config.Property(proptype=int, default=10)
     num_dec = config.Property(proptype=int, default=10)
     num_freq = config.Property(proptype=int, default=256)
-    freq_width = config.Property(proptype=float, default=100.0)
+    freq_width = config.Property(proptype=float, default=0.0)
     weight = config.enum(["patch", "dec", "input"], default="input")
 
     def process(self, catalog: containers.SourceCatalog) -> containers.FormedBeam:
@@ -1151,22 +1152,17 @@ class RingMapStack2D(RingMapBeamForm):
         fe = fs + ringmap.map.local_shape[2]
         local_freq = ringmap.freq[fs:fe]
 
-        # Dereference the datasets
-        rmm = ringmap.map[:].local_array
-        rmw = (
-            ringmap.weight[:].local_array
-            if "weight" in ringmap.datasets
-            else invert_no_zero(ringmap.rms[:].local_array) ** 2
-        )
-
         # RA and EL grid info
         ra = ringmap.index_map["ra"]
         el = ringmap.index_map["el"]
+
+        dra = np.median(np.abs(np.diff(ra)))
+        dell = np.median(np.abs(np.diff(el)))
+
         nra = ra.size
         nel = el.size
 
         # Determine if the RA axis wraps around from 360 to 0 deg
-        dra = np.median(np.abs(np.diff(ra)))
         tol = dra / 100.0
         ra_wraps = np.isclose(ra[-1] + dra, 360.0, atol=tol) and np.isclose(
             ra[0], 0.0, atol=tol
@@ -1174,14 +1170,26 @@ class RingMapStack2D(RingMapBeamForm):
 
         # Calculate the frequencies bins to use
         nbins = 2 * self.num_freq + 1
-        bin_edges = np.linspace(
-            -self.freq_width, self.freq_width, nbins + 1, endpoint=True
-        )
+        if self.freq_width > 0:
+            bin_edges = np.linspace(
+                -self.freq_width, self.freq_width, nbins + 1, endpoint=True
+            )
+        else:
+            df = np.median(np.abs(np.diff(ringmap.freq)))
+            bin_edges = (np.arange(-self.num_freq, self.num_freq + 2) - 0.5) * df
 
         # Calculate the edges of the frequency distribution, sources outside this range
         # will be dropped
         global_fmin = ringmap.freq.min()
         global_fmax = ringmap.freq.max()
+
+        # Dereference the datasets
+        rmm = ringmap.map[:].local_array
+        if "weight" in ringmap.datasets:
+            rmw = ringmap.weight[:].local_array
+        else:
+            rmw = invert_no_zero(ringmap.rms[:].local_array) ** 2
+            rmw = rmw[..., np.newaxis] * np.ones(el.size)
 
         # Create temporary array to accumulate into
         wstack = np.zeros(
@@ -1266,17 +1274,27 @@ class RingMapStack2D(RingMapBeamForm):
 
         stack_all = wstack_all * invert_no_zero(weight_all)
 
+        # Create the axes of the 3D grid
+        delta_f = np.zeros(nbins, dtype=[("centre", float), ("width", float)])
+        delta_f["centre"] = 0.5 * (bin_edges[1:] + bin_edges[:-1])
+        delta_f["width"] = bin_edges[1:] - bin_edges[:-1]
+
+        delta_ra = np.arange(-self.num_ra, self.num_ra + 1) * dra
+        delta_dec = np.degrees(
+            np.arcsin(np.arange(-self.num_dec, self.num_dec + 1) * dell)
+        )
+
         # Create the container to store the data in
-        bin_centres = 0.5 * (bin_edges[1:] + bin_edges[:-1])
         stack = containers.Stack3D(
-            freq=bin_centres,
-            delta_ra=np.arange(-self.num_ra, self.num_ra + 1),
-            delta_dec=np.arange(-self.num_dec, self.num_dec + 1),
+            freq=delta_f,
+            delta_ra=delta_ra,
+            delta_dec=delta_dec,
             axes_from=ringmap,
             attrs_from=ringmap,
         )
         stack.attrs["tag"] = catalog.attrs["tag"]
         stack.stack[:] = stack_all[1:-1].transpose((1, 2, 3, 0))
+        stack.weight[:] = weight_all[1:-1].transpose((1, 2, 3, 0))
 
         return stack
 
