@@ -1876,7 +1876,7 @@ def get_1d_ps(
     variance = []
     n_eff = []
 
-    # define the Lendre polynomial
+    # define the Legendre polynomial
     L = legendre(l)
 
     # Average the modes falls in each bin
