@@ -197,11 +197,18 @@ class ConstructWienerDelayTransform(task.SingleTask):
 
         diag = (slice(None), np.arange(nfreq), np.arange(nfreq))
 
-        # Compute delays in micro-sec
+        # Extract frequencies
         freq = data.freq
         dfreq = np.median(np.abs(np.diff(freq)))
 
-        tau = np.fft.fftshift(np.fft.fftfreq(nfreq, d=dfreq))
+        # Get the window
+        window = self._get_window(freq)
+        win_mask = window > 0
+
+        # Compute delays in micro-sec
+        ntau = np.sum(win_mask, dtype=int)
+        tau = np.fft.fftshift(np.fft.fftfreq(ntau, d=dfreq))
+
         tau = tau[tau >= 0.0]
 
         # Create output container
@@ -213,20 +220,18 @@ class ConstructWienerDelayTransform(task.SingleTask):
         D = out.filter[:].local_array
         D[:] = 0.0
 
+        # Save parameters describing window to attributes of output container
+        for attr in ["window", "window_lower_freq", "window_upper_freq"]:
+            out.attrs[attr] = getattr(self, attr)
+
         # Construct the operator that performs a discrete fourier transform
         # from the delay domain to the frequency domain.
-        F = np.exp(2.0j * np.pi * np.outer(freq, tau)) / np.sqrt(nfreq)  # freq, delay
+        F = np.exp(2.0j * np.pi * np.outer(freq, tau)) / np.sqrt(ntau)  # freq, delay
         FT = F.T.conj()  # delay, freq
 
         # Construct signal prior
         Sdiag = self._get_prior(tau)
         FSFT = (F * Sdiag[np.newaxis, :]) @ FT
-
-        # Get the window
-        window = self._get_window(freq)
-
-        for attr in ["window", "window_lower_freq", "window_upper_freq"]:
-            out.attrs[attr] = getattr(self, attr)
 
         # Extract the ringmap and the weights.
         # Zero out any ringmap data where the weights are zero.
@@ -241,12 +246,12 @@ class ConstructWienerDelayTransform(task.SingleTask):
             # The filter and freq_cov datasets do not have an elevation axis.
             # Perform an allgather to acquire the entire dataset on every rank.
             # Shape (ra, freq, freq)
-            M = data.freq_cov[pp].allgather().transpose(2, 0, 1)
+            C = data.freq_cov[pp].allgather().transpose(2, 0, 1)
             K = data.filter[pp].allgather().transpose(2, 0, 1)
 
             # Extract the diagonal of the noise covariance
             # Shape (ra, freq)
-            Mdiag = M[diag]
+            Cdiag = C[diag]
 
             # Loop over elevations
             for ee in range(nel_local):
@@ -263,17 +268,17 @@ class ConstructWienerDelayTransform(task.SingleTask):
                 # equal to the inverse of the weight dataset.  Also applies
                 # any mask present in the weights to the noise covariance.
                 # Finally, applies the window that will be applied to the data.
-                r_noise = np.sqrt(tools.invert_no_zero(w * Mdiag)) * window
+                r_noise = np.sqrt(tools.invert_no_zero(w * Cdiag)) * win_mask
                 r_noise_2 = r_noise[:, :, np.newaxis] * r_noise[:, np.newaxis, :]
 
                 # Noise covariance in filtered frequency domain
                 # Shape (ra, freq, freq)
-                N = M * r_noise_2
+                N = C * r_noise_2
 
                 # Mask out missing frequencies in the filter and apply window
                 mask = w > 0
-                WM = window * mask
-                H = WM[:, :, np.newaxis] * K
+                M = win_mask * mask
+                H = M[:, :, np.newaxis] * K
                 HT = H.transpose(0, 2, 1).conj()
 
                 # Signal covariance in masked, filtered frequency domain
@@ -288,7 +293,7 @@ class ConstructWienerDelayTransform(task.SingleTask):
                 # Shape (ra, freq, freq)
                 A_inv = np.zeros_like(A)
                 for rr in range(nra):
-                    valid = np.flatnonzero(mask[rr])
+                    valid = np.flatnonzero(M[rr])
 
                     if valid.size == 0:
                         continue
@@ -314,9 +319,7 @@ class ConstructWienerDelayTransform(task.SingleTask):
                 # Apply adjoint operator to project to delay domain
                 # Shape (ra, delay, freq)
                 D[pp, :, ee, :, :] = (
-                    Sdiag[np.newaxis, :, np.newaxis]
-                    * (RT @ A_inv)
-                    * WM[:, np.newaxis, :]
+                    Sdiag[np.newaxis, :, np.newaxis] * (RT @ A_inv) * window
                 )
 
         # Return the output container
@@ -356,6 +359,11 @@ class ConstructWienerDelayTransform(task.SingleTask):
             frng[0] = self.window_lower_freq
         if self.window_upper_freq is not None:
             frng[1] = self.window_upper_freq
+
+        self.log.info(
+            f"Applying a {self.window} window "
+            f"spanning {frng[0]:0.2f} - {frng[1]:0.2f} MHz."
+        )
 
         x = (freq - frng[0]) / (frng[1] - frng[0])
         return tools.window_generalised(x, window=self.window)
