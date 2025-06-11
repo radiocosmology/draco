@@ -1888,7 +1888,7 @@ def get_1d_ps(
             # multiply by Legendre polynomials before binning and
             # also normalize it properly; following Eqn:3 of https://arxiv.org/pdf/1801.04969
             # Check also, eqn 22 of  https://wwwmpa.mpa-garching.mpg.de/~komatsu/lecturenotes/Shun_Saito_on_RSD.pdf
-            # Note the norm factor below doest not have 2 in the demoniator, as we are taking only
+            # Note the norm factor below doest not have 2 in the denominator, as we are taking only
             # positive half of k_para and assumes symmetry.
             p = np.sum(w_b * p1D[indices == i] * L(mu_i)) / np.sum(w_b)
             p *= 2 * l + 1  # normalization
