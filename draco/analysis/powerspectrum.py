@@ -101,13 +101,15 @@ class EstimateVariance(task.SingleTask):
     dataset = config.Property(proptype=str, default="map")
     expand_pol = config.Property(proptype=bool, default=True)
 
-    def process(self, data0)#, data1):
+    def process(self, data0):#, data1):
 
         data1 = None
 
         # make sure we are not distributed over the axis to measure variance on
+        dist_ax = None
         if data0.distributed and data0[self.dataset].distributed_axis != self.axis:
-            data0.redistribute(np.argmax(data0[self.dataset].shape))
+            dist_ax = data0[self.dataset].attrs["axis"][np.argmax(data0[self.dataset].shape)]
+            data0.redistribute(dist_ax)
 
         # get a reference to the first dataset and its weights
         m0 = data0[self.dataset][:].local_array
@@ -117,7 +119,7 @@ class EstimateVariance(task.SingleTask):
             m1, w1 = m0, w0
         else:
             if data1.distributed and data1[self.dataset].distributed_axis != self.axis:
-                data1.redistribute(np.argmax(data0[self.dataset].shape))
+                data1.redistribute(dist_ax)
             m1 = data1[self.dataset][:].local_array
             w1 = data1.weight[:].local_array
 
@@ -134,6 +136,7 @@ class EstimateVariance(task.SingleTask):
         wx = np.sqrt(w0 * w1)
         wx *= np.expand_dims(invert_no_zero(np.sum(wx, axis=ax)), axis=ax)
         var = np.sum(m0 * m1 * wx, axis=ax) - np.sum(m0 * wx, axis=ax) * mu1 - np.sum(m1 * wx, axis=ax) * mu0 + mu0 * mu1
+        var = np.expand_dims(var, axis=ax)
 
         pax = None
         if self.expand_pol:
@@ -152,14 +155,16 @@ class EstimateVariance(task.SingleTask):
             wx = np.sqrt(w0 * w1[rs])
             wx *= np.expand_dims(invert_no_zero(np.sum(wx, axis=ax)), axis=ax)
             var_xpol = np.sum(m0 * m1[rs] * wx, axis=ax) - np.sum(m0 * wx, axis=ax) * mu1[rs_nof] - np.sum(m1[rs] * wx, axis=ax) * mu0 + mu0 * mu1[rs_nof]
+            var_xpol = np.expand_dims(var_xpol, axis=ax)
 
         # save both polarisations separately
         new_ax = {self.axis: np.array([np.mean(data0.freq)])}
         if pax is not None:
             new_ax["pol"] = np.array([p + p for p in data0.pol] + [data0.pol[0] + data0.pol[1], data0.pol[1] + data0.pol[0]])
-        new_cont = containers.empty_like(data0, **new_ax)
+        new_cont = containers.empty_like(data0, distributed=True, **new_ax)
+        new_cont.redistribute(dist_ax)
         if pax is not None:
-            new_cont[self.dataset][:] = np.concatenate((var, var_xpol), axis=pax).reshape(new_cont[self.dataset].local_shape)
+            new_cont[self.dataset][:] = np.concatenate([var, var_xpol], axis=pax).reshape(new_cont[self.dataset].local_shape)
         else:
             new_cont[self.dataset][:] = var.reshape(new_cont[self.dataset].local_shape)
 
