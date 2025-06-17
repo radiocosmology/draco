@@ -627,6 +627,63 @@ class SanitizeWeights(task.SingleTask):
         return data
 
 
+class NegativeAutosMask(task.SingleTask):
+    """Flag in frequency-time if any autocorrelation is negative."""
+
+    def setup(self, telescope):
+        """Save the telescope model.
+
+        Parameters
+        ----------
+        telescope : TransitTelescope
+            Telescope object to use
+        """
+        self.telescope = io.get_telescope(telescope)
+
+    def process(self, data: containers.VisContainer) -> containers.RFIMask:
+        """Extract autos and flag if any auto is negative.
+
+        Parameters
+        ----------
+        data
+            Timestream dataset containing visibilities and
+            the relevant index map entries.
+
+        Returns
+        -------
+        mask
+            time-frequency mask
+        """
+        data.redistribute("freq")
+
+        # Determine stack axis
+        stack_new, _ = tools.redefine_stack_index_map(
+            self.telescope, data.input, data.prod, data.stack, data.reverse_map["stack"]
+        )
+        # Construct prodstack axis
+        ps = data.prod[stack_new["prod"]]
+        conj = stack_new["conjugate"]
+
+        prodstack = ps.copy()
+        prodstack["input_a"] = np.where(conj, ps["input_b"], ps["input_a"])
+        prodstack["input_b"] = np.where(conj, ps["input_a"], ps["input_b"])
+
+        # Extract the autocorrelations
+        autos = data.vis[:, prodstack["input_a"] == prodstack["input_b"]].real
+
+        # Flag if any auto is negative and gather the mask
+        mask = np.any(autos < 0.0, axis=1).allgather()
+
+        self.log.debug(
+            f"{100.0 * mask.mean():.2f}% of data flagged due to negative autos."
+        )
+
+        mask_cont = containers.RFIMask(axes_from=data)
+        mask_cont.mask[:] = mask
+
+        return mask_cont
+
+
 class SmoothVisWeight(task.SingleTask):
     """Smooth the visibility weights with a median filter.
 
