@@ -359,7 +359,7 @@ class SiderealRegridderLinear(SiderealRegridder):
         coeff2 = dx1 * norm
 
         # Initialize the output arrays
-        shp = vis.shape[:-1] + (self.samples,)
+        shp = (*vis.shape[:-1], self.samples)
 
         interp_vis = np.zeros(shp, dtype=vis.dtype)
         interp_weight = np.zeros(shp, dtype=weight.dtype)
@@ -439,7 +439,7 @@ class SiderealRegridderCubic(SiderealRegridder):
         coeff *= 0.5
 
         # Initialize the output arrays
-        shp = vis.shape[:-1] + (self.samples,)
+        shp = (*vis.shape[:-1], self.samples)
 
         interp_vis = np.zeros(shp, dtype=vis.dtype)
         interp_weight = np.zeros(shp, dtype=weight.dtype)

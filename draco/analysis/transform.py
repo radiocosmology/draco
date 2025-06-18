@@ -665,7 +665,7 @@ def _make_marray(ts, mmodes=None, mmax=None, dtype=None, use_fftw=True):
         )
 
     if mmodes is None:
-        mmodes = np.zeros((mmax + 1, 2) + ts.shape[:-1], dtype=dtype)
+        mmodes = np.zeros((mmax + 1, 2, *ts.shape[:-1]), dtype=dtype)
 
     if mmax is None:
         mmax = mmodes.shape[0] - 1
@@ -972,8 +972,8 @@ class Regridder(task.SingleTask):
         interp_grid = interp_grid[pad:-pad].copy()
 
         # Reshape to the correct shape
-        sts = sts.reshape(vis_data.shape[:-1] + (self.samples,))
-        ni = ni.reshape(vis_data.shape[:-1] + (self.samples,))
+        sts = sts.reshape((*vis_data.shape[:-1], self.samples))
+        ni = ni.reshape((*vis_data.shape[:-1], self.samples))
 
         if self.mask_zero_weight:
             # set weights to zero where there is no data
