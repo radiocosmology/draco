@@ -2332,7 +2332,7 @@ def _move_front(arr: np.ndarray, axis: int, shape: tuple) -> np.ndarray:
 def _inv_move_front(arr: np.ndarray, axis: int, shape: tuple) -> np.ndarray:
     # Move the first axis back to it's original position and return the original shape,
     # i.e. reverse the above operation
-    rshape = (shape[axis], *shape[:axis], *shape[axis + 1:])
+    rshape = (shape[axis], *shape[:axis], *shape[axis + 1 :])
     new_arr = arr.reshape(rshape)
     new_arr = np.moveaxis(new_arr, 0, axis)
     return new_arr.reshape(shape)
