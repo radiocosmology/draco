@@ -479,9 +479,10 @@ def atleast_Nd(x: np.ndarray, N: int, lax: int = -1):
 
     slobj = (slice(None),) * max(x.ndim - lax, 0)
 
-    inv = np.s_[..., *(0 for _ in newdims), *slobj]
+    add = (..., *newdims, *slobj)
+    inv = (..., *(0 for _ in newdims), *slobj)
 
-    return x[..., *newdims, *slobj], inv
+    return x[add], inv
 
 
 def _check_shape(x: np.ndarray, A: np.ndarray, copy: bool = False):
