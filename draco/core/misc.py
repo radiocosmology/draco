@@ -125,10 +125,15 @@ class ApplyGain(task.SingleTask):
 
                     # Smooth weight array if it exists
                     if weight_arr is not None:
+                        # Preserve masked values
+                        wmask = weight_arr <= 0.0
+                        # Smooth
                         shp = weight_arr.shape
                         weight_arr = ss.medfilt2d(
                             weight_arr.reshape(-1, shp[-1]), kernel_size=[1, l]
                         ).reshape(shp)
+                        # re-apply mask
+                        weight_arr[wmask] = 0.0
 
         else:
             raise RuntimeError("Format of `gain` argument is unknown.")
