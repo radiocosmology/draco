@@ -676,6 +676,42 @@ class LoadFilesAndSelect(BaseLoadFiles):
         return self.collection[key]
 
 
+class LoadFilesFromPathAndTag(LoadFilesFromParams):
+    """Load files using all combinations of given paths and tags.
+
+    `paths` should be provided with `{tag}` as a stand-in for places
+    the tag is inserted. Specifically, tags are insterted by calling
+    `path.format{tag=tag}`
+
+    This is intended to replicate specific patterns which arent available
+    with `glob`, such as `/path/to/files/*[tag1, tag2]/*.h5`.
+
+    Attributes
+    ----------
+    paths : list[str]
+        List of files paths, with `{tag}` as a stand-in where tags
+        should be inserted.
+    tags: list[str]
+        List of tags
+    """
+
+    paths = config.Property(proptype=list)
+    tags = config.Property(proptype=list)
+
+    files = None
+
+    def setup(self):
+        """Construct the list of files."""
+        # Call baseclass setup to resolve selections
+        super().setup()
+
+        self.files = []
+
+        for path in self.paths:
+            for tag in self.tags:
+                self.files.append(path.format(tag=tag))
+
+
 class FindFiles(pipeline.TaskBase):
     """Take a glob or list of files and pass on to other tasks.
 
