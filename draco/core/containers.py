@@ -3450,6 +3450,16 @@ class SpectroscopicCatalog(SourceCatalog):
         }
     }
 
+class WeightedSpectroscopicCatalog(SpectroscopicCatalog):
+    """A container for spectroscopic catalogs with photometric weights."""
+
+    _table_spec: ClassVar = {
+        "weight": {
+            "columns": [["fkp", np.float64], ["cp", np.float64], ["noz", np.float64], ["sys", np.float64]],
+            "axis": "object_id",
+        }
+    }
+
 
 class FormedBeam(FreqContainer, DataWeightContainer):
     """Container for formed beams."""

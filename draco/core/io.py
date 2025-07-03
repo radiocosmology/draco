@@ -304,14 +304,16 @@ class LoadFITSCatalog(task.SingleTask):
 
                 # TODO: read out the weights from the catalogs
                 with fits.open(cfile, mode="readonly") as cat:
-                    pos = np.array([cat[1].data[col] for col in ["RA", "DEC", "Z"]])
+                    cat_fields = cat[1].columns.names[:7] # this leaves out `NZ` and object_`ID`
+                    data = np.array([cat[1].data[col] for col in cat_fields])
 
                 # Apply any redshift selection to the objects
                 if self.z_range:
-                    zsel = (pos[2] >= self.z_range[0]) & (pos[2] <= self.z_range[1])
-                    pos = pos[:, zsel]
+                    z_ind = cat_fields.index("Z")
+                    zsel = (data[z_ind] >= self.z_range[0]) & (data[z_ind] <= self.z_range[1])
+                    data = data[:, zsel]
 
-                catalog_stack.append(pos)
+                catalog_stack.append(data)
 
             # NOTE: this one is tricky, for some reason the concatenate in here
             # produces a non C contiguous array, so we need to ensure that otherwise
@@ -329,14 +331,23 @@ class LoadFITSCatalog(task.SingleTask):
         self.log.debug(f"Constructing catalog with {num_objects} objects.")
 
         if self.comm.rank != 0:
-            catalog_array = np.zeros((3, num_objects), dtype=np.float64)
+            catalog_array = np.zeros((7, num_objects), dtype=np.float64)
         self.comm.Bcast(catalog_array, root=0)
 
-        catalog = containers.SpectroscopicCatalog(object_id=num_objects)
+        self.log.debug(f"catalog_array shape is {catalog_array.shape} and C-contiguous flag is {catalog_array.flags['C_CONTIGUOUS']}.")
+
+        self.log.debug("Initializing catalog container.")
+        catalog = containers.WeightedSpectroscopicCatalog(object_id=num_objects)
+
+        self.log.debug("Loading data into catalog container.")
         catalog["position"]["ra"] = catalog_array[0]
         catalog["position"]["dec"] = catalog_array[1]
         catalog["redshift"]["z"] = catalog_array[2]
         catalog["redshift"]["z_error"] = 0
+        catalog["weight"]["fkp"] = catalog_array[3]
+        catalog["weight"]["sys"] = catalog_array[4]
+        catalog["weight"]["cp"] = catalog_array[5]
+        catalog["weight"]["noz"] = catalog_array[6]
 
         # Assign a tag to the stack of maps
         catalog.attrs["tag"] = group["tag"]

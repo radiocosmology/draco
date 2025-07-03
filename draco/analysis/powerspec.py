@@ -8,6 +8,7 @@ from cora.util import units
 from cora.util.cosmology import Cosmology
 
 from draco.analysis.ringmapmaker import find_grid_indices
+from draco.analysis.delay import flatten_axes
 from draco.core import containers, io, task
 from draco.util import tools
 
@@ -439,6 +440,144 @@ class ApplyWienerDelayTransform(task.SingleTask):
         return out
 
 
+class DelayTransformMapFFT(task.SingleTask):
+    """Transform the ringmap from frequency to delay domain.
+
+    This transforms the ringmap from frequency to delay domain by doing simple FFT.
+    This will only work when the map is foreground filtered and close to noise.
+    Otherwise  FFT along frequency axis will leak foreground power to high delays
+    due to the presence of RFI masked missing data along frequency.
+
+    The delay spectrum  output is indexed by a `baseline` axis. This
+    axis is the composite axis of all the axes in the container except the frequency
+    axis and the ra axis. These constituent axes are included in the index map,
+    and their order is given by the `baseline_axes` attribute.
+
+    Attributes
+    ----------
+    apply_pixel_mask : bool, optional
+        If true, apply the pixel mask to the data, which is stored
+        in the weight dataset. Default: False.
+    apply_window : bool, optional
+        Whether to apply apodisation to frequency axis. Default: True.
+    window : window available in :func:`draco.util.tools.window_generalised()`, optional
+        Apodisation to perform on frequency axis. Default: 'nuttall'.
+    """
+
+    apply_pixel_mask = config.Property(proptype=bool, default=False)
+    apply_window = config.Property(proptype=bool, default=True)
+    window = config.enum(
+        [
+            "uniform",
+            "hann",
+            "hanning",
+            "hamming",
+            "blackman",
+            "nuttall",
+            "blackman_nuttall",
+            "blackman_harris",
+        ],
+        default="nuttall",
+    )
+
+    def process(self, rm):
+        """Estimate the delay spectrum of the ringmap.
+
+        Parameters
+        ----------
+        rm : containers.RingMap
+            Data for which to estimate the power spectrum.
+
+        Returns
+        -------
+        delay spectrum : containers.DelayTransform
+        """
+        rm.redistribute("freq")
+
+        if not isinstance(rm, containers.RingMap):
+            raise ValueError(
+                f"Input container must be instance of RingMap (received {rm.__class__})"
+            )
+
+        freq_spacing = np.abs(np.diff(rm.freq[:])).mean()
+        ndelay = len(rm.freq)
+
+        # Compute delays in micro-sec
+        self.delays = np.fft.fftshift(np.fft.fftfreq(ndelay, d=freq_spacing))
+
+        # Get relevant views of data and weights, and create output container.
+        # Find the relevant axis positions
+        data_view, bl_axes = flatten_axes(rm.map, ["ra", "freq"])
+        weight_view, _ = flatten_axes(rm.weight, ["ra", "freq"], match_dset=rm.map)
+
+        # baseline axis
+        bl = np.prod([len(rm.index_map[ax]) for ax in bl_axes])
+
+        # Initialise the spectrum container
+        delay_spectrum = containers.DelayTransform(
+            baseline=bl,
+            sample=rm.index_map["ra"],
+            delay=self.delays,
+            attrs_from=rm,
+        )
+
+        delay_spectrum.redistribute("baseline")
+        delay_spectrum.spectrum[:] = 0.0
+
+        # Copy the index maps for all the flattened axes into the output container, and
+        # write out their order into an attribute so we can reconstruct this easily
+        # when loading in the spectrum
+        for ax in bl_axes:
+            delay_spectrum.create_index_map(ax, rm.index_map[ax])
+        delay_spectrum.attrs["baseline_axes"] = bl_axes
+
+        # Save the frequency axis of the input data as an attribute in the output
+        # container
+        delay_spectrum.attrs["freq"] = rm.freq
+
+        # Do delay transform
+        for lbi, bi in delay_spectrum.spectrum[:].enumerate(axis=0):
+            self.log.debug(
+                f"Estimating the delay spectrum of each baseline {bi}/{bl} by FFT "
+            )
+
+            # Get the local selections
+            data = data_view.local_array[lbi]
+            weight = weight_view.local_array[lbi]
+
+            # Apply the pixel mask stored in weight to the data
+            # This is needed before taking FFT for spatial pixel mask
+            if self.apply_pixel_mask:
+                pixel_mask = np.where(weight > 0.0, 1.0, weight)
+                data *= pixel_mask
+
+            # Do FFT along freq
+            if self.apply_window:
+                fsel = np.arange(ndelay)
+                x = fsel / ndelay
+                w = tools.window_generalised(x, window=self.window)
+
+                # Estimate the equivalent noise bandwidth for the tapering window
+                # and store it as an attribute
+                NEB_freq = noise_equivalent_bandwidth(ndelay, self.window)
+                delay_spectrum.attrs["window_los"] = self.window
+                delay_spectrum.attrs["effective_bandwidth"] = NEB_freq
+
+                # Now apply the tapering function to the data and
+                # take iFFT
+                w = w[np.newaxis, :]
+                yspec = np.fft.fftshift(np.fft.ifft(data * w, axis=-1), axes=-1)
+
+            else:
+                yspec = np.fft.fftshift(np.fft.ifft(data, axis=-1), axes=-1)
+                delay_spectrum.attrs["window_los"] = "None"
+                delay_spectrum.attrs["effective_bandwidth"] = 1.0
+
+            delay_spectrum.spectrum[bi] = yspec
+
+        return delay_spectrum
+
+
 class SpatialTransformDelayMap(task.SingleTask):
     """Spatial transform the delay map from (RA,DEC) to (u,v) domain.
 
@@ -604,6 +743,45 @@ class SpatialTransformDelayMap(task.SingleTask):
         vis_cube.attrs["effective_dec"] = NEB_dec
 
         return vis_cube
+
+
+class DeconvolveResamplerWindow(task.SingleTask):
+    """Remove the window associated with the resampler when gridding a catalog.
+
+    Uses Equation 18 from https://arxiv.org/pdf/astro-ph/0409240. Applies the correction in place.
+    """
+
+    resampler = config.enum(["ngp", "cic", "tsc", "pcs"], default="tsc")
+
+    def process(self, data_tau_uv):
+        data_tau_uv.redistribute("delay")
+
+        resampler_dict = {"ngp": 1, "cic": 2, "tsc": 3, "pcs": 4}
+        kxb2 = 0.5 * data_tau_uv.kx[:]
+        kyb2 = 0.5 * data_tau_uv.ky[:]
+        kzb2 = 0.5 * data_tau_uv.kpara[:]
+
+        nkz = data_tau_uv.vis.local_shape[1]
+        kz_offset = data_tau_uv.vis.local_offset[1]
+
+        local_kz_slice = slice(kz_offset, kz_offset + nkz)
+
+        kzb2 = kzb2[local_kz_slice]
+
+        # pre-computed values, maybe add code which can compute these...
+        k_Ny_x = .86 # h Mpc^-1
+        k_Ny_y = .80
+        k_Ny_z = 1.67
+
+        k_cube_x, k_cube_y, k_cube_z = np.meshgrid(kxb2 / k_Ny_x, kyb2 / k_Ny_y, kzb2 / k_Ny_z)
+
+        p = resampler_dict[self.resampler]
+        W_k = (np.sinc(k_cube_x)*np.sinc(k_cube_y)*np.sinc(k_cube_z))**p
+        W_k = W_k.T
+
+        data_tau_uv.vis.local_data[:] *= W_k[np.newaxis, :]**-1
+
+        return data_tau_uv
 
 
 class CrossPowerSpectrum3D(task.SingleTask):
@@ -1392,8 +1570,8 @@ def noise_equivalent_bandwidth(N, window):
     ----------
     N: int
         Size of the window.
-    window : array_like
-        A 1-Dimenaional array like.
+    window : str
+        The name of the window function to apply.
 
     Returns
     -------

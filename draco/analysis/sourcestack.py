@@ -5,7 +5,8 @@ from caput import config, pipeline
 from cora.util import units
 from mpi4py import MPI
 
-from ..core import containers, task
+from ..analysis import beamform
+from ..core import containers, io, task
 from ..util.random import RandomTask
 from ..util.tools import invert_no_zero
 
@@ -450,3 +451,156 @@ class GroupSourceStacks(task.SingleTask):
         self.counter += 1
 
         return out
+
+
+class BinEBOSSCatalog(task.SingleTask):
+
+    resampler = config.enum(["ngp", "cic", "tsc", "pcs"], default="tsc")
+    weighted = config.Property(proptype=bool, default=False)
+    shuffle = config.Property(proptype=bool, default=False)
+    seed = config.Property(proptype=int, default=0)
+
+    def _ngp(s):
+        return np.where(np.abs(s) < 0.5, 1, 0)
+
+    def _cic(s):
+        return np.where(np.abs(s) < 1.0, 1 - np.abs(s), 0)
+
+    def _tsc(s):
+        return np.where(
+            np.abs(s) < 0.5,
+            0.75 - s**2,
+            np.where(np.abs(s) < 1.5, 0.5 * (1.5 - np.abs(s)) ** 2, 0),
+        )
+
+    def _pcs(s):
+        return np.where(
+            np.abs(s) < 1.0,
+            (1 / 6.0) * (4 - 6 * s**2 + 3 * np.abs(s) ** 3),
+            np.where(np.abs(s) < 2.0, (1 / 6.0) * (2 - np.abs(s)) ** 3, 0),
+        )
+
+    def _resolve_resampler(self):
+        return self.__class__.__dict__[f"_{self.resampler}"]
+
+    def setup(self, telescope):
+        self.telescope = io.get_telescope(telescope)
+        self.resampler_func = self._resolve_resampler()
+
+    def process(self, catalog, ringmap):
+        rm_out = containers.RingMap(
+            attrs_from=ringmap,
+            axes_from=ringmap,
+        )
+
+        rm_out.redistribute("freq")
+
+        rm_freq = rm_out.index_map["freq"][:]
+        rm_freq_c = rm_freq["centre"]
+
+        # Get local portion of the frequency axis
+        nfreq = rm_out.map.local_shape[2]
+        freq_offset = rm_out.map.local_offset[2]
+
+        local_freq_slice = slice(freq_offset, freq_offset + nfreq)
+        local_freq = rm_freq_c[local_freq_slice]
+
+        rm_ra = rm_out.index_map["ra"][:]
+        rm_el = rm_out.index_map["el"][:]
+
+        if "lsd" in ringmap.attrs:
+
+            lsd = (
+                ringmap.attrs["lsd"][0]
+                if isinstance(ringmap.attrs["lsd"], np.ndarray)
+                else ringmap.attrs["lsd"]
+            )
+            epoch = self.telescope.lsd_to_unix(lsd)
+            cat_ra, cat_dec = beamform.icrs_to_cirs(
+                catalog["position"]["ra"], catalog["position"]["dec"], epoch
+            )
+
+        else:
+            cat_ra, cat_dec = catalog["position"]["ra"], catalog["position"]["dec"]
+
+        cat_el = np.sin(np.radians(cat_dec - 49.32))
+
+        cat_z = catalog["redshift"]["z"]
+
+        # Functionality for generating a shuffled catalog
+        if self.shuffle:
+            rng = np.random.default_rng(self.seed)
+            rng.shuffle(cat_z)
+
+        cat_freq = NU21 / (1 + cat_z)
+
+        if self.weighted:
+
+            w_fkp = catalog["weight"]["fkp"]
+            w_cp = catalog["weight"]["cp"]
+            w_sys = catalog["weight"]["sys"]
+            w_noz = catalog["weight"]["noz"]
+
+            w = w_cp * w_noz * w_sys * w_fkp
+
+        else:
+            w = np.ones_like(cat_ra)
+
+        cat_within_el = (cat_el < rm_el.max()) & (cat_el > rm_el.min())
+        cat_within_ra = (cat_ra < rm_ra.max()) & (cat_ra > rm_ra.min())
+        cat_within_local_freq = (cat_freq < local_freq.max()) & (
+            cat_freq > local_freq.min()
+        )
+
+        cat_within_bounds = cat_within_el & cat_within_ra & cat_within_local_freq
+
+        cat_ra_within = cat_ra[cat_within_bounds]
+        cat_el_within = cat_el[cat_within_bounds]
+        cat_freq_within = cat_freq[cat_within_bounds]
+
+        dra = np.median(np.abs(np.diff(rm_ra)))
+        dza = np.median(np.abs(np.diff(rm_el)))
+        dnu = np.median(np.abs(np.diff(rm_freq_c)))
+
+        ra_min = rm_ra.min()
+        za_min = rm_el.min()
+
+        for ii in range(np.sum(cat_within_bounds)):
+
+            raw = cat_ra_within[ii]
+            elw = cat_el_within[ii]
+            nuw = cat_freq_within[ii]
+
+            ra_ind = np.rint((raw - ra_min) / dra).astype(np.int64)
+            za_ind = np.rint((elw - za_min) / dza).astype(np.int64)
+
+            ra_sl = slice(max(ra_ind - 6, 0), min(ra_ind + 6, rm_ra.size))
+            el_sl = slice(max(za_ind - 4, 0), min(za_ind + 4, rm_el.size))
+
+            s_ra = (raw - rm_ra[ra_sl]) / dra
+            s_el = (elw - rm_el[el_sl]) / dza
+            s_nu = (nuw - local_freq) / dnu
+
+            srag, selg, snug = np.meshgrid(s_ra, s_el, s_nu)
+
+            windowed_obj = (
+                w[ii]
+                * (
+                    self.resampler_func(srag)
+                    * self.resampler_func(selg)
+                    * self.resampler_func(snug)
+                ).T
+            )
+
+            if 0 in windowed_obj.shape:
+                continue
+
+            self.log.info(
+                f"Slices are {ra_sl}, {el_sl} and window shape is {windowed_obj.shape}."
+            )
+
+            rm_out.map.local_data[:, :, :, ra_sl, el_sl] += windowed_obj[
+                np.newaxis, np.newaxis, ...
+            ]
+
+        return rm_out
