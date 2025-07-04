@@ -1842,7 +1842,6 @@ class Downselect(io.SelectionsMixin, task.SingleTask):
         -------
         out
             Container of same type as the input with specific axis selections.
-            Any datasets not included in the selections will not be initialized.
         """
         sel = {}
 
@@ -1872,7 +1871,9 @@ class Downselect(io.SelectionsMixin, task.SingleTask):
         out = data.__class__(
             axes_from=data, attrs_from=data, skip_datasets=True, **output_axes
         )
-        containers.copy_datasets_filter(data, out, selection=sel)
+        containers.copy_datasets_filter(
+            data, out, selection=sel, copy_without_selection=True
+        )
 
         return out
 
