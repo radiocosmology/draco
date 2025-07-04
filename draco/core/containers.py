@@ -3794,7 +3794,7 @@ def copy_datasets_filter(
 ):
     """Copy datasets while filtering a given axis.
 
-    Only datasets containing the axis to be filtered will be copied.
+    By default, only datasets containing the axis to be filtered will be copied.
 
     Parameters
     ----------
@@ -3912,6 +3912,9 @@ def copy_datasets_filter(
             arr = mpiarray._apply_sel(arr, sel, ax_ind)
 
         dest_dset[:] = arr[:]
+
+        # also copy attritutes
+        memh5.copyattrs(item.attrs, dest_dset.attrs)
 
         if isinstance(dest_dset, memh5.MemDatasetDistributed):
             # Redistribute back to the original axis
