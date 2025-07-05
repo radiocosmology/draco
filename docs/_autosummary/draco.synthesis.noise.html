@@ -1,0 +1,489 @@
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" data-content_root="../">
+<head>
+  <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>draco.synthesis.noise &mdash; draco 0.0.1 documentation</title>
+      <link rel="stylesheet" type="text/css" href="../_static/pygments.css?v=b86133f3" />
+      <link rel="stylesheet" type="text/css" href="../_static/css/theme.css?v=e59714d7" />
+
+  
+      <script src="../_static/jquery.js?v=5d32c60e"></script>
+      <script src="../_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
+      <script src="../_static/documentation_options.js?v=d45e8c67"></script>
+      <script src="../_static/doctools.js?v=9bcbadda"></script>
+      <script src="../_static/sphinx_highlight.js?v=dc90522c"></script>
+    <script src="../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../genindex.html" />
+    <link rel="search" title="Search" href="../search.html" />
+    <link rel="next" title="draco.synthesis.stream" href="draco.synthesis.stream.html" />
+    <link rel="prev" title="draco.synthesis.gain" href="draco.synthesis.gain.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="../index.html" class="icon icon-home">
+            draco
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <ul class="current">
+<li class="toctree-l1"><a class="reference internal" href="../tutorial.html">Tutorial</a></li>
+<li class="toctree-l1 current"><a class="reference internal" href="../reference.html">API Reference</a><ul class="current">
+<li class="toctree-l2 current"><a class="reference internal" href="../reference.html#submodules">Submodules</a><ul class="current">
+<li class="toctree-l3"><a class="reference internal" href="draco.analysis.html">draco.analysis</a></li>
+<li class="toctree-l3"><a class="reference internal" href="draco.core.html">draco.core</a></li>
+<li class="toctree-l3 current"><a class="reference internal" href="draco.synthesis.html">draco.synthesis</a><ul class="current">
+<li class="toctree-l4"><a class="reference internal" href="draco.synthesis.gain.html">draco.synthesis.gain</a></li>
+<li class="toctree-l4 current"><a class="current reference internal" href="#">draco.synthesis.noise</a></li>
+<li class="toctree-l4"><a class="reference internal" href="draco.synthesis.stream.html">draco.synthesis.stream</a></li>
+</ul>
+</li>
+<li class="toctree-l3"><a class="reference internal" href="draco.util.html">draco.util</a></li>
+</ul>
+</li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="../dev.html">Development Guidelines</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../index.html">draco</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../index.html" class="icon icon-home" aria-label="Home"></a></li>
+          <li class="breadcrumb-item"><a href="../reference.html">API Reference</a></li>
+          <li class="breadcrumb-item"><a href="draco.synthesis.html">draco.synthesis</a></li>
+      <li class="breadcrumb-item active">draco.synthesis.noise</li>
+      <li class="wy-breadcrumbs-aside">
+            <a href="../_sources/_autosummary/draco.synthesis.noise.rst.txt" rel="nofollow"> View page source</a>
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <section id="module-draco.synthesis.noise">
+<span id="draco-synthesis-noise"></span><h1>draco.synthesis.noise<a class="headerlink" href="#module-draco.synthesis.noise" title="Link to this heading"></a></h1>
+<p>Add the effects of instrumental noise into the simulation.</p>
+<p>This is separated out into multiple tasks. The first, <a class="reference internal" href="#draco.synthesis.noise.ReceiverTemperature" title="draco.synthesis.noise.ReceiverTemperature"><code class="xref py py-class docutils literal notranslate"><span class="pre">ReceiverTemperature</span></code></a>
+adds in the effects of instrumental noise bias into the data. The second,
+<a class="reference internal" href="#draco.synthesis.noise.SampleNoise" title="draco.synthesis.noise.SampleNoise"><code class="xref py py-class docutils literal notranslate"><span class="pre">SampleNoise</span></code></a>, takes a timestream which is assumed to be the expected (or
+average) value and returns an observed time stream. The :class: <cite>GaussianNoise</cite>
+adds in the effects of a Gaussian distributed noise into visibility data.
+The :class: <cite>GaussianNoiseDataset</cite> replaces visibility data with Gaussian distributed noise,
+using the variance of the noise estimate in the existing data.</p>
+<p class="rubric">Classes</p>
+<table class="autosummary longtable docutils align-default">
+<tbody>
+<tr class="row-odd"><td><p><a class="reference internal" href="#draco.synthesis.noise.FreqCorrelatedNoise" title="draco.synthesis.noise.FreqCorrelatedNoise"><code class="xref py py-obj docutils literal notranslate"><span class="pre">FreqCorrelatedNoise</span></code></a>()</p></td>
+<td><p>Generate frequency-correlated noise using Cholesky factors.</p></td>
+</tr>
+<tr class="row-even"><td><p><a class="reference internal" href="#draco.synthesis.noise.GaussianNoise" title="draco.synthesis.noise.GaussianNoise"><code class="xref py py-obj docutils literal notranslate"><span class="pre">GaussianNoise</span></code></a>()</p></td>
+<td><p>Add Gaussian distributed noise to a visibility dataset.</p></td>
+</tr>
+<tr class="row-odd"><td><p><a class="reference internal" href="#draco.synthesis.noise.GaussianNoiseDataset" title="draco.synthesis.noise.GaussianNoiseDataset"><code class="xref py py-obj docutils literal notranslate"><span class="pre">GaussianNoiseDataset</span></code></a>()</p></td>
+<td><p>Generates a Gaussian distributed noise dataset using the noise estimates of an existing dataset.</p></td>
+</tr>
+<tr class="row-even"><td><p><a class="reference internal" href="#draco.synthesis.noise.MultipleFreqCorrelatedNoise" title="draco.synthesis.noise.MultipleFreqCorrelatedNoise"><code class="xref py py-obj docutils literal notranslate"><span class="pre">MultipleFreqCorrelatedNoise</span></code></a>()</p></td>
+<td><p>Generates multiple realizations of frequency-correlated noise.</p></td>
+</tr>
+<tr class="row-odd"><td><p><a class="reference internal" href="#draco.synthesis.noise.MultipleGaussianNoiseDatasets" title="draco.synthesis.noise.MultipleGaussianNoiseDatasets"><code class="xref py py-obj docutils literal notranslate"><span class="pre">MultipleGaussianNoiseDatasets</span></code></a>()</p></td>
+<td><p>Generates multiple Gaussian distributed noise datasets.</p></td>
+</tr>
+<tr class="row-even"><td><p><a class="reference internal" href="#draco.synthesis.noise.MultipleNoiseRealizationsMixin" title="draco.synthesis.noise.MultipleNoiseRealizationsMixin"><code class="xref py py-obj docutils literal notranslate"><span class="pre">MultipleNoiseRealizationsMixin</span></code></a>()</p></td>
+<td><p>Generates multiple noise realizations with the same underlying statistics.</p></td>
+</tr>
+<tr class="row-odd"><td><p><a class="reference internal" href="#draco.synthesis.noise.ReceiverTemperature" title="draco.synthesis.noise.ReceiverTemperature"><code class="xref py py-obj docutils literal notranslate"><span class="pre">ReceiverTemperature</span></code></a>()</p></td>
+<td><p>Add a basic receiver temperature term into the data.</p></td>
+</tr>
+<tr class="row-even"><td><p><a class="reference internal" href="#draco.synthesis.noise.SampleNoise" title="draco.synthesis.noise.SampleNoise"><code class="xref py py-obj docutils literal notranslate"><span class="pre">SampleNoise</span></code></a>()</p></td>
+<td><p>Add properly distributed noise to a visibility dataset.</p></td>
+</tr>
+</tbody>
+</table>
+<dl class="py class">
+<dt class="sig sig-object py" id="draco.synthesis.noise.FreqCorrelatedNoise">
+<em class="property"><span class="k"><span class="pre">class</span></span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">draco.synthesis.noise.</span></span><span class="sig-name descname"><span class="pre">FreqCorrelatedNoise</span></span><a class="reference internal" href="../_modules/draco/synthesis/noise.html#FreqCorrelatedNoise"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#draco.synthesis.noise.FreqCorrelatedNoise" title="Link to this definition"></a></dt>
+<dd><p>Bases: <a class="reference internal" href="draco.core.task.html#draco.core.task.SingleTask" title="draco.core.task.SingleTask"><code class="xref py py-class docutils literal notranslate"><span class="pre">SingleTask</span></code></a>, <a class="reference internal" href="draco.util.random.html#draco.util.random.RandomTask" title="draco.util.random.RandomTask"><code class="xref py py-class docutils literal notranslate"><span class="pre">RandomTask</span></code></a></p>
+<p>Generate frequency-correlated noise using Cholesky factors.</p>
+<p>This task uses precomputed Cholesky decompositions of the frequency-frequency
+noise covariance (stored in a FreqNoiseModel container) to simulate
+a noise realization into a VisGridStream container.</p>
+<dl class="py attribute">
+<dt class="sig sig-object py" id="draco.synthesis.noise.FreqCorrelatedNoise.save_redundancy">
+<span class="sig-name descname"><span class="pre">save_redundancy</span></span><a class="headerlink" href="#draco.synthesis.noise.FreqCorrelatedNoise.save_redundancy" title="Link to this definition"></a></dt>
+<dd><p>If True, save the redundancy of each visibility.  Default is False.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>bool</p>
+</dd>
+</dl>
+</dd></dl>
+
+<p>Initialize pipeline task.</p>
+<p>May be overridden with no arguments.  Will be called after any
+<cite>config.Property</cite> attributes are set and after ‘input’ and ‘requires’
+keys are set up.</p>
+<dl class="py method">
+<dt class="sig sig-object py" id="draco.synthesis.noise.FreqCorrelatedNoise.process">
+<span class="sig-name descname"><span class="pre">process</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">noise_model</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/draco/synthesis/noise.html#FreqCorrelatedNoise.process"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#draco.synthesis.noise.FreqCorrelatedNoise.process" title="Link to this definition"></a></dt>
+<dd><p>Simulate noise into a VisGridStream container.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>noise_model</strong> (<a class="reference internal" href="draco.core.containers.html#draco.core.containers.FreqNoiseModel" title="draco.core.containers.FreqNoiseModel"><em>containers.FreqNoiseModel</em></a>) – Input noise model containing Cholesky factors and baseline redundancy.</p>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p><strong>out</strong> – Container filled with a frequency-correlated noise realization.</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p><a class="reference internal" href="draco.core.containers.html#draco.core.containers.VisGridStream" title="draco.core.containers.VisGridStream">containers.VisGridStream</a></p>
+</dd>
+</dl>
+</dd></dl>
+
+</dd></dl>
+
+<dl class="py class">
+<dt class="sig sig-object py" id="draco.synthesis.noise.GaussianNoise">
+<em class="property"><span class="k"><span class="pre">class</span></span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">draco.synthesis.noise.</span></span><span class="sig-name descname"><span class="pre">GaussianNoise</span></span><a class="reference internal" href="../_modules/draco/synthesis/noise.html#GaussianNoise"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#draco.synthesis.noise.GaussianNoise" title="Link to this definition"></a></dt>
+<dd><p>Bases: <a class="reference internal" href="draco.core.task.html#draco.core.task.SingleTask" title="draco.core.task.SingleTask"><code class="xref py py-class docutils literal notranslate"><span class="pre">SingleTask</span></code></a>, <a class="reference internal" href="draco.util.random.html#draco.util.random.RandomTask" title="draco.util.random.RandomTask"><code class="xref py py-class docutils literal notranslate"><span class="pre">RandomTask</span></code></a></p>
+<p>Add Gaussian distributed noise to a visibility dataset.</p>
+<p>Note that this is an approximation to the actual noise distribution good only
+when T_recv &gt;&gt; T_sky and delta_time * delta_freq &gt;&gt; 1.</p>
+<dl class="py attribute">
+<dt class="sig sig-object py" id="draco.synthesis.noise.GaussianNoise.ndays">
+<span class="sig-name descname"><span class="pre">ndays</span></span><a class="headerlink" href="#draco.synthesis.noise.GaussianNoise.ndays" title="Link to this definition"></a></dt>
+<dd><p>Multiplies the number of samples in each measurement.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>float</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="draco.synthesis.noise.GaussianNoise.set_weights">
+<span class="sig-name descname"><span class="pre">set_weights</span></span><a class="headerlink" href="#draco.synthesis.noise.GaussianNoise.set_weights" title="Link to this definition"></a></dt>
+<dd><p>Set the weights to the appropriate values.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>bool</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="draco.synthesis.noise.GaussianNoise.add_noise">
+<span class="sig-name descname"><span class="pre">add_noise</span></span><a class="headerlink" href="#draco.synthesis.noise.GaussianNoise.add_noise" title="Link to this definition"></a></dt>
+<dd><p>Add Gaussian noise to the visibilities. By default this is True, but it may be
+desirable to only set the weights.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>bool</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="draco.synthesis.noise.GaussianNoise.recv_temp">
+<span class="sig-name descname"><span class="pre">recv_temp</span></span><a class="headerlink" href="#draco.synthesis.noise.GaussianNoise.recv_temp" title="Link to this definition"></a></dt>
+<dd><p>The temperature of the noise to add.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>bool</p>
+</dd>
+</dl>
+</dd></dl>
+
+<p>Initialize pipeline task.</p>
+<p>May be overridden with no arguments.  Will be called after any
+<cite>config.Property</cite> attributes are set and after ‘input’ and ‘requires’
+keys are set up.</p>
+<dl class="py method">
+<dt class="sig sig-object py" id="draco.synthesis.noise.GaussianNoise.process">
+<span class="sig-name descname"><span class="pre">process</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">data</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/draco/synthesis/noise.html#GaussianNoise.process"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#draco.synthesis.noise.GaussianNoise.process" title="Link to this definition"></a></dt>
+<dd><p>Generate a noisy dataset.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>data</strong> (<code class="xref py py-class docutils literal notranslate"><span class="pre">containers.SiderealStream</span></code> or <code class="xref py py-class docutils literal notranslate"><span class="pre">containers.TimeStream</span></code>) – The expected (i.e. noiseless) visibility dataset. Note the modification
+is done in place.</p>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p><strong>data_noise</strong> – The sampled (i.e. noisy) visibility dataset.</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>same as parameter <cite>data</cite></p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="draco.synthesis.noise.GaussianNoise.setup">
+<span class="sig-name descname"><span class="pre">setup</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">manager</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/draco/synthesis/noise.html#GaussianNoise.setup"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#draco.synthesis.noise.GaussianNoise.setup" title="Link to this definition"></a></dt>
+<dd><p>Set the telescope instance if a manager object is given.</p>
+<p>This is used to simulate noise for visibilities that are stacked
+over redundant baselines.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>manager</strong> (<em>manager.ProductManager</em><em>, </em><em>optional</em>) – The telescope/manager used to set the <cite>redundancy</cite>. If not set,
+<cite>redundancy</cite> is derived from the data.</p>
+</dd>
+</dl>
+</dd></dl>
+
+</dd></dl>
+
+<dl class="py class">
+<dt class="sig sig-object py" id="draco.synthesis.noise.GaussianNoiseDataset">
+<em class="property"><span class="k"><span class="pre">class</span></span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">draco.synthesis.noise.</span></span><span class="sig-name descname"><span class="pre">GaussianNoiseDataset</span></span><a class="reference internal" href="../_modules/draco/synthesis/noise.html#GaussianNoiseDataset"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#draco.synthesis.noise.GaussianNoiseDataset" title="Link to this definition"></a></dt>
+<dd><p>Bases: <a class="reference internal" href="draco.core.task.html#draco.core.task.SingleTask" title="draco.core.task.SingleTask"><code class="xref py py-class docutils literal notranslate"><span class="pre">SingleTask</span></code></a>, <a class="reference internal" href="draco.util.random.html#draco.util.random.RandomTask" title="draco.util.random.RandomTask"><code class="xref py py-class docutils literal notranslate"><span class="pre">RandomTask</span></code></a></p>
+<p>Generates a Gaussian distributed noise dataset using the noise estimates of an existing dataset.</p>
+<dl class="py attribute">
+<dt class="sig sig-object py" id="draco.synthesis.noise.GaussianNoiseDataset.dataset">
+<span class="sig-name descname"><span class="pre">dataset</span></span><a class="headerlink" href="#draco.synthesis.noise.GaussianNoiseDataset.dataset" title="Link to this definition"></a></dt>
+<dd><p>The dataset to fill with gaussian noise. If set to ‘vis’, will ensure
+autos are real. If not set, will look for a default dataset in a list
+of known containers.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>string</p>
+</dd>
+</dl>
+</dd></dl>
+
+<p>Initialize pipeline task.</p>
+<p>May be overridden with no arguments.  Will be called after any
+<cite>config.Property</cite> attributes are set and after ‘input’ and ‘requires’
+keys are set up.</p>
+<dl class="py method">
+<dt class="sig sig-object py" id="draco.synthesis.noise.GaussianNoiseDataset.process">
+<span class="sig-name descname"><span class="pre">process</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">data</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/draco/synthesis/noise.html#GaussianNoiseDataset.process"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#draco.synthesis.noise.GaussianNoiseDataset.process" title="Link to this definition"></a></dt>
+<dd><p>Generates a Gaussian distributed noise dataset given the provided dataset’s visibility weights.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>data</strong> (<code class="xref py py-class docutils literal notranslate"><span class="pre">VisContainer</span></code>) – Any dataset which contains a vis and weight attribute.
+Note the modification is done in place.</p>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p><strong>data_noise</strong> – The previous dataset with the visibility replaced with
+a Gaussian distributed noise realisation.</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>same as parameter <cite>data</cite></p>
+</dd>
+</dl>
+</dd></dl>
+
+</dd></dl>
+
+<dl class="py class">
+<dt class="sig sig-object py" id="draco.synthesis.noise.MultipleFreqCorrelatedNoise">
+<em class="property"><span class="k"><span class="pre">class</span></span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">draco.synthesis.noise.</span></span><span class="sig-name descname"><span class="pre">MultipleFreqCorrelatedNoise</span></span><a class="reference internal" href="../_modules/draco/synthesis/noise.html#MultipleFreqCorrelatedNoise"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#draco.synthesis.noise.MultipleFreqCorrelatedNoise" title="Link to this definition"></a></dt>
+<dd><p>Bases: <a class="reference internal" href="#draco.synthesis.noise.MultipleNoiseRealizationsMixin" title="draco.synthesis.noise.MultipleNoiseRealizationsMixin"><code class="xref py py-class docutils literal notranslate"><span class="pre">MultipleNoiseRealizationsMixin</span></code></a>, <a class="reference internal" href="#draco.synthesis.noise.FreqCorrelatedNoise" title="draco.synthesis.noise.FreqCorrelatedNoise"><code class="xref py py-class docutils literal notranslate"><span class="pre">FreqCorrelatedNoise</span></code></a></p>
+<p>Generates multiple realizations of frequency-correlated noise.</p>
+</dd></dl>
+
+<dl class="py class">
+<dt class="sig sig-object py" id="draco.synthesis.noise.MultipleGaussianNoiseDatasets">
+<em class="property"><span class="k"><span class="pre">class</span></span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">draco.synthesis.noise.</span></span><span class="sig-name descname"><span class="pre">MultipleGaussianNoiseDatasets</span></span><a class="reference internal" href="../_modules/draco/synthesis/noise.html#MultipleGaussianNoiseDatasets"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#draco.synthesis.noise.MultipleGaussianNoiseDatasets" title="Link to this definition"></a></dt>
+<dd><p>Bases: <a class="reference internal" href="#draco.synthesis.noise.MultipleNoiseRealizationsMixin" title="draco.synthesis.noise.MultipleNoiseRealizationsMixin"><code class="xref py py-class docutils literal notranslate"><span class="pre">MultipleNoiseRealizationsMixin</span></code></a>, <a class="reference internal" href="#draco.synthesis.noise.GaussianNoiseDataset" title="draco.synthesis.noise.GaussianNoiseDataset"><code class="xref py py-class docutils literal notranslate"><span class="pre">GaussianNoiseDataset</span></code></a></p>
+<p>Generates multiple Gaussian distributed noise datasets.</p>
+</dd></dl>
+
+<dl class="py class">
+<dt class="sig sig-object py" id="draco.synthesis.noise.MultipleNoiseRealizationsMixin">
+<em class="property"><span class="k"><span class="pre">class</span></span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">draco.synthesis.noise.</span></span><span class="sig-name descname"><span class="pre">MultipleNoiseRealizationsMixin</span></span><a class="reference internal" href="../_modules/draco/synthesis/noise.html#MultipleNoiseRealizationsMixin"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#draco.synthesis.noise.MultipleNoiseRealizationsMixin" title="Link to this definition"></a></dt>
+<dd><p>Bases: <code class="xref py py-class docutils literal notranslate"><span class="pre">object</span></code></p>
+<p>Generates multiple noise realizations with the same underlying statistics.</p>
+<p>This is a non-functional class mixin that must be combined with a class whose
+process method generates a single noise realization.</p>
+<dl class="py attribute">
+<dt class="sig sig-object py" id="draco.synthesis.noise.MultipleNoiseRealizationsMixin.niter">
+<span class="sig-name descname"><span class="pre">niter</span></span><a class="headerlink" href="#draco.synthesis.noise.MultipleNoiseRealizationsMixin.niter" title="Link to this definition"></a></dt>
+<dd><p>Number of noise realizations to generate.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>int</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="draco.synthesis.noise.MultipleNoiseRealizationsMixin.process">
+<span class="sig-name descname"><span class="pre">process</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="../_modules/draco/synthesis/noise.html#MultipleNoiseRealizationsMixin.process"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#draco.synthesis.noise.MultipleNoiseRealizationsMixin.process" title="Link to this definition"></a></dt>
+<dd><p>Generate a noise realization.</p>
+<p>The variance will be set to the inverse of the
+weight dataset of the container provided on setup.</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="draco.synthesis.noise.MultipleNoiseRealizationsMixin.setup">
+<span class="sig-name descname"><span class="pre">setup</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">data1</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">data2</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/draco/synthesis/noise.html#MultipleNoiseRealizationsMixin.setup"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#draco.synthesis.noise.MultipleNoiseRealizationsMixin.setup" title="Link to this definition"></a></dt>
+<dd><p>Save the data as a class attribute.</p>
+<p>If multiple input containers are provided, the class alternates between
+them when generating the noise realization. This enables cross power
+spectrum analysis.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>data1</strong> (<code class="xref py py-class docutils literal notranslate"><span class="pre">VisContainer</span></code>) – Any dataset which contains a vis and weight attribute.</p></li>
+<li><p><strong>data2</strong> (<code class="xref py py-class docutils literal notranslate"><span class="pre">VisContainer</span></code>) – Any dataset which contains a vis and weight attribute.</p></li>
+</ul>
+</dd>
+</dl>
+</dd></dl>
+
+</dd></dl>
+
+<dl class="py class">
+<dt class="sig sig-object py" id="draco.synthesis.noise.ReceiverTemperature">
+<em class="property"><span class="k"><span class="pre">class</span></span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">draco.synthesis.noise.</span></span><span class="sig-name descname"><span class="pre">ReceiverTemperature</span></span><a class="reference internal" href="../_modules/draco/synthesis/noise.html#ReceiverTemperature"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#draco.synthesis.noise.ReceiverTemperature" title="Link to this definition"></a></dt>
+<dd><p>Bases: <a class="reference internal" href="draco.core.task.html#draco.core.task.SingleTask" title="draco.core.task.SingleTask"><code class="xref py py-class docutils literal notranslate"><span class="pre">SingleTask</span></code></a></p>
+<p>Add a basic receiver temperature term into the data.</p>
+<p>This class adds in an uncorrelated, frequency and time independent receiver
+noise temperature to the data. As it is uncorrelated this will only affect
+the auto-correlations. Note this only adds in the offset to the visibility,
+to add the corresponding random fluctuations to subsequently use the
+<a class="reference internal" href="#draco.synthesis.noise.SampleNoise" title="draco.synthesis.noise.SampleNoise"><code class="xref py py-class docutils literal notranslate"><span class="pre">SampleNoise</span></code></a> task.</p>
+<dl class="py attribute">
+<dt class="sig sig-object py" id="draco.synthesis.noise.ReceiverTemperature.recv_temp">
+<span class="sig-name descname"><span class="pre">recv_temp</span></span><a class="headerlink" href="#draco.synthesis.noise.ReceiverTemperature.recv_temp" title="Link to this definition"></a></dt>
+<dd><p>The receiver temperature in Kelvin.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>float</p>
+</dd>
+</dl>
+</dd></dl>
+
+<p>Initialize pipeline task.</p>
+<p>May be overridden with no arguments.  Will be called after any
+<cite>config.Property</cite> attributes are set and after ‘input’ and ‘requires’
+keys are set up.</p>
+<dl class="py method">
+<dt class="sig sig-object py" id="draco.synthesis.noise.ReceiverTemperature.process">
+<span class="sig-name descname"><span class="pre">process</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">data</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/draco/synthesis/noise.html#ReceiverTemperature.process"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#draco.synthesis.noise.ReceiverTemperature.process" title="Link to this definition"></a></dt>
+<dd><p>Iterate over the products to find the auto-correlations and add the noise into them.</p>
+</dd></dl>
+
+</dd></dl>
+
+<dl class="py class">
+<dt class="sig sig-object py" id="draco.synthesis.noise.SampleNoise">
+<em class="property"><span class="k"><span class="pre">class</span></span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">draco.synthesis.noise.</span></span><span class="sig-name descname"><span class="pre">SampleNoise</span></span><a class="reference internal" href="../_modules/draco/synthesis/noise.html#SampleNoise"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#draco.synthesis.noise.SampleNoise" title="Link to this definition"></a></dt>
+<dd><p>Bases: <a class="reference internal" href="draco.core.task.html#draco.core.task.SingleTask" title="draco.core.task.SingleTask"><code class="xref py py-class docutils literal notranslate"><span class="pre">SingleTask</span></code></a>, <a class="reference internal" href="draco.util.random.html#draco.util.random.RandomTask" title="draco.util.random.RandomTask"><code class="xref py py-class docutils literal notranslate"><span class="pre">RandomTask</span></code></a></p>
+<p>Add properly distributed noise to a visibility dataset.</p>
+<p>This task draws properly (complex Wishart) distributed samples from an input
+visibility dataset which is assumed to represent the expectation.</p>
+<p>See <a class="reference external" href="http://link.springer.com/article/10.1007%2Fs10440-010-9599-x">http://link.springer.com/article/10.1007%2Fs10440-010-9599-x</a> for a
+discussion of the Bartlett decomposition for complex Wishart distributed
+quantities.</p>
+<dl class="py attribute">
+<dt class="sig sig-object py" id="draco.synthesis.noise.SampleNoise.sample_frac">
+<span class="sig-name descname"><span class="pre">sample_frac</span></span><a class="headerlink" href="#draco.synthesis.noise.SampleNoise.sample_frac" title="Link to this definition"></a></dt>
+<dd><p>Multiplies the number of samples in each measurement. For instance this
+could be a duty cycle if the correlator was not keeping up, or could be
+larger than one if multiple measurements were combined.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>float</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="draco.synthesis.noise.SampleNoise.set_weights">
+<span class="sig-name descname"><span class="pre">set_weights</span></span><a class="headerlink" href="#draco.synthesis.noise.SampleNoise.set_weights" title="Link to this definition"></a></dt>
+<dd><p>Set the weights to the appropriate values.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>bool</p>
+</dd>
+</dl>
+</dd></dl>
+
+<p>Initialize pipeline task.</p>
+<p>May be overridden with no arguments.  Will be called after any
+<cite>config.Property</cite> attributes are set and after ‘input’ and ‘requires’
+keys are set up.</p>
+<dl class="py method">
+<dt class="sig sig-object py" id="draco.synthesis.noise.SampleNoise.process">
+<span class="sig-name descname"><span class="pre">process</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">data_exp</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/draco/synthesis/noise.html#SampleNoise.process"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#draco.synthesis.noise.SampleNoise.process" title="Link to this definition"></a></dt>
+<dd><p>Generate a noisy dataset.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>data_exp</strong> (<code class="xref py py-class docutils literal notranslate"><span class="pre">containers.SiderealStream</span></code> or <code class="xref py py-class docutils literal notranslate"><span class="pre">containers.TimeStream</span></code>) – The expected (i.e. noiseless) visibility dataset. Must be the full
+triangle. Make sure you have added an instrumental noise bias if you
+want instrumental noise.</p>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p><strong>data_samp</strong> – The sampled (i.e. noisy) visibility dataset.</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>same as parameter <cite>data_exp</cite></p>
+</dd>
+</dl>
+</dd></dl>
+
+</dd></dl>
+
+</section>
+
+
+           </div>
+          </div>
+          <footer><div class="rst-footer-buttons" role="navigation" aria-label="Footer">
+        <a href="draco.synthesis.gain.html" class="btn btn-neutral float-left" title="draco.synthesis.gain" accesskey="p" rel="prev"><span class="fa fa-arrow-circle-left" aria-hidden="true"></span> Previous</a>
+        <a href="draco.synthesis.stream.html" class="btn btn-neutral float-right" title="draco.synthesis.stream" accesskey="n" rel="next">Next <span class="fa fa-arrow-circle-right" aria-hidden="true"></span></a>
+    </div>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2016, Richard Shaw.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>
