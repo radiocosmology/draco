@@ -1735,7 +1735,7 @@ class MixData(task.SingleTask):
         for key, aux_coeff in self.aux_coeff.items():
             aco = aux_coeff[self._data_ind]
             if aco != 0.0:
-                self.mixed_data.datasets[key][:] += aco * data.datasets[key]
+                self.mixed_data.datasets[key][:] += aco * data.datasets[key][:]
 
         # Save the tags
         if "tag" in data.attrs and (
