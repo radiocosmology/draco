@@ -1621,6 +1621,11 @@ class MixData(task.SingleTask):
     tag_coeff : list
         Boolean array indicating which input containers tags should be used to generate
         the output tag.
+    aux_coeff : dict
+        Coefficients to be applied to auxiliary datasets in the input container to
+        generate the output.  This should be a dictionary where each key is the name
+        of a dataset in the input container, and the corresponding value is a list
+        of coefficients used to mix.
     invert_weight : bool
         Invert the weights to convert to variance prior to mixing.  Re-invert in the
         final mixed data product to convert back to inverse variance.
@@ -1632,6 +1637,7 @@ class MixData(task.SingleTask):
     data_coeff = config.list_type(type_=float)
     weight_coeff = config.list_type(type_=float)
     tag_coeff = config.list_type(type_=bool)
+    aux_coeff = config.Property(proptype=dict)
     invert_weight = config.Property(proptype=bool, default=False)
     require_nonzero_weight = config.Property(proptype=bool, default=False)
 
@@ -1668,6 +1674,14 @@ class MixData(task.SingleTask):
 
         if self.mixed_data is None:
             self.mixed_data = containers.empty_like(data)
+
+            # If requested, add auxiliary datasets
+            for key in self.aux_coeff.keys():
+                if key not in self.mixed_data.datasets:
+                    self.mixed_data.add_dataset(key)
+                self.mixed_data.datasets[key][:] = 0.0
+
+            # Redistribute over frequency
             self.mixed_data.redistribute("freq")
 
             # Zero out data and weights
@@ -1716,6 +1730,12 @@ class MixData(task.SingleTask):
             # Update the flag
             if self.require_nonzero_weight:
                 self._flag &= data.weight[:] > 0.0
+
+        # Deal with auxiliary datasets
+        for key, aux_coeff in self.aux_coeff.items():
+            aco = aux_coeff[self._data_ind]
+            if aco != 0.0:
+                self.mixed_data.datasets[key][:] += aco * data.datasets[key]
 
         # Save the tags
         if "tag" in data.attrs and (
