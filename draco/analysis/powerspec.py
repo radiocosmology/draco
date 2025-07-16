@@ -606,6 +606,56 @@ class GenerateNoiseScaleFactor(task.SingleTask):
     This task uses a even minus odd nights jackknive map and
     estimate scale factor to re-scale the noise delay spectrum.
     The scale factor is estimated by taking RMS over frequencies 
+    of the jackknive map, after normalized by the weight. 
+    The output can be used to scale the noise delay map using
+    ScaleDelayTransform task.
+    """
+       
+    def process(self, rm):
+        """Generate a scale factor from the map.
+
+        Parameters
+        ----------
+        rm : containers.RingMap
+            The input jackknive map (even minus odd night).
+        Returns
+        -------
+        out : containers.RingMap
+            The scaled factor.
+        """
+        rm.redistribute("ra")
+        
+        # Create the output container
+        out = containers.RingMap(beam = rm.index_map['beam'],
+                         pol = rm.index_map['pol'],
+                         freq = np.zeros(1),
+                         ra = rm.index_map['ra'],
+                         el = rm.index_map['el'])
+        
+        out.redistribute("ra")
+
+        # Dereference datasets
+        data = rm.map[:].local_array
+        weight = rm.weight[:].local_array
+
+        # Normalized by the weight or inverse sigma
+        data_norm = data * np.sqrt(weight[np.newaxis,...])
+        
+        # take only unflagged chans  
+        gf = np.any(weight>0.0, axis=(0,2,3))
+
+        rms = np.std(data_norm[:,:,gf,...], axis=2, keepdims=True)
+        out.map[:] = rms
+        
+        return out
+
+
+class GenerateNoiseScaleFactorOld(task.SingleTask):
+    """Generate a scale factor to re-scale the noise.
+
+    This task uses a even minus odd nights jackknive map and
+    estimate scale factor to re-scale the noise delay spectrum.
+    The scale factor is estimated by taking RMS over frequencies 
     of the jackknive map, after normalized by the weight and saved
     in a DelayTransform container. The output can be used to scale
     the noise delay map using ScaleDelayTransform task.
@@ -681,6 +731,66 @@ class GenerateNoiseScaleFactor(task.SingleTask):
 
 
 class ScaleDelayTransform(task.SingleTask):
+    """Apply a scaled factor to the  delay spectrum.
+
+    This task uses a scale factor and multiply that factor to 
+    the delay spectrum. This is useful to scale the noise delay spectrum
+    to account for the spatial variation of the sky temperature.
+    
+    Attributes
+    ----------
+    in_place : bool
+        If True, modify in place and return the input container.
+    """
+    
+    in_place = config.Property(proptype=bool, default=True)
+    
+    def process(self, ds, rm):
+        """Apply the scale factor to delay spectrum.
+
+        Parameters
+        ----------
+        data : containers.DelayTransform
+            The input delay spectrum.
+        ss : containers.RingMap
+            The precomputed scale factor.
+
+        Returns
+        -------
+        out : containers.DelayTransform
+            The scaled delay spectrum.
+        """
+
+        # Redistribute over RA
+        ds.redistribute("baseline")
+        #rm.redistribute("ra")
+
+        # Flatten the scale factor to match the delay spectrum axes
+        scale_factor, _ = flatten_axes(rm.map, ["ra", "freq"])
+        
+        # Genearate an output container
+        if self.in_place:
+            out_ds = ds
+        else:
+            out_ds = ds.copy()
+
+        spec = out_ds.spectrum[:].local_array
+        sweight = out_ds.weight[:].local_array
+        
+        # Generate the RMS over frequency per baseline and save it
+        for lbi, bi in out_ds.spectrum[:].enumerate(axis=0):
+            self.log.debug(f"Scaling the RMS for baseline {bi}")
+
+            # store the map after applying the conversion factor
+            spec[lbi] *=  scale_factor.local_array[lbi]
+            sweight[lbi] *= (
+            tools.invert_no_zero(scale_factor.local_array[lbi]) ** 2
+             )
+            
+        return out_ds
+
+
+class ScaleDelayTransformOld(task.SingleTask):
     """Apply a scaled factor to the  delay spectrum.
 
     This task uses a scale factor and multiply that factor to 
