@@ -7,6 +7,7 @@ import scipy.linalg
 from caput import config, mpiarray
 from cora.util import units
 from cora.util.cosmology import Cosmology
+from draco.analysis.delay import flatten_axes, match_axes
 
 from draco.analysis.delay import flatten_axes
 from draco.analysis.ringmapmaker import find_grid_indices
