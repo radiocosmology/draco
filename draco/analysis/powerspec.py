@@ -463,16 +463,16 @@ class ApplyWienerDelayTransform(task.SingleTask):
 
 
 class GenerateNoiseScaleFactor(task.SingleTask):
-    """Generate a scale factor to re-scale the noise delayspectrums.
+    """Generate a scale factor to re-scale the noise.
 
-    This task uses a even minus odd nights jackknive map and
+    This task uses a even minus odd nights jackknife map and
     estimate scale factor to re-scale the noise delay spectrum.
-    The scale factor is estimated by taking RMS over frequencies
-    of the jackknive map, after normalized by the weight and saved
-    in a DelayTransform container. The output can be used to scale
-    the noise delay map using ScaleDelayTransform task.
+    The scale factor is estimated by taking RMS over frequencies 
+    of the jackknife map, after normalized by the weight. 
+    The output can be used to scale the noise delay map using
+    ScaleDelayTransform task.
     """
-
+       
     def process(self, rm):
         """Generate a scale factor from the map.
 
@@ -480,87 +480,61 @@ class GenerateNoiseScaleFactor(task.SingleTask):
         ----------
         rm : containers.RingMap
             The input jackknive map (even minus odd night).
-
         Returns
         -------
-        out : containers.DelayTransform
-            The scaled factor.
+        out : containers.RingMap
+            The scale factor.
         """
         rm.redistribute("ra")
-
-        npol, nfreq, nra, nel = rm.weight[:].local_shape
-        freq = rm.freq
-        dfreq = np.median(np.abs(np.diff(freq)))
-        tau = np.fft.fftshift(np.fft.fftfreq(freq.size, d=dfreq))
-        tau = tau[tau >= 0.0]
-
-        # Find the relevant axis positions
-        data_view, bl_axes = flatten_axes(rm.map, ["ra", "freq"])
-        weight_view, _ = flatten_axes(rm.weight, ["ra", "freq"], match_dset=rm.map)
-
+        
         # Create the output container
-        out = containers.DelayTransform(
-            baseline=npol * nel,
-            sample=rm.index_map["ra"],
-            delay=tau,
-            attrs_from=rm,
-        )
-        out.redistribute("baseline")
+        out = containers.RingMap(beam = rm.index_map['beam'],
+                         pol = rm.index_map['pol'],
+                         freq = np.zeros(1),
+                         ra = rm.index_map['ra'],
+                         el = rm.index_map['el'])
+        
+        out.redistribute("ra")
 
-        # Copy the index maps for all the flattened axes into the output container, and
-        # write out their order into an attribute so we can reconstruct this easily
-        # when loading in the spectrum
-        bl_axes = np.array(["pol", "el"])
-        for ax in bl_axes:
-            out.create_index_map(ax, rm.index_map[ax])
+        # Dereference datasets
+        data = rm.map[:].local_array
+        weight = rm.weight[:].local_array
 
-        out.attrs["baseline_axes"] = bl_axes
-        out.attrs["freq"] = rm.freq
+        # Normalized by the weight or inverse sigma
+        data_norm = data * np.sqrt(weight[np.newaxis,...])
+        
+        # take only unflagged chans  
+        gf = np.any(weight>0.0, axis=(0,2,3))
 
-        out.spectrum[:] = 0.0
-
-        # Generate the RMS over frequency per baseline and save it
-        for lbi, bi in out.spectrum[:].enumerate(axis=0):
-            self.log.debug(f"Estimating the RMS over freq for baseline {bi}")
-
-            # Get the local selections
-            data = data_view.local_array[lbi]
-            weight = weight_view.local_array[lbi]
-
-            # Normalized by the weight or inverse sigma
-            data_norm = data * np.sqrt(weight)
-
-            # take only unflagged chans
-            gf = np.any(weight > 0.0, axis=0)
-            rms = np.std(data_norm[:, gf], axis=-1, keepdims=True)
-            out.spectrum[bi] = rms
-
+        rms = np.std(data_norm[:,:,gf,...], axis=2, keepdims=True)
+        out.map[:] = rms
+        
         return out
 
 
-class ScaleDelayTransform(task.SingleTask):
+ass ScaleDelayTransform(task.SingleTask):
     """Apply a scaled factor to the  delay spectrum.
 
-    This task uses a scale factor and multiply that factor to
+    This task uses a scale factor and multiply that factor to 
     the delay spectrum. This is useful to scale the noise delay spectrum
     to account for the spatial variation of the sky temperature.
-
+    
     Attributes
     ----------
     in_place : bool
         If True, modify in place and return the input container.
     """
-
+    
     in_place = config.Property(proptype=bool, default=True)
-
-    def process(self, ds, ss):
+    
+    def process(self, ds, rm):
         """Apply the scale factor to delay spectrum.
 
         Parameters
         ----------
-        ds : containers.DelayTransform
+        data : containers.DelayTransform
             The input delay spectrum.
-        ss : containers.DelayTransform
+        ss : containers.RingMap
             The precomputed scale factor.
 
         Returns
@@ -568,25 +542,33 @@ class ScaleDelayTransform(task.SingleTask):
         out : containers.DelayTransform
             The scaled delay spectrum.
         """
-        # Redistribute over delay
-        ds.redistribute("delay")
-        ss.redistribute("delay")
 
+        # Redistribute over RA
+        ds.redistribute("baseline")
+       
+        # Flatten the scale factor to match the delay spectrum axes
+        scale_factor, _ = flatten_axes(rm.map, ["ra", "freq"])
+        
         # Genearate an output container
         if self.in_place:
             out_ds = ds
         else:
             out_ds = ds.copy()
 
-        # store the spectrum after applying the scale factor
-        # although the scale factor is complex, it's imaginary component is zero
-        # and we are just multiplying the real component.
-        out_ds.spectrum[:].local_array[:] *= np.real(ss.spectrum[:].local_array)
+        # Dereference the datasets
+        spec = out_ds.spectrum[:].local_array
+        sweight = out_ds.weight[:].local_array
+        
+        # Multiply the scaling factor per baseline and save it
+        for lbi, bi in out_ds.spectrum[:].enumerate(axis=0):
+            self.log.debug(f"Multiply the scale factor for baseline {bi}")
 
-        out_ds.weight[:].local_array[:] *= (
-            tools.invert_no_zero(np.real(ss.spectrum[:].local_array)) ** 2
-        )
-
+            # store the map after applying the conversion factor
+            spec[lbi] *=  scale_factor.local_array[lbi]
+            sweight[lbi] *= (
+            tools.invert_no_zero(scale_factor.local_array[lbi]) ** 2
+             )
+            
         return out_ds
 
 
