@@ -4,7 +4,6 @@ from functools import cache
 
 import numpy as np
 import scipy.linalg
-
 from caput import config, mpiarray, task, units
 from cora.util.cosmology import Cosmology
 
