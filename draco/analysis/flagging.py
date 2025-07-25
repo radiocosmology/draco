@@ -7,6 +7,7 @@ The convention for flagging/masking is `True` for contaminated samples that shou
 be excluded and `False` for clean samples.
 """
 
+import logging
 import re
 import warnings
 from typing import ClassVar, overload
@@ -3644,19 +3645,12 @@ def _convert_axis_nearest_interpolation(
     # Disable spreading if axes align exactly (diagonal distance is zero)
     if np.all(np.diag(dist) == 0):
         spread_factor = 0
+        logger = logging.getLogger(__name__)
+        logger.debug("Setting 'spread_factor = 0' because axes are aligned exactly")
 
     # Construct conservative spreading window
     resolution = np.median(np.abs(np.diff(from_ax)))
     window = np.abs(dist) < spread_factor * resolution
-
-    # Prepare output container with the converted axis values
-    axes = {
-        (to_ax_name if ax == from_ax_name else ax): (
-            new_ax if ax == from_ax_name else getattr(stream, ax)
-        )
-        for ax in stream.axes
-    }
-    out = to_type(**axes, attrs_from=stream)
 
     # Create output container with converted axis values
     axes = {
@@ -3665,7 +3659,6 @@ def _convert_axis_nearest_interpolation(
         )
         for ax in stream.axes
     }
-
     out = to_type(**axes, attrs_from=stream)
 
     # Interpolate each dataset in the container
@@ -3686,12 +3679,7 @@ def _convert_axis_nearest_interpolation(
             denominator = np.sum(window, axis=-1).reshape(
                 (-1,) + (1,) * (numerator.ndim - 1)
             )
-            converted = np.divide(
-                numerator,
-                denominator,
-                out=np.zeros_like(numerator),
-                where=denominator != 0,
-            )
+            converted = numerator * tools.invert_no_zero(denominator)
 
         # Create dataset in the output container if not present
         if out.datasets.get(dname, None) is None:
