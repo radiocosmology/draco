@@ -7,6 +7,7 @@ The convention for flagging/masking is `True` for contaminated samples that shou
 be excluded and `False` for clean samples.
 """
 
+import logging
 import re
 import warnings
 from typing import ClassVar, overload
@@ -3400,7 +3401,7 @@ def destripe(x, w, axis=1):
     return x - stripe[bsel]
 
 
-class SiderealMaskConversion(task.SingleTask):
+class RFIMaskSiderealRegridderNearest(task.SingleTask):
     """Convert the axis of an RFI mask from time to ra.
 
     The conversion is performed by mapping values between Unix time and LSA
@@ -3408,246 +3409,136 @@ class SiderealMaskConversion(task.SingleTask):
 
     Attributes
     ----------
-    spread_size : int
-        The number of cells to flag before and after a detected true value. This ensures
-        conservative flagging, preventing missed detections due to axis alignment issues.
-        Default is 1.
+    spread_factor : float
+        Spreading width in RA bins for conservative flagging. Default is 1.0.
     npix : int
-        The number of pixels used to cover the full RA range from 0 to 360.
-         Defualt is 4096.
+        The number of pixels used to cover the full RA range from 0 to 360. Defualt is 4096.
+    single_CSD : bool
+        Whether to extract only the main CSD from the input time stream. If True, only the region
+        between the first occurrence of RA=0 and the second occurrence of RA=360 will be kept.
+        Values outside this window will be excluded from interpolation. Default is True.
+
     """
 
-    spread_size = config.Property(proptype=int, default=1)
+    spread_factor = config.Property(proptype=float, default=1)
     npix = config.Property(proptype=int, default=4096)
+    single_CSD = config.Property(proptype=bool, default=True)
 
     def setup(self, manager):
         """Set the local observers position.
 
         Parameters
         ----------
-        manager : :class:`~caput.time.Observer`
+        manager :
             An Observer object holding the geographic location of the telescope.
-            Note that :class:`~drift.core.TransitTelescope` instances are also
-            Observers.
         """
-        # Need an Observer object holding the geographic location of the telescope.
         self.observer = io.get_telescope(manager)
 
     def process(self, rfimask):
-        """Produce a RFI mask.
+        """Convert time axis to RA axis using LSA mapping.
 
         Parameters
         ----------
-        rfimask : containers.LocalizedRFIMask
-            Container for holding a mask indicating channels that are free from RFI events.
-            Its axes are freq, el, and time.
+        rfimask : containers.LocalizedRFIMask or containers.RFIMask
+            Input mask with axes (freq, el, time) or (freq, time).
 
         Returns
         -------
-        out : containers.LocalizedSiderealRFIMask
-            Boolean mask that can be applied to a ringmap
-            with the task `ApplyLocalizedRFIMask` to mask contaminated samples.
-            Its axes are freq, ra, and el.
-
+        out : containers.LocalizedSiderealRFIMask or containers.SiderealRFIMask
+            Output mask with axes (freq, ra, el) or (freq, ra).
         """
-        # Extract mask/frac and axes data
-        mask = rfimask.mask[:]
-        freq = rfimask.freq[:]
-        time = rfimask.time[:]
-        el = rfimask.el[:]
-        nfreq, nel, ntime = mask.shape
+        if isinstance(rfimask, containers.LocalizedRFIMask):
+            to_type = containers.LocalizedSiderealRFIMask
+        elif isinstance(rfimask, containers.RFIMask):
+            to_type = containers.SiderealRFIMask
+        else:
+            raise TypeError(
+                f"Expected LocalizedSiderealRFIMask or SiderealRFIMask input. Got {type(rfimask)}."
+            )
 
-        # Find closest ra indices
-        ra = self.observer.unix_to_lsa(time)
-        full_ra = np.linspace(0, 360, self.npix, endpoint=False)
-        ra_closest_indices = np.abs(ra[:, None] - full_ra).argmin(axis=1)
+        from_ax = self.observer.unix_to_lsa(rfimask.time[:])
 
-        # Make the new ra axis
-        min_index = np.min(ra_closest_indices)
-        max_index = np.max(ra_closest_indices)
-        new_ra = full_ra[min_index : max_index + 1]
-        nra = len(new_ra)
+        # If needed, trim the input rfimask to a single CSD
+        if self.single_CSD:
+            diff = np.diff(from_ax)
+            indices = np.where(diff < 0)[0]
 
-        # Broadcast the mask data for corresponding cells
-        mask_adj = np.full((nfreq, nel, nra), False)
-        mask_adj[:, :, ra_closest_indices - min_index] = mask
+            if len(indices) < 2:
+                raise ValueError("Could not find a complete CSD in the input.")
+            if len(indices) > 2:
+                raise ValueError("Found more than one CSD in the input.")
 
-        # Falg before and after a given true value for conservative flagging
-        for repeat in range(self.spread_size):
-            mask_adj[:, :, :-1] |= mask_adj[:, :, 1:]
-            mask_adj[:, :, 1:] |= mask_adj[:, :, :-1]
+            start = indices[0]
+            end = indices[1] + 1
 
-        # Save the adjusted mask to output container
-        mask_adj = np.transpose(mask_adj, (0, 2, 1))
-        out = containers.LocalizedSiderealRFIMask(freq=freq, ra=new_ra, el=el)
-        out.mask[:] = mask_adj
+            # Mark values outside this region as invalid (-1)
+            from_ax[:start] = -1
+            from_ax[end:] = -1
 
-        if rfimask.datasets.get("frac_rfi", None) is not None:
-            frac_rfi = rfimask.frac_rfi[:]
-            frac_rfi_adj = np.full((nfreq, nel, nra), 0.0)
-            frac_rfi_adj[:, :, ra_closest_indices - min_index] = frac_rfi
-
-            for repeat in range(self.spread_size):
-                frac_rfi_adj[:, :, :-1] = np.maximum(
-                    frac_rfi_adj[:, :, :-1], frac_rfi_adj[:, :, 1:]
-                )
-                frac_rfi_adj[:, :, 1:] = np.maximum(
-                    frac_rfi_adj[:, :, 1:], frac_rfi_adj[:, :, :-1]
-                )
-
-            frac_rfi_adj = np.transpose(frac_rfi_adj, (0, 2, 1))
-            out.add_dataset("frac_rfi")
-            out.frac_rfi[:] = frac_rfi_adj
-
-        # Return output container
-        return out
+        return _convert_axis_nearest_interpolation(
+            stream=rfimask,
+            to_type=to_type,
+            from_ax_name="time",
+            to_ax_name="ra",
+            from_ax=from_ax,
+            to_ax=np.linspace(0, 360, self.npix, endpoint=False),
+            spread_factor=self.spread_factor,
+        )
 
 
-class InterpolateRFIMaskNearest(task.SingleTask):
-    """Align the time axis of an RFI mask to a target data stream.
+class RFIMaskTimeRegridderNearest(task.SingleTask):
+    """Align the time axis of an input container to a target stream.
 
     This task adjusts the time axis of an RFI mask to match the time axis of
-    a target dataset such as a TimeStream or SystemSensitivity. This is useful
-    when the original mask and the target data stream do not have exactly matching
-    time axes.
-
-    The alignment is performed using nearest-interpolation in time, and the RFI mask
-    is expanded along the time axis based on its spread_size to ensure conservative flagging.
+    a target dataset such as a TimeStream or SystemSensitivity, using nearest interpolation.
+    This is useful when the original mask and the target data stream do not have exactly
+    matching time axes.
 
     Attributes
     ----------
-    spread_size : float
-        Time spreading factor for conservative flagging. Each flagged time sample
-        is expanded to neighboring target time values that fall within spread_size
-        times the time resolution of the input mask. If the time axes of the input mask
-        and target align exactly, spreading is automatically disabled by setting this
-        to zero. Default is 1.0.
+    spread_factor : float
+        Width of conservative flagging window in time resolution units. Default is 1.0.
     """
 
-    spread_size = config.Property(proptype=float, default=1.0)
+    spread_factor = config.Property(proptype=float, default=1.0)
 
     def setup(self, tstream):
-        """Set the target time axis from the data container.
-
-        This sets the reference time axis to which the RFI mask will be aligned.
+        """Set the reference time axis from the target stream.
 
         Parameters
         ----------
         tstream : containers.TimeStream, SystemSensitivity, etc.
             A time-like data container that provides the target time axis.
         """
-        # Set up target time
         try:
             self.target_time = tstream.time[:]
         except AttributeError as exc:
             raise TypeError(
-                f"Expected a dataset with a time axis. Got {tstream.__class__.__name__} instead."
+                f"Expected a time-like stream for reference time. Got {type(tstream)}."
             ) from exc
 
     def process(self, rfimask):
-        """Align the RFI mask's time axis to match the target dataset.
+        """Apply time alignment to the input RFI mask.
 
         Parameters
         ----------
-        rfimask : containers.LocalizedRFIMask or containers.RFIMask
-            The original RFI mask to be realigned.
+        rfimask : containers.RFIMask or containers.LocalizedRFIMask
+            Input RFI mask with original time axis.
 
         Returns
         -------
-        out : containers.RFIMask or containers.LocalizedRFIMask
-            The RFI mask with its time axis aligned to the reference time axis.
+        out : same type as input
+            RFI mask with time axis matched to the target.
         """
-        # Validate the mask data type
-        if not isinstance(rfimask, containers.LocalizedRFIMask | containers.RFIMask):
-            raise ValueError(
-                f"Input must be an instance of RFIMask or LocalizedRFIMask, got {type(rfimask)}."
-            )
-
-        # Ensure frequency axis is distributed
-        rfimask.redistribute("freq")
-
-        # Extract time
-        mask_time = rfimask.time[:]
-
-        # Get the mask data (locally or globally depending on distribution)
-        mask = (
-            rfimask.mask[:].local_array if rfimask.mask.distributed else rfimask.mask[:]
+        return _convert_axis_nearest_interpolation(
+            stream=rfimask,
+            to_type=type(rfimask),
+            from_ax_name="time",
+            to_ax_name="time",
+            from_ax=rfimask.time[:],
+            to_ax=self.target_time[:],
+            spread_factor=self.spread_factor,
         )
-
-        # Move the time axis to the front
-        mask = np.moveaxis(mask, -1, 0).astype(np.float32)
-
-        # Determine valid time range in the target time
-        start = _search_nearest(self.target_time[:], mask_time[0])
-        end = _search_nearest(self.target_time[:], mask_time[-1])
-        valid_target_range = slice(start, end + 1)
-
-        # The new time axis of the adjusted mask
-        new_time = self.target_time[valid_target_range]
-
-        # Nearest-interpolation
-        nearest_indices = _search_nearest(mask_time, new_time)
-
-        # Compute pairwise time distances between new_time and matched mask_time values
-        dist = cdist(
-            new_time[:, np.newaxis],
-            mask_time[nearest_indices, np.newaxis],
-            metric="euclidean",
-        )
-
-        # Disable spreading if time axes match exactly
-        if np.sum(np.diag(dist) == 0):
-            self.spread_factor = 0
-
-        # Create a time window mask around each matched time sample
-        window = np.abs(dist) <= self.spread_size * np.median(
-            np.abs(np.diff(mask_time[:]))
-        )
-
-        # Apply the spreading window to the nearest-mapped mask
-        mask_adj = (window @ mask[nearest_indices]) > 0
-
-        # Move the time axis back
-        mask_adj = np.moveaxis(mask_adj, 0, -1)
-
-        # Create output container
-        freq = rfimask.freq[:]
-        if isinstance(rfimask, containers.LocalizedRFIMask):
-            el = rfimask.el[:]
-            out = containers.LocalizedRFIMask(
-                freq=freq, time=new_time, el=el, attrs_from=rfimask
-            )
-        else:
-            out = containers.RFIMask(freq=freq, time=new_time, attrs_from=rfimask)
-
-        # Assign the new mask
-        if rfimask.mask.distributed:
-            out.mask[:].local_array[:] = mask_adj
-        else:
-            out.mask[:] = mask_adj
-
-        # Handle optional frac_rfi dataset if it exists
-        if rfimask.datasets.get("frac_rfi", None) is not None:
-
-            # Extract frac_rfi data
-            frac_rfi = (
-                rfimask.frac_rfi.local_data
-                if rfimask.mask.distributed
-                else rfimask.frac_rfi[:]
-            )
-            frac_rfi = np.moveaxis(frac_rfi, -1, 0).astype(np.float32)
-
-            frac_rfi_adj = window @ frac_rfi[nearest_indices]
-            frac_rfi_adj = np.moveaxis(frac_rfi_adj, 0, -1)
-
-            out.add_dataset("frac_rfi")
-            if rfimask.mask.distributed:
-                out.frac_rfi[:].local_array[:] = frac_rfi_adj
-            else:
-                out.frac_rfi[:] = frac_rfi_adj
-
-        # Return output container
-        return out
 
 
 class ReduceMaskEl(task.SingleTask):
@@ -3658,13 +3549,13 @@ class ReduceMaskEl(task.SingleTask):
 
     Attributes
     ----------
-    threshold : int
+    el_threshold : int
     This number determines the minimum number of detected RFI events along the el axis required for a data point
     to be included in the reduced mask. Default is 1.
 
     """
 
-    threshold = config.Property(proptype=int, default=1)
+    el_threshold = config.Property(proptype=int, default=1)
 
     def process(self, rfimask):
         """Produce a RFI mask.
@@ -3694,7 +3585,7 @@ class ReduceMaskEl(task.SingleTask):
         freq = rfimask.freq[:]
 
         # Apply reduction condition
-        reduced_mask = np.sum(mask, axis=el_axis) >= self.threshold
+        reduced_mask = np.sum(mask, axis=el_axis) >= self.el_threshold
 
         # Determine output class type
         if isinstance(rfimask, containers.LocalizedRFIMask):
@@ -3806,3 +3697,127 @@ class ApplyLocalizedRFIMask(task.SingleTask):
         )
 
         return tsc
+
+
+def _convert_axis_nearest_interpolation(
+    stream, to_type, from_ax_name, to_ax_name, from_ax, to_ax, spread_factor
+):
+    """Generic axis conversion using nearest-neighbor interpolation.
+
+    This function converts one axis of a data container from 'from_ax_name'
+    to 'to_ax_name' by re-mapping dataset values onto a new target axis.
+    It uses nearest-neighbor interpolation to associate the new axis bins
+    with the closest original data points. Additionally, it can apply a
+    conservative spreading window, where flagged or elevated samples
+    spread to nearby bins within a distance determined by 'spread_factor'.
+
+    Parameters
+    ----------
+    stream : containers.ContainerBase
+        The input container holding the original data and axis.
+        Example: LocalizedRFIMask with axes (freq, time, el).
+    to_type : type
+        The class of the output container to produce.
+        Example: LocalizedSiderealRFIMask with axes (freq, el, ra).
+    from_ax_name : str
+        The name of the axis in the input container to convert from.
+        Example: 'time'.
+    to_ax_name : str
+        The name of the target axis to convert to.
+        Example: 'ra'.
+    from_ax : np.ndarray
+        The array of converted input axis values (e.g., times converted to RA).
+        This defines how the existing data aligns with the new axis.
+    to_ax : np.ndarray
+        The target axis values of the output data.
+    spread_factor : float
+        The width of the conservative spreading window in units of the input axis
+        resolution. If the axes match exactly, spreading is disabled.
+
+    Returns
+    -------
+    out : containers.ContainerBase
+        A new container of type `to_type` with converted axes and interpolated datasets.
+
+    Notes
+    -----
+    - Boolean datasets are propagated conservatively using a logical OR
+      across the spreading window.
+    - Numerical datasets are averaged over the spreading window,
+      preserving fractional quantities (e.g., fractional RFI occupancy).
+    - If `spread_factor` is zero or the input/output axes match exactly,
+      only pure nearest-neighbor interpolation is performed.
+    """
+    # Identify overlapping region of new axis within the range of the converted from_ax
+    start = _search_nearest(to_ax, np.min(from_ax))
+    end = _search_nearest(to_ax, np.max(from_ax))
+    valid_range = slice(start, end + 1)
+    new_ax = to_ax[valid_range]
+
+    # Estimate resolutions to determine mapping strategy
+    new_resolution = np.median(np.abs(np.diff(new_ax)))
+    from_resolution = np.median(np.abs(np.diff(from_ax)))
+
+    # Determine nearest-neighbor indices for mapping
+    if new_resolution < from_resolution:
+        nearest_indices = _search_nearest(from_ax, new_ax)
+    else:
+        nearest_indices = np.arange(len(from_ax))
+
+    # Compute pairwise distances between each new axis point and nearest from_ax points
+    dist = cdist(
+        new_ax[:, np.newaxis], from_ax[nearest_indices, np.newaxis], metric="euclidean"
+    )
+
+    # Disable spreading if axes align exactly (diagonal distance is zero)
+    if np.all(np.diag(dist) == 0):
+        spread_factor = 0
+        logger = logging.getLogger(__name__)
+        logger.debug("Setting 'spread_factor = 0' because axes are aligned exactly")
+
+    # Construct conservative spreading window
+    resolution = np.median(np.abs(np.diff(from_ax)))
+    window = np.abs(dist) < spread_factor * resolution
+
+    # Create output container with converted axis values
+    axes = {
+        (to_ax_name if ax == from_ax_name else ax): (
+            new_ax if ax == from_ax_name else getattr(stream, ax)
+        )
+        for ax in stream.axes
+    }
+    out = to_type(**axes, attrs_from=stream)
+
+    # Interpolate each dataset in the container
+    for dname in list(stream.datasets):
+        # Extract dataset and bring from_ax to the front
+        data = np.array(getattr(stream, dname)[:])
+        ax_idx = list(getattr(stream, dname).attrs["axis"]).index(from_ax_name)
+        data = np.moveaxis(data, ax_idx, 0)
+
+        # Interpolation based on data type
+        if data.dtype == np.bool:
+            # Boolean datasets: use OR over spreading window
+            converted = np.tensordot(window, data[nearest_indices], axes=([1], [0])) > 0
+        else:
+            # Numerical datasets: compute weighted average over the spreading window
+            window = window.astype(np.float32)
+            numerator = np.tensordot(window, data[nearest_indices], axes=([1], [0]))
+            denominator = np.sum(window, axis=-1).reshape(
+                (-1,) + (1,) * (numerator.ndim - 1)
+            )
+            converted = numerator * tools.invert_no_zero(denominator)
+
+        # Create dataset in the output container if not present
+        if out.datasets.get(dname, None) is None:
+            out.add_dataset(dname)
+
+        # Move converted axis back to appropariate location
+        ax_idx = list(getattr(out, dname).attrs["axis"]).index(to_ax_name)
+        converted = np.moveaxis(converted, 0, ax_idx)
+
+        # Store converted dataset
+        out[dname][:] = converted
+
+    # Return output container
+    return out
