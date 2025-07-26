@@ -8,6 +8,7 @@ from caput import config, mpiarray
 from cora.util import units
 from cora.util.cosmology import Cosmology
 
+from draco.analysis.transform import ReduceChisq
 from draco.analysis.delay import flatten_axes
 from draco.analysis.ringmapmaker import find_grid_indices
 from draco.core import containers, io, task
@@ -461,57 +462,23 @@ class ApplyWienerDelayTransform(task.SingleTask):
         return out
 
 
-class GenerateNoiseScaleFactor(task.SingleTask):
+class ReduceExcessScatter(ReduceChisq):
     """Generate a scale factor to re-scale the noise.
 
     This task uses a even minus odd nights jackknife map and
     estimate scale factor to re-scale the noise delay spectrum.
     The scale factor is estimated by taking RMS over frequencies
     of the jackknife map, after normalized by the weight.
+    We use ReduceChisq task to generate the scale factor, with
+    params, axes is Freq and dataset is map.
     The output can be used to scale the noise delay map using
     ScaleDelayTransform task.
     """
 
-    def process(self, rm):
-        """Generate a scale factor from the map.
+    def reduction(self, arr, weight, axis):
 
-        Parameters
-        ----------
-        rm : containers.RingMap
-            The input jackknife map (even minus odd night).
-
-        Returns
-        -------
-        out : containers.RingMap
-            The scale factor.
-        """
-        rm.redistribute("ra")
-
-        # Create the output container
-        out = containers.RingMap(
-            beam=rm.index_map["beam"],
-            pol=rm.index_map["pol"],
-            freq=np.zeros(1),
-            ra=rm.index_map["ra"],
-            el=rm.index_map["el"],
-        )
-
-        out.redistribute("ra")
-
-        # Dereference datasets
-        data = rm.map[:].local_array
-        weight = rm.weight[:].local_array
-
-        # Normalized by the weight or inverse sigma
-        data_norm = data * np.sqrt(weight[np.newaxis, ...])
-
-        # take only unflagged chans
-        gf = np.any(weight > 0.0, axis=(0, 2, 3))
-
-        rms = np.std(data_norm[:, :, gf, ...], axis=2, keepdims=True)
-        out.map[:] = rms
-
-        return out
+        v, num = super().reduction(arr, weight, axis)
+        return np.sqrt(v), num
 
 
 class ScaleDelayTransform(task.SingleTask):
