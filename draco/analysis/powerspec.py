@@ -8,9 +8,9 @@ from caput import config, mpiarray
 from cora.util import units
 from cora.util.cosmology import Cosmology
 
-from draco.analysis.transform import ReduceChisq
 from draco.analysis.delay import flatten_axes
 from draco.analysis.ringmapmaker import find_grid_indices
+from draco.analysis.transform import ReduceChisq
 from draco.core import containers, io, task
 from draco.util import tools
 
@@ -476,7 +476,7 @@ class ReduceExcessScatter(ReduceChisq):
     """
 
     def reduction(self, arr, weight, axis):
-
+        """Apply a chi-squared calculation."""
         v, num = super().reduction(arr, weight, axis)
         return np.sqrt(v), num
 
