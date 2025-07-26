@@ -14,9 +14,13 @@ from setuptools import Extension, setup
 # Enable OpenMP support if available
 if re.search("gcc", sysconfig.get_config_var("CC")) is None:
     print("Not using OpenMP")
-    omp_args = []
+    OMP_ARGS = []
 else:
-    omp_args = ["-fopenmp"]
+    OMP_ARGS = ["-fopenmp"]
+
+# Subset of `-ffast-math` compiler flags which should
+# preserve IEEE compliance
+FAST_MATH_ARGS = ["-O3", "-fno-math-errno", "-fno-trapping-math", "-march=native"]
 
 # Cython module for fast operations
 extensions = [
@@ -24,15 +28,15 @@ extensions = [
         "draco.util._fast_tools",
         ["draco/util/_fast_tools.pyx"],
         include_dirs=[np.get_include()],
-        extra_compile_args=omp_args,
-        extra_link_args=omp_args,
+        extra_compile_args=[*FAST_MATH_ARGS, *OMP_ARGS],
+        extra_link_args=[*FAST_MATH_ARGS, *OMP_ARGS],
     ),
     Extension(
         "draco.util.truncate",
         ["draco/util/truncate.pyx"],
         include_dirs=[np.get_include()],
-        extra_compile_args=omp_args,
-        extra_link_args=omp_args,
+        extra_compile_args=OMP_ARGS,
+        extra_link_args=OMP_ARGS,
     ),
 ]
 
