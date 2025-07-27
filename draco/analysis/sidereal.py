@@ -359,7 +359,7 @@ class SiderealRegridderLinear(SiderealRegridder):
         coeff2 = dx1 * norm
 
         # Initialize the output arrays
-        shp = vis.shape[:-1] + (self.samples,)
+        shp = (*vis.shape[:-1], self.samples)
 
         interp_vis = np.zeros(shp, dtype=vis.dtype)
         interp_weight = np.zeros(shp, dtype=weight.dtype)
@@ -439,7 +439,7 @@ class SiderealRegridderCubic(SiderealRegridder):
         coeff *= 0.5
 
         # Initialize the output arrays
-        shp = vis.shape[:-1] + (self.samples,)
+        shp = (*vis.shape[:-1], self.samples)
 
         interp_vis = np.zeros(shp, dtype=vis.dtype)
         interp_weight = np.zeros(shp, dtype=weight.dtype)
@@ -553,10 +553,13 @@ class SiderealRebinner(SiderealRegridder):
 
         # Initialize any missing datasets
         alt_dspec = {}
+        contains_covariance = False
         for name, dataset in data.datasets.items():
             if name not in sdata.datasets:
                 alt_dspec[name] = dataset.attrs["axis"]
                 sdata.add_dataset(name)
+                if "freq_cov" in name:
+                    contains_covariance = True
 
         sdata.add_dataset("effective_ra")
         sdata.add_dataset("nsample")
@@ -587,7 +590,16 @@ class SiderealRebinner(SiderealRegridder):
         ssn = sdata.nsample[:].local_array
         salt = {name: sdata.datasets[name][:].local_array for name in alt_dspec.keys()}
 
-        lookup = {name: nn for nn, name in enumerate(data.vis.attrs["axis"][:-2])}
+        vax = data.vis.attrs["axis"][:-2]
+        lookup = {name: nn for nn, name in enumerate(vax)}
+
+        # If the input data product contains a freq-freq covariance matrix,
+        # then we will need access to the weight dataset for all frequencies.
+        if contains_covariance:
+            if self.weight == "uniform":
+                weight_all = (data.weight[:] > 0.0).allgather()
+            else:
+                weight_all = data.weight[:].allgather()
 
         # Loop over all but the last two axes.
         # For an input TimeStream, this will be a loop over freq.
@@ -611,6 +623,14 @@ class SiderealRebinner(SiderealRegridder):
             # Count number of samples
             ssn[ind] = m @ Rt
 
+            # Compute factors needed for the covariance calculation
+            if contains_covariance:
+                iall = tuple(
+                    ii if ax != "freq" else slice(None) for ii, ax in zip(ind, vax)
+                )
+                wall = weight_all[iall]
+                nall = tools.invert_no_zero(wall @ Rt)
+
             # Weighted rebin of other datasets
             for name, axis in alt_dspec.items():
                 aind = tuple(
@@ -620,7 +640,12 @@ class SiderealRebinner(SiderealRegridder):
                     ]
                 )
 
-                salt[name][aind] = norm * ((alt_data[name][aind] * w) @ Rt)
+                if "freq_cov" in name:
+                    salt[name][aind] = (
+                        norm * nall * ((alt_data[name][aind] * w * wall) @ Rtsq)
+                    )
+                else:
+                    salt[name][aind] = norm * ((alt_data[name][aind] * w) @ Rt)
 
             # Weighted rebin of the effective RA
             effective_lsd = norm * ((timestamp_lsd * w) @ Rt)
@@ -780,7 +805,7 @@ class SiderealStacker(task.SingleTask):
                 f"type(stack) (={type(self.stack)})."
             )
 
-        sdata.redistribute("freq")
+        sdata.redistribute("ra")
 
         # Get the LSD (or CSD) label out of the input's attributes.
         # If there is no label, use a placeholder.
@@ -826,12 +851,16 @@ class SiderealStacker(task.SingleTask):
 
                     # Create a slice into the weight dataset that will allow it
                     # to be broadcasted against the additional dataset.
-                    self.weight_slice[name] = get_slice_to_broadcast(
-                        wax, dataset.attrs["axis"]
-                    )
+                    wslc1 = get_slice_to_broadcast(wax, dataset.attrs["axis"])
+
+                    if "freq_cov" in name:
+                        wslc2 = get_slice_to_broadcast(wax, sdata.swapped_freq_cov_axis)
+                        self.weight_slice[name] = (wslc1, wslc2)
+                    else:
+                        self.weight_slice[name] = wslc1
 
             # Now that we have all datasets, redistribute over frequency.
-            self.stack.redistribute("freq")
+            self.stack.redistribute("ra")
 
             # Initialize all datasets to zero.
             for data in self.stack.datasets.values():
@@ -898,8 +927,11 @@ class SiderealStacker(task.SingleTask):
         # Update any additional datasets.  Note this will include the effective_ra.
         for name in self.additional_datasets:
             wslc = self.weight_slice[name]
-            delta = coeff[wslc] * (sdata[name][:] - self.stack[name][:])
-            self.stack[name][:] += delta * inv_sum_coeff[wslc]
+            if "freq_cov" in name:
+                self.stack[name][:] += coeff[wslc[0]] * coeff[wslc[1]] * sdata[name][:]
+            else:
+                delta = coeff[wslc] * (sdata[name][:] - self.stack[name][:])
+                self.stack[name][:] += delta * inv_sum_coeff[wslc]
 
         # The calculations below are only required if the sample variance was requested
         if self.with_sample_variance:
@@ -932,17 +964,23 @@ class SiderealStacker(task.SingleTask):
             self.stack.weight[:] = tools.invert_no_zero(self.stack.weight[:]) * norm**2
 
         else:
-            # For inverse variance weighting without rebinning,
-            # additional normalization is not required.
-            norm = None
+            # For inverse variance weighting the stack.weight dataset is finalized,
+            # no additional normalization is required.
+            norm = self.stack.weight[:]
+
+        # Apply the inverse squared norm factor to any dataset that is a
+        # freq-freq covariance
+        for name in self.additional_datasets:
+            if "freq_cov" in name:
+                wslc = self.weight_slice[name]
+                self.stack[name][:] *= tools.invert_no_zero(
+                    norm[wslc[0]] * norm[wslc[1]]
+                )
 
         # We need to normalize the sample variance by the sum of coefficients.
         # Can be found in the stack.nsample dataset for uniform case
         # or the stack.weight dataset for inverse variance case.
         if self.with_sample_variance:
-
-            if norm is None:
-                norm = self.stack.weight[:]
 
             # Perform Bessel's correction.  In the case of
             # uniform  weighting, norm will be equal to nsample - 1.
@@ -954,9 +992,12 @@ class SiderealStacker(task.SingleTask):
                 self.stack.nsample[:] > 1, tools.invert_no_zero(norm), 0.0
             )[wslc]
 
+        # Now redistribute back over frequency
+        self.stack.redistribute("freq")
+
+        # For samples where there is no data, the effective ra should
+        # be the same as the grid ra
         if "effective_ra" in self.stack.datasets:
-            # For samples where there is no data, the effective ra should
-            # be the same as the grid ra
             weight = self.stack.weight[:].local_array
             era = self.stack.effective_ra[:].local_array
 

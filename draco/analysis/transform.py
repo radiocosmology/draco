@@ -546,9 +546,13 @@ class MModeTransform(task.SingleTask):
         Deconvolve the effect of the finite width of the RA integration (presuming it
         was a rectangular integration window). This is applied to both the visibilities
         and the weights.
+    use_fftw : bool
+        If True, then use fftW to do the Fourier Transform, else use
+        numpy fft. Default is True.
     """
 
     remove_integration_window = config.Property(proptype=bool, default=False)
+    use_fftw = config.Property(proptype=bool, default=True)
 
     def setup(self, manager: io.TelescopeConvertible | None = None):
         """Set the telescope instance if a manager object is given.
@@ -617,7 +621,7 @@ class MModeTransform(task.SingleTask):
         # Generate the m-mode transform directly into the output container
         # NOTE: Need to zero fill as not every element gets set within _make_marray
         mvis[:] = 0.0
-        _make_marray(svis, mvis)
+        _make_marray(svis, mvis, mmax=None, dtype=None, use_fftw=self.use_fftw)
 
         # Assign the weights into the container
         mweight[:] = weight_sum[np.newaxis, np.newaxis, :, :]
@@ -637,7 +641,7 @@ class MModeTransform(task.SingleTask):
         return ma
 
 
-def _make_marray(ts, mmodes=None, mmax=None, dtype=None):
+def _make_marray(ts, mmodes=None, mmax=None, dtype=None, use_fftw=True):
     """Make an m-mode array from a sidereal stream.
 
     This will loop over the first axis of `ts` to avoid needing a lot of memory for
@@ -661,7 +665,7 @@ def _make_marray(ts, mmodes=None, mmax=None, dtype=None):
         )
 
     if mmodes is None:
-        mmodes = np.zeros((mmax + 1, 2) + ts.shape[:-1], dtype=dtype)
+        mmodes = np.zeros((mmax + 1, 2, *ts.shape[:-1]), dtype=dtype)
 
     if mmax is None:
         mmax = mmodes.shape[0] - 1
@@ -679,7 +683,11 @@ def _make_marray(ts, mmodes=None, mmax=None, dtype=None):
     # so we have to flatten the other axes to get around that. This is
     # still faster than `numpy` or `scipy` ffts.
     shp = ts.shape
-    m_fft = fftw.fft(ts.reshape(-1, shp[-1]), axes=-1).reshape(shp)
+    if use_fftw:
+        m_fft = fftw.fft(ts.reshape(-1, shp[-1]), axes=-1).reshape(shp)
+    else:
+        m_fft = np.fft.fft(ts.reshape(-1, shp[-1]), axis=-1).reshape(shp)
+
     m_fft = np.moveaxis(m_fft, -1, 0)
 
     # Write the positive and negative m's
@@ -964,8 +972,8 @@ class Regridder(task.SingleTask):
         interp_grid = interp_grid[pad:-pad].copy()
 
         # Reshape to the correct shape
-        sts = sts.reshape(vis_data.shape[:-1] + (self.samples,))
-        ni = ni.reshape(vis_data.shape[:-1] + (self.samples,))
+        sts = sts.reshape((*vis_data.shape[:-1], self.samples))
+        ni = ni.reshape((*vis_data.shape[:-1], self.samples))
 
         if self.mask_zero_weight:
             # set weights to zero where there is no data
@@ -1209,6 +1217,9 @@ class SelectPol(task.SingleTask):
 
                 elif np.issubdtype(out_dset.dtype, np.bool_):
                     pass
+
+                elif "freq_cov" in name:
+                    out_dset[oslc] /= nsum**2
 
                 else:
                     out_dset[oslc] /= nsum
@@ -1610,6 +1621,11 @@ class MixData(task.SingleTask):
     tag_coeff : list
         Boolean array indicating which input containers tags should be used to generate
         the output tag.
+    aux_coeff : dict
+        Coefficients to be applied to auxiliary datasets in the input container to
+        generate the output.  This should be a dictionary where each key is the name
+        of a dataset in the input container, and the corresponding value is a list
+        of coefficients used to mix.
     invert_weight : bool
         Invert the weights to convert to variance prior to mixing.  Re-invert in the
         final mixed data product to convert back to inverse variance.
@@ -1621,6 +1637,7 @@ class MixData(task.SingleTask):
     data_coeff = config.list_type(type_=float)
     weight_coeff = config.list_type(type_=float)
     tag_coeff = config.list_type(type_=bool)
+    aux_coeff = config.Property(proptype=dict)
     invert_weight = config.Property(proptype=bool, default=False)
     require_nonzero_weight = config.Property(proptype=bool, default=False)
 
@@ -1657,6 +1674,14 @@ class MixData(task.SingleTask):
 
         if self.mixed_data is None:
             self.mixed_data = containers.empty_like(data)
+
+            # If requested, add auxiliary datasets
+            for key in self.aux_coeff.keys():
+                if key not in self.mixed_data.datasets:
+                    self.mixed_data.add_dataset(key)
+                self.mixed_data.datasets[key][:] = 0.0
+
+            # Redistribute over frequency
             self.mixed_data.redistribute("freq")
 
             # Zero out data and weights
@@ -1705,6 +1730,12 @@ class MixData(task.SingleTask):
             # Update the flag
             if self.require_nonzero_weight:
                 self._flag &= data.weight[:] > 0.0
+
+        # Deal with auxiliary datasets
+        for key, aux_coeff in self.aux_coeff.items():
+            aco = aux_coeff[self._data_ind]
+            if aco != 0.0:
+                self.mixed_data.datasets[key][:] += aco * data.datasets[key][:]
 
         # Save the tags
         if "tag" in data.attrs and (
@@ -1831,7 +1862,6 @@ class Downselect(io.SelectionsMixin, task.SingleTask):
         -------
         out
             Container of same type as the input with specific axis selections.
-            Any datasets not included in the selections will not be initialized.
         """
         sel = {}
 
@@ -1861,7 +1891,9 @@ class Downselect(io.SelectionsMixin, task.SingleTask):
         out = data.__class__(
             axes_from=data, attrs_from=data, skip_datasets=True, **output_axes
         )
-        containers.copy_datasets_filter(data, out, selection=sel)
+        containers.copy_datasets_filter(
+            data, out, selection=sel, copy_without_selection=True
+        )
 
         return out
 

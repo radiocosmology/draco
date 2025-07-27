@@ -6,7 +6,7 @@ all be moved out into their own module.
 """
 
 import numpy as np
-from caput import config
+from caput import config, weighted_median
 
 from ..core import containers, task
 from ..util import tools
@@ -103,8 +103,6 @@ class ApplyGain(task.SingleTask):
 
                 # Smooth the gain data if required
                 if self.smoothing_length is not None:
-                    import scipy.signal as ss
-
                     # Turn smoothing length into a number of samples
                     tdiff = gain.time[1] - gain.time[0]
                     samp = int(np.ceil(self.smoothing_length / tdiff))
@@ -115,9 +113,19 @@ class ApplyGain(task.SingleTask):
                     # Turn into 2D array (required by smoothing routines)
                     gain_r = gain_arr.reshape(-1, gain_arr.shape[-1])
 
+                    # Get smoothing weight mask, if it exists
+                    if weight_arr is not None:
+                        wmask = (weight_arr > 0.0).astype(np.float64)
+                    else:
+                        wmask = np.ones(gain_r.shape, dtype=np.float64)
+
                     # Smooth amplitude and phase separately
-                    smooth_amp = ss.medfilt2d(np.abs(gain_r), kernel_size=[1, l])
-                    smooth_phase = ss.medfilt2d(np.angle(gain_r), kernel_size=[1, l])
+                    smooth_amp = weighted_median.moving_weighted_median(
+                        np.abs(gain_r), weights=wmask, size=(1, l)
+                    )
+                    smooth_phase = weighted_median.moving_weighted_median(
+                        np.angle(gain_r), weights=wmask, size=(1, l)
+                    )
 
                     # Recombine and reshape back to original shape
                     gain_arr = smooth_amp * np.exp(1.0j * smooth_phase)
@@ -125,10 +133,13 @@ class ApplyGain(task.SingleTask):
 
                     # Smooth weight array if it exists
                     if weight_arr is not None:
+                        # Smooth
                         shp = weight_arr.shape
-                        weight_arr = ss.medfilt2d(
-                            weight_arr.reshape(-1, shp[-1]), kernel_size=[1, l]
+                        weight_arr = weighted_median.moving_weighted_median(
+                            weight_arr.reshape(-1, shp[-1]), weights=wmask, size=(1, l)
                         ).reshape(shp)
+                        # Ensure flagged values remain flagged
+                        weight_arr[wmask == 0] = 0.0
 
         else:
             raise RuntimeError("Format of `gain` argument is unknown.")

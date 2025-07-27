@@ -123,13 +123,16 @@ class GaussianNoiseDataset(task.SingleTask, random.RandomTask):
         return out
 
 
-class MultipleGaussianNoiseDatasets(GaussianNoiseDataset):
-    """Generates multiple Gaussian distributed noise datasets.
+class MultipleNoiseRealizationsMixin:
+    """Generates multiple noise realizations with the same underlying statistics.
+
+    This is a non-functional class mixin that must be combined with a class whose
+    process method generates a single noise realization.
 
     Attributes
     ----------
     niter : int
-        Number of Gaussian noise datasets to generate.
+        Number of noise realizations to generate.
     """
 
     niter = config.Property(proptype=int, default=1)
@@ -163,6 +166,12 @@ class MultipleGaussianNoiseDatasets(GaussianNoiseDataset):
             raise pipeline.PipelineStopIteration
 
         return super().process(self.data[self._count % len(self.data)])
+
+
+class MultipleGaussianNoiseDatasets(
+    MultipleNoiseRealizationsMixin, GaussianNoiseDataset
+):
+    """Generates multiple Gaussian distributed noise datasets."""
 
 
 class GaussianNoise(task.SingleTask, random.RandomTask):
@@ -364,3 +373,105 @@ class SampleNoise(task.SingleTask, random.RandomTask):
                 )
 
         return data_exp
+
+
+class FreqCorrelatedNoise(task.SingleTask, random.RandomTask):
+    """Generate frequency-correlated noise using Cholesky factors.
+
+    This task uses precomputed Cholesky decompositions of the frequency-frequency
+    noise covariance (stored in a FreqNoiseModel container) to simulate
+    a noise realization into a VisGridStream container.
+
+    Attributes
+    ----------
+    save_redundancy : bool
+        If True, save the redundancy of each visibility.  Default is False.
+    """
+
+    save_redundancy = config.Property(proptype=bool, default=False)
+
+    def process(self, noise_model):
+        """Simulate noise into a VisGridStream container.
+
+        Parameters
+        ----------
+        noise_model : containers.FreqNoiseModel
+            Input noise model containing Cholesky factors and baseline redundancy.
+
+        Returns
+        -------
+        out : containers.VisGridStream
+            Container filled with a frequency-correlated noise realization.
+        """
+        noise_model.redistribute("ra")
+
+        out = containers.VisGridStream(
+            axes_from=noise_model,
+            attrs_from=noise_model,
+            distributed=noise_model.distributed,
+            comm=noise_model.comm,
+        )
+        out.redistribute("ra")
+
+        if self.save_redundancy:
+            out.add_dataset("redundancy")
+            out.redundancy[:] = noise_model.redundancy[:][..., np.newaxis]
+
+        # Compute the redundancy factor that determines how the noise depends
+        # on north-south baseline distance
+        redundancy = noise_model.redundancy[:]
+        inv_sqrt_redundancy = tools.invert_no_zero(np.sqrt(redundancy))
+
+        # Dereference datasets
+        L = noise_model.freq_cov[:].local_array
+        weight = noise_model.weight[:].local_array
+
+        ovis = out.vis[:].local_array
+        oweight = out.weight[:].local_array
+
+        npol, nfreq, new, nns, nra = ovis.shape
+
+        # Loop over pol and ew to reduce memory usage
+        for pp in range(npol):
+
+            for ee in range(new):
+
+                # Generate a set of complex random numbers with unit standard deviation
+                z = np.empty((nra, nfreq, nns), dtype=ovis.dtype)
+
+                random.complex_normal(
+                    scale=1.0,
+                    out=z,
+                    rng=self.rng,
+                )
+
+                # Multiply by the Cholesky decomposition of the freq-freq covariance matrix
+                # to introduce the desired correlation as a function of frequency, then divide
+                # by the square root of the redundancy of the baseline.
+                sz = np.matmul(L[pp, ee], z) * inv_sqrt_redundancy[pp, ee]
+
+                ovis[pp, :, ee] = sz.transpose(1, 2, 0)
+
+                oweight[pp, :, ee] = (
+                    weight[pp, :, ee, np.newaxis, :] * redundancy[pp, ee, :, np.newaxis]
+                )
+
+        # Ensure that the visibility matrix is Hermitian
+        nyp = nns // 2 + 1
+        slc_pos = slice(1, nyp)
+        slc_neg = slice(-1, -nyp, -1)
+
+        pconjmap = np.unique(
+            [pj + pi for pi, pj in out.index_map["pol"]], return_inverse=True
+        )[1]
+
+        for pi, po in enumerate(pconjmap):
+            ovis[po, :, 0, slc_neg, :] = ovis[pi, :, 0, slc_pos, :].conj()
+            if pi == po:
+                ovis[po, :, 0, 0, :] = ovis[pi, :, 0, 0, :].real * 2**0.5
+
+        return out
+
+
+class MultipleFreqCorrelatedNoise(MultipleNoiseRealizationsMixin, FreqCorrelatedNoise):
+    """Generates multiple realizations of frequency-correlated noise."""

@@ -1124,10 +1124,14 @@ class DelayFilterHyFoReSBandpassHybridVisClean(task.SingleTask):
         is less than this fraction of the median value over all
         unmasked frequencies.  Default is 0.0 (i.e., do not mask
         frequencies with low attenuation).
+    calculate_cov : bool
+        Calculate the frequency-frequency noise covariance due to filtering.
     """
 
     cutoff = config.Property(proptype=float, default=1e-1)
     atten_threshold = config.Property(proptype=float, default=0.0)
+
+    calculate_cov = config.Property(proptype=bool, default=False)
 
     def process(self, hv, source, bp):
         """Compensates the bandpass window and subtracts foreground residuals.
@@ -1151,10 +1155,6 @@ class DelayFilterHyFoReSBandpassHybridVisClean(task.SingleTask):
                 window-compensated gains along with the singular values
                 of the window, rank of the inverted window, and cutoff
         """
-        # Distribute over products
-        hv.redistribute(["ra", "time"])
-        source.redistribute(["ra", "time"])
-
         # Validate that both hybrid beamformed visibilites match
         if not np.array_equal(source.freq, hv.freq):
             raise ValueError("Frequencies do not match for hybrid visibilities.")
@@ -1170,6 +1170,18 @@ class DelayFilterHyFoReSBandpassHybridVisClean(task.SingleTask):
 
         if not np.array_equal(source.ra, hv.ra):
             raise ValueError("Right Ascension do not match for hybrid visibilities.")
+
+        # If requested, add freq_cov dataset.
+        if self.calculate_cov:
+            if "complex_filter" in source.datasets:
+                hv.add_dataset("complex_freq_cov")
+            else:
+                hv.add_dataset("freq_cov")
+            hv.freq_cov[:] = 0.0
+
+        # Distribute over products
+        hv.redistribute(["ra", "time"])
+        source.redistribute(["ra", "time"])
 
         npol, nfreq, new, nel, ntime = hv.vis.local_shape
 
@@ -1221,6 +1233,8 @@ class DelayFilterHyFoReSBandpassHybridVisClean(task.SingleTask):
         vis = hv.vis[:].local_array
         weight = hv.weight[:].local_array
         filt = source.filter[:].local_array
+        if self.calculate_cov:
+            freq_cov = hv.freq_cov[:].local_array
 
         # loop over products
         for tt in range(ntime):
@@ -1235,10 +1249,6 @@ class DelayFilterHyFoReSBandpassHybridVisClean(task.SingleTask):
 
                     if not np.any(flag):
                         continue
-
-                    # Grab datasets for this pol and ew baseline
-                    tvis = np.ascontiguousarray(vis[pp, :, xx, :, tt])
-                    tvar = tools.invert_no_zero(weight[pp, :, xx, tt])
 
                     # Grab the filter for this pol and ew baseline
                     NF = np.ascontiguousarray(filt[pp, :, :, xx, tt])
@@ -1262,13 +1272,27 @@ class DelayFilterHyFoReSBandpassHybridVisClean(task.SingleTask):
                         weight[pp, :, xx, tt] = 0.0
                         continue
 
-                    # Subtract foreground residuals
+                    # Construct gain correction
                     diag_m = 1 - g[pp, xx, :]
-                    vis[pp, :, xx, :, tt] = np.matmul(NF, diag_m[:, np.newaxis] * tvis)
-                    # Variance multiples with the filter value squared
-                    weight[pp, :, xx, tt] = tools.invert_no_zero(
-                        np.matmul(np.abs(NF) ** 2, (np.abs(diag_m[:]) ** 2) * tvar)
+
+                    # Apply the gain correction to visibilities and visibility variance
+                    tvis = vis[pp, :, xx, :, tt] * diag_m[:, np.newaxis]
+                    tvar = (
+                        tools.invert_no_zero(weight[pp, :, xx, tt])
+                        * np.abs(diag_m) ** 2
                     )
+
+                    # Apply the filter
+                    vis[pp, :, xx, :, tt] = np.matmul(NF, tvis)
+
+                    # Apply filter squared to the variance and covariance
+                    weight[pp, :, xx, tt] = tools.invert_no_zero(
+                        np.matmul(np.abs(NF) ** 2, tvar)
+                    )
+
+                    if self.calculate_cov:
+                        freq_cov[pp, :, :, xx, tt] = np.matmul(NF * tvar, NF.T.conj())
+
                     # Flag frequencies with large attenuation
                     if self.atten_threshold > 0.0:
                         diag = np.abs(np.diag(NF))
