@@ -7,7 +7,7 @@ from typing import overload
 
 import numpy as np
 import scipy.linalg as la
-from caput import config, fftw, mpiarray, pipeline
+from caput import config, fftw, mpiarray, pipeline, weighted_median
 from caput.tools import invert_no_zero
 from numpy.lib.recfunctions import structured_to_unstructured
 
@@ -2074,6 +2074,70 @@ class ReduceVar(ReduceBase):
         return v, ws
 
 
+class ReduceMAD(ReduceBase):
+    """Compute the median absolute deviation (MAD) of an input container.
+
+    This task reduces an array along specified axes by calculating the
+    weighted or unweighted median absolute deviation, with optional subtraction
+    of the median prior to reduction. It supports different weighting schemes
+    for masking or downweighting specific elements.
+
+    Attributes
+    ----------
+    weighting : str
+        Specifies the weighting scheme to use. Options are:
+        - "masked": treat weights as a binary mask (nonzero = keep),
+        - "weighted": use weights for computing the weighted median,
+        - "excess": multiply array by sqrt(weight) before masking.
+    skip_median : bool
+        If True, skips subtracting the weighted median from the array before
+        computing the MAD. Defaults to False.
+
+    Notes
+    -----
+    The output MAD is scaled by 1.4826 to make it comparable to the standard
+    deviation for a normal distribution. If the input array is complex,
+    the median is computed separately for the real and imaginary parts.
+    """
+
+    weighting = config.enum(["masked", "weighted", "excess"], default="masked")
+    skip_median = config.Property(proptype=bool, default=False)
+
+    _op = "median_absolute_deviation"
+
+    def reduction(self, arr, weight, axis):
+        """Calculate the median absolute deviation."""
+        if self.weighting == "excess":
+            arr = arr * np.sqrt(weight)
+            weight = (weight > 0).astype(weight.dtype)
+
+        elif self.weighting == "masked":
+            weight = (weight > 0).astype(weight.dtype)
+
+        keep = [i for i in list(range(arr.ndim)) if i not in axis]
+        order = keep + list(axis)
+
+        shp = [arr.shape[i] for i in keep] + [-1]
+        rshp = [arr.shape[i] if i in keep else 1 for i in list(range(arr.ndim))]
+
+        arr = arr.transpose(*order).reshape(*shp)
+        flag = weight.transpose(*order).reshape(*shp)
+
+        summed_weight = np.sum(weight, axis=-1).reshape(*rshp)
+
+        if not self.skip_median:
+            med = weighted_median.weighted_median(arr.real, flag)
+            if np.iscomplexobj(arr):
+                med = med + 1.0j * weighted_median.weighted_median(arr.imag, flag)
+            arr = arr - med[..., np.newaxis]
+
+        mad = 1.4826 * weighted_median.weighted_median(np.abs(arr), weight).reshape(
+            rshp
+        )
+
+        return mad, summed_weight
+
+
 class ReduceChisq(ReduceBase):
     """Calculate the chi-squared per degree of freedom.
 
@@ -2100,6 +2164,98 @@ class ReduceChisq(ReduceBase):
         ) * invert_no_zero(num)
 
         return v, num
+
+
+class ScaleDataWeight(task.SingleTask):
+    """Scale data and weight arrays in a container by data array in another container.
+
+    Intended for use with subclasses of BaseReduce to normalize data based on
+    statistics computed by reducing over one or more axes.
+
+    Attributes
+    ----------
+    in_place : bool, default=True
+        Whether to modify the input container in place. If False, returns a copy.
+    invert : bool, default=False
+        If True, apply the inverse of the scale factor to the data.
+    """
+
+    in_place = config.Property(proptype=bool, default=True)
+    invert = config.Property(proptype=bool, default=False)
+
+    def process(self, data, scale):
+        """Apply scaling to the data and weight arrays in a container.
+
+        Parameters
+        ----------
+        data : subclass of containers.DataWeightContainer
+            The container whose data and weight arrays will be scaled.
+        scale : same type as `data`
+            A container of the same type as `data`, whose `data` and `weight`
+            fields provide the scale factor and corresponding mask.
+
+        Returns
+        -------
+        out : same type as `data`
+            The scaled container. May be the same object as `data` (in-place) or a copy.
+        """
+        # Validate the types are the same
+        if type(data) is not type(scale):
+            raise TypeError(
+                f"type(data) (={type(data)}) must match " f"type(scale) (={type(scale)}"
+            )
+
+        # Extract the shapes
+        daxes = data.data[:].attrs["axis"]
+        waxes = data.weight[:].attrs["axis"]
+        shp1 = list(data.data[:].global_shape)
+        shp2 = list(scale.data[:].global_shape)
+
+        # Ensure that the size of each axis in the scale container
+        # is equal to the size of the axis in the data container,
+        # or equal to 1 (i.e., broadcastable).  Also check that
+        # all non-singular dimensions are also present in the weight
+        # dataset, since otherwise broadcasting against the weights
+        # is undefined.
+        avail = {}
+        for ax, s1, s2 in zip(daxes, shp1, shp2):
+            if s1 == s2 and ax in waxes:
+                avail[ax] = s1
+            elif s2 != 1:
+                raise RuntimeError(
+                    "scale_factor must broadcast against data and weight."
+                )
+
+        # TODO make this work if all axes have been reduced
+        if not avail:
+            raise RuntimeError("Must have common axis to distribute over.")
+
+        # Construct slices that will allow the scale factor to broadcast
+        # against the weights and the weights to broadcast against the
+        # scale factor.
+        wslc = tuple([slice(None) if dax in waxes else 0 for dax in daxes])
+        dslc = tuple([slice(None) if wax in daxes else np.newaxis for wax in waxes])
+
+        # Distribute over the largest axis
+        dist_axis = sorted(avail, key=avail.get, reverse=True)[0]
+
+        data.redistribute(dist_axis)
+        scale.redistribute(dist_axis)
+
+        # Make a copy of data if requested
+        out = data if self.in_place else data.copy()
+
+        # Scale data and weight in the data container by the data in the
+        # scale container (or its inverse).
+        c = scale.data[:].local_array * (scale.weight[:].local_array[dslc] > 0.0)
+        if self.invert:
+            out.data[:].local_array[:] *= tools.invert_no_zero(c)
+            out.weight[:].local_array[:] *= c[wslc] ** 2
+        else:
+            out.data[:].local_array[:] *= c
+            out.weight[:].local_array[:] *= tools.invert_no_zero(c[wslc] ** 2)
+
+        return out
 
 
 class HPFTimeStream(task.SingleTask):
