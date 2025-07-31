@@ -3562,7 +3562,9 @@ class ReduceMaskEl(task.SingleTask):
 
         Parameters
         ----------
-        rfimask : containers.LocalizedRFIMask(freq, el, time) or containers.SiderealLocalizedRFIMask(freq, ra, el)
+        rfimask : containers.LocalizedRFIMask(freq, el, time) or
+                  containers.SiderealLocalizedRFIMask(freq, ra, el) or
+                  containers.RingMapMask(pol, freq, ra, el)
             El-specific RFI mask indicating channels that are free from RFI events.
 
         Returns
@@ -3571,38 +3573,33 @@ class ReduceMaskEl(task.SingleTask):
             Non el-specific RFI mask indicating channels that are free from RFI events.
 
         """
-        # Validate inpput class
-        if (not isinstance(rfimask, containers.LocalizedRFIMask)) & (
-            not isinstance(rfimask, containers.LocalizedSiderealRFIMask)
-        ):
+        class_dict = {
+            containers.LocalizedRFIMask: containers.RFIMask,
+            containers.LocalizedSiderealRFIMask: containers.SiderealRFIMask,
+            containers.RingMapMask: containers.SiderealRFIMaskByPol,
+        }
+
+        # Validate input class
+        if rfimask.__class__ not in class_dict:
             raise ValueError(
-                f"Input class must be LocalizedRFIMask or LocalizedSiderealRFIMask. Got {type(rfimask)}."
+                f"Input class must be LocalizedRFIMask, LocalizedSiderealRFIMask, or RingMapMask. Got {type(rfimask)}."
             )
+
+        rfimask.redistribute("freq")
 
         # Extract mask/frac and axes data
         mask = rfimask.mask[:]
         el_axis = list(rfimask.mask.attrs["axis"]).index("el")
-        freq = rfimask.freq[:]
 
         # Apply reduction condition
         reduced_mask = np.sum(mask, axis=el_axis) >= self.el_threshold
 
         # Determine output class type
-        if isinstance(rfimask, containers.LocalizedRFIMask):
-            # LocalizedRFIMask(freq, el, time) -> RFIMask(freq, time)
-            time = rfimask.time[:]
-            output = containers.RFIMask(freq=freq, time=time)
-        elif isinstance(rfimask, containers.LocalizedSiderealRFIMask):
-            # LocalizedSiderealRFIMask(freq, ra, el)  -> SiderealRFIMask(freq, ra)
-            ra = rfimask.ra[:]
-            output = containers.SiderealRFIMask(freq=freq, ra=ra)
+        output_container = class_dict[rfimask.__class__]
+        output = output_container(axes_from=rfimask, attrs_from=rfimask)
 
         # The output RFI mask is not frequency distributed
-        arr = reduced_mask
-        arrdist = mpiarray.MPIArray.wrap(arr, axis=0)
-        final_mask = arrdist.allgather()
-
-        output.mask[:] = final_mask
+        output.mask[:] = reduced_mask.allgather()
 
         # Return output container
         return output
