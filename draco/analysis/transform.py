@@ -1911,14 +1911,10 @@ class ReduceBase(task.SingleTask):
         Axis names to apply the reduction to
     dataset : str
         Dataset name to reduce.
-    weighting : str
-        Which type of weighting to use, if applicable. Options are "none",
-        "masked", or "weighted"
     """
 
     axes = config.Property(proptype=list)
     dataset = config.Property(proptype=str)
-    weighting = config.enum(["none", "masked", "weighted"], default="none")
 
     _op = None
 
@@ -2048,7 +2044,16 @@ class ReduceBase(task.SingleTask):
 
 
 class ReduceVar(ReduceBase):
-    """Take the weighted variance of a container."""
+    """Take the weighted variance of a container.
+
+    Attributes
+    ----------
+    weighting : str
+        Which type of weighting to use, if applicable.
+        Options are "none", "masked", or "weighted".
+    """
+
+    weighting = config.enum(["none", "masked", "weighted"], default="none")
 
     _op = "variance"
 
@@ -2121,14 +2126,18 @@ class ReduceMAD(ReduceBase):
         rshp = [arr.shape[i] if i in keep else 1 for i in list(range(arr.ndim))]
 
         arr = arr.transpose(*order).reshape(*shp)
-        flag = weight.transpose(*order).reshape(*shp)
+        weight = np.ascontiguousarray(weight.transpose(*order).reshape(*shp))
 
         summed_weight = np.sum(weight, axis=-1).reshape(*rshp)
 
         if not self.skip_median:
-            med = weighted_median.weighted_median(arr.real, flag)
+            med = weighted_median.weighted_median(
+                np.ascontiguousarray(arr.real), weight
+            )
             if np.iscomplexobj(arr):
-                med = med + 1.0j * weighted_median.weighted_median(arr.imag, flag)
+                med = med + 1.0j * weighted_median.weighted_median(
+                    np.ascontiguousarray(arr.imag), weight
+                )
             arr = arr - med[..., np.newaxis]
 
         mad = 1.4826 * weighted_median.weighted_median(np.abs(arr), weight).reshape(
@@ -2178,10 +2187,21 @@ class ScaleDataWeight(task.SingleTask):
         Whether to modify the input container in place. If False, returns a copy.
     invert : bool, default=False
         If True, apply the inverse of the scale factor to the data.
+    scale_data : bool, default=True
+        If True, also apply the scale factor (or its inverse) to the data.
+    scale_weight : bool, default=False
+        If True, also apply the scale factor (or its inverse) to the weight.
     """
 
     in_place = config.Property(proptype=bool, default=True)
     invert = config.Property(proptype=bool, default=False)
+    scale_data = config.Property(proptype=bool, default=True)
+    scale_weight = config.Property(proptype=bool, default=False)
+
+    def setup(self):
+        """Check that one of scale_data or scale_weight is set."""
+        if not self.scale_data and not self.scale_weight:
+            raise ValueError("Must set either scale_data or scale_weight to True.")
 
     def process(self, data, scale):
         """Apply scaling to the data and weight arrays in a container.
@@ -2206,8 +2226,8 @@ class ScaleDataWeight(task.SingleTask):
             )
 
         # Extract the shapes
-        daxes = data.data[:].attrs["axis"]
-        waxes = data.weight[:].attrs["axis"]
+        daxes = data.data.attrs["axis"]
+        waxes = data.weight.attrs["axis"]
         shp1 = list(data.data[:].global_shape)
         shp2 = list(scale.data[:].global_shape)
 
@@ -2249,11 +2269,15 @@ class ScaleDataWeight(task.SingleTask):
         # scale container (or its inverse).
         c = scale.data[:].local_array * (scale.weight[:].local_array[dslc] > 0.0)
         if self.invert:
-            out.data[:].local_array[:] *= tools.invert_no_zero(c)
-            out.weight[:].local_array[:] *= c[wslc] ** 2
+            if self.scale_data:
+                out.data[:].local_array[:] *= tools.invert_no_zero(c)
+            if self.scale_weight:
+                out.weight[:].local_array[:] *= c[wslc] ** 2
         else:
-            out.data[:].local_array[:] *= c
-            out.weight[:].local_array[:] *= tools.invert_no_zero(c[wslc] ** 2)
+            if self.scale_data:
+                out.data[:].local_array[:] *= c
+            if self.scale_weight:
+                out.weight[:].local_array[:] *= tools.invert_no_zero(c[wslc] ** 2)
 
         return out
 
