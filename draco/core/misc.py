@@ -6,7 +6,7 @@ all be moved out into their own module.
 """
 
 import numpy as np
-from caput import config
+from caput import config, weighted_median
 
 from ..core import containers, task
 from ..util import tools
@@ -51,7 +51,7 @@ class ApplyGain(task.SingleTask):
         gain.redistribute("freq")
 
         if tstream.is_stacked and not isinstance(
-            gain, (containers.CommonModeGainData, containers.CommonModeSiderealGainData)
+            gain, containers.CommonModeGainData | containers.CommonModeSiderealGainData
         ):
             raise ValueError(
                 f"Cannot apply input-dependent gains to stacked data: {tstream!s}"
@@ -68,12 +68,10 @@ class ApplyGain(task.SingleTask):
 
         elif isinstance(
             gain,
-            (
-                containers.GainData,
-                containers.SiderealGainData,
-                containers.CommonModeGainData,
-                containers.CommonModeSiderealGainData,
-            ),
+            containers.GainData
+            | containers.SiderealGainData
+            | containers.CommonModeGainData
+            | containers.CommonModeSiderealGainData,
         ):
             # Extract gain array
             gain_arr = gain.gain[:]
@@ -86,7 +84,7 @@ class ApplyGain(task.SingleTask):
 
             if isinstance(
                 gain,
-                (containers.SiderealGainData, containers.CommonModeSiderealGainData),
+                containers.SiderealGainData | containers.CommonModeSiderealGainData,
             ):
                 # Check that we are defined at the same RA samples
                 if (gain.ra != tstream.ra).any():
@@ -105,8 +103,6 @@ class ApplyGain(task.SingleTask):
 
                 # Smooth the gain data if required
                 if self.smoothing_length is not None:
-                    import scipy.signal as ss
-
                     # Turn smoothing length into a number of samples
                     tdiff = gain.time[1] - gain.time[0]
                     samp = int(np.ceil(self.smoothing_length / tdiff))
@@ -117,9 +113,19 @@ class ApplyGain(task.SingleTask):
                     # Turn into 2D array (required by smoothing routines)
                     gain_r = gain_arr.reshape(-1, gain_arr.shape[-1])
 
+                    # Get smoothing weight mask, if it exists
+                    if weight_arr is not None:
+                        wmask = (weight_arr > 0.0).astype(np.float64)
+                    else:
+                        wmask = np.ones(gain_r.shape, dtype=np.float64)
+
                     # Smooth amplitude and phase separately
-                    smooth_amp = ss.medfilt2d(np.abs(gain_r), kernel_size=[1, l])
-                    smooth_phase = ss.medfilt2d(np.angle(gain_r), kernel_size=[1, l])
+                    smooth_amp = weighted_median.moving_weighted_median(
+                        np.abs(gain_r), weights=wmask, size=(1, l)
+                    )
+                    smooth_phase = weighted_median.moving_weighted_median(
+                        np.angle(gain_r), weights=wmask, size=(1, l)
+                    )
 
                     # Recombine and reshape back to original shape
                     gain_arr = smooth_amp * np.exp(1.0j * smooth_phase)
@@ -127,10 +133,13 @@ class ApplyGain(task.SingleTask):
 
                     # Smooth weight array if it exists
                     if weight_arr is not None:
+                        # Smooth
                         shp = weight_arr.shape
-                        weight_arr = ss.medfilt2d(
-                            weight_arr.reshape(-1, shp[-1]), kernel_size=[1, l]
+                        weight_arr = weighted_median.moving_weighted_median(
+                            weight_arr.reshape(-1, shp[-1]), weights=wmask, size=(1, l)
                         ).reshape(shp)
+                        # Ensure flagged values remain flagged
+                        weight_arr[wmask == 0] = 0.0
 
         else:
             raise RuntimeError("Format of `gain` argument is unknown.")
@@ -151,7 +160,7 @@ class ApplyGain(task.SingleTask):
                 tstream.vis[:], gvis, out=tstream.vis[:], prod_map=tstream.prod
             )
         elif isinstance(
-            gain, (containers.CommonModeGainData, containers.CommonModeSiderealGainData)
+            gain, containers.CommonModeGainData | containers.CommonModeSiderealGainData
         ):
             # Apply the gains to all 'prods/stacks' directly:
             tstream.vis[:] *= np.abs(gvis[:, np.newaxis, :]) ** 2
@@ -174,7 +183,7 @@ class ApplyGain(task.SingleTask):
                 tstream.weight[:], gweight, out=tstream.weight[:], prod_map=tstream.prod
             )
         elif isinstance(
-            gain, (containers.CommonModeGainData, containers.CommonModeSiderealGainData)
+            gain, containers.CommonModeGainData | containers.CommonModeSiderealGainData
         ):
             # Apply the gains to all 'prods/stacks' directly:
             tstream.weight[:] *= gweight[:, np.newaxis, :] ** 2
@@ -190,7 +199,20 @@ class ApplyGain(task.SingleTask):
 
 
 class AccumulateList(task.MPILoggedTask):
-    """Accumulate the inputs into a list and return when the task *finishes*."""
+    """Accumulate the inputs into a list and return as a group.
+
+    If `group_size` is None, return when the task *finishes*. Otherwise,
+    return every time `group_size` inputs have been accumulated.
+
+    Attributes
+    ----------
+    group_size
+        If this is set, this task will return the list of accumulated
+        data whenever it reaches this length. If not set, wait until
+        no more input is received and then return everything.
+    """
+
+    group_size = config.Property(proptype=int, default=None)
 
     def __init__(self):
         super().__init__()
@@ -200,6 +222,15 @@ class AccumulateList(task.MPILoggedTask):
         """Append an input to the list of inputs."""
         self._items.append(input_)
 
+        if self.group_size is not None:
+            if len(self._items) >= self.group_size:
+                output = self._items
+                self._items = []
+
+                return output
+
+        return None
+
     def finish(self):
         """Remove the internal reference.
 
@@ -208,7 +239,10 @@ class AccumulateList(task.MPILoggedTask):
         items = self._items
         del self._items
 
-        return items
+        # If the group_size was set, then items will either be an empty list
+        # or an incomplete list (with the incorrect number of outputs), so
+        # in that case return None to prevent the pipeline from crashing.
+        return items if self.group_size is None else None
 
 
 class CheckMPIEnvironment(task.MPILoggedTask):

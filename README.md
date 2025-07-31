@@ -36,10 +36,10 @@ draco can be installed with `pip` in the usual way:
 ```
 $ pip install git+https://github.com/radiocosmology/draco.git
 ```
-or by downloading the package and running the `setup.py` script:
+or by downloading the package and running `pip` from within the package directory:
 ```
 $ cd draco
-$ python setup.py install
+$ pip install -e .
 ```
 
 The full documentation of `draco` is at https://radiocosmology.github.io/draco/.

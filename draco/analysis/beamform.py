@@ -1,20 +1,22 @@
 """Beamform visibilities to the location of known sources."""
 
-from typing import Tuple
-
 import healpy
 import numpy as np
 import scipy.interpolate
-from caput import config
+from caput import config, interferometry
 from caput import time as ctime
 from cora.util import units
 from skyfield.api import Angle, Star
+
+from draco.analysis.sidereal import _search_nearest
 
 from ..core import containers, io, task
 from ..util._fast_tools import beamform
 from ..util.tools import (
     baseline_vector,
     calculate_redundancy,
+    correct_phase_wrap,
+    find_contiguous_slices,
     invert_no_zero,
     polarization_map,
 )
@@ -117,7 +119,7 @@ class BeamFormBase(task.SingleTask):
             if self.collapse_ha:
                 self.log.info(
                     "Tracking source for declination dependent amount of time "
-                    "[%d seconds at equator]" % self.timetrack
+                    f"[{self.timetrack:0.0f} seconds at equator]"
                 )
             else:
                 raise NotImplementedError(
@@ -128,7 +130,7 @@ class BeamFormBase(task.SingleTask):
 
         else:
             self.log.info(
-                "Tracking source for fixed amount of time [%d seconds]" % self.timetrack
+                f"Tracking source for fixed amount of time [{self.timetrack:0.0f} seconds]"
             )
 
     def process(self):
@@ -178,12 +180,8 @@ class BeamFormBase(task.SingleTask):
         # Copy catalog information
         formed_beam["position"][:] = self.source_cat["position"][:]
         if "redshift" in self.source_cat:
+            formed_beam.add_dataset("redshift")
             formed_beam["redshift"][:] = self.source_cat["redshift"][:]
-        else:
-            # TODO: If there is not redshift information,
-            # should I have a different formed_beam container?
-            formed_beam["redshift"]["z"][:] = 0.0
-            formed_beam["redshift"]["z_error"][:] = 0.0
 
         # Ensure container is distributed in frequency
         formed_beam.redistribute("freq")
@@ -748,7 +746,7 @@ class BeamFormCat(BeamFormBase):
         return super().process()
 
 
-class BeamFormExternalBase(BeamFormBase):
+class BeamFormExternalMixin:
     """Base class for tasks that beamform using an external model of the primary beam.
 
     The primary beam is provided to the task during setup.  Do not use this class
@@ -821,13 +819,14 @@ class BeamFormExternalBase(BeamFormBase):
         self._beam_freq = gbeam.freq[lo : lo + nfreq]
 
         # Find the relevant indices into the polarisation axis
-        ipol = np.array([list(gbeam.pol).index(pstr) for pstr in self.process_pol])
+        process_pol = getattr(self, "process_pol", list(gbeam.pol))
+        ipol = np.array([list(gbeam.pol).index(pstr) for pstr in process_pol])
         npol = ipol.size
         self._beam_pol = [gbeam.pol[ip] for ip in ipol]
 
         # Extract beam
-        flag = gbeam.weight[:, :, 0][:, ipol] > 0.0
-        beam = np.where(flag, gbeam.beam[:, :, 0][:, ipol].real, 0.0)
+        flag = gbeam.weight[:].local_array[:, :, 0][:, ipol] > 0.0
+        beam = np.where(flag, gbeam.beam[:].local_array[:, :, 0][:, ipol].real, 0.0)
 
         # Convert the declination and hour angle axis to radians, make sure they are sorted
         ha = (gbeam.phi + 180.0) % 360.0 - 180.0
@@ -896,14 +895,14 @@ class BeamFormExternalBase(BeamFormBase):
         return np.where(flag, primay_beam, 0.0)
 
 
-class BeamFormExternal(BeamFormExternalBase, BeamForm):
+class BeamFormExternal(BeamFormExternalMixin, BeamForm):
     """Beamform a single catalog and multiple datasets using an external beam model.
 
     The setup method requires [beam, manager, source_cat] as arguments.
     """
 
 
-class BeamFormExternalCat(BeamFormExternalBase, BeamFormCat):
+class BeamFormExternalCat(BeamFormExternalMixin, BeamFormCat):
     """Beamform multiple catalogs and a single dataset using an external beam model.
 
     The setup method requires [beam, manager, data] as arguments.
@@ -954,9 +953,12 @@ class RingMapBeamForm(task.SingleTask):
 
         src_ra, src_dec = self._process_catalog(catalog)
 
+        # Get the pixel indices
+        ra_ind, el_ind, src_ind = self._source_ind(src_ra, src_dec)
+
         # Container to hold the formed beams
         formed_beam = containers.FormedBeam(
-            object_id=catalog.index_map["object_id"],
+            object_id=catalog.index_map["object_id"][src_ind],
             axes_from=ringmap,
             attrs_from=catalog,
             distributed=True,
@@ -967,18 +969,16 @@ class RingMapBeamForm(task.SingleTask):
         formed_beam.weight[:] = 0.0
 
         # Copy catalog information
-        formed_beam["position"][:] = catalog["position"][:]
+        formed_beam["position"][:] = catalog["position"][src_ind]
         if "redshift" in catalog:
-            formed_beam["redshift"][:] = catalog["redshift"][:]
+            formed_beam.add_dataset("redshift")
+            formed_beam["redshift"][:] = catalog["redshift"][src_ind]
 
         # Ensure containers are distributed in frequency
         formed_beam.redistribute("freq")
         ringmap.redistribute("freq")
 
         has_weight = "weight" in ringmap.datasets
-
-        # Get the pixel indices
-        ra_ind, za_ind = self._source_ind(src_ra, src_dec)
 
         # Dereference the datasets
         fbb = formed_beam.beam[:]
@@ -988,15 +988,15 @@ class RingMapBeamForm(task.SingleTask):
 
         # Loop over sources and extract the polarised pencil beams containing them from
         # the ringmaps
-        for si, (ri, zi) in enumerate(zip(ra_ind, za_ind)):
-            fbb[si] = rmm[0, :, :, ri, zi]
-            fbw[si] = rmw[:, :, ri, zi] if has_weight else rmw[:, :, ri]
+        for si, (ri, ei) in enumerate(zip(ra_ind, el_ind)):
+            fbb[si] = rmm[0, :, :, ri, ei]
+            fbw[si] = rmw[:, :, ri, ei] if has_weight else rmw[:, :, ri]
 
         return formed_beam
 
     def _process_catalog(
         self, catalog: containers.SourceCatalog
-    ) -> Tuple[np.ndarray, np.ndarray]:
+    ) -> tuple[np.ndarray, np.ndarray]:
         """Get the current epoch coordinates of the catalog."""
         if "position" not in catalog:
             raise ValueError("Input is missing a position table.")
@@ -1026,25 +1026,69 @@ class RingMapBeamForm(task.SingleTask):
 
     def _source_ind(
         self, src_ra: np.ndarray, src_dec: np.ndarray
-    ) -> Tuple[np.ndarray, np.ndarray]:
-        """Get the RA/ZA ringmap pixel indices of the sources."""
-        # Get the grid size of the map in RA and sin(ZA)
-        dra = np.median(np.abs(np.diff(self.ringmap.index_map["ra"])))
-        dza = np.median(np.abs(np.diff(self.ringmap.index_map["el"])))
-        za_min = self.ringmap.index_map["el"][:].min()
+    ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+        """Find the indices of the pixels nearest to an array of source coordinates.
+
+        Given arrays of source right ascensions and declinations, this method finds
+        the indices into the RA and elevation axis of a ringmap corresponding to the
+        nearest pixels.  It excludes any sources that fall outside the ringmap.
+
+        Parameters
+        ----------
+        src_ra : np.ndarray[nsource,]
+            Source right ascensions in degrees.
+        src_dec : np.ndarray[nsource,]
+            Source declinations in degrees.
+
+        Returns
+        -------
+        ra_ind : np.ndarray[nvalid,]
+            Indices into the RA axis corresponding to the nearest pixel
+            for valid sources.
+        el_ind : np.ndarray[nvalid,]
+            Indices into the elevation axis corresponding to the nearest pixel
+            for valid sources.
+        src_ind : np.ndarray[nvalid,]
+            Indices of the sources that fall within the map's RA and elevation range.
+        """
+        src_el = np.sin(np.radians(src_dec - self.telescope.latitude))
+
+        # Get the map grid in RA and sin(ZA)
+        ra = self.ringmap.index_map["ra"]
+        el = self.ringmap.index_map["el"]
+
+        delta_ra = np.median(np.abs(np.diff(ra)))
+        delta_el = np.median(np.abs(np.diff(el)))
 
         # Get the source indices in RA
         # NOTE: that we need to take into account that sources might be less than 360
         # deg, but still closer to ind=0
-        max_ra_ind = len(self.ringmap.ra) - 1
-        ra_ind = (np.rint(src_ra / dra) % max_ra_ind).astype(np.int64)
+        ra_ind = _search_nearest(np.append(ra, 360.0 + ra[0]), src_ra) % ra.size
+
+        ra_sep = src_ra - ra[ra_ind]
+        ra_sep = (ra_sep + 180.0) % 360.0 - 180.0
 
         # Get the indices for the ZA direction
-        za_ind = np.rint(
-            (np.sin(np.radians(src_dec - self.telescope.latitude)) - za_min) / dza
-        ).astype(np.int64)
+        el_ind = _search_nearest(el, src_el)
 
-        return ra_ind, za_ind
+        el_sep = src_el - el[el_ind]
+
+        # Make sure no source are outside of the range covered by the map
+        src_flag = (np.abs(ra_sep) > (0.5 * delta_ra)) | (
+            np.abs(el_sep) > (0.5 * delta_el)
+        )
+
+        if np.any(src_flag):
+            self.log.info(
+                f"There are {np.sum(src_flag)} (of {src_flag.size}) "
+                "sources outside of the RA and Declination range covered by the map."
+            )
+
+        src_ind = np.flatnonzero(~src_flag)
+        ra_ind = ra_ind[src_ind]
+        el_ind = el_ind[src_ind]
+
+        return ra_ind, el_ind, src_ind
 
 
 class RingMapStack2D(RingMapBeamForm):
@@ -1059,6 +1103,7 @@ class RingMapStack2D(RingMapBeamForm):
         stack.
     freq_width : float
         Length of frequency interval either side of source to use in MHz.
+        If set to zero, then will default to use the ringmaps native resolution.
     weight : {"patch", "dec", "enum"}
         How to weight the data. If `"input"` the data is weighted on a pixel by pixel
         basis according to the input data. If `"patch"` then the inverse of the
@@ -1069,7 +1114,7 @@ class RingMapStack2D(RingMapBeamForm):
     num_ra = config.Property(proptype=int, default=10)
     num_dec = config.Property(proptype=int, default=10)
     num_freq = config.Property(proptype=int, default=256)
-    freq_width = config.Property(proptype=float, default=100.0)
+    freq_width = config.Property(proptype=float, default=0.0)
     weight = config.enum(["patch", "dec", "input"], default="input")
 
     def process(self, catalog: containers.SourceCatalog) -> containers.FormedBeam:
@@ -1094,7 +1139,10 @@ class RingMapStack2D(RingMapBeamForm):
         src_z = catalog["redshift"]["z"]
 
         # Get the pixel indices
-        ra_ind, za_ind = self._source_ind(src_ra, src_dec)
+        ra_ind, el_ind, src_ind = self._source_ind(src_ra, src_dec)
+
+        # Exclude sources outside of the map
+        src_z = src_z[src_ind]
 
         # Ensure containers are distributed in frequency
         ringmap.redistribute("freq")
@@ -1104,24 +1152,44 @@ class RingMapStack2D(RingMapBeamForm):
         fe = fs + ringmap.map.local_shape[2]
         local_freq = ringmap.freq[fs:fe]
 
-        # Dereference the datasets
-        rmm = ringmap.map[:]
-        rmw = (
-            ringmap.weight[:]
-            if "weight" in ringmap.datasets
-            else invert_no_zero(ringmap.rms[:]) ** 2
+        # RA and EL grid info
+        ra = ringmap.index_map["ra"]
+        el = ringmap.index_map["el"]
+
+        dra = np.median(np.abs(np.diff(ra)))
+        dell = np.median(np.abs(np.diff(el)))
+
+        nra = ra.size
+        nel = el.size
+
+        # Determine if the RA axis wraps around from 360 to 0 deg
+        tol = dra / 100.0
+        ra_wraps = np.isclose(ra[-1] + dra, 360.0, atol=tol) and np.isclose(
+            ra[0], 0.0, atol=tol
         )
 
         # Calculate the frequencies bins to use
         nbins = 2 * self.num_freq + 1
-        bin_edges = np.linspace(
-            -self.freq_width, self.freq_width, nbins + 1, endpoint=True
-        )
+        if self.freq_width > 0:
+            bin_edges = np.linspace(
+                -self.freq_width, self.freq_width, nbins + 1, endpoint=True
+            )
+        else:
+            df = np.median(np.abs(np.diff(ringmap.freq)))
+            bin_edges = (np.arange(-self.num_freq, self.num_freq + 2) - 0.5) * df
 
         # Calculate the edges of the frequency distribution, sources outside this range
         # will be dropped
         global_fmin = ringmap.freq.min()
         global_fmax = ringmap.freq.max()
+
+        # Dereference the datasets
+        rmm = ringmap.map[:].local_array
+        if "weight" in ringmap.datasets:
+            rmw = ringmap.weight[:].local_array
+        else:
+            rmw = invert_no_zero(ringmap.rms[:].local_array) ** 2
+            rmw = rmw[..., np.newaxis] * np.ones(el.size)
 
         # Create temporary array to accumulate into
         wstack = np.zeros(
@@ -1136,8 +1204,8 @@ class RingMapStack2D(RingMapBeamForm):
 
         # Loop over sources and extract the polarised pencil beams containing them from
         # the ringmaps
-        for si, (ri, zi, z) in enumerate(zip(ra_ind, za_ind, src_z)):
-            source_freq = 1420.406 / (1 + z)
+        for si, (ri, ei, z) in enumerate(zip(ra_ind, el_ind, src_z)):
+            source_freq = NU21 / (1 + z)
 
             if source_freq > global_fmax or source_freq < global_fmin:
                 continue
@@ -1145,13 +1213,42 @@ class RingMapStack2D(RingMapBeamForm):
             # Get bin indices
             bin_ind = np.digitize(local_freq - source_freq, bin_edges)
 
-            # Get the slices to extract the enclosing angular region
-            ri_slice = slice(ri - self.num_ra, ri + self.num_ra + 1)
-            zi_slice = slice(zi - self.num_dec, zi + self.num_dec + 1)
+            # Get the el slice to extract the enclosing angular region
+            estart, estop = ei - self.num_dec, ei + self.num_dec + 1
+            ei_start, ei_stop = max(estart, 0), min(estop, nel)
 
-            b = rmm[0, :, :, ri_slice, zi_slice]
-            w = rmw[:, :, ri_slice, np.newaxis]
+            ei_slice = slice(ei_start, ei_stop)
+            ei_out = slice(max(0, -estart), self.num_dec * 2 + 1 - max(0, estop - nel))
 
+            # Get the ra slice to extract the enclosing angular region
+            rstart, rstop = ri - self.num_ra, ri + self.num_ra + 1
+
+            if ra_wraps and ((rstart < 0) or (rstop > nra)):
+                # The source is near one of the ends of the RA axis,
+                # so we will need to wrap around.  Do this by creating
+                # two slices, one at each end, and concatenating them.
+                ri_slice = [slice((nra + rstart) % nra, nra), slice(0, rstop % nra)]
+                ri_out = slice(None)
+
+                b = np.concatenate(
+                    tuple(rmm[0, :, :, slc, ei_slice] for slc in ri_slice), axis=2
+                )
+                w = np.concatenate(
+                    tuple(rmw[:, :, slc, ei_slice] for slc in ri_slice), axis=2
+                )
+
+            else:
+                ri_start, ri_stop = max(rstart, 0), min(rstop, nra)
+                ri_slice = slice(ri_start, ri_stop)
+
+                ri_out = slice(
+                    max(0, -rstart), self.num_ra * 2 + 1 - max(0, rstop - nra)
+                )
+
+                b = rmm[0, :, :, ri_slice, ei_slice]
+                w = rmw[:, :, ri_slice, ei_slice]
+
+            # Determine the weight that is given to this source
             if self.weight == "patch":
                 # Replace the weights with the variance of the patch
                 w = (w != 0) * invert_no_zero(b.var(axis=(2, 3)))[
@@ -1159,14 +1256,14 @@ class RingMapStack2D(RingMapBeamForm):
                 ]
             elif self.weight == "dec":
                 # w = (w != 0) * invert_no_zero(b.var(axis=2))[:, :, np.newaxis, :]
-                w = (w != 0) * w_global[:, :, np.newaxis, zi_slice]
+                w = (w != 0) * w_global[:, :, np.newaxis, ei_slice]
 
             bw = b * w
 
             # TODO: this is probably slow so should be moved into Cython
             for lfi, bi in enumerate(bin_ind):
-                wstack[bi] += bw[:, lfi]
-                weight[bi] += w[:, lfi]
+                wstack[bi, :, ri_out, ei_out] += bw[:, lfi]
+                weight[bi, :, ri_out, ei_out] += w[:, lfi]
 
         # Arrays to reduce the data into
         wstack_all = np.zeros_like(wstack)
@@ -1177,19 +1274,405 @@ class RingMapStack2D(RingMapBeamForm):
 
         stack_all = wstack_all * invert_no_zero(weight_all)
 
+        # Create the axes of the 3D grid
+        delta_f = np.zeros(nbins, dtype=[("centre", float), ("width", float)])
+        delta_f["centre"] = 0.5 * (bin_edges[1:] + bin_edges[:-1])
+        delta_f["width"] = bin_edges[1:] - bin_edges[:-1]
+
+        delta_ra = np.arange(-self.num_ra, self.num_ra + 1) * dra
+        delta_dec = np.degrees(
+            np.arcsin(np.arange(-self.num_dec, self.num_dec + 1) * dell)
+        )
+
         # Create the container to store the data in
-        bin_centres = 0.5 * (bin_edges[1:] + bin_edges[:-1])
         stack = containers.Stack3D(
-            freq=bin_centres,
-            delta_ra=np.arange(-self.num_ra, self.num_ra + 1),
-            delta_dec=np.arange(-self.num_dec, self.num_dec + 1),
+            freq=delta_f,
+            delta_ra=delta_ra,
+            delta_dec=delta_dec,
             axes_from=ringmap,
             attrs_from=ringmap,
         )
         stack.attrs["tag"] = catalog.attrs["tag"]
         stack.stack[:] = stack_all[1:-1].transpose((1, 2, 3, 0))
+        stack.weight[:] = weight_all[1:-1].transpose((1, 2, 3, 0))
 
         return stack
+
+
+class HybridVisBeamForm(task.SingleTask):
+    """Beamform on a catalog of sources using the HybridVisStream data product.
+
+    Attributes
+    ----------
+    window : float
+        Window size in degrees.  For each source, right ascensions corresponding to
+        abs(ra - source_ra) <= window are extracted from the hybrid beamformed
+        visibility at the declination closest to the sources location.  Default is
+        5 degrees.
+    ignore_rot : bool
+        Ignore the telescope rotation_angle when calculating the baseline distances
+        used to beamform in the east-west direction.  Defaults to False.
+    """
+
+    window = config.Property(proptype=float, default=5.0)
+    ignore_rot = config.Property(proptype=bool, default=False)
+
+    def setup(self, manager, catalog):
+        """Define the observer and the catalog of sources.
+
+        Parameters
+        ----------
+        manager : draco.core.io.TelescopeConvertible
+            Observer object holding the geographic location of the telescope.
+            Note that if ignore_rot is False and this object has a non-zero
+            rotation_angle, then the beamforming will account for the phase
+            due to the north-south component of the rotation.
+
+        catalog : draco.core.containers.SourceCatalog
+            Beamform on sources in this catalog.
+        """
+        self.telescope = io.get_telescope(manager)
+        self.latitude = np.radians(self.telescope.latitude)
+        if not self.ignore_rot and hasattr(self.telescope, "rotation_angle"):
+            self.log.info(
+                "Correcting for phase due to north-south component of a "
+                f"{self.telescope.rotation_angle:0.2f} degree rotation."
+            )
+            self.rot = np.radians(self.telescope.rotation_angle)
+        else:
+            self.rot = 0.0
+
+        self.catalog = catalog
+
+    def process(self, hvis):
+        """Finish beamforming in the east-west direction.
+
+        Parameters
+        ----------
+        hvis : draco.core.containers.HybridVisStream
+            Visibilities beamformed in the north-south direction to
+            a grid of declinations along the meridian.
+
+        Returns
+        -------
+        out : draco.core.containers.HybridFormedBeamHA
+            Visibilities beamformed to the location of sources
+            in a catalog.
+        """
+        hvis.redistribute("freq")
+
+        fringestopped = hvis.attrs.get("fringestopped", False)
+
+        # Get source positions
+        lsd = hvis.attrs.get("lsd", hvis.attrs.get("csd"))
+
+        src_ra, src_dec = (
+            self.catalog["position"]["ra"][:],
+            self.catalog["position"]["dec"][:],
+        )
+        if lsd is not None:
+            epoch = np.atleast_1d(self.telescope.lsd_to_unix(lsd))
+            coords = [icrs_to_cirs(src_ra, src_dec, ep) for ep in epoch]
+            src_ra = np.mean([coord[0] for coord in coords], axis=0)
+            src_dec = np.mean([coord[1] for coord in coords], axis=0)
+
+        # Find nearest declination
+        dec = np.degrees(np.arcsin(hvis.index_map["el"]) + self.latitude)
+        nearest_dec = _search_nearest(dec, src_dec)
+
+        delta_dec = np.max(np.abs(np.diff(dec)))
+        valid_src = np.abs(src_dec - dec[nearest_dec]) < delta_dec
+
+        self.log.info(
+            f"There are {np.sum(valid_src)} catalog sources in this declination range."
+        )
+
+        # Find hour angle window
+        ra = hvis.ra
+        ha_arr = correct_phase_wrap(ra[np.newaxis, :] - src_ra[:, np.newaxis], deg=True)
+        valid = np.abs(ha_arr) <= self.window
+
+        nha = np.sum(valid, axis=-1)
+
+        ra_rad = np.radians(ra)
+
+        # Calculate baseline distances
+        freq = hvis.freq[hvis.vis[:].local_bounds]
+        lmbda = C * 1e-6 / freq
+
+        ew = hvis.index_map["ew"]
+        u = ew[np.newaxis, :, np.newaxis] / lmbda[:, np.newaxis, np.newaxis]
+        v = np.sin(self.rot) * u
+
+        # Dereference input datasets
+        vis = hvis.vis[:].local_array  # pol, freq, ew, el, ra
+        weight = hvis.weight[:].local_array  # pol, freq, ew, ra
+
+        # Create the output container
+        out = containers.FormedBeamHAEW(
+            object_id=self.catalog.index_map["object_id"],
+            ha=np.arange(np.max(nha), dtype=int),
+            axes_from=hvis,
+            attrs_from=hvis,
+            distributed=hvis.distributed,
+            comm=hvis.comm,
+        )
+
+        if "redshift" in hvis:
+            out.add_dataset("redshift")
+            out.redshift[:] = hvis.redshift[:]
+
+        out.position["ra"][:] = src_ra
+        out.position["dec"][:] = src_dec
+
+        out.redistribute("freq")
+
+        # Dereference output datasets
+        ofb = out.beam[:].local_array
+        ofb[:] = 0.0
+
+        owe = out.weight[:].local_array
+        owe[:] = 0.0
+
+        oha = out.ha[:]
+        oha[:] = 0.0
+
+        # Loop over sources and fringestop
+        for ss, (idec, sdec) in enumerate(zip(nearest_dec, np.radians(src_dec))):
+
+            in_range = np.flatnonzero(valid[ss])
+            if (in_range.size == 0) or not valid_src[ss]:
+                continue
+
+            cos_dec = np.cos(np.radians(dec[idec]))
+
+            isort = np.argsort(ha_arr[ss, in_range])
+            in_range = in_range[isort]
+
+            islcs = find_contiguous_slices(in_range)
+            count = 0
+            for islc in islcs:
+
+                svis = vis[..., idec, islc]  # pol, freq, ew, ha
+                sweight = weight[..., islc]
+
+                nsample = svis.shape[-1]
+                oslc = slice(count, count + nsample)
+                count = count + nsample
+
+                oha[ss, oslc] = ha_arr[ss, islc]
+                ha = np.radians(ha_arr[ss, islc])
+
+                # Loop over local frequencies and fringestop
+                for ff in range(svis.shape[1]):
+
+                    owe[ss, :, ff, :, oslc] = sweight[:, ff]
+
+                    # Calculate the phase
+                    phi = interferometry.fringestop_phase(
+                        ha, self.latitude, sdec, u[ff], v[ff]
+                    )
+
+                    # If the container has already been fringestopped,
+                    # then we need to remove that contribution from the phase
+                    if fringestopped:
+                        omega = 2.0 * np.pi * ew * cos_dec / lmbda[ff]
+                        phi *= np.exp(
+                            -1.0j * omega[:, np.newaxis] * ra_rad[np.newaxis, islc]
+                        )
+
+                    ofb[ss, :, ff, :, oslc] = svis[:, ff] * phi
+
+        return out
+
+
+class FitBeamFormed(BeamFormExternalMixin, task.SingleTask):
+    """Fit beamformed visibilities as a function of hour angle to a primary beam model.
+
+    Must provide a GridBeam object in celestial coordinates as argument to setup.
+
+    Attributes
+    ----------
+    weight : "uniform" or "inverse_variance"
+        How to weight different hour angles during the fit.
+    max_ha : float
+        Only consider hour angles less than this value in degrees.
+        If not provided, then will include all hour angles in the
+        input container.
+    epsilon : float
+        Regularisation used during the fit.
+    """
+
+    weight = config.enum(["uniform", "inverse_variance"], default="uniform")
+    max_ha = config.Property(proptype=float, default=None)
+    min_num_background = config.Property(proptype=int, default=5)
+    min_frac_beam = config.Property(proptype=float, default=0.50)
+    epsilon = config.Property(proptype=float, default=1.0e-10)
+
+    def process(self, data):
+        """Fit a model to the beamformed visibilites along the hour angle axis.
+
+        Parameters
+        ----------
+        data : FormedBeamHA or FormedBeamHAEW
+            Visibilities beamformed to the location of sources in a catalog.
+
+        Returns
+        -------
+        out : FitFormedBeam or FitFormedBeamEW
+            Best-fit parameters describing the hour-angle dependence.
+        """
+        container_lookup = {
+            containers.FormedBeamHA: containers.FitFormedBeam,
+            containers.FormedBeamHAEW: containers.FitFormedBeamEW,
+        }
+
+        # Distrbitue over frequency
+        data.redistribute("freq")
+
+        # Identify local frequencies
+        self.freq_local = data.freq[data.beam[:].local_bounds]
+        self._initialize_beam_with_data()
+
+        # Create output container
+        OutputContainer = container_lookup[data.__class__]
+
+        out = OutputContainer(
+            axes_from=data,
+            attrs_from=data,
+            distributed=data.distributed,
+            comm=data.comm,
+        )
+
+        out.redistribute("freq")
+
+        # Initialize everything to zero
+        for dset in out.datasets.values():
+            dset[:] = 0.0
+
+        # Copy over source coordinates
+        out.position[:] = data.position[:]
+        if "redshift" in data:
+            out.add_dataset("redshift")
+            out.redshift[:] = data.redshift[:]
+
+        # Dereference datasets
+        beam = data.beam[:].local_array
+        weight = data.weight[:].local_array
+
+        obeam = out.beam[:].local_array
+        oweight = out.weight[:].local_array
+
+        obkg = out.background[:].local_array
+        oweightbkg = out.weight_background[:].local_array
+        ocorr = out.corr_background_beam[:].local_array
+
+        # Get source coordinates
+        src_dec = np.radians(data.position["dec"][:])
+
+        src_ha = data.ha[:]
+        max_nha = src_ha.shape[1]
+
+        # Loop over sources
+        for ss, sdec in enumerate(src_dec):
+
+            # Ignore missing sources
+            if not np.any(weight[ss] > 0.0):
+                continue
+
+            # Extract hour angle axis
+            nha = max_nha - np.min(np.flatnonzero(src_ha[ss, ::-1] != 0.0))
+            slc = slice(0, nha)
+            sha = np.radians(src_ha[ss, slc])
+
+            # Loop over polarisation
+            for pp, pol in enumerate(data.pol):
+
+                b = beam[ss, pp, ..., slc]
+                w = weight[ss, pp, ..., slc]
+
+                if self.weight == "uniform":
+                    sigma = np.sqrt(invert_no_zero(w))
+                    w = w > 0.0
+
+                if self.max_ha is not None:
+                    flag_ha = np.abs(sha) <= np.radians(self.max_ha)
+                    w = w * flag_ha
+                else:
+                    flag_ha = np.ones(nha, dtype=bool)
+
+                # Get the template as a function of hour angle
+                X = self.get_template(pol, sdec, sha)
+                if "ew" in out.index_map:
+                    X = X[:, np.newaxis, :, :]
+
+                # Identify frequencies/baselines that are missing a significant fraction of samples
+                f = w > 0
+                offsrc = X[..., 1] < 0.05
+                flag_background = np.sum(f * offsrc, axis=-1) > self.min_num_background
+                flag_beam = (
+                    np.sum(f * X[..., 1], axis=-1)
+                    * invert_no_zero(np.sum(flag_ha * X[..., 1], axis=-1))
+                ) > self.min_frac_beam
+
+                flag = flag_background & flag_beam
+
+                if not np.any(flag):
+                    continue
+
+                # Construct the inverse parameter covariance matrix
+                XT = np.swapaxes(X, -2, -1)
+                A = np.matmul(XT, w[..., np.newaxis] * X) + np.eye(2) * self.epsilon
+
+                # Solve for the parameters and their covariance
+                proj_wb = np.sum(
+                    XT * (w * b)[..., np.newaxis, :], axis=-1, keepdims=True
+                )
+
+                coeff = np.linalg.solve(A, proj_wb)[..., 0]
+                cov = np.linalg.solve(A, np.eye(2))
+
+                # Save to output container
+                obeam[ss, pp] = coeff[..., 1]
+                obkg[ss, pp] = coeff[..., 0]
+
+                if self.weight == "uniform":
+                    B = np.matmul(cov, XT * (w * sigma)[..., np.newaxis, :])
+                    cov = np.matmul(B, np.swapaxes(B, -2, -1))
+
+                oweight[ss, pp] = flag * invert_no_zero(cov[..., 1, 1])
+                oweightbkg[ss, pp] = flag * invert_no_zero(cov[..., 0, 0])
+
+                ocorr[ss, pp] = cov[..., 0, 1] * np.sqrt(
+                    oweight[ss, pp] * oweightbkg[ss, pp]
+                )
+
+        return out
+
+    def get_template(self, pol, dec, ha):
+        """Get the template as a function of hour angle to fit to transit.
+
+        Parameters
+        ----------
+        pol : str
+            String specifying the polarisation,
+            either 'XX', 'XY', 'YX', or 'YY'.
+        dec : float
+            The declination of the source in radians.
+        ha : np.ndarray[nha,]
+            The hour angle of the source in radians.
+
+        Returns
+        -------
+        t : np.ndarray[nha, 2]
+            Template for the source transit as a function of hour angle.
+            First column is entirely 1 and corresponds to an overall additive
+            offset. Second column is the primary beam model versus hour angle.
+        """
+        t = np.ones((self.freq_local.size, ha.size, 2), dtype=float)
+        t[..., 1] = self._beamfunc(pol, dec, ha)
+
+        return t
 
 
 class HealpixBeamForm(task.SingleTask):
@@ -1258,6 +1741,7 @@ class HealpixBeamForm(task.SingleTask):
         # Copy catalog information
         formed_beam["position"][:] = catalog["position"][:]
         if "redshift" in catalog:
+            formed_beam.add_dataset("redshift")
             formed_beam["redshift"][:] = catalog["redshift"][:]
 
         # Get the source positions at the epoch of the input map

@@ -1,55 +1,42 @@
-import sys
+"""Build cython extensions.
 
-from setuptools import setup, find_packages, Extension
-from Cython.Build import cythonize
+The full project config can be found in `pyproject.toml`. `setup.py` is still
+required to build cython extensions.
+"""
+
+import re
+import sysconfig
 
 import numpy as np
-
-import versioneer
-
+from Cython.Build import cythonize
+from setuptools import Extension, setup
 
 # Enable OpenMP support if available
-if sys.platform == "darwin":
-    compile_args = []
-    link_args = []
+if re.search("gcc", sysconfig.get_config_var("CC")) is None:
+    print("Not using OpenMP")
+    omp_args = []
 else:
-    compile_args = ["-fopenmp"]
-    link_args = ["-fopenmp"]
+    omp_args = ["-fopenmp"]
 
 # Cython module for fast operations
-fast_ext = Extension(
-    "draco.util._fast_tools",
-    ["draco/util/_fast_tools.pyx"],
-    include_dirs=[np.get_include()],
-    extra_compile_args=compile_args,
-    extra_link_args=link_args,
-)
-
-trunc_ext = Extension(
-    "draco.util.truncate",
-    ["draco/util/truncate.pyx"],
-    include_dirs=[np.get_include()],
-    extra_compile_args=compile_args,
-    extra_link_args=link_args,
-)
-
-
-# Load the PEP508 formatted requirements from the requirements.txt file. Needs
-# pip version > 19.0
-with open("requirements.txt", "r") as fh:
-    requires = fh.readlines()
+extensions = [
+    Extension(
+        "draco.util._fast_tools",
+        ["draco/util/_fast_tools.pyx"],
+        include_dirs=[np.get_include()],
+        extra_compile_args=omp_args,
+        extra_link_args=omp_args,
+    ),
+    Extension(
+        "draco.util.truncate",
+        ["draco/util/truncate.pyx"],
+        include_dirs=[np.get_include()],
+        extra_compile_args=omp_args,
+        extra_link_args=omp_args,
+    ),
+]
 
 setup(
-    name="draco",
-    version=versioneer.get_version(),
-    cmdclass=versioneer.get_cmdclass(),
-    license="MIT",
-    packages=find_packages(),
-    ext_modules=cythonize([fast_ext, trunc_ext]),
-    install_requires=requires,
-    python_requires=">=3.8",
-    author="Richard Shaw",
-    author_email="richard@phas.ubc.ca",
-    description="Analysis and simulation tools for driftscan radio interferometers.",
-    url="http://github.com/radiocosmology/draco/",
+    name="draco",  # required
+    ext_modules=cythonize(extensions),
 )

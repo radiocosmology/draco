@@ -17,6 +17,7 @@ Containers
 - :py:class:`HybridVisMModes`
 - :py:class:`RingMap`
 - :py:class:`RingMapMask`
+- :py:class:`RingMapTaper`
 - :py:class:`CommonModeGainData`
 - :py:class:`CommonModeSiderealGainData`
 - :py:class:`GainData`
@@ -36,6 +37,8 @@ Containers
 - :py:class:`FormedBeamHA`
 - :py:class:`FormedBeamMask`
 - :py:class:`FormedBeamHAMask`
+- :py:class:`LocalizedRFIMask`
+- :py:class:`LocalizedSiderealRFIMask`
 
 Container Base Classes
 ----------------------
@@ -58,10 +61,11 @@ their own custom container types.
 """
 
 import inspect
-from typing import ClassVar, List, Optional, Union
+from typing import ClassVar
 
 import numpy as np
 from caput import memh5, mpiarray, tod
+from cora.util.cosmology import Cosmology
 
 from ..util import tools
 
@@ -150,6 +154,7 @@ class ContainerBase(memh5.BasicCont):
 
     convert_attribute_strings = True
     convert_dataset_strings = True
+    allow_chunked = True
 
     def __init__(self, *args, **kwargs):
         # Arguments for pulling in definitions from other containers
@@ -163,7 +168,7 @@ class ContainerBase(memh5.BasicCont):
         comm = kwargs.pop("comm", None)
 
         # Extract misc options
-        self.allow_chunked = kwargs.pop("allow_chunked", True)
+        self.allow_chunked = kwargs.pop("allow_chunked", self.allow_chunked)
         skip_datasets = kwargs.pop("skip_datasets", False)
 
         # Handle the data_group argument. We need to identify if the argument
@@ -198,7 +203,7 @@ class ContainerBase(memh5.BasicCont):
                 copy_axis_attrs = False
 
                 # If axis is an integer, turn into an arange as a default definition
-                if isinstance(axis_map, (int, np.integer)):
+                if isinstance(axis_map, int | np.integer):
                     axis_map = np.arange(axis_map)
 
             # If no valid map provided in arguments copy from another object if set
@@ -499,62 +504,6 @@ class ContainerBase(memh5.BasicCont):
 
         return selections
 
-    def copy(self, shared=None):
-        """Copy this container, optionally sharing the source datasets.
-
-        This routine will create a copy of the container. By default this is
-        as full copy with the contents fully independent. However, a set of
-        dataset names can be given that will share the same data as the
-        source to save memory for large datasets. These will just view the
-        same memory, so any modification to either the original or the copy
-        will be visible to the other. This includes all write operations,
-        addition and removal of attributes, redistribution etc. This
-        functionality should be used with caution and clearly documented.
-
-        Parameters
-        ----------
-        shared : list, optional
-            A list of datasets whose content will be shared with the original.
-
-        Returns
-        -------
-        copy : subclass of ContainerBase
-            The copied container.
-        """
-        new_cont = self.__class__(
-            attrs_from=self,
-            axes_from=self,
-            skip_datasets=True,
-            distributed=self.distributed,
-            comm=self.comm,
-        )
-
-        # Loop over datasets that exist in the source and either add a view of
-        # the source dataset, or perform a full copy
-        for name, data in self.datasets.items():
-            if shared and name in shared:
-                # TODO: find a way to do this that doesn't depend on the
-                # internal implementation of BasicCont and MemGroup
-                # NOTE: we don't use `.view()` on the RHS here as we want to
-                # preserve the shared data through redistributions
-                new_cont._data._get_storage()[name] = self._data._get_storage()[name]
-            else:
-                dset = new_cont.add_dataset(name)
-
-                # Ensure that we have exactly the same distribution
-                if dset.distributed:
-                    dset.redistribute(data.distributed_axis)
-
-                # Copy over the data and attributes
-                dset[:] = data[:]
-                memh5.copyattrs(data.attrs, dset.attrs)
-                # TODO Is there a case where these properties don't exist?
-                dset.chunks = data.chunks
-                dset.compression = data.compression
-                dset.compression_opts = data.compression_opts
-
-        return new_cont
-
 
 class TableBase(ContainerBase):
     """A base class for containers holding tables of data.
@@ -655,7 +604,7 @@ class TableBase(ContainerBase):
         dt = []
         for ci, (name, dtype) in enumerate(columns):
             if not isinstance(name, str):
-                raise ValueError("Column %i is invalid" % ci)
+                raise ValueError(f"Column {ci:d} is invalid")
             dt.append((name, dtype))
 
         return dt
@@ -696,8 +645,8 @@ class DataWeightContainer(ContainerBase):
     `_weight_dset_name`.
     """
 
-    _data_dset_name: Optional[str] = None
-    _weight_dset_name: Optional[str] = None
+    _data_dset_name: str | None = None
+    _weight_dset_name: str | None = None
 
     @property
     def data(self) -> memh5.MemDataset:
@@ -1076,7 +1025,7 @@ class MContainer(ContainerBase):
     _axes = ("m", "msign")
 
     def __init__(
-        self, mmax: Optional[int] = None, oddra: Optional[bool] = None, *args, **kwargs
+        self, mmax: int | None = None, oddra: bool | None = None, *args, **kwargs
     ):
         # Set up axes from passed arguments
         if mmax is not None:
@@ -1189,7 +1138,7 @@ class SiderealStream(
             "distributed_axis": "freq",
             "compression": COMPRESSION,
             "compression_opts": COMPRESSION_OPTS,
-            "chunks": (64, 128, 128),
+            "chunks": (32, 512, 2048),
             "truncate": {
                 "weight_dataset": "vis_weight",
             },
@@ -1202,7 +1151,7 @@ class SiderealStream(
             "distributed_axis": "freq",
             "compression": COMPRESSION,
             "compression_opts": COMPRESSION_OPTS,
-            "chunks": (64, 128, 128),
+            "chunks": (32, 512, 2048),
             "truncate": True,
         },
         "input_flags": {
@@ -1226,7 +1175,7 @@ class SiderealStream(
             "distributed_axis": "freq",
             "compression": COMPRESSION,
             "compression_opts": COMPRESSION_OPTS,
-            "chunks": (3, 64, 128, 128),
+            "chunks": (1, 32, 512, 2048),
             "truncate": True,
         },
         "nsample": {
@@ -1237,7 +1186,7 @@ class SiderealStream(
             "distributed_axis": "freq",
             "compression": COMPRESSION,
             "compression_opts": COMPRESSION_OPTS,
-            "chunks": (64, 128, 128),
+            "chunks": (32, 512, 2048),
         },
         "effective_ra": {
             "axes": ["freq", "stack", "ra"],
@@ -1247,7 +1196,7 @@ class SiderealStream(
             "distributed_axis": "freq",
             "compression": COMPRESSION,
             "compression_opts": COMPRESSION_OPTS,
-            "chunks": (64, 128, 128),
+            "chunks": (32, 512, 2048),
             "truncate": True,
         },
     }
@@ -1364,6 +1313,31 @@ class RFIMask(FreqContainer, TODContainer):
         return self.datasets["mask"]
 
 
+class RFIMaskByPol(RFIMask):
+    """A container for holding a polarisation-dependent RFI mask as a function of time.
+
+    The mask is `True` for contaminated samples that should be excluded, and
+    `False` for clean samples.
+    """
+
+    _axes = ("pol",)
+
+    _dataset_spec: ClassVar = {
+        "mask": {
+            "axes": ["pol", "freq", "time"],
+            "dtype": bool,
+            "initialise": True,
+            "distributed": False,
+            "distributed_axis": "freq",
+        }
+    }
+
+    @property
+    def pol(self):
+        """Get the pol index map."""
+        return self.index_map["pol"]
+
+
 class SiderealRFIMask(FreqContainer, SiderealContainer):
     """A container for holding an RFI mask for a sidereal stream.
 
@@ -1385,6 +1359,31 @@ class SiderealRFIMask(FreqContainer, SiderealContainer):
     def mask(self):
         """Get the mask dataset."""
         return self.datasets["mask"]
+
+
+class SiderealRFIMaskByPol(SiderealRFIMask):
+    """A container for holding a polarisation-dependent RFI mask as a function of RA.
+
+    The mask is `True` for contaminated samples that should be excluded, and
+    `False` for clean samples.
+    """
+
+    _axes = ("pol",)
+
+    _dataset_spec: ClassVar = {
+        "mask": {
+            "axes": ["pol", "freq", "ra"],
+            "dtype": bool,
+            "initialise": True,
+            "distributed": False,
+            "distributed_axis": "freq",
+        }
+    }
+
+    @property
+    def pol(self):
+        """Get the pol index map."""
+        return self.index_map["pol"]
 
 
 class BaselineMask(FreqContainer, TODContainer):
@@ -1912,7 +1911,7 @@ class VisGridStream(FreqContainer, SiderealContainer, VisBase):
         "redundancy": {
             "axes": ["pol", "ew", "ns", "ra"],
             "dtype": np.int32,
-            "initialise": True,
+            "initialise": False,
             "distributed": False,
             "chunks": (1, 64, 1, 64, 128),
             "compression": COMPRESSION,
@@ -1923,10 +1922,102 @@ class VisGridStream(FreqContainer, SiderealContainer, VisBase):
     @property
     def redundancy(self):
         """Get the redundancy dataset."""
-        return self.datasets["redundancy"]
+        if "redundancy" in self.datasets:
+            return self.datasets["redundancy"]
+
+        raise KeyError("Dataset 'redundancy' not initialised.")
 
 
-class HybridVisStream(FreqContainer, SiderealContainer, VisBase):
+class FilterFreqContainer(ContainerBase):
+    """Base container for data that has undergone filtering along the frequency axis.
+
+    This container behaves like a standard `ContainerBase`, but is tailored for
+    datasets where a frequency-domain filter has been applied. It defines a
+    `freq_sum` axis by default and provides additional logic to manage mutually
+    exclusive filter and frequency covariance datasets.
+
+    Expected Datasets:
+    ------------------
+    - `filter` or `complex_filter`
+      Real or complex filter applied in the frequency domain.
+    - `freq_cov` or `complex_freq_cov`:
+      Real or complex covariance matrix in the frequency domain.
+    """
+
+    _axes = ("freq_sum",)
+
+    def __init__(self, *args, **kwargs):
+
+        for ax in ["freq_sum"]:
+
+            if ax not in kwargs:
+                if "axes_from" in kwargs and ax in kwargs["axes_from"].index_map:
+                    kwargs[ax] = kwargs["axes_from"].index_map[ax]
+                elif "freq" in kwargs:
+                    kwargs[ax] = kwargs["freq"]
+                elif "axes_from" in kwargs and "freq" in kwargs["axes_from"].index_map:
+                    kwargs[ax] = kwargs["axes_from"].index_map["freq"]
+            else:
+                raise RuntimeError(f"Must provide {ax} or freq axis.")
+
+        super().__init__(*args, **kwargs)
+
+    def add_dataset(self, name):
+        """Ensure that multiple filters and covariances are not created."""
+        if name == "filter" and "complex_filter" in self.datasets:
+            raise RuntimeError(
+                "Requesting creation of real-valued filter but "
+                "complex filter already exists."
+            )
+        if name == "complex_filter" and "filter" in self.datasets:
+            raise RuntimeError(
+                "Requesting creation of complex-valued filter but "
+                "real filter already exists."
+            )
+        if name == "freq_cov" and "complex_freq_cov" in self.datasets:
+            raise RuntimeError(
+                "Requesting creation of real-valued freq_cov but "
+                "complex_freq_cov already exists."
+            )
+        if name == "complex_freq_cov" and "freq_cov" in self.datasets:
+            raise RuntimeError(
+                "Requesting creation of complex_freq_cov but "
+                "real-valued freq_cov already exists."
+            )
+        return super().add_dataset(name)
+
+    @property
+    def filter(self):
+        """Return the filter dataset, if available."""
+        if "filter" in self.datasets:
+            return self.datasets["filter"]
+        if "complex_filter" in self.datasets:
+            return self.datasets["complex_filter"]
+
+        raise KeyError("Dataset 'filter' not initialised.")
+
+    @property
+    def freq_cov(self):
+        """Return the freq_cov dataset, if available."""
+        if "freq_cov" in self.datasets:
+            return self.datasets["freq_cov"]
+        if "complex_freq_cov" in self.datasets:
+            return self.datasets["complex_freq_cov"]
+
+        raise KeyError("Dataset 'freq_cov' not initialised.")
+
+    @property
+    def swapped_freq_cov_axis(self):
+        """Return the axis names of the freq_cov dataset with freq <--> freq_sum.
+
+        This is useful for broadcasting the weight dataset when propagating the
+        covariance matrix through linear operators.
+        """
+        swap = {"freq": "freq_sum", "freq_sum": "freq"}
+        return np.array([swap.get(ax, ax) for ax in self.freq_cov.attrs["axis"]])
+
+
+class HybridVisStream(FilterFreqContainer, FreqContainer, SiderealContainer, VisBase):
     """Visibilities beamformed only in the NS direction.
 
     This container has visibilities beam formed only in the NS direction to give a
@@ -1942,6 +2033,9 @@ class HybridVisStream(FreqContainer, SiderealContainer, VisBase):
             "initialise": True,
             "distributed": True,
             "distributed_axis": "freq",
+            "chunks": (1, 32, 1, 512, 2048),
+            "compression": COMPRESSION,
+            "compression_opts": COMPRESSION_OPTS,
         },
         "dirty_beam": {
             "axes": ["pol", "freq", "ew", "el", "ra"],
@@ -1949,6 +2043,9 @@ class HybridVisStream(FreqContainer, SiderealContainer, VisBase):
             "initialise": False,
             "distributed": True,
             "distributed_axis": "freq",
+            "chunks": (1, 32, 1, 512, 2048),
+            "compression": COMPRESSION,
+            "compression_opts": COMPRESSION_OPTS,
         },
         "vis_weight": {
             "axes": ["pol", "freq", "ew", "ra"],
@@ -1956,13 +2053,129 @@ class HybridVisStream(FreqContainer, SiderealContainer, VisBase):
             "initialise": True,
             "distributed": True,
             "distributed_axis": "freq",
+            "chunks": (1, 32, 4, 2048),
+            "compression": COMPRESSION,
+            "compression_opts": COMPRESSION_OPTS,
+        },
+        "elevation_vis_weight": {
+            "axes": ["pol", "freq", "ew", "el", "ra"],
+            "dtype": np.float32,
+            "initialise": False,
+            "distributed": True,
+            "distributed_axis": "freq",
+            "chunks": (1, 32, 4, 512, 2048),
+            "compression": COMPRESSION,
+            "compression_opts": COMPRESSION_OPTS,
+        },
+        "effective_ra": {
+            "axes": ["pol", "freq", "ew", "ra"],
+            "dtype": np.float32,
+            "initialise": False,
+            "distributed": True,
+            "distributed_axis": "freq",
+            "chunks": (1, 32, 4, 2048),
+            "compression": COMPRESSION,
+            "compression_opts": COMPRESSION_OPTS,
+        },
+        "nsample": {
+            "axes": ["pol", "freq", "ew", "ra"],
+            "dtype": np.float32,
+            "initialise": False,
+            "distributed": True,
+            "distributed_axis": "freq",
+            "chunks": (1, 32, 4, 2048),
+            "compression": COMPRESSION,
+            "compression_opts": COMPRESSION_OPTS,
+        },
+        "filter": {
+            "axes": ["pol", "freq", "freq_sum", "ew", "ra"],
+            "dtype": np.float64,
+            "initialise": False,
+            "distributed": True,
+            "distributed_axis": "freq",
+            "chunks": (1, 32, 96, 4, 2048),
+            "compression": COMPRESSION,
+            "compression_opts": COMPRESSION_OPTS,
+        },
+        "complex_filter": {
+            "axes": ["pol", "freq", "freq_sum", "ew", "ra"],
+            "dtype": np.complex128,
+            "initialise": False,
+            "distributed": True,
+            "distributed_axis": "freq",
+            "chunks": (1, 32, 96, 4, 2048),
+            "compression": COMPRESSION,
+            "compression_opts": COMPRESSION_OPTS,
+        },
+        "freq_cov": {
+            "axes": ["pol", "freq", "freq_sum", "ew", "ra"],
+            "dtype": np.float64,
+            "initialise": False,
+            "distributed": True,
+            "distributed_axis": "freq",
+            "chunks": (1, 32, 96, 4, 2048),
+            "compression": COMPRESSION,
+            "compression_opts": COMPRESSION_OPTS,
+        },
+        "complex_freq_cov": {
+            "axes": ["pol", "freq", "freq_sum", "ew", "ra"],
+            "dtype": np.complex128,
+            "initialise": False,
+            "distributed": True,
+            "distributed_axis": "freq",
+            "chunks": (1, 32, 96, 4, 2048),
+            "compression": COMPRESSION,
+            "compression_opts": COMPRESSION_OPTS,
         },
     }
+
+    def add_dataset(self, name):
+        """Override base class to deal with elevation dependent vis weight."""
+        if name == "vis_weight" and "elevation_vis_weight" in self.datasets:
+            raise RuntimeError(
+                "Requesting creation of elevation-independent weights but "
+                "elevation-dependent weights already exist."
+            )
+        if name == "elevation_vis_weight":
+            if "vis_weight" in self.datasets:
+                raise RuntimeError(
+                    "Requesting creation of elevation-dependent weights but "
+                    "elevation-independent weights already exist."
+                )
+            # Make this the default weight dataset
+            self._weight_dset_name = "elevation_vis_weight"
+        return super().add_dataset(name)
 
     @property
     def dirty_beam(self):
         """Not useful at this stage, but it's needed to propagate onward."""
         return self.datasets["dirty_beam"]
+
+    @property
+    def effective_ra(self):
+        """Get the effective_ra dataset if it exists, None otherwise."""
+        if "effective_ra" in self.datasets:
+            return self.datasets["effective_ra"]
+
+        raise KeyError("Dataset 'effective_ra' not initialised.")
+
+    @property
+    def nsample(self):
+        """Get the nsample dataset if it exists, None otherwise."""
+        if "nsample" in self.datasets:
+            return self.datasets["nsample"]
+
+        raise KeyError("Dataset 'nsample' not initialised.")
+
+    @property
+    def pol(self):
+        """Get the polarisation index map."""
+        return self.index_map["pol"]
+
+    @property
+    def ew(self):
+        """Get the east-west baseline index map."""
+        return self.index_map["ew"]
 
 
 class HybridVisMModes(FreqContainer, MContainer, VisBase):
@@ -1992,7 +2205,9 @@ class HybridVisMModes(FreqContainer, MContainer, VisBase):
     }
 
 
-class RingMap(FreqContainer, SiderealContainer, DataWeightContainer):
+class RingMap(
+    FilterFreqContainer, FreqContainer, SiderealContainer, DataWeightContainer
+):
     """Container for holding multifrequency ring maps.
 
     The maps are packed in format `[freq, pol, ra, EW beam, el]` where
@@ -2045,6 +2260,17 @@ class RingMap(FreqContainer, SiderealContainer, DataWeightContainer):
             "compression_opts": COMPRESSION_OPTS,
             "truncate": True,
         },
+        "dirty_beam_power": {
+            "axes": ["beam", "pol", "freq", "el"],
+            "dtype": np.float64,
+            "initialise": False,
+            "distributed": True,
+            "distributed_axis": "freq",
+            "chunks": (1, 1, 128, 128),
+            "compression": COMPRESSION,
+            "compression_opts": COMPRESSION_OPTS,
+            "truncate": True,
+        },
         "rms": {
             "axes": ["pol", "freq", "ra"],
             "dtype": np.float64,
@@ -2055,6 +2281,46 @@ class RingMap(FreqContainer, SiderealContainer, DataWeightContainer):
             "compression": COMPRESSION,
             "compression_opts": COMPRESSION_OPTS,
             "truncate": True,
+        },
+        "filter": {
+            "axes": ["pol", "freq", "freq_sum", "ra"],
+            "dtype": np.float64,
+            "initialise": False,
+            "distributed": True,
+            "distributed_axis": "freq",
+            "chunks": (1, 64, 64, 256),
+            "compression": COMPRESSION,
+            "compression_opts": COMPRESSION_OPTS,
+        },
+        "complex_filter": {
+            "axes": ["pol", "freq", "freq_sum", "ra"],
+            "dtype": np.complex128,
+            "initialise": False,
+            "distributed": True,
+            "distributed_axis": "freq",
+            "chunks": (1, 64, 64, 256),
+            "compression": COMPRESSION,
+            "compression_opts": COMPRESSION_OPTS,
+        },
+        "freq_cov": {
+            "axes": ["pol", "freq", "freq_sum", "ra"],
+            "dtype": np.float64,
+            "initialise": False,
+            "distributed": True,
+            "distributed_axis": "freq",
+            "chunks": (1, 64, 64, 256),
+            "compression": COMPRESSION,
+            "compression_opts": COMPRESSION_OPTS,
+        },
+        "complex_freq_cov": {
+            "axes": ["pol", "freq", "freq_sum", "ra"],
+            "dtype": np.complex128,
+            "initialise": False,
+            "distributed": True,
+            "distributed_axis": "freq",
+            "chunks": (1, 64, 64, 256),
+            "compression": COMPRESSION,
+            "compression_opts": COMPRESSION_OPTS,
         },
     }
 
@@ -2083,8 +2349,13 @@ class RingMap(FreqContainer, SiderealContainer, DataWeightContainer):
 
     @property
     def dirty_beam(self):
-        """Get the dirty beam dataset."""
+        """Get the dirty_beam dataset."""
         return self.datasets["dirty_beam"]
+
+    @property
+    def dirty_beam_power(self):
+        """Get the dirty_beam_power dataset."""
+        return self.datasets["dirty_beam_power"]
 
 
 class RingMapMask(FreqContainer, SiderealContainer):
@@ -2108,6 +2379,95 @@ class RingMapMask(FreqContainer, SiderealContainer):
         return self.datasets["mask"]
 
 
+class RingMapTaper(FreqContainer, SiderealContainer):
+    """Container for a smooth transition from good to bad ringmap pixels."""
+
+    _axes = ("pol", "el")
+
+    _dataset_spec: ClassVar = {
+        "taper": {
+            "axes": ["pol", "freq", "ra", "el"],
+            "dtype": float,
+            "initialise": True,
+            "distributed": True,
+            "distributed_axis": "freq",
+        }
+    }
+
+    @property
+    def taper(self):
+        """Get the mask dataset."""
+        return self.datasets["taper"]
+
+    @property
+    def weight(self):
+        """Map weight to taper so that it can easily be updated with masks."""
+        return self.datasets["taper"]
+
+
+class FreqNoiseModel(FilterFreqContainer, FreqContainer, SiderealContainer):
+    """Container storing Cholesky factors of frequency-frequency noise covariance.
+
+    This container is intended for generating noise realizations in visibility space
+    that include the desired correlations as a function of freq and el.  This is
+    typically used to populate a VisGridStream container with synthetic noise having
+    a specific spectral structure.
+    """
+
+    _axes = ("pol", "ew", "ns")
+
+    _dataset_spec: ClassVar = {
+        "redundancy": {
+            "axes": ["pol", "ew", "ns"],
+            "dtype": np.int32,
+            "initialise": True,
+            "distributed": False,
+            "chunks": (1, 1, 128),
+            "compression": COMPRESSION,
+            "compression_opts": COMPRESSION_OPTS,
+        },
+        "weight": {
+            "axes": ["pol", "freq", "ew", "ra"],
+            "dtype": np.float32,
+            "initialise": True,
+            "distributed": True,
+            "chunks": (1, 64, 1, 2048),
+            "compression": COMPRESSION,
+            "compression_opts": COMPRESSION_OPTS,
+        },
+        "freq_cov": {
+            "axes": ["pol", "ew", "ra", "freq", "freq_sum"],
+            "dtype": np.float64,
+            "initialise": False,
+            "distributed": True,
+            "distributed_axis": "ra",
+            "chunks": (1, 1, 2048, 64, 64),
+            "compression": COMPRESSION,
+            "compression_opts": COMPRESSION_OPTS,
+        },
+        "complex_freq_cov": {
+            "axes": ["pol", "ew", "ra", "freq", "freq_sum"],
+            "dtype": np.complex128,
+            "initialise": False,
+            "distributed": True,
+            "distributed_axis": "ra",
+            "chunks": (1, 1, 2048, 64, 64),
+            "compression": COMPRESSION,
+            "compression_opts": COMPRESSION_OPTS,
+        },
+    }
+
+    @property
+    def redundancy(self):
+        """Get the redundancy dataset."""
+        return self.datasets["redundancy"]
+
+    @property
+    def weight(self):
+        """Get the weight dataset."""
+        return self.datasets["weight"]
+
+
 class GainDataBase(DataWeightContainer):
     """A container interface for gain-like data.
 
@@ -2124,7 +2484,7 @@ class GainDataBase(DataWeightContainer):
         return self.datasets["gain"]
 
     @property
-    def weight(self) -> Optional[memh5.MemDataset]:
+    def weight(self) -> memh5.MemDataset | None:
         """The weights for each data point.
 
         Returns None is no weight dataset exists.
@@ -2348,6 +2708,13 @@ class DelaySpectrum(DelayContainer):
             "distributed": True,
             "distributed_axis": "baseline",
         },
+        "spectrum_mask": {
+            "axes": ["baseline"],
+            "dtype": bool,
+            "initialise": False,
+            "distributed": True,
+            "distributed_axis": "baseline",
+        },
     }
 
     def __init__(self, *args, weight_boost=1.0, sample=1, **kwargs):
@@ -2392,7 +2759,29 @@ class DelayTransform(DelayContainer):
             "initialise": True,
             "distributed": True,
             "distributed_axis": "baseline",
-        }
+            "compression": COMPRESSION,
+            "compression_opts": COMPRESSION_OPTS,
+            "chunks": (512, 2048, 32),
+            "truncate": True,
+        },
+        "weight": {
+            "axes": ["baseline", "sample", "delay"],
+            "dtype": np.float32,
+            "initialise": False,
+            "distributed": True,
+            "distributed_axis": "baseline",
+            "compression": COMPRESSION,
+            "compression_opts": COMPRESSION_OPTS,
+            "chunks": (512, 2048, 32),
+            "truncate": True,
+        },
+        "spectrum_mask": {
+            "axes": ["baseline", "sample"],
+            "dtype": bool,
+            "initialise": False,
+            "distributed": True,
+            "distributed_axis": "baseline",
+        },
     }
 
     def __init__(self, weight_boost=1.0, *args, **kwargs):
@@ -2403,6 +2792,11 @@ class DelayTransform(DelayContainer):
     def spectrum(self):
         """Get the spectrum dataset."""
         return self.datasets["spectrum"]
+
+    @property
+    def weight(self):
+        """Get the spectrum dataset."""
+        return self.datasets["weight"]
 
     @property
     def weight_boost(self):
@@ -2417,6 +2811,330 @@ class DelayTransform(DelayContainer):
     def freq(self):
         """Get the frequency axis of the input data."""
         return self.attrs["freq"]
+
+
+class DelayTransformOperator(DelayContainer, FreqContainer, SiderealContainer):
+    """Wiener filter that transforms each pixel from frequency to delay."""
+
+    _axes = ("pol", "el")
+
+    _dataset_spec: ClassVar = {
+        "filter": {
+            "axes": ["pol", "ra", "el", "delay", "freq"],
+            "dtype": np.complex64,
+            "initialise": True,
+            "distributed": True,
+            "distributed_axis": "el",
+        }
+    }
+
+    @property
+    def filter(self):
+        """Get the filter dataset."""
+        return self.datasets["filter"]
+
+
+class CosmologyContainer(ContainerBase):
+    """A baseclass for a container that is referenced to a background Cosmology.
+
+    Parameters
+    ----------
+    cosmology
+        An explicit cosmology instance or dict representation. If not set, the cosmology
+        *must* get set via `attrs_from`.
+    """
+
+    def __init__(self, cosmology: Cosmology | dict | None = None, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+
+        cosmo_dict = self._resolve_args(cosmology, **kwargs)
+        self.attrs["cosmology"] = cosmo_dict
+
+    @staticmethod
+    def _resolve_args(
+        cosmology: Cosmology | dict | None = None,
+        attrs_from: ContainerBase | None = None,
+        **kwargs,
+    ):
+        """Try and extract a Cosmology dict representation from the parameters.
+
+        Useful as subclasses sometimes need access *before* the full class is setup.
+        """
+        # Insert the Cosmological parameters
+        if cosmology is None:
+            if attrs_from is not None and "cosmology" in attrs_from.attrs:
+                cosmology = attrs_from.attrs["cosmology"]
+            else:
+                raise ValueError("A cosmology must be supplied.")
+        elif not isinstance(cosmology, (Cosmology | dict)):
+            raise TypeError("cosmology argument must be a Cosmology instance.")
+
+        if isinstance(cosmology, Cosmology):
+            cosmology = cosmology.to_dict()
+
+        return cosmology
+
+    _cosmology_instance = None
+
+    @property
+    def cosmology(self):
+        """The background cosmology."""
+        if self._cosmology_instance is None:
+            self._cosmology_instance = Cosmology(**self.attrs["cosmology"])
+
+        return self._cosmology_instance
+
+
+class Fourier3DContainer(CosmologyContainer, DelayContainer):
+    """A base container with Fourier axes, (pol,delay,u,v)."""
+
+    _axes = ("pol", "u", "v")
+
+    _dataset_spec: ClassVar = {
+        "kx": {
+            "axes": ["u"],
+            "dtype": np.float64,
+            "initialise": True,
+            "distributed": False,
+        },
+        "ky": {
+            "axes": ["v"],
+            "dtype": np.float64,
+            "initialise": True,
+            "distributed": False,
+        },
+        "kpara": {
+            "axes": ["delay"],
+            "dtype": np.float64,
+            "initialise": True,
+            "distributed": False,
+        },
+        "uv_mask": {
+            "axes": ["u", "v"],
+            "dtype": bool,
+            "initialise": True,
+            "distributed": False,
+        },
+    }
+
+    @property
+    def kx(self):
+        """Get the kx axis."""
+        return self.datasets["kx"]
+
+    @property
+    def ky(self):
+        """Get the ky axis."""
+        return self.datasets["ky"]
+
+    @property
+    def kpara(self):
+        """Get the k_parallel axis."""
+        return self.datasets["kpara"]
+
+    @property
+    def uv_mask(self):
+        """Get the uv-domain mask."""
+        return self.datasets["uv_mask"]
+
+    @property
+    def redshift(self):
+        """Get the redshift attrs."""
+        return self.attrs["redshift"]
+
+    @property
+    def freq_center(self):
+        """Get the central frequency attrs."""
+        return self.attrs["freq_center"]
+
+
+class SpatialDelayCube(Fourier3DContainer):
+    """Container for a data in (pol,delays,u,v) domain."""
+
+    _dataset_spec: ClassVar = {
+        "vis": {
+            "axes": ["pol", "delay", "u", "v"],
+            "dtype": np.complex128,
+            "initialise": True,
+            "distributed": True,
+            "distributed_axis": "delay",
+        },
+    }
+
+    @property
+    def vis(self):
+        """Get the spatial data cube."""
+        return self.datasets["vis"]
+
+
+class PowerSpectrum3D(Fourier3DContainer):
+    """Container for a 3D power spectrum."""
+
+    _dataset_spec: ClassVar = {
+        "spectrum": {
+            "axes": ["pol", "delay", "u", "v"],
+            "dtype": np.complex128,
+            "initialise": True,
+            "distributed": True,
+            "distributed_axis": "delay",
+        }
+    }
+
+    @property
+    def spectrum(self):
+        """Get the 3D power spectrum."""
+        return self.datasets["spectrum"]
+
+    @property
+    def ps_norm(self):
+        """Get the power spectrum normalizaiton attrs."""
+        return self.attrs["ps_norm"]
+
+
+class PowerSpectrum2D(CosmologyContainer):
+    """Container for a 2D cylindrically averaged  power spectrum."""
+
+    _axes = ("pol", "delay", "uv_dist")
+
+    _dataset_spec: ClassVar = {
+        "spectrum": {
+            "axes": ["pol", "delay", "uv_dist"],
+            "dtype": np.complex128,
+            "initialise": True,
+            "distributed": True,
+            "distributed_axis": "delay",
+        },
+        "weight": {
+            "axes": ["pol", "delay", "uv_dist"],
+            "dtype": np.float64,
+            "initialise": True,
+            "distributed": True,
+        },
+        "neff": {
+            "axes": ["pol", "delay", "uv_dist"],
+            "dtype": np.float64,
+            "initialise": True,
+            "distributed": True,
+            "distributed_axis": "delay",
+        },
+        "mask": {
+            "axes": ["pol", "delay", "uv_dist"],
+            "dtype": bool,
+            "initialise": True,
+            "distributed": True,
+        },
+        "kpara": {
+            "axes": ["delay"],
+            "dtype": np.float64,
+            "initialise": True,
+            "distributed": False,
+        },
+        "kperp": {
+            "axes": ["uv_dist"],
+            "dtype": np.float64,
+            "initialise": True,
+            "distributed": False,
+        },
+    }
+
+    @property
+    def spectrum(self):
+        """Get the 2D power spectrum dataset."""
+        return self.datasets["spectrum"]
+
+    @property
+    def weight(self):
+        """Get the 2D weight dataset."""
+        return self.datasets["weight"]
+
+    @property
+    def neff(self):
+        """Get the effective number of modes dataset."""
+        return self.datasets["neff"]
+
+    @property
+    def mask(self):
+        """Get the 2D signal window dataset."""
+        return self.datasets["mask"]
+
+    @property
+    def kpara(self):
+        """Get the k_parallel axis."""
+        return self.datasets["kpara"]
+
+    @property
+    def kperp(self):
+        """Get the kprep axis."""
+        return self.datasets["kperp"]
+
+    @property
+    def delay_cut(self):
+        """Get the delay cutoff value."""
+        return self.attrs["delay_cut"]
+
+
+class PowerSpectrum1D(CosmologyContainer):
+    """Container for a 1D power spectrum."""
+
+    _axes = ("pol", "k")
+
+    _dataset_spec: ClassVar = {
+        "spectrum": {
+            "axes": ["pol", "k"],
+            "dtype": np.complex128,
+            "initialise": True,
+            "distributed": True,
+        },
+        "samp_var": {
+            "axes": ["pol", "k"],
+            "dtype": np.float64,
+            "initialise": True,
+            "distributed": True,
+        },
+        "var": {
+            "axes": ["pol", "k"],
+            "dtype": np.float64,
+            "initialise": True,
+            "distributed": True,
+        },
+        "neff": {
+            "axes": ["pol", "k"],
+            "dtype": np.float64,
+            "initialise": True,
+            "distributed": True,
+        },
+        "k1D": {
+            "axes": ["pol", "k"],
+            "dtype": np.float64,
+            "initialise": True,
+            "distributed": True,
+        },
+    }
+
+    @property
+    def spectrum(self):
+        """Get the 1D power spectrum dataset."""
+        return self.datasets["spectrum"]
+
+    @property
+    def samp_var(self):
+        """Get the 1D power spectrum error dataset."""
+        return self.datasets["samp_var"]
+
+    @property
+    def var(self):
+        """Get the 1D power spectrum var dataset."""
+        return self.datasets["var"]
+
+    @property
+    def neff(self):
+        """Get the 1D power spectrum var dataset."""
+        return self.datasets["neff"]
+
+    @property
+    def k1D(self):
+        """Get the k1D dataset."""
+        return self.datasets["k1D"]
 
 
 class WaveletSpectrum(FreqContainer, DelayContainer, DataWeightContainer):
@@ -2762,7 +3480,7 @@ class FormedBeam(FreqContainer, DataWeightContainer):
         "redshift": {
             "axes": ["object_id"],
             "dtype": np.dtype([("z", np.float64), ("z_error", np.float64)]),
-            "initialise": True,
+            "initialise": False,
             "distributed": False,
         },
     }
@@ -2774,6 +3492,19 @@ class FormedBeam(FreqContainer, DataWeightContainer):
     def beam(self):
         """Get the beam dataset."""
         return self.datasets["beam"]
+
+    @property
+    def position(self):
+        """Get the position dataset."""
+        return self.datasets["position"]
+
+    @property
+    def redshift(self):
+        """Get the redshift dataset."""
+        if "redshift" in self.datasets:
+            return self.datasets["redshift"]
+
+        raise KeyError("Dataset 'redshift' not initialised.")
 
     @property
     def frequency(self):
@@ -2806,6 +3537,9 @@ class FormedBeamHA(FormedBeam):
             "initialise": True,
             "distributed": True,
             "distributed_axis": "freq",
+            "chunks": (32, 4, 128, 64),
+            "compression": COMPRESSION,
+            "compression_opts": COMPRESSION_OPTS,
         },
         "weight": {
             "axes": ["object_id", "pol", "freq", "ha"],
@@ -2813,6 +3547,9 @@ class FormedBeamHA(FormedBeam):
             "initialise": True,
             "distributed": True,
             "distributed_axis": "freq",
+            "chunks": (32, 4, 128, 64),
+            "compression": COMPRESSION,
+            "compression_opts": COMPRESSION_OPTS,
         },
         "object_ha": {
             "axes": ["object_id", "ha"],
@@ -2826,6 +3563,145 @@ class FormedBeamHA(FormedBeam):
     def ha(self):
         """Get the hour angle dataset."""
         return self.datasets["object_ha"]
+
+
+class FormedBeamHAEW(FormedBeamHA):
+    """Container for formed beams constructed from a HybridVisStream.
+
+    These have not been collapsed along the hour angle (ha) or
+    east west baseline (ew) axis.
+    """
+
+    _axes = ("ew",)
+
+    _dataset_spec: ClassVar = {
+        "beam": {
+            "axes": ["object_id", "pol", "freq", "ew", "ha"],
+            "dtype": np.complex128,
+            "initialise": True,
+            "distributed": True,
+            "distributed_axis": "freq",
+            "chunks": (8, 4, 128, 4, 64),
+            "compression": COMPRESSION,
+            "compression_opts": COMPRESSION_OPTS,
+        },
+        "weight": {
+            "axes": ["object_id", "pol", "freq", "ew", "ha"],
+            "dtype": np.float32,
+            "initialise": True,
+            "distributed": True,
+            "distributed_axis": "freq",
+            "chunks": (8, 4, 128, 4, 64),
+            "compression": COMPRESSION,
+            "compression_opts": COMPRESSION_OPTS,
+        },
+        "object_ha": {
+            "axes": ["object_id", "ha"],
+            "dtype": np.float64,
+            "initialise": True,
+            "distributed": False,
+        },
+    }
+
+    @property
+    def ew(self):
+        """Get the ew index map."""
+        return self.index_map["ew"]
+
+
+class FitFormedBeam(FormedBeam):
+    """Container for formed beams fit to a primary beam model versus hour angle."""
+
+    _dataset_spec: ClassVar = {
+        "background": {
+            "axes": ["object_id", "pol", "freq"],
+            "dtype": np.complex128,
+            "initialise": True,
+            "distributed": True,
+            "distributed_axis": "freq",
+        },
+        "weight_background": {
+            "axes": ["object_id", "pol", "freq"],
+            "dtype": np.float32,
+            "initialise": True,
+            "distributed": True,
+            "distributed_axis": "freq",
+        },
+        "corr_background_beam": {
+            "axes": ["object_id", "pol", "freq"],
+            "dtype": np.float32,
+            "initialise": True,
+            "distributed": True,
+            "distributed_axis": "freq",
+        },
+    }
+
+    @property
+    def background(self):
+        """Get the background dataset."""
+        return self.datasets["background"]
+
+    @property
+    def weight_background(self):
+        """Get the weight_background dataset."""
+        return self.datasets["weight_background"]
+
+    @property
+    def corr_background_beam(self):
+        """Get the corr_background_beam dataset."""
+        return self.datasets["corr_background_beam"]
+
+
+class FitFormedBeamEW(FitFormedBeam):
+    """Container for formed beams fit to a primary beam model versus hour angle.
+
+    These have not been collapsed along the east west baseline (ew) axis.
+    """
+
+    _axes = ("ew",)
+
+    _dataset_spec: ClassVar = {
+        "beam": {
+            "axes": ["object_id", "pol", "freq", "ew"],
+            "dtype": np.complex128,
+            "initialise": True,
+            "distributed": True,
+            "distributed_axis": "freq",
+        },
+        "weight": {
+            "axes": ["object_id", "pol", "freq", "ew"],
+            "dtype": np.float32,
+            "initialise": True,
+            "distributed": True,
+            "distributed_axis": "freq",
+        },
+        "background": {
+            "axes": ["object_id", "pol", "freq", "ew"],
+            "dtype": np.complex128,
+            "initialise": True,
+            "distributed": True,
+            "distributed_axis": "freq",
+        },
+        "weight_background": {
+            "axes": ["object_id", "pol", "freq", "ew"],
+            "dtype": np.float32,
+            "initialise": True,
+            "distributed": True,
+            "distributed_axis": "freq",
+        },
+        "corr_background_beam": {
+            "axes": ["object_id", "pol", "freq", "ew"],
+            "dtype": np.float32,
+            "initialise": True,
+            "distributed": True,
+            "distributed_axis": "freq",
+        },
+    }
+
+    @property
+    def ew(self):
+        """Get the ew index map."""
+        return self.index_map["ew"]
 
 
 class FormedBeamMask(FreqContainer):
@@ -2911,13 +3787,14 @@ def empty_timestream(**kwargs):
 def copy_datasets_filter(
     source: ContainerBase,
     dest: ContainerBase,
-    axis: Union[str, list, tuple] = [],
-    selection: Union[np.ndarray, list, slice, dict] = {},
-    exclude_axes: Optional[List[str]] = None,
+    axis: str | list | tuple = [],
+    selection: np.ndarray | list | slice | dict = {},
+    exclude_axes: list[str] | None = None,
+    copy_without_selection: bool = False,
 ):
     """Copy datasets while filtering a given axis.
 
-    Only datasets containing the axis to be filtered will be copied.
+    By default, only datasets containing the axis to be filtered will be copied.
 
     Parameters
     ----------
@@ -2935,6 +3812,9 @@ def copy_datasets_filter(
     exclude_axes
         An optional set of axes that if a dataset contains one means it will
         not be copied.
+    copy_without_selection
+        If set to True, then datasets that do not have an axis appearing in
+        selection will still be copied over in full.  Default is False.
     """
     exclude_axes_set = set(exclude_axes) if exclude_axes else set()
     if isinstance(axis, str):
@@ -2944,7 +3824,7 @@ def copy_datasets_filter(
     # Resolve the selections and axes, removing any that aren't needed
     if not isinstance(selection, dict):
         # Assume we just want to apply this selection to all listed axes
-        selection = {ax: selection for ax in axis}
+        selection = dict.fromkeys(axis, selection)
 
     if not axis:
         axis = set(selection.keys())
@@ -2977,11 +3857,12 @@ def copy_datasets_filter(
 
         item_axes = list(item.attrs.get("axis", ()))
 
-        # Only copy if at least one of the axes we are filtering
-        # are present, and there are no excluded axes in the dataset
-        if not (
-            axis.intersection(item_axes) and exclude_axes_set.isdisjoint(item_axes)
-        ):
+        # Do not copy datasets that contain excluded axes
+        if not exclude_axes_set.isdisjoint(item_axes):
+            continue
+
+        # Unless requested, do not copy datasets that do not contain selected axes
+        if not copy_without_selection and not axis.intersection(item_axes):
             continue
 
         if item.name not in dest:
@@ -3032,6 +3913,341 @@ def copy_datasets_filter(
 
         dest_dset[:] = arr[:]
 
+        # also copy attritutes
+        memh5.copyattrs(item.attrs, dest_dset.attrs)
+
         if isinstance(dest_dset, memh5.MemDatasetDistributed):
             # Redistribute back to the original axis
             dest_dset.redistribute(original_ax_id)
+
+
+class LocalizedRFIMask(FreqContainer, TODContainer):
+    """Container for an RFI mask for each freq, el, and time sample.
+
+    The data frac_rfi stores information about the proportion of subdata
+    that detected RFI, which is used to generate the mask.
+    """
+
+    _axes = ("el",)
+
+    _dataset_spec: ClassVar = {
+        "mask": {
+            "axes": ["freq", "el", "time"],
+            "dtype": bool,
+            "initialise": True,
+            "distributed": True,
+            "distributed_axis": "freq",
+        },
+        "frac_rfi": {
+            "axes": ["freq", "el", "time"],
+            "dtype": np.float32,
+            "initialise": False,
+            "distributed": True,
+            "distributed_axis": "freq",
+            "compression": COMPRESSION,
+            "compression_opts": COMPRESSION_OPTS,
+            "chunks": (64, 128, 512),
+            "truncate": True,
+        },
+    }
+
+    @property
+    def mask(self):
+        """Get the mask dataset."""
+        return self.datasets["mask"]
+
+    @property
+    def frac_rfi(self):
+        """Get the frac_rfi dataset."""
+        return self.datasets["frac_rfi"]
+
+    @property
+    def el(self):
+        """Get the el axis."""
+        return self.index_map["el"]
+
+
+class LocalizedSiderealRFIMask(FreqContainer, SiderealContainer):
+    """Container for an RFI mask for each freq, ra, and el sample.
+
+    The data frac_rfi stores information about the proportion of subdata
+    that detected RFI, which is used to generate the mask.
+    """
+
+    _axes = ("el",)
+
+    _dataset_spec: ClassVar = {
+        "mask": {
+            "axes": ["freq", "ra", "el"],
+            "dtype": bool,
+            "initialise": True,
+            "distributed": True,
+            "distributed_axis": "freq",
+        },
+        "frac_rfi": {
+            "axes": ["freq", "ra", "el"],
+            "dtype": np.float32,
+            "initialise": False,
+            "distributed": True,
+            "distributed_axis": "freq",
+            "compression": COMPRESSION,
+            "compression_opts": COMPRESSION_OPTS,
+            "chunks": (64, 512, 128),
+            "truncate": True,
+        },
+    }
+
+    @property
+    def mask(self):
+        """Get the mask dataset."""
+        return self.datasets["mask"]
+
+    @property
+    def frac_rfi(self):
+        """Get the frac_rfi dataset."""
+        return self.datasets["frac_rfi"]
+
+    @property
+    def el(self):
+        """Get the el axis."""
+        return self.index_map["el"]
+
+
+class VisBandpassWindow(FreqContainer):
+    """Container for bandpass gains and their window estimated by running bandpass HyFoReS on hybrid beam-formed visibilities."""
+
+    _axes = ("pol",)
+
+    # TODO: check if np.complex128 is required
+    _dataset_spec: ClassVar = {
+        "bandpass": {
+            "axes": ["pol", "freq"],
+            "dtype": np.complex128,
+            "initialise": True,
+            "distributed": False,
+        },
+        "window": {
+            "axes": ["pol", "freq", "freq"],
+            "dtype": np.complex128,
+            "initialise": True,
+            "distributed": False,
+        },
+    }
+
+    @property
+    def bandpass(self):
+        """Get the bandpass dataset."""
+        return self.datasets["bandpass"]
+
+    @property
+    def window(self):
+        """Get the window dataset."""
+        return self.datasets["window"]
+
+
+class VisBandpassCompensate(FreqContainer):
+    """Container for window-compensated bandpass gains."""
+
+    _axes = ("pol",)
+
+    # TODO: redefine the second axis for sval
+    _dataset_spec: ClassVar = {
+        "comp_bandpass": {
+            "axes": ["pol", "freq"],
+            "dtype": np.complex128,
+            "initialise": True,
+            "distributed": False,
+        },
+        "sval": {
+            "axes": ["pol", "freq"],
+            "dtype": np.complex128,
+            "initialise": True,
+            "distributed": False,
+        },
+    }
+
+    @property
+    def comp_bandpass(self):
+        """Get the comp_bandpass dataset."""
+        return self.datasets["comp_bandpass"]
+
+    @property
+    def sval(self):
+        """Get the sval dataset."""
+        return self.datasets["sval"]
+
+
+class VisBandpassWindowBaseline(VisBandpassWindow):
+    """Container for bandpass gains and their window estimated by running bandpass HyFoReS on hybrid beam-formed visibilities."""
+
+    _axes = ("ew",)
+
+    _dataset_spec: ClassVar = {
+        "bandpass": {
+            "axes": ["pol", "ew", "freq"],
+            "dtype": np.complex128,
+            "initialise": True,
+            "distributed": False,
+        },
+        "window": {
+            "axes": ["pol", "ew", "freq", "freq"],
+            "dtype": np.complex128,
+            "initialise": True,
+            "distributed": False,
+        },
+    }
+
+    @property
+    def bandpass(self):
+        """Get the bandpass dataset."""
+        return self.datasets["bandpass"]
+
+    @property
+    def window(self):
+        """Get the window dataset."""
+        return self.datasets["window"]
+
+
+class VisBandpassCompensateBaseline(VisBandpassCompensate):
+    """Container for window-compensated bandpass gains."""
+
+    _axes = ("ew",)
+
+    _dataset_spec: ClassVar = {
+        "comp_bandpass": {
+            "axes": ["pol", "ew", "freq"],
+            "dtype": np.complex128,
+            "initialise": True,
+            "distributed": False,
+        },
+        "sval": {
+            "axes": ["pol", "ew", "freq"],
+            "dtype": np.complex128,
+            "initialise": True,
+            "distributed": False,
+        },
+    }
+
+    @property
+    def comp_bandpass(self):
+        """Get the comp_bandpass dataset."""
+        return self.datasets["comp_bandpass"]
+
+    @property
+    def sval(self):
+        """Get the sval dataset."""
+        return self.datasets["sval"]
+
+
+class VisBandpassWindowBaselineRA(SiderealContainer, VisBandpassWindowBaseline):
+    """Container for bandpass gains and their window estimated by running bandpass HyFoReS on hybrid beam-formed visibilities."""
+
+    _dataset_spec: ClassVar = {
+        "bandpass": {
+            "axes": ["pol", "ew", "ra", "freq"],
+            "dtype": np.complex128,
+            "initialise": True,
+            "distributed": True,
+            "distributed_axis": "ra",
+            "chunks": (1, 4, 2048, 32),
+            "compression": COMPRESSION,
+            "compression_opts": COMPRESSION_OPTS,
+        },
+        "window": {
+            "axes": ["pol", "ew", "ra", "freq", "freq"],
+            "dtype": np.complex128,
+            "initialise": True,
+            "distributed": True,
+            "distributed_axis": "ra",
+            "chunks": (1, 4, 2048, 32, 32),
+            "compression": COMPRESSION,
+            "compression_opts": COMPRESSION_OPTS,
+        },
+    }
+
+    @property
+    def bandpass(self):
+        """Get the bandpass dataset."""
+        return self.datasets["bandpass"]
+
+    @property
+    def window(self):
+        """Get the window dataset."""
+        return self.datasets["window"]
+
+
+class VisBandpassCompensateBaselineRA(SiderealContainer, VisBandpassCompensateBaseline):
+    """Container for window-compensated bandpass gains."""
+
+    _dataset_spec: ClassVar = {
+        "comp_bandpass": {
+            "axes": ["pol", "ew", "ra", "freq"],
+            "dtype": np.complex128,
+            "initialise": True,
+            "distributed": True,
+            "distributed_axis": "ra",
+            "chunks": (1, 4, 2048, 32),
+            "compression": COMPRESSION,
+            "compression_opts": COMPRESSION_OPTS,
+        },
+        "rank": {
+            "axes": ["pol", "ew", "ra"],
+            "dtype": np.complex128,
+            "initialise": True,
+            "distributed": True,
+            "distributed_axis": "ra",
+            "chunks": (1, 4, 2048),
+            "compression": COMPRESSION,
+            "compression_opts": COMPRESSION_OPTS,
+        },
+    }
+
+    @property
+    def comp_bandpass(self):
+        """Get the comp_bandpass dataset."""
+        return self.datasets["comp_bandpass"]
+
+    @property
+    def rank(self):
+        """Get the sval dataset."""
+        return self.datasets["rank"]
+
+
+class HorizonLimit(ContainerBase):
+    """Container holding the altitude of the horizon as a function of azimuth."""
+
+    _axes = ("azimuth",)
+
+    _dataset_spec: ClassVar = {
+        "altitude": {
+            "axes": ["azimuth"],
+            "dtype": float,
+            "initialise": True,
+            "distributed": False,
+        }
+    }
+
+    def get_horizon_limit(self, az):
+        """Interpolate the horizon altitude at a given azimuth.
+
+        Parameters
+        ----------
+        az : float or ndarray
+            Azimuth angle in degrees at which to evaluate the horizon limit.
+
+        Returns
+        -------
+        alt : float or ndarray
+            Interpolated horizon altitude(s) in degrees.
+        """
+        return np.interp(az, self.azimuth, self.altitude, period=360.0)
+
+    @property
+    def azimuth(self):
+        """Get the index map containing the azimuth angle (in degrees)."""
+        return self.index_map["azimuth"]
+
+    @property
+    def altitude(self):
+        """Get the dataset containing the altitude (in degrees)."""
+        return self.datasets["altitude"]

@@ -4,7 +4,8 @@ import concurrent.futures
 import contextlib
 import os
 import zlib
-from typing import Callable, ClassVar, Optional
+from collections.abc import Callable
+from typing import ClassVar
 
 import numpy as np
 from caput import config
@@ -99,7 +100,7 @@ def complex_normal(loc=0.0, scale=1.0, size=None, dtype=None, rng=None, out=None
 
     # Fill the complex array by creating a real type view of it
     rtype = _type_map[dtype]
-    rsize = size[:-1] + (size[-1] * 2,)
+    rsize = (*size[:-1], size[-1] * 2)
     rng.standard_normal(rsize, dtype=rtype, out=out.view(rtype))
 
     # Use inplace ops for scaling and adding to avoid intermediate arrays
@@ -299,9 +300,9 @@ class MultithreadedRNG(np.random.Generator):
 
     def __init__(
         self,
-        seed: Optional[int] = None,
-        threads: Optional[int] = None,
-        bitgen: Optional[np.random.BitGenerator] = None,
+        seed: int | None = None,
+        threads: int | None = None,
+        bitgen: np.random.BitGenerator | None = None,
     ):
         if bitgen is None:
             bitgen = _default_bitgen
@@ -418,11 +419,16 @@ class MultithreadedRNG(np.random.Generator):
             # A worker method for each thread to fill its part of the array with the
             # random numbers
             def _fill(gen: np.random.Generator, local_array: np.ndarray) -> None:
+                if has_dtype:
+                    kwargs["dtype"] = dtype
                 if has_out:
+                    if out.dtype != dtype:
+                        raise TypeError(
+                            f"Output array of type f{local_array.dtype} does not "
+                            f"match dtype argument {dtype}."
+                        )
                     method(gen, *args, **kwargs, out=local_array)
                 else:
-                    if has_dtype:
-                        kwargs["dtype"] = dtype
                     local_array[:] = method(
                         gen,
                         *args,
