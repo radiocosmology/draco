@@ -10,11 +10,11 @@ using the variance of the noise estimate in the existing data.
 """
 
 import numpy as np
-from caput import config, pipeline, random, task
+from caput import config, pipeline, task
 from caput.time import STELLAR_S
 
 from ..core import containers, io
-from ..util import tools
+from ..util import random, tools
 
 
 class ReceiverTemperature(task.SingleTask):

@@ -1,11 +1,12 @@
 """draco test utils."""
 
 import numpy as np
-from caput import config, memh5, pipeline, random
+from caput import config, memh5, pipeline
 from caput.task import SingleTask
 from caput.task.random import RandomTask
 
 from ..core.containers import SiderealStream
+from . import random
 
 
 class DummyTask(SingleTask):

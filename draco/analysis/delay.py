@@ -6,7 +6,8 @@ from typing import TypeVar
 
 import numpy as np
 import scipy.linalg as la
-from caput import config, fftw, memh5, mpiarray, random, task, units
+from caput import config, fftw, memh5, mpiarray, task, units
+from caput.random import default_rng
 from numpy.lib.recfunctions import structured_to_unstructured
 
 from ..core import containers, io
@@ -1754,7 +1755,7 @@ def delay_power_spectrum_gibbs(
     """
     # Get reference to RNG
     if rng is None:
-        rng = random.default_rng()
+        rng = default_rng()
 
     spec = []
 
