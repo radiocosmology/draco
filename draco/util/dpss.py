@@ -304,7 +304,7 @@ def accumulate_variance(wo: np.ndarray, wi: np.ndarray, W: np.ndarray) -> np.nda
     return invert_no_zero(vi)
 
 
-def flag_above_cutoff(W: np.ndarray, fc: float) -> np.ndarray:
+def flag_above_cutoff(W: np.ndarray, fc: float | None = None) -> np.ndarray:
     """Mask to flag inpainted gaps wider than the cutoff `fc`.
 
     Calculates the width of each flagged region along the last axis,
@@ -318,7 +318,8 @@ def flag_above_cutoff(W: np.ndarray, fc: float) -> np.ndarray:
         Original mask array, False where samples are flagged.
     fc
         Cutoff width, in units of samples. Gaps above this
-        value are flagged.
+        value are flagged. A `None` value will return the
+        original mask
 
     Returns
     -------
@@ -326,6 +327,9 @@ def flag_above_cutoff(W: np.ndarray, fc: float) -> np.ndarray:
         Mask with gaps larger than `fc` flagged, where
         False corresponds to flagged values.
     """
+    if fc is None:
+        return W
+
     M = ~W
     dist = np.zeros_like(W, dtype=np.float32)
     # Get the rising and falling edge of flagged regions
