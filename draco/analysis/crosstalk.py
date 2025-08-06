@@ -1,7 +1,9 @@
 """Routines to estimate systematics like crosstalk and gains."""
 
+from typing import overload
+
 import numpy as np
-from caput import config
+from caput import config, tools
 
 from ..core import containers, task
 
@@ -17,8 +19,14 @@ class ExtractCrosstalkGain(task.SingleTask):
 
     nra = config.Property(proptype=int, default=64)
 
-    def setup(self, sstack: containers.SiderealStream):
-        """Set the reference sidereal stack."""
+    def setup(self, sstack: containers.SiderealStream | containers.VisGridStream):
+        """Set the reference sidereal stack.
+
+        Parameters
+        ----------
+        sstack
+            Reference dataset
+        """
         self.sstack = sstack
 
         if len(sstack.ra) % self.nra != 0:
@@ -28,14 +36,37 @@ class ExtractCrosstalkGain(task.SingleTask):
             )
         self.sstack.redistribute("freq")
 
-    def process(self, ss: containers.SiderealStream) -> containers.VisCrosstalkGain:
-        """For each input stream assess the cross talk and gain."""
+    @overload
+    def process(
+        self, ss: containers.VisGridStream
+    ) -> containers.VisCrosstalkGainGrid: ...
+    @overload
+    def process(self, ss: containers.SiderealStream) -> containers.VisCrosstalkGain: ...
+    def process(self, ss):
+        """For each input stream assess the cross talk and gain.
+
+        Parameters
+        ----------
+        ss
+            Calculate gains and crosstalk for this dataset
+
+        Returns
+        -------
+        ss_db
+            Container with gain and crosstalk estimates
+        """
+        # Verify that these datasets are compatible
+        if not isinstance(ss, self.sstack.__class__):
+            raise RuntimeError(
+                f"Both datasets must be the same type. Got {type(ss)} and {type(self.sstack)}."
+            )
+
         if np.any(self.sstack.ra != ss.ra):
             raise RuntimeError(
                 "The RA bins in the input must match those in the stack."
             )
 
-        if ss.vis[:].shape != self.sstack.vis[:].shape:
+        if ss.vis[:].global_shape != self.sstack.vis[:].global_shape:
             raise RuntimeError(
                 "The shape of the input vis dataset must match that in the stack."
             )
@@ -82,29 +113,41 @@ class ExtractCrosstalkGain(task.SingleTask):
                 (ssiw[fslice] * ssiv[fslice]).reshape(newshape).sum(axis=-1)
             )
 
-            # Construct the inverse covariance
-            mNi = np.zeros((*slshape, self.nra, 2, 2), dtype=np.complex64)
-            mNi[..., 0, 0] = (
+            # Construct the covariance. Because we just have a batch of
+            # 2x2 matrices to invert, instead of constructing the inverse
+            # covariance and using `solve`, we can make the covariance
+            # directly and multiply
+            mN = np.zeros((*slshape, self.nra, 2, 2), dtype=np.complex64)
+            mN[..., 1, 1] = (
                 (np.abs(sssv[fslice]) ** 2 * ssiw[fslice])
                 .reshape(newshape)
                 .sum(axis=-1)
             )
-            mNi[..., 0, 1] = (
-                (sssv[fslice].conj() * ssiw[fslice]).reshape(newshape).sum(axis=-1)
-            )
-            mNi[..., 1, 1] = ssiw[fslice].reshape(newshape).sum(axis=-1)
-            mNi[..., 1, 0] = mNi[..., 0, 1].conj()
+            mN[..., 0, 0] = ssiw[fslice].reshape(newshape).sum(axis=-1)
+            mN[..., 0, 1] = -1.0 * (sssv[fslice].conj() * ssiw[fslice]).reshape(
+                newshape
+            ).sum(axis=-1)
+            mN[..., 1, 0] = -1.0 * mN[..., 0, 1].conj()
 
-            # Assign weights before adding in prior term
-            ssbgw[fslice] = mNi[..., 0, 0].real
-            ssbxw[fslice] = mNi[..., 1, 1].real
+            # Assign weights before including determinant and
+            # prior terms. Note that these are swapped because
+            # the weights should be _inverse_ variance
+            ssbgw[fslice] = mN[..., 1, 1].real
+            ssbxw[fslice] = mN[..., 0, 0].real
 
-            # TODO: don't hardcode prior/regularisation
-            mNi += np.array([[1e-6, 0], [0, 1e-8]])
+            # Divide by the determinant to get the covariance
+            detmN = mN[..., 1, 1] * mN[..., 0, 0] - mN[..., 0, 1] * mN[..., 1, 0]
+            mN *= tools.invert_no_zero(detmN)[..., np.newaxis, np.newaxis]
 
-            gxhat = np.linalg.solve(mNi, gx_dirty)
+            # For a N-D matrix where N>2, matmul treats the array as a
+            # stack of 2D matrices residing in the last two axes, which
+            # is the situation we are in. Need to add the extra axis
+            # to make this work properly
+            # TODO: it should be really easy to write a cython function
+            # to do this, but it might not be necessary
+            gxhat = mN @ gx_dirty[..., np.newaxis]
 
-            ssbg[fslice] = gxhat[..., 0]
-            ssbx[fslice] = gxhat[..., 1]
+            ssbg[fslice] = gxhat[..., 0, 0]
+            ssbx[fslice] = gxhat[..., 1, 0]
 
         return ss_db
