@@ -26,6 +26,7 @@ dependencies = [
     "caput[compression,fftw] @ git+https://github.com/radiocosmology/caput.git",
     "cora @ git+https://github.com/radiocosmology/cora.git",
     "cython>0.18",
+    "dnspython",
     "driftscan @ git+https://github.com/radiocosmology/driftscan.git",
     "mpi4py",
     "numpy>=1.24",
