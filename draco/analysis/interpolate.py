@@ -8,7 +8,7 @@ from ..core import io, task
 from ..util import dpss
 
 
-class DPSSInpaint(task.SingleTask):
+class DPSSFilter(task.SingleTask):
     """Fill data gaps using DPSS inpainting.
 
     Discrete prolate spheroidal sequence (DPSS) inpainting involves
@@ -24,6 +24,9 @@ class DPSSInpaint(task.SingleTask):
 
     Attributes
     ----------
+    inpaint : bool
+        If True, inpaint flagged values. Otherwise, return the
+        filtered dataset. Default is True.
     axis : str
         Name of the axis over which to inpaint. Only one-dimensional
         inpainting is currently supported. Must be either "freq" or
@@ -38,26 +41,26 @@ class DPSSInpaint(task.SingleTask):
         significant performance improvements.
     halfwidths : list
         List of window half-widths. Must be the same length as `centres`.
-    snr_cov : float
+    epsilon : float
         Wiener filter inverse signal covariance. Default is 1.0e-3.
-    flag_above_cutoff : bool
+    cutoff_frac : float
         Re-flag gaps in the data above the width specified by
         cutoff_frac * fs / max(halfwidths), where fs is the
-        sample rate. Default is True.
-    cutoff_frac : float
-        Fraction of the cutoff used when re-flagging inpainted
-        samples. Default is 1.0.
+        sample rate. Default is 1.0.
     copy : bool
         If true, copy the container instead of inpainting in-place.
     """
 
+    inpaint = config.Property(proptype=bool, default=True)
+
     axis = config.enum(["freq", "ra"], default="freq")
     iter_axes = config.Property(proptype=list, default=["stack", "el"])
+
     centres = config.Property(proptype=list)
     halfwidths = config.Property(proptype=list)
-    snr_cov = config.Property(proptype=float, default=1.0e-3)
-    flag_above_cutoff = config.Property(proptype=bool, default=True)
+    epsilon = config.Property(proptype=float, default=1.0e-3)
     cutoff_frac = config.Property(proptype=float, default=1.0)
+
     copy = config.Property(proptype=bool, default=True)
 
     def setup(self, mask=None):
@@ -96,7 +99,7 @@ class DPSSInpaint(task.SingleTask):
         # Set the local selection over the distributed axis
         self._set_sel(data)
 
-        vinp, winp = self.inpaint(data.vis, data.weight, samples)
+        vinp, winp = self._filter(data.vis, data.weight, samples)
 
         # Make the output container
         if self.copy:
@@ -115,7 +118,7 @@ class DPSSInpaint(task.SingleTask):
 
         return out
 
-    def inpaint(self, vis, weight, samples):
+    def _filter(self, vis, weight, samples):
         """Inpaint visibilities using a wiener filter.
 
         Use a single sequence for the entire dataset.
@@ -146,11 +149,16 @@ class DPSSInpaint(task.SingleTask):
             M = wobs[ii] > 0
             W = mobs if self.mask is not None else M
 
-            vinp[ii], winp[ii] = dpss.inpaint(vobs[ii], wobs[ii], A, W, self.snr_cov)
+            # Inpaint or filter
+            if self.inpaint:
+                vinp[ii], winp[ii] = dpss.inpaint(
+                    vobs[ii], wobs[ii], A, W, self.epsilon
+                )
+            else:
+                vinp[ii], winp[ii] = dpss.filter(vobs[ii], wobs[ii], A, W, self.epsilon)
 
             # Re-flag gaps above the cutoff width
-            if self.flag_above_cutoff:
-                winp[ii] *= dpss.flag_above_cutoff(M, cutoff)
+            winp[ii] *= dpss.flag_above_cutoff(M, cutoff)
 
         # Reshape and move the interpolation axis back
         vinp = _inv_move_front(vinp, vaxind, vis.local_shape)
@@ -180,7 +188,7 @@ class DPSSInpaint(task.SingleTask):
         return [modes], amap, cutoff
 
 
-class DPSSInpaintBaseline(DPSSInpaint):
+class DPSSFilterBaseline(DPSSFilter):
     """Inpaint with baseline-dependent cut.
 
     This is a non-functional base class which provides functionality
@@ -259,7 +267,7 @@ class DPSSInpaintBaseline(DPSSInpaint):
         raise NotImplementedError()
 
 
-class DPSSInpaintDelay(DPSSInpaintBaseline):
+class DPSSFilterDelay(DPSSFilterBaseline):
     """Inpaint with baseline-dependent delay cut.
 
     Attributes
@@ -302,7 +310,7 @@ class DPSSInpaintDelay(DPSSInpaintBaseline):
         return np.round(delay_cut, decimals=3)
 
 
-class DPSSInpaintMMode(DPSSInpaintBaseline):
+class DPSSFilterMMode(DPSSFilterBaseline):
     """Inpaint with a baseline-dependent m cut.
 
     Attributes
@@ -350,11 +358,11 @@ class StokesIMixin:
         self._baselines = data.stack[data.vis[:].local_bounds]
 
 
-class DPSSInpaintDelayStokesI(StokesIMixin, DPSSInpaintDelay):
+class DPSSFilterDelayStokesI(StokesIMixin, DPSSFilterDelay):
     """Inpaint Stokes I with baseline-dependent delay cut."""
 
 
-class DPSSInpaintMModeStokesI(StokesIMixin, DPSSInpaintMMode):
+class DPSSFilterMModeStokesI(StokesIMixin, DPSSFilterMMode):
     """Inpaint Stokes I with baseline-dependent m-mode cut."""
 
 
