@@ -275,9 +275,7 @@ class GaussianProcessPrior(OptFunc):
         # Get the covariance kernel. Alpha needs to be applied _after_
         # inverting with the regularisation, so just set it to 1.0 here.
         # Strictly do not support band-diagonal kernels for now.
-        kernel_params.update(
-            {"N": int(N), "width": int(width), "alpha": 1.0, "banded": False}
-        )
+        kernel_params.update({"N": int(N), "width": int(width), "alpha": 1.0})
 
         C = kernels.get_kernel(kernel, **kernel_params)
 
