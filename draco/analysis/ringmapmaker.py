@@ -33,6 +33,8 @@ from ..util import tools
 from ..util.exception import ConfigError
 from . import transform
 
+from scipy import linalg
+
 
 class MakeVisGrid(task.SingleTask):
     """Arrange the visibilities onto a 2D grid.
@@ -1767,3 +1769,235 @@ def find_grid_indices(baselines):
     yind, dy = _get_inds(np.dot(baselines, yh))
 
     return xind, yind, dx, dy
+
+
+class AliasFreeRebin(task.SingleTask):
+    channel_bin = config.Property(proptype=int, default=1)
+    alpha = config.Property(proptype=float, default=0.0)
+
+    def setup(self, gb, ringmap, tel):
+        """Generic setup method.
+
+        To be complemented by specific setup methods in daughter tasks.
+
+        Parameters
+        ----------
+        gb : containers.GridBeam
+             Primary beam model.
+
+        ringmap : containers.RingMap
+                  Input data to apply the filter.
+
+        tel : TransitTelescope
+        """
+
+        self.telescope = io.get_telescope(tel)
+
+        prim_beam_array = (
+            np.abs(gb.beam[:, :, 0, :, int(gb.beam.shape[-1] / 2)])
+            .allgather()
+            .transpose(1, 0, 2)
+        )
+
+        total_pb_array = np.zeros(
+            (ringmap.pol.shape[0], len(gb.freq), ringmap.el.shape[0])
+        )
+        el_values = ringmap.el
+
+        for i in range(el_values.shape[0]):
+            el = el_values[i]
+            close_el_ind = np.argmin(np.abs(gb.theta - el))
+
+            if el > gb.theta[close_el_ind]:
+                assert (gb.theta[close_el_ind] < el) & (
+                    el < gb.theta[close_el_ind + 1]
+                ), f"not correct, {gb.theta[close_el_ind]}, {el}, {gb.theta[close_el_ind+1]}"
+                start_el_ind = close_el_ind
+                end_el_ind = close_el_ind + 1
+            elif el < gb.theta[close_el_ind]:
+                assert (gb.theta[close_el_ind - 1] < el) & (
+                    el < gb.theta[close_el_ind]
+                ), f"not correct, {gb.theta[close_el_ind-1]}, {el}, {gb.theta[close_el_ind]}"
+                start_el_ind = close_el_ind - 1
+                end_el_ind = close_el_ind
+            else:
+                assert (
+                    gb.theta[close_el_ind] == el
+                ), f"not correct, {gb.theta[close_el_ind]}, {el}"
+                start_el_ind = close_el_ind
+                end_el_ind = close_el_ind
+
+            if start_el_ind != end_el_ind:
+                ave_pb = prim_beam_array[:, :, start_el_ind] + (
+                    prim_beam_array[:, :, end_el_ind]
+                    - prim_beam_array[:, :, start_el_ind]
+                ) / (gb.theta[end_el_ind] - gb.theta[start_el_ind]) * (
+                    el - gb.theta[start_el_ind]
+                )
+            else:
+                ave_pb = prim_beam_array[:, :, start_el_ind]
+
+            total_pb_array[:, :, i] = ave_pb
+
+        # average_pb_array = np.mean(total_pb_array, axis=1)
+
+        self.total_pb_array = total_pb_array
+        # self.average_pb_array = average_pb_array
+        self.pb_freq = gb.freq
+
+    def process(self, ss):
+        """Take the input data set and apply Wiener filter in a given chanel bin.
+
+        Parameters
+        ----------
+        ss : containers.RingMap
+             Input data to apply the filter.
+             Before this process, the ringmap should be destriped.
+
+        Returns
+        -------
+        sb : containers.RingMap
+             Filtered ringmap.
+        """
+
+        # the minimum separation between antenna feeds
+        xind, yind, min_xsep, min_ysep = find_grid_indices(self.telescope.baselines)
+        dmin = min_ysep
+
+        # define a signal inverse covariance matrix
+        sigma_S = 5
+        S_inv = sigma_S ** (-2) * np.eye(ss.el.shape[0])
+
+        if "freq" not in ss.index_map:
+            raise RuntimeError("Data does not have a frequency axis.")
+
+        if len(ss.freq) % self.channel_bin != 0:
+            raise RuntimeError("Binning must exactly divide the number of channels.")
+
+        # load a primary beam model
+        total_pb_array = self.total_pb_array
+        pb_freq = self.pb_freq
+        assert (
+            ss.freq == pb_freq
+        ).all(), f"Frequency ranges of the input ringmap and primary beam beam don't match! {ss.freq[0:3]}, {pb_freq[0:3]}"
+
+        # redistribute along time and ra
+        ss.redistribute(["time", "ra"])
+
+        # obtain the center and the width of a new frequency distribution
+        fc = ss.index_map["freq"]["centre"].reshape(-1, self.channel_bin).mean(axis=-1)
+        fw = ss.index_map["freq"]["width"].reshape(-1, self.channel_bin).sum(axis=-1)
+
+        freq_map = np.empty(fc.shape[0], dtype=ss.index_map["freq"].dtype)
+        freq_map["centre"] = fc
+        freq_map["width"] = fw
+
+        # define the output ringmap
+        sb = containers.RingMap(
+            freq=freq_map,
+            axes_from=ss,
+            attrs_from=ss,
+            distributed=ss.distributed,
+            comm=ss.comm,
+        )
+
+        # redistribute along time and ra (the output ringmap as well)
+        sb.redistribute(["time", "ra"])
+
+        el_values = ss.el
+
+        # stack dirty beam R @ N^{-1} @ d, and a part of noise inverse covariance matrix R.T @ N^{-1} @ R,
+        # then sum them up.
+        ss_m = ss.map[:]
+        sb_m = sb.map[:]
+
+        dirty_beam = np.zeros(
+            (len(ss.pol), len(sb.freq), sb_m.shape[-1], sb_m.shape[-2])
+        )
+        N_Rinv = np.zeros(
+            (len(ss.pol), len(sb.freq), sb_m.shape[-2], sb_m.shape[-1], sb_m.shape[-1])
+        )
+
+        for i in range(len(ss.pol)):
+            for k in range(len(ss.freq)):
+                ri = k // self.channel_bin
+                data = np.asarray(ss_m[0, i, k, :, :])  # daily ringmap, not stacked one
+
+                freq = ss.freq[k]
+                center_freq = sb.freq[ri]
+
+                # include power-law term in R matrix
+                pl_term = (freq / center_freq) ** (-1.0 * self.alpha)
+
+                real_noise_cov = np.asarray(ss.weight[i, k, :, :])
+
+                # raise RuntimeError if the primary beam model in the input frequency is unavailable.
+                # or just break this loop?
+                try:
+                    pb_array = total_pb_array[i, k] * pl_term
+                except IndexError:
+                    raise RuntimeError(
+                        f"No primary beam model is available for lower frequencies than {pb_freq[-1]} MHz."
+                    )
+
+                # a spatial separation between a real source and its aliasing in N-S direction
+                # space = np.round(2.99792458e2/freq/dmin, decimals=5)
+                space = 2.99792458e2 / freq / dmin
+
+                for l in range(ss_m.shape[-1]):
+                    el = el_values[l]
+                    up = el + space
+                    if up < 1:
+                        alias_pos_up = np.argmin(np.abs(el_values - up))
+                    else:
+                        alias_pos_up = None
+
+                    dirty_beam[i, ri, l, :] += (
+                        pb_array[l] * real_noise_cov[:, l] * data[:, l]
+                    )
+                    N_Rinv[i, ri, :, l, l] += (
+                        pb_array[l] * real_noise_cov[:, l] * pb_array[l]
+                    )
+                    if alias_pos_up is not None:
+                        dirty_beam[i, ri, l, :] += (
+                            pb_array[l]
+                            * real_noise_cov[:, alias_pos_up]
+                            * data[:, alias_pos_up]
+                        )
+                        dirty_beam[i, ri, alias_pos_up, :] += (
+                            pb_array[alias_pos_up]
+                            * real_noise_cov[:, alias_pos_up]
+                            * data[:, l]
+                        )
+
+                        N_Rinv[i, ri, :, l, l] += (
+                            pb_array[l] * real_noise_cov[:, alias_pos_up] * pb_array[l]
+                        )
+                        N_Rinv[i, ri, :, alias_pos_up, l] += (
+                            pb_array[alias_pos_up]
+                            * (real_noise_cov[:, l] + real_noise_cov[:, alias_pos_up])
+                            * pb_array[l]
+                        )
+                        N_Rinv[i, ri, :, l, alias_pos_up] += (
+                            pb_array[l]
+                            * (real_noise_cov[:, alias_pos_up] + real_noise_cov[:, l])
+                            * pb_array[alias_pos_up]
+                        )
+                        N_Rinv[i, ri, :, alias_pos_up, alias_pos_up] += (
+                            pb_array[alias_pos_up]
+                            * real_noise_cov[:, alias_pos_up]
+                            * pb_array[alias_pos_up]
+                        )
+
+            # apply Wiener filter per RA
+            for ri in range(len(sb.freq)):
+                for m in range(sb_m.shape[-2]):
+                    part_dirty_beam = dirty_beam[i, ri, :, m]
+                    part_N_Rinv = N_Rinv[i, ri, m, :, :]
+                    part_s_hat = linalg.solve(
+                        S_inv + part_N_Rinv, part_dirty_beam, assume_a="pos"
+                    )
+                    # sb_m[0,i,ri,m,:] = part_s_hat * average_pb_array[i,:]
+                    sb_m[0, i, ri, m, :] = part_s_hat
+
+        return sb
