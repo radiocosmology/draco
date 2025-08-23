@@ -7,6 +7,7 @@ import scipy.linalg
 from caput import config, mpiarray
 from cora.util import units
 from cora.util.cosmology import Cosmology
+from scipy.special import legendre
 
 from draco.analysis.delay import flatten_axes
 from draco.analysis.ringmapmaker import find_grid_indices
@@ -1032,11 +1033,19 @@ class SphericalPowerSpectrum2Dto1D(task.SingleTask):
         The number of bins in 3D spherical binning. Default: 8
     logbins_3D : bool, optional
         If True, use logarithmic binning in cylindrical averaging. Default: False
-
+    l : int
+      The order of Legendre polynomials.
+      l = 0 (monopole), 2 (quadrupole) and 4 (hexadecapole)
+      Default: l = 0 , this gives the monopole of the power spectrum.
+      This will allow us to estimate other multipoles in addition to
+      monopole (or the power spectrum) term.
+      More details are here: https://arxiv.org/pdf/1801.04969, and
+      https://wwwmpa.mpa-garching.mpg.de/~komatsu/lecturenotes/Shun_Saito_on_RSD.pdf
     """
 
     Nbins_3D = config.Property(proptype=int, default=8)
     logbins_3D = config.Property(proptype=bool, default=True)
+    l = config.Property(proptype=int, default=0)
 
     def process(self, ps2D):
         """Estimate the spherically averaged power spectrum.
@@ -1092,6 +1101,7 @@ class SphericalPowerSpectrum2Dto1D(task.SingleTask):
                 Nbins_3D=self.Nbins_3D,
                 weight_cube=weight_2D[pp],
                 logbins_3D=self.logbins_3D,
+                l=self.l,
             )
 
         return pspec_1D
@@ -1888,6 +1898,7 @@ def get_1d_ps(
     signal_window=None,
     Nbins_3D=10,
     logbins_3D=True,
+    l=0,
 ):
     """Compute the 3D spherically averaged power spectrum.
 
@@ -1907,6 +1918,11 @@ def get_1d_ps(
         The number of 3D bins.
     logbins_3D : bool
         Bin in logarithmic space if True.
+    l : int
+     The order of Legendre polynomials.
+     l = 0 (monopole), 2 (quadrupole) and 4 (hexadecapole)
+     Default: l = 0 , this gives the monopole of the power spectrum.
+
 
     Returns
     -------
@@ -1925,12 +1941,14 @@ def get_1d_ps(
     # Estimate the 1D k-modes
     kpp, kll = np.meshgrid(kperp, kpara)
     k = np.sqrt(kpp**2 + kll**2)
+    mu = kpara[:, np.newaxis] / k
 
     # apply the window mask
     if signal_window is not None:
         k = k[signal_window]
         ps_2D = ps_2D[signal_window]
         w = weight_cube[signal_window]
+        mu = mu[signal_window]
 
     # Take the min and max of 1D k-modes
     kmin = k[k > 0].min()
@@ -1946,6 +1964,7 @@ def get_1d_ps(
     p1D = ps_2D.flatten()
     w1D = w.flatten()
     k1D = k.flatten()
+    mu1D = mu.flatten()
 
     # find the indices of bins
     indices = np.digitize(k1D, kbins)
@@ -1958,11 +1977,22 @@ def get_1d_ps(
     variance = []
     n_eff = []
 
+    # define the Legendre polynomial
+    L = legendre(l)
+
     # Average the modes falls in each bin
     with np.errstate(divide="ignore", invalid="ignore"):
         for i in np.arange(len(kbins) - 1) + 1:
             w_b = w1D[indices == i]
-            p = np.sum(w_b * p1D[indices == i]) / np.sum(w_b)
+            mu_i = mu1D[indices == i]
+
+            # multiply by Legendre polynomials before binning and
+            # also normalize it properly; following Eqn:3 of https://arxiv.org/pdf/1801.04969
+            # Check also, eqn 22 of  https://wwwmpa.mpa-garching.mpg.de/~komatsu/lecturenotes/Shun_Saito_on_RSD.pdf
+            # Note the norm factor below doest not have 2 in the denominator, as we are taking only
+            # positive half of k_para and assumes symmetry.
+            p = np.sum(w_b * p1D[indices == i] * L(mu_i)) / np.sum(w_b)
+            p *= 2 * l + 1  # normalization
             p_err = np.sqrt(np.sum(w_b**2 * np.abs(p) ** 2) / np.sum(w_b) ** 2)
             k_mean_b = nanaverage(k1D[indices == i], w_b)
             k3D.append(k_mean_b)
