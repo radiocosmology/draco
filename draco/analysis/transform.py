@@ -594,6 +594,13 @@ class MModeTransform(task.SingleTask):
         svis = sstream.vis[:].local_array
         sweight = sstream.weight[:].local_array
 
+        # Zero out any flagged data prior to calculating the m-mode transform
+        slc = tools.broadcast_weights(
+            sstream.weight.attrs["axis"], sstream.vis.attrs["axis"]
+        )
+        flag = sweight > 0.0
+        svis *= flag[slc]
+
         # Sum the noise variance over time samples, this will become the noise
         # variance for the m-modes
         nra = sstream.weight.shape[-1]
