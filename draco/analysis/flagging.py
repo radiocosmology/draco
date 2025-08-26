@@ -1972,7 +1972,7 @@ class RFISensitivityMask(task.SingleTask):
 
         return rfimask
 
-    def _combine_st_mad_hook(self, times):
+    def _combine_st_mad_hook(self, times, freq):
         """Override to add a custom blending mask between the SumThreshold and MAD flagged data.
 
         This is useful to use the MAD algorithm around bright source
@@ -1982,6 +1982,8 @@ class RFISensitivityMask(task.SingleTask):
         ----------
         times : np.ndarray[ntime]
             Times of the data at floating point UNIX time.
+        freq : np.ndarray[nfreq]
+            Array of frequencies.
 
         Returns
         -------
@@ -1989,7 +1991,7 @@ class RFISensitivityMask(task.SingleTask):
             Mixing array as a function of time. If `True` that sample will be
             filled from the MAD, if `False` use the SumThreshold algorithm.
         """
-        return np.ones_like(times, dtype=bool)
+        return np.ones((freq.size, times.size), dtype=bool)
 
     def _static_rfi_mask_hook(self, freq, timestamp=None):
         """Override this function to apply a static RFI mask to the data.
