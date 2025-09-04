@@ -9,7 +9,7 @@ from cora.util import units
 from numpy.lib.recfunctions import structured_to_unstructured
 
 from ..core import containers, io, task
-from ..util import random, tools
+from ..util import filters, random, tools
 from .delayopt import delay_power_spectrum_maxpost
 
 # A specific subclass of a FreqContainer
@@ -128,11 +128,11 @@ class DelayFilter(task.SingleTask):
             t_mask = (t_samp == t_samp.max()).astype(np.float64)
 
             try:
-                NF = null_delay_filter(
+                NF = filters.null_filter(
                     freq,
                     delay_cut,
                     f_mask,
-                    num_delay=number_cut,
+                    num_modes=number_cut,
                     window=self.window,
                 )
             except la.LinAlgError as e:
@@ -308,11 +308,11 @@ class DelayFilterBase(task.SingleTask):
             # This has occasionally failed to converge, catch this and output enough
             # info to debug after the fact
             try:
-                NF = null_delay_filter(
+                NF = filters.null_filter(
                     freq,
                     delay_cut,
                     f_mask,
-                    num_delay=number_cut,
+                    num_modes=number_cut,
                     window=self.window,
                 )
             except la.LinAlgError as e:
@@ -2139,87 +2139,6 @@ def delay_spectrum_wiener_filter(
         y_spec = _alternating_real_to_complex(y_spec)
 
     return y_spec
-
-
-def null_delay_filter(
-    freq,
-    delay_cut,
-    mask,
-    num_delay=200,
-    tol=1e-8,
-    window=True,
-    type_="high",
-    lapack_driver="gesvd",
-):
-    """Take frequency data and null out any delays below some value.
-
-    Parameters
-    ----------
-    freq : np.ndarray[freq]
-        Frequencies we have data at.
-    delay_cut : float
-        Delay cut to apply.
-    mask : np.ndarray[freq]
-        Frequencies to mask out.
-    num_delay : int, optional
-        Number of delay values to use.
-    tol : float, optional
-        Cut off value for singular values.
-    window : bool, optional
-        Apply a window function to the data while filtering.
-    type_ : str, optional
-        Whether to apply a high-pass or low-pass filter. Options are
-        `high` or `low`. Default is `high`.
-    lapack_driver : str, optional
-        Which lapack driver to use in the SVD. Options are 'gesvd' or 'gesdd'.
-        'gesdd' is generally faster, but seems to experience convergence issues.
-        Default is 'gesvd'.
-
-    Returns
-    -------
-    filter : np.ndarray[freq, freq]
-        The filter as a 2D matrix.
-    """
-    if type_ not in {"high", "low"}:
-        raise ValueError(f"Filter type must be one of [high, low]. Got {type_}")
-
-    # Construct the window function
-    x = (freq - freq.min()) / np.ptp(freq)
-    w = tools.window_generalised(x, window="nuttall")
-
-    delay = np.linspace(-delay_cut, delay_cut, num_delay)
-
-    # Construct the Fourier matrix
-    F = mask[:, np.newaxis] * np.exp(
-        2.0j * np.pi * delay[np.newaxis, :] * freq[:, np.newaxis]
-    )
-
-    if window:
-        F *= w[:, np.newaxis]
-
-    # Use an SVD to figure out the set of significant modes spanning the delays
-    # we are wanting to get rid of.
-    # NOTE: we've experienced some convergence failures in here which ultimately seem
-    # to be the fault of MKL (see https://github.com/scipy/scipy/issues/10032 and links
-    # therein). This seems to be limited to the `gesdd` LAPACK routine, so we can get
-    # around it by switching to `gesvd`.
-    u, sig, _ = la.svd(F, full_matrices=False, lapack_driver=lapack_driver)
-    nmodes = np.sum(sig > tol * sig.max())
-    p = u[:, :nmodes]
-
-    # Construct a projection matrix for the filter
-    proj = p @ p.T.conj()
-
-    if type_ == "high":
-        proj = np.identity(len(freq)) - proj
-
-    # Multiply in the mask and window (if applicable)
-    proj *= mask[np.newaxis, :]
-
-    if window:
-        proj *= w[np.newaxis, :]
-
-    return proj
 
 
 # ----------------------------------------
