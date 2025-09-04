@@ -13,7 +13,9 @@ import warnings
 from typing import ClassVar, overload
 
 import numpy as np
-from caput import config, mpiarray, weighted_median
+import numpy.typing as npt
+from caput import config, fftw, weighted_median
+from caput.mpiarray import MPIArray
 from cora.util import units
 from scipy.signal import convolve, firwin, oaconvolve
 from scipy.spatial.distance import cdist
