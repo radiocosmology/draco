@@ -1117,7 +1117,7 @@ class RFIVisMask(tasklib.base.ContainerTask):
 
         # Set up the initial mask, reducing over baselines
         mask = (weight == 0).all(axis=1)
-        mask |= self._static_rfi_mask_hook(freq, times[0])[:, np.newaxis]
+        mask.local_array[:] |= self._static_rfi_mask_hook(freq, times[0])[:, np.newaxis]
 
         self.log.debug(
             f"{100.0 * mask.allgather().mean():.2f}% of data initially flagged."
@@ -1225,43 +1225,54 @@ class RFITransientVisMask(RFIVisMask):
         """Mask scattered transient RFI."""
         # Convert times to ra in radians
         ra = np.unwrap(self.telescope.unix_to_lsa(times), period=360.0) * np.pi / 180.0
+
         # Get the per-frequency high-pass and low-pass cuts
         dec = np.deg2rad(self.telescope.latitude)
-        lambda_inv = freq[:, np.newaxis] * 1e6 / constants.c
-
-        # Maximum cut per frequency
+        lambda_inv = freq.min() * 1e6 / constants.c
         hpf_cut = lambda_inv * baselines[:, 0].max() / np.cos(dec)
 
-        vis = vis.local_array
-        weight = weight.local_array
+        # high-pass filter in `m` then crudely beamform with an fft
+        vhpf = filters.highpass_weighted_convolution_filter(
+            vis.local_array[:],
+            weight.local_array[:],
+            ra,
+            hpf_cut,
+            axis=-1,
+        )
+        # crude fft beamform
+        np.fft.fft(vhpf, axis=1, out=vhpf)
+        # magnitude of the beamformed visibilities
+        np.absolute(vhpf, out=vhpf)
+
+        # Create the output mask and apply the initial mask
+        finalmask = mpiarray.zeros(vis.global_shape, dtype=bool, axis=0)
+        finalmask |= mask[:, np.newaxis]
+        # Dereference the distributed array
+        fl = finalmask.local_array
 
         # Iterate over frequencies
-        for fsel in range(vis.shape[0]):
-            if np.all(mask[fsel]):
-                # Frequency is already masked
-                continue
-
-            # Apply a high-pass mmode filter. Scattered emission appears
-            # similar to an impulse function in time, so its fourier transform
-            # should extend to high m
-            v_hpf = filters.highpass_weighted_convolution_filter(
-                vis[fsel], weight[fsel], ra, hpf_cut[fsel]
-            )
-
-            # MAD filter flags scattered emission after beamforming
-            map_hpf = abs(fft.fftw.fft(v_hpf, axes=0))
-            mad_mask = np.zeros_like(v_hpf, dtype=bool) | mask[fsel][np.newaxis]
-            mad_ = mad(map_hpf, mad_mask, self.mad_base_size, self.mad_dev_size)
+        for ii in range(fl.shape[0]):
+            # Compute median absolute deviations of the filtered map
+            mad_ = mad(vhpf[ii], fl[ii], self.mad_base_size, self.mad_dev_size)
             # Hysteresis threshold mask flags anything above `sigma_high` or
             # anything above `sigma_low` ONLY if it is connected to a region
             # above `sigma_high`
-            mad_mask |= apply_hysteresis_threshold(
-                mad_, self.sigma_low, self.sigma_high
-            )
-            # Collapse over baselines and flag
-            mask[fsel] |= np.mean(mad_mask, axis=0) > self.frac_samples
+            fl[ii] |= apply_hysteresis_threshold(mad_, self.sigma_low, self.sigma_high)
 
-        return mpiarray.MPIArray.wrap(mask, axis=0).allgather()
+        # Apply scale-invariant rank operator. At this stage, the mask typically
+        # won't have regions which are wide in _both_ time and frequency, so this
+        # should have a fairly minimal effect on the total flagging. Avoid extending
+        # anything that was originally masked.
+        finalmask = finalmask.redistribute(axis=1)
+        finalmask.local_array[:] |= rfi.scale_invariant_rank(
+            finalmask.local_array & ~mask.allgather()[:, np.newaxis],
+            eta=(0.1, 0.2),
+            axis=(0, -1),
+        )
+        finalmask = finalmask.redistribute(axis=0)
+
+        # Collapse over beams and return the time-frequency mask
+        return finalmask.mean(axis=1).allgather() > self.frac_samples
 
 
 class RFINarrowbandVisMask(RFIVisMask, transform.ReduceVar):
@@ -1389,7 +1400,7 @@ class RFINarrowbandVisMask(RFIVisMask, transform.ReduceVar):
 
         # Expand the mask in time only. Expanding in frequency generally ends
         # up being too aggressive
-        summask |= rfi.sir((summask & ~mask)[:, np.newaxis], only_time=True)[:, 0]
+        summask |= rfi.scale_invariant_rank(summask & ~mask, axis=-1)
 
         return summask
 
@@ -2007,9 +2018,9 @@ class RFISensitivityMask(tasklib.base.ContainerTask):
                         # then apply it here to extend the sumthreshold mask
                         # in time across the transits.
                         if not self.sir:
-                            expanded = rfi.sir(
-                                tempmask[:, None], eta=0.2, only_time=True
-                            )[:, 0]
+                            expanded = rfi.scale_invariant_rank(
+                                tempmask, eta=0.2, axis=-1
+                            )
                             tempmask = np.where(madtimes, expanded, tempmask)
 
                         current_flag |= tempmask
@@ -2115,9 +2126,10 @@ class RFISensitivityMask(tasklib.base.ContainerTask):
         # Remove baseflag from mask and run SIR
         nobaseflag = np.copy(mask)
         nobaseflag[baseflag] = False
-        nobaseflagsir = rfi.sir(
-            nobaseflag[:, np.newaxis, :], eta=self.eta, only_time=self.only_time
-        )[:, 0, :]
+
+        axes = (-1,) if self.only_time else (0, -1)
+
+        nobaseflagsir = rfi.scale_invariant_rank(nobaseflag, eta=self.eta, axis=axes)
 
         # Make sure the original mask (including baseflag) is still masked
         return nobaseflagsir | mask
