@@ -14,8 +14,7 @@ from typing import ClassVar, overload
 
 import numpy as np
 import numpy.typing as npt
-from caput import config, fftw, weighted_median
-from caput.mpiarray import MPIArray
+from caput import config, mpiarray, weighted_median
 from cora.util import units
 from scipy.signal import convolve
 from scipy.spatial.distance import cdist
@@ -817,7 +816,7 @@ class ThresholdVisWeightFrequency(task.SingleTask):
             > np.fmax(threshold * self.relative_threshold, self.absolute_threshold)
         )[:, 0, :]
         # Collect all parts of the mask. Method .allgather() returns a np.ndarray
-        mask = MPIArray.wrap(mask, axis=0).allgather()
+        mask = mpiarray.MPIArray.wrap(mask, axis=0).allgather()
         # Log the percent of data masked
         drop_frac = np.sum(mask) / np.prod(mask.shape)
         self.log.info(
@@ -970,7 +969,7 @@ class ThresholdVisWeightBaseline(task.SingleTask):
         self.log.info(f"{100.0 * mask_frac:.5f} of data is below the weight threshold")
 
         # Save mask to output container
-        mask_cont.mask[:] = MPIArray.wrap(local_mask, axis=1)
+        mask_cont.mask[:] = mpiarray.MPIArray.wrap(local_mask, axis=1)
 
         # Distribute back across frequency
         mask_cont.redistribute("freq")
@@ -1022,7 +1021,7 @@ class CollapseBaselineMask(task.SingleTask):
         local_mask = np.any(local_mask, axis=1)
 
         # Gather full mask on each rank
-        full_mask = MPIArray.wrap(local_mask, axis=0).allgather()
+        full_mask = mpiarray.MPIArray.wrap(local_mask, axis=0).allgather()
 
         # Log the percent of freq/time samples masked
         drop_frac = np.sum(full_mask) / np.prod(full_mask.shape)
@@ -1115,9 +1114,11 @@ class RFIVisMask(task.SingleTask):
 
         # Set up the initial mask, reducing over baselines
         mask = (weight == 0).all(axis=1)
-        mask |= self._static_rfi_mask_hook(freq, times[0])[:, np.newaxis]
+        mask.local_array[:] |= self._static_rfi_mask_hook(freq, times[0])[:, np.newaxis]
 
-        self.log.debug(f"{100.0 * mask.mean():.2f}% of data initially flagged.")
+        self.log.debug(
+            f"{100.0 * mask.allgather().mean():.2f}% of data initially flagged."
+        )
 
         # Create a time-frequency mask
         out.mask[:] = self.generate_mask(vis, weight, mask, freq, baselines, times)
@@ -1128,8 +1129,8 @@ class RFIVisMask(task.SingleTask):
 
     def generate_mask(
         self,
-        vis: MPIArray,
-        weight: MPIArray,
+        vis: mpiarray.MPIArray,
+        weight: mpiarray.MPIArray,
         mask: npt.NDArray[np.bool_],
         freq: npt.NDArray[np.floating],
         baselines: npt.NDArray[np.floating],
@@ -1221,43 +1222,54 @@ class RFITransientVisMask(RFIVisMask):
         """Mask scattered transient RFI."""
         # Convert times to ra in radians
         ra = np.unwrap(self.telescope.unix_to_lsa(times), period=360.0) * np.pi / 180.0
+
         # Get the per-frequency high-pass and low-pass cuts
         dec = np.deg2rad(self.telescope.latitude)
-        lambda_inv = freq[:, np.newaxis] * 1e6 / units.c
-
-        # Maximum cut per frequency
+        lambda_inv = freq.min() * 1e6 / units.c
         hpf_cut = lambda_inv * baselines[:, 0].max() / np.cos(dec)
 
-        vis = vis.local_array
-        weight = weight.local_array
+        # high-pass filter in `m` then crudely beamform with an fft
+        vhpf = filters.highpass_weighted_convolution_filter(
+            vis.local_array[:],
+            weight.local_array[:],
+            ra,
+            hpf_cut,
+            axis=-1,
+        )
+        # crude fft beamform
+        np.fft.fft(vhpf, axis=1, out=vhpf)
+        # magnitude of the beamformed visibilities
+        np.absolute(vhpf, out=vhpf)
+
+        # Create the output mask and apply the initial mask
+        finalmask = mpiarray.zeros(vis.global_shape, dtype=bool, axis=0)
+        finalmask |= mask[:, np.newaxis]
+        # Dereference the distributed array
+        fl = finalmask.local_array
 
         # Iterate over frequencies
-        for fsel in range(vis.shape[0]):
-            if np.all(mask[fsel]):
-                # Frequency is already masked
-                continue
-
-            # Apply a high-pass mmode filter. Scattered emission appears
-            # similar to an impulse function in time, so its fourier transform
-            # should extend to high m
-            v_hpf = filters.highpass_weighted_convolution_filter(
-                vis[fsel], weight[fsel], ra, hpf_cut[fsel]
-            )
-
-            # MAD filter flags scattered emission after beamforming
-            map_hpf = abs(fftw.fft(v_hpf, axes=0))
-            mad_mask = np.zeros_like(v_hpf, dtype=bool) | mask[fsel][np.newaxis]
-            mad_ = mad(map_hpf, mad_mask, self.mad_base_size, self.mad_dev_size)
+        for ii in range(fl.shape[0]):
+            # Compute median absolute deviations of the filtered map
+            mad_ = mad(vhpf[ii], fl[ii], self.mad_base_size, self.mad_dev_size)
             # Hysteresis threshold mask flags anything above `sigma_high` or
             # anything above `sigma_low` ONLY if it is connected to a region
             # above `sigma_high`
-            mad_mask |= apply_hysteresis_threshold(
-                mad_, self.sigma_low, self.sigma_high
-            )
-            # Collapse over baselines and flag
-            mask[fsel] |= np.mean(mad_mask, axis=0) > self.frac_samples
+            fl[ii] |= apply_hysteresis_threshold(mad_, self.sigma_low, self.sigma_high)
 
-        return MPIArray.wrap(mask, axis=0).allgather()
+        # Apply scale-invariant rank operator. At this stage, the mask typically
+        # won't have regions which are wide in _both_ time and frequency, so this
+        # should have a fairly minimal effect on the total flagging. Avoid extending
+        # anything that was originally masked.
+        finalmask = finalmask.redistribute(axis=1)
+        finalmask.local_array[:] |= rfi.scale_invariant_rank(
+            finalmask.local_array & ~mask.allgather()[:, np.newaxis],
+            eta=(0.1, 0.2),
+            axis=(0, -1),
+        )
+        finalmask = finalmask.redistribute(axis=0)
+
+        # Collapse over beams and return the time-frequency mask
+        return finalmask.mean(axis=1).allgather() > self.frac_samples
 
 
 class RFINarrowbandVisMask(RFIVisMask, transform.ReduceVar):
@@ -1341,7 +1353,7 @@ class RFINarrowbandVisMask(RFIVisMask, transform.ReduceVar):
             power[fsel] = np.mean(abs(v_lpf)[bl_sel], axis=0)
 
         # Gather the entire power array for masking
-        power = MPIArray.wrap(power, axis=0).allgather()
+        power = mpiarray.MPIArray.wrap(power, axis=0).allgather()
 
         # Find times where there are bright sources in the sky
         # which should be treated differently
@@ -1385,7 +1397,7 @@ class RFINarrowbandVisMask(RFIVisMask, transform.ReduceVar):
 
         # Expand the mask in time only. Expanding in frequency generally ends
         # up being too aggressive
-        summask |= rfi.sir((summask & ~mask)[:, np.newaxis], only_time=True)[:, 0]
+        summask |= rfi.scale_invariant_rank(summask & ~mask, axis=-1)
 
         return summask
 
@@ -1930,7 +1942,7 @@ class RFISensitivityMask(task.SingleTask):
         # Create arrays to hold final masks
         nfreq, _, ntime = radiometer.shape
 
-        finalmask = MPIArray((npol, nfreq, ntime), axis=0, dtype=bool)
+        finalmask = mpiarray.MPIArray((npol, nfreq, ntime), axis=0, dtype=bool)
         finalmask[:] = False
 
         # Loop over polarisations
@@ -2007,9 +2019,9 @@ class RFISensitivityMask(task.SingleTask):
                         # then apply it here to extend the sumthreshold mask
                         # in time across the transits.
                         if not self.sir:
-                            expanded = rfi.sir(
-                                tempmask[:, None], eta=0.2, only_time=True
-                            )[:, 0]
+                            expanded = rfi.scale_invariant_rank(
+                                tempmask, eta=0.2, axis=-1
+                            )
                             tempmask = np.where(madtimes, expanded, tempmask)
 
                         current_flag |= tempmask
@@ -2018,10 +2030,10 @@ class RFISensitivityMask(task.SingleTask):
 
         # Perform an OR (.any) along the pol axis and reform into an MPIArray
         # along the freq axis
-        finalmask = MPIArray.wrap(finalmask.redistribute(1).any(0), 0)
+        finalmask = mpiarray.MPIArray.wrap(finalmask.redistribute(1).any(0), 0)
 
         # Collect all parts of the mask onto rank 1 and then broadcast to all ranks
-        finalmask = MPIArray.wrap(finalmask, 0).allgather()
+        finalmask = mpiarray.MPIArray.wrap(finalmask, 0).allgather()
 
         # Log the fraction of data masked
         percent_masked = 100 * np.sum(finalmask) / float(finalmask.size)
@@ -2119,9 +2131,10 @@ class RFISensitivityMask(task.SingleTask):
         # Remove baseflag from mask and run SIR
         nobaseflag = np.copy(mask)
         nobaseflag[baseflag] = False
-        nobaseflagsir = rfi.sir(
-            nobaseflag[:, np.newaxis, :], eta=self.eta, only_time=self.only_time
-        )[:, 0, :]
+
+        axes = (-1,) if self.only_time else (0, -1)
+
+        nobaseflagsir = rfi.scale_invariant_rank(nobaseflag, eta=self.eta, axis=axes)
 
         # Make sure the original mask (including baseflag) is still masked
         return nobaseflagsir | mask
@@ -2966,7 +2979,7 @@ class MaskFreq(task.SingleTask):
         )
         axis_dist = [ax for ax in waxes if ax in ["freq", "time", "ra"]].index("freq")
 
-        present_data = MPIArray.wrap(
+        present_data = mpiarray.MPIArray.wrap(
             (data.weight[:] > 0).sum(axis=axis_sum),
             comm=data.weight.comm,
             axis=axis_dist,
@@ -3644,7 +3657,7 @@ class ReduceMaskEl(task.SingleTask):
 
         # The output RFI mask is not frequency distributed
         arr = reduced_mask
-        arrdist = MPIArray.wrap(arr, axis=0)
+        arrdist = mpiarray.MPIArray.wrap(arr, axis=0)
         final_mask = arrdist.allgather()
 
         output.mask[:] = final_mask
