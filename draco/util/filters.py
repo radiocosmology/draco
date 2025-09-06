@@ -53,6 +53,7 @@ def lowpass_weighted_convolution_filter(
 
     # Low-pass filter the visibilities. `oaconvolve` is significantly
     # faster than the standard convolve method
+    # TODO: write a faster version of this
     vw_lp = signal.oaconvolve(data * weight, kernel, mode="same")
     ww_lp = signal.oaconvolve(weight, kernel, mode="same")
 
