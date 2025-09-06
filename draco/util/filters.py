@@ -58,7 +58,11 @@ def lowpass_weighted_convolution_filter(
     vw_lp = signal.oaconvolve(data * weight, kernel, mode="same")
     ww_lp = signal.oaconvolve(weight, kernel, mode="same")
 
-    return vw_lp * algorithms.invert_no_zero(ww_lp)
+    # Avoid some extra copies
+    ww_lp = algorithms.invert_no_zero(ww_lp, out=ww_lp)
+    vw_lp *= ww_lp
+
+    return vw_lp
 
 
 def highpass_weighted_convolution_filter(
