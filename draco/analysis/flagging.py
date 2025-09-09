@@ -1395,7 +1395,7 @@ class RFINarrowbandVisMask(RFIVisMask, transform.ReduceVar):
 
         # Expand the mask in time only. Expanding in frequency generally ends
         # up being too aggressive
-        summask |= rfi.sir((summask & ~mask)[:, np.newaxis], only_time=True)[:, 0]
+        summask |= rfi.scale_invariant_rank(summask & ~mask, axis=-1)
 
         return summask
 
@@ -1987,9 +1987,9 @@ class RFISensitivityMask(task.SingleTask):
                         # then apply it here to extend the sumthreshold mask
                         # in time across the transits.
                         if not self.sir:
-                            expanded = rfi.sir(
-                                tempmask[:, None], eta=0.2, only_time=True
-                            )[:, 0]
+                            expanded = rfi.scale_invariant_rank(
+                                tempmask, eta=0.2, axis=-1
+                            )
                             tempmask = np.where(madtimes, expanded, tempmask)
 
                         current_flag |= tempmask
@@ -2099,9 +2099,10 @@ class RFISensitivityMask(task.SingleTask):
         # Remove baseflag from mask and run SIR
         nobaseflag = np.copy(mask)
         nobaseflag[baseflag] = False
-        nobaseflagsir = rfi.sir(
-            nobaseflag[:, np.newaxis, :], eta=self.eta, only_time=self.only_time
-        )[:, 0, :]
+
+        axes = (-1,) if self.only_time else (0, -1)
+
+        nobaseflagsir = rfi.scale_invariant_rank(nobaseflag, eta=self.eta, axis=axes)
 
         # Make sure the original mask (including baseflag) is still masked
         return nobaseflagsir | mask
