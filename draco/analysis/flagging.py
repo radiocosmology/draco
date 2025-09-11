@@ -1272,61 +1272,76 @@ class RFITransientVisMask(RFIVisMask):
         return finalmask.mean(axis=1).allgather() > self.frac_samples
 
 
-class RFINarrowbandVisMask(RFIVisMask):
-    """Identify and flag narrowband RFI in the visibilities.
+class RFIStaticVisMask(RFIVisMask):
+    """Identify and flag (mostly) static RFI in the visibilities.
 
-    A low-pass filter is applied in RA to reduce transient sky sources.
-    The average visibility power is taken over 2+ cylinder separation baselines
-    to obtain a single 1D array per frequency. These powers are gathered across all
-    frequencies and a basic background subtraction is applied. Sumthreshold
-    algorithm is then used for flagging, with a variance estimate used to
-    boost the expected noise during the daytime and bright point source
-    transits.
+    Apply a median absolute deviations filter to the median-of-means of
+    visibility bins, optionally after beamforming. The filter is applied
+    iteratively on progressively wider time bins, where each bin contains
+    the weighted average of the constituent samples. Flagging for a given
+    frequency is applied to the entire time range for each baseline/beam.
+    The time-baseline-frequency mask is expanded in time using the scale-invariant
+    rank operator. Finally, a time-frequency mask is constructed by flagging
+    any time-frequency sample for which some fraction of baselines/beams
+    are flagged.
 
     Attributes
     ----------
     beamform
         If true, beamform the visibilities before applying the MAD filter. This
         will flag each beam independently instead of each baseline. Default is False.
-    nbins
-        Number of time bins to use when downsampling the data
-        before applying the MAD filter. Default is 16.
-    mad_base_size
-        Median absolute deviations base window. Default is [11, 1].
-    mad_dev_size
-        Median absolute deviation median deviation window.
-        Default is [101, 1].
+    initial_binsize
+        Initial bin size for the multi-scale binning. Default is 256.
+    rho
+        Bin size reduction iteration factor for the multi-scale binning.
+        Default is 2.0.
     sigma_high
-        Median absolute deviations sigma threshold. Default is 8.0.
+        Median absolute deviations sigma threshold. Default is 3.0.
     sigma_low
         Median absolute deviations low sigma threshold. A value above
         this threshold is masked only if it is either larger than `sigma_high`
         or it is larger than `sigma_low` AND connected to a region larger
-        than `sigma_high`. Default is 4.0.
+        than `sigma_high`. Default is 2.0.
+    eta
+        Aggressiveness of the SIR operator.  With eta=0, no additional samples
+        are flagged and with eta=1, all samples will be flagged.  Default is 0.2.
     frac_samples
         Fraction of baseline or beam samples flagged above which
         the entire time sample will be flagged. Default is 0.01.
+    include_intracyl
+        If true, include intra-cylinder baselines in the flagging. These baselines
+        are more susceptible to crosstalk, which can lead to over-flagging.
+        Default is False.
     """
 
     beamform: bool = config.Property(proptype=bool, default=False)
-    nbins: int = config.Property(proptype=int, default=8)
 
-    mad_base_size: list[int] = config.list_type(int, length=2, default=[11, 1])
-    mad_dev_size: list[int] = config.list_type(int, length=2, default=[101, 1])
-    sigma_high: float = config.Property(proptype=float, default=8.0)
-    sigma_low: float = config.Property(proptype=float, default=4.0)
+    initial_binsize: int = config.Property(proptype=int, default=256)
+    rho: float = config.Property(proptype=float, default=2.0)
+
+    sigma_high: float = config.Property(proptype=float, default=3.0)
+    sigma_low: float = config.Property(proptype=float, default=2.0)
+    eta: float = config.Property(proptype=float, default=0.4)
     frac_samples: float = config.Property(proptype=float, default=0.01)
 
-    nsigma_1d = config.Property(proptype=float, default=5.0)
+    include_intracyl: bool = config.Property(proptype=bool, default=False)
+
+    def setup(self, telescope):
+        """Set up the bins."""
+        # Call the parent setup method
+        super().setup(telescope)
+        # Set up the averaging bin sizes
+        nbins = np.rint(np.emath.logn(self.rho, self.initial_binsize)).astype(int)
+        self.bins = [1, *(int(self.rho**n) for n in range(nbins, 0, -1))]
 
     def generate_mask(self, vis, weight, mask, freq, baselines, times):
         """Mask narrowband RFI."""
-        # Ignore intra-cylinder baselines, since crosstalk can look like
-        # static RFI bands
-        # TODO: try to remove a sinusoidal spectrum before filtering
-        bl_sel = baselines[:, 0] > self.telescope.u_width
-        vis = vis[:, bl_sel]
-        weight = weight[:, bl_sel]
+        if not self.include_intracyl:
+            # Ignore intra-cylinder baselines for now - crosstalk will end
+            # up get flagged without a better form of baseline subtraction
+            bl_sel = baselines[:, 0] > self.telescope.u_width
+            vis = vis[:, bl_sel]
+            weight = weight[:, bl_sel]
 
         # Beamform if desired, which will flag each beam independently
         # instead of each baseline
@@ -1335,82 +1350,93 @@ class RFINarrowbandVisMask(RFIVisMask):
 
         _global_shape = vis.global_shape
 
+        # Figure out the overall valid baselines/beams
+        valid_bls = (weight > 0).redistribute(axis=1).any(axis=(0, -1)).allgather()
+
         # We need all frequencies, so redistribute to the baseline/beam axis
         # redistributing ends up copying these arrays, so it's fine
         # to destroy the contents now
         vis = vis.redistribute(axis=1).local_array
         weight = weight.redistribute(axis=1).local_array
-        # The mask doesn't have a baseline/beam axis
-        mask = mask.allgather()[:, np.newaxis]
 
-        # Get the sample bin centres to interpolate back
-        bins = times.reshape(-1, times.size // self.nbins).mean(axis=-1)
-        index = _search_nearest(bins, times)
+        # Define functions to be called in the flagging loop
+        def resample_func(x, w, samples, nbins):
+            # Weighted resampling function
+            bins = samples.reshape(-1, samples.size // nbins).mean(axis=-1)
+            newshape = (*x.shape[:-1], nbins, -1)
 
-        # Bin the visibilities and mask using a weighted sum
-        newshape = (*vis.shape[:-1], self.nbins, -1)
-        newmaskshape = (*mask.shape[:-1], self.nbins, -1)
+            xb = (x * w).reshape(newshape).sum(axis=-1)
+            xb *= tools.invert_no_zero(w.reshape(newshape).sum(axis=-1))
 
-        vbin = (vis * weight).reshape(newshape).sum(axis=-1)
-        vbin *= tools.invert_no_zero(weight.reshape(newshape).sum(axis=-1))
-        # A bin is flagged if all of its constituent samples are flagged
-        mbin = mask.reshape(newmaskshape).all(axis=-1)[:, 0]
+            mb = (w == 0).reshape(newshape).all(axis=-1)
 
-        if self.nsigma_1d:
-            # Apply a 1D MAD filter using visibilities
-            mask |= self._mad_1d(vbin, mbin)[:, np.newaxis, np.newaxis]
+            # Return binned data, mask, and the index mapping
+            return xb, mb, _search_nearest(bins, samples)
 
+        def masked_median_func(x, m, axis=-1, keepdims=True):
+            # Median function that ignores masked values, operating
+            # on the magnitude of complex values
+            if axis != -1:
+                x = np.moveaxis(x, axis, -1)
+                m = np.moveaxis(m, axis, -1)
+            # `weighted_median` requires c-contiguous float64 input
+            x = np.abs(x, dtype=np.float64, order="C")
+            w = (~m).astype(np.float64, copy=True, order="C")
+
+            med = weighted_median.weighted_median(x, w)
+
+            if keepdims:
+                med = med[..., np.newaxis]
+
+            if axis != -1:
+                med = np.moveaxis(med, -1, axis).copy()
+
+            return med
+
+        def mad_func(spectrum, m, axis=-1):
+            # Median absolute deviations over an axis
+            madspec = masked_median_func(spectrum, m, axis=axis)
+            # Re-use the spectrum array to store the absolute deviations
+            np.absolute(spectrum - madspec, out=spectrum)
+            med = 1.4826 * masked_median_func(spectrum, m, axis=axis)
+
+            return spectrum * tools.invert_no_zero(med)
+
+        # Construct the output mask array and apply the initial mask
         finalmask = mpiarray.zeros(_global_shape, dtype=bool, axis=1)
-        finalmask |= mask
+        # The initial mask does not have a beam/baseline axis
+        finalmask |= mask.allgather()[:, np.newaxis]
         # Dereference the distributed array
         fl = finalmask.local_array
 
-        # Iterate over baseline/declination and apply a median
-        # absolute deviations filter
-        for ii in range(vbin.shape[1]):
-            # Compute the median absolute deviations
-            mad_ = mad(vbin[:, ii], mbin, self.mad_base_size, self.mad_dev_size)
-            # Hysteresis threshold mask flags anything above `sigma_high` or
-            # anything above `sigma_low` ONLY if it is connected to a region
-            # above `sigma_high`
-            mii = apply_hysteresis_threshold(mad_, self.sigma_low, self.sigma_high)
-            # Expand in time and frequency using scale-invariant rank operator
-            mii = rfi.scale_invariant_rank(mii, eta=0.2, axis=(0, -1))
-            # Project back to the original time resolution
-            fl[:, ii] |= mii[..., index]
+        # Iterate over the bin sizes
+        for bsize in self.bins:
+            # downsample
+            vb, mb, index = resample_func(vis, weight * (~fl), times, bsize)
+            # Median over time of the means
+            spectrum = masked_median_func(vb, mb, axis=-1)
+            m = np.all(mb, axis=-1, keepdims=True)
+            # Convert the median of means to a median absolute deviation
+            m1d = mad_func(spectrum, m, axis=0)
+            # Apply hysteresis thresholding to the normalized spectrum.
+            # The scipy implementation only supports 2D arrays, so we
+            # have to iterate over the baseline/beam axis
+            for ii in range(m1d.shape[1]):
+                mb[:, ii] |= apply_hysteresis_threshold(
+                    m1d[:, ii], self.sigma_low, self.sigma_high
+                )
 
-        # Expand again in time using scale-invariant rank operator
-        fl[:] |= rfi.scale_invariant_rank(fl, eta=0.2, axis=-1)
-        finalmask = finalmask.redistribute(axis=0)
+            # Project the mask back to the full time resolution
+            fl[:] |= mb[..., index]
+
+        # Expand in time using scale-invariant rank operator
+        fl[:] |= rfi.scale_invariant_rank(fl, eta=self.eta, axis=-1)
+
+        # Redistribute back to frequency axis
+        finalmask = finalmask.redistribute(axis=0)[:, valid_bls]
 
         # Collapse over baselines/beams and return the time-frequency mask
         return finalmask.mean(axis=1).allgather() > self.frac_samples
-
-    def _mad_1d(self, vis, mask):
-        """Mask based on the median over time."""
-        # `weighted_median` only accepts real, contiguous arrays,
-        # so we have to do some wrangling
-        vr = np.ascontiguousarray(vis.real)
-        vi = np.ascontiguousarray(vis.imag)
-        w = np.ascontiguousarray((~mask).astype(np.float64))
-
-        # The copies ensure that these are contiguous
-        specr = weighted_median.weighted_median(vr, w).T.copy()
-        speci = weighted_median.weighted_median(vi, w).T.copy()
-
-        specw = np.any(~mask, axis=-1).T.astype(np.float64)
-        # Take another median over frequency
-        madr = weighted_median.weighted_median(specr, specw)
-        madi = weighted_median.weighted_median(speci, specw)
-
-        # Convert to complex values and compute the deviation
-        # TODO: is there a quicker way to do this?
-        spectrum = specr + 1j * speci
-        mad_ = madr + 1j * madi
-
-        mad_ = np.abs(spectrum - mad_) / abs(mad_)
-
-        return (mad_ > self.nsigma_1d).mean(axis=0) > self.frac_samples
 
 
 class RFIMaskChisqHighDelay(task.SingleTask):
