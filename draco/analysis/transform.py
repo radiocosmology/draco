@@ -1152,7 +1152,6 @@ class SelectPol(tasklib.base.ContainerTask):
 
         # Loop over datasets
         for name, dset in polcont.datasets.items():
-
             out_dset = outcont.datasets[name]
 
             if "pol" not in dset.attrs["axis"]:
@@ -1177,14 +1176,12 @@ class SelectPol(tasklib.base.ContainerTask):
 
             # Loop over output polarisations
             for oo, po in enumerate(self.pol):
-
                 oslc = make_slice(oo, pol_axis_pos)
                 pol_to_sum = self.P[po]
                 nsum = len(pol_to_sum)
 
                 # Loop over the input polarisations that we need to sum
                 for pi, sign in pol_to_sum.items():
-
                     ii = input_pol.index(pi)
                     islc = make_slice(ii, pol_axis_pos)
 
@@ -1311,7 +1308,6 @@ class PolWeightedAverage(tasklib.base.ContainerTask):
 
         # Loop over all other datasets
         for name, dset in polcont.datasets.items():
-
             # Already dealt with weights
             if name == polcont._weight_dset_name:
                 continue
@@ -1979,19 +1975,19 @@ class ReduceBase(tasklib.base.ContainerTask):
         out.redistribute(new_ax_name)
 
         # Get the weights
-        if hasattr(data, "weight"):
+        weight, w_axes = self._get_weights(data)
+
+        if weight is not None:
             # The weights should be distributed over the same axis as the array,
             # even if they don't share all the same axes
-            w_axes = list(data.weight.attrs["axis"])
             new_weight_ax = w_axes.index(new_ax_name)
-            weight = data.weight[:].redistribute(new_weight_ax)
+            weight = weight.redistribute(new_weight_ax)
             # Insert a size 1 axis for each missing axis in the weights
             wslc = [slice(None) if ax in w_axes else None for ax in ds_axes]
             weight = weight.local_array[tuple(wslc)]
         else:
-            self.log.info("No weights available. Using equal weighting.")
+            weight = np.ones_like(ds[:].local_array, dtype=np.float32)
             wslc = None
-            weight = np.ones(ds.local_shape, ds.dtype)
 
         # Apply the reduction, ensuring that the weights have the correct dimension
         weight = np.broadcast_to(weight, ds.local_shape, subok=False)
@@ -2017,7 +2013,21 @@ class ReduceBase(tasklib.base.ContainerTask):
 
         return out
 
-    def _make_output_container(self, data: ContainerPrototype) -> ContainerPrototype:
+    def _get_weights(self, data: containers.ContainerBase) -> mpiarray.MPIArray | None:
+        """Get the weights to use for the reduction."""
+        if not hasattr(data, "weight") and self.weighting != "none":
+            raise RuntimeError(
+                "No weights available. Cannot use weighted or masked weighting."
+            )
+
+        if hasattr(data, "weight"):
+            return data.weight[:], list(data.weight.attrs["axis"])
+
+        return None, None
+
+    def _make_output_container(
+        self, data: containers.ContainerBase
+    ) -> containers.ContainerBase:
         """Create the output container."""
         # For a collapsed axis, the meaning of the index map will depend on
         # the reduction being done, and can be meaningless. The first value
