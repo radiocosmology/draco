@@ -203,6 +203,10 @@ class MaskBaselines(tasklib.base.ContainerTask):
         full copy of the data, if "vis" we create a copy only of the modified
         weight dataset and the unmodified vis dataset is shared, if "all" we
         modify in place and return the input container.
+    combine_method: {"and", "or"}
+        Method to combine different flagging criteria. If "or", a baseline is
+        flagged if any of the criteria are met. If "and", all criteria must be met.
+        Default is "or".
     """
 
     mask_long_ns = config.Property(proptype=float, default=None)
@@ -217,6 +221,8 @@ class MaskBaselines(tasklib.base.ContainerTask):
 
     share = config.enum(["none", "vis", "all"], default="all")
 
+    combine_method = config.enum(["and", "or"], default="or")
+
     def setup(self, telescope):
         """Set the telescope model.
 
@@ -228,9 +234,7 @@ class MaskBaselines(tasklib.base.ContainerTask):
         self.telescope = io.get_telescope(telescope)
 
         if self.zero_data and self.share == "vis":
-            self.log.warn(
-                "Setting `zero_data = True` and `share = vis` doesn't make much sense."
-            )
+            raise RuntimeError("Can't zero the visibilities if they are shared.")
 
     def process(self, ss):
         """Apply the mask to data.
@@ -246,24 +250,32 @@ class MaskBaselines(tasklib.base.ContainerTask):
 
         baselines = self.telescope.baselines
 
-        # The masking array. True will *retain* a sample
-        mask = np.zeros_like(ss.weight[:].local_array, dtype=bool)
+        # Get the method used to combine the mask and initialise the masking
+        # array accordingly. True indicates a flagged sample.
+        if self.combine_method == "or":
+            combine_func = np.logical_or
+            mask = np.zeros_like(ss.weight[:].local_array, dtype=bool)
+        elif self.combine_method == "and":
+            combine_func = np.logical_and
+            mask = np.ones_like(ss.weight[:].local_array, dtype=bool)
+        else:
+            raise RuntimeError(f"Unknown combine_method: {self.combine_method}")
 
         if self.mask_long_ns is not None:
             long_ns_mask = np.abs(baselines[:, 1]) > self.mask_long_ns
-            mask |= long_ns_mask[np.newaxis, :, np.newaxis]
+            combine_func(mask, long_ns_mask[np.newaxis, :, np.newaxis], out=mask)
 
         if self.mask_short is not None:
             short_mask = np.sum(baselines**2, axis=1) ** 0.5 < self.mask_short
-            mask |= short_mask[np.newaxis, :, np.newaxis]
+            combine_func(mask, short_mask[np.newaxis, :, np.newaxis], out=mask)
 
         if self.mask_short_ew is not None:
             short_ew_mask = np.abs(baselines[:, 0]) < self.mask_short_ew
-            mask |= short_ew_mask[np.newaxis, :, np.newaxis]
+            combine_func(mask, short_ew_mask[np.newaxis, :, np.newaxis], out=mask)
 
         if self.mask_short_ns is not None:
             short_ns_mask = np.abs(baselines[:, 1]) < self.mask_short_ns
-            mask |= short_ns_mask[np.newaxis, :, np.newaxis]
+            combine_func(mask, short_ns_mask[np.newaxis, :, np.newaxis], out=mask)
 
         if self.weight_threshold is not None:
             # Get the sum of the weights over frequencies
@@ -272,8 +284,10 @@ class MaskBaselines(tasklib.base.ContainerTask):
             self.comm.Allreduce(weight_sum_local, weight_sum_tot, op=MPI.SUM)
 
             # Retain only baselines with average weights larger than the threshold
-            mask |= weight_sum_tot[np.newaxis, :, :] < self.weight_threshold * len(
-                ss.freq
+            combine_func(
+                mask,
+                weight_sum_tot[np.newaxis, :, :] < self.weight_threshold * len(ss.freq),
+                out=mask,
             )
 
         if self.missing_threshold is not None:
@@ -285,9 +299,11 @@ class MaskBaselines(tasklib.base.ContainerTask):
 
             # Mask out baselines with more that `missing_threshold` samples missing
             baseline_missing_ratio = 1 - nsamp_tot / nsamp_tot.max()
-            mask |= (
+            combine_func(
+                mask,
                 baseline_missing_ratio[np.newaxis, :, np.newaxis]
-                > self.missing_threshold
+                > self.missing_threshold,
+                out=mask,
             )
 
         if self.share == "all":
