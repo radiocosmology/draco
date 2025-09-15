@@ -2117,6 +2117,32 @@ class ReduceChisq(ReduceBase):
         return v, num
 
 
+class _InverseStackRedundancyWeights(ReduceBase):
+    """Weights to undo the effect of redundancy averaging."""
+
+    def _get_weights(self, data):
+        """Calculate baseline redundancy and return the inverse."""
+        if "stack" not in data.index_map:
+            raise RuntimeError(
+                "No 'stack' axis in index map. Cannot calculate weights."
+            )
+
+        redundancy = tools.calculate_redundancy(
+            data.input_flags[:],
+            data.index_map["prod"][:],
+            data.reverse_map["stack"]["stack"][:],
+            data.index_map["stack"][:].size,
+        )
+
+        weight = data.weight[:] * tools.invert_no_zero(redundancy**2)[np.newaxis]
+
+        return weight, list(data.weight.attrs["axis"])
+
+
+class ReduceChisqInverseRedundancy(ReduceChisq, _InverseStackRedundancyWeights):
+    """Calculate the chi-squared per degree of freedom, undoing redundancy averaging."""
+
+
 class HPFTimeStream(tasklib.base.ContainerTask):
     """High pass filter a timestream.
 
