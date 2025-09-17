@@ -190,6 +190,9 @@ class MaskBaselines(task.SingleTask):
     mask_short_ns : float, optional
         Mask out baselines shorter then a given distance in the North-South
         direction.
+    mask_pol : list of str, optional
+        List of polarisation products to mask. Each entry should be a string
+        of length 2, e.g. ["XX", "YY"].
     missing_threshold : float, optional
         Mask any baseline that is missing more than this fraction of samples. This is
         measured relative to other baselines.
@@ -211,6 +214,8 @@ class MaskBaselines(task.SingleTask):
     mask_short = config.Property(proptype=float, default=None)
     mask_short_ew = config.Property(proptype=float, default=None)
     mask_short_ns = config.Property(proptype=float, default=None)
+
+    mask_pol = config.Property(proptype=list, default=None)
 
     weight_threshold = config.Property(proptype=float, default=None)
     missing_threshold = config.Property(proptype=float, default=None)
@@ -303,6 +308,15 @@ class MaskBaselines(task.SingleTask):
                 > self.missing_threshold,
                 out=mask,
             )
+
+        if self.mask_pol is not None:
+            pols = np.char.array(self.telescope.polarisation)[
+                self.telescope.uniquepairs
+            ]
+            pols = pols[:, 0] + pols[:, 1]
+
+            for p in self.mask_pol:
+                combine_func(mask, (pols == p)[np.newaxis, :, np.newaxis], out=mask)
 
         if self.share == "all":
             ssc = ss
