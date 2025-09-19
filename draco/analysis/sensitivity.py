@@ -51,7 +51,7 @@ class ComputeSystemSensitivity(task.SingleTask):
         # Ensure we are distributed over frequency. Get shape of visibilities.
         data.redistribute("freq")
 
-        nfreq, nstack, ntime = data.vis.local_shape
+        nfreq, _, ntime = data.vis.local_shape
 
         # Extract the input flags.  If container has a gain dataset,
         # then also check for the default gain 1.0 + 0.0j as this indicates
