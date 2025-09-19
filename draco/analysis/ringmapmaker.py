@@ -1678,7 +1678,7 @@ class ReconstructVisFreqCov(ReconstructVisNoiseBase):
         weight_out = out.weight[:].local_array
         weight_out[:] = 0.0
 
-        npol, nfreq, nfreqs, new, nra = cov_in.shape
+        npol, nfreq, _, new, nra = cov_in.shape
 
         # Construct the noise factor.  Shape is (pol, freq, freq_sum, ew).
         noise_factor = np.empty(cov_in.shape[:-1], dtype=float)
