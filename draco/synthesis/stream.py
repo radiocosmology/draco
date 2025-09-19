@@ -67,9 +67,7 @@ class SimulateSidereal(task.SingleTask):
         nfreq = tel.nfreq
         npol = tel.num_pol_sky
 
-        lfreq, sfreq, efreq = mpiutil.split_local(nfreq)
-
-        lm, sm, em = mpiutil.split_local(mmax + 1)
+        lfreq = mpiutil.split_local(nfreq)[0]
 
         # Set the minimum resolution required for the sky.
         ntime = 2 * mmax + 1

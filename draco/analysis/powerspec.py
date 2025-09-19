@@ -109,7 +109,7 @@ class TransformJyPerBeamToKelvin(task.SingleTask):
             self.telescope.feedpositions[prod["input_a"], :]
             - self.telescope.feedpositions[prod["input_b"], :]
         )
-        xind, yind, dx, dy = find_grid_indices(baselines)
+        xind = find_grid_indices(baselines)[0]
         baslines = baselines[xind <= self.ncyl]
         bl = np.sqrt(np.sum(baslines**2, axis=-1))
         return bl.max()
@@ -401,7 +401,7 @@ class ApplyWienerDelayTransform(task.SingleTask):
         data.redistribute("ra")
         operator.redistribute("ra")
 
-        npol, nfreq, nra, nel = data.weight[:].local_shape
+        npol, _, nra, nel = data.weight[:].local_shape
 
         # Create the output container
         out = containers.DelayTransform(

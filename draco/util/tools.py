@@ -340,7 +340,7 @@ def calculate_redundancy(input_flags, prod_map, stack_index, nstack):
         Array indicating the total number of redundant baselines
         with good inputs that were stacked into each unique baseline.
     """
-    ninput, ntime = input_flags.shape
+    _, ntime = input_flags.shape
     redundancy = np.zeros((nstack, ntime), dtype=np.float32)
 
     if not np.any(input_flags):
