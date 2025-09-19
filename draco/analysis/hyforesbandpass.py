@@ -121,7 +121,7 @@ class DelayFilterHyFoReSBandpassHybridVis(task.SingleTask):
         if not np.array_equal(source.ra, hv.ra):
             raise ValueError("Right Ascension do not match for hybrid visibilities.")
 
-        npol, nfreq, new, nel, ntime = hv.vis.local_shape
+        npol, nfreq, new, _, ntime = hv.vis.local_shape
 
         # Dereference the required datasets
         vis = hv.vis[:].local_array
@@ -401,7 +401,7 @@ class DelayFilterHyFoReSBandpassHybridVisMask(DelayFilterHyFoReSBandpassHybridVi
         if not np.array_equal(source.ra, hv.ra):
             raise ValueError("Right Ascension do not match for hybrid visibilities.")
 
-        npol, nfreq, new, nel, ntime = hv.vis.local_shape
+        npol, nfreq, new, _, ntime = hv.vis.local_shape
 
         # Dereference the required datasets
         vis = hv.vis[:].local_array.copy()
@@ -630,7 +630,7 @@ class HyFoReSBandpassHybridVis(DelayFilterHyFoReSBandpassHybridVis):
         hv.redistribute(["ra", "time"])
         pf_hv.redistribute(["ra", "time"])
 
-        npol, nfreq, new, nel, ntime = hv.vis.local_shape
+        npol, nfreq, new, _, ntime = hv.vis.local_shape
 
         # Dereference the required datasets
         vis = hv.vis[:].local_array.copy()
@@ -793,7 +793,7 @@ class HyFoReSBandpassHybridVisMask(DelayFilterHyFoReSBandpassHybridVis):
         pf_hv.redistribute(["ra", "time"])
         maskf.redistribute(["ra", "time"])
 
-        npol, nfreq, new, nel, ntime = hv.vis.local_shape
+        npol, nfreq, new, _, ntime = hv.vis.local_shape
 
         # Dereference the required datasets
         vis = hv.vis[:].local_array.copy()
@@ -968,7 +968,7 @@ class HyFoReSBandpassHybridVisMaskKeepSource(DelayFilterHyFoReSBandpassHybridVis
         maskf.redistribute(["ra", "time"])
         masksf.redistribute(["ra", "time"])
 
-        npol, nfreq, new, nel, ntime = hv.vis.local_shape
+        npol, nfreq, new, _, ntime = hv.vis.local_shape
 
         # Dereference the required datasets
         vis = hv.vis[:].local_array.copy()
@@ -1183,7 +1183,7 @@ class DelayFilterHyFoReSBandpassHybridVisClean(task.SingleTask):
         hv.redistribute(["ra", "time"])
         source.redistribute(["ra", "time"])
 
-        npol, nfreq, new, nel, ntime = hv.vis.local_shape
+        npol, nfreq, new, _, ntime = hv.vis.local_shape
 
         # Compensate the window for the estimated bandpass gains
         y = bp.bandpass[:]
@@ -1207,7 +1207,7 @@ class DelayFilterHyFoReSBandpassHybridVisClean(task.SingleTask):
                 for xx in range(new):
 
                     # save the singular values for debugging or inspection
-                    u, s_val[pp, xx], vh = la.svd(W[pp, xx, :, :])
+                    s_val[pp, xx] = la.svd(W[pp, xx, :, :], compute_uv=False)
                     # TODO: use la.solve(W, y)
                     W_pinv[pp, xx, :, :], rank[pp, xx] = la.pinv(
                         W[pp, xx, :, :], atol=self.cutoff, return_rank=True

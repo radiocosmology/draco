@@ -1895,7 +1895,7 @@ class RFISensitivityMask(task.SingleTask):
             madtimes = self._combine_st_mad_hook(sensitivity.time, freq)
 
         # Create arrays to hold final masks
-        nfreq, nlocal, ntime = radiometer.shape
+        nfreq, _, ntime = radiometer.shape
 
         finalmask = MPIArray((npol, nfreq, ntime), axis=0, dtype=bool)
         finalmask[:] = False
@@ -2743,7 +2743,7 @@ class TaperDelayTransform(task.SingleTask):
         else:
             taper = np.all(~apply.mask[:].local_array, axis=1).transpose(0, 2, 1)
 
-        npol, nel, nra = taper.shape
+        _, _, nra = taper.shape
 
         # Check that the axes match
         for dax, tax in [("sample", "ra"), ("el", "el")]:
