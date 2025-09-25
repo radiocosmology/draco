@@ -3750,25 +3750,19 @@ def _convert_axis_nearest_interpolation(
     - If `spread_factor` is zero or the input/output axes match exactly,
       only pure nearest-neighbor interpolation is performed.
     """
-    # Identify overlapping region of new axis within the range of the converted from_ax
-    start = _search_nearest(to_ax, np.min(from_ax))
-    end = _search_nearest(to_ax, np.max(from_ax))
-    valid_range = slice(start, end + 1)
-    new_ax = to_ax[valid_range]
-
     # Estimate resolutions to determine mapping strategy
-    new_resolution = np.median(np.abs(np.diff(new_ax)))
+    new_resolution = np.median(np.abs(np.diff(to_ax)))
     from_resolution = np.median(np.abs(np.diff(from_ax)))
 
     # Determine nearest-neighbor indices for mapping
     if new_resolution < from_resolution:
-        nearest_indices = _search_nearest(from_ax, new_ax)
+        nearest_indices = _search_nearest(from_ax, to_ax)
     else:
         nearest_indices = np.arange(len(from_ax))
 
     # Compute pairwise distances between each new axis point and nearest from_ax points
     dist = cdist(
-        new_ax[:, np.newaxis], from_ax[nearest_indices, np.newaxis], metric="euclidean"
+        to_ax[:, np.newaxis], from_ax[nearest_indices, np.newaxis], metric="euclidean"
     )
 
     # Disable spreading if axes align exactly (diagonal distance is zero)
@@ -3784,7 +3778,7 @@ def _convert_axis_nearest_interpolation(
     # Create output container with converted axis values
     axes = {
         (to_ax_name if ax == from_ax_name else ax): (
-            new_ax if ax == from_ax_name else getattr(stream, ax)
+            to_ax if ax == from_ax_name else getattr(stream, ax)
         )
         for ax in stream.axes
     }
