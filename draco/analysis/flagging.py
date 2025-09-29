@@ -888,14 +888,20 @@ class ThresholdVisWeightBaseline(task.SingleTask):
         # Get local section of weights
         local_weight = stream.weight[:].local_array
 
+        # Reshape the weight array
+        average_weight = np.moveaxis(local_weight, 1, 0).reshape(
+            local_weight.shape[1], -1
+        )
+        average_sel = average_weight > self.ignore_absolute_threshold
+
         # For each baseline (axis=1), take average over non-ignored time/freq samples
-        average_func = np.ma.median if self.average_type == "median" else np.ma.mean
-        average_weight = average_func(
-            np.ma.array(
-                local_weight, mask=(local_weight <= self.ignore_absolute_threshold)
-            ),
-            axis=(0, 2),
-        ).data
+        if self.average_type == "mean":
+            average_weight = np.sum(average_weight * average_sel, axis=-1)
+            average_weight *= tools.invert_no_zero(np.sum(average_sel, axis=-1))
+        elif self.average_type == "median":
+            average_weight = weighted_median.weighted_median(
+                average_weight, average_sel.astype(np.float64)
+            )
 
         # Figure out which entries to keep
         threshold = np.maximum(
@@ -903,9 +909,8 @@ class ThresholdVisWeightBaseline(task.SingleTask):
         )
 
         # Compute the mask, excluding samples that we want to ignore
-        local_mask = (local_weight < threshold[np.newaxis, :, np.newaxis]) & (
-            local_weight > self.ignore_absolute_threshold
-        )
+        local_mask = local_weight < threshold[np.newaxis, :, np.newaxis]
+        local_mask &= local_weight > self.ignore_absolute_threshold
 
         # If only flagging co-pol baselines, make separate mask to select those,
         # and multiply into low-weight mask
@@ -932,9 +937,7 @@ class ThresholdVisWeightBaseline(task.SingleTask):
         stream.comm.Allreduce(local_mask_sum, global_mask_total, op=MPI.SUM)
         mask_frac = global_mask_total / float(np.prod(stream.weight.global_shape))
 
-        self.log.info(
-            "%0.5f%% of data is below the weight threshold" % (100.0 * mask_frac)
-        )
+        self.log.info(f"{100.0 * mask_frac:.5f} of data is below the weight threshold")
 
         # Save mask to output container
         mask_cont.mask[:] = MPIArray.wrap(local_mask, axis=1)
