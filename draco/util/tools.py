@@ -7,6 +7,7 @@ import itertools
 import warnings
 
 import numpy as np
+import numpy.typing as npt
 
 # Keep this here for compatibility
 from caput.tools import invert_no_zero
@@ -602,117 +603,223 @@ def window_generalised(x, window="nuttall"):
     return np.where((x >= 0) & (x <= 1), w, 0)
 
 
-def arPLS_1d(y, mask=None, lam=1e2, end_frac=1e-2, max_iter=1000):
-    r"""Use arPLS to estimate a signal baseline.
+class penalized_least_squares_1d_base:
+    r"""Use penalized least squares to estimate a signal baseline.
 
-    1D implementation of symmetrically reweighted penalized least squares.
+    1D base implementation of penalized least squares. Solves for a signal
+    baseline in the presence of high power outliers by iteratively fitting
+    a smooth baseline and reweighting based on a reweighting function applied
+    to the difference between the signal and the baseline estimate.
+
+    This implementation is intended to be used like a function, invoking the
+    `__new__` method. Subclasses should implement the `_reweight_func_hook`
+    method to provide a reweighting function.
+
+    Notes
+    -----
+    PLS solves the following linear system given signal :math: `\mathtt{y}`
+    .. math:: (W + \lambdaD_{d}^{T}D_{d})z = Wy
+
+    The solver runs until `max_iter` iterations, or until the fractional mean
+    change in weights is less than `end_frac`.
+    """
+
+    def __new__(
+        cls,
+        y: npt.NDArray,
+        mask: npt.NDArray | None = None,
+        lam: float = 1e2,
+        epsilon: float = 1e-2,
+        max_iter: int = 100,
+    ) -> np.ndarray:
+        r"""Estimate the baseline of a 1D signal using penalized least squares.
+
+        Properties
+        ----------
+        y : np.ndarray
+            1D signal array
+        mask : np.ndarray, optional
+            1D boolean array of same length as `y`. Default is None.
+        lam : float, optional
+            Scaling parameter used to control importance of smoothness vs.
+            fit. High value prioritizes smoothness of the baseline estimate.
+            Default is 1e2.
+        end_frac : float, optional
+            Convergeance ratio `norm(delta_w) / norm(w)`.
+        max_iter : int, optional
+            Maximum number of iterations to run, even if the convergance
+            criteria is not met.
+
+        Returns
+        -------
+        z : np.ndarray
+            Baseline estimate of the same shape as `y`
+        """
+        y = np.squeeze(y)
+        if y.ndim != 1:
+            raise ValueError(f"Expected 1D data array - got array with shape {y.shape}")
+
+        N = y.shape[0]
+
+        if mask is None:
+            mask = np.zeros(N, dtype=bool)
+        elif np.all(mask):
+            warnings.warn("Entire dataset is masked.")
+
+            return np.zeros_like(y)
+
+        mask = np.squeeze(mask)
+
+        if mask.ndim != 1:
+            raise ValueError(
+                f"Expected 1D mask array - got array with shape {mask.shape}"
+            )
+
+        # Construct second-order difference matrix
+        D = np.array([[1, -2, 1]]).T.repeat(N - 1, axis=1)
+        D = dia_array((D, [-2, -1, 0]), shape=(N, N - 2))
+        Hp = lam * D @ D.T
+
+        # Create the banded smoothness matrix and weights matrix
+        H = np.ones((3, N), dtype=np.float64)
+        W = np.zeros_like(H)
+
+        # Fill the lower banded matrix
+        for i in range(H.shape[0]):
+            H[i, : N - i] = Hp.diagonal(i)
+
+        # Initialize weights to one
+        W[0] = 1.0
+
+        for ii in range(max_iter):
+            # Ignore masked values
+            W[:, mask] = 0.0
+            # Extract the actual weights. W is a 3xN matrix to match
+            # the banded shape of H, all off-diagonal elements are zero
+            w = W[0]
+
+            z = la.solveh_banded(H + W, w * y, lower=True, check_finite=False)
+
+            # Get the difference between the signal and the baseline
+            # estimate and apply the reweighting function
+            wt = cls._reweight_func_hook(y - z, mask, ii)
+
+            # Check for convergence
+            if la.norm(w - wt) / la.norm(w) < epsilon:
+                break
+
+            # Update the weights
+            W[0] = wt
+        else:
+            warnings.warn(
+                f"{cls.__name__} did not converge after {max_iter} iterations."
+            )
+
+        return z
+
+    @classmethod
+    def _reweight_func_hook(cls, d: npt.NDArray, m: npt.NDArray, ii: int) -> np.ndarray:
+        """Reweighting function for penalized least squares.
+
+        Parameters
+        ----------
+        d : np.ndarray
+            The difference between the signal and the baseline estimate.
+        m : np.ndarray
+            The mask array.
+        ii : int
+            The current iteration number.
+        """
+        raise NotImplementedError
+
+
+class arPLS_1d(penalized_least_squares_1d_base):
+    r"""Use penalized least squares to estimate a signal baseline.
+
+    1D implementation of asymmetrically reweighted penalized least squares.
     Solves for a signal baseline in the presence of high power outliers by
     heavily weighting values below the signal and minimizing the weights
     of values above the signal.
 
     Notes
     -----
-    arPLS solves the following linear system given signal :math: `\mathtt{y}`
-    .. math:: (W + \lambdaD_{d}^{T}D_{d})z = Wy
-    where the weighting function is given by
+    arPLS uses a weighting function given by
     .. math:: w_{i} = (1 + \exp(2\sigma^{-1}(r_{i} - (2\sigma - \mu))))^{-1}
     where :math:`\mathtt{r_{i}}` is the difference :math:`\mathtt{y_{i} - z_{i}}`
     and :math:`\mathtt{\mu}` and :math:`\mathtt{\sigma}` are the mean and standard
     deviation of the negative values in :math:`\mathbf{r}`.
-    The solver runs until `max_iter` iterations, or until the fractional mean
-    change in weights is less than `end_frac`.
 
     Reference:
     https://www.sciencedirect.com/science/article/pii/S1090780706002266
-
-
-    Properties
-    ----------
-    y : np.ndarray
-        1D signal array
-    mask : np.ndarray, optional
-        1D boolean array of same length as `y`. Default is None.
-    lam : float, optional
-        Scaling parameter used to control importance of smoothness vs.
-        fit. High value prioritizes smoothness of the baseline estimate.
-        Default is 1e2.
-    end_frac : float, optional
-        Convergeance ratio `norm(delta_w) / norm(w)`.
-    max_iter : int, optional
-        Maximum number of iterations to run, even if the convergance
-        criteria is not met.
-
-    Returns
-    -------
-    z : np.ndarray
-        Baseline estimate of the same shape as `y`
     """
-    y = np.squeeze(y)
-    if y.ndim != 1:
-        raise ValueError(f"Expected 1D data array - got array with shape {y.shape}")
 
-    N = y.shape[0]
+    def __new__(cls, y: npt.NDArray, *args, **kwargs) -> np.ndarray:  # noqa: D102
+        # Get the maximum exponential to avoid runtime warnings
+        cls._maxpwr = np.log(np.finfo(y.dtype).max)
 
-    if mask is None:
-        mask = np.zeros(N, dtype=bool)
-    elif np.all(mask):
-        warnings.warn("Entire dataset is masked.")
+        return super().__new__(cls, y, *args, **kwargs)
 
-        return np.zeros_like(y)
+    @classmethod
+    def _reweight_func_hook(cls, d: npt.NDArray, m: npt.NDArray, ii: int) -> np.ndarray:
+        # Compute the mean and std where unmasked data is less than zero
+        mu = np.mean(d, where=(d < 0) & ~m)
+        sigma = np.std(d, where=(d < 0) & ~m)
 
-    mask = np.squeeze(mask)
+        # Use a single array to use for the entire process,
+        # and apply operations in-place
+        x = 2 * (d - (2 * sigma - mu)) * invert_no_zero(sigma)
 
-    if mask.ndim != 1:
-        raise ValueError(f"Expected 1D mask array - got array with shape {mask.shape}")
+        # Clip to avoid overflow in the exponential
+        np.clip(x, -cls._maxpwr, cls._maxpwr, out=x)
 
-    # Construct second-order difference matrix
-    D = np.array([[1, -2, 1]]).T.repeat(N - 1, axis=1)
-    D = dia_array((D, [-2, -1, 0]), shape=(N, N - 2))
-    Hp = lam * D @ D.T
+        # Take the exponential and compute the weights
+        np.exp(x, out=x)
+        x += 1.0
+        invert_no_zero(x, out=x)
 
-    # Create the banded smoothness matrix and weights matrix
-    H = np.ones((3, N), dtype=np.float64)
-    W = np.zeros_like(H)
+        return x
 
-    # Fill the lower banded matrix
-    for i in range(H.shape[0]):
-        H[i, : N - i] = Hp.diagonal(i)
 
-    # Initialize weights to one
-    W[0] = 1.0
+class IarPLS_1d(penalized_least_squares_1d_base):
+    r"""Use penalized least squares to estimate a signal baseline.
 
-    # Get the maximum exponential to avoid runtime warnings
-    maxpwr = np.log(np.finfo(y.dtype).max)
+    1D implementation of improved asymmetrically reweighted penalized
+    least squares. Solves for a signal baseline in the presence of high
+    power outliers by heavily weighting values below the signal and
+    minimizing the weights of values above the signal.
 
-    for _ in range(max_iter):
-        # Ignore masked values
-        W[:, mask] = 0.0
-        # Extract the actual weights. W is a 3xN matrix to match
-        # the banded shape of H, all off-diagonal elements are zero
-        w = W[0]
+    Notes
+    -----
+    IarPLS uses a weighting function given by
+    .. math:: w_{i} = 0.5 * (1 - \frac{x}{\sqrt{1 + x^{2}}})
+    with :math:`x = \exp(t) * \frac{r_{i} - 2\sigma}{\sigma}`
+    where :math:`t` is the iteration number, :math:`\mathtt{r_{i}}` is the
+    difference :math:`\mathtt{y_{i} - z_{i}}` and :math:`\mathtt{\sigma}`
+    is the mean and standard deviation of the negative values
+    in :math:`\mathbf{r}`.
 
-        z = la.solveh_banded(H + W, w * y, lower=True)
+    Reference:
+    https://opg.optica.org/ao/abstract.cfm?uri=ao-59-34-10933
+    """
 
-        # Get the difference between the signal and the baseline estimate,
-        # and compute the mean and std where unmasked data is less than zero
-        d = y - z
-        dn = d[(d < 0) & ~mask]
-        m = np.mean(dn)
-        s = np.std(dn)
+    def __new__(cls, y: npt.NDArray, *args, **kwargs) -> np.ndarray:  # noqa: D102
+        # Get the maximum square and exponential to avoid runtime warnings
+        cls._maxsqr = np.finfo(y.dtype).max ** 0.5
+        cls._maxpwr = np.log(np.finfo(y.dtype).max)
 
-        # Adjust weights based on the criteria discussed in the paper
-        pwr = 2 * (d - ((2 * s) - m)) * invert_no_zero(s)
-        pwr = np.clip(pwr, -maxpwr, maxpwr)
-        wt = invert_no_zero(1 + np.exp(pwr))
+        return super().__new__(cls, y, *args, **kwargs)
 
-        # Check for convergeance
-        if la.norm(w - wt) / la.norm(w) < end_frac:
-            break
+    @classmethod
+    def _reweight_func_hook(cls, d: npt.NDArray, m: npt.NDArray, ii: int) -> np.ndarray:
+        # Compute the std where unmasked data is less than zero
+        sigma = np.std(d, where=(d < 0) & ~m)
+        # Compute the exponential of the iteration, clipped to avoid overflow
+        t = np.clip(ii + 1, -cls._maxpwr, cls._maxpwr)
 
-        # Update the weights
-        W[0] = wt
+        x = np.exp(t) * (d - 2 * sigma) * invert_no_zero(sigma)
+        np.clip(x, -cls._maxsqr, cls._maxsqr, out=x)
 
-    return z
+        return 0.5 * (1 - x * invert_no_zero((1 + x**2) ** 0.5))
 
 
 def taper_mask(mask, nwidth, outer=False):
