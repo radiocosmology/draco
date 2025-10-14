@@ -67,9 +67,7 @@ class SimulateSidereal(task.SingleTask):
         nfreq = tel.nfreq
         npol = tel.num_pol_sky
 
-        lfreq, sfreq, efreq = mpiutil.split_local(nfreq)
-
-        lm, sm, em = mpiutil.split_local(mmax + 1)
+        lfreq = mpiutil.split_local(nfreq)[0]
 
         # Set the minimum resolution required for the sky.
         ntime = 2 * mmax + 1
@@ -81,7 +79,7 @@ class SimulateSidereal(task.SingleTask):
             raise ValueError("Frequencies in map do not match those in Beam Transfers.")
 
         # Calculate the alm's for the local sections
-        row_alm = hputil.sphtrans_sky(row_map, lmax=lmax).reshape(
+        row_alm = hputil.sphtrans_sky(row_map.local_array, lmax=lmax).reshape(
             (lfreq, npol * (lmax + 1), lmax + 1)
         )
 
@@ -107,7 +105,7 @@ class SimulateSidereal(task.SingleTask):
         # visibilities
         for mp, mi in vis_data.enumerate(axis=0):
             vis_data[mp] = bt.project_vector_sky_to_telescope(
-                mi, col_alm[mp].view(np.ndarray)
+                mi, col_alm.local_array[mp]
             )
 
         # Rearrange axes such that frequency is last (as we want to divide

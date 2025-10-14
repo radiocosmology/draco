@@ -487,7 +487,7 @@ class DayenuDelayFilterHybridVis(task.SingleTask):
         # Extract the required axes
         freq = stream.freq[:]
 
-        npol, nfreq, new, nel, ntime = stream.vis.local_shape
+        npol, _, new, _, ntime = stream.vis.local_shape
 
         # Dereference the required datasets
         vis = stream.vis[:].local_array
@@ -515,7 +515,7 @@ class DayenuDelayFilterHybridVis(task.SingleTask):
 
                 # Construct the filter
                 try:
-                    NF, index = delay_filter(
+                    NF, _ = delay_filter(
                         freq,
                         flagx,
                         tau_width=self.tauw,
@@ -654,7 +654,7 @@ class ApplyDelayFilterHybridVis(task.SingleTask):
         hv.redistribute(["ra", "time"])
         source.redistribute(["ra", "time"])
 
-        npol, nfreq, new, nel, ntime = hv.vis.local_shape
+        npol, _, new, _, ntime = hv.vis.local_shape
 
         # Dereference the required datasets
         vis = hv.vis[:].local_array

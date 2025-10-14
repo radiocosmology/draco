@@ -49,7 +49,7 @@ class SVDSpectrumEstimator(task.SingleTask):
             )
             mask_m = weight_m == 0.0
 
-            u, sig, vh = svd_em(vis_m, mask_m, niter=self.niter)
+            _, sig, _ = svd_em(vis_m, mask_m, niter=self.niter)
 
             spec.spectrum[m] = sig
 
