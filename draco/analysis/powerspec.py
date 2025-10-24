@@ -1032,11 +1032,15 @@ class SphericalPowerSpectrum2Dto1D(task.SingleTask):
         The number of bins in 3D spherical binning. Default: 8
     logbins_3D : bool, optional
         If True, use logarithmic binning in cylindrical averaging. Default: False
+    bin_edges : list of float, optional
+        The bin edges to use for 1D binning. If provided, these override Nbins_3D
+        and logbins_3D. Default is None.
 
     """
 
     Nbins_3D = config.Property(proptype=int, default=8)
     logbins_3D = config.Property(proptype=bool, default=True)
+    bin_edges = config.Property(proptype=list, default=None)
 
     def process(self, ps2D):
         """Estimate the spherically averaged power spectrum.
@@ -1056,6 +1060,20 @@ class SphericalPowerSpectrum2Dto1D(task.SingleTask):
                 f"Input container must be instance of PowerSpectrum2D (received {ps2D.__class__})"
             )
         ps2D.redistribute("pol")
+
+        # Warn if both bin_edges and Nbins_3D are provided
+        if self.bin_edges is not None and self.Nbins_3D is not None:
+            self.log.warning(
+                "Both 'bin_edges' and 'Nbins_3D' are specified. "
+                "Using 'bin_edges' and ignoring 'Nbins_3D'."
+            )
+
+        # If user provided bin edges, set Nbins accordingly
+        if self.bin_edges is not None:
+            self.Nbins_3D = len(self.bin_edges)
+            kbins = np.array(self.bin_edges)
+        else:
+            kbins = None  # will be determined in get_1d_ps()
 
         # Extract required data axes
         pol = ps2D.index_map["pol"]
@@ -1089,6 +1107,7 @@ class SphericalPowerSpectrum2Dto1D(task.SingleTask):
                 kperp,
                 kpara,
                 signal_window=mask_2D[pp],
+                kbins=kbins,
                 Nbins_3D=self.Nbins_3D,
                 weight_cube=weight_2D[pp],
                 logbins_3D=self.logbins_3D,
@@ -1886,6 +1905,7 @@ def get_1d_ps(
     kpara,
     weight_cube,
     signal_window=None,
+    kbins=None,
     Nbins_3D=10,
     logbins_3D=True,
 ):
@@ -1903,6 +1923,9 @@ def get_1d_ps(
         The weight array to use during spherical averaging.
     signal_window :  np.ndarray[kpara,kperp]
         The signal window mask.
+    kbins : np.ndarray, optional
+        Explicit bin edges in k-space for the 1D spectrum. If provided, this overrides
+        Nbins_3D and logbins_3D.
     Nbins_3D : int
         The number of 3D bins.
     logbins_3D : bool
@@ -1936,11 +1959,12 @@ def get_1d_ps(
     kmin = k[k > 0].min()
     kmax = k.max()
 
-    # estimat the bins
-    if logbins_3D:
-        kbins = np.logspace(np.log10(kmin), np.log10(kmax), Nbins_3D)
-    else:
-        kbins = np.linspace(kmin, kmax, Nbins_3D)
+    # Estimate the bins if not provided
+    if kbins is None:
+        if logbins_3D:
+            kbins = np.logspace(np.log10(kmin), np.log10(kmax), Nbins_3D)
+        else:
+            kbins = np.linspace(kmin, kmax, Nbins_3D)
 
     # Flatten the arrays
     p1D = ps_2D.flatten()
@@ -1964,7 +1988,7 @@ def get_1d_ps(
             w_b = w1D[indices == i]
             p = np.sum(w_b * p1D[indices == i]) / np.sum(w_b)
             p_err = np.sqrt(np.sum(w_b**2 * np.abs(p) ** 2) / np.sum(w_b) ** 2)
-            k_mean_b = nanaverage(k1D[indices == i], w_b)
+            k_mean_b = np.average(k1D[indices == i], weights=w_b)
             k3D.append(k_mean_b)
             var = 1 / np.sum(w_b)
 
