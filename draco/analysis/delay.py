@@ -1,5 +1,7 @@
 """Delay space spectrum estimation and filtering."""
 
+from __future__ import annotations
+
 from typing import TypeVar
 
 import numpy as np
@@ -889,13 +891,16 @@ class DelaySpectrumBase(DelaySpectrumContainerMixin, DelayTransformBase):
             Output delay spectrum.
         """
         nbase = out_cont.spectrum.global_shape[0]
+        nbaselocal = out_cont.spectrum.local_shape[0]
         ndelay = len(delays)
 
         prior = self._get_prior(nbase)
 
         # Iterate over the combined baseline axis
         for lbi, bi in out_cont.spectrum[:].enumerate(axis=0):
-            self.log.debug(f"Estimating the delay transform of baseline {bi}/{nbase}")
+            self.log.debug(
+                f"Estimating the delay transform of baseline {bi + 1}/{nbaselocal} ({nbase} total)."
+            )
 
             data = data_view.local_array[lbi]
             weight = weight_view.local_array[lbi]
@@ -1126,6 +1131,7 @@ class DelayPowerSpectrumBase(DelayPowerSpectrumContainerMixin, DelayTransformBas
             Output delay spectrum or delay power spectrum.
         """
         nbase = out_cont.spectrum.global_shape[0]
+        nbaselocal = out_cont.spectrum.local_shape[0]
         ndelay = len(delays)
 
         # Set initial conditions for delay power spectrum
@@ -1133,7 +1139,9 @@ class DelayPowerSpectrumBase(DelayPowerSpectrumContainerMixin, DelayTransformBas
 
         # Iterate over all baselines and use the Gibbs sampler to estimate the spectrum
         for lbi, bi in out_cont.spectrum[:].enumerate(axis=0):
-            self.log.debug(f"Delay transforming baseline {bi}/{nbase}")
+            self.log.debug(
+                f"Delay transforming baseline {bi + 1}/{nbaselocal} ({nbase} total)."
+            )
 
             # Get the local selections
             data = data_view.local_array[lbi]
