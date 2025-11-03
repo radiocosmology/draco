@@ -28,6 +28,10 @@ class SourceStack(task.SingleTask):
         Only stack on sources in frequency bin with this index.
         Useful for isolating stacking signal from a narrow frequency range.
         Default: None.
+    uniform_weight : bool, optional
+        If True, use uniform weighting instead of inverse variance weighting.
+        Mask information from original weights is still preserved.
+        Default: False.
     """
 
     # Number of frequencies to keep on each side of source RA
@@ -35,6 +39,9 @@ class SourceStack(task.SingleTask):
 
     # Only consider sources within frequency channel with this index
     single_source_bin_index = config.Property(proptype=int, default=None)
+
+    # Use uniform weighting instead of inverse variance
+    uniform_weight = config.Property(proptype=bool, default=False)
 
     def process(self, formed_beam):
         """Receives a formed beam object and stack across sources.
@@ -135,6 +142,14 @@ class SourceStack(task.SingleTask):
             fb = formed_beam.beam[:, pp].view(np.ndarray)
             fw = formed_beam.weight[:, pp].view(np.ndarray)
 
+            # Create effective weights: preserve mask but optionally make uniform
+            if self.uniform_weight:
+                # Create uniform weights where original weights are non-zero (preserve mask)
+                fw_eff = (fw > 0).astype(np.float64)
+            else:
+                # Use original inverse variance weights
+                fw_eff = fw
+
             # Source stack array.
             source_stack = np.zeros(self.nstack, dtype=np.float64)
             source_weight = np.zeros(self.nstack, dtype=np.float64)
@@ -154,13 +169,13 @@ class SourceStack(task.SingleTask):
 
                 source_stack += np.bincount(
                     source_indices[lq, f_slice],
-                    weights=fw[lq, f_slice] * fb[lq, f_slice],
+                    weights=fw_eff[lq, f_slice] * fb[lq, f_slice],
                     minlength=self.nstack,
                 )
 
                 source_weight += np.bincount(
                     source_indices[lq, f_slice],
-                    weights=fw[lq, f_slice],
+                    weights=fw_eff[lq, f_slice],
                     minlength=self.nstack,
                 )
 
@@ -362,7 +377,7 @@ class GroupSourceStacks(task.SingleTask):
             self.nmock += 1
 
         self.log.info(
-            "Collected frequency stack.  Current size is %d." % len(self.stack)
+            f"Collected frequency stack.  Current size is {len(self.stack):d}."
         )
 
         if (len(self.stack) % self.ngroup) == 0:
@@ -389,8 +404,8 @@ class GroupSourceStacks(task.SingleTask):
         Then, empty the list, reset the stack counter, and increment the group counter.
         """
         self.log.info(
-            "We have accumulated %d mock realizations.  Saving to file. [group %03d]"
-            % (self.nmock, self.counter)
+            f"We have accumulated {self.nmock:d} mock realizations.  "
+            f"Saving to file. [group {self.counter:03d}]"
         )
 
         mock = np.arange(self.nmock, dtype=np.int64)

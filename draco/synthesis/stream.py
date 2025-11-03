@@ -6,11 +6,14 @@ expand any redundant products with :class:`ExpandProducts` and finally generate
 a set of time stream files with :class:`MakeTimeStream`.
 """
 
+import inspect
+
 import numpy as np
-from caput import config, mpiarray, mpiutil, pipeline
+from caput import config, mpiarray, mpiutil, pipeline, tools
 from cora.util import hputil
 
 from ..core import containers, io, task
+from ..util import regrid
 
 
 class SimulateSidereal(task.SingleTask):
@@ -64,9 +67,7 @@ class SimulateSidereal(task.SingleTask):
         nfreq = tel.nfreq
         npol = tel.num_pol_sky
 
-        lfreq, sfreq, efreq = mpiutil.split_local(nfreq)
-
-        lm, sm, em = mpiutil.split_local(mmax + 1)
+        lfreq = mpiutil.split_local(nfreq)[0]
 
         # Set the minimum resolution required for the sky.
         ntime = 2 * mmax + 1
@@ -78,7 +79,7 @@ class SimulateSidereal(task.SingleTask):
             raise ValueError("Frequencies in map do not match those in Beam Transfers.")
 
         # Calculate the alm's for the local sections
-        row_alm = hputil.sphtrans_sky(row_map, lmax=lmax).reshape(
+        row_alm = hputil.sphtrans_sky(row_map.local_array, lmax=lmax).reshape(
             (lfreq, npol * (lmax + 1), lmax + 1)
         )
 
@@ -104,7 +105,7 @@ class SimulateSidereal(task.SingleTask):
         # visibilities
         for mp, mi in vis_data.enumerate(axis=0):
             vis_data[mp] = bt.project_vector_sky_to_telescope(
-                mi, col_alm[mp].view(np.ndarray)
+                mi, col_alm.local_array[mp]
             )
 
         # Rearrange axes such that frequency is last (as we want to divide
@@ -243,6 +244,169 @@ class ExpandProducts(task.SingleTask):
 
 
 class MakeTimeStream(task.SingleTask):
+    """Generate a time stream from a sidereal stream.
+
+    Requires an input dataset with a time axis to mimic.
+
+    Attributes
+    ----------
+    lanczos_width : int
+        Width of the Lanczos interpolation kernel.
+    """
+
+    lanczos_width = config.Property(proptype=int, default=5)
+
+    def setup(self, observer):
+        """Set up a telescope object.
+
+        Parameters
+        ----------
+        observer : ProductManager
+            Telescope manager
+        """
+        self.observer = io.get_telescope(observer)
+
+    def process(self, sstream, tstream):
+        """Sample the sidereal stream at a set of times.
+
+        Parameters
+        ----------
+        sstream : containers.SiderealStream | containers.HybridVisStream
+            Dataset sampled in RA
+        tstream : containers.TODContainer | HybridVisStream
+            Dataset sampled in time
+
+        Returns
+        -------
+        timestream : containers.TimeStream | containers.HybridVisStream
+            sstream data sampled in time
+        """
+        # Figure out the time-like axis of `tstream`
+        if hasattr(tstream, "time"):
+            time = tstream.time[:]
+            tra = self.observer.unix_to_lsa(time)
+        elif hasattr(tstream, "ra"):
+            tra = tstream.ra[:]
+            lsd = tstream.attrs.get("lsd", tstream.attrs.get("csd"))
+            time = self.observer.lsd_to_unix(lsd + tra / 360.0)
+
+        # Determine output container based on input container
+        container_map = {
+            containers.SiderealStream: containers.TimeStream,
+            containers.HybridVisStream: containers.HybridVisStream,
+        }
+
+        # Make the new timestream containers
+        for cls in inspect.getmro(sstream.__class__):
+            OutputContainer = container_map.get(cls)
+
+            if OutputContainer is not None:
+                break
+
+        if OutputContainer is None:
+            raise TypeError(
+                f"No valid container mapping.\nGot {sstream.__class__}.\n"
+                f"Mappings exist for {list(container_map.keys())}."
+            )
+
+        # Provide both the time and ra axes - whichever one isn't
+        # used will be ignored
+        out = OutputContainer(axes_from=sstream, attrs_from=sstream, time=time, ra=tra)
+
+        # Make sure datasets are distributed correctly
+        sstream.redistribute("freq")
+        out.redistribute("freq")
+
+        # Make the interpolation array
+        R = regrid.lanczos_forward_matrix(
+            sstream.ra, tra % 360, self.lanczos_width, periodic=True
+        ).T.copy()
+
+        # Move the RA axis to the back
+        axind = list(sstream.data.attrs["axis"]).index("ra")
+        data = np.moveaxis(sstream.data[:].local_array, axind, -1)
+
+        # Apply the interpolation matrix and
+        # move the time-like axis back to where it belongs
+        out.data[:].local_array[:] = np.moveaxis(data @ R, -1, axind)
+
+        # Propagate the weights as well
+        waxind = list(sstream.weight.attrs["axis"]).index("ra")
+        var = np.moveaxis(
+            tools.invert_no_zero(sstream.weight[:].local_array), waxind, -1
+        )
+        wout = tools.invert_no_zero(var @ (R**2))
+
+        out.weight[:].local_array[:] = np.moveaxis(wout, -1, waxind)
+
+        return out
+
+
+class MakeTimeStreamFixedInput(MakeTimeStream):
+    """Make multiple time streams from a single input."""
+
+    def setup(self, observer, sstream):
+        """Set up a telescope object and save the input stream.
+
+        Parameters
+        ----------
+        observer : ProductManager
+            Telescope manager
+        sstream : containers.SiderealStream | containers.HybridVisStream
+            Input sidereal dataset
+        """
+        self.sstream = sstream
+        super().setup(observer)
+
+    def process(self, tstream):
+        """Sample the saved sidereal stream at `tstream` time samples.
+
+        Parameters
+        ----------
+        tstream : containers.TODContainer
+            Dataset sampled in time
+
+        Returns
+        -------
+        timestream : containers.TimeStream | containers.HybridVisStream
+            sstream data sampled in time
+        """
+        return super().process(self.sstream, tstream)
+
+
+class MakeTimeStreamFixedTime(MakeTimeStream):
+    """Make multiple time streams for fixed time samples."""
+
+    def setup(self, observer, tstream):
+        """Set up a telescope object and save the input timestream.
+
+        Parameters
+        ----------
+        observer : ProductManager
+            Telescope manager
+        tstream : containers.TODContainer
+            Input sidereal dataset
+        """
+        self.tstream = tstream
+        super().setup(observer)
+
+    def process(self, sstream):
+        """Sample the sidereal stream at saved time samples.
+
+        Parameters
+        ----------
+        sstream : containers.SiderealSteam | containers.HybridVisStream
+            Dataset sampled in time
+
+        Returns
+        -------
+        timestream : containers.TimeStream | containers.HybridVisStream
+            sstream data sampled in time
+        """
+        return super().process(sstream, self.tstream)
+
+
+class MakeMultipleTimeStreams(MakeTimeStreamFixedInput):
     """Generate a series of time streams files from a sidereal stream.
 
     Parameters
@@ -267,58 +431,28 @@ class MakeTimeStream(task.SingleTask):
 
     samples_per_file = config.Property(proptype=int, default=1024)
 
-    _cur_time = 0.0  # Hold the current file start time
-
-    def setup(self, sstream, manager):
-        """Get the sidereal stream to turn into files.
-
-        Parameters
-        ----------
-        sstream : SiderealStream
-            The sidereal data to use.
-        manager : ProductManager or BeamTransfer
-            Beam Transfer and telescope manager
-        """
-        self.sstream = sstream
-        # Need an Observer object holding the geographic location of the telescope.
-        self.observer = io.get_telescope(manager)
-        # Initialise the current start time
-        self._cur_time = self.start_time
+    _cur_time = None  # Hold the current file start time
 
     def process(self):
         """Create a timestream file.
 
         Returns
         -------
-        tstream : :class:`containers.TimeStream`
+        tstream : containers.TimeStream | containers.HybridVisStream
             Time stream object.
         """
-        from ..util import regrid
+        if self._cur_time is None:
+            self._cur_time = self.start_time
 
         # First check to see if we have reached the end of the requested time,
         # and if so stop the iteration.
         if self._cur_time >= self.end_time:
             raise pipeline.PipelineStopIteration
 
-        time = self._next_time_axis()
+        # Produce a new timestream with the target time axis
+        tstream = self._next_time_axis()
 
-        # Make the timestream container
-        tstream = containers.empty_timestream(axes_from=self.sstream, time=time)
-
-        # Make the interpolation array
-        ra = self.observer.unix_to_lsa(tstream.time)
-        lza = regrid.lanczos_forward_matrix(self.sstream.ra, ra, periodic=True)
-        lza = lza.T.astype(np.complex64)
-
-        # Apply the interpolation matrix to construct the new timestream, place
-        # the output directly into the container
-        np.dot(self.sstream.vis[:], lza, out=tstream.vis[:])
-
-        # Set the weights array to the maximum value for CHIME
-        tstream.weight[:] = 1.0
-
-        # Output the timestream
-        return tstream
+        return super().process(self.sstream, tstream)
 
     def _next_time_axis(self):
         # Calculate the integration time
@@ -352,7 +486,9 @@ class MakeTimeStream(task.SingleTask):
         # Increment the current start time for the next iteration
         self._cur_time += nsamp * int_time
 
-        return time
+        # Return an empty, un-initialised TODContainer
+        # for compatibility with parent tasks
+        return containers.TODContainer(time=time, skip_datasets=True)
 
 
 class MakeSiderealDayStream(task.SingleTask):

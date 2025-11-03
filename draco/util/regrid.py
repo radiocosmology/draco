@@ -4,8 +4,6 @@ This is described in some detail in `doclib:173
 <http://bao.chimenet.ca/doc/cgi-bin/general/documents/display?Id=173>`_.
 """
 
-from typing import List, Union
-
 import numpy as np
 import scipy.linalg as la
 import scipy.sparse as ss
@@ -74,7 +72,7 @@ def band_wiener(R, Ni, Si, y, bw):
         Ni_ki = Ni[ki].astype(np.float64)
 
         # Calculate the Wiener noise weighting (i.e. inverse covariance)
-        Ci = _fast_tools._band_wiener_covariance(R, Ni_ki, start_ind, end_ind, bw)
+        Ci = _fast_tools._linear_covariance_banded(R, Ni_ki, start_ind, end_ind, bw)
 
         # Set the noise estimate before adding in the signal contribution. This avoids
         # the issue that the inverse-noise estimate becomes non-zero even when the data
@@ -215,7 +213,7 @@ def rebin_matrix(tra: np.ndarray, ra: np.ndarray, width_t: float = 0) -> np.ndar
 
 
 def grad_1d(
-    x: np.ndarray, si: np.ndarray, mask: np.ndarray, period: Union[float, None] = None
+    x: np.ndarray, si: np.ndarray, mask: np.ndarray, period: float | None = None
 ) -> np.ndarray:
     """Gradient with boundary samples wrapped.
 
@@ -261,7 +259,16 @@ def grad_1d(
     # involves masking any sample where an adjacent sample is masked
     mask |= np.concatenate(([False], mask[:-1])) | np.concatenate((mask[1:], [False]))
 
-    return (~mask * np.gradient(x, si))[sel], mask[sel]
+    # `np.gradient` will produce NaNs if the sample separation is zero -
+    # i.e., if there are two adjacent zeros in `si`. Explicitly set
+    # these values to zero
+    with np.errstate(divide="ignore", invalid="ignore"):
+        grad = np.gradient(x, si)
+
+    mask |= ~np.isfinite(grad)
+    grad[mask] = 0.0
+
+    return grad[sel], mask[sel]
 
 
 def taylor_coeff(
@@ -270,9 +277,9 @@ def taylor_coeff(
     M: int,
     Ni: np.ndarray,
     Si: float,
-    period: Union[float, None] = None,
-    xc: Union[np.ndarray, None] = None,
-) -> List[ss.csr_array]:
+    period: float | None = None,
+    xc: np.ndarray | None = None,
+) -> list[ss.csr_array]:
     """Return a set of sparse matrices that estimates expansion coefficients.
 
     Parameters

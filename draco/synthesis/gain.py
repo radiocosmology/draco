@@ -207,7 +207,7 @@ class SiderealGains(BaseGains):
         gain = mpiarray.MPIArray.wrap(gain_comb, axis=1, comm=data.comm)
         gain_data.gain[:] = gain
         gain_data.attrs["lsd"] = self._current_lsd
-        gain_data.attrs["tag"] = "lsd_%i" % self._current_lsd
+        gain_data.attrs["tag"] = f"lsd_{self._current_lsd:d}"
 
         # Increment current lsd
         self._current_lsd += 1

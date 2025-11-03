@@ -3,11 +3,11 @@
 This includes grouping frequencies and products to performing the m-mode transform.
 """
 
-from typing import Optional, Tuple, Union, overload
+from typing import overload
 
 import numpy as np
 import scipy.linalg as la
-from caput import config, mpiarray
+from caput import config, fftw, mpiarray, pipeline
 from caput.tools import invert_no_zero
 from numpy.lib.recfunctions import structured_to_unstructured
 
@@ -86,42 +86,23 @@ class FrequencyRebin(task.SingleTask):
         return sb
 
 
-class CollateProducts(task.SingleTask):
-    """Extract and order the correlation products for map-making.
+class TelescopeStreamMixIn:
+    """A mixin providing functionality for creating telescope-defined sidereal streams.
 
-    The task will take a sidereal task and format the products that are needed
-    or the map-making. It uses a BeamTransfer instance to figure out what these
-    products are, and how they should be ordered. It similarly selects only the
-    required frequencies.
-
-    It is important to note that while the input
-    :class:`~containers.SiderealStream` can contain more feeds and frequencies
-    than are contained in the BeamTransfers, the converse is not true. That is,
-    all the frequencies and feeds that are in the BeamTransfers must be found in
-    the timestream object.
-
-    Parameters
-    ----------
-    weight : string ('natural', 'uniform', or 'inverse_variance')
-        How to weight the redundant baselines when stacking:
-            'natural' - each baseline weighted by its redundancy (default)
-            'uniform' - each baseline given equal weight
-            'inverse_variance' - each baseline weighted by the weight attribute
+    This mixin is designed to be used with pipeline tasks that require certain
+    index maps in order to create SiderealStream containers compatible with the
+    baseline configuration provided in a telescope instance.
     """
 
-    weight = config.Property(proptype=str, default="natural")
-
     def setup(self, tel):
-        """Set the Telescope instance to use.
+        """Set up the telescope instance and precompute index maps.
 
         Parameters
         ----------
         tel : TransitTelescope
-            Telescope object to use
+            The telescope instance to use to compute the prod, stack,
+            and reverse_stack index maps.
         """
-        if self.weight not in ["natural", "uniform", "inverse_variance"]:
-            KeyError(f"Do not recognize weight = {self.weight!s}")
-
         self.telescope = io.get_telescope(tel)
 
         # Precalculate the stack properties
@@ -154,6 +135,32 @@ class CollateProducts(task.SingleTask):
             feedmask, self.telescope.feedmap[triu], self.telescope.npairs
         )
         self.bt_rev["conjugate"] = np.where(feedmask, self.telescope.feedconj[triu], 0)
+
+
+class CollateProducts(TelescopeStreamMixIn, task.SingleTask):
+    """Extract and order the correlation products for map-making.
+
+    The task will take a sidereal task and format the products that are needed
+    or the map-making. It uses a BeamTransfer instance to figure out what these
+    products are, and how they should be ordered. It similarly selects only the
+    required frequencies.
+
+    It is important to note that while the input
+    :class:`~containers.SiderealStream` can contain more feeds and frequencies
+    than are contained in the BeamTransfers, the converse is not true. That is,
+    all the frequencies and feeds that are in the BeamTransfers must be found in
+    the timestream object.
+
+    Parameters
+    ----------
+    weight : string ('natural', 'uniform', or 'inverse_variance')
+        How to weight the redundant baselines when stacking:
+            'natural' - each baseline weighted by its redundancy (default)
+            'uniform' - each baseline given equal weight
+            'inverse_variance' - each baseline weighted by the weight attribute
+    """
+
+    weight = config.enum(["natural", "uniform", "inverse_variance"], default="natural")
 
     @overload
     def process(self, ss: containers.SiderealStream) -> containers.SiderealStream: ...
@@ -202,8 +209,8 @@ class CollateProducts(task.SingleTask):
 
             if not np.all(stack_flag):
                 self.log.warning(
-                    "There are %d stacked baselines that are masked "
-                    "in the telescope instance." % np.sum(~stack_flag)
+                    f"There are {np.sum(~stack_flag):0.0f} stacked baselines "
+                    "that are masked in the telescope instance."
                 )
 
             ss_prod = ss.prod[stack_new["prod"]]
@@ -409,7 +416,9 @@ class SelectFreq(task.SingleTask):
         # Copy over datasets. If the dataset has a frequency axis,
         # then we only copy over the subset.
         if isinstance(data, containers.ContainerBase):
-            containers.copy_datasets_filter(data, newdata, "freq", newindex)
+            containers.copy_datasets_filter(
+                data, newdata, "freq", newindex, copy_without_selection=True
+            )
         else:
             newdata.vis[:] = data.vis[newindex]
             newdata.weight[:] = data.weight[newindex]
@@ -422,6 +431,105 @@ class SelectFreq(task.SingleTask):
         newdata.redistribute("freq")
 
         return newdata
+
+
+class GenerateSubBands(SelectFreq):
+    """Generate multiple sub-bands from an input container.
+
+    Attributes
+    ----------
+    sub_band_spec : dict
+        Dictionary of the format {"band_a": {"channel_range": [0, 64]}, ...}
+        where each entry is a separate sub-band with the key providing the tag
+        that will be used to describe the sub-band and the value providing a
+        dictionary that can contain any of the config properties used by the
+        SelectFreq task to downselect along the frequency axis to obtain the
+        sub-band from the input container.
+    """
+
+    sub_band_spec = config.Property(proptype=dict)
+
+    def setup(self, data):
+        """Cache the data product that will be sub-divided along the frequency axis.
+
+        Parameters
+        ----------
+        data : container
+            Any container with a freq axis.
+        """
+        self.default_parameters = {
+            key: val.default
+            for key, val in SelectFreq.__dict__.items()
+            if isinstance(val, config.Property)
+        }
+
+        self.data = data
+        self.base_tag = self.data.attrs.get("tag", None)
+
+        self.sub_bands = list(self.sub_band_spec.keys())[::-1]
+
+    def process(self):
+        """Select the next sub-band from the container that was provided on setup.
+
+        Returns
+        -------
+        sub : container
+            Same type of container as was provided on setup,
+            downselected along the frequency axis.
+        """
+        if len(self.sub_bands) == 0:
+            raise pipeline.PipelineStopIteration
+
+        tag = self.sub_bands.pop()
+        self._set_freq_selection(**self.sub_band_spec[tag])
+
+        if self.base_tag is not None:
+            self.data.attrs["tag"] = "_".join([self.base_tag, tag])
+        else:
+            self.data.attrs["tag"] = tag
+
+        return super().process(self.data)
+
+    def _set_freq_selection(self, **kwargs):
+        """Set properties of the SelectFreq base class to choose the next sub-band."""
+        for key, default in self.default_parameters.items():
+            value = kwargs[key] if key in kwargs else default
+            setattr(self, key, value)
+
+
+class ElevationDependentHybridVisWeight(task.SingleTask):
+    """Add elevation dependence to hybrid visibility weights."""
+
+    def process(self, data: containers.HybridVisStream):
+        """Remove the weights dataset and broadcast to elevation weights.
+
+        Parameters
+        ----------
+        data
+            Hybrid visibilities with elevation-independent weights.
+
+        Returns
+        -------
+        data
+            Input container with different weights dataset
+        """
+        data.redistribute("freq")
+
+        # if elevation-dependent weights alread exist, this
+        # should be a no-op and just pass the dataset along
+        if "elevation_vis_weight" in data:
+            self.log.debug("Container already has the required dataset.")
+        else:
+            weights = data["vis_weight"][:].local_array
+            # Remove the reference to the vis_weight dataset
+            del data["vis_weight"]
+            # Add the new elevation-dependent weight dataset
+            data.add_dataset("elevation_vis_weight")
+            # Write the weights into the new dataset, broadcasting over
+            # the elevation axis
+            data.weight[:].local_array[:] = weights[..., np.newaxis, :]
+
+        return data
 
 
 class MModeTransform(task.SingleTask):
@@ -438,11 +546,15 @@ class MModeTransform(task.SingleTask):
         Deconvolve the effect of the finite width of the RA integration (presuming it
         was a rectangular integration window). This is applied to both the visibilities
         and the weights.
+    use_fftw : bool
+        If True, then use fftW to do the Fourier Transform, else use
+        numpy fft. Default is True.
     """
 
     remove_integration_window = config.Property(proptype=bool, default=False)
+    use_fftw = config.Property(proptype=bool, default=True)
 
-    def setup(self, manager: Optional[io.TelescopeConvertible] = None):
+    def setup(self, manager: io.TelescopeConvertible | None = None):
         """Set the telescope instance if a manager object is given.
 
         This is used to set the `mmax` used in the transform.
@@ -474,24 +586,25 @@ class MModeTransform(task.SingleTask):
             containers.SiderealStream: containers.MModes,
             containers.HybridVisStream: containers.HybridVisMModes,
         }
-
-        # Get the output container and figure out at which position is it's
-        # frequency axis
+        # Get the output container type
         out_cont = contmap[sstream.__class__]
 
         sstream.redistribute("freq")
+
+        svis = sstream.vis[:].local_array
+        sweight = sstream.weight[:].local_array
 
         # Sum the noise variance over time samples, this will become the noise
         # variance for the m-modes
         nra = sstream.weight.shape[-1]
         weight_sum = nra**2 * tools.invert_no_zero(
-            tools.invert_no_zero(sstream.weight[:]).sum(axis=-1)
+            tools.invert_no_zero(sweight).sum(axis=-1)
         )
 
         if self.telescope is not None:
             mmax = self.telescope.mmax
         else:
-            mmax = sstream.vis.shape[-1] // 2
+            mmax = svis.shape[-1] // 2
 
         # Create the container to store the modes in
         ma = out_cont(
@@ -502,14 +615,16 @@ class MModeTransform(task.SingleTask):
             comm=sstream.comm,
         )
         ma.redistribute("freq")
+        mvis = ma.vis[:].local_array
+        mweight = ma.weight[:].local_array
 
         # Generate the m-mode transform directly into the output container
         # NOTE: Need to zero fill as not every element gets set within _make_marray
-        ma.vis[:] = 0.0
-        _make_marray(sstream.vis[:].local_array, ma.vis[:].local_array)
+        mvis[:] = 0.0
+        _make_marray(svis, mvis, mmax=None, dtype=None, use_fftw=self.use_fftw)
 
         # Assign the weights into the container
-        ma.weight[:] = weight_sum[np.newaxis, np.newaxis, :, :]
+        mweight[:] = weight_sum[np.newaxis, np.newaxis, :, :]
 
         # Divide out the m-mode sinc-suppression caused by the rectangular integration window
         if self.remove_integration_window:
@@ -517,16 +632,16 @@ class MModeTransform(task.SingleTask):
             w = np.sinc(m / nra)
             inv_w = tools.invert_no_zero(w)
 
-            sl_vis = (slice(None),) + (np.newaxis,) * (len(ma.vis.shape) - 1)
-            ma.vis[:] *= inv_w[sl_vis]
+            sl_vis = (slice(None),) + (np.newaxis,) * (len(mvis.shape) - 1)
+            mvis[:] *= inv_w[sl_vis]
 
-            sl_weight = (slice(None),) + (np.newaxis,) * (len(ma.weight.shape) - 1)
-            ma.weight[:] *= w[sl_weight] ** 2
+            sl_weight = (slice(None),) + (np.newaxis,) * (len(mweight.shape) - 1)
+            mweight[:] *= w[sl_weight] ** 2
 
         return ma
 
 
-def _make_marray(ts, mmodes=None, mmax=None, dtype=None):
+def _make_marray(ts, mmodes=None, mmax=None, dtype=None, use_fftw=True):
     """Make an m-mode array from a sidereal stream.
 
     This will loop over the first axis of `ts` to avoid needing a lot of memory for
@@ -550,7 +665,7 @@ def _make_marray(ts, mmodes=None, mmax=None, dtype=None):
         )
 
     if mmodes is None:
-        mmodes = np.zeros((mmax + 1, 2) + ts.shape[:-1], dtype=dtype)
+        mmodes = np.zeros((mmax + 1, 2, *ts.shape[:-1]), dtype=dtype)
 
     if mmax is None:
         mmax = mmodes.shape[0] - 1
@@ -563,16 +678,29 @@ def _make_marray(ts, mmodes=None, mmax=None, dtype=None):
     mlim = min(N // 2, mmax)
     mlim_neg = N // 2 - 1 + N % 2 if mmax >= N // 2 else mmax
 
-    for i in range(ts.shape[0]):
-        m_fft = np.fft.fft(ts[i], axis=-1) / ts.shape[-1]
+    # Do the transform and move the M axis to the front. There's
+    # a bug in `pyfftw` which causes an error if `ts.ndim - len(axes) >= 2`,
+    # so we have to flatten the other axes to get around that. This is
+    # still faster than `numpy` or `scipy` ffts.
+    shp = ts.shape
+    if use_fftw:
+        m_fft = fftw.fft(ts.reshape(-1, shp[-1]), axes=-1).reshape(shp)
+    else:
+        m_fft = np.fft.fft(ts.reshape(-1, shp[-1]), axis=-1).reshape(shp)
 
-        # Loop and copy over positive and negative m's
-        # NOTE: this is done as a loop to try and save memory
-        for mi in range(mlim + 1):
-            mmodes[mi, 0, i] = m_fft[..., mi]
+    m_fft = np.moveaxis(m_fft, -1, 0)
 
-        for mi in range(1, mlim_neg + 1):
-            mmodes[mi, 1, i] = m_fft[..., -mi].conj()
+    # Write the positive and negative m's
+    npos = mlim + 1
+    nneg = mlim_neg + 1
+
+    # Applying fft normalisation here is quite a bit
+    # faster than applying it directly to `m_fft`. It's
+    # not entirely clear why.
+    norm = tools.invert_no_zero(shp[-1])
+    mmodes[:npos, 0] = m_fft[:npos] * norm
+    # Take the conjugate of the negative modes
+    mmodes[1:nneg, 1] = m_fft[-1:-nneg:-1].conj() * norm
 
     return mmodes
 
@@ -721,8 +849,8 @@ def _unpack_marray(mmodes, n=None):
     return marray
 
 
-class Regridder(task.SingleTask):
-    """Interpolate time-ordered data onto a regular grid.
+class LanczosRegridder(task.SingleTask):
+    """Interpolate the time-like axis of a dataset onto a regular grid.
 
     Uses a maximum-likelihood inverse of a Lanczos interpolation to do the
     regridding. This gives a reasonably local regridding, that is pretty well
@@ -736,10 +864,11 @@ class Regridder(task.SingleTask):
         Start of the interpolated samples.
     end: float
         End of the interpolated samples.
-    lanczos_width : int
-        Width of the Lanczos interpolation kernel.
-    snr_cov: float
-        Ratio of signal covariance to noise covariance (used for Wiener filter).
+    kernel_width : int
+        Width of the interpolation kernel. NOTE: This was formally called
+        `lanczos_width`.
+    epsilon: float
+        Numerical regulariser used in kernel inversion. Default is 1.0e-3.
     mask_zero_weight: bool
         Mask the output noise weights at frequencies where the weights were
         zero for all time samples.
@@ -748,8 +877,8 @@ class Regridder(task.SingleTask):
     samples = config.Property(proptype=int, default=1024)
     start = config.Property(proptype=float)
     end = config.Property(proptype=float)
-    lanczos_width = config.Property(proptype=int, default=5)
-    snr_cov = config.Property(proptype=float, default=1e-8)
+    kernel_width = config.Property(proptype=int, default=5)
+    epsilon = config.Property(proptype=float, default=1e-3)
     mask_zero_weight = config.Property(proptype=bool, default=False)
 
     def setup(self, observer):
@@ -762,7 +891,7 @@ class Regridder(task.SingleTask):
             Note that :class:`~drift.core.TransitTelescope` instances are also
             Observers.
         """
-        self.observer = observer
+        self.observer = io.get_telescope(observer)
 
     def process(self, data):
         """Regrid visibility data in the time direction.
@@ -816,7 +945,7 @@ class Regridder(task.SingleTask):
 
     def _regrid(self, vis_data, weight, times):
         # Create a regular grid, padded at either end to supress interpolation issues
-        pad = 5 * self.lanczos_width
+        pad = 5 * self.kernel_width
         interp_grid = (
             np.arange(-pad, self.samples + pad, dtype=np.float64) / self.samples
         )
@@ -825,7 +954,7 @@ class Regridder(task.SingleTask):
 
         # Construct regridding matrix for reverse problem
         lzf = regrid.lanczos_forward_matrix(
-            interp_grid, times, self.lanczos_width
+            interp_grid, times, self.kernel_width
         ).T.copy()
 
         # Reshape data
@@ -833,10 +962,10 @@ class Regridder(task.SingleTask):
         nr = weight.reshape(-1, vis_data.shape[-1])
 
         # Construct a signal 'covariance'
-        Si = np.ones_like(interp_grid) * self.snr_cov
+        Si = np.ones_like(interp_grid) * self.epsilon
 
         # Calculate the interpolated data and a noise weight at the points in the padded grid
-        sts, ni = regrid.band_wiener(lzf, nr, Si, vr, 2 * self.lanczos_width - 1)
+        sts, ni = regrid.band_wiener(lzf, nr, Si, vr, 2 * self.kernel_width - 1)
 
         # Throw away the padded ends
         sts = sts[:, pad:-pad].copy()
@@ -844,8 +973,8 @@ class Regridder(task.SingleTask):
         interp_grid = interp_grid[pad:-pad].copy()
 
         # Reshape to the correct shape
-        sts = sts.reshape(vis_data.shape[:-1] + (self.samples,))
-        ni = ni.reshape(vis_data.shape[:-1] + (self.samples,))
+        sts = sts.reshape((*vis_data.shape[:-1], self.samples))
+        ni = ni.reshape((*vis_data.shape[:-1], self.samples))
 
         if self.mask_zero_weight:
             # set weights to zero where there is no data
@@ -853,6 +982,10 @@ class Regridder(task.SingleTask):
             ni *= w_mask[..., np.newaxis]
 
         return interp_grid, sts, ni
+
+
+# Alias for compatibility
+Regridder = LanczosRegridder
 
 
 class ShiftRA(task.SingleTask):
@@ -931,34 +1064,53 @@ class ShiftRA(task.SingleTask):
 
 
 class SelectPol(task.SingleTask):
-    """Extract a subset of polarisations, including Stokes parameters.
+    """Extract a subset of Stokes parameters from beamformed data.
 
-    This currently only extracts Stokes I.
+    Supports extraction of Stokes I, Q, U, and V from beamformed data for
+    linear polarisations (XX, YY, reXY, imXY). Assumes beamformed data are
+    already calibrated and normalized.
 
     Attributes
     ----------
-    pol : list
-        Polarisations to extract. Only Stokes I extraction is supported (i.e. `pol =
-        ["I"]`).
+    pol : list of str
+            List of Stokes parameters to extract.
+            Must be a subset of ['I', 'Q', 'U', 'V'].
     """
 
     pol = config.Property(proptype=list)
 
-    def process(self, polcont):
-        """Extract the specified polarisation from the input.
+    def setup(self):
+        """Check that the requested polarisations are valid."""
+        self.P = {
+            "I": {"XX": 1, "YY": 1},
+            "Q": {"XX": 1, "YY": -1},
+            "U": {"reXY": 1},
+            "V": {"imXY": 1},
+        }
 
-        This will combine polarisation pairs to get instrumental Stokes polarisations if
-        requested.
+        missing_pol = [pstr for pstr in self.pol if pstr not in self.P]
+        if missing_pol:
+            raise ValueError(
+                f"Do not support the selection of {missing_pol}.  "
+                f"Available options include {list(self.P.keys())}."
+            )
+
+        if len(set(self.pol)) != len(self.pol):
+            raise ValueError("Duplicate Stokes parameters requested in `pol`.")
+
+    def process(self, polcont):
+        """Extract the requested Stokes parameters from the input container.
 
         Parameters
         ----------
         polcont : ContainerBase
-            A container with a polarisation axis.
+            A container with a 'pol' axis containing linear polarisation data
+            (e.g., XX, YY, reXY, imXY).
 
         Returns
         -------
-        selectedpolcont : same as polcont
-            A new container with the selected polarisation.
+        outcont : same type as polcont
+            A new container containing only the requested Stokes parameters.
         """
         polcont.redistribute("freq")
 
@@ -967,33 +1119,335 @@ class SelectPol(task.SingleTask):
                 f"Container of type {type(polcont)} does not have a pol axis."
             )
 
-        if len(self.pol) != 1 or self.pol[0] != "I":
-            raise NotImplementedError("Only selecting stokes I is currently working.")
+        input_pol = list(polcont.index_map["pol"])
 
+        # First, make sure that we have all of the input polarisations we require
+        # to construct the selected polarisations.
+        required_pol = [pol for pstr in self.pol for pol in self.P[pstr]]
+        missing_pol = [pol for pol in np.unique(required_pol) if pol not in input_pol]
+        if len(missing_pol) > 0:
+            raise ValueError(
+                f"Missing the following polarisations {missing_pol}, "
+                f"which are needed to construct {self.pol}."
+            )
+
+        # Identify the "data" and "weight" dataset
+        data_dset_name = getattr(polcont, "_data_dset_name", None)
+        weight_dset_name = getattr(polcont, "_weight_dset_name", None)
+
+        # Create the output container
         outcont = containers.empty_like(polcont, pol=np.array(self.pol))
+
+        for name in polcont.datasets.keys():
+            if name not in outcont.datasets:
+                outcont.add_dataset(name)
+
         outcont.redistribute("freq")
 
-        # Get the locations of the XX and YY components
-        XX_ind = list(polcont.index_map["pol"]).index("XX")
-        YY_ind = list(polcont.index_map["pol"]).index("YY")
+        # Create a function that generates the appropriate slices
+        def make_slice(index, axis_pos):
+            return (slice(None),) * axis_pos + (index,)
 
+        # Loop over datasets
         for name, dset in polcont.datasets.items():
+
             out_dset = outcont.datasets[name]
+
             if "pol" not in dset.attrs["axis"]:
+                # No polarisation axis, directly copy over dataset
                 out_dset[:] = dset[:]
-            else:
-                pol_axis_pos = list(dset.attrs["axis"]).index("pol")
+                continue
 
-                sl = tuple([slice(None)] * pol_axis_pos)
-                out_dset[(*sl, 0)] = dset[(*sl, XX_ind)]
-                out_dset[(*sl, 0)] += dset[(*sl, YY_ind)]
+            # Polarisation axis present, initialize output dataset to zero
+            out_dset[:] = 0
 
-                if np.issubdtype(out_dset.dtype, np.integer):
-                    out_dset[:] //= 2
+            pol_axis_pos = list(dset.attrs["axis"]).index("pol")
+
+            # If this is the weight dataset, keep track of where it is
+            # non-zero across all of the summed polarisations.
+            if name == weight_dset_name:
+                flag = mpiarray.ones(
+                    out_dset[:].global_shape,
+                    axis=out_dset[:].axis,
+                    dtype=bool,
+                    comm=outcont.comm,
+                )
+
+            # Loop over output polarisations
+            for oo, po in enumerate(self.pol):
+
+                oslc = make_slice(oo, pol_axis_pos)
+                pol_to_sum = self.P[po]
+                nsum = len(pol_to_sum)
+
+                # Loop over the input polarisations that we need to sum
+                for pi, sign in pol_to_sum.items():
+
+                    ii = input_pol.index(pi)
+                    islc = make_slice(ii, pol_axis_pos)
+
+                    if name == data_dset_name:
+                        # This is the primary data product, where we would like
+                        # to account for the sign.
+                        out_dset[oslc] += sign * dset[islc]
+
+                    elif name == weight_dset_name:
+                        # Keep track of what samples have non-zero weight
+                        # across all input polarisations.
+                        flag[oslc] &= dset[islc] > 0.0
+
+                        # Invert weights so that we properly propagate the variance.
+                        out_dset[oslc] += tools.invert_no_zero(dset[islc])
+
+                    elif np.issubdtype(out_dset.dtype, np.bool_):
+                        # All cases of boolean datasets with a polarisation axis
+                        # are masks, where a True value indicates a masked sample.
+                        # In this case, we will combine the masks, so that if any
+                        # of the input polarisations are masked then the output
+                        # polarisation is also masked.
+                        out_dset[oslc] |= dset[islc]
+
+                    else:
+                        # For all other datasets, we will simply take the average
+                        out_dset[oslc] += dset[islc]
+
+                # Normalize the output based on how many polarisations were summed
+                if name == weight_dset_name:
+                    out_dset[oslc] = (
+                        flag[oslc] * nsum**2 * tools.invert_no_zero(out_dset[oslc])
+                    )
+
+                elif np.issubdtype(out_dset.dtype, np.integer):
+                    out_dset[oslc] //= nsum
+
+                elif np.issubdtype(out_dset.dtype, np.bool_):
+                    pass
+
+                elif "freq_cov" in name:
+                    out_dset[oslc] /= nsum**2
+
                 else:
-                    out_dset[:] *= 0.5
+                    out_dset[oslc] /= nsum
 
         return outcont
+
+
+class PolWeightedAverage(task.SingleTask):
+    """Compute an optimally weighted pseudo-Stokes I from XX and YY polarisations.
+
+    This computes a weighted average:
+        data_I = (w_XX * d_XX + w_YY * d_YY) / (w_XX + w_YY)
+        weight_I = w_XX + w_YY
+
+    Requires the input container to be a subclass of DataWeightContainer and to
+    contain both XX and YY polarisations.
+    """
+
+    def process(self, polcont):
+        """Compute pseudo-Stokes I from XX and YY.
+
+        Parameters
+        ----------
+        polcont : DataWeightContainer
+            A container with weight dataset and a 'pol' axis containing XX and YY.
+
+        Returns
+        -------
+        outcont : same type as polcont
+            A container with a single polarisation axis labeled 'I'.
+        """
+        # Check input container
+        if not hasattr(polcont, "_weight_dset_name"):
+            raise TypeError(
+                "Input must be a subclass of DataWeightContainer with defined weight datasets."
+            )
+
+        if "pol" not in polcont.axes:
+            raise ValueError(
+                f"Input container of type {type(polcont)} does not have a 'pol' axis."
+            )
+
+        input_pol = list(polcont.index_map["pol"])
+        if "XX" not in input_pol or "YY" not in input_pol:
+            raise ValueError("Input must contain both 'XX' and 'YY' polarisations.")
+
+        ixx = input_pol.index("XX")
+        iyy = input_pol.index("YY")
+
+        if iyy > ixx:
+            start = ixx
+            stride = iyy - ixx
+        else:
+            start = iyy
+            stride = ixx - iyy
+
+        pol_slice = slice(start, start + stride + 1, stride)
+
+        def make_pol_slice(axis_names):
+            axis = list(axis_names).index("pol")
+            slc = (slice(None),) * axis + (pol_slice,)
+            return axis, slc
+
+        # Create output container
+        outcont = containers.empty_like(polcont, pol=np.array(["I"]))
+
+        for name in polcont.datasets.keys():
+            if name not in outcont.datasets:
+                outcont.add_dataset(name)
+
+        polcont.redistribute("freq")
+        outcont.redistribute("freq")
+
+        # Extract the weights dataset for the XX and YY polarisation.
+        # Save their sum to the output container.
+        waxis = polcont.weight.attrs["axis"]
+        wpax, wslc = make_pol_slice(waxis)
+
+        weight = polcont.weight[wslc]
+        outcont.weight[:] = np.sum(weight, axis=wpax, keepdims=True)
+        norm = tools.invert_no_zero(outcont.weight[:])
+
+        # Loop over all other datasets
+        for name, dset in polcont.datasets.items():
+
+            # Already dealt with weights
+            if name == polcont._weight_dset_name:
+                continue
+
+            # If the dataset does not have a pol axis, then just
+            # copy it over directly and continue.
+            if "pol" not in dset.attrs["axis"]:
+                outcont.datasets[name][:] = dset[:]
+                continue
+
+            # Make the weights broadcastable against this dataset
+            pax, dslc = make_pol_slice(dset.attrs["axis"])
+            wexp = tools.broadcast_weights(waxis, dset.attrs["axis"])
+
+            # Take the weighted average
+            outcont.datasets[name][:] = (
+                np.sum(weight[wexp] * dset[dslc], axis=pax, keepdims=True) * norm[wexp]
+            )
+
+        return outcont
+
+
+class StokesIVis(task.SingleTask):
+    """Extract instrumental Stokes I from visibilities."""
+
+    def setup(self, telescope):
+        """Set the local observers.
+
+        Parameters
+        ----------
+        telescope : :class:`~caput.time.Observer`
+            An Observer object holding the geographic location of the telescope.
+            Note that :class:`~drift.core.TransitTelescope` instances are also
+            Observers.
+        """
+        self.telescope = io.get_telescope(telescope)
+
+    def process(self, data):
+        """Extract instrumental Stokes I.
+
+        This process will reduce the length of the baseline axis.
+
+        Parameters
+        ----------
+        data : containers.VisContainer
+            Container with visibilities and baselines matching
+            the telescope object.
+
+        Returns
+        -------
+        data : containers.VisContainer
+            Container with the same type as `data`, with polarised
+            baselines combined into Stokes I.
+        """
+        data.redistribute("freq")
+
+        # Get stokes I
+        vis, weight, baselines = stokes_I(data, self.telescope)
+
+        # Make the output container
+        # TODO: the axes for this container should probably
+        # be adjusted to make more sense
+        out = containers.empty_like(data, stack=baselines)
+        out.redistribute("freq")
+
+        out.vis[:] = vis.redistribute(0)
+        out.weight[:] = weight.redistribute(0)
+
+        return out
+
+
+def stokes_I(sstream, tel):
+    """Extract instrumental Stokes I from a time/sidereal stream.
+
+    Parameters
+    ----------
+    sstream : containers.SiderealStream, container.TimeStream
+        Stream of correlation data.
+    tel : TransitTelescope
+        Instance describing the telescope.
+
+    Returns
+    -------
+    vis_I : mpiarray.MPIArray[nfreq, nbase, ntime]
+        The instrumental Stokes I visibilities, distributed over baselines.
+    vis_weight : mpiarray.MPIArray[nfreq, nbase, ntime]
+        The weights for each visibility, distributed over baselines.
+    ubase : np.ndarray[nbase, 2]
+        Baseline vectors corresponding to output.
+    """
+    # Make sure the data is distributed in a reasonable way
+    sstream.redistribute("freq")
+    # Construct a complex number representing each baseline (used for determining
+    # unique baselines).
+    # Due to floating point precision, some baselines don't get matched as having
+    # the same lengths. To get around this, round all separations to 0.1 mm precision
+    bl_round = np.around(tel.baselines[:, 0] + 1.0j * tel.baselines[:, 1], 4)
+
+    # Map unique baseline lengths to each polarisation pair
+    ubase, uinv, ucount = np.unique(bl_round, return_inverse=True, return_counts=True)
+    ubase = ubase.astype(np.complex128, copy=False).view(np.float64).reshape(-1, 2)
+
+    # Construct the output arrays
+    new_shape = (
+        sstream.vis.global_shape[0],
+        ubase.shape[0],
+        sstream.vis.global_shape[2],
+    )
+    vis_I = mpiarray.zeros(new_shape, dtype=sstream.vis.dtype, axis=0)
+    vis_weight = mpiarray.zeros(new_shape, dtype=sstream.weight.dtype, axis=0)
+
+    # Find co-pol baselines (XX and YY)
+    pairs = tel.uniquepairs
+    pols = tel.polarisation[pairs]
+    is_copol = pols[:, 0] == pols[:, 1]
+
+    # Iterate over products to construct the Stokes I vis
+    ssv = sstream.vis[:].local_array
+    ssw = sstream.weight[:].local_array
+
+    for ii, ui in enumerate(uinv):
+        # Skip if not a co-pol baseline
+        if not is_copol[ii]:
+            continue
+
+        # Skip if not all polarisations are included
+        if ucount[ui] < 4:
+            continue
+
+        # Skip if there's a bad feed
+        if tel.feedmap[(*pairs[ii],)] == -1:
+            continue
+
+        # Accumulate the visibilities and weights
+        vis_I.local_array[:, ui] += ssv[:, ii]
+        vis_weight.local_array[:, ui] += ssw[:, ii]
+
+    return vis_I, vis_weight, ubase
 
 
 class TransformJanskyToKelvin(task.SingleTask):
@@ -1139,12 +1593,14 @@ class TransformJanskyToKelvin(task.SingleTask):
             new_stream = sstream.copy()
 
         # Apply the conversion to the data and the weights
+        vis = new_stream.vis[:].local_array
+        weight = new_stream.weight[:].local_array
         if self.convert_Jy_to_K:
-            new_stream.vis[:] *= Jy_to_K
-            new_stream.weight[:] *= K_to_Jy**2
+            vis *= Jy_to_K
+            weight *= K_to_Jy**2
         else:
-            new_stream.vis[:] *= K_to_Jy
-            new_stream.weight[:] *= Jy_to_K**2
+            vis *= K_to_Jy
+            weight *= Jy_to_K**2
 
         return new_stream
 
@@ -1155,7 +1611,7 @@ class MixData(task.SingleTask):
     This can generate arbitrary linear combinations of the data and weights for both
     `SiderealStream` and `RingMap` objects, and can be used for many purposes such as:
     adding together simulated timestreams, injecting signal into data, replacing weights
-    in simulated data with those from real data, etc.
+    in simulated data with those from real data, performing jackknifes, etc.
 
     All coefficients are applied naively to generate the final combinations, i.e. no
     normalisations or weighted summation is performed.
@@ -1163,16 +1619,34 @@ class MixData(task.SingleTask):
     Attributes
     ----------
     data_coeff : list
-        A list of coefficients to apply to the data dataset of each input containter to
+        A list of coefficients to apply to the data dataset of each input container to
         produce the final output. These are applied to either the `vis` or `map` dataset
         depending on the the type of the input container.
     weight_coeff : list
         Coefficient to be applied to each input containers weights to generate the
         output.
+    tag_coeff : list
+        Boolean array indicating which input containers tags should be used to generate
+        the output tag.
+    aux_coeff : dict
+        Coefficients to be applied to auxiliary datasets in the input container to
+        generate the output.  This should be a dictionary where each key is the name
+        of a dataset in the input container, and the corresponding value is a list
+        of coefficients used to mix.
+    invert_weight : bool
+        Invert the weights to convert to variance prior to mixing.  Re-invert in the
+        final mixed data product to convert back to inverse variance.
+    require_nonzero_weight : bool
+        Set the weight to zero in the mixed data if the weight is zero in any of the
+        input data.
     """
 
     data_coeff = config.list_type(type_=float)
     weight_coeff = config.list_type(type_=float)
+    tag_coeff = config.list_type(type_=bool)
+    aux_coeff = config.Property(proptype=dict)
+    invert_weight = config.Property(proptype=bool, default=False)
+    require_nonzero_weight = config.Property(proptype=bool, default=False)
 
     mixed_data = None
 
@@ -1184,8 +1658,15 @@ class MixData(task.SingleTask):
             )
 
         self._data_ind = 0
+        self._tags = []
+        self._wfunc = tools.invert_no_zero if self.invert_weight else lambda x: x
 
-    def process(self, data: Union[containers.SiderealStream, containers.RingMap]):
+    def process(
+        self,
+        data: (
+            containers.SiderealStream | containers.HybridVisStream | containers.RingMap
+        ),
+    ):
         """Add the input data into the mixed data output.
 
         Parameters
@@ -1193,17 +1674,6 @@ class MixData(task.SingleTask):
         data
             The data to be added into the mix.
         """
-
-        def _get_dset(data):
-            # Helpful routine to get the data dset depending on the type
-            if isinstance(data, containers.SiderealStream):
-                return data.vis
-
-            if isinstance(data, containers.RingMap):
-                return data.map
-
-            return None
-
         if self._data_ind >= len(self.data_coeff):
             raise RuntimeError(
                 "This task cannot accept more items than there are coefficents set."
@@ -1211,14 +1681,30 @@ class MixData(task.SingleTask):
 
         if self.mixed_data is None:
             self.mixed_data = containers.empty_like(data)
+
+            # If requested, add auxiliary datasets
+            for key in self.aux_coeff.keys():
+                if key not in self.mixed_data.datasets:
+                    self.mixed_data.add_dataset(key)
+                self.mixed_data.datasets[key][:] = 0.0
+
+            # Redistribute over frequency
             self.mixed_data.redistribute("freq")
 
             # Zero out data and weights
-            _get_dset(self.mixed_data)[:] = 0.0
+            self.mixed_data.data[:] = 0.0
             self.mixed_data.weight[:] = 0.0
 
+            if self.require_nonzero_weight:
+                self._flag = mpiarray.ones(
+                    self.mixed_data.weight.shape,
+                    axis=self.mixed_data.weight.distributed_axis,
+                    comm=self.mixed_data.comm,
+                    dtype=bool,
+                )
+
         # Validate the types are the same
-        if type(self.mixed_data) != type(data):
+        if type(self.mixed_data) is not type(data):
             raise TypeError(
                 f"type(data) (={type(data)}) must match "
                 f"type(data_stack) (={type(self.type)}"
@@ -1226,23 +1712,49 @@ class MixData(task.SingleTask):
 
         data.redistribute("freq")
 
-        mixed_dset = _get_dset(self.mixed_data)[:]
-        data_dset = _get_dset(data)[:]
-
         # Validate the shapes match
-        if mixed_dset.shape != data_dset.shape:
+        if self.mixed_data.data.shape != data.data.shape:
             raise ValueError(
-                f"Size of data ({data_dset.shape}) must match "
-                f"data_stack ({mixed_dset.shape})"
+                f"Size of data ({data.data.shape}) must match "
+                f"data_stack ({self.mixed_data.data.shape})"
+            )
+
+        if self.mixed_data.weight.shape != data.weight.shape:
+            raise ValueError(
+                f"Size of data ({data.weight.shape}) must match "
+                f"data_stack ({self.mixed_data.weightshape})"
             )
 
         # Mix in the data and weights
-        mixed_dset[:] += self.data_coeff[self._data_ind] * data_dset[:]
-        self.mixed_data.weight[:] += self.weight_coeff[self._data_ind] * data.weight[:]
+        dco = self.data_coeff[self._data_ind]
+        if dco != 0.0:
+            self.mixed_data.data[:] += dco * data.data[:]
+
+        wco = self.weight_coeff[self._data_ind]
+        if wco != 0.0:
+            self.mixed_data.weight[:] += wco * self._wfunc(data.weight[:])
+
+            # Update the flag
+            if self.require_nonzero_weight:
+                self._flag &= data.weight[:] > 0.0
+
+        # Deal with auxiliary datasets
+        for key, aux_coeff in self.aux_coeff.items():
+            aco = aux_coeff[self._data_ind]
+            if aco != 0.0:
+                self.mixed_data.datasets[key][:] += aco * data.datasets[key][:]
+
+        # Save the tags
+        if "tag" in data.attrs and (
+            self.tag_coeff is None or self.tag_coeff[self._data_ind]
+        ):
+            self._tags.append(data.attrs["tag"])
 
         self._data_ind += 1
 
-    def process_finish(self) -> Union[containers.SiderealStream, containers.RingMap]:
+    def _make_output(
+        self,
+    ) -> containers.SiderealStream | containers.HybridVisStream | containers.RingMap:
         """Return the container with the mixed inputs.
 
         Returns
@@ -1261,7 +1773,78 @@ class MixData(task.SingleTask):
         data = self.mixed_data
         self.mixed_data = None
 
+        # Apply the logical AND of all flags
+        if self.require_nonzero_weight:
+            data.weight[:] *= self._flag.astype(data.weight.dtype)
+            self._flag = None
+
+        # Convert back to inverse variance
+        data.weight[:] = self._wfunc(data.weight[:])
+
+        # Combine the tags
+        data.attrs["tag"] = "_".join(self._tags)
+
         return data
+
+    def process_finish(
+        self,
+    ) -> containers.SiderealStream | containers.HybridVisStream | containers.RingMap:
+        """Return the container with the mixed inputs.
+
+        Returns
+        -------
+        mixed_data
+            The mixed data.
+        """
+        return self._make_output()
+
+
+class Jackknife(MixData):
+    """Perform a jackknife of two datasets.
+
+    This is identical to MixData but sets the default config properties
+    to values appropriate for carrying out a jackknife of two datasets.
+    """
+
+    data_coeff = config.list_type(type_=float, default=[0.5, -0.5])
+    weight_coeff = config.list_type(type_=float, default=[0.25, 0.25])
+    tag_coeff = config.list_type(type_=bool, default=[True, True])
+    invert_weight = config.Property(proptype=bool, default=True)
+    require_nonzero_weight = config.Property(proptype=bool, default=True)
+
+
+class MixTwoDatasets(MixData):
+    """Mix two datasets in a single iteration."""
+
+    data_coeff = config.list_type(type_=float, length=2)
+    weight_coeff = config.list_type(type_=float, length=2)
+    tag_coeff = config.list_type(type_=bool, length=2)
+
+    def process(self, data1, data2):
+        """Combine the two datasets into mixed data output.
+
+        Parameters
+        ----------
+        data1 : containers.SiderealStream | containers.RingMap
+            First dataset to mix
+        data2 : containers.SiderealStream | containers.RingMap
+            Second dataset to mix
+        """
+        # Combine the two datasets
+        super().process(data1)
+        super().process(data2)
+
+        out = self._make_output()
+
+        # Reset data counter and tags
+        self._data_ind = 0
+        self._tags = []
+
+        return out
+
+    def process_finish(self):
+        """Overwrite `process_finish` to no-op."""
+        return
 
 
 class Downselect(io.SelectionsMixin, task.SingleTask):
@@ -1286,24 +1869,38 @@ class Downselect(io.SelectionsMixin, task.SingleTask):
         -------
         out
             Container of same type as the input with specific axis selections.
-            Any datasets not included in the selections will not be initialized.
         """
-        # Re-format selections to only use axis name
-        for ax_sel in list(self._sel):
-            ax = ax_sel.replace("_sel", "")
-            self._sel[ax] = self._sel.pop(ax_sel)
+        sel = {}
+
+        # Parse axes with selections and reformat to use only
+        # the axis name
+        for k in self.selections:
+            *axis, type_ = k.split("_")
+            axis_name = "_".join(axis)
+
+            ax_sel = self._sel.get(f"{axis_name}_sel")
+
+            if type_ == "map":
+                # Use index map to get the correct axis indices
+                imap = list(data.index_map[axis_name])
+                ax_sel = [imap.index(x) for x in ax_sel]
+
+            if ax_sel is not None:
+                sel[axis_name] = ax_sel
 
         # Figure out the axes for the new container and
         # Apply the downselections to each axis index_map
         output_axes = {
-            ax: mpiarray._apply_sel(data.index_map[ax], sel, 0)
-            for ax, sel in self._sel.items()
+            ax: mpiarray._apply_sel(data.index_map[ax], ax_sel, 0)
+            for ax, ax_sel in sel.items()
         }
         # Create the output container without initializing any datasets.
         out = data.__class__(
             axes_from=data, attrs_from=data, skip_datasets=True, **output_axes
         )
-        containers.copy_datasets_filter(data, out, selection=self._sel)
+        containers.copy_datasets_filter(
+            data, out, selection=sel, copy_without_selection=True
+        )
 
         return out
 
@@ -1383,13 +1980,17 @@ class ReduceBase(task.SingleTask):
 
         # Get the weights
         if hasattr(data, "weight"):
-            weight = data.weight[:]
             # The weights should be distributed over the same axis as the array,
             # even if they don't share all the same axes
-            new_weight_ax = list(data.weight.attrs["axis"]).index(new_ax_name)
-            weight = weight.redistribute(new_weight_ax)
+            w_axes = list(data.weight.attrs["axis"])
+            new_weight_ax = w_axes.index(new_ax_name)
+            weight = data.weight[:].redistribute(new_weight_ax)
+            # Insert a size 1 axis for each missing axis in the weights
+            wslc = [slice(None) if ax in w_axes else None for ax in ds_axes]
+            weight = weight.local_array[tuple(wslc)]
         else:
             self.log.info("No weights available. Using equal weighting.")
+            wslc = None
             weight = np.ones(ds.local_shape, ds.dtype)
 
         # Apply the reduction, ensuring that the weights have the correct dimension
@@ -1405,7 +2006,11 @@ class ReduceBase(task.SingleTask):
         out[self.dataset][:] = reduced[:]
 
         if hasattr(out, "weight"):
-            out.weight[:] = reduced_weight[:]
+            if wslc is None:
+                out.weight[:] = reduced_weight
+            else:
+                owslc = [ws if ws is not None else 0 for ws in wslc]
+                out.weight[:] = reduced_weight[tuple(owslc)]
 
         # Redistribute bcak to the original axis, again using the axis name
         out.redistribute(ds_axes[original_ax_id])
@@ -1444,7 +2049,7 @@ class ReduceBase(task.SingleTask):
 
     def reduction(
         self, arr: np.ndarray, weight: np.ndarray, axis: tuple
-    ) -> Tuple[np.ndarray, np.ndarray]:
+    ) -> tuple[np.ndarray, np.ndarray]:
         """Overwrite to implement the reductino operation."""
         raise NotImplementedError
 

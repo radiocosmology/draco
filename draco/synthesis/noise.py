@@ -10,7 +10,7 @@ using the variance of the noise estimate in the existing data.
 """
 
 import numpy as np
-from caput import config
+from caput import config, pipeline
 from caput.time import STELLAR_S
 
 from ..core import containers, io, task
@@ -56,6 +56,7 @@ class GaussianNoiseDataset(task.SingleTask, random.RandomTask):
     """
 
     dataset = config.Property(proptype=str, default=None)
+    in_place = config.Property(proptype=bool, default=True)
 
     def process(self, data):
         """Generates a Gaussian distributed noise dataset given the provided dataset's visibility weights.
@@ -73,19 +74,9 @@ class GaussianNoiseDataset(task.SingleTask, random.RandomTask):
             a Gaussian distributed noise realisation.
 
         """
-        _default_dataset = {
-            containers.TimeStream: "vis",
-            containers.SiderealStream: "vis",
-            containers.HybridVisMModes: "vis",
-            containers.RingMap: "map",
-            containers.GridBeam: "beam",
-            containers.TrackBeam: "beam",
-        }
         if self.dataset is None:
-            for cls, dataset in _default_dataset.items():
-                if isinstance(data, cls):
-                    dataset_name = dataset
-                    break
+            if isinstance(data, containers.DataWeightContainer):
+                dataset_name = data._data_dset_name
             else:
                 raise ValueError(
                     f"No default dataset known for {type(data)} container."
@@ -101,17 +92,25 @@ class GaussianNoiseDataset(task.SingleTask, random.RandomTask):
         # Distribute in something other than `stack`
         data.redistribute("freq")
 
+        # If requested, create a new output container
+        if not self.in_place:
+            out = data.copy()
+            out.redistribute("freq")
+        else:
+            out = data
+
         # Replace visibilities with noise
-        dset = data[dataset_name][:]
+        dset = out[dataset_name][:].local_array
+        weight = data.weight[:].local_array
         if np.iscomplexobj(dset):
             random.complex_normal(
-                scale=tools.invert_no_zero(data.weight[:]) ** 0.5,
+                scale=tools.invert_no_zero(weight) ** 0.5,
                 out=dset,
                 rng=self.rng,
             )
         else:
             self.rng.standard_normal(out=dset)
-            dset *= tools.invert_no_zero(data.weight[:]) ** 0.5
+            dset *= tools.invert_no_zero(weight) ** 0.5
 
         # We need to loop to ensure the autos are real and have the correct variance
         if dataset_name == "vis":
@@ -121,7 +120,58 @@ class GaussianNoiseDataset(task.SingleTask, random.RandomTask):
                     dset[:, si].real *= 2**0.5
                     dset[:, si].imag = 0.0
 
-        return data
+        return out
+
+
+class MultipleNoiseRealizationsMixin:
+    """Generates multiple noise realizations with the same underlying statistics.
+
+    This is a non-functional class mixin that must be combined with a class whose
+    process method generates a single noise realization.
+
+    Attributes
+    ----------
+    niter : int
+        Number of noise realizations to generate.
+    """
+
+    niter = config.Property(proptype=int, default=1)
+    in_place = False
+
+    def setup(self, data1, data2=None):
+        """Save the data as a class attribute.
+
+        If multiple input containers are provided, the class alternates between
+        them when generating the noise realization. This enables cross power
+        spectrum analysis.
+
+        Parameters
+        ----------
+        data1 : :class:`VisContainer`
+            Any dataset which contains a vis and weight attribute.
+        data2 : :class:`VisContainer`
+            Any dataset which contains a vis and weight attribute.
+        """
+        self.data = [data1]
+        if data2 is not None:
+            self.data.append(data2)
+
+    def process(self):
+        """Generate a noise realization.
+
+        The variance will be set to the inverse of the
+        weight dataset of the container provided on setup.
+        """
+        if self._count == self.niter:
+            raise pipeline.PipelineStopIteration
+
+        return super().process(self.data[self._count % len(self.data)])
+
+
+class MultipleGaussianNoiseDatasets(
+    MultipleNoiseRealizationsMixin, GaussianNoiseDataset
+):
+    """Generates multiple Gaussian distributed noise datasets."""
 
 
 class GaussianNoise(task.SingleTask, random.RandomTask):
@@ -323,3 +373,105 @@ class SampleNoise(task.SingleTask, random.RandomTask):
                 )
 
         return data_exp
+
+
+class FreqCorrelatedNoise(task.SingleTask, random.RandomTask):
+    """Generate frequency-correlated noise using Cholesky factors.
+
+    This task uses precomputed Cholesky decompositions of the frequency-frequency
+    noise covariance (stored in a FreqNoiseModel container) to simulate
+    a noise realization into a VisGridStream container.
+
+    Attributes
+    ----------
+    save_redundancy : bool
+        If True, save the redundancy of each visibility.  Default is False.
+    """
+
+    save_redundancy = config.Property(proptype=bool, default=False)
+
+    def process(self, noise_model):
+        """Simulate noise into a VisGridStream container.
+
+        Parameters
+        ----------
+        noise_model : containers.FreqNoiseModel
+            Input noise model containing Cholesky factors and baseline redundancy.
+
+        Returns
+        -------
+        out : containers.VisGridStream
+            Container filled with a frequency-correlated noise realization.
+        """
+        noise_model.redistribute("ra")
+
+        out = containers.VisGridStream(
+            axes_from=noise_model,
+            attrs_from=noise_model,
+            distributed=noise_model.distributed,
+            comm=noise_model.comm,
+        )
+        out.redistribute("ra")
+
+        if self.save_redundancy:
+            out.add_dataset("redundancy")
+            out.redundancy[:] = noise_model.redundancy[:][..., np.newaxis]
+
+        # Compute the redundancy factor that determines how the noise depends
+        # on north-south baseline distance
+        redundancy = noise_model.redundancy[:]
+        inv_sqrt_redundancy = tools.invert_no_zero(np.sqrt(redundancy))
+
+        # Dereference datasets
+        L = noise_model.freq_cov[:].local_array
+        weight = noise_model.weight[:].local_array
+
+        ovis = out.vis[:].local_array
+        oweight = out.weight[:].local_array
+
+        npol, nfreq, new, nns, nra = ovis.shape
+
+        # Loop over pol and ew to reduce memory usage
+        for pp in range(npol):
+
+            for ee in range(new):
+
+                # Generate a set of complex random numbers with unit standard deviation
+                z = np.empty((nra, nfreq, nns), dtype=ovis.dtype)
+
+                random.complex_normal(
+                    scale=1.0,
+                    out=z,
+                    rng=self.rng,
+                )
+
+                # Multiply by the Cholesky decomposition of the freq-freq covariance matrix
+                # to introduce the desired correlation as a function of frequency, then divide
+                # by the square root of the redundancy of the baseline.
+                sz = np.matmul(L[pp, ee], z) * inv_sqrt_redundancy[pp, ee]
+
+                ovis[pp, :, ee] = sz.transpose(1, 2, 0)
+
+                oweight[pp, :, ee] = (
+                    weight[pp, :, ee, np.newaxis, :] * redundancy[pp, ee, :, np.newaxis]
+                )
+
+        # Ensure that the visibility matrix is Hermitian
+        nyp = nns // 2 + 1
+        slc_pos = slice(1, nyp)
+        slc_neg = slice(-1, -nyp, -1)
+
+        pconjmap = np.unique(
+            [pj + pi for pi, pj in out.index_map["pol"]], return_inverse=True
+        )[1]
+
+        for pi, po in enumerate(pconjmap):
+            ovis[po, :, 0, slc_neg, :] = ovis[pi, :, 0, slc_pos, :].conj()
+            if pi == po:
+                ovis[po, :, 0, 0, :] = ovis[pi, :, 0, 0, :].real * 2**0.5
+
+        return out
+
+
+class MultipleFreqCorrelatedNoise(MultipleNoiseRealizationsMixin, FreqCorrelatedNoise):
+    """Generates multiple realizations of frequency-correlated noise."""
