@@ -487,7 +487,7 @@ class RandomTask(task.MPILoggedTask):
 
         .. warning::
             Generating the seed is a collective operation if the seed is not set,
-            and so all ranks must participate in the first access of this property.
+            and so all ranks must participate in the call to `__init__`.
         """
         # Initialize the base class
         super().__init__()
