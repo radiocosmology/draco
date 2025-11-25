@@ -1,4 +1,4 @@
-from caput import config, pipeline, memh5
+from caput import config, pipeline, memdata
 
 import caput
 import numpy
@@ -26,8 +26,8 @@ def test_metadata_to_hdf5():
     man = pipeline.Manager.from_yaml_str(testconfig)
     man.run()
 
-    # Do the same using caput.memh5 to make sure it deserializes it
-    with memh5.MemDiskGroup.from_file("{}.h5".format(TAG)) as m:
+    # Do the same using caput.memdata to make sure it deserializes it
+    with memdata.MemDiskGroup.from_file("{}.h5".format(TAG)) as m:
         configdump = m.history["config"]
         versiondump = m.history["versions"]
         assert versiondump == {"numpy": numpy.__version__, "caput": caput.__version__}
@@ -44,10 +44,10 @@ def test_metadata_to_yaml():
             - numpy
             - caput
         tasks:
-            - type: draco.core.io.SaveModuleVersions
+            - type: caput.pipeline.tasklib.debug.SaveModuleVersions
               params:
                 root: {0}
-            - type: draco.core.io.SaveConfig
+            - type: caput.pipeline.tasklib.debug.SaveConfig
               params:
                 root: {0}
     """.format(TAG)
