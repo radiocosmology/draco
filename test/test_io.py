@@ -2,7 +2,9 @@ import pathlib
 import numpy as np
 import pytest
 
-from caput import mpiutil, pipeline
+from caput import config
+from caput.pipeline import exceptions, tasklib
+from caput.util import mpitools
 from draco.core import containers, io
 
 # Run these tests under MPI
@@ -12,9 +14,9 @@ pytestmark = pytest.mark.mpi
 @pytest.fixture
 def mpi_tmp_path(tmp_path_factory):
     dirname = None
-    if mpiutil.rank0:
+    if mpitools.rank0:
         dirname = str(tmp_path_factory.mktemp("mpi"))
-    dirname = mpiutil.bcast(dirname, root=0)
+    dirname = mpitools.bcast(dirname, root=0)
 
     return pathlib.Path(dirname)
 
@@ -43,7 +45,7 @@ def test_LoadBasicCont_simple(ss_container, mpi_tmp_path):
     fname = str(mpi_tmp_path / "ss.h5")
     ss_container.save(fname)
 
-    task = io.LoadBasicCont()
+    task = tasklib.io.LoadFilesFromParams()
     task.files = [fname]
 
     task.setup()
@@ -59,7 +61,7 @@ def test_LoadBasicCont_simple(ss_container, mpi_tmp_path):
     assert ss_load.weight.attrs["test_attr3"] == "hello3"
 
     # As we only put one item into the queue, this should end the iterations
-    with pytest.raises(pipeline.PipelineStopIteration):
+    with pytest.raises(exceptions.PipelineStopIteration):
         task.next()
 
 
@@ -70,7 +72,7 @@ def test_LoadBasicCont_selection(ss_container, mpi_tmp_path):
     freq_range = [1, 4]
     ra_range = [3, 10]
 
-    task = io.LoadBasicCont()
+    task = tasklib.io.LoadFilesFromParams()
     task.files = [fname]
     task.selections = {
         "freq_range": freq_range,
@@ -86,7 +88,7 @@ def test_LoadBasicCont_selection(ss_container, mpi_tmp_path):
     nf = freq_range[1] - freq_range[0]
     if ss_load.comm.rank < nf:
         # Check the freq selection
-        n, s, e = mpiutil.split_local(nf, comm=ss_load.comm)
+        n, s, e = mpitools.split_local(nf, comm=ss_load.comm)
         vis_real = np.arange(*freq_range)[s:e][:, np.newaxis, np.newaxis]
         assert (ss_vis.local_array.real == vis_real).all()
 
@@ -104,7 +106,7 @@ def test_LoadBasicCont_selection(ss_container, mpi_tmp_path):
     assert ss_load.weight.attrs["test_attr3"] == "hello3"
 
     # As we only put one item into the queue, this should end the iterations
-    with pytest.raises(pipeline.PipelineStopIteration):
+    with pytest.raises(exceptions.PipelineStopIteration):
         task.next()
 
 
@@ -123,67 +125,65 @@ def existing_file_list():
         f.write("brr")
         f.flush()
         file_list.append(f.name)
-        io._list_or_glob(file_list)
+        tasklib.io.list_or_glob(file_list)
     file_list.append(GLOB_WITH_NO_FILES)
-    yield io._list_or_glob(file_list)
+    yield tasklib.io.list_or_glob(file_list)
     for f in file_list:
         if not "*" in f:
             os.unlink(f)
 
 
 def test_list_or_glob(existing_file_list):
-    assert io._list_or_glob(GLOB_WITH_NO_FILES) == []
-
-    existing_file_list = io._list_or_glob(existing_file_list)
+    assert tasklib.io.list_or_glob(GLOB_WITH_NO_FILES) == []
+    existing_file_list = tasklib.io.list_or_glob(existing_file_list)
 
     assert len(existing_file_list) == NUM_FILES
     for f in existing_file_list:
         assert isinstance(f, str)
 
-    with pytest.raises(io.ConfigError):
-        io._list_or_glob(1)
+    with pytest.raises(config.CaputConfigError):
+        tasklib.io.list_or_glob(1)
 
-    with pytest.raises(io.ConfigError):
-        io._list_or_glob("/does/not/exist/for/sure")
+    with pytest.raises(config.CaputConfigError):
+        tasklib.io.list_or_glob("/does/not/exist/for/sure")
 
 
 def test_list_of_filelists(existing_file_list):
-    with pytest.raises(io.ConfigError):
-        io._list_of_filelists(GLOB_WITH_NO_FILES)
-
-    existing_file_list = io._list_of_filelists(existing_file_list)
+    with pytest.raises(config.CaputConfigError):
+        tasklib.io.list_of_filelists(GLOB_WITH_NO_FILES)
+    existing_file_list = tasklib.io.list_of_filelists(existing_file_list)
     assert len(existing_file_list) == NUM_FILES
     for f in existing_file_list:
         assert isinstance(f, str)
 
-    with pytest.raises(io.ConfigError):
-        io._list_of_filelists([1])
+    with pytest.raises(config.CaputConfigError):
+        tasklib.io.list_of_filelists([1])
 
-    with pytest.raises(io.ConfigError):
-        io._list_of_filelists(["/does/not/exist/for/sure"])
+    with pytest.raises(config.CaputConfigError):
+        tasklib.io.list_of_filelists(["/does/not/exist/for/sure"])
 
     list_of_lists = [existing_file_list for _ in range(NUM_FILES)]
-    list_of_lists = io._list_of_filelists(list_of_lists)
+    list_of_lists = tasklib.io.list_of_filelists(list_of_lists)
     assert len(list_of_lists) == NUM_FILES * NUM_FILES
 
 
 def test_list_of_filegroups(existing_file_list):
-    with pytest.raises(io.ConfigError):
-        io._list_of_filegroups(GLOB_WITH_NO_FILES)
+    with pytest.raises(config.CaputConfigError):
+        tasklib.io.list_of_filegroups(GLOB_WITH_NO_FILES)
 
     groups = [
         {"files": existing_file_list, "tag": "test"},
         {"files": existing_file_list},
     ]
-    groups = io._list_of_filegroups(groups)
+    groups = tasklib.io.list_of_filegroups(groups)
     assert len(groups) == 2
     for i in range(2):
         assert len(groups[i]["files"]) == NUM_FILES
         for f in groups[i]["files"]:
             assert isinstance(f, str)
 
-    with pytest.raises(io.ConfigError):
-        io._list_of_filegroups([1])
+    with pytest.raises(config.CaputConfigError):
+        tasklib.io.list_of_filegroups([1])
 
-    with pytest.raises(io.ConfigError):
-        io._list_of_filegroups([{"files": ["/does/not/exist/for/sure"]}])
+    with pytest.raises(config.CaputConfigError):
+        tasklib.io.list_of_filegroups([{"files": ["/does/not/exist/for/sure"]}])
