@@ -1,18 +1,20 @@
 """Source Stack Analysis Tasks."""
 
 import numpy as np
-from caput import config, pipeline, task, units
+from caput import config
+from caput.astro import constants
+from caput.pipeline import exceptions, tasklib
 from mpi4py import MPI
 
 from ..core import containers
 from ..util.tools import invert_no_zero
 
 # Constants
-NU21 = units.nu21
-C = units.c
+NU21 = constants.nu21
+C = constants.c
 
 
-class SourceStack(task.SingleTask):
+class SourceStack(tasklib.base.ContainerTask):
     """Stack the product of `draco.analysis.BeamForm` accross sources.
 
     For this to work BeamForm must have been run with `collapse_ha = True` (default).
@@ -209,7 +211,7 @@ class SourceStack(task.SingleTask):
         return stack
 
 
-class RandomSubset(task.SingleTask, task.random.RandomTask):
+class RandomSubset(tasklib.base.ContainerTask, tasklib.random.RandomTask):
     """Take a large mock catalog and draw `number` catalogs of a given `size`.
 
     Attributes
@@ -279,7 +281,7 @@ class RandomSubset(task.SingleTask, task.random.RandomTask):
             objects.
         """
         if self.catalog_ind >= self.number:
-            raise pipeline.PipelineStopIteration
+            raise exceptions.PipelineStopIteration
 
         objects = self.catalog.index_map["object_id"]
         num_cat = len(objects)
@@ -327,7 +329,7 @@ class RandomSubset(task.SingleTask, task.random.RandomTask):
         return new_catalog
 
 
-class GroupSourceStacks(task.SingleTask):
+class GroupSourceStacks(tasklib.base.ContainerTask):
     """Accumulate many frequency stacks into a single container.
 
     Attributes

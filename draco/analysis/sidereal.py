@@ -14,9 +14,9 @@ import inspect
 import numpy as np
 import scipy.linalg as la
 from caput import config, mpiarray
-from caput.pipeline import tasklib
-from caput.containers import tod
 from caput.astro import constants
+from caput.containers import tod
+from caput.pipeline import tasklib
 
 from ..core import containers, io
 from ..util import gaussian_process, regrid, tools

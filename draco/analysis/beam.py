@@ -16,13 +16,13 @@ Tasks
 
 import numpy as np
 import scipy.constants
-from caput import task
+from caput.pipeline import tasklib
 
 from ..core import containers, io
 from ..util import interferometry, tools
 
 
-class CreateBeamStream(task.SingleTask):
+class CreateBeamStream(tasklib.base.ContainerTask):
     """Convert a GridBeam to a HybridVisStream that can be used for ringmap maker deconvolution."""
 
     telescope = None
