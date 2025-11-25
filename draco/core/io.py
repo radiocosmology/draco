@@ -1,12 +1,13 @@
 """Tasks for reading and writing specific container types."""
 
 import numpy as np
-from caput import config, pipeline, task, units
-from caput.task.io import list_of_filegroups
+from caput import config
+from caput.astro import constants
+from caput.pipeline import Task, exceptions, tasklib
 from drift.core import beamtransfer, manager, telescope
 
 
-class LoadMaps(task.MPILoggedTask):
+class LoadMaps(tasklib.base.MPILoggedTask):
     """Load a series of maps from files given in the tasks parameters.
 
     Maps are given as one, or a list of `File Groups` (see
@@ -19,7 +20,7 @@ class LoadMaps(task.MPILoggedTask):
         A dictionary specifying a file group, or a list of them.
     """
 
-    maps = config.Property(proptype=list_of_filegroups)
+    maps = config.Property(proptype=tasklib.io.list_of_filegroups)
 
     def next(self):
         """Load the groups of maps from disk and pass them on.
@@ -32,7 +33,7 @@ class LoadMaps(task.MPILoggedTask):
 
         # Exit this task if we have eaten all the file groups
         if len(self.maps) == 0:
-            raise pipeline.PipelineStopIteration
+            raise exceptions.PipelineStopIteration
 
         group = self.maps.pop(0)
 
@@ -72,7 +73,7 @@ class LoadMaps(task.MPILoggedTask):
         return map_stack
 
 
-class LoadFITSCatalog(task.SingleTask):
+class LoadFITSCatalog(tasklib.base.ContainerTask):
     """Load an SDSS-style FITS source catalog.
 
     Catalogs are given as one, or a list of `File Groups` (see
@@ -90,7 +91,7 @@ class LoadFITSCatalog(task.SingleTask):
         `z_range`.
     """
 
-    catalogs = config.Property(proptype=list_of_filegroups)
+    catalogs = config.Property(proptype=tasklib.io.list_of_filegroups)
     z_range = config.list_type(type_=float, length=2, default=None)
     freq_range = config.list_type(type_=float, length=2, default=None)
 
@@ -107,14 +108,14 @@ class LoadFITSCatalog(task.SingleTask):
 
         # Exit this task if we have eaten all the file groups
         if len(self.catalogs) == 0:
-            raise pipeline.PipelineStopIteration
+            raise exceptions.PipelineStopIteration
 
         group = self.catalogs.pop(0)
 
         # Set the redshift selection
         if self.freq_range:
-            zl = units.nu21 / self.freq_range[1] - 1
-            zh = units.nu21 / self.freq_range[0] - 1
+            zl = constants.nu21 / self.freq_range[1] - 1
+            zh = constants.nu21 / self.freq_range[0] - 1
             self.z_range = (zl, zh)
 
         if self.z_range:
@@ -171,7 +172,7 @@ class LoadFITSCatalog(task.SingleTask):
         return catalog
 
 
-class LoadBeamTransfer(pipeline.TaskBase):
+class LoadBeamTransfer(Task):
     """Loads a beam transfer manager from disk.
 
     Attributes
@@ -211,7 +212,7 @@ class LoadBeamTransfer(pipeline.TaskBase):
             return tel, bt
 
 
-class LoadProductManager(pipeline.TaskBase):
+class LoadProductManager(Task):
     """Loads a driftscan product manager from disk.
 
     Attributes

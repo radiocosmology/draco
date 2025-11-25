@@ -60,13 +60,14 @@ their own custom container types.
 from typing import ClassVar
 
 import numpy as np
-from caput import memh5, tod
+from caput import memdata
 from caput.containers import (
     COMPRESSION,
     COMPRESSION_OPTS,
-    ContainerBase,
+    ContainerPrototype,
     DataWeightContainer,
-    TableBase,
+    TableSpec,
+    tod,
 )
 from cora.core.containers import (
     CosmologyContainer,
@@ -79,10 +80,10 @@ from cora.core.containers import (
 from ..util import tools
 
 
-class TODContainer(ContainerBase, tod.TOData):
+class TODContainer(ContainerPrototype, tod.TOData):
     """A pipeline container for time ordered data.
 
-    This works like a normal :class:`ContainerBase` container, with the added
+    This works like a normal :class:`ContainerPrototype` container, with the added
     ability to be concatenated, and treated like a a :class:`tod.TOData`
     instance.
     """
@@ -108,7 +109,7 @@ class VisBase(DataWeightContainer):
 class VisContainer(VisBase):
     """A base container for holding a visibility dataset.
 
-    This works like a :class:`ContainerBase` container, with the
+    This works like a :class:`ContainerPrototype` container, with the
     ability to create visibility specific axes, if they are not
     passed as a kwargs parameter.
 
@@ -118,10 +119,10 @@ class VisContainer(VisBase):
 
     Parameters
     ----------
-    axes_from : `memh5.BasicCont`, optional
+    axes_from : `caput.containers.ContainerPrototype`, optional
         Another container to copy axis definitions from. Must be supplied as
         keyword argument.
-    attrs_from : `memh5.BasicCont`, optional
+    attrs_from : `caput.containers.ContainerPrototype`, optional
         Another container to copy attributes from. Must be supplied as keyword
         argument. This applies to attributes in default datasets too.
     kwargs : dict
@@ -165,7 +166,7 @@ class VisContainer(VisBase):
             stack["conjugate"] = 0
             kwargs["stack"] = stack
 
-        # Call initializer from `ContainerBase`
+        # Call initializer from `ContainerPrototype`
         super().__init__(*args, **kwargs)
 
         # `axes_from` can be provided via the `copy_from` argument, so
@@ -232,10 +233,10 @@ class VisContainer(VisBase):
         return len(self.stack) != len(self.prod)
 
 
-class SampleVarianceContainer(ContainerBase):
+class SampleVarianceContainer(ContainerPrototype):
     """Base container for holding the sample variance over observations.
 
-    This works like :class:`ContainerBase` but provides additional capabilities
+    This works like :class:`ContainerPrototype` but provides additional capabilities
     for containers that may be used to hold the sample mean and variance over
     complex-valued observations.  These capabilities include automatic definition
     of the component axis, properties for accessing standard datasets, properties
@@ -358,10 +359,10 @@ class SampleVarianceContainer(ContainerBase):
         return nsample * tools.invert_no_zero(C[0] + C[2])
 
 
-class FreqContainer(ContainerBase):
+class FreqContainer(ContainerPrototype):
     """A pipeline container for data with a frequency axis.
 
-    This works like a normal :class:`ContainerBase` container, but already has a freq
+    This works like a normal :class:`ContainerPrototype` container, but already has a freq
     axis defined, and specific properties for dealing with frequencies.
     """
 
@@ -382,10 +383,10 @@ class FreqContainer(ContainerBase):
             return self.index_map["freq"][:]
 
 
-class SiderealContainer(ContainerBase):
+class SiderealContainer(ContainerPrototype):
     """A pipeline container for data with an RA axis.
 
-    This works like a normal :class:`ContainerBase` container, but already has an RA
+    This works like a normal :class:`ContainerPrototype` container, but already has an RA
     axis defined, and specific properties for dealing with this axis.
 
     Note that Right Ascension is a fairly ambiguous term. What is typically meant
@@ -418,7 +419,7 @@ class SiderealContainer(ContainerBase):
         return self.index_map["ra"][:]
 
 
-class MContainer(ContainerBase):
+class MContainer(ContainerPrototype):
     """Container for holding m-mode type data.
 
     Note this container will have an `msign` axis even though not all m-mode based
@@ -1298,10 +1299,10 @@ class VisGridStream(FreqContainer, SiderealContainer, VisBase):
         raise KeyError("Dataset 'redundancy' not initialised.")
 
 
-class FilterFreqContainer(ContainerBase):
+class FilterFreqContainer(ContainerPrototype):
     """Base container for data that has undergone filtering along the frequency axis.
 
-    This container behaves like a standard `ContainerBase`, but is tailored for
+    This container behaves like a standard `ContainerPrototype`, but is tailored for
     datasets where a frequency-domain filter has been applied. It defines a
     `freq_sum` axis by default and provides additional logic to manage mutually
     exclusive filter and frequency covariance datasets.
@@ -1849,12 +1850,12 @@ class GainDataBase(DataWeightContainer):
     _weight_dset_name = "weight"
 
     @property
-    def gain(self) -> memh5.MemDataset:
+    def gain(self) -> memdata.MemDataset:
         """Get the gain dataset."""
         return self.datasets["gain"]
 
     @property
-    def weight(self) -> memh5.MemDataset | None:
+    def weight(self) -> memdata.MemDataset | None:
         """The weights for each data point.
 
         Returns None is no weight dataset exists.
@@ -2005,7 +2006,7 @@ class StaticGainData(FreqContainer, GainDataBase):
         return self.index_map["input"]
 
 
-class DelayCutoff(ContainerBase):
+class DelayCutoff(ContainerPrototype):
     """Container for a delay cutoff."""
 
     _axes = ("pol", "el")
@@ -2036,7 +2037,7 @@ class DelayCutoff(ContainerBase):
         return self.index_map["el"]
 
 
-class DelayContainer(ContainerBase):
+class DelayContainer(ContainerPrototype):
     """A container with a delay axis."""
 
     _axes = ("delay",)
@@ -2514,7 +2515,7 @@ class DelayCrossSpectrum(DelaySpectrum):
         return self.datasets["spectrum"]
 
 
-class Powerspectrum2D(ContainerBase):
+class Powerspectrum2D(ContainerPrototype):
     """Container for a 2D cartesian power spectrum.
 
     Generally you should set the standard attributes `z_start` and `z_end` with
@@ -2587,7 +2588,7 @@ class Powerspectrum2D(ContainerBase):
         return self.datasets["C_inv"]
 
 
-class SVDSpectrum(ContainerBase):
+class SVDSpectrum(ContainerPrototype):
     """Container for an m-mode SVD spectrum."""
 
     _axes = ("m", "singularvalue")
@@ -2743,7 +2744,7 @@ class Stack3D(FreqContainer, DataWeightContainer):
         return self.datasets["stack"]
 
 
-class SourceCatalog(TableBase):
+class SourceCatalog(TableSpec):
     """A basic container for holding astronomical source catalogs.
 
     Notes
@@ -3370,7 +3371,7 @@ class VisBandpassCompensateBaselineRA(SiderealContainer, VisBandpassCompensateBa
         return self.datasets["rank"]
 
 
-class HorizonLimit(ContainerBase):
+class HorizonLimit(ContainerPrototype):
     """Container holding the altitude of the horizon as a function of azimuth."""
 
     _axes = ("azimuth",)
