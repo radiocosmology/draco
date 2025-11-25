@@ -7,16 +7,17 @@ from typing import overload
 
 import numpy as np
 import scipy.linalg as la
-from caput import config, fftw, mpiarray, pipeline, task
+from caput import config, mpiarray
+from caput.algorithms import fft, invert_no_zero
 from caput.containers import copy_datasets_filter
-from caput.tools import invert_no_zero
+from caput.pipeline import exceptions, tasklib
 from numpy.lib.recfunctions import structured_to_unstructured
 
 from ..core import containers, io
 from ..util import regrid, tools
 
 
-class FrequencyRebin(task.SingleTask):
+class FrequencyRebin(tasklib.base.ContainerTask):
     """Rebin neighbouring frequency channels.
 
     Parameters
@@ -138,7 +139,7 @@ class TelescopeStreamMixIn:
         self.bt_rev["conjugate"] = np.where(feedmask, self.telescope.feedconj[triu], 0)
 
 
-class CollateProducts(TelescopeStreamMixIn, task.SingleTask):
+class CollateProducts(TelescopeStreamMixIn, tasklib.base.ContainerTask):
     """Extract and order the correlation products for map-making.
 
     The task will take a sidereal task and format the products that are needed
@@ -329,7 +330,7 @@ class CollateProducts(TelescopeStreamMixIn, task.SingleTask):
         return sp
 
 
-class SelectFreq(task.SingleTask):
+class SelectFreq(tasklib.base.ContainerTask):
     """Select a subset of frequencies from a container.
 
     Attributes
@@ -477,7 +478,7 @@ class GenerateSubBands(SelectFreq):
             downselected along the frequency axis.
         """
         if len(self.sub_bands) == 0:
-            raise pipeline.PipelineStopIteration
+            raise exceptions.PipelineStopIteration
 
         tag = self.sub_bands.pop()
         self._set_freq_selection(**self.sub_band_spec[tag])
@@ -496,7 +497,7 @@ class GenerateSubBands(SelectFreq):
             setattr(self, key, value)
 
 
-class ElevationDependentHybridVisWeight(task.SingleTask):
+class ElevationDependentHybridVisWeight(tasklib.base.ContainerTask):
     """Add elevation dependence to hybrid visibility weights."""
 
     def process(self, data: containers.HybridVisStream):
@@ -531,7 +532,7 @@ class ElevationDependentHybridVisWeight(task.SingleTask):
         return data
 
 
-class MModeTransform(task.SingleTask):
+class MModeTransform(tasklib.base.ContainerTask):
     """Transform a sidereal stream to m-modes.
 
     Currently ignores any noise weighting.
@@ -683,7 +684,7 @@ def _make_marray(ts, mmodes=None, mmax=None, dtype=None, use_fftw=True):
     # still faster than `numpy` or `scipy` ffts.
     shp = ts.shape
     if use_fftw:
-        m_fft = fftw.fft(ts.reshape(-1, shp[-1]), axes=-1).reshape(shp)
+        m_fft = fft.fftw.fft(ts.reshape(-1, shp[-1]), axes=-1).reshape(shp)
     else:
         m_fft = np.fft.fft(ts.reshape(-1, shp[-1]), axis=-1).reshape(shp)
 
@@ -704,7 +705,7 @@ def _make_marray(ts, mmodes=None, mmax=None, dtype=None, use_fftw=True):
     return mmodes
 
 
-class MModeInverseTransform(task.SingleTask):
+class MModeInverseTransform(tasklib.base.ContainerTask):
     """Transform m-modes to sidereal stream.
 
     Currently ignores any noise weighting.
@@ -791,7 +792,9 @@ class MModeInverseTransform(task.SingleTask):
         return sstream
 
 
-class SiderealMModeResample(task.group_tasks(MModeTransform, MModeInverseTransform)):
+class SiderealMModeResample(
+    tasklib.base.group_tasks(MModeTransform, MModeInverseTransform)
+):
     """Resample a sidereal stream by FFT.
 
     This performs a forward and inverse m-mode transform to resample a sidereal stream.
@@ -848,7 +851,7 @@ def _unpack_marray(mmodes, n=None):
     return marray
 
 
-class LanczosRegridder(task.SingleTask):
+class LanczosRegridder(tasklib.base.ContainerTask):
     """Interpolate the time-like axis of a dataset onto a regular grid.
 
     Uses a maximum-likelihood inverse of a Lanczos interpolation to do the
@@ -885,7 +888,7 @@ class LanczosRegridder(task.SingleTask):
 
         Parameters
         ----------
-        observer : :class:`~caput.time.Observer`
+        observer : :class:`~caput.astro.observer.Observer`
             An Observer object holding the geographic location of the telescope.
             Note that :class:`~drift.core.TransitTelescope` instances are also
             Observers.
@@ -987,7 +990,7 @@ class LanczosRegridder(task.SingleTask):
 Regridder = LanczosRegridder
 
 
-class ShiftRA(task.SingleTask):
+class ShiftRA(tasklib.base.ContainerTask):
     """Add a shift to the RA axis.
 
     This is useful for fixing a bug in earlier revisions of CHIME processing.
@@ -1062,7 +1065,7 @@ class ShiftRA(task.SingleTask):
         return sscont
 
 
-class SelectPol(task.SingleTask):
+class SelectPol(tasklib.base.ContainerTask):
     """Extract a subset of Stokes parameters from beamformed data.
 
     Supports extraction of Stokes I, Q, U, and V from beamformed data for
@@ -1231,7 +1234,7 @@ class SelectPol(task.SingleTask):
         return outcont
 
 
-class PolWeightedAverage(task.SingleTask):
+class PolWeightedAverage(tasklib.base.ContainerTask):
     """Compute an optimally weighted pseudo-Stokes I from XX and YY polarisations.
 
     This computes a weighted average:
@@ -1331,7 +1334,7 @@ class PolWeightedAverage(task.SingleTask):
         return outcont
 
 
-class StokesIVis(task.SingleTask):
+class StokesIVis(tasklib.base.ContainerTask):
     """Extract instrumental Stokes I from visibilities."""
 
     def setup(self, telescope):
@@ -1339,7 +1342,7 @@ class StokesIVis(task.SingleTask):
 
         Parameters
         ----------
-        telescope : :class:`~caput.time.Observer`
+        telescope : :class:`~caput.astro.observer.Observer`
             An Observer object holding the geographic location of the telescope.
             Note that :class:`~drift.core.TransitTelescope` instances are also
             Observers.
@@ -1449,7 +1452,7 @@ def stokes_I(sstream, tel):
     return vis_I, vis_weight, ubase
 
 
-class TransformJanskyToKelvin(task.SingleTask):
+class TransformJanskyToKelvin(tasklib.base.ContainerTask):
     """Task to convert from Jy to Kelvin and vice-versa.
 
     This integrates over the primary beams in the telescope class to derive the
@@ -1604,7 +1607,7 @@ class TransformJanskyToKelvin(task.SingleTask):
         return new_stream
 
 
-class MixData(task.SingleTask):
+class MixData(tasklib.base.ContainerTask):
     """Mix together pieces of data with specified weights.
 
     This can generate arbitrary linear combinations of the data and weights for both
@@ -1846,7 +1849,7 @@ class MixTwoDatasets(MixData):
         return
 
 
-class Downselect(task.io.SelectionsMixin, task.SingleTask):
+class Downselect(tasklib.io.SelectionsMixin, tasklib.base.ContainerTask):
     """Apply axis selections to a container.
 
     Apply slice or `np.take` operations across multiple axes of a container.
@@ -1902,7 +1905,7 @@ class Downselect(task.io.SelectionsMixin, task.SingleTask):
         return out
 
 
-class ReduceBase(task.SingleTask):
+class ReduceBase(tasklib.base.ContainerTask):
     """Apply a weighted reduction operation across specific axes.
 
     This is non-functional without overriding the `reduction` method.
@@ -2106,7 +2109,7 @@ class ReduceChisq(ReduceBase):
         return v, num
 
 
-class HPFTimeStream(task.SingleTask):
+class HPFTimeStream(tasklib.base.ContainerTask):
     """High pass filter a timestream.
 
     This is done by solving for a low-pass filtered version of the timestream and then

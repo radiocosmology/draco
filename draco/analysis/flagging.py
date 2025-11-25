@@ -14,12 +14,10 @@ from typing import ClassVar, overload
 
 import numpy as np
 import numpy.typing as npt
-
 from caput import config, mpiarray
-from caput.algorithms import weighted_median, fft
-from caput.pipeline import tasklib
+from caput.algorithms import fft, weighted_median
 from caput.astro import constants
-
+from caput.pipeline import tasklib
 from scipy.signal import convolve
 from scipy.spatial.distance import cdist
 from skimage.filters import apply_hysteresis_threshold
@@ -547,7 +545,7 @@ class RadiometerWeight(tasklib.base.ContainerTask):
         -------
         stream : SiderealStream or TimeStream
         """
-        from caput.astro.time import STELLAR_S
+        from caput.astro.constants import STELLAR_S
 
         # Redistribute over the frequency direction
         stream.redistribute("freq")

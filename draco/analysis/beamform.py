@@ -3,8 +3,11 @@
 import healpy
 import numpy as np
 import scipy.interpolate
-from caput import config, task, units
-from caput import time as ctime
+from caput import config
+from caput.astro import constants
+from caput.astro import skyfield as skf
+from caput.astro import time as ctime
+from caput.pipeline import tasklib
 from skyfield.api import Angle, Star
 
 from draco.analysis.sidereal import _search_nearest
@@ -22,11 +25,11 @@ from ..util.tools import (
 )
 
 # Constants
-NU21 = units.nu21
-C = units.c
+NU21 = constants.nu21
+C = constants.c
 
 
-class BeamFormBase(task.SingleTask):
+class BeamFormBase(tasklib.base.ContainerTask):
     """Base class for beam forming tasks.
 
     Defines a few useful methods. Not to be used directly
@@ -531,7 +534,7 @@ class BeamFormBase(task.SingleTask):
             lsd = np.mean(data.attrs["lsd"])
             self.epoch = self.telescope.lsd_to_unix(lsd)
 
-            dt = 240.0 * ctime.SIDEREAL_S * np.median(np.abs(np.diff(self.ra)))
+            dt = 240.0 * constants.SIDEREAL_S * np.median(np.abs(np.diff(self.ra)))
 
         else:
             self.is_sstream = False
@@ -909,7 +912,7 @@ class BeamFormExternalCat(BeamFormExternalMixin, BeamFormCat):
     """
 
 
-class RingMapBeamForm(task.SingleTask):
+class RingMapBeamForm(tasklib.base.ContainerTask):
     """Beamform by extracting the pixel containing each source form a RingMap.
 
     This is significantly faster than `Beamform` or `BeamformCat` with the caveat
@@ -1299,7 +1302,7 @@ class RingMapStack2D(RingMapBeamForm):
         return stack
 
 
-class HybridVisBeamForm(task.SingleTask):
+class HybridVisBeamForm(tasklib.base.ContainerTask):
     """Beamform on a catalog of sources using the HybridVisStream data product.
 
     Attributes
@@ -1486,7 +1489,7 @@ class HybridVisBeamForm(task.SingleTask):
         return out
 
 
-class FitBeamFormed(BeamFormExternalMixin, task.SingleTask):
+class FitBeamFormed(BeamFormExternalMixin, tasklib.base.ContainerTask):
     """Fit beamformed visibilities as a function of hour angle to a primary beam model.
 
     Must provide a GridBeam object in celestial coordinates as argument to setup.
@@ -1675,7 +1678,7 @@ class FitBeamFormed(BeamFormExternalMixin, task.SingleTask):
         return t
 
 
-class HealpixBeamForm(task.SingleTask):
+class HealpixBeamForm(tasklib.base.ContainerTask):
     """Beamform by extracting the pixel containing each source form a Healpix map.
 
     Unless it has an explicit `epoch` attribute, the Healpix map is assumed to be in the
@@ -1782,7 +1785,7 @@ def icrs_to_cirs(ra, dec, epoch, apparent=True):
         redshift position.
     epoch : time_like
         Time to convert the positions to. Can be any type convertible to a
-        time using `caput.time.ensure_unix`.
+        time using `caput.astro.time.ensure_unix`.
     apparent : bool
         Calculate the apparent position (includes abberation and deflection).
 
@@ -1793,9 +1796,9 @@ def icrs_to_cirs(ra, dec, epoch, apparent=True):
     """
     positions = Star(ra=Angle(degrees=ra), dec=Angle(degrees=dec))
 
-    epoch = ctime.unix_to_skyfield_time(ctime.ensure_unix(epoch))
+    epoch = skf.unix_to_skyfield_time(ctime.ensure_unix(epoch))
 
-    earth = ctime.skyfield_wrapper.ephemeris["earth"]
+    earth = skf.skyfield_wrapper.ephemeris["earth"]
     positions = earth.at(epoch).observe(positions)
 
     if apparent:

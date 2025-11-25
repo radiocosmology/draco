@@ -4,10 +4,9 @@ from functools import cache
 
 import numpy as np
 import scipy.linalg
-
 from caput import config, mpiarray
-from caput.pipeline import tasklib
 from caput.astro import constants
+from caput.pipeline import tasklib
 from cora.util.cosmology import Cosmology
 
 from draco.analysis.delay import flatten_axes
@@ -622,7 +621,9 @@ class SpatialTransformDelayMap(tasklib.base.ContainerTask):
         ra = ds.index_map["sample"]  # deg
         dec = self.tel.latitude + np.degrees(np.arcsin(el))  # deg
         freq = ds.attrs["freq"]  # MHz
-        wl = constants.c / (freq * 1e6)  # wavelength in meter, speed of light is in meter.
+        wl = constants.c / (
+            freq * 1e6
+        )  # wavelength in meter, speed of light is in meter.
 
         # Unpack the baseline axis of the delay spectrum
         # and reshape it as (pol,delay,ra,el)

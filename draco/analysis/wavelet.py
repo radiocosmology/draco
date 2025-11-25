@@ -6,14 +6,16 @@ import numpy as np
 import pywt
 import scipy.fft as fft
 import scipy.linalg as la
-from caput import config, mpiutil, task
+from caput import config
+from caput.pipeline import tasklib
+from caput.util import mpitools
 
 from ..core import containers
 from ..util import _fast_tools
 from .delay import flatten_axes
 
 
-class WaveletSpectrumEstimator(task.SingleTask):
+class WaveletSpectrumEstimator(tasklib.base.ContainerTask):
     """Estimate a continuous wavelet power spectrum from the data.
 
     This requires the input of the underlying data, *and* an estimate of its delay
@@ -120,7 +122,7 @@ class WaveletSpectrumEstimator(task.SingleTask):
 
             # Doing the cwt and calculating the variance can eat a bunch of
             # memory. Break it up into chunks to try and control this
-            for _, s, e in mpiutil.split_m(wv_scales.shape[0], self.chunks).T:
+            for _, s, e in mpitools.split_m(wv_scales.shape[0], self.chunks).T:
                 with fft.set_workers(workers):
                     wd, _ = pywt.cwt(
                         d_infill,

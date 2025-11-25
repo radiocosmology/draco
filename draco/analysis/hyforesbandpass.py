@@ -35,7 +35,9 @@ Contact Haochen for an example config file.
 import time
 
 import numpy as np
-from caput import config, task, units
+from caput import config
+from caput.astro import constants
+from caput.pipeline import tasklib
 from mpi4py import MPI
 from scipy import linalg as la
 
@@ -46,7 +48,7 @@ from ..core import io
 from ..util import tools
 
 
-class DelayFilterHyFoReSBandpassHybridVis(task.SingleTask):
+class DelayFilterHyFoReSBandpassHybridVis(tasklib.base.ContainerTask):
     """Estimate bandpass gains and their window matrix from unfiltered hybrid vis.
 
     HyFoReS uses the unfiltered visibilities as estimated foregrounds and use the
@@ -343,7 +345,7 @@ class DelayFilterHyFoReSBandpassHybridVis(task.SingleTask):
             Regions of sky where ``|sin(za)|`` is greater than or equal to
             this value will contain aliases.
         """
-        return units.c / (freq * 1e6 * self.min_ysep) - 1.0
+        return constants.c / (freq * 1e6 * self.min_ysep) - 1.0
 
 
 class DelayFilterHyFoReSBandpassHybridVisMask(DelayFilterHyFoReSBandpassHybridVis):
@@ -1103,7 +1105,7 @@ class HyFoReSBandpassHybridVisMaskKeepSource(DelayFilterHyFoReSBandpassHybridVis
         return bp_gain_win
 
 
-class DelayFilterHyFoReSBandpassHybridVisClean(task.SingleTask):
+class DelayFilterHyFoReSBandpassHybridVisClean(tasklib.base.ContainerTask):
     """Compensates bandpass gain windows and subtracts foreground residuals.
 
     This task first compensates the bandpass window to obtain the unwindowed

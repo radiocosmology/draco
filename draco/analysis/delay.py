@@ -6,8 +6,10 @@ from typing import TypeVar
 
 import numpy as np
 import scipy.linalg as la
-from caput import config, fftw, memh5, mpiarray, task, units
-from caput.random import default_rng
+from caput import config, memdata, mpiarray
+from caput.algorithms import fft, random
+from caput.astro import constants
+from caput.pipeline import tasklib
 from numpy.lib.recfunctions import structured_to_unstructured
 
 from ..core import containers, io
@@ -23,7 +25,7 @@ FreqContainerType = TypeVar("FreqContainerType", bound=containers.FreqContainer)
 # ---------------------
 
 
-class DelayFilter(task.SingleTask):
+class DelayFilter(tasklib.base.ContainerTask):
     """Remove delays less than a given threshold.
 
     This is performed by projecting the data onto the null space that is orthogonal
@@ -113,7 +115,9 @@ class DelayFilter(task.SingleTask):
                 baseline = np.linalg.norm(baseline)  # Norm
 
             # In micro seconds
-            baseline_delay_cut = self.za_cut * baseline / units.c * 1e6 + self.extra_cut
+            baseline_delay_cut = (
+                self.za_cut * baseline / constants.c * 1e6 + self.extra_cut
+            )
             delay_cut = np.amax([baseline_delay_cut, self.delay_cut])
 
             # Calculate the number of samples needed to construct the delay null space.
@@ -148,7 +152,7 @@ class DelayFilter(task.SingleTask):
         return ss
 
 
-class DelayFilterBase(task.SingleTask):
+class DelayFilterBase(tasklib.base.ContainerTask):
     """Remove delays less than a given threshold.
 
     This is performed by projecting the data onto the null space that is orthogonal
@@ -339,7 +343,7 @@ class DelayFilterBase(task.SingleTask):
 # -----------------------------
 
 
-class DelayTransformBase(task.SingleTask):
+class DelayTransformBase(tasklib.base.ContainerTask):
     """Base class for transforming from frequency to delay (non-functional).
 
     Attributes
@@ -1053,7 +1057,7 @@ class DelaySpectrumWienerFilterIteratePS(DelaySpectrumWienerFilter):
 # -------------------------------------------------------------
 
 
-class DelaySpectrumToPowerSpectrum(task.SingleTask):
+class DelaySpectrumToPowerSpectrum(tasklib.base.ContainerTask):
     """Compute a delay power spectrum from a delay spectrum."""
 
     def process(self, dspec: containers.DelayTransform) -> containers.DelaySpectrum:
@@ -1210,7 +1214,7 @@ class DelayPowerSpectrumBase(DelayPowerSpectrumContainerMixin, DelayTransformBas
         raise NotImplementedError()
 
 
-class DelayPowerSpectrumGibbs(DelayPowerSpectrumBase, task.random.RandomTask):
+class DelayPowerSpectrumGibbs(DelayPowerSpectrumBase, tasklib.random.RandomTask):
     """Use a Gibbs sampler to estimate the delay power spectrum.
 
     The spectrum returned is the median of the final half of the
@@ -1296,7 +1300,9 @@ class DelayPowerSpectrumNRML(DelayPowerSpectrumBase):
         return spec, samples, success
 
 
-class DelayCrossPowerSpectrumEstimator(DelayPowerSpectrumGibbs, task.random.RandomTask):
+class DelayCrossPowerSpectrumEstimator(
+    DelayPowerSpectrumGibbs, tasklib.random.RandomTask
+):
     """A delay cross power spectrum estimator.
 
     This takes multiple compatible `FreqContainer`s as inputs and will return a
@@ -1755,7 +1761,7 @@ def delay_power_spectrum_gibbs(
     """
     # Get reference to RNG
     if rng is None:
-        rng = default_rng()
+        rng = random.default_rng()
 
     spec = []
 
@@ -2119,7 +2125,7 @@ def delay_spectrum_fft(data, N, window="nuttall"):
         window = tools.window_generalised(wx, window=window)[np.newaxis]
         data *= window
 
-    return fftw.ifft(data, axes=-1)
+    return fft.fftw.ifft(data, axes=-1)
 
 
 def delay_spectrum_wiener_filter(
@@ -2229,9 +2235,9 @@ def match_axes(dset1, dset2):
 
 
 def flatten_axes(
-    dset: memh5.MemDatasetDistributed,
+    dset: memdata.MemDatasetDistributed,
     axes_to_keep: list[str],
-    match_dset: memh5.MemDatasetDistributed | None = None,
+    match_dset: memdata.MemDatasetDistributed | None = None,
 ) -> tuple[mpiarray.MPIArray, list[str]]:
     """Move the specified axes of the dataset to the back, and flatten all others.
 

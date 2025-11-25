@@ -1,12 +1,13 @@
 """Tasks for foreground filtering data."""
 
 import numpy as np
-from caput import config, task
+from caput import config
+from caput.pipeline import tasklib
 
 from ..core import containers, io
 
 
-class _ProjectFilterBase(task.SingleTask):
+class _ProjectFilterBase(tasklib.base.ContainerTask):
     """A base class for projecting data to/from a different basis.
 
     Attributes
@@ -24,12 +25,12 @@ class _ProjectFilterBase(task.SingleTask):
 
         Parameters
         ----------
-        inp : memh5.BasicCont
+        inp : caput.containers.Container
             Data to process.
 
         Returns
         -------
-        output : memh5.BasicCont
+        output : caput.containers.Container
         """
         if self.mode == "forward":
             return self._forward(inp)

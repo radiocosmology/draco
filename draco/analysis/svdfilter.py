@@ -2,12 +2,13 @@
 
 import numpy as np
 import scipy.linalg as la
-from caput import config, task
+from caput import config
+from caput.pipeline import tasklib
 
 from ..core import containers
 
 
-class SVDSpectrumEstimator(task.SingleTask):
+class SVDSpectrumEstimator(tasklib.base.ContainerTask):
     """Calculate the SVD spectrum of a set of m-modes.
 
     Attributes
@@ -56,7 +57,7 @@ class SVDSpectrumEstimator(task.SingleTask):
         return spec
 
 
-class SVDFilter(task.SingleTask):
+class SVDFilter(tasklib.base.ContainerTask):
     """SVD filter the m-modes to remove the most correlated components.
 
     Attributes

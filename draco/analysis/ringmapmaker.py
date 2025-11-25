@@ -24,7 +24,8 @@ Tasks
 
 import numpy as np
 import scipy.constants
-from caput import config, task
+from caput import config
+from caput.pipeline import tasklib
 from mpi4py import MPI
 from numpy.lib.recfunctions import structured_to_unstructured
 
@@ -33,7 +34,7 @@ from ..util import tools
 from . import transform
 
 
-class MakeVisGrid(task.SingleTask):
+class MakeVisGrid(tasklib.base.ContainerTask):
     """Arrange the visibilities onto a 2D grid.
 
     This will fill out the visibilities in the half plane `x >= 0` where x is the EW
@@ -181,7 +182,7 @@ class MakeVisGrid(task.SingleTask):
         return grid
 
 
-class BeamformNS(task.SingleTask):
+class BeamformNS(tasklib.base.ContainerTask):
     """A simple and quick map-maker that forms a series of beams on the meridian.
 
     This is designed to run on data after it has been collapsed down to
@@ -351,7 +352,7 @@ class BeamformNS(task.SingleTask):
         return hv
 
 
-class BeamformEW(task.SingleTask):
+class BeamformEW(tasklib.base.ContainerTask):
     """Final beam forming in the EW direction.
 
     This is designed to run on data after the NS beam forming.
@@ -530,11 +531,11 @@ class BeamformEW(task.SingleTask):
         return np.array(dpol, dtype="U4"), P
 
 
-class RingMapMaker(task.group_tasks(MakeVisGrid, BeamformNS, BeamformEW)):
+class RingMapMaker(tasklib.base.group_tasks(MakeVisGrid, BeamformNS, BeamformEW)):
     """Make a ringmap from the data."""
 
 
-class DeconvolveHybridMBase(task.SingleTask):
+class DeconvolveHybridMBase(tasklib.base.ContainerTask):
     """Base class for deconvolving ringmapmakers (non-functional).
 
     Attributes
@@ -1198,7 +1199,7 @@ TikhonovRingMapMakerExternal = TikhonovRingMapMaker
 WienerRingMapMakerExternal = WienerRingMapMaker
 
 
-class RADependentWeights(task.SingleTask):
+class RADependentWeights(tasklib.base.ContainerTask):
     """Re-establish an RA dependence to the `weight` dataset of a deconvolved ringmap.
 
     This RA dependence was lost in the round-trip m-mode transform.
@@ -1314,7 +1315,9 @@ class RADependentWeights(task.SingleTask):
         return ringmap
 
 
-class ReconstructVisNoiseBase(transform.TelescopeStreamMixIn, task.SingleTask):
+class ReconstructVisNoiseBase(
+    transform.TelescopeStreamMixIn, tasklib.base.ContainerTask
+):
     """Reconstruct visibility weights or covariances consistent with hybrid beamforming.
 
     This class provides shared logic for reproducing the statistical properties of

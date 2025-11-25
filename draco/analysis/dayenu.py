@@ -7,7 +7,9 @@ import time
 
 import numpy as np
 import scipy.interpolate
-from caput import config, task, units
+from caput import config
+from caput.astro import constants
+from caput.pipeline import tasklib
 from mpi4py import MPI
 
 from ..core import containers, io
@@ -15,7 +17,7 @@ from ..util import tools
 from . import transform
 
 
-class DayenuDelayFilter(task.SingleTask):
+class DayenuDelayFilter(tasklib.base.ContainerTask):
     """Apply a DAYENU high-pass delay filter to visibility data.
 
     Attributes
@@ -185,7 +187,7 @@ class DayenuDelayFilter(task.SingleTask):
         else:
             baselines = np.sqrt(np.sum(baselines**2, axis=-1))  # Norm
 
-        baseline_delay_cut = 1e6 * self.za_cut * baselines / units.c
+        baseline_delay_cut = 1e6 * self.za_cut * baselines / constants.c
 
         return baseline_delay_cut + self.tauw
 
@@ -402,7 +404,7 @@ class DayenuDelayFilterFixedCutoff(transform.ReduceChisq):
         return out
 
 
-class DayenuDelayFilterHybridVis(task.SingleTask):
+class DayenuDelayFilterHybridVis(tasklib.base.ContainerTask):
     """Apply a DAYENU high-pass delay filter to hybrid beamformed visibilities.
 
     Attributes
@@ -573,7 +575,7 @@ class DayenuDelayFilterHybridVis(task.SingleTask):
         return stream
 
 
-class ApplyDelayFilterHybridVis(task.SingleTask):
+class ApplyDelayFilterHybridVis(tasklib.base.ContainerTask):
     """Apply a previously saved filter to the hybrid beamformed visibilities.
 
     This task takes a DAYENU filter saved in hybrid beamformed data and applies to
@@ -776,7 +778,7 @@ class ApplyDelayFilterHybridVisSingleSource(ApplyDelayFilterHybridVis):
         return super().process(hv, self.source)
 
 
-class DayenuDelayFilterMap(task.SingleTask):
+class DayenuDelayFilterMap(tasklib.base.ContainerTask):
     """Apply a DAYENU high-pass delay filter to ringmap data.
 
     Attributes
@@ -977,7 +979,7 @@ class DayenuDelayFilterMap(task.SingleTask):
         return np.max([func(el) for func in self._cut_interpolator.values()])
 
 
-class DayenuMFilter(task.SingleTask):
+class DayenuMFilter(tasklib.base.ContainerTask):
     """Apply a DAYENU bandpass m-mode filter.
 
     Attributes
@@ -1118,7 +1120,7 @@ class DayenuMFilter(task.SingleTask):
         return stream
 
     def _get_cut(self, freq, xsep):
-        lmbda = units.c / (freq * 1e6)
+        lmbda = constants.c / (freq * 1e6)
         u = xsep / lmbda
         return instantaneous_m(
             0.0, np.radians(self.telescope.latitude), np.radians(self.dec), u, 0.0
