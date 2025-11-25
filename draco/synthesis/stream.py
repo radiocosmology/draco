@@ -9,14 +9,17 @@ a set of time stream files with :class:`MakeTimeStream`.
 import inspect
 
 import numpy as np
-from caput import config, mpiarray, mpiutil, pipeline, task, tools
+from caput import config, mpiarray
+from caput.algorithms import invert_no_zero
+from caput.pipeline import exceptions, tasklib
+from caput.util import mpitools
 from cora.util import hputil
 
 from ..core import containers, io
 from ..util import regrid
 
 
-class SimulateSidereal(task.SingleTask):
+class SimulateSidereal(tasklib.base.ContainerTask):
     """Create a simulated sidereal dataset from an input map.
 
     Attributes
@@ -67,7 +70,7 @@ class SimulateSidereal(task.SingleTask):
         nfreq = tel.nfreq
         npol = tel.num_pol_sky
 
-        lfreq = mpiutil.split_local(nfreq)[0]
+        lfreq = mpitools.split_local(nfreq)[0]
 
         # Set the minimum resolution required for the sky.
         ntime = 2 * mmax + 1
@@ -175,7 +178,7 @@ class SimulateSidereal(task.SingleTask):
         return sstream
 
 
-class ExpandProducts(task.SingleTask):
+class ExpandProducts(tasklib.base.ContainerTask):
     """Un-wrap collated products to full triangle."""
 
     def setup(self, telescope):
@@ -243,7 +246,7 @@ class ExpandProducts(task.SingleTask):
         return new_stream
 
 
-class MakeTimeStream(task.SingleTask):
+class MakeTimeStream(tasklib.base.ContainerTask):
     """Generate a time stream from a sidereal stream.
 
     Requires an input dataset with a time axis to mimic.
@@ -332,10 +335,8 @@ class MakeTimeStream(task.SingleTask):
 
         # Propagate the weights as well
         waxind = list(sstream.weight.attrs["axis"]).index("ra")
-        var = np.moveaxis(
-            tools.invert_no_zero(sstream.weight[:].local_array), waxind, -1
-        )
-        wout = tools.invert_no_zero(var @ (R**2))
+        var = np.moveaxis(invert_no_zero(sstream.weight[:].local_array), waxind, -1)
+        wout = invert_no_zero(var @ (R**2))
 
         out.weight[:].local_array[:] = np.moveaxis(wout, -1, waxind)
 
@@ -447,7 +448,7 @@ class MakeMultipleTimeStreams(MakeTimeStreamFixedInput):
         # First check to see if we have reached the end of the requested time,
         # and if so stop the iteration.
         if self._cur_time >= self.end_time:
-            raise pipeline.PipelineStopIteration
+            raise exceptions.PipelineStopIteration
 
         # Produce a new timestream with the target time axis
         tstream = self._next_time_axis()
@@ -491,7 +492,7 @@ class MakeMultipleTimeStreams(MakeTimeStreamFixedInput):
         return containers.TODContainer(time=time, skip_datasets=True)
 
 
-class MakeSiderealDayStream(task.SingleTask):
+class MakeSiderealDayStream(tasklib.base.ContainerTask):
     """Task for simulating a set of sidereal days from a given stream.
 
     This creates a copy of the base stream for every LSD within the provided time
@@ -549,7 +550,7 @@ class MakeSiderealDayStream(task.SingleTask):
 
         # Check if we have reached the end of the requested time
         if self._current_lsd >= self.lsd_end:
-            raise pipeline.PipelineStopIteration
+            raise exceptions.PipelineStopIteration
 
         ss = self.sstream.copy()
         ss.attrs["tag"] = f"lsd_{self._current_lsd}"

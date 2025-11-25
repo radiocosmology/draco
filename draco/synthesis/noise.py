@@ -10,14 +10,15 @@ using the variance of the noise estimate in the existing data.
 """
 
 import numpy as np
-from caput import config, pipeline, task
-from caput.time import STELLAR_S
+from caput import config
+from caput.astro.constants import STELLAR_S
+from caput.pipeline import exceptions, tasklib
 
 from ..core import containers, io
 from ..util import random, tools
 
 
-class ReceiverTemperature(task.SingleTask):
+class ReceiverTemperature(tasklib.base.ContainerTask):
     """Add a basic receiver temperature term into the data.
 
     This class adds in an uncorrelated, frequency and time independent receiver
@@ -44,7 +45,7 @@ class ReceiverTemperature(task.SingleTask):
         return data
 
 
-class GaussianNoiseDataset(task.SingleTask, task.random.RandomTask):
+class GaussianNoiseDataset(tasklib.base.ContainerTask, tasklib.random.RandomTask):
     """Generates a Gaussian distributed noise dataset using the noise estimates of an existing dataset.
 
     Attributes
@@ -163,7 +164,7 @@ class MultipleNoiseRealizationsMixin:
         weight dataset of the container provided on setup.
         """
         if self._count == self.niter:
-            raise pipeline.PipelineStopIteration
+            raise exceptions.PipelineStopIteration
 
         return super().process(self.data[self._count % len(self.data)])
 
@@ -174,7 +175,7 @@ class MultipleGaussianNoiseDatasets(
     """Generates multiple Gaussian distributed noise datasets."""
 
 
-class GaussianNoise(task.SingleTask, task.random.RandomTask):
+class GaussianNoise(tasklib.base.ContainerTask, tasklib.random.RandomTask):
     """Add Gaussian distributed noise to a visibility dataset.
 
     Note that this is an approximation to the actual noise distribution good only
@@ -283,7 +284,7 @@ class GaussianNoise(task.SingleTask, task.random.RandomTask):
         return data
 
 
-class SampleNoise(task.SingleTask, task.random.RandomTask):
+class SampleNoise(tasklib.base.ContainerTask, tasklib.random.RandomTask):
     """Add properly distributed noise to a visibility dataset.
 
     This task draws properly (complex Wishart) distributed samples from an input
@@ -322,8 +323,6 @@ class SampleNoise(task.SingleTask, task.random.RandomTask):
         data_samp : same as parameter `data_exp`
             The sampled (i.e. noisy) visibility dataset.
         """
-        from caput.time import STELLAR_S
-
         from ..util import _fast_tools
 
         data_exp.redistribute("freq")
@@ -375,7 +374,7 @@ class SampleNoise(task.SingleTask, task.random.RandomTask):
         return data_exp
 
 
-class FreqCorrelatedNoise(task.SingleTask, task.random.RandomTask):
+class FreqCorrelatedNoise(tasklib.base.ContainerTask, tasklib.random.RandomTask):
     """Generate frequency-correlated noise using Cholesky factors.
 
     This task uses precomputed Cholesky decompositions of the frequency-frequency
