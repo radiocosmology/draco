@@ -1,15 +1,14 @@
 """draco test utils."""
 
 import numpy as np
-from caput import config, memh5, pipeline
-from caput.task import SingleTask
-from caput.task.random import RandomTask
+from caput import config, containers
+from caput.pipeline import exceptions, tasklib
 
 from ..core.containers import SiderealStream
 from . import random
 
 
-class DummyTask(SingleTask):
+class DummyTask(tasklib.base.ContainerTask):
     """Produce an empty data stream for testing.
 
     Attributes
@@ -28,15 +27,15 @@ class DummyTask(SingleTask):
 
         Returns
         -------
-        cont : subclass of `memh5.BasicCont`
+        cont : subclass of `caput.containers.Container`
             Empty data stream.
         """
         if self.total_len == 0:
-            raise pipeline.PipelineStopIteration
+            raise exceptions.PipelineStopIteration
 
         self.log.debug(f"Producing test data '{self.tag}'...")
 
-        cont = memh5.BasicCont()
+        cont = containers.Container()
 
         if "tag" not in cont.attrs:
             cont.attrs["tag"] = self.tag
@@ -113,7 +112,7 @@ def mock_freq_data(
     return data, weights
 
 
-class RandomFreqData(RandomTask):
+class RandomFreqData(tasklib.random.RandomTask):
     """Generate a random sidereal stream with structure in delay.
 
     Attributes
@@ -159,7 +158,7 @@ class RandomFreqData(RandomTask):
             streams.
         """
         if self.num_realisation == 0:
-            raise pipeline.PipelineStopIteration()
+            raise exceptions.PipelineStopIteration()
 
         # Construct the frequency axis
         freq = np.linspace(

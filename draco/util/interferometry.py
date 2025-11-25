@@ -9,7 +9,7 @@ Interferometry
 """
 
 import numpy as np
-from caput.coordinates.spherical import projected_distance
+from caput.astro.coordinates import spherical
 
 
 def fringestop_phase(ha, lat, dec, u, v, w=0.0):
@@ -39,6 +39,6 @@ def fringestop_phase(ha, lat, dec, u, v, w=0.0):
         The phase required to *correct* the fringeing. Shape is
         given by the broadcast of the arguments together.
     """
-    phase = -2.0j * np.pi * projected_distance(ha, lat, dec, u, v, w)
+    phase = -2.0j * np.pi * spherical.projected_distance(ha, lat, dec, u, v, w)
 
     return np.exp(phase, out=phase)

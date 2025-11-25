@@ -7,7 +7,7 @@ import itertools
 import warnings
 
 import numpy as np
-from caput.tools import invert_no_zero
+from caput.algorithms import invert_no_zero
 from numpy.lib.recfunctions import structured_to_unstructured
 from scipy import linalg as la
 from scipy.signal import oaconvolve
