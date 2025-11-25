@@ -1,7 +1,7 @@
 """Utilities for drawing random numbers."""
 
 import numpy as np
-from caput.random import default_rng
+from caput.algorithms.random import default_rng
 
 
 def complex_normal(loc=0.0, scale=1.0, size=None, dtype=None, rng=None, out=None):

@@ -5,7 +5,7 @@ Includes implementations of median filtering and high-pass filtering.
 
 import numpy as np
 import numpy.typing as npt
-from caput import tools, weighted_median
+from caput import algorithms
 from scipy import linalg as la
 from scipy import signal
 
@@ -58,7 +58,7 @@ def lowpass_weighted_convolution_filter(
     vw_lp = signal.oaconvolve(data * weight, kernel, mode="same")
     ww_lp = signal.oaconvolve(weight, kernel, mode="same")
 
-    return vw_lp * tools.invert_no_zero(ww_lp)
+    return vw_lp * algorithms.invert_no_zero(ww_lp)
 
 
 def highpass_weighted_convolution_filter(
@@ -123,7 +123,7 @@ def medfilt(
     x = np.ascontiguousarray(x.astype(np.float64))
     w = np.ascontiguousarray((~mask).astype(np.float64))
 
-    return weighted_median.moving_weighted_median(x, w, size, *args)
+    return algorithms.weighted_median.moving_weighted_median(x, w, size, *args)
 
 
 def null_filter(
