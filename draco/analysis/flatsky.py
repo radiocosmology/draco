@@ -32,7 +32,7 @@ class RingmapSHT(task.SingleTask):
         return alm_cont
 
 
-def _ringmap2alm(rmap, el, obs_lat, lmax=None):
+def _ringmap2alm(rmap, el, obs_lat, lmax=None, epsilon=1e-3, maxiter=100):
     """expect a ringmap with dimensions [nmap, nel, nra]"""
     # ring latitude
     theta = np.pi / 2 - (np.arcsin(el) + obs_lat)
@@ -41,7 +41,7 @@ def _ringmap2alm(rmap, el, obs_lat, lmax=None):
     nra = rmap.shape[-1]
 
     # perform SHT
-    res = sht.adjoint_synthesis(
+    res = sht.pseudo_analysis(
         map=rmap.reshape((rmap.shape[0], -1)),
         theta=theta,
         nphi=np.ones(theta.size, dtype=np.uint64) * nra,
@@ -49,28 +49,15 @@ def _ringmap2alm(rmap, el, obs_lat, lmax=None):
         ringstart=np.arange(theta.size, dtype=np.uint64) * nra,
         spin=0,
         lmax=lmax,
+        maxiter=maxiter,
+        epsilon=epsilon,
         #nthreads=8,
     )
 
-    return res / nra  # normalise m-transform
+    print(f"pseudo_analysis finished with status {res[1]} after {res[2]} iterations "
+          f"and residual {res[3]}.")
 
-
-def _mmode2alm(mmodes, el, obs_lat, lmax=None):
-    """expect a hybrid-vis m-modes with dimensions [nmap, nel, nm]"""
-    # ring latitude
-    theta = np.pi / 2 - (np.arcsin(el) + obs_lat)
-
-    # infer lmax
-    if lmax is None:
-        lmax = mmodes.shape[-1] - 1
-
-    return sht.leg2alm(
-        leg=mmodes[..., :lmax + 1],
-        theta=theta,
-        spin=0,
-        lmax=lmax,
-        #nthreads=8,
-    )
+    return res[0]
 
 
 def _alm2lmax(N):
