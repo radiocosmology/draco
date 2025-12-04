@@ -4251,3 +4251,100 @@ class HorizonLimit(ContainerBase):
     def altitude(self):
         """Get the dataset containing the altitude (in degrees)."""
         return self.datasets["altitude"]
+
+
+class SHCoeff(FreqContainer):
+
+    _axes = ("pol", "lm")
+
+    _dataset_spec: ClassVar = {
+        "alm": {
+            "axes": ["pol", "freq", "lm"],
+            "dtype": complex,
+            "initialise": True,
+            "distributed": False,
+        }
+    }
+
+    @property
+    def lmax(self):
+        from ..analysis import flatsky
+        return flatsky._alm2lmax(self.index_map["alm"].size)
+
+    @property
+    def l(self):
+        raise NotImplementedError("return array of l")
+
+    @property
+    def m(self):
+        raise NotImplementedError("return array of m")
+
+
+class TiledPatches(FreqContainer, DataWeightContainer):
+
+    _data_dset_name = "map"
+    _weight_dset_name = "weight"
+
+    _dataset_spec: ClassVar = {
+        "map": {
+            "axes": ["pol", "freq", "patch", "y", "x"],
+            "dtype": float,
+            "initialise": True,
+            "distributed": False,
+        },
+        "weight": {
+            "axes": ["pol", "freq", "patch", "y", "x"],
+            "dtype": float,
+            "initialise": True,
+            "distributed": False,
+        },
+        "patch_center": {
+            "axes": ["patch"],
+            "dtype": np.dtype([("ra", float), ("dec", float)]),
+            "intialise": True,
+            "distributed": False,
+        }
+    }
+
+    @property
+    def x(self):
+        return self.index_map["x"]
+
+    @property
+    def y(self):
+        return self.index_map["y"]
+
+
+class TiledPatchesDelay(DelayContainer, DataWeightContainer):
+
+    _data_dset_name = "map"
+    _weight_dset_name = "weight"
+
+    _dataset_spec: ClassVar = {
+        "map": {
+            "axes": ["pol", "delay", "patch", "y", "x"],
+            "dtype": float,
+            "initialise": True,
+            "distributed": False,
+        },
+        "weight": {
+            "axes": ["pol", "delay", "patch", "y", "x"],
+            "dtype": float,
+            "initialise": True,
+            "distributed": False,
+        },
+        "patch_center": {
+            "axes": ["patch"],
+            "dtype": np.dtype([("ra", float), ("dec", float)]),
+            "intialise": True,
+            "distributed": False,
+        }
+    }
+
+    @property
+    def x(self):
+        return self.index_map["x"]
+
+    @property
+    def y(self):
+        return self.index_map["y"]
