@@ -1,35 +1,133 @@
 
 import numpy as np
+from ducc0 import sht
 from scipy.special import lpn
 from caput import config
 import healpy as hp
-from ducc0 import sht
 from cora.util import hputil, coord
 
-from ..core import io, task
+from ..core import io, task, containers
 
 
 class RingmapSHT(task.SingleTask):
 
-    lmax = config.Property(proptype=int, default=512)
+    lmax = config.Property(proptype=int, default=2048)
 
     def setup(self, manager):
 
         self.telescope = io.get_telescope(manager)
 
     def process(self, rmap):
-        # TODO consider supporting m-modes as input
 
-        # handle containers manipulation
+        rm_view = rmap.map[:].reshape((-1, rmap.map.shape[-2:]))
+        n_lm = self.lmax * (self.lmax + 1)
+        alm = np.zeros((rm_view.shape[0], n_lm))
+        for i in range(alm.shape[0]):
+            alm[i] = _ringmap2alm(
+                rm_view[i], el=rmap.el[:], lmax=self.lmax,
+                obs_lat=np.radians(self.telescope.latitude)
+            )
 
-        alm = _ringmap2alm(
-            rmap.map[:], el=rmap.el[:], lmax=self.lmax,
-            obs_lat=np.radians(self.telescope.latitude)
+        return containers.SHCoeff(axes_from=rmap, alm=alm, lm=np.arange(alm.shape[-1]))
+
+
+class ProjectToPatches(task.SingleTask):
+
+    nside = config.Property(proptype=int, default=6)
+    width = config.Property(proptype=float, default=10)
+    npix = config.Property(proptype=int, default=64)
+    lmax = config.Property(proptype=int, default=2048)
+
+    def setup(self, manager, rmap=None):
+        telescope = io.get_telescope(manager)
+        self.lat = telescope.latitude
+        if rmap is None:
+            self._el_range = [-1.0, 1.0]
+        else:
+            self._el_range = rmap.el.min(), rmap.el.max()
+
+    def process(self, alm):
+        # get sky area and distribute patches
+        dec_range = np.degrees(np.arcsin(self._el_range)) + self.lat
+        patch_center = _tile_patches(self.nside, dec_range)
+
+        # generate square grid coordinates
+        n = self.npix
+        polar_grid = _flat_grid(np.radians(self.width), n, n)
+        tx, ty = (np.arange(n) / n - 0.5) * self.width, (np.arange(n) / n - 1.5) * self.width
+
+        # do the projection for every freq/pol
+        alm_view = alm.alm[:].reshape((-1,) + alm.alm.shape[-2:])
+        rm_patches = np.zeros((alm_view.shape[0], patch_center.shape[0], n, n))
+        for i in range(patch_center.shape[0]):
+            # rotate the square grid to patch location
+            p_rot = np.radians(patch_center[i])
+            p_grid = _rotate_patch_grid(polar_grid, p_rot)
+            # ensure coordinates are within bounds
+            p_grid[:, 1] = np.where(p_grid[:, 1] < 0, p_grid[:, 1] + 2 * np.pi, p_grid[:, 1])
+            for j in range(alm_view.shape[0]):
+                # project map onto patch
+                rm_patches[j, i] = _project_on_patch(alm_view[j], p_grid, lmax=self.lmax).reshape((n, n))
+
+        # return a patches container
+        final_shape = alm.alm.shape[:2] + rm_patches.shape[1:]
+        patches = containers.TiledPatches(
+            axes_from=alm,
+            map=rm_patches.reshape(final_shape),
+            patch=np.arange(patch_center.shape[0]),
+            patch_center=patch_center,
+            x=tx,
+            y=ty
         )
+        return patches
 
-        alm_cont = None
 
-        return alm_cont
+class CorrelatePatches(task.SingleTask):
+
+    do_apod = config.Property(proptype=bool, default=True)
+    permute = config.Property(proptype=int, default=None)
+    mask_frac = config.Property(proptype=float, default=0.5)
+
+    def setup(self):
+        self.rng = np.random.default_rng(seed=self.permute)
+
+    def process(self, a, b):
+        if a.map.shape != b.map.shape:
+            raise ValueError(
+                f"Shapes of map patches don't match: {a.map.shape} != {b.map.shape}"
+            )
+
+        n = a.map.shape[-1]  # assumes square patch
+
+        # flag based on fraction masked
+        a_flagged = np.sum(a.weight[:] != 0, axis=(-2, -1)) < self.mask_frac * n**2
+        b_flagged = np.sum(b.weight[:] != 0, axis=(-2, -1)) < self.mask_frac * n**2
+        flagged = a_flagged | b_flagged
+
+        # set apodisation
+        if self.do_apod:
+            apod = np.hanning(n)[np.newaxis, :] * np.hanning(n)[:, np.newaxis]
+        else:
+            apod = np.ones((n, n))
+
+        # FFT of patches
+        a_ft = np.fft.fft2(a.map[:] * apod)
+        b_ft = np.fft.fft2(b.map[:] * apod)
+
+        # u-v samples
+        u = 2 * np.pi * np.fft.fftfreq(a_ft.shape[-1], np.abs(a_ft.x[1] - a_ft.x[0]))
+        v = 2 * np.pi * np.fft.fftfreq(a_ft.shape[-2], np.abs(a_ft.y[1] - a_ft.y[0]))
+
+        # get the next permutation if configured
+        if self.permute is None:
+            perm = slice(None)
+        else:
+            perm = self.rng.permutation(a.shape[-3] - flagged.sum())
+
+        # correlate
+        corr = np.mean(a_ft[~flagged][perm] * b_ft[~flagged].conj(), axis=-3)
+
+        return containers.PowerSpectrum3D(axes_from=a, spectrum=corr, u=u, v=v)
 
 
 def _ringmap2alm(rmap, el, obs_lat, lmax=None, epsilon=1e-3, maxiter=100):
@@ -42,7 +140,7 @@ def _ringmap2alm(rmap, el, obs_lat, lmax=None, epsilon=1e-3, maxiter=100):
 
     # perform SHT
     res = sht.pseudo_analysis(
-        map=rmap.reshape((rmap.shape[0], -1)),
+        map=rmap.reshape((1, -1)),  # 1-component, flattened array
         theta=theta,
         nphi=np.ones(theta.size, dtype=np.uint64) * nra,
         phi0=np.zeros(theta.size),
@@ -51,7 +149,6 @@ def _ringmap2alm(rmap, el, obs_lat, lmax=None, epsilon=1e-3, maxiter=100):
         lmax=lmax,
         maxiter=maxiter,
         epsilon=epsilon,
-        #nthreads=8,
     )
 
     print(f"pseudo_analysis finished with status {res[1]} after {res[2]} iterations "
