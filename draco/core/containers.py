@@ -4267,9 +4267,13 @@ class SHCoeff(FreqContainer):
     }
 
     @property
+    def alm(self):
+        return self["alm"][:]
+
+    @property
     def lmax(self):
         from ..analysis import flatsky
-        return flatsky._alm2lmax(self.index_map["alm"].size)
+        return flatsky._alm2lmax(self.index_map["lm"].size)
 
     @property
     def l(self):
@@ -4284,6 +4288,8 @@ class TiledPatches(FreqContainer, DataWeightContainer):
 
     _data_dset_name = "map"
     _weight_dset_name = "weight"
+
+    _axes = ("pol", "patch", "x", "y")
 
     _dataset_spec: ClassVar = {
         "map": {
@@ -4301,7 +4307,7 @@ class TiledPatches(FreqContainer, DataWeightContainer):
         "patch_center": {
             "axes": ["patch"],
             "dtype": np.dtype([("ra", float), ("dec", float)]),
-            "intialise": True,
+            "initialise": True,
             "distributed": False,
         }
     }
@@ -4319,6 +4325,8 @@ class TiledPatchesDelay(DelayContainer, DataWeightContainer):
 
     _data_dset_name = "map"
     _weight_dset_name = "weight"
+
+    _axes = ("pol", "patch", "x", "y")
 
     _dataset_spec: ClassVar = {
         "map": {
