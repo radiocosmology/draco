@@ -10,6 +10,8 @@ from ..core import io, task, containers
 
 
 class RingmapSHT(task.SingleTask):
+    """Only sort of works when aliased regions and above the pole are excluded.
+    """
 
     lmax = config.Property(proptype=int, default=2048)
 
@@ -19,16 +21,18 @@ class RingmapSHT(task.SingleTask):
 
     def process(self, rmap):
 
-        rm_view = rmap.map[:].reshape((-1, rmap.map.shape[-2:]))
-        n_lm = self.lmax * (self.lmax + 1)
-        alm = np.zeros((rm_view.shape[0], n_lm))
-        for i in range(alm.shape[0]):
-            alm[i] = _ringmap2alm(
-                rm_view[i], el=rmap.el[:], lmax=self.lmax,
-                obs_lat=np.radians(self.telescope.latitude)
-            )
+        rm_view = rmap.map[:].local_array.reshape((-1,) + rmap.map.shape[-2:])
+        rm_view = np.swapaxes(rm_view, -2, -1)  # expect el, RA order
+        alm = _ringmap2alm(
+            rm_view, el=rmap.el[:], lmax=self.lmax,
+            obs_lat=np.radians(self.telescope.latitude)
+        )
 
-        return containers.SHCoeff(axes_from=rmap, alm=alm, lm=np.arange(alm.shape[-1]))
+        alm = alm.reshape(rmap.map.shape[:-2] + alm.shape[-1:])
+
+        alm_cont = containers.SHCoeff(axes_from=rmap, lm=np.arange(alm.shape[-1]))
+        alm_cont.alm[:] = alm[:, 0]
+        return alm_cont
 
 
 class ProjectToPatches(task.SingleTask):
@@ -57,7 +61,7 @@ class ProjectToPatches(task.SingleTask):
         tx, ty = (np.arange(n) / n - 0.5) * self.width, (np.arange(n) / n - 1.5) * self.width
 
         # do the projection for every freq/pol
-        alm_view = alm.alm[:].reshape((-1,) + alm.alm.shape[-2:])
+        alm_view = alm.alm[:].reshape((-1, alm.alm.shape[-1]))
         rm_patches = np.zeros((alm_view.shape[0], patch_center.shape[0], n, n))
         for i in range(patch_center.shape[0]):
             # rotate the square grid to patch location
@@ -70,15 +74,15 @@ class ProjectToPatches(task.SingleTask):
                 rm_patches[j, i] = _project_on_patch(alm_view[j], p_grid, lmax=self.lmax).reshape((n, n))
 
         # return a patches container
-        final_shape = alm.alm.shape[:2] + rm_patches.shape[1:]
         patches = containers.TiledPatches(
             axes_from=alm,
-            map=rm_patches.reshape(final_shape),
             patch=np.arange(patch_center.shape[0]),
-            patch_center=patch_center,
             x=tx,
             y=ty
         )
+        final_shape = alm.alm.shape[:2] + rm_patches.shape[1:]
+        patches["map"][:] = rm_patches.reshape(final_shape)
+        patches["patch_center"][:] = patch_center.view(patches["patch_center"].dtype)[..., 0]
         return patches
 
 
@@ -140,7 +144,7 @@ def _ringmap2alm(rmap, el, obs_lat, lmax=None, epsilon=1e-3, maxiter=100):
 
     # perform SHT
     res = sht.pseudo_analysis(
-        map=rmap.reshape((1, -1)),  # 1-component, flattened array
+        map=rmap.reshape((rmap.shape[0], 1, -1)),  # 1-component, flattened array
         theta=theta,
         nphi=np.ones(theta.size, dtype=np.uint64) * nra,
         phi0=np.zeros(theta.size),
@@ -253,7 +257,7 @@ def _project_on_patch(alm, grid, lmax=None, epsilon=1e-9, nthreads=16):
     if lmax is None:
         lmax = hp.Alm.getlmax(alm.size)
     return sht.synthesis_general(
-        alm=alm,
+        alm=alm[np.newaxis, ...],
         loc=grid,
         spin=0,
         lmax=lmax,
