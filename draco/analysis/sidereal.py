@@ -672,7 +672,6 @@ class SiderealRebinner(SiderealRegridder):
         # For an input TimeStream, this will be a loop over freq.
         # For an input HybridVisStream, this will be a loop over (pol, freq, ew).
         for ind in np.ndindex(*vis_data.shape[:-2]):
-
             w = weight[ind]
             m = (w > 0.0).astype(np.float32)
             if self.weight == "uniform":
@@ -1048,7 +1047,6 @@ class SiderealStacker(task.SingleTask):
         # Can be found in the stack.nsample dataset for uniform case
         # or the stack.weight dataset for inverse variance case.
         if self.with_sample_variance:
-
             # Perform Bessel's correction.  In the case of
             # uniform  weighting, norm will be equal to nsample - 1.
             norm = norm - self.sum_coeff_sq * tools.invert_no_zero(norm)
@@ -1230,7 +1228,7 @@ class SiderealStackerMatch(task.SingleTask):
             # Note, need to use a pseudo-inverse in here as there is a singular mode
             A = la.pinv(
                 np.identity(self.count) - np.dot(V.T, Ni_s[:, np.newaxis] * V),
-                rcond=1e-8,
+                rtol=1e-8,
             )
 
             # Perform the deconvolution step
