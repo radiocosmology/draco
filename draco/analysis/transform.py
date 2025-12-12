@@ -1644,7 +1644,7 @@ class MixData(task.SingleTask):
     data_coeff = config.list_type(type_=float)
     weight_coeff = config.list_type(type_=float)
     tag_coeff = config.list_type(type_=bool)
-    aux_coeff = config.Property(proptype=dict)
+    aux_coeff = config.Property(proptype=dict, default={})
     invert_weight = config.Property(proptype=bool, default=False)
     require_nonzero_weight = config.Property(proptype=bool, default=False)
 
