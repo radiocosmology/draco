@@ -1467,7 +1467,7 @@ class TimeStream(FreqContainer, VisContainer, TODContainer):
             "distributed_axis": "freq",
             "compression": COMPRESSION,
             "compression_opts": COMPRESSION_OPTS,
-            "chunks": (64, 128, 128),
+            "chunks": (16, 256, 1024),
             "truncate": {
                 "weight_dataset": "vis_weight",
             },
@@ -1480,7 +1480,7 @@ class TimeStream(FreqContainer, VisContainer, TODContainer):
             "distributed_axis": "freq",
             "compression": COMPRESSION,
             "compression_opts": COMPRESSION_OPTS,
-            "chunks": (64, 128, 128),
+            "chunks": (16, 256, 1024),
             "truncate": True,
         },
         "input_flags": {
@@ -1495,6 +1495,9 @@ class TimeStream(FreqContainer, VisContainer, TODContainer):
             "initialise": False,
             "distributed": True,
             "distributed_axis": "freq",
+            "compression": COMPRESSION,
+            "compression_opts": COMPRESSION_OPTS,
+            "chunks": (16, 256, 1024),
         },
     }
 
