@@ -1231,19 +1231,6 @@ class RFITransientVisMask(RFIVisMask):
         lambda_inv = freq.min() * 1e6 / constants.c
         hpf_cut = lambda_inv * baselines[:, 0].max() / np.cos(dec)
 
-        # high-pass filter in `m` then crudely beamform with an fft
-        vhpf = filters.highpass_weighted_convolution_filter(
-            vis.local_array[:],
-            weight.local_array[:],
-            ra,
-            hpf_cut,
-            axis=-1,
-        )
-        # crude fft beamform
-        np.fft.fft(vhpf, axis=1, out=vhpf)
-        # magnitude of the beamformed visibilities
-        np.absolute(vhpf, out=vhpf)
-
         # Create the output mask and apply the initial mask
         finalmask = mpiarray.zeros(vis.global_shape, dtype=bool, axis=0)
         finalmask |= mask[:, np.newaxis]
@@ -1252,8 +1239,22 @@ class RFITransientVisMask(RFIVisMask):
 
         # Iterate over frequencies
         for ii in range(fl.shape[0]):
+            # Skip if frequency is already masked
+            if np.all(mask[ii]):
+                continue
+
+            # high-pass filter
+            vhpf = filters.highpass_weighted_convolution_filter(
+                vis.local_array[ii],
+                weight.local_array[ii],
+                ra,
+                hpf_cut,
+                axis=-1,
+            )
+            np.fft.fft(vhpf, axis=0, out=vhpf)
+            np.absolute(vhpf, out=vhpf)
             # Compute median absolute deviations of the filtered map
-            mad_ = mad(vhpf[ii], fl[ii], self.mad_base_size, self.mad_dev_size)
+            mad_ = mad(vhpf, fl[ii], self.mad_base_size, self.mad_dev_size)
             # Hysteresis threshold mask flags anything above `sigma_high` or
             # anything above `sigma_low` ONLY if it is connected to a region
             # above `sigma_high`
