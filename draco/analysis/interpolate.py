@@ -107,8 +107,8 @@ class DPSSFilter(tasklib.base.ContainerTask):
         if self.copy:
             # Trying to copy a dataset while distributed
             # over a non-contiguous axis (time/ra in this case)
-            # hangs almost indefinitely. We need to distribute
-            # over a different axis before copying.
+            # hangs. We need to distribute over a different axis
+            # before copying.
             data.redistribute("freq")
             out = data.copy()
             out.redistribute(self.iter_axes)
