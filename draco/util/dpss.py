@@ -1,15 +1,19 @@
 """Routines for DPSS inpainting."""
 
+import logging
+
 import numpy as np
 from caput.tools import invert_no_zero
 from scipy import interpolate
 from scipy import linalg as la
 
+logger = logging.getLogger(__name__)
+
 
 def make_covariance(
     samples: np.ndarray,
-    halfwidths: list[float],
-    centres: list[float],
+    halfwidths: list[float] | float,
+    centres: list[float] | float,
 ) -> np.ndarray:
     """Make a signal covariance model.
 
@@ -153,7 +157,7 @@ def project(x: np.ndarray, Ni: np.ndarray, A: np.ndarray) -> np.ndarray:
 
 def solve(
     xp: np.ndarray, Ni: np.ndarray, A: np.ndarray, Si: float = 1e-3
-) -> list[np.ndarray, np.ndarray]:
+) -> tuple[np.ndarray, ...]:
     """Apply the inpainting operator to data.
 
     Returns the inpainted data and corresponding inverse
@@ -220,7 +224,11 @@ def solve(
         # Cholesky decomposition. This is faster than
         # doing a standard solve, and significantly
         # faster than an inverse
-        CiL = la.cho_factor(Ci.astype(cho_dtype), lower=False, check_finite=False)
+        try:
+            CiL = la.cho_factor(Ci.astype(cho_dtype), lower=False, check_finite=False)
+        except np.linalg.LinAlgError:
+            logger.debug(f"Error inverting Ci in iteration {ii}/{xp.shape[0] - 1}")
+            continue
 
         # Solve for the data projection coefficient
         b[ii] = la.cho_solve(CiL, xp[ii], check_finite=False)
@@ -247,8 +255,9 @@ def solve(
 
     # Construct the interpolated data
     x = A @ np.moveaxis(b[inv], -1, si)
+    w = np.moveaxis(Ni[inv], -1, si)
 
-    return x, np.moveaxis(Ni[inv], -1, si)
+    return x, w
 
 
 def accumulate_variance(wo: np.ndarray, wi: np.ndarray, W: np.ndarray) -> np.ndarray:
@@ -358,7 +367,7 @@ def flag_above_cutoff(W: np.ndarray, fc: float | None = None) -> np.ndarray:
 
 def filter(
     x: np.ndarray, Ni: np.ndarray, A: np.ndarray, W: np.ndarray, Si: float = 1e-3
-) -> np.ndarray:
+) -> tuple[np.ndarray, np.ndarray]:
     """Filter using a DPSS basis over the first axis.
 
     Parameters
