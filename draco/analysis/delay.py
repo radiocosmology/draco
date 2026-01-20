@@ -1220,11 +1220,15 @@ class DelayPowerSpectrumGibbs(DelayPowerSpectrumBase, random.RandomTask):
     ----------
     initial_amplitude : float, optional
         The Gibbs sampler will be initialized with a flat power spectrum with
-        this amplitude. Unused if maxpost=True (flat spectrum is a bad initial
-        guess for the max-likelihood estimator). Default: 10.
+        this amplitude. Default is 10.0
+    median_frac : float, optional
+        The returned power spectrum is the median of the last `median_frac`
+        fraction of samples. Default is 0.5.
+
     """
 
     initial_amplitude = config.Property(proptype=float, default=10.0)
+    median_frac = config.Property(proptype=float, default=0.5)
 
     def _get_prior(self, nbase, ndelay, dtype):
         """Start with a flat prior."""
@@ -1232,7 +1236,7 @@ class DelayPowerSpectrumGibbs(DelayPowerSpectrumBase, random.RandomTask):
 
     def _estimator(self, data, weight, S, ndelay, channel_ind):
         """Use a gibbs sampler to calculate a power spectrum."""
-        samples = delay_power_spectrum_gibbs(
+        samples, success = delay_power_spectrum_gibbs(
             data,
             ndelay,
             weight,
@@ -1244,10 +1248,18 @@ class DelayPowerSpectrumGibbs(DelayPowerSpectrumBase, random.RandomTask):
             complex_timedomain=self.complex_timedomain,
         )
 
-        spec = np.median(samples[-(self.nsamp // 2) :], axis=0)
-        spec = np.fft.fftshift(spec)
+        nsamp_spec = int(self.nsamp * self.median_frac)
 
-        return spec, samples, True
+        if samples:
+            spec = np.median(samples[-nsamp_spec:], axis=0)
+            spec = np.fft.fftshift(spec)
+        else:
+            # Estimator failed at the first sample. Set the spectrum
+            # to the prior and flag it as bad
+            success = False
+            spec = S
+
+        return spec, samples, success
 
 
 class DelayPowerSpectrumNRML(DelayPowerSpectrumBase):
@@ -1738,6 +1750,8 @@ def delay_power_spectrum_gibbs(
     -------
     spec : list
         List of spectrum samples.
+    success : bool
+        True if the chain completed successfully.
     """
     # Get reference to RNG
     if rng is None:
@@ -1867,12 +1881,20 @@ def delay_power_spectrum_gibbs(
     # Perform the Gibbs sampling iteration for a given number of loops and
     # return the power spectrum output of them.
     for ii in range(niter):
-        d_samp = _draw_signal_sample(S_samp)
+        try:
+            d_samp = _draw_signal_sample(S_samp)
+        except np.linalg.LinAlgError:
+            # Covariance is not positive-definite (is this expected?)
+            success = False
+            break
+
         S_samp = _draw_ps_sample(d_samp)
 
         spec.append(S_samp)
+    else:
+        success = True
 
-    return spec
+    return spec, success
 
 
 def delay_spectrum_gibbs_cross(
