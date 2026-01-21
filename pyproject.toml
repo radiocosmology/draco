@@ -50,7 +50,7 @@ classifiers = [
 [project.optional-dependencies]
 lint = ["black", "ruff"]
 test = ["pytest", "wheel"]
-docs = ["Sphinx>=5.0", "sphinx_rtd_theme"]
+docs = ["Sphinx>=5.0,<9", "sphinx_rtd_theme"]
 
 [project.urls]
 Documentation = "https://radiocosmology.github.io/draco"
