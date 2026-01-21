@@ -21,9 +21,7 @@ def test_metadata_to_hdf5():
               params:
                 tag: {}
                 save: Yes
-    """.format(
-        TAG
-    )
+    """.format(TAG)
 
     man = pipeline.Manager.from_yaml_str(testconfig)
     man.run()
@@ -52,9 +50,7 @@ def test_metadata_to_yaml():
             - type: draco.core.io.SaveConfig
               params:
                 root: {0}
-    """.format(
-        TAG
-    )
+    """.format(TAG)
 
     man = pipeline.Manager.from_yaml_str(testconfig)
     man.run()
