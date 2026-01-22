@@ -28,6 +28,7 @@ dependencies = [
     "cython>0.18",
     "dnspython",
     "driftscan @ git+https://github.com/radiocosmology/driftscan.git",
+    "jax",
     "mpi4py",
     "numpy>=1.24",
     "astropy>=6.1.6",
