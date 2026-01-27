@@ -23,6 +23,7 @@ class RingmapSHT(task.SingleTask):
 
         rm_view = rmap.map[:].local_array.reshape((-1,) + rmap.map.shape[-2:])
         rm_view = np.swapaxes(rm_view, -2, -1)  # expect el, RA order
+        # this will raise and exception if the SHT fails
         alm = _ringmap2alm(
             rm_view, el=rmap.el[:], lmax=self.lmax,
             obs_lat=np.radians(self.telescope.latitude)
@@ -54,6 +55,7 @@ class ProjectToPatches(task.SingleTask):
         # get sky area and distribute patches
         dec_range = np.degrees(np.arcsin(self._el_range)) + self.lat
         patch_center = _tile_patches(self.nside, dec_range)
+        self.log.info(f"Dividing into {patch_center.shape[0]} tiles.")
 
         # generate square grid coordinates
         n = self.npix
@@ -155,8 +157,8 @@ def _ringmap2alm(rmap, el, obs_lat, lmax=None, epsilon=1e-3, maxiter=100):
         epsilon=epsilon,
     )
 
-    print(f"pseudo_analysis finished with status {res[1]} after {res[2]} iterations "
-          f"and residual {res[3]}.")
+    if res[1] > 2:
+        raise RuntimeError(f"pseudo_analysis failed to converge with exit code {res[1]}")
 
     return res[0]
 
@@ -197,9 +199,7 @@ def _ps2corr(Cl, lmax, theta):
 
 def _tile_patches(nside, dec_range):
     # tile the sky using HEALpix
-    print(f"Resolution: {np.degrees(hp.nside2resol(nside))} deg")
     npatch = hp.nside2npix(nside)
-    print(f"Num pix: {npatch}")
 
     # each HEALpix cell will be center of a flat patch
     patch_center = np.array(hp.pix2ang(nside, np.arange(npatch), lonlat=True))
