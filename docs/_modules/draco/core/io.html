@@ -1,0 +1,1638 @@
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" data-content_root="../../../">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>draco.core.io &mdash; draco 0.0.1 documentation</title>
+      <link rel="stylesheet" type="text/css" href="../../../_static/pygments.css?v=b86133f3" />
+      <link rel="stylesheet" type="text/css" href="../../../_static/css/theme.css?v=9edc463e" />
+
+  
+      <script src="../../../_static/jquery.js?v=5d32c60e"></script>
+      <script src="../../../_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
+      <script src="../../../_static/documentation_options.js?v=d45e8c67"></script>
+      <script src="../../../_static/doctools.js?v=9bcbadda"></script>
+      <script src="../../../_static/sphinx_highlight.js?v=dc90522c"></script>
+    <script src="../../../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../../../genindex.html" />
+    <link rel="search" title="Search" href="../../../search.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="../../../index.html" class="icon icon-home">
+            draco
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../../../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../tutorial.html">Tutorial</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../reference.html">API Reference</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../dev.html">Development Guidelines</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../../../index.html">draco</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../../../index.html" class="icon icon-home" aria-label="Home"></a></li>
+          <li class="breadcrumb-item"><a href="../../index.html">Module code</a></li>
+      <li class="breadcrumb-item active">draco.core.io</li>
+      <li class="wy-breadcrumbs-aside">
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <h1>Source code for draco.core.io</h1><div class="highlight"><pre>
+<span></span><span class="sd">&quot;&quot;&quot;Tasks for reading and writing data.</span>
+
+<span class="sd">File Groups</span>
+<span class="sd">===========</span>
+
+<span class="sd">Several tasks accept groups of files as arguments. These are specified in the YAML file as a dictionary like below.</span>
+
+<span class="sd">.. code-block:: yaml</span>
+
+<span class="sd">    list_of_file_groups:</span>
+<span class="sd">        -   tag: first_group  # An optional tag naming the group</span>
+<span class="sd">            files:</span>
+<span class="sd">                -   &#39;file1.h5&#39;</span>
+<span class="sd">                -   &#39;file[3-4].h5&#39;  # Globs are processed</span>
+<span class="sd">                -   &#39;file7.h5&#39;</span>
+
+<span class="sd">        -   files:  # No tag specified, implicitly gets the tag &#39;group_2&#39;</span>
+<span class="sd">                -   &#39;another_file1.h5&#39;</span>
+<span class="sd">                -   &#39;another_file2.h5&#39;</span>
+
+
+<span class="sd">    single_group:</span>
+<span class="sd">        files: [&#39;file1.h5&#39;, &#39;file2.h5&#39;]</span>
+<span class="sd">&quot;&quot;&quot;</span>
+
+<span class="kn">import</span><span class="w"> </span><span class="nn">os.path</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">shutil</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">subprocess</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">functools</span><span class="w"> </span><span class="kn">import</span> <span class="n">partial</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">typing</span><span class="w"> </span><span class="kn">import</span> <span class="n">ClassVar</span>
+
+<span class="kn">import</span><span class="w"> </span><span class="nn">numpy</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">np</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">caput</span><span class="w"> </span><span class="kn">import</span> <span class="n">config</span><span class="p">,</span> <span class="n">fileformats</span><span class="p">,</span> <span class="n">memh5</span><span class="p">,</span> <span class="n">pipeline</span><span class="p">,</span> <span class="n">truncate</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">cora.util</span><span class="w"> </span><span class="kn">import</span> <span class="n">units</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">drift.core</span><span class="w"> </span><span class="kn">import</span> <span class="n">beamtransfer</span><span class="p">,</span> <span class="n">manager</span><span class="p">,</span> <span class="n">telescope</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">yaml</span><span class="w"> </span><span class="kn">import</span> <span class="n">dump</span> <span class="k">as</span> <span class="n">yamldump</span>
+
+<span class="kn">from</span><span class="w"> </span><span class="nn">..util.exception</span><span class="w"> </span><span class="kn">import</span> <span class="n">ConfigError</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">.</span><span class="w"> </span><span class="kn">import</span> <span class="n">task</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_list_of_filelists</span><span class="p">(</span><span class="n">files</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">|</span> <span class="nb">list</span><span class="p">[</span><span class="nb">list</span><span class="p">[</span><span class="nb">str</span><span class="p">]])</span> <span class="o">-&gt;</span> <span class="nb">list</span><span class="p">[</span><span class="nb">list</span><span class="p">[</span><span class="nb">str</span><span class="p">]]:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Take in a list of lists/glob patterns of filenames.</span>
+
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    files</span>
+<span class="sd">        A path or glob pattern (e.g. /my/data/*.h5) or a list of those (or a list of</span>
+<span class="sd">        lists of those).</span>
+
+<span class="sd">    Raises</span>
+<span class="sd">    ------</span>
+<span class="sd">    ConfigError</span>
+<span class="sd">        If files has the wrong format or refers to a file that doesn&#39;t exist.</span>
+
+<span class="sd">    Returns</span>
+<span class="sd">    -------</span>
+<span class="sd">    The input file list list. Any glob patterns will be flattened to file path string</span>
+<span class="sd">    lists.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="kn">import</span><span class="w"> </span><span class="nn">glob</span>
+
+    <span class="n">f2</span> <span class="o">=</span> <span class="p">[]</span>
+
+    <span class="k">for</span> <span class="n">filelist</span> <span class="ow">in</span> <span class="n">files</span><span class="p">:</span>
+        <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">filelist</span><span class="p">,</span> <span class="nb">str</span><span class="p">):</span>
+            <span class="k">if</span> <span class="s2">&quot;*&quot;</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">filelist</span> <span class="ow">and</span> <span class="ow">not</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">isfile</span><span class="p">(</span><span class="n">filelist</span><span class="p">):</span>
+                <span class="k">raise</span> <span class="n">ConfigError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;File not found: </span><span class="si">{</span><span class="n">filelist</span><span class="si">!s}</span><span class="s2">&quot;</span><span class="p">)</span>
+            <span class="n">filelist</span> <span class="o">=</span> <span class="n">glob</span><span class="o">.</span><span class="n">glob</span><span class="p">(</span><span class="n">filelist</span><span class="p">)</span>
+        <span class="k">elif</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">filelist</span><span class="p">,</span> <span class="nb">list</span><span class="p">):</span>
+            <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">filelist</span><span class="p">)):</span>
+                <span class="n">filelist</span><span class="p">[</span><span class="n">i</span><span class="p">]</span> <span class="o">=</span> <span class="n">_list_or_glob</span><span class="p">(</span><span class="n">filelist</span><span class="p">[</span><span class="n">i</span><span class="p">])</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="n">ConfigError</span><span class="p">(</span><span class="s2">&quot;Must be list or glob pattern.&quot;</span><span class="p">)</span>
+        <span class="n">f2</span> <span class="o">=</span> <span class="n">f2</span> <span class="o">+</span> <span class="n">filelist</span>
+
+    <span class="k">return</span> <span class="n">f2</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_list_or_glob</span><span class="p">(</span><span class="n">files</span><span class="p">:</span> <span class="nb">str</span> <span class="o">|</span> <span class="nb">list</span><span class="p">[</span><span class="nb">str</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="nb">list</span><span class="p">[</span><span class="nb">str</span><span class="p">]:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Take in a list of lists/glob patterns of filenames.</span>
+
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    files</span>
+<span class="sd">        A path or glob pattern (e.g. /my/data/*.h5) or a list of those</span>
+
+<span class="sd">    Returns</span>
+<span class="sd">    -------</span>
+<span class="sd">    The input file list. Any glob patterns will be flattened to file path string lists.</span>
+
+<span class="sd">    Raises</span>
+<span class="sd">    ------</span>
+<span class="sd">    ConfigError</span>
+<span class="sd">        If files has the wrong type or if it refers to a file that doesn&#39;t exist.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="kn">import</span><span class="w"> </span><span class="nn">glob</span>
+
+    <span class="c1"># If the input was a list, process each element and return as a single flat list</span>
+    <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">files</span><span class="p">,</span> <span class="nb">list</span><span class="p">):</span>
+        <span class="n">parsed_files</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="k">for</span> <span class="n">f</span> <span class="ow">in</span> <span class="n">files</span><span class="p">:</span>
+            <span class="n">parsed_files</span> <span class="o">=</span> <span class="n">parsed_files</span> <span class="o">+</span> <span class="n">_list_or_glob</span><span class="p">(</span><span class="n">f</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">parsed_files</span>
+
+    <span class="c1"># If it&#39;s a glob we need to expand the glob and then call again</span>
+    <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">files</span><span class="p">,</span> <span class="nb">str</span><span class="p">)</span> <span class="ow">and</span> <span class="nb">any</span><span class="p">(</span><span class="n">c</span> <span class="ow">in</span> <span class="n">files</span> <span class="k">for</span> <span class="n">c</span> <span class="ow">in</span> <span class="s2">&quot;*?[&quot;</span><span class="p">):</span>
+        <span class="k">return</span> <span class="n">_list_or_glob</span><span class="p">(</span><span class="nb">sorted</span><span class="p">(</span><span class="n">glob</span><span class="o">.</span><span class="n">glob</span><span class="p">(</span><span class="n">files</span><span class="p">)))</span>
+
+    <span class="c1"># We presume a string is an actual path...</span>
+    <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">files</span><span class="p">,</span> <span class="nb">str</span><span class="p">):</span>
+        <span class="c1"># Check that it exists and is a file (or dir if zarr format)</span>
+        <span class="k">if</span> <span class="n">files</span><span class="o">.</span><span class="n">endswith</span><span class="p">(</span><span class="s2">&quot;.zarr&quot;</span><span class="p">):</span>
+            <span class="k">if</span> <span class="ow">not</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">isdir</span><span class="p">(</span><span class="n">files</span><span class="p">):</span>
+                <span class="k">raise</span> <span class="n">ConfigError</span><span class="p">(</span>
+                    <span class="sa">f</span><span class="s2">&quot;Expected a zarr directory store, but directory not found: </span><span class="si">{</span><span class="n">files</span><span class="si">}</span><span class="s2">&quot;</span>
+                <span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="k">if</span> <span class="ow">not</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">isfile</span><span class="p">(</span><span class="n">files</span><span class="p">):</span>
+                <span class="k">raise</span> <span class="n">ConfigError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;File not found: </span><span class="si">{</span><span class="n">files</span><span class="si">!s}</span><span class="s2">&quot;</span><span class="p">)</span>
+
+        <span class="k">return</span> <span class="p">[</span><span class="n">files</span><span class="p">]</span>
+
+    <span class="k">raise</span> <span class="n">ConfigError</span><span class="p">(</span>
+        <span class="sa">f</span><span class="s2">&quot;Argument must be list, glob pattern, or file path, got </span><span class="si">{</span><span class="n">files</span><span class="si">!r}</span><span class="s2">&quot;</span>
+    <span class="p">)</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_list_of_filegroups</span><span class="p">(</span><span class="n">groups</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="nb">dict</span><span class="p">]</span> <span class="o">|</span> <span class="nb">dict</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">list</span><span class="p">[</span><span class="nb">dict</span><span class="p">]:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Process a file group/groups.</span>
+
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    groups</span>
+<span class="sd">        Dicts should contain keys &#39;files&#39;: An iterable with file path or glob pattern</span>
+<span class="sd">        strings, &#39;tag&#39;: the group tag str</span>
+
+<span class="sd">    Returns</span>
+<span class="sd">    -------</span>
+<span class="sd">    The input groups. Any glob patterns in the &#39;files&#39; list will be flattened to file</span>
+<span class="sd">    path strings.</span>
+
+<span class="sd">    Raises</span>
+<span class="sd">    ------</span>
+<span class="sd">    ConfigError</span>
+<span class="sd">        If groups has the wrong format.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="kn">import</span><span class="w"> </span><span class="nn">glob</span>
+
+    <span class="c1"># Convert to list if the group was not included in a list</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">groups</span><span class="p">,</span> <span class="nb">list</span><span class="p">):</span>
+        <span class="n">groups</span> <span class="o">=</span> <span class="p">[</span><span class="n">groups</span><span class="p">]</span>
+
+    <span class="c1"># Iterate over groups, set the tag if needed, and process the file list</span>
+    <span class="c1"># through glob</span>
+    <span class="k">for</span> <span class="n">gi</span><span class="p">,</span> <span class="n">group</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">groups</span><span class="p">):</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="n">files</span> <span class="o">=</span> <span class="n">group</span><span class="p">[</span><span class="s2">&quot;files&quot;</span><span class="p">]</span>
+        <span class="k">except</span> <span class="ne">KeyError</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="n">ConfigError</span><span class="p">(</span><span class="s2">&quot;File group is missing key &#39;files&#39;.&quot;</span><span class="p">)</span>
+        <span class="k">except</span> <span class="ne">TypeError</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="n">ConfigError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Expected type dict in file groups (got </span><span class="si">{</span><span class="nb">type</span><span class="p">(</span><span class="n">group</span><span class="p">)</span><span class="si">}</span><span class="s2">).&quot;</span><span class="p">)</span>
+
+        <span class="k">if</span> <span class="s2">&quot;tag&quot;</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">group</span><span class="p">:</span>
+            <span class="n">group</span><span class="p">[</span><span class="s2">&quot;tag&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">&quot;group_</span><span class="si">{</span><span class="n">gi</span><span class="si">:</span><span class="s2">d</span><span class="si">}</span><span class="s2">&quot;</span>
+
+        <span class="n">flist</span> <span class="o">=</span> <span class="p">[]</span>
+
+        <span class="k">for</span> <span class="n">fname</span> <span class="ow">in</span> <span class="n">files</span><span class="p">:</span>
+            <span class="k">if</span> <span class="s2">&quot;*&quot;</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">fname</span> <span class="ow">and</span> <span class="ow">not</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">isfile</span><span class="p">(</span><span class="n">fname</span><span class="p">):</span>
+                <span class="k">raise</span> <span class="n">ConfigError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;File not found: </span><span class="si">{</span><span class="n">fname</span><span class="si">!s}</span><span class="s2">&quot;</span><span class="p">)</span>
+            <span class="n">flist</span> <span class="o">+=</span> <span class="n">glob</span><span class="o">.</span><span class="n">glob</span><span class="p">(</span><span class="n">fname</span><span class="p">)</span>
+
+        <span class="k">if</span> <span class="ow">not</span> <span class="nb">len</span><span class="p">(</span><span class="n">flist</span><span class="p">):</span>
+            <span class="k">raise</span> <span class="n">ConfigError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;No files in group exist (</span><span class="si">{</span><span class="n">files</span><span class="si">!s}</span><span class="s2">).&quot;</span><span class="p">)</span>
+
+        <span class="n">group</span><span class="p">[</span><span class="s2">&quot;files&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">flist</span>
+
+    <span class="k">return</span> <span class="n">groups</span>
+
+
+<div class="viewcode-block" id="LoadMaps">
+<a class="viewcode-back" href="../../../_autosummary/draco.core.io.html#draco.core.io.LoadMaps">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">LoadMaps</span><span class="p">(</span><span class="n">task</span><span class="o">.</span><span class="n">MPILoggedTask</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Load a series of maps from files given in the tasks parameters.</span>
+
+<span class="sd">    Maps are given as one, or a list of `File Groups` (see</span>
+<span class="sd">    :mod:`draco.core.io`). Maps within the same group are added together</span>
+<span class="sd">    before being passed on.</span>
+
+<span class="sd">    Attributes</span>
+<span class="sd">    ----------</span>
+<span class="sd">    maps : list or dict</span>
+<span class="sd">        A dictionary specifying a file group, or a list of them.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+
+    <span class="n">maps</span> <span class="o">=</span> <span class="n">config</span><span class="o">.</span><span class="n">Property</span><span class="p">(</span><span class="n">proptype</span><span class="o">=</span><span class="n">_list_of_filegroups</span><span class="p">)</span>
+
+<div class="viewcode-block" id="LoadMaps.next">
+<a class="viewcode-back" href="../../../_autosummary/draco.core.io.html#draco.core.io.LoadMaps.next">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">next</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Load the groups of maps from disk and pass them on.</span>
+
+<span class="sd">        Returns</span>
+<span class="sd">        -------</span>
+<span class="sd">        map : :class:`containers.Map`</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="kn">from</span><span class="w"> </span><span class="nn">.</span><span class="w"> </span><span class="kn">import</span> <span class="n">containers</span>
+
+        <span class="c1"># Exit this task if we have eaten all the file groups</span>
+        <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">maps</span><span class="p">)</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="n">pipeline</span><span class="o">.</span><span class="n">PipelineStopIteration</span>
+
+        <span class="n">group</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">maps</span><span class="o">.</span><span class="n">pop</span><span class="p">(</span><span class="mi">0</span><span class="p">)</span>
+
+        <span class="n">map_stack</span> <span class="o">=</span> <span class="kc">None</span>
+
+        <span class="c1"># Iterate over all the files in the group, load them into a Map</span>
+        <span class="c1"># container and add them all together</span>
+        <span class="k">for</span> <span class="n">mfile</span> <span class="ow">in</span> <span class="n">group</span><span class="p">[</span><span class="s2">&quot;files&quot;</span><span class="p">]:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">log</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="s2">&quot;Loading file </span><span class="si">%s</span><span class="s2">&quot;</span><span class="p">,</span> <span class="n">mfile</span><span class="p">)</span>
+
+            <span class="n">current_map</span> <span class="o">=</span> <span class="n">containers</span><span class="o">.</span><span class="n">Map</span><span class="o">.</span><span class="n">from_file</span><span class="p">(</span><span class="n">mfile</span><span class="p">,</span> <span class="n">distributed</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+            <span class="n">current_map</span><span class="o">.</span><span class="n">redistribute</span><span class="p">(</span><span class="s2">&quot;freq&quot;</span><span class="p">)</span>
+
+            <span class="c1"># Start the stack if needed</span>
+            <span class="k">if</span> <span class="n">map_stack</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+                <span class="n">map_stack</span> <span class="o">=</span> <span class="n">current_map</span>
+
+            <span class="c1"># Otherwise, check that the new map has consistent frequencies,</span>
+            <span class="c1"># nside and pol and stack up.</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="k">if</span> <span class="p">(</span><span class="n">current_map</span><span class="o">.</span><span class="n">freq</span> <span class="o">!=</span> <span class="n">map_stack</span><span class="o">.</span><span class="n">freq</span><span class="p">)</span><span class="o">.</span><span class="n">all</span><span class="p">():</span>
+                    <span class="k">raise</span> <span class="ne">RuntimeError</span><span class="p">(</span><span class="s2">&quot;Maps do not have consistent frequencies.&quot;</span><span class="p">)</span>
+
+                <span class="k">if</span> <span class="p">(</span><span class="n">current_map</span><span class="o">.</span><span class="n">index_map</span><span class="p">[</span><span class="s2">&quot;pol&quot;</span><span class="p">]</span> <span class="o">!=</span> <span class="n">map_stack</span><span class="o">.</span><span class="n">index_map</span><span class="p">[</span><span class="s2">&quot;pol&quot;</span><span class="p">])</span><span class="o">.</span><span class="n">all</span><span class="p">():</span>
+                    <span class="k">raise</span> <span class="ne">RuntimeError</span><span class="p">(</span><span class="s2">&quot;Maps do not have the same polarisations.&quot;</span><span class="p">)</span>
+
+                <span class="k">if</span> <span class="p">(</span>
+                    <span class="n">current_map</span><span class="o">.</span><span class="n">index_map</span><span class="p">[</span><span class="s2">&quot;pixel&quot;</span><span class="p">]</span> <span class="o">!=</span> <span class="n">map_stack</span><span class="o">.</span><span class="n">index_map</span><span class="p">[</span><span class="s2">&quot;pixel&quot;</span><span class="p">]</span>
+                <span class="p">)</span><span class="o">.</span><span class="n">all</span><span class="p">():</span>
+                    <span class="k">raise</span> <span class="ne">RuntimeError</span><span class="p">(</span><span class="s2">&quot;Maps do not have the same pixelisation.&quot;</span><span class="p">)</span>
+
+                <span class="n">map_stack</span><span class="o">.</span><span class="n">map</span><span class="p">[:]</span> <span class="o">+=</span> <span class="n">current_map</span><span class="o">.</span><span class="n">map</span><span class="p">[:]</span>
+
+        <span class="c1"># Assign a tag to the stack of maps</span>
+        <span class="n">map_stack</span><span class="o">.</span><span class="n">attrs</span><span class="p">[</span><span class="s2">&quot;tag&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">group</span><span class="p">[</span><span class="s2">&quot;tag&quot;</span><span class="p">]</span>
+
+        <span class="k">return</span> <span class="n">map_stack</span></div>
+</div>
+
+
+
+<div class="viewcode-block" id="LoadFITSCatalog">
+<a class="viewcode-back" href="../../../_autosummary/draco.core.io.html#draco.core.io.LoadFITSCatalog">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">LoadFITSCatalog</span><span class="p">(</span><span class="n">task</span><span class="o">.</span><span class="n">SingleTask</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Load an SDSS-style FITS source catalog.</span>
+
+<span class="sd">    Catalogs are given as one, or a list of `File Groups` (see</span>
+<span class="sd">    :mod:`draco.core.io`). Catalogs within the same group are combined together</span>
+<span class="sd">    before being passed on.</span>
+
+<span class="sd">    Attributes</span>
+<span class="sd">    ----------</span>
+<span class="sd">    catalogs : list or dict</span>
+<span class="sd">        A dictionary specifying a file group, or a list of them.</span>
+<span class="sd">    z_range : list, optional</span>
+<span class="sd">        Select only sources with a redshift within the given range.</span>
+<span class="sd">    freq_range : list, optional</span>
+<span class="sd">        Select only sources with a 21cm line freq within the given range. Overrides</span>
+<span class="sd">        `z_range`.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+
+    <span class="n">catalogs</span> <span class="o">=</span> <span class="n">config</span><span class="o">.</span><span class="n">Property</span><span class="p">(</span><span class="n">proptype</span><span class="o">=</span><span class="n">_list_of_filegroups</span><span class="p">)</span>
+    <span class="n">z_range</span> <span class="o">=</span> <span class="n">config</span><span class="o">.</span><span class="n">list_type</span><span class="p">(</span><span class="n">type_</span><span class="o">=</span><span class="nb">float</span><span class="p">,</span> <span class="n">length</span><span class="o">=</span><span class="mi">2</span><span class="p">,</span> <span class="n">default</span><span class="o">=</span><span class="kc">None</span><span class="p">)</span>
+    <span class="n">freq_range</span> <span class="o">=</span> <span class="n">config</span><span class="o">.</span><span class="n">list_type</span><span class="p">(</span><span class="n">type_</span><span class="o">=</span><span class="nb">float</span><span class="p">,</span> <span class="n">length</span><span class="o">=</span><span class="mi">2</span><span class="p">,</span> <span class="n">default</span><span class="o">=</span><span class="kc">None</span><span class="p">)</span>
+
+<div class="viewcode-block" id="LoadFITSCatalog.process">
+<a class="viewcode-back" href="../../../_autosummary/draco.core.io.html#draco.core.io.LoadFITSCatalog.process">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">process</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Load the groups of catalogs from disk, concatenate them and pass them on.</span>
+
+<span class="sd">        Returns</span>
+<span class="sd">        -------</span>
+<span class="sd">        catalog : :class:`containers.SpectroscopicCatalog`</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="kn">from</span><span class="w"> </span><span class="nn">astropy.io</span><span class="w"> </span><span class="kn">import</span> <span class="n">fits</span>
+
+        <span class="kn">from</span><span class="w"> </span><span class="nn">.</span><span class="w"> </span><span class="kn">import</span> <span class="n">containers</span>
+
+        <span class="c1"># Exit this task if we have eaten all the file groups</span>
+        <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">catalogs</span><span class="p">)</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="n">pipeline</span><span class="o">.</span><span class="n">PipelineStopIteration</span>
+
+        <span class="n">group</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">catalogs</span><span class="o">.</span><span class="n">pop</span><span class="p">(</span><span class="mi">0</span><span class="p">)</span>
+
+        <span class="c1"># Set the redshift selection</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">freq_range</span><span class="p">:</span>
+            <span class="n">zl</span> <span class="o">=</span> <span class="n">units</span><span class="o">.</span><span class="n">nu21</span> <span class="o">/</span> <span class="bp">self</span><span class="o">.</span><span class="n">freq_range</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span> <span class="o">-</span> <span class="mi">1</span>
+            <span class="n">zh</span> <span class="o">=</span> <span class="n">units</span><span class="o">.</span><span class="n">nu21</span> <span class="o">/</span> <span class="bp">self</span><span class="o">.</span><span class="n">freq_range</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">-</span> <span class="mi">1</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">z_range</span> <span class="o">=</span> <span class="p">(</span><span class="n">zl</span><span class="p">,</span> <span class="n">zh</span><span class="p">)</span>
+
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">z_range</span><span class="p">:</span>
+            <span class="n">zl</span><span class="p">,</span> <span class="n">zh</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">z_range</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">log</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Applying redshift selection </span><span class="si">{</span><span class="n">zl</span><span class="si">:</span><span class="s2">.2f</span><span class="si">}</span><span class="s2"> &lt;= z &lt;= </span><span class="si">{</span><span class="n">zh</span><span class="si">:</span><span class="s2">.2f</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+
+        <span class="c1"># Load the data only on rank=0 and then broadcast</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">comm</span><span class="o">.</span><span class="n">rank</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
+            <span class="c1"># Iterate over all the files in the group, load them into a Map</span>
+            <span class="c1"># container and add them all together</span>
+            <span class="n">catalog_stack</span> <span class="o">=</span> <span class="p">[]</span>
+            <span class="k">for</span> <span class="n">cfile</span> <span class="ow">in</span> <span class="n">group</span><span class="p">[</span><span class="s2">&quot;files&quot;</span><span class="p">]:</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">log</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="s2">&quot;Loading file </span><span class="si">%s</span><span class="s2">&quot;</span><span class="p">,</span> <span class="n">cfile</span><span class="p">)</span>
+
+                <span class="c1"># TODO: read out the weights from the catalogs</span>
+                <span class="k">with</span> <span class="n">fits</span><span class="o">.</span><span class="n">open</span><span class="p">(</span><span class="n">cfile</span><span class="p">,</span> <span class="n">mode</span><span class="o">=</span><span class="s2">&quot;readonly&quot;</span><span class="p">)</span> <span class="k">as</span> <span class="n">cat</span><span class="p">:</span>
+                    <span class="n">pos</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">([</span><span class="n">cat</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span><span class="o">.</span><span class="n">data</span><span class="p">[</span><span class="n">col</span><span class="p">]</span> <span class="k">for</span> <span class="n">col</span> <span class="ow">in</span> <span class="p">[</span><span class="s2">&quot;RA&quot;</span><span class="p">,</span> <span class="s2">&quot;DEC&quot;</span><span class="p">,</span> <span class="s2">&quot;Z&quot;</span><span class="p">]])</span>
+
+                <span class="c1"># Apply any redshift selection to the objects</span>
+                <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">z_range</span><span class="p">:</span>
+                    <span class="n">zsel</span> <span class="o">=</span> <span class="p">(</span><span class="n">pos</span><span class="p">[</span><span class="mi">2</span><span class="p">]</span> <span class="o">&gt;=</span> <span class="bp">self</span><span class="o">.</span><span class="n">z_range</span><span class="p">[</span><span class="mi">0</span><span class="p">])</span> <span class="o">&amp;</span> <span class="p">(</span><span class="n">pos</span><span class="p">[</span><span class="mi">2</span><span class="p">]</span> <span class="o">&lt;=</span> <span class="bp">self</span><span class="o">.</span><span class="n">z_range</span><span class="p">[</span><span class="mi">1</span><span class="p">])</span>
+                    <span class="n">pos</span> <span class="o">=</span> <span class="n">pos</span><span class="p">[:,</span> <span class="n">zsel</span><span class="p">]</span>
+
+                <span class="n">catalog_stack</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">pos</span><span class="p">)</span>
+
+            <span class="c1"># NOTE: this one is tricky, for some reason the concatenate in here</span>
+            <span class="c1"># produces a non C contiguous array, so we need to ensure that otherwise</span>
+            <span class="c1"># the broadcasting will get very confused</span>
+            <span class="n">catalog_array</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">concatenate</span><span class="p">(</span><span class="n">catalog_stack</span><span class="p">,</span> <span class="n">axis</span><span class="o">=-</span><span class="mi">1</span><span class="p">)</span><span class="o">.</span><span class="n">astype</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">float64</span><span class="p">)</span>
+            <span class="n">catalog_array</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">ascontiguousarray</span><span class="p">(</span><span class="n">catalog_array</span><span class="p">)</span>
+            <span class="n">num_objects</span> <span class="o">=</span> <span class="n">catalog_array</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">num_objects</span> <span class="o">=</span> <span class="kc">None</span>
+            <span class="n">catalog_array</span> <span class="o">=</span> <span class="kc">None</span>
+
+        <span class="c1"># Broadcast the size of the catalog to all ranks, create the target array and</span>
+        <span class="c1"># broadcast into it</span>
+        <span class="n">num_objects</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">comm</span><span class="o">.</span><span class="n">bcast</span><span class="p">(</span><span class="n">num_objects</span><span class="p">,</span> <span class="n">root</span><span class="o">=</span><span class="mi">0</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">log</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Constructing catalog with </span><span class="si">{</span><span class="n">num_objects</span><span class="si">}</span><span class="s2"> objects.&quot;</span><span class="p">)</span>
+
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">comm</span><span class="o">.</span><span class="n">rank</span> <span class="o">!=</span> <span class="mi">0</span><span class="p">:</span>
+            <span class="n">catalog_array</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">zeros</span><span class="p">((</span><span class="mi">3</span><span class="p">,</span> <span class="n">num_objects</span><span class="p">),</span> <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">float64</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">comm</span><span class="o">.</span><span class="n">Bcast</span><span class="p">(</span><span class="n">catalog_array</span><span class="p">,</span> <span class="n">root</span><span class="o">=</span><span class="mi">0</span><span class="p">)</span>
+
+        <span class="n">catalog</span> <span class="o">=</span> <span class="n">containers</span><span class="o">.</span><span class="n">SpectroscopicCatalog</span><span class="p">(</span><span class="n">object_id</span><span class="o">=</span><span class="n">num_objects</span><span class="p">)</span>
+        <span class="n">catalog</span><span class="p">[</span><span class="s2">&quot;position&quot;</span><span class="p">][</span><span class="s2">&quot;ra&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">catalog_array</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+        <span class="n">catalog</span><span class="p">[</span><span class="s2">&quot;position&quot;</span><span class="p">][</span><span class="s2">&quot;dec&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">catalog_array</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span>
+        <span class="n">catalog</span><span class="p">[</span><span class="s2">&quot;redshift&quot;</span><span class="p">][</span><span class="s2">&quot;z&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">catalog_array</span><span class="p">[</span><span class="mi">2</span><span class="p">]</span>
+        <span class="n">catalog</span><span class="p">[</span><span class="s2">&quot;redshift&quot;</span><span class="p">][</span><span class="s2">&quot;z_error&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="mi">0</span>
+
+        <span class="c1"># Assign a tag to the stack of maps</span>
+        <span class="n">catalog</span><span class="o">.</span><span class="n">attrs</span><span class="p">[</span><span class="s2">&quot;tag&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">group</span><span class="p">[</span><span class="s2">&quot;tag&quot;</span><span class="p">]</span>
+
+        <span class="k">return</span> <span class="n">catalog</span></div>
+</div>
+
+
+
+<div class="viewcode-block" id="SelectionsMixin">
+<a class="viewcode-back" href="../../../_autosummary/draco.core.io.html#draco.core.io.SelectionsMixin">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">SelectionsMixin</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Mixin for parsing axis selections, typically from a yaml config.</span>
+
+<span class="sd">    Attributes</span>
+<span class="sd">    ----------</span>
+<span class="sd">    selections : dict, optional</span>
+<span class="sd">        A dictionary of axis selections. See below for details.</span>
+
+<span class="sd">    allow_index_map : bool, optional</span>
+<span class="sd">        If true, selections can be made based on an index_map dataset.</span>
+<span class="sd">        This cannot be implemented when reading from disk. See below for</span>
+<span class="sd">        details. Default is False.</span>
+
+<span class="sd">    Selections</span>
+<span class="sd">    ----------</span>
+<span class="sd">    Selections can be given to limit the data read to specified subsets. They can be</span>
+<span class="sd">    given for any named axis in the container.</span>
+
+<span class="sd">    Selections can be given as a slice with an `&lt;axis name&gt;_range` key with either</span>
+<span class="sd">    `[start, stop]` or `[start, stop, step]` as the value. Alternatively a list of</span>
+<span class="sd">    explicit indices to extract can be given with the `&lt;axis name&gt;_index` key, and</span>
+<span class="sd">    the value is a list of the indices. Finally, selection based on an `index_map`</span>
+<span class="sd">    can be given with specific `index_map` entries with the `&lt;axis name&gt;_map` key,</span>
+<span class="sd">    which will be converted to axis indices. `&lt;axis name&gt;_range` will take precedence</span>
+<span class="sd">    over `&lt;axis name&gt;_index`, which will in turn take precedence over `&lt;axis_name&gt;_map`,</span>
+<span class="sd">    but you should clearly avoid doing this.</span>
+
+<span class="sd">    Additionally, index-based selections currently don&#39;t work for distributed reads.</span>
+
+<span class="sd">    Here&#39;s an example in the YAML format that the pipeline uses:</span>
+
+<span class="sd">    .. code-block:: yaml</span>
+
+<span class="sd">        selections:</span>
+<span class="sd">            freq_range: [256, 512, 4]  # A strided slice</span>
+<span class="sd">            stack_index: [1, 2, 4, 9, 16, 25, 36, 49, 64]  # A sparse selection</span>
+<span class="sd">            stack_range: [1, 14]  # Will override the selection above</span>
+<span class="sd">            pol_map: [&quot;XX&quot;, &quot;YY&quot;] # Select the indices corresponding to these entries</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+
+    <span class="n">selections</span> <span class="o">=</span> <span class="n">config</span><span class="o">.</span><span class="n">Property</span><span class="p">(</span><span class="n">proptype</span><span class="o">=</span><span class="nb">dict</span><span class="p">,</span> <span class="n">default</span><span class="o">=</span><span class="kc">None</span><span class="p">)</span>
+    <span class="n">allow_index_map</span> <span class="o">=</span> <span class="n">config</span><span class="o">.</span><span class="n">Property</span><span class="p">(</span><span class="n">proptype</span><span class="o">=</span><span class="nb">bool</span><span class="p">,</span> <span class="n">default</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
+
+<div class="viewcode-block" id="SelectionsMixin.setup">
+<a class="viewcode-back" href="../../../_autosummary/draco.core.io.html#draco.core.io.SelectionsMixin.setup">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">setup</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Resolve the selections.&quot;&quot;&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_sel</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_resolve_sel</span><span class="p">()</span></div>
+
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">_resolve_sel</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="c1"># Turn the selection parameters into actual selectable types</span>
+
+        <span class="n">sel</span> <span class="o">=</span> <span class="p">{}</span>
+
+        <span class="n">sel_parsers</span> <span class="o">=</span> <span class="p">{</span>
+            <span class="s2">&quot;range&quot;</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">_parse_range</span><span class="p">,</span>
+            <span class="s2">&quot;index&quot;</span><span class="p">:</span> <span class="n">partial</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_parse_index</span><span class="p">,</span> <span class="n">type_</span><span class="o">=</span><span class="nb">int</span><span class="p">),</span>
+            <span class="s2">&quot;map&quot;</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">_parse_index</span><span class="p">,</span>
+        <span class="p">}</span>
+
+        <span class="k">if</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">allow_index_map</span><span class="p">:</span>
+            <span class="k">del</span> <span class="n">sel_parsers</span><span class="p">[</span><span class="s2">&quot;map&quot;</span><span class="p">]</span>
+
+        <span class="c1"># To enforce the precedence of range vs index selections, we rely on the fact</span>
+        <span class="c1"># that a sort will place the axis_range keys after axis_index keys</span>
+        <span class="k">for</span> <span class="n">k</span> <span class="ow">in</span> <span class="nb">sorted</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">selections</span> <span class="ow">or</span> <span class="p">[]):</span>
+            <span class="c1"># Parse the key to get the axis name and type, accounting for the fact the</span>
+            <span class="c1"># axis name may contain an underscore</span>
+            <span class="o">*</span><span class="n">axis</span><span class="p">,</span> <span class="n">type_</span> <span class="o">=</span> <span class="n">k</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="s2">&quot;_&quot;</span><span class="p">)</span>
+            <span class="n">axis_name</span> <span class="o">=</span> <span class="s2">&quot;_&quot;</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">axis</span><span class="p">)</span>
+
+            <span class="k">if</span> <span class="n">type_</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">sel_parsers</span><span class="p">:</span>
+                <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+                    <span class="sa">f</span><span class="s1">&#39;Unsupported selection type &quot;</span><span class="si">{</span><span class="n">type_</span><span class="si">}</span><span class="s1">&quot;, or invalid key &quot;</span><span class="si">{</span><span class="n">k</span><span class="si">}</span><span class="s1">&quot;. &#39;</span>
+                    <span class="s2">&quot;Note that map-type selections require `allow_index_map=True`.&quot;</span>
+                <span class="p">)</span>
+
+            <span class="n">sel</span><span class="p">[</span><span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">axis_name</span><span class="si">}</span><span class="s2">_sel&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">sel_parsers</span><span class="p">[</span><span class="n">type_</span><span class="p">](</span><span class="bp">self</span><span class="o">.</span><span class="n">selections</span><span class="p">[</span><span class="n">k</span><span class="p">])</span>
+
+        <span class="k">return</span> <span class="n">sel</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">_parse_range</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">x</span><span class="p">):</span>
+        <span class="c1"># Parse and validate a range type selection</span>
+
+        <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">x</span><span class="p">,</span> <span class="nb">list</span> <span class="o">|</span> <span class="nb">tuple</span><span class="p">)</span> <span class="ow">or</span> <span class="nb">len</span><span class="p">(</span><span class="n">x</span><span class="p">)</span> <span class="o">&gt;</span> <span class="mi">3</span> <span class="ow">or</span> <span class="nb">len</span><span class="p">(</span><span class="n">x</span><span class="p">)</span> <span class="o">&lt;</span> <span class="mi">2</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+                <span class="sa">f</span><span class="s2">&quot;Range spec must be a length 2 or 3 list or tuple. Got </span><span class="si">{</span><span class="n">x</span><span class="si">}</span><span class="s2">.&quot;</span>
+            <span class="p">)</span>
+
+        <span class="k">for</span> <span class="n">v</span> <span class="ow">in</span> <span class="n">x</span><span class="p">:</span>
+            <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">v</span><span class="p">,</span> <span class="nb">int</span><span class="p">):</span>
+                <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;All elements of range spec must be ints. Got </span><span class="si">{</span><span class="n">x</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+
+        <span class="k">return</span> <span class="nb">slice</span><span class="p">(</span><span class="o">*</span><span class="n">x</span><span class="p">)</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">_parse_index</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">x</span><span class="p">,</span> <span class="n">type_</span><span class="o">=</span><span class="nb">object</span><span class="p">):</span>
+        <span class="c1"># Parse and validate an index type selection</span>
+
+        <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">x</span><span class="p">,</span> <span class="nb">list</span> <span class="o">|</span> <span class="nb">tuple</span><span class="p">)</span> <span class="ow">or</span> <span class="nb">len</span><span class="p">(</span><span class="n">x</span><span class="p">)</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Index spec must be a non-empty list or tuple. Got </span><span class="si">{</span><span class="n">x</span><span class="si">}</span><span class="s2">.&quot;</span><span class="p">)</span>
+
+        <span class="k">for</span> <span class="n">v</span> <span class="ow">in</span> <span class="n">x</span><span class="p">:</span>
+            <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">v</span><span class="p">,</span> <span class="n">type_</span><span class="p">):</span>
+                <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;All elements of index spec must be </span><span class="si">{</span><span class="n">type_</span><span class="si">}</span><span class="s2">. Got </span><span class="si">{</span><span class="n">x</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+
+        <span class="k">return</span> <span class="nb">list</span><span class="p">(</span><span class="n">x</span><span class="p">)</span></div>
+
+
+
+<div class="viewcode-block" id="BaseLoadFiles">
+<a class="viewcode-back" href="../../../_autosummary/draco.core.io.html#draco.core.io.BaseLoadFiles">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">BaseLoadFiles</span><span class="p">(</span><span class="n">SelectionsMixin</span><span class="p">,</span> <span class="n">task</span><span class="o">.</span><span class="n">SingleTask</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Base class for loading containers from a file on disk.</span>
+
+<span class="sd">    Provides the capability to make selections along axes.</span>
+
+<span class="sd">    Attributes</span>
+<span class="sd">    ----------</span>
+<span class="sd">    distributed : bool, optional</span>
+<span class="sd">        Whether the file should be loaded distributed across ranks.</span>
+<span class="sd">    convert_strings : bool, optional</span>
+<span class="sd">        Convert strings to unicode when loading.</span>
+<span class="sd">    redistribute : str, optional</span>
+<span class="sd">        An optional axis name to redistribute the container over after it has</span>
+<span class="sd">        been read.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+
+    <span class="n">distributed</span> <span class="o">=</span> <span class="n">config</span><span class="o">.</span><span class="n">Property</span><span class="p">(</span><span class="n">proptype</span><span class="o">=</span><span class="nb">bool</span><span class="p">,</span> <span class="n">default</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+    <span class="n">convert_strings</span> <span class="o">=</span> <span class="n">config</span><span class="o">.</span><span class="n">Property</span><span class="p">(</span><span class="n">proptype</span><span class="o">=</span><span class="nb">bool</span><span class="p">,</span> <span class="n">default</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+    <span class="n">redistribute</span> <span class="o">=</span> <span class="n">config</span><span class="o">.</span><span class="n">Property</span><span class="p">(</span><span class="n">proptype</span><span class="o">=</span><span class="nb">str</span><span class="p">,</span> <span class="n">default</span><span class="o">=</span><span class="kc">None</span><span class="p">)</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">_load_file</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">filename</span><span class="p">,</span> <span class="n">extra_message</span><span class="o">=</span><span class="s2">&quot;&quot;</span><span class="p">):</span>
+        <span class="c1"># Load the file into the relevant container</span>
+
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">exists</span><span class="p">(</span><span class="n">filename</span><span class="p">):</span>
+            <span class="k">raise</span> <span class="ne">RuntimeError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;File does not exist: </span><span class="si">{</span><span class="n">filename</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">log</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Loading file </span><span class="si">{</span><span class="n">filename</span><span class="si">}</span><span class="s2"> </span><span class="si">{</span><span class="n">extra_message</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">log</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Reading with selections: </span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">_sel</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+
+        <span class="c1"># If we are applying selections we need to dispatch the `from_file` via the</span>
+        <span class="c1"># correct subclass, rather than relying on the internal detection of the</span>
+        <span class="c1"># subclass. To minimise the number of files being opened this is only done on</span>
+        <span class="c1"># rank=0 and is then broadcast</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_sel</span><span class="p">:</span>
+            <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">comm</span><span class="o">.</span><span class="n">rank</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
+                <span class="k">with</span> <span class="n">fileformats</span><span class="o">.</span><span class="n">guess_file_format</span><span class="p">(</span><span class="n">filename</span><span class="p">)</span><span class="o">.</span><span class="n">open</span><span class="p">(</span><span class="n">filename</span><span class="p">,</span> <span class="s2">&quot;r&quot;</span><span class="p">)</span> <span class="k">as</span> <span class="n">fh</span><span class="p">:</span>
+                    <span class="n">clspath</span> <span class="o">=</span> <span class="n">memh5</span><span class="o">.</span><span class="n">MemDiskGroup</span><span class="o">.</span><span class="n">_detect_subclass_path</span><span class="p">(</span><span class="n">fh</span><span class="p">)</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="n">clspath</span> <span class="o">=</span> <span class="kc">None</span>
+            <span class="n">clspath</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">comm</span><span class="o">.</span><span class="n">bcast</span><span class="p">(</span><span class="n">clspath</span><span class="p">,</span> <span class="n">root</span><span class="o">=</span><span class="mi">0</span><span class="p">)</span>
+            <span class="n">new_cls</span> <span class="o">=</span> <span class="n">memh5</span><span class="o">.</span><span class="n">MemDiskGroup</span><span class="o">.</span><span class="n">_resolve_subclass</span><span class="p">(</span><span class="n">clspath</span><span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">new_cls</span> <span class="o">=</span> <span class="n">memh5</span><span class="o">.</span><span class="n">BasicCont</span>
+
+        <span class="n">cont</span> <span class="o">=</span> <span class="n">new_cls</span><span class="o">.</span><span class="n">from_file</span><span class="p">(</span>
+            <span class="n">filename</span><span class="p">,</span>
+            <span class="n">distributed</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">distributed</span><span class="p">,</span>
+            <span class="n">comm</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">comm</span><span class="p">,</span>
+            <span class="n">convert_attribute_strings</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">convert_strings</span><span class="p">,</span>
+            <span class="n">convert_dataset_strings</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">convert_strings</span><span class="p">,</span>
+            <span class="o">**</span><span class="bp">self</span><span class="o">.</span><span class="n">_sel</span><span class="p">,</span>
+        <span class="p">)</span>
+
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">redistribute</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">cont</span><span class="o">.</span><span class="n">redistribute</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">redistribute</span><span class="p">)</span>
+
+        <span class="k">return</span> <span class="n">cont</span></div>
+
+
+
+<div class="viewcode-block" id="LoadFilesFromParams">
+<a class="viewcode-back" href="../../../_autosummary/draco.core.io.html#draco.core.io.LoadFilesFromParams">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">LoadFilesFromParams</span><span class="p">(</span><span class="n">BaseLoadFiles</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Load data from files given in the tasks parameters.</span>
+
+<span class="sd">    Attributes</span>
+<span class="sd">    ----------</span>
+<span class="sd">    files : glob pattern, or list</span>
+<span class="sd">        Can either be a glob pattern, or lists of actual files.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+
+    <span class="n">files</span> <span class="o">=</span> <span class="n">config</span><span class="o">.</span><span class="n">Property</span><span class="p">(</span><span class="n">proptype</span><span class="o">=</span><span class="n">_list_or_glob</span><span class="p">)</span>
+
+    <span class="n">_file_ind</span> <span class="o">=</span> <span class="mi">0</span>
+
+<div class="viewcode-block" id="LoadFilesFromParams.process">
+<a class="viewcode-back" href="../../../_autosummary/draco.core.io.html#draco.core.io.LoadFilesFromParams.process">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">process</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Load the given files in turn and pass on.</span>
+
+<span class="sd">        Returns</span>
+<span class="sd">        -------</span>
+<span class="sd">        cont : subclass of `memh5.BasicCont`</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="c1"># Garbage collect to workaround leaking memory from containers.</span>
+        <span class="c1"># TODO: find actual source of leak</span>
+        <span class="kn">import</span><span class="w"> </span><span class="nn">gc</span>
+
+        <span class="n">gc</span><span class="o">.</span><span class="n">collect</span><span class="p">()</span>
+
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_file_ind</span> <span class="o">==</span> <span class="nb">len</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">files</span><span class="p">):</span>
+            <span class="k">raise</span> <span class="n">pipeline</span><span class="o">.</span><span class="n">PipelineStopIteration</span>
+
+        <span class="c1"># Fetch and remove the first item in the list</span>
+        <span class="n">file_</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">files</span><span class="p">[</span><span class="bp">self</span><span class="o">.</span><span class="n">_file_ind</span><span class="p">]</span>
+
+        <span class="c1"># Load into a container</span>
+        <span class="n">nfiles_str</span> <span class="o">=</span> <span class="nb">str</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">files</span><span class="p">))</span>
+        <span class="n">message</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">&quot;[</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">_file_ind</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="mi">1</span><span class="si">:</span><span class="s2"> </span><span class="si">{</span><span class="nb">len</span><span class="p">(</span><span class="n">nfiles_str</span><span class="p">)</span><span class="si">}}</span><span class="s2">/</span><span class="si">{</span><span class="n">nfiles_str</span><span class="si">}</span><span class="s2">]&quot;</span>
+        <span class="n">cont</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_load_file</span><span class="p">(</span><span class="n">file_</span><span class="p">,</span> <span class="n">extra_message</span><span class="o">=</span><span class="n">message</span><span class="p">)</span>
+
+        <span class="k">if</span> <span class="s2">&quot;tag&quot;</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">cont</span><span class="o">.</span><span class="n">attrs</span><span class="p">:</span>
+            <span class="c1"># Get the first part of the actual filename and use it as the tag</span>
+            <span class="n">tag</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">splitext</span><span class="p">(</span><span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">basename</span><span class="p">(</span><span class="n">file_</span><span class="p">))[</span><span class="mi">0</span><span class="p">]</span>
+
+            <span class="n">cont</span><span class="o">.</span><span class="n">attrs</span><span class="p">[</span><span class="s2">&quot;tag&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">tag</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">_file_ind</span> <span class="o">+=</span> <span class="mi">1</span>
+
+        <span class="k">return</span> <span class="n">cont</span></div>
+</div>
+
+
+
+<span class="c1"># Define alias for old code</span>
+<span class="n">LoadBasicCont</span> <span class="o">=</span> <span class="n">LoadFilesFromParams</span>
+
+
+<div class="viewcode-block" id="LoadFilesFromAttrs">
+<a class="viewcode-back" href="../../../_autosummary/draco.core.io.html#draco.core.io.LoadFilesFromAttrs">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">LoadFilesFromAttrs</span><span class="p">(</span><span class="n">BaseLoadFiles</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Load files from paths constructed using the attributes of another container.</span>
+
+<span class="sd">    This class enables the dynamic generation of file paths by formatting a specified</span>
+<span class="sd">    filename template with attributes from an input container.  It inherits from</span>
+<span class="sd">    `BaseLoadFiles` and provides functionality to load files into a container.</span>
+
+<span class="sd">    Attributes</span>
+<span class="sd">    ----------</span>
+<span class="sd">    filename : str</span>
+<span class="sd">        Template for the file path, which can include placeholders referencing attributes</span>
+<span class="sd">        in the input container.  For example: `rfi_mask_lsd_{lsd}.h5`.  The placeholders</span>
+<span class="sd">        will be replaced with corresponding attribute values from the input container.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+
+    <span class="n">filename</span> <span class="o">=</span> <span class="n">config</span><span class="o">.</span><span class="n">Property</span><span class="p">(</span><span class="n">proptype</span><span class="o">=</span><span class="nb">str</span><span class="p">)</span>
+
+<div class="viewcode-block" id="LoadFilesFromAttrs.process">
+<a class="viewcode-back" href="../../../_autosummary/draco.core.io.html#draco.core.io.LoadFilesFromAttrs.process">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">process</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">incont</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Load a file based on attributes from the input container.</span>
+
+<span class="sd">        Parameters</span>
+<span class="sd">        ----------</span>
+<span class="sd">        incont : subclass of `memh5.BasicCont`</span>
+<span class="sd">            Input container whose attributes are used to construct the file path.</span>
+
+<span class="sd">        Returns</span>
+<span class="sd">        -------</span>
+<span class="sd">        outcont : subclass of `memh5.BasicCont`</span>
+<span class="sd">            A container populated with data from the loaded file.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="c1"># Construct the filename from the attributes in the input container</span>
+        <span class="n">attrs</span> <span class="o">=</span> <span class="nb">dict</span><span class="p">(</span><span class="n">incont</span><span class="o">.</span><span class="n">attrs</span><span class="p">)</span>
+        <span class="n">filename</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">filename</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="o">**</span><span class="n">attrs</span><span class="p">)</span>
+
+        <span class="c1"># Use the base class method to load the file</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_load_file</span><span class="p">(</span><span class="n">filename</span><span class="p">)</span></div>
+</div>
+
+
+
+<div class="viewcode-block" id="LoadFilesAndSelect">
+<a class="viewcode-back" href="../../../_autosummary/draco.core.io.html#draco.core.io.LoadFilesAndSelect">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">LoadFilesAndSelect</span><span class="p">(</span><span class="n">BaseLoadFiles</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Load a collection of files on setup and select specific entries on process.</span>
+
+<span class="sd">    Attributes</span>
+<span class="sd">    ----------</span>
+<span class="sd">    files : list of str or str</span>
+<span class="sd">        A list of file paths or a glob pattern specifying the files to load.</span>
+<span class="sd">    key_format : str, optional</span>
+<span class="sd">        A format string used to generate keys for file selection.  Can reference</span>
+<span class="sd">        any variables contained in the attributes of the containers.  If `None`,</span>
+<span class="sd">        files are stored with numerical indices.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+
+    <span class="n">files</span> <span class="o">=</span> <span class="n">config</span><span class="o">.</span><span class="n">Property</span><span class="p">(</span><span class="n">proptype</span><span class="o">=</span><span class="n">_list_or_glob</span><span class="p">)</span>
+    <span class="n">key_format</span> <span class="o">=</span> <span class="n">config</span><span class="o">.</span><span class="n">Property</span><span class="p">(</span><span class="n">proptype</span><span class="o">=</span><span class="nb">str</span><span class="p">)</span>
+
+<div class="viewcode-block" id="LoadFilesAndSelect.setup">
+<a class="viewcode-back" href="../../../_autosummary/draco.core.io.html#draco.core.io.LoadFilesAndSelect.setup">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">setup</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Load and store files in a dictionary.</span>
+
+<span class="sd">        This method iterates through the list of files, loads their contents,</span>
+<span class="sd">        and stores them in the `self.collection` dictionary. If `key_format`</span>
+<span class="sd">        is provided, it is used to generate a key based on the file attributes.</span>
+<span class="sd">        Otherwise, the index of the file in the list is used as the key.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="c1"># Call the baseclass setup to resolve any selections</span>
+        <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="n">setup</span><span class="p">()</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">collection</span> <span class="o">=</span> <span class="p">{}</span>
+        <span class="k">for</span> <span class="n">ff</span><span class="p">,</span> <span class="n">filename</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">files</span><span class="p">):</span>
+            <span class="n">cont</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_load_file</span><span class="p">(</span><span class="n">filename</span><span class="p">)</span>
+
+            <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">key_format</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">collection</span><span class="p">[</span><span class="n">ff</span><span class="p">]</span> <span class="o">=</span> <span class="n">cont</span>
+
+            <span class="k">else</span><span class="p">:</span>
+                <span class="n">attrs</span> <span class="o">=</span> <span class="nb">dict</span><span class="p">(</span><span class="n">cont</span><span class="o">.</span><span class="n">attrs</span><span class="p">)</span>
+                <span class="n">key</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">key_format</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="o">**</span><span class="n">attrs</span><span class="p">)</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">collection</span><span class="p">[</span><span class="n">key</span><span class="p">]</span> <span class="o">=</span> <span class="n">cont</span></div>
+
+
+<div class="viewcode-block" id="LoadFilesAndSelect.process">
+<a class="viewcode-back" href="../../../_autosummary/draco.core.io.html#draco.core.io.LoadFilesAndSelect.process">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">process</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">incont</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Select and return a file from the collection based on the input container.</span>
+
+<span class="sd">        If `key_format` is provided, the selection key is derived from the attributes</span>
+<span class="sd">        of the input container.  If the resulting key is not found in the collection,</span>
+<span class="sd">        a warning is logged, and `None` is returned.</span>
+
+<span class="sd">        If `key_format` is not provided, files are selected sequentially from</span>
+<span class="sd">        the collection, cycling back to the beginning if more input containers</span>
+<span class="sd">        are received than the number of available files.</span>
+
+<span class="sd">        Parameters</span>
+<span class="sd">        ----------</span>
+<span class="sd">        incont : memh5.BasicCont subclass</span>
+<span class="sd">            Container whose attributes are used to determine the selection key.</span>
+
+<span class="sd">        Returns</span>
+<span class="sd">        -------</span>
+<span class="sd">        outcont : memh5.BasicCont subclass or None</span>
+<span class="sd">            The selected file if found, otherwise `None`.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">key_format</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">key</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_count</span> <span class="o">%</span> <span class="nb">len</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">collection</span><span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">log</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Selecting file in position </span><span class="si">{</span><span class="n">key</span><span class="si">}</span><span class="s2">.&quot;</span><span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">attrs</span> <span class="o">=</span> <span class="nb">dict</span><span class="p">(</span><span class="n">incont</span><span class="o">.</span><span class="n">attrs</span><span class="p">)</span>
+            <span class="n">key</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">key_format</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="o">**</span><span class="n">attrs</span><span class="p">)</span>
+
+            <span class="k">if</span> <span class="n">key</span> <span class="ow">not</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">collection</span><span class="p">:</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">log</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Could not find file with label </span><span class="si">{</span><span class="n">key</span><span class="si">}</span><span class="s2">.&quot;</span><span class="p">)</span>
+                <span class="k">return</span> <span class="kc">None</span>
+
+            <span class="bp">self</span><span class="o">.</span><span class="n">log</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Selecting file with label </span><span class="si">{</span><span class="n">key</span><span class="si">}</span><span class="s2">.&quot;</span><span class="p">)</span>
+
+        <span class="c1"># Return the file with the desired key</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">collection</span><span class="p">[</span><span class="n">key</span><span class="p">]</span></div>
+</div>
+
+
+
+<div class="viewcode-block" id="LoadFilesFromPathAndTag">
+<a class="viewcode-back" href="../../../_autosummary/draco.core.io.html#draco.core.io.LoadFilesFromPathAndTag">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">LoadFilesFromPathAndTag</span><span class="p">(</span><span class="n">LoadFilesFromParams</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Load files using all combinations of given paths and tags.</span>
+
+<span class="sd">    `paths` should be provided with `{tag}` as a stand-in for places</span>
+<span class="sd">    the tag is inserted. Specifically, tags are insterted by calling</span>
+<span class="sd">    `path.format{tag=tag}`</span>
+
+<span class="sd">    This is intended to replicate specific patterns which arent available</span>
+<span class="sd">    with `glob`, such as `/path/to/files/*[tag1, tag2]/*.h5`.</span>
+
+<span class="sd">    Attributes</span>
+<span class="sd">    ----------</span>
+<span class="sd">    paths : list[str]</span>
+<span class="sd">        List of files paths, with `{tag}` as a stand-in where tags</span>
+<span class="sd">        should be inserted.</span>
+<span class="sd">    tags: list[str]</span>
+<span class="sd">        List of tags</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+
+    <span class="n">paths</span> <span class="o">=</span> <span class="n">config</span><span class="o">.</span><span class="n">Property</span><span class="p">(</span><span class="n">proptype</span><span class="o">=</span><span class="nb">list</span><span class="p">)</span>
+    <span class="n">tags</span> <span class="o">=</span> <span class="n">config</span><span class="o">.</span><span class="n">Property</span><span class="p">(</span><span class="n">proptype</span><span class="o">=</span><span class="nb">list</span><span class="p">)</span>
+
+    <span class="n">files</span> <span class="o">=</span> <span class="kc">None</span>
+
+<div class="viewcode-block" id="LoadFilesFromPathAndTag.setup">
+<a class="viewcode-back" href="../../../_autosummary/draco.core.io.html#draco.core.io.LoadFilesFromPathAndTag.setup">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">setup</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Construct the list of files.&quot;&quot;&quot;</span>
+        <span class="c1"># Call baseclass setup to resolve selections</span>
+        <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="n">setup</span><span class="p">()</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">files</span> <span class="o">=</span> <span class="p">[]</span>
+
+        <span class="k">for</span> <span class="n">path</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">paths</span><span class="p">:</span>
+            <span class="k">for</span> <span class="n">tag</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">tags</span><span class="p">:</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">files</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">path</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">tag</span><span class="o">=</span><span class="n">tag</span><span class="p">))</span></div>
+</div>
+
+
+
+<div class="viewcode-block" id="FindFiles">
+<a class="viewcode-back" href="../../../_autosummary/draco.core.io.html#draco.core.io.FindFiles">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">FindFiles</span><span class="p">(</span><span class="n">pipeline</span><span class="o">.</span><span class="n">TaskBase</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Take a glob or list of files and pass on to other tasks.</span>
+
+<span class="sd">    Files are specified as a parameter in the configuration file.</span>
+
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    files : list or glob</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+
+    <span class="n">files</span> <span class="o">=</span> <span class="n">config</span><span class="o">.</span><span class="n">Property</span><span class="p">(</span><span class="n">proptype</span><span class="o">=</span><span class="n">_list_or_glob</span><span class="p">)</span>
+
+<div class="viewcode-block" id="FindFiles.setup">
+<a class="viewcode-back" href="../../../_autosummary/draco.core.io.html#draco.core.io.FindFiles.setup">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">setup</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Return list of files specified in the parameters.&quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">files</span><span class="p">,</span> <span class="nb">list</span> <span class="o">|</span> <span class="nb">tuple</span><span class="p">):</span>
+            <span class="k">raise</span> <span class="ne">RuntimeError</span><span class="p">(</span><span class="s2">&quot;Argument must be list of files.&quot;</span><span class="p">)</span>
+
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">files</span></div>
+</div>
+
+
+
+<div class="viewcode-block" id="LoadFiles">
+<a class="viewcode-back" href="../../../_autosummary/draco.core.io.html#draco.core.io.LoadFiles">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">LoadFiles</span><span class="p">(</span><span class="n">LoadFilesFromParams</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Load data from files passed into the setup routine.</span>
+
+<span class="sd">    File must be a serialised subclass of :class:`memh5.BasicCont`.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+
+    <span class="n">files</span> <span class="o">=</span> <span class="kc">None</span>
+
+<div class="viewcode-block" id="LoadFiles.setup">
+<a class="viewcode-back" href="../../../_autosummary/draco.core.io.html#draco.core.io.LoadFiles.setup">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">setup</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">files</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Set the list of files to load.</span>
+
+<span class="sd">        Parameters</span>
+<span class="sd">        ----------</span>
+<span class="sd">        files : list</span>
+<span class="sd">            Files to load</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="c1"># Call the baseclass setup to resolve any selections</span>
+        <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="n">setup</span><span class="p">()</span>
+
+        <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">files</span><span class="p">,</span> <span class="nb">list</span> <span class="o">|</span> <span class="nb">tuple</span><span class="p">):</span>
+            <span class="k">raise</span> <span class="ne">RuntimeError</span><span class="p">(</span><span class="sa">f</span><span class="s1">&#39;Argument must be list of files. Got &quot;</span><span class="si">{</span><span class="n">files</span><span class="si">}</span><span class="s1">&quot;&#39;</span><span class="p">)</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">files</span> <span class="o">=</span> <span class="n">files</span></div>
+</div>
+
+
+
+<div class="viewcode-block" id="Save">
+<a class="viewcode-back" href="../../../_autosummary/draco.core.io.html#draco.core.io.Save">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">Save</span><span class="p">(</span><span class="n">pipeline</span><span class="o">.</span><span class="n">TaskBase</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Save out the input, and pass it on.</span>
+
+<span class="sd">    Assumes that the input has a `to_hdf5` method. Appends a *tag* if there is</span>
+<span class="sd">    a `tag` entry in the attributes, otherwise just uses a count.</span>
+
+<span class="sd">    Attributes</span>
+<span class="sd">    ----------</span>
+<span class="sd">    root : str</span>
+<span class="sd">        Root of the file name to output to.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+
+    <span class="n">root</span> <span class="o">=</span> <span class="n">config</span><span class="o">.</span><span class="n">Property</span><span class="p">(</span><span class="n">proptype</span><span class="o">=</span><span class="nb">str</span><span class="p">)</span>
+
+    <span class="n">count</span> <span class="o">=</span> <span class="mi">0</span>
+
+<div class="viewcode-block" id="Save.next">
+<a class="viewcode-back" href="../../../_autosummary/draco.core.io.html#draco.core.io.Save.next">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">next</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">data</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Write out the data file.</span>
+
+<span class="sd">        Assumes it has an MPIDataset interface.</span>
+
+<span class="sd">        Parameters</span>
+<span class="sd">        ----------</span>
+<span class="sd">        data : mpidataset.MPIDataset</span>
+<span class="sd">            Data to write out.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="s2">&quot;tag&quot;</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">data</span><span class="o">.</span><span class="n">attrs</span><span class="p">:</span>
+            <span class="n">tag</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">count</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">count</span> <span class="o">+=</span> <span class="mi">1</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">tag</span> <span class="o">=</span> <span class="n">data</span><span class="o">.</span><span class="n">attrs</span><span class="p">[</span><span class="s2">&quot;tag&quot;</span><span class="p">]</span>
+
+        <span class="n">fname</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">root</span><span class="si">}</span><span class="s2">_</span><span class="si">{</span><span class="n">tag</span><span class="si">!s}</span><span class="s2">.h5&quot;</span>
+
+        <span class="n">data</span><span class="o">.</span><span class="n">to_hdf5</span><span class="p">(</span><span class="n">fname</span><span class="p">)</span>
+
+        <span class="k">return</span> <span class="n">data</span></div>
+</div>
+
+
+
+<div class="viewcode-block" id="Print">
+<a class="viewcode-back" href="../../../_autosummary/draco.core.io.html#draco.core.io.Print">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">Print</span><span class="p">(</span><span class="n">pipeline</span><span class="o">.</span><span class="n">TaskBase</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Stupid module which just prints whatever it gets. Good for debugging.&quot;&quot;&quot;</span>
+
+<div class="viewcode-block" id="Print.next">
+<a class="viewcode-back" href="../../../_autosummary/draco.core.io.html#draco.core.io.Print.next">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">next</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">input_</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Print the input.&quot;&quot;&quot;</span>
+        <span class="nb">print</span><span class="p">(</span><span class="n">input_</span><span class="p">)</span>
+
+        <span class="k">return</span> <span class="n">input_</span></div>
+</div>
+
+
+
+<div class="viewcode-block" id="LoadBeamTransfer">
+<a class="viewcode-back" href="../../../_autosummary/draco.core.io.html#draco.core.io.LoadBeamTransfer">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">LoadBeamTransfer</span><span class="p">(</span><span class="n">pipeline</span><span class="o">.</span><span class="n">TaskBase</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Loads a beam transfer manager from disk.</span>
+
+<span class="sd">    Attributes</span>
+<span class="sd">    ----------</span>
+<span class="sd">    product_directory : str</span>
+<span class="sd">        Path to the saved Beam Transfer products.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+
+    <span class="n">product_directory</span> <span class="o">=</span> <span class="n">config</span><span class="o">.</span><span class="n">Property</span><span class="p">(</span><span class="n">proptype</span><span class="o">=</span><span class="nb">str</span><span class="p">)</span>
+
+<div class="viewcode-block" id="LoadBeamTransfer.setup">
+<a class="viewcode-back" href="../../../_autosummary/draco.core.io.html#draco.core.io.LoadBeamTransfer.setup">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">setup</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Load the beam transfer matrices.</span>
+
+<span class="sd">        Returns</span>
+<span class="sd">        -------</span>
+<span class="sd">        tel : TransitTelescope</span>
+<span class="sd">            Object describing the telescope.</span>
+<span class="sd">        bt : BeamTransfer</span>
+<span class="sd">            BeamTransfer manager.</span>
+<span class="sd">        feed_info : list, optional</span>
+<span class="sd">            Optional list providing additional information about each feed.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="kn">import</span><span class="w"> </span><span class="nn">os</span>
+
+        <span class="kn">from</span><span class="w"> </span><span class="nn">drift.core</span><span class="w"> </span><span class="kn">import</span> <span class="n">beamtransfer</span>
+
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">exists</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">product_directory</span><span class="p">):</span>
+            <span class="k">raise</span> <span class="ne">RuntimeError</span><span class="p">(</span><span class="s2">&quot;BeamTransfers do not exist.&quot;</span><span class="p">)</span>
+
+        <span class="n">bt</span> <span class="o">=</span> <span class="n">beamtransfer</span><span class="o">.</span><span class="n">BeamTransfer</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">product_directory</span><span class="p">)</span>
+
+        <span class="n">tel</span> <span class="o">=</span> <span class="n">bt</span><span class="o">.</span><span class="n">telescope</span>
+
+        <span class="k">try</span><span class="p">:</span>
+            <span class="k">return</span> <span class="n">tel</span><span class="p">,</span> <span class="n">bt</span><span class="p">,</span> <span class="n">tel</span><span class="o">.</span><span class="n">feeds</span>
+        <span class="k">except</span> <span class="ne">AttributeError</span><span class="p">:</span>
+            <span class="k">return</span> <span class="n">tel</span><span class="p">,</span> <span class="n">bt</span></div>
+</div>
+
+
+
+<div class="viewcode-block" id="LoadProductManager">
+<a class="viewcode-back" href="../../../_autosummary/draco.core.io.html#draco.core.io.LoadProductManager">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">LoadProductManager</span><span class="p">(</span><span class="n">pipeline</span><span class="o">.</span><span class="n">TaskBase</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Loads a driftscan product manager from disk.</span>
+
+<span class="sd">    Attributes</span>
+<span class="sd">    ----------</span>
+<span class="sd">    product_directory : str</span>
+<span class="sd">        Path to the root of the products. This is the same as the output</span>
+<span class="sd">        directory used by ``drift-makeproducts``.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+
+    <span class="n">product_directory</span> <span class="o">=</span> <span class="n">config</span><span class="o">.</span><span class="n">Property</span><span class="p">(</span><span class="n">proptype</span><span class="o">=</span><span class="nb">str</span><span class="p">)</span>
+
+<div class="viewcode-block" id="LoadProductManager.setup">
+<a class="viewcode-back" href="../../../_autosummary/draco.core.io.html#draco.core.io.LoadProductManager.setup">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">setup</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Load the beam transfer matrices.</span>
+
+<span class="sd">        Returns</span>
+<span class="sd">        -------</span>
+<span class="sd">        manager : ProductManager</span>
+<span class="sd">            Object describing the telescope.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="kn">import</span><span class="w"> </span><span class="nn">os</span>
+
+        <span class="kn">from</span><span class="w"> </span><span class="nn">drift.core</span><span class="w"> </span><span class="kn">import</span> <span class="n">manager</span>
+
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">exists</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">product_directory</span><span class="p">):</span>
+            <span class="k">raise</span> <span class="ne">RuntimeError</span><span class="p">(</span><span class="s2">&quot;Products do not exist.&quot;</span><span class="p">)</span>
+
+        <span class="c1"># Load ProductManager and Timestream</span>
+        <span class="k">return</span> <span class="n">manager</span><span class="o">.</span><span class="n">ProductManager</span><span class="o">.</span><span class="n">from_config</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">product_directory</span><span class="p">)</span></div>
+</div>
+
+
+
+<div class="viewcode-block" id="Truncate">
+<a class="viewcode-back" href="../../../_autosummary/draco.core.io.html#draco.core.io.Truncate">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">Truncate</span><span class="p">(</span><span class="n">task</span><span class="o">.</span><span class="n">SingleTask</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Precision truncate data prior to saving with bitshuffle compression.</span>
+
+<span class="sd">    If no configuration is provided, will look for preset values for the</span>
+<span class="sd">    input container. Any properties defined in the config will override the</span>
+<span class="sd">    presets.</span>
+
+<span class="sd">    If available, each specified dataset will be truncated relative to a</span>
+<span class="sd">    (specified) weight dataset with the truncation increasing the variance up</span>
+<span class="sd">    to the specified maximum in `variance_increase`. If there is no specified</span>
+<span class="sd">    weight dataset then the truncation falls back to using the</span>
+<span class="sd">    `fixed_precision`.</span>
+
+<span class="sd">    Attributes</span>
+<span class="sd">    ----------</span>
+<span class="sd">    dataset : dict</span>
+<span class="sd">        Datasets to be truncated as keys. Possible values are:</span>
+<span class="sd">        - bool : Whether or not to truncate, using default fixed precision.</span>
+<span class="sd">        - float : Truncate to this relative precision.</span>
+<span class="sd">        - dict : Specify values for `weight_dataset`, `fixed_precision`, `variance_increase`.</span>
+<span class="sd">    ensure_chunked : bool</span>
+<span class="sd">        If True, ensure datasets are chunked according to their dataset_spec.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+
+    <span class="n">dataset</span> <span class="o">=</span> <span class="n">config</span><span class="o">.</span><span class="n">Property</span><span class="p">(</span><span class="n">proptype</span><span class="o">=</span><span class="nb">dict</span><span class="p">,</span> <span class="n">default</span><span class="o">=</span><span class="kc">None</span><span class="p">)</span>
+    <span class="n">ensure_chunked</span> <span class="o">=</span> <span class="n">config</span><span class="o">.</span><span class="n">Property</span><span class="p">(</span><span class="n">proptype</span><span class="o">=</span><span class="nb">bool</span><span class="p">,</span> <span class="n">default</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+
+    <span class="n">default_params</span><span class="p">:</span> <span class="n">ClassVar</span> <span class="o">=</span> <span class="p">{</span>
+        <span class="s2">&quot;weight_dataset&quot;</span><span class="p">:</span> <span class="kc">None</span><span class="p">,</span>
+        <span class="s2">&quot;fixed_precision&quot;</span><span class="p">:</span> <span class="mf">1e-4</span><span class="p">,</span>
+        <span class="s2">&quot;variance_increase&quot;</span><span class="p">:</span> <span class="mf">1e-3</span><span class="p">,</span>
+    <span class="p">}</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">_get_params</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">container</span><span class="p">,</span> <span class="n">dset</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Load truncation parameters for a dataset from config or container defaults.</span>
+
+<span class="sd">        Parameters</span>
+<span class="sd">        ----------</span>
+<span class="sd">        container</span>
+<span class="sd">            Container class.</span>
+<span class="sd">        dset : str</span>
+<span class="sd">            Dataset name</span>
+
+<span class="sd">        Returns</span>
+<span class="sd">        -------</span>
+<span class="sd">        Dict or None</span>
+<span class="sd">            Returns `None` if the dataset shouldn&#39;t get truncated.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="c1"># Check if dataset should get truncated at all</span>
+        <span class="k">if</span> <span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">dataset</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">)</span> <span class="ow">or</span> <span class="p">(</span><span class="n">dset</span> <span class="ow">not</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">dataset</span><span class="p">):</span>
+            <span class="n">cdspec</span> <span class="o">=</span> <span class="n">container</span><span class="o">.</span><span class="n">_class_dataset_spec</span><span class="p">()</span>
+            <span class="k">if</span> <span class="n">dset</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">cdspec</span> <span class="ow">or</span> <span class="ow">not</span> <span class="n">cdspec</span><span class="p">[</span><span class="n">dset</span><span class="p">]</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;truncate&quot;</span><span class="p">,</span> <span class="kc">False</span><span class="p">):</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">log</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Not truncating dataset &#39;</span><span class="si">{</span><span class="n">dset</span><span class="si">}</span><span class="s2">&#39; in </span><span class="si">{</span><span class="n">container</span><span class="si">}</span><span class="s2">.&quot;</span><span class="p">)</span>
+                <span class="k">return</span> <span class="kc">None</span>
+            <span class="c1"># Use the dataset spec if nothing specified in config</span>
+            <span class="n">given_params</span> <span class="o">=</span> <span class="n">cdspec</span><span class="p">[</span><span class="n">dset</span><span class="p">]</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;truncate&quot;</span><span class="p">,</span> <span class="kc">False</span><span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">given_params</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">dataset</span><span class="p">[</span><span class="n">dset</span><span class="p">]</span>
+
+        <span class="c1"># Parse config parameters</span>
+        <span class="n">params</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">default_params</span><span class="o">.</span><span class="n">copy</span><span class="p">()</span>
+        <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">given_params</span><span class="p">,</span> <span class="nb">dict</span><span class="p">):</span>
+            <span class="n">params</span><span class="o">.</span><span class="n">update</span><span class="p">(</span><span class="n">given_params</span><span class="p">)</span>
+        <span class="k">elif</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">given_params</span><span class="p">,</span> <span class="nb">float</span><span class="p">):</span>
+            <span class="n">params</span><span class="p">[</span><span class="s2">&quot;fixed_precision&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">given_params</span>
+        <span class="k">elif</span> <span class="ow">not</span> <span class="n">given_params</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">log</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Not truncating dataset &#39;</span><span class="si">{</span><span class="n">dset</span><span class="si">}</span><span class="s2">&#39; in </span><span class="si">{</span><span class="n">container</span><span class="si">}</span><span class="s2">.&quot;</span><span class="p">)</span>
+            <span class="k">return</span> <span class="kc">None</span>
+
+        <span class="c1"># Factor of 3 for variance over uniform distribution of truncation errors</span>
+        <span class="k">if</span> <span class="n">params</span><span class="p">[</span><span class="s2">&quot;variance_increase&quot;</span><span class="p">]</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">params</span><span class="p">[</span><span class="s2">&quot;variance_increase&quot;</span><span class="p">]</span> <span class="o">*=</span> <span class="mi">3</span>
+
+        <span class="k">return</span> <span class="n">params</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">_get_weights</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">container</span><span class="p">,</span> <span class="n">dset</span><span class="p">,</span> <span class="n">wdset</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Extract the weight dataset and broadcast agaonst the truncation dataset.</span>
+
+<span class="sd">        Parameters</span>
+<span class="sd">        ----------</span>
+<span class="sd">        container</span>
+<span class="sd">            Container class.</span>
+<span class="sd">        dset : str</span>
+<span class="sd">            Dataset name</span>
+<span class="sd">        wdset : str</span>
+<span class="sd">            Weight dataset name</span>
+
+<span class="sd">        Returns</span>
+<span class="sd">        -------</span>
+<span class="sd">        weight : np.ndarray</span>
+<span class="sd">            Array of weights to use in truncation. If `dset` is complex,</span>
+<span class="sd">            this is scaled by a factor of 2.</span>
+
+<span class="sd">        Raises</span>
+<span class="sd">        ------</span>
+<span class="sd">        KeyError</span>
+<span class="sd">            Raised if either `dset` or `wdset` does not exist.</span>
+<span class="sd">        ValueError</span>
+<span class="sd">            Raised if the weight dataset cannot be broadcast to</span>
+<span class="sd">            the shape of the dataset to be truncated.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="c1"># Try to get weights from an attribute first</span>
+        <span class="k">if</span> <span class="nb">hasattr</span><span class="p">(</span><span class="n">container</span><span class="p">,</span> <span class="n">wdset</span><span class="p">):</span>
+            <span class="n">weight</span> <span class="o">=</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">container</span><span class="p">,</span> <span class="n">wdset</span><span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">weight</span> <span class="o">=</span> <span class="n">container</span><span class="p">[</span><span class="n">wdset</span><span class="p">]</span>
+
+        <span class="n">data</span> <span class="o">=</span> <span class="n">container</span><span class="p">[</span><span class="n">dset</span><span class="p">]</span>
+
+        <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">weight</span><span class="p">,</span> <span class="n">memh5</span><span class="o">.</span><span class="n">MemDataset</span><span class="p">):</span>
+            <span class="c1"># Add missing broadcast axes to the weights dataset</span>
+            <span class="n">waxes</span> <span class="o">=</span> <span class="n">weight</span><span class="o">.</span><span class="n">attrs</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;axis&quot;</span><span class="p">,</span> <span class="p">[])</span>
+            <span class="n">daxes</span> <span class="o">=</span> <span class="n">data</span><span class="o">.</span><span class="n">attrs</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;axis&quot;</span><span class="p">,</span> <span class="p">[])</span>
+            <span class="c1"># Add length-one axes</span>
+            <span class="n">slobj</span> <span class="o">=</span> <span class="nb">tuple</span><span class="p">(</span><span class="nb">slice</span><span class="p">(</span><span class="kc">None</span><span class="p">)</span> <span class="k">if</span> <span class="n">ax</span> <span class="ow">in</span> <span class="n">waxes</span> <span class="k">else</span> <span class="n">np</span><span class="o">.</span><span class="n">newaxis</span> <span class="k">for</span> <span class="n">ax</span> <span class="ow">in</span> <span class="n">daxes</span><span class="p">)</span>
+            <span class="n">weight</span> <span class="o">=</span> <span class="n">weight</span><span class="p">[:][</span><span class="n">slobj</span><span class="p">]</span>
+
+        <span class="c1"># Broadcast `weight` against the shape of the truncation array</span>
+        <span class="n">weight</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">broadcast_to</span><span class="p">(</span><span class="n">weight</span><span class="p">,</span> <span class="n">data</span><span class="p">[:]</span><span class="o">.</span><span class="n">shape</span><span class="p">)</span><span class="o">.</span><span class="n">copy</span><span class="p">()</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">)</span>
+
+        <span class="k">if</span> <span class="n">np</span><span class="o">.</span><span class="n">iscomplexobj</span><span class="p">(</span><span class="n">data</span><span class="p">):</span>
+            <span class="n">weight</span> <span class="o">*=</span> <span class="mf">2.0</span>
+
+        <span class="k">return</span> <span class="n">weight</span>
+
+<div class="viewcode-block" id="Truncate.process">
+<a class="viewcode-back" href="../../../_autosummary/draco.core.io.html#draco.core.io.Truncate.process">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">process</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">data</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Truncate the incoming data.</span>
+
+<span class="sd">        The truncation is done *in place*.</span>
+
+<span class="sd">        Parameters</span>
+<span class="sd">        ----------</span>
+<span class="sd">        data : containers.ContainerBase</span>
+<span class="sd">            Data to truncate.</span>
+
+<span class="sd">        Returns</span>
+<span class="sd">        -------</span>
+<span class="sd">        truncated_data : containers.ContainerBase</span>
+<span class="sd">            Truncated data.</span>
+
+<span class="sd">        Raises</span>
+<span class="sd">        ------</span>
+<span class="sd">        `config.CaputConfigError`</span>
+<span class="sd">             If the input data container has no preset values and `fixed_precision` or</span>
+<span class="sd">             `variance_increase` are not set in the config.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">ensure_chunked</span><span class="p">:</span>
+            <span class="n">data</span><span class="o">.</span><span class="n">_ensure_chunked</span><span class="p">()</span>
+
+        <span class="k">for</span> <span class="n">dset</span> <span class="ow">in</span> <span class="n">data</span><span class="o">.</span><span class="n">dataset_spec</span><span class="p">:</span>
+            <span class="c1"># get truncation parameters from config or container defaults</span>
+            <span class="n">specs</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_get_params</span><span class="p">(</span><span class="nb">type</span><span class="p">(</span><span class="n">data</span><span class="p">),</span> <span class="n">dset</span><span class="p">)</span>
+
+            <span class="k">if</span> <span class="p">(</span><span class="n">specs</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">)</span> <span class="ow">or</span> <span class="p">(</span><span class="n">dset</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">data</span><span class="p">):</span>
+                <span class="c1"># Don&#39;t truncate this dataset</span>
+                <span class="k">continue</span>
+
+            <span class="bp">self</span><span class="o">.</span><span class="n">log</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Truncating </span><span class="si">{</span><span class="n">dset</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+
+            <span class="n">old_shape</span> <span class="o">=</span> <span class="n">data</span><span class="p">[</span><span class="n">dset</span><span class="p">][:]</span><span class="o">.</span><span class="n">shape</span>
+            <span class="c1"># np.ndarray.reshape must be used with ndarrays</span>
+            <span class="c1"># MPIArrays use MPIArray.reshape()</span>
+            <span class="n">val</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="n">data</span><span class="p">[</span><span class="n">dset</span><span class="p">][:]</span><span class="o">.</span><span class="n">view</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">),</span> <span class="n">data</span><span class="p">[</span><span class="n">dset</span><span class="p">][:]</span><span class="o">.</span><span class="n">size</span><span class="p">)</span>
+
+            <span class="k">if</span> <span class="n">specs</span><span class="p">[</span><span class="s2">&quot;weight_dataset&quot;</span><span class="p">]</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+                <span class="k">if</span> <span class="n">np</span><span class="o">.</span><span class="n">iscomplexobj</span><span class="p">(</span><span class="n">data</span><span class="p">[</span><span class="n">dset</span><span class="p">]):</span>
+                    <span class="n">data</span><span class="p">[</span><span class="n">dset</span><span class="p">][:]</span><span class="o">.</span><span class="n">real</span> <span class="o">=</span> <span class="n">truncate</span><span class="o">.</span><span class="n">bit_truncate_relative</span><span class="p">(</span>
+                        <span class="n">val</span><span class="o">.</span><span class="n">real</span><span class="p">,</span> <span class="n">specs</span><span class="p">[</span><span class="s2">&quot;fixed_precision&quot;</span><span class="p">]</span>
+                    <span class="p">)</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="n">old_shape</span><span class="p">)</span>
+                    <span class="n">data</span><span class="p">[</span><span class="n">dset</span><span class="p">][:]</span><span class="o">.</span><span class="n">imag</span> <span class="o">=</span> <span class="n">truncate</span><span class="o">.</span><span class="n">bit_truncate_relative</span><span class="p">(</span>
+                        <span class="n">val</span><span class="o">.</span><span class="n">imag</span><span class="p">,</span> <span class="n">specs</span><span class="p">[</span><span class="s2">&quot;fixed_precision&quot;</span><span class="p">]</span>
+                    <span class="p">)</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="n">old_shape</span><span class="p">)</span>
+                <span class="k">else</span><span class="p">:</span>
+                    <span class="n">data</span><span class="p">[</span><span class="n">dset</span><span class="p">][:]</span> <span class="o">=</span> <span class="n">truncate</span><span class="o">.</span><span class="n">bit_truncate_relative</span><span class="p">(</span>
+                        <span class="n">val</span><span class="p">,</span> <span class="n">specs</span><span class="p">[</span><span class="s2">&quot;fixed_precision&quot;</span><span class="p">]</span>
+                    <span class="p">)</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="n">old_shape</span><span class="p">)</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="n">wdset</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_get_weights</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">dset</span><span class="p">,</span> <span class="n">specs</span><span class="p">[</span><span class="s2">&quot;weight_dataset&quot;</span><span class="p">])</span>
+                <span class="n">wdset</span> <span class="o">/=</span> <span class="n">specs</span><span class="p">[</span><span class="s2">&quot;variance_increase&quot;</span><span class="p">]</span>
+
+                <span class="k">if</span> <span class="n">np</span><span class="o">.</span><span class="n">iscomplexobj</span><span class="p">(</span><span class="n">data</span><span class="p">[</span><span class="n">dset</span><span class="p">]):</span>
+                    <span class="n">data</span><span class="p">[</span><span class="n">dset</span><span class="p">][:]</span><span class="o">.</span><span class="n">real</span> <span class="o">=</span> <span class="n">truncate</span><span class="o">.</span><span class="n">bit_truncate_weights</span><span class="p">(</span>
+                        <span class="n">val</span><span class="o">.</span><span class="n">real</span><span class="p">,</span>
+                        <span class="n">wdset</span><span class="p">,</span>
+                        <span class="n">specs</span><span class="p">[</span><span class="s2">&quot;fixed_precision&quot;</span><span class="p">],</span>
+                    <span class="p">)</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="n">old_shape</span><span class="p">)</span>
+                    <span class="n">data</span><span class="p">[</span><span class="n">dset</span><span class="p">][:]</span><span class="o">.</span><span class="n">imag</span> <span class="o">=</span> <span class="n">truncate</span><span class="o">.</span><span class="n">bit_truncate_weights</span><span class="p">(</span>
+                        <span class="n">val</span><span class="o">.</span><span class="n">imag</span><span class="p">,</span>
+                        <span class="n">wdset</span><span class="p">,</span>
+                        <span class="n">specs</span><span class="p">[</span><span class="s2">&quot;fixed_precision&quot;</span><span class="p">],</span>
+                    <span class="p">)</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="n">old_shape</span><span class="p">)</span>
+                <span class="k">else</span><span class="p">:</span>
+                    <span class="n">data</span><span class="p">[</span><span class="n">dset</span><span class="p">][:]</span> <span class="o">=</span> <span class="n">truncate</span><span class="o">.</span><span class="n">bit_truncate_weights</span><span class="p">(</span>
+                        <span class="n">val</span><span class="p">,</span>
+                        <span class="n">wdset</span><span class="p">,</span>
+                        <span class="n">specs</span><span class="p">[</span><span class="s2">&quot;fixed_precision&quot;</span><span class="p">],</span>
+                    <span class="p">)</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="n">old_shape</span><span class="p">)</span>
+
+        <span class="k">return</span> <span class="n">data</span></div>
+</div>
+
+
+
+<div class="viewcode-block" id="ZipZarrContainers">
+<a class="viewcode-back" href="../../../_autosummary/draco.core.io.html#draco.core.io.ZipZarrContainers">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">ZipZarrContainers</span><span class="p">(</span><span class="n">task</span><span class="o">.</span><span class="n">SingleTask</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Zip up a Zarr container into a single file.</span>
+
+<span class="sd">    This is useful to save on file quota and speed up IO by combining the chunk</span>
+<span class="sd">    data into a single file. Note that the file cannot really be updated after</span>
+<span class="sd">    this process has been performed.</span>
+
+<span class="sd">    As this process is IO limited in most cases, it will attempt to parallelise</span>
+<span class="sd">    the compression across different distinct nodes. That means at most only</span>
+<span class="sd">    one rank per node will participate.</span>
+
+<span class="sd">    Attributes</span>
+<span class="sd">    ----------</span>
+<span class="sd">    containers : list</span>
+<span class="sd">        The names of the Zarr containers to compress. The zipped files will</span>
+<span class="sd">        have the same names with `.zip` appended.</span>
+<span class="sd">    remove : bool</span>
+<span class="sd">        Remove the original data when finished. Defaults to True.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+
+    <span class="n">containers</span> <span class="o">=</span> <span class="n">config</span><span class="o">.</span><span class="n">Property</span><span class="p">(</span><span class="n">proptype</span><span class="o">=</span><span class="nb">list</span><span class="p">)</span>
+    <span class="n">remove</span> <span class="o">=</span> <span class="n">config</span><span class="o">.</span><span class="n">Property</span><span class="p">(</span><span class="n">proptype</span><span class="o">=</span><span class="nb">bool</span><span class="p">,</span> <span class="n">default</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+
+    <span class="n">_host_rank</span> <span class="o">=</span> <span class="kc">None</span>
+
+<div class="viewcode-block" id="ZipZarrContainers.setup">
+<a class="viewcode-back" href="../../../_autosummary/draco.core.io.html#draco.core.io.ZipZarrContainers.setup">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">setup</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">_</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Setup the task.</span>
+
+<span class="sd">        This routine does nothing at all with the input, but it means the</span>
+<span class="sd">        process won&#39;t run until the (optional) requirement is received. This</span>
+<span class="sd">        can be used to delay evaluation until you know that all the files are</span>
+<span class="sd">        available.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="kn">import</span><span class="w"> </span><span class="nn">socket</span>
+
+        <span class="c1"># See if we can find 7z</span>
+        <span class="n">path_7z</span> <span class="o">=</span> <span class="n">shutil</span><span class="o">.</span><span class="n">which</span><span class="p">(</span><span class="s2">&quot;7z&quot;</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">path_7z</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">RuntimeError</span><span class="p">(</span><span class="s2">&quot;Could not find 7z on the PATH&quot;</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_path_7z</span> <span class="o">=</span> <span class="n">path_7z</span>
+
+        <span class="c1"># Get the rank -&gt; hostname mapping for all ranks</span>
+        <span class="n">my_host</span> <span class="o">=</span> <span class="n">socket</span><span class="o">.</span><span class="n">gethostname</span><span class="p">()</span>
+        <span class="n">my_rank</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">comm</span><span class="o">.</span><span class="n">rank</span>
+        <span class="n">all_host_ranks</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">comm</span><span class="o">.</span><span class="n">allgather</span><span class="p">((</span><span class="n">my_host</span><span class="p">,</span> <span class="n">my_rank</span><span class="p">))</span>
+
+        <span class="c1"># Identify the lowest rank running on each node</span>
+        <span class="n">unique_hosts</span> <span class="o">=</span> <span class="p">{}</span>
+        <span class="k">for</span> <span class="n">host</span><span class="p">,</span> <span class="n">rank</span> <span class="ow">in</span> <span class="n">all_host_ranks</span><span class="p">:</span>
+            <span class="k">if</span> <span class="n">host</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">unique_hosts</span><span class="p">:</span>
+                <span class="n">unique_hosts</span><span class="p">[</span><span class="n">host</span><span class="p">]</span> <span class="o">=</span> <span class="n">rank</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="k">if</span> <span class="n">unique_hosts</span><span class="p">[</span><span class="n">host</span><span class="p">]</span> <span class="o">&gt;</span> <span class="n">rank</span><span class="p">:</span>
+                    <span class="n">unique_hosts</span><span class="p">[</span><span class="n">host</span><span class="p">]</span> <span class="o">=</span> <span class="n">rank</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">_num_hosts</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">unique_hosts</span><span class="p">)</span>
+
+        <span class="c1"># Figure out if this rank is one that needs to do anything</span>
+        <span class="k">if</span> <span class="n">unique_hosts</span><span class="p">[</span><span class="n">my_host</span><span class="p">]</span> <span class="o">!=</span> <span class="n">my_rank</span><span class="p">:</span>
+            <span class="c1"># This is not the lowest rank on the host, so we don&#39;t do anything</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_host_rank</span> <span class="o">=</span> <span class="kc">None</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="c1"># This is the lowest rank, so find where we are in the sorted list of all hosts</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_host_rank</span> <span class="o">=</span> <span class="nb">sorted</span><span class="p">(</span><span class="n">unique_hosts</span><span class="p">)</span><span class="o">.</span><span class="n">index</span><span class="p">(</span><span class="n">my_host</span><span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">log</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Lowest rank on </span><span class="si">{</span><span class="n">my_host</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="ZipZarrContainers.process">
+<a class="viewcode-back" href="../../../_autosummary/draco.core.io.html#draco.core.io.ZipZarrContainers.process">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">process</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Compress the listed zarr containers.</span>
+
+<span class="sd">        Only the lowest rank on each node will participate.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_host_rank</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="c1"># Get the set of containers this rank is responsible for compressing</span>
+            <span class="n">my_containers</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">containers</span><span class="p">[</span><span class="bp">self</span><span class="o">.</span><span class="n">_host_rank</span> <span class="p">::</span> <span class="bp">self</span><span class="o">.</span><span class="n">_num_hosts</span><span class="p">]</span>
+
+            <span class="k">for</span> <span class="n">container</span> <span class="ow">in</span> <span class="n">my_containers</span><span class="p">:</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">log</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Zipping </span><span class="si">{</span><span class="n">container</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+
+                <span class="k">if</span> <span class="ow">not</span> <span class="n">container</span><span class="o">.</span><span class="n">endswith</span><span class="p">(</span><span class="s2">&quot;.zarr&quot;</span><span class="p">)</span> <span class="ow">or</span> <span class="ow">not</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">isdir</span><span class="p">(</span><span class="n">container</span><span class="p">):</span>
+                    <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">container</span><span class="si">}</span><span class="s2"> is not a valid .zarr directory&quot;</span><span class="p">)</span>
+
+                <span class="c1"># Run 7z to zip up the file</span>
+                <span class="n">dest_file</span> <span class="o">=</span> <span class="n">container</span> <span class="o">+</span> <span class="s2">&quot;.zip&quot;</span>
+                <span class="n">src_dir</span> <span class="o">=</span> <span class="n">container</span> <span class="o">+</span> <span class="s2">&quot;/.&quot;</span>
+                <span class="n">command</span> <span class="o">=</span> <span class="p">[</span><span class="bp">self</span><span class="o">.</span><span class="n">_path_7z</span><span class="p">,</span> <span class="s2">&quot;a&quot;</span><span class="p">,</span> <span class="s2">&quot;-tzip&quot;</span><span class="p">,</span> <span class="s2">&quot;-mx=0&quot;</span><span class="p">,</span> <span class="n">dest_file</span><span class="p">,</span> <span class="n">src_dir</span><span class="p">]</span>
+                <span class="n">status</span> <span class="o">=</span> <span class="n">subprocess</span><span class="o">.</span><span class="n">run</span><span class="p">(</span><span class="n">command</span><span class="p">,</span> <span class="n">capture_output</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+
+                <span class="k">if</span> <span class="n">status</span><span class="o">.</span><span class="n">returncode</span> <span class="o">!=</span> <span class="mi">0</span><span class="p">:</span>
+                    <span class="bp">self</span><span class="o">.</span><span class="n">log</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="s2">&quot;Error occurred while zipping. Debug logs follow...&quot;</span><span class="p">)</span>
+                    <span class="bp">self</span><span class="o">.</span><span class="n">log</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;stdout=</span><span class="si">{</span><span class="n">status</span><span class="o">.</span><span class="n">stdout</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+                    <span class="bp">self</span><span class="o">.</span><span class="n">log</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;stderr=</span><span class="si">{</span><span class="n">status</span><span class="o">.</span><span class="n">stderr</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+                    <span class="k">raise</span> <span class="ne">RuntimeError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Error occurred while zipping </span><span class="si">{</span><span class="n">container</span><span class="si">}</span><span class="s2">.&quot;</span><span class="p">)</span>
+
+                <span class="bp">self</span><span class="o">.</span><span class="n">log</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Done zipping. Generated </span><span class="si">{</span><span class="n">dest_file</span><span class="si">}</span><span class="s2">.&quot;</span><span class="p">)</span>
+
+                <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">remove</span><span class="p">:</span>
+                    <span class="n">shutil</span><span class="o">.</span><span class="n">rmtree</span><span class="p">(</span><span class="n">container</span><span class="p">)</span>
+                    <span class="bp">self</span><span class="o">.</span><span class="n">log</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Removed original container </span><span class="si">{</span><span class="n">container</span><span class="si">}</span><span class="s2">.&quot;</span><span class="p">)</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">comm</span><span class="o">.</span><span class="n">Barrier</span><span class="p">()</span>
+
+        <span class="k">raise</span> <span class="n">pipeline</span><span class="o">.</span><span class="n">PipelineStopIteration</span></div>
+</div>
+
+
+
+<div class="viewcode-block" id="ZarrZipHandle">
+<a class="viewcode-back" href="../../../_autosummary/draco.core.io.html#draco.core.io.ZarrZipHandle">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">ZarrZipHandle</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;A handle for keeping track of background Zarr-zipping job.&quot;&quot;&quot;</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">filename</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">handle</span><span class="p">:</span> <span class="n">subprocess</span><span class="o">.</span><span class="n">Popen</span> <span class="o">|</span> <span class="kc">None</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">filename</span> <span class="o">=</span> <span class="n">filename</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">handle</span> <span class="o">=</span> <span class="n">handle</span></div>
+
+
+
+<div class="viewcode-block" id="SaveZarrZip">
+<a class="viewcode-back" href="../../../_autosummary/draco.core.io.html#draco.core.io.SaveZarrZip">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">SaveZarrZip</span><span class="p">(</span><span class="n">ZipZarrContainers</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Save a container as a .zarr.zip file.</span>
+
+<span class="sd">    This task saves the output first as a .zarr container, and then starts a background</span>
+<span class="sd">    job to start turning it into a zip file. It returns a handle to this job. All these</span>
+<span class="sd">    handles should be fed into a `WaitZarrZip` task to ensure the pipeline run does not</span>
+<span class="sd">    terminate before they are complete.</span>
+
+<span class="sd">    This accepts most parameters that a standard task would for saving, including</span>
+<span class="sd">    compression parameter overrides.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+
+    <span class="c1"># This keeps track of the global number of operations run such that we can dispatch</span>
+    <span class="c1"># the background jobs to different ranks</span>
+    <span class="n">_operation_counter</span> <span class="o">=</span> <span class="mi">0</span>
+
+<div class="viewcode-block" id="SaveZarrZip.setup">
+<a class="viewcode-back" href="../../../_autosummary/draco.core.io.html#draco.core.io.SaveZarrZip.setup">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">setup</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Check the parameters and determine the ranks to use.&quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">output_name</span><span class="o">.</span><span class="n">endswith</span><span class="p">(</span><span class="s2">&quot;.zarr.zip&quot;</span><span class="p">):</span>
+            <span class="k">raise</span> <span class="n">ConfigError</span><span class="p">(</span><span class="s2">&quot;File output name must end in `.zarr.zip`.&quot;</span><span class="p">)</span>
+
+        <span class="c1"># Trim off the .zip suffix and fix the file format</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">output_name</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">output_name</span><span class="p">[:</span><span class="o">-</span><span class="mi">4</span><span class="p">]</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">output_format</span> <span class="o">=</span> <span class="n">fileformats</span><span class="o">.</span><span class="n">Zarr</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">save</span> <span class="o">=</span> <span class="kc">True</span>
+
+        <span class="c1"># Call the baseclass to determine which ranks will do the work</span>
+        <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="n">setup</span><span class="p">()</span></div>
+
+
+    <span class="c1"># Override next as we don&#39;t want the usual mechanism</span>
+<div class="viewcode-block" id="SaveZarrZip.next">
+<a class="viewcode-back" href="../../../_autosummary/draco.core.io.html#draco.core.io.SaveZarrZip.next">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">next</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">container</span><span class="p">:</span> <span class="n">memh5</span><span class="o">.</span><span class="n">BasicCont</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">ZarrZipHandle</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Take a container and save it out as a .zarr.zip file.</span>
+
+<span class="sd">        Parameters</span>
+<span class="sd">        ----------</span>
+<span class="sd">        container</span>
+<span class="sd">            Container to save out.</span>
+
+<span class="sd">        Returns</span>
+<span class="sd">        -------</span>
+<span class="sd">        handle</span>
+<span class="sd">            A handle to use to determine if the job has successfully completed. This</span>
+<span class="sd">            should be given to the `WaitZarrZip` task.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">outfile</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_save_output</span><span class="p">(</span><span class="n">container</span><span class="p">)</span>
+        <span class="n">dest_file</span> <span class="o">=</span> <span class="n">outfile</span> <span class="o">+</span> <span class="s2">&quot;.zip&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">comm</span><span class="o">.</span><span class="n">Barrier</span><span class="p">()</span>
+
+        <span class="n">bg_process</span> <span class="o">=</span> <span class="kc">None</span>
+
+        <span class="n">host_rank_to_use</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_operation_counter</span> <span class="o">%</span> <span class="bp">self</span><span class="o">.</span><span class="n">_num_hosts</span>
+
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_host_rank</span> <span class="o">==</span> <span class="n">host_rank_to_use</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">log</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Starting background job to zip </span><span class="si">{</span><span class="n">outfile</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+
+            <span class="c1"># Run 7z to zip up the file</span>
+            <span class="n">dest_file</span> <span class="o">=</span> <span class="n">outfile</span> <span class="o">+</span> <span class="s2">&quot;.zip&quot;</span>
+            <span class="n">src_dir</span> <span class="o">=</span> <span class="n">outfile</span> <span class="o">+</span> <span class="s2">&quot;/.&quot;</span>
+            <span class="n">command</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">_path_7z</span><span class="si">}</span><span class="s2"> a -tzip -mx=0 </span><span class="si">{</span><span class="n">dest_file</span><span class="si">}</span><span class="s2"> </span><span class="si">{</span><span class="n">src_dir</span><span class="si">}</span><span class="s2">&quot;</span>
+
+            <span class="c1"># If we are to remove the file get the background job to do it immediately</span>
+            <span class="c1"># after zipping succeeds</span>
+            <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">remove</span><span class="p">:</span>
+                <span class="n">command</span> <span class="o">+=</span> <span class="sa">f</span><span class="s2">&quot; &amp;&amp; rm -r </span><span class="si">{</span><span class="n">outfile</span><span class="si">}</span><span class="s2">&quot;</span>
+
+            <span class="n">bg_process</span> <span class="o">=</span> <span class="n">subprocess</span><span class="o">.</span><span class="n">Popen</span><span class="p">(</span>
+                <span class="n">command</span><span class="p">,</span> <span class="n">shell</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">stdout</span><span class="o">=</span><span class="n">subprocess</span><span class="o">.</span><span class="n">PIPE</span><span class="p">,</span> <span class="n">stderr</span><span class="o">=</span><span class="n">subprocess</span><span class="o">.</span><span class="n">PIPE</span>
+            <span class="p">)</span>
+
+        <span class="c1"># Increment the global operations counter</span>
+        <span class="bp">self</span><span class="o">.</span><span class="vm">__class__</span><span class="o">.</span><span class="n">_operation_counter</span> <span class="o">+=</span> <span class="mi">1</span>
+
+        <span class="k">return</span> <span class="n">ZarrZipHandle</span><span class="p">(</span><span class="n">dest_file</span><span class="p">,</span> <span class="n">bg_process</span><span class="p">)</span></div>
+</div>
+
+
+
+<div class="viewcode-block" id="WaitZarrZip">
+<a class="viewcode-back" href="../../../_autosummary/draco.core.io.html#draco.core.io.WaitZarrZip">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">WaitZarrZip</span><span class="p">(</span><span class="n">task</span><span class="o">.</span><span class="n">MPILoggedTask</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Collect Zarr-zipping jobs and wait for them to complete.&quot;&quot;&quot;</span>
+
+    <span class="n">_handles</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="n">ZarrZipHandle</span><span class="p">]</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span>
+
+<div class="viewcode-block" id="WaitZarrZip.next">
+<a class="viewcode-back" href="../../../_autosummary/draco.core.io.html#draco.core.io.WaitZarrZip.next">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">next</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">handle</span><span class="p">:</span> <span class="n">ZarrZipHandle</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Receive the handles to wait on.</span>
+
+<span class="sd">        Parameters</span>
+<span class="sd">        ----------</span>
+<span class="sd">        handle</span>
+<span class="sd">            The handle to wait on.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_handles</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_handles</span> <span class="o">=</span> <span class="p">[]</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">_handles</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">handle</span><span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="WaitZarrZip.finish">
+<a class="viewcode-back" href="../../../_autosummary/draco.core.io.html#draco.core.io.WaitZarrZip.finish">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">finish</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Wait for all Zarr zipping jobs to complete.&quot;&quot;&quot;</span>
+        <span class="k">for</span> <span class="n">h</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_handles</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">log</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Waiting on job processing </span><span class="si">{</span><span class="n">h</span><span class="o">.</span><span class="n">filename</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+
+            <span class="k">if</span> <span class="n">h</span><span class="o">.</span><span class="n">handle</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+                <span class="n">returncode</span> <span class="o">=</span> <span class="n">h</span><span class="o">.</span><span class="n">handle</span><span class="o">.</span><span class="n">wait</span><span class="p">()</span>
+
+                <span class="k">if</span> <span class="n">returncode</span> <span class="o">!=</span> <span class="mi">0</span> <span class="ow">or</span> <span class="ow">not</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">exists</span><span class="p">(</span><span class="n">h</span><span class="o">.</span><span class="n">filename</span><span class="p">):</span>
+                    <span class="bp">self</span><span class="o">.</span><span class="n">log</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="s2">&quot;Error occurred while zipping. Debug logs follow...&quot;</span><span class="p">)</span>
+                    <span class="bp">self</span><span class="o">.</span><span class="n">log</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;stdout=</span><span class="si">{</span><span class="n">h</span><span class="o">.</span><span class="n">handle</span><span class="o">.</span><span class="n">stdout</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+                    <span class="bp">self</span><span class="o">.</span><span class="n">log</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;stderr=</span><span class="si">{</span><span class="n">h</span><span class="o">.</span><span class="n">handle</span><span class="o">.</span><span class="n">stderr</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+                    <span class="k">raise</span> <span class="ne">RuntimeError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Error occurred while zipping </span><span class="si">{</span><span class="n">h</span><span class="o">.</span><span class="n">filename</span><span class="si">}</span><span class="s2">.&quot;</span><span class="p">)</span>
+
+            <span class="bp">self</span><span class="o">.</span><span class="n">comm</span><span class="o">.</span><span class="n">Barrier</span><span class="p">()</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">log</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Processing job for </span><span class="si">{</span><span class="n">h</span><span class="o">.</span><span class="n">filename</span><span class="si">}</span><span class="s2"> successful.&quot;</span><span class="p">)</span></div>
+</div>
+
+
+
+<div class="viewcode-block" id="SaveModuleVersions">
+<a class="viewcode-back" href="../../../_autosummary/draco.core.io.html#draco.core.io.SaveModuleVersions">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">SaveModuleVersions</span><span class="p">(</span><span class="n">task</span><span class="o">.</span><span class="n">SingleTask</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Write module versions to a YAML file.</span>
+
+<span class="sd">    The list of modules should be added to the configuration under key &#39;save_versions&#39;.</span>
+<span class="sd">    The version strings are written to a YAML file.</span>
+
+<span class="sd">    Attributes</span>
+<span class="sd">    ----------</span>
+<span class="sd">    root : str</span>
+<span class="sd">        Root of the file name to output to.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+
+    <span class="n">root</span> <span class="o">=</span> <span class="n">config</span><span class="o">.</span><span class="n">Property</span><span class="p">(</span><span class="n">proptype</span><span class="o">=</span><span class="nb">str</span><span class="p">)</span>
+
+    <span class="n">done</span> <span class="o">=</span> <span class="kc">True</span>
+
+<div class="viewcode-block" id="SaveModuleVersions.setup">
+<a class="viewcode-back" href="../../../_autosummary/draco.core.io.html#draco.core.io.SaveModuleVersions.setup">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">setup</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Save module versions.&quot;&quot;&quot;</span>
+        <span class="n">fname</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">root</span><span class="si">}</span><span class="s2">_versions.yml&quot;</span>
+        <span class="n">f</span> <span class="o">=</span> <span class="nb">open</span><span class="p">(</span><span class="n">fname</span><span class="p">,</span> <span class="s2">&quot;w&quot;</span><span class="p">)</span>
+        <span class="n">f</span><span class="o">.</span><span class="n">write</span><span class="p">(</span><span class="n">yamldump</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">versions</span><span class="p">))</span>
+        <span class="n">f</span><span class="o">.</span><span class="n">close</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">done</span> <span class="o">=</span> <span class="kc">True</span></div>
+
+
+<div class="viewcode-block" id="SaveModuleVersions.process">
+<a class="viewcode-back" href="../../../_autosummary/draco.core.io.html#draco.core.io.SaveModuleVersions.process">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">process</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Do nothing.&quot;&quot;&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">done</span> <span class="o">=</span> <span class="kc">True</span>
+        <span class="k">return</span></div>
+</div>
+
+
+
+<div class="viewcode-block" id="SaveConfig">
+<a class="viewcode-back" href="../../../_autosummary/draco.core.io.html#draco.core.io.SaveConfig">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">SaveConfig</span><span class="p">(</span><span class="n">task</span><span class="o">.</span><span class="n">SingleTask</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Write pipeline config to a text file.</span>
+
+<span class="sd">    Yaml configuration document is written to a text file.</span>
+
+<span class="sd">    Attributes</span>
+<span class="sd">    ----------</span>
+<span class="sd">    root : str</span>
+<span class="sd">        Root of the file name to output to.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+
+    <span class="n">root</span> <span class="o">=</span> <span class="n">config</span><span class="o">.</span><span class="n">Property</span><span class="p">(</span><span class="n">proptype</span><span class="o">=</span><span class="nb">str</span><span class="p">)</span>
+    <span class="n">done</span> <span class="o">=</span> <span class="kc">True</span>
+
+<div class="viewcode-block" id="SaveConfig.setup">
+<a class="viewcode-back" href="../../../_autosummary/draco.core.io.html#draco.core.io.SaveConfig.setup">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">setup</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Save module versions.&quot;&quot;&quot;</span>
+        <span class="n">fname</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">root</span><span class="si">}</span><span class="s2">_config.yml&quot;</span>
+        <span class="n">f</span> <span class="o">=</span> <span class="nb">open</span><span class="p">(</span><span class="n">fname</span><span class="p">,</span> <span class="s2">&quot;w&quot;</span><span class="p">)</span>
+        <span class="n">f</span><span class="o">.</span><span class="n">write</span><span class="p">(</span><span class="n">yamldump</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">pipeline_config</span><span class="p">))</span>
+        <span class="n">f</span><span class="o">.</span><span class="n">close</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">done</span> <span class="o">=</span> <span class="kc">True</span></div>
+
+
+<div class="viewcode-block" id="SaveConfig.process">
+<a class="viewcode-back" href="../../../_autosummary/draco.core.io.html#draco.core.io.SaveConfig.process">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">process</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Do nothing.&quot;&quot;&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">done</span> <span class="o">=</span> <span class="kc">True</span>
+        <span class="k">return</span></div>
+</div>
+
+
+
+<span class="c1"># Python types for objects convertible to beamtransfers or telescope instances</span>
+<span class="n">BeamTransferConvertible</span> <span class="o">=</span> <span class="n">manager</span><span class="o">.</span><span class="n">ProductManager</span> <span class="o">|</span> <span class="n">beamtransfer</span><span class="o">.</span><span class="n">BeamTransfer</span>
+<span class="n">TelescopeConvertible</span> <span class="o">=</span> <span class="n">BeamTransferConvertible</span> <span class="o">|</span> <span class="n">telescope</span><span class="o">.</span><span class="n">TransitTelescope</span>
+
+
+<div class="viewcode-block" id="get_telescope">
+<a class="viewcode-back" href="../../../_autosummary/draco.core.io.html#draco.core.io.get_telescope">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">get_telescope</span><span class="p">(</span><span class="n">obj</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Return a telescope object out of the input.</span>
+
+<span class="sd">    Either `ProductManager`, `BeamTransfer`, or `TransitTelescope`.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">try</span><span class="p">:</span>
+        <span class="k">return</span> <span class="n">get_beamtransfer</span><span class="p">(</span><span class="n">obj</span><span class="p">)</span><span class="o">.</span><span class="n">telescope</span>
+    <span class="k">except</span> <span class="ne">RuntimeError</span><span class="p">:</span>
+        <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">obj</span><span class="p">,</span> <span class="n">telescope</span><span class="o">.</span><span class="n">TransitTelescope</span><span class="p">):</span>
+            <span class="k">return</span> <span class="n">obj</span>
+
+    <span class="k">raise</span> <span class="ne">RuntimeError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Could not get telescope instance out of </span><span class="si">{</span><span class="n">obj</span><span class="si">!r}</span><span class="s2">&quot;</span><span class="p">)</span></div>
+
+
+
+<div class="viewcode-block" id="get_beamtransfer">
+<a class="viewcode-back" href="../../../_autosummary/draco.core.io.html#draco.core.io.get_beamtransfer">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">get_beamtransfer</span><span class="p">(</span><span class="n">obj</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Return a BeamTransfer object out of the input.</span>
+
+<span class="sd">    Either `ProductManager` or `BeamTransfer`.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">obj</span><span class="p">,</span> <span class="n">beamtransfer</span><span class="o">.</span><span class="n">BeamTransfer</span><span class="p">):</span>
+        <span class="k">return</span> <span class="n">obj</span>
+
+    <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">obj</span><span class="p">,</span> <span class="n">manager</span><span class="o">.</span><span class="n">ProductManager</span><span class="p">):</span>
+        <span class="k">return</span> <span class="n">obj</span><span class="o">.</span><span class="n">beamtransfer</span>
+
+    <span class="k">raise</span> <span class="ne">RuntimeError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Could not get BeamTransfer instance out of </span><span class="si">{</span><span class="n">obj</span><span class="si">!r}</span><span class="s2">&quot;</span><span class="p">)</span></div>
+
+</pre></div>
+
+           </div>
+          </div>
+          <footer>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2016, Richard Shaw.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>
