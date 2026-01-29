@@ -9,6 +9,7 @@ import scipy.linalg as la
 from caput import config, memdata, mpiarray
 from caput.algorithms import fft, random
 from caput.astro import constants
+from caput.containers import ContainerPrototype
 from caput.pipeline import tasklib
 from numpy.lib.recfunctions import structured_to_unstructured
 
@@ -656,7 +657,7 @@ class DelayTransformBase(tasklib.base.ContainerTask):
         ss: containers.FreqContainer,
         delays: np.ndarray,
         coord_axes: list[str],
-    ) -> containers.ContainerBase:
+    ) -> ContainerPrototype:
         """Create a suitable output container.
 
         Parameters
@@ -766,7 +767,7 @@ class DelayPowerSpectrumContainerMixin(GeneralInputContainerMixin):
         ss: containers.FreqContainer,
         delays: np.ndarray,
         coord_axes: list[str] | np.ndarray,
-    ) -> containers.ContainerBase:
+    ) -> ContainerPrototype:
         """Create the output container for the delay power spectrum.
 
         If `coord_axes` is a list of strings then it is assumed to be a list of the
@@ -831,7 +832,7 @@ class DelaySpectrumContainerMixin(GeneralInputContainerMixin):
 
     def _create_output(
         self, ss: containers.FreqContainer, delays: np.ndarray, coord_axes: list[str]
-    ) -> containers.ContainerBase:
+    ) -> ContainerPrototype:
         """Create the output container for the delay transform."""
         # Initialise the spectrum container
         nbase = np.prod([len(ss.index_map[ax]) for ax in coord_axes])
@@ -1342,7 +1343,7 @@ class DelayCrossPowerSpectrumEstimator(
         ss: list[containers.FreqContainer],
         delays: np.ndarray,
         coord_axes: list[str],
-    ) -> containers.ContainerBase:
+    ) -> ContainerPrototype:
         """Create the output container for the delay power spectrum.
 
         If `coord_axes` is a list of strings then it is assumed to be a list of the
