@@ -123,7 +123,7 @@ def medfilt(
     x = np.ascontiguousarray(x.astype(np.float64))
     w = np.ascontiguousarray((~mask).astype(np.float64))
 
-    return algorithms.weighted_median.moving_weighted_median(x, w, size, *args)
+    return algorithms.median.moving_weighted_median(x, w, size, *args)
 
 
 def null_filter(

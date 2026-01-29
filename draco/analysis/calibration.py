@@ -2,7 +2,7 @@
 
 import numpy as np
 from caput import config
-from caput.algorithms import weighted_median
+from caput.algorithms import median
 from caput.pipeline import tasklib
 
 from ..core import containers
@@ -117,10 +117,10 @@ class ApplyGain(tasklib.base.ContainerTask):
                         wmask = np.ones(gain_r.shape, dtype=np.float64)
 
                     # Smooth amplitude and phase separately
-                    smooth_amp = weighted_median.moving_weighted_median(
+                    smooth_amp = median.moving_weighted_median(
                         np.abs(gain_r), weights=wmask, size=(1, l)
                     )
-                    smooth_phase = weighted_median.moving_weighted_median(
+                    smooth_phase = median.moving_weighted_median(
                         np.angle(gain_r), weights=wmask, size=(1, l)
                     )
 
@@ -132,7 +132,7 @@ class ApplyGain(tasklib.base.ContainerTask):
                     if weight_arr is not None:
                         # Smooth
                         shp = weight_arr.shape
-                        weight_arr = weighted_median.moving_weighted_median(
+                        weight_arr = median.moving_weighted_median(
                             weight_arr.reshape(-1, shp[-1]), weights=wmask, size=(1, l)
                         ).reshape(shp)
                         # Ensure flagged values remain flagged
