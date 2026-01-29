@@ -9,7 +9,7 @@ import numpy as np
 import scipy.linalg as la
 from caput import config, mpiarray
 from caput.algorithms import fft, invert_no_zero
-from caput.containers import copy_datasets_filter
+from caput.containers import ContainerPrototype, copy_datasets_filter
 from caput.pipeline import exceptions, tasklib
 from numpy.lib.recfunctions import structured_to_unstructured
 
@@ -360,12 +360,12 @@ class SelectFreq(tasklib.base.ContainerTask):
 
         Parameters
         ----------
-        data : containers.ContainerBase
+        data : ContainerPrototype
             A data container with a frequency axis.
 
         Returns
         -------
-        newdata : containers.ContainerBase
+        newdata : ContainerPrototype
             New container with trimmed frequencies.
         """
         # Set up frequency selection.
@@ -415,7 +415,7 @@ class SelectFreq(tasklib.base.ContainerTask):
 
         # Copy over datasets. If the dataset has a frequency axis,
         # then we only copy over the subset.
-        if isinstance(data, containers.ContainerBase):
+        if isinstance(data, ContainerPrototype):
             copy_datasets_filter(
                 data, newdata, "freq", newindex, copy_without_selection=True
             )
@@ -1105,7 +1105,7 @@ class SelectPol(tasklib.base.ContainerTask):
 
         Parameters
         ----------
-        polcont : ContainerBase
+        polcont : ContainerPrototype
             A container with a 'pol' axis containing linear polarisation data
             (e.g., XX, YY, reXY, imXY).
 
@@ -1859,7 +1859,7 @@ class Downselect(tasklib.io.SelectionsMixin, tasklib.base.ContainerTask):
     in the selections.
     """
 
-    def process(self, data: containers.ContainerBase) -> containers.ContainerBase:
+    def process(self, data: ContainerPrototype) -> ContainerPrototype:
         """Apply downselections to the container.
 
         Parameters
@@ -1929,7 +1929,7 @@ class ReduceBase(tasklib.base.ContainerTask):
 
     _op = None
 
-    def process(self, data: containers.ContainerBase) -> containers.ContainerBase:
+    def process(self, data: ContainerPrototype) -> ContainerPrototype:
         """Downselect and apply the reduction operation to the data.
 
         Parameters
@@ -2017,9 +2017,7 @@ class ReduceBase(tasklib.base.ContainerTask):
 
         return out
 
-    def _make_output_container(
-        self, data: containers.ContainerBase
-    ) -> containers.ContainerBase:
+    def _make_output_container(self, data: ContainerPrototype) -> ContainerPrototype:
         """Create the output container."""
         # For a collapsed axis, the meaning of the index map will depend on
         # the reduction being done, and can be meaningless. The first value

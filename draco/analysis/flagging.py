@@ -15,8 +15,10 @@ from typing import ClassVar, overload
 import numpy as np
 import numpy.typing as npt
 from caput import config, mpiarray
-from caput.algorithms import fft, weighted_median
+from caput.algorithms import fft
+from caput.algorithms.median import weighted_median
 from caput.astro import constants
+from caput.containers import ContainerPrototype
 from caput.pipeline import tasklib
 from scipy.signal import convolve
 from scipy.spatial.distance import cdist
@@ -436,7 +438,7 @@ class MaskBadGains(tasklib.base.ContainerTask):
 
         Parameters
         ----------
-        data : :class:`andata.Corrdata` or :class:`container.ContainerBase` with a `gain` dataset
+        data : :class:`andata.Corrdata` or :class:`ContainerPrototype` with a `gain` dataset
             Data containing the gains to be flagged. Must have a `gain` dataset.
 
         Returns
@@ -2371,7 +2373,7 @@ class ApplyGenericMask(tasklib.base.ContainerTask):
     should be flagged.
     """
 
-    def process(self, data: containers.ContainerBase, mask: containers.ContainerBase):
+    def process(self, data: ContainerPrototype, mask: ContainerPrototype):
         """Apply the mask to the dataset weights.
 
         Reorder the mask axes and add broadcasting axes if necessary.
@@ -2446,17 +2448,17 @@ class GeneralCombineMasks(tasklib.base.ContainerTask):
     _dataset_name = "mask"
     _operators: ClassVar[set[str]] = set("&|~^()")
 
-    def process(self, masks: list[containers.ContainerBase]):
+    def process(self, masks: list[ContainerPrototype]):
         """Combine the given list of masks using the logical expression.
 
         Parameters
         ----------
-        masks : list of containers.ContainerBase
+        masks : list of ContainerPrototype
             A list of containers with a `mask` dataset, all of the same type and shape.
 
         Returns
         -------
-        combined_mask : containers.ContainerBase
+        combined_mask : ContainerPrototype
             A new container of the same type with the result of the logical combination.
         """
         if len(masks) > 26:
@@ -2505,17 +2507,17 @@ class GeneralCombineMasks(tasklib.base.ContainerTask):
 class CombineMasks(GeneralCombineMasks):
     """Combine an arbitrary number of masks conservatively (logical OR)."""
 
-    def process(self, masks: list[containers.ContainerBase]):
+    def process(self, masks: list[ContainerPrototype]):
         """Construct the logical OR of all masks.
 
         Parameters
         ----------
-        masks : list of containers.ContainerBase
+        masks : list of ContainerPrototype
             A list of containers with a `mask` dataset, all of the same type and shape.
 
         Returns
         -------
-        combined_mask : containers.ContainerBase
+        combined_mask : ContainerPrototype
             A new container of the same type containing the logical OR of all masks.
         """
         # Construct expression: A | B | C ...
@@ -2539,7 +2541,7 @@ class ApplyTaper(tasklib.base.ContainerTask):
 
     update_weight = config.Property(proptype=bool, default=False)
 
-    def process(self, data: containers.ContainerBase, taper: containers.ContainerBase):
+    def process(self, data: ContainerPrototype, taper: ContainerPrototype):
         """Apply the taper to the dataset weights.
 
         Reorder the taper axes and add broadcasting axes if necessary.
@@ -2550,7 +2552,7 @@ class ApplyTaper(tasklib.base.ContainerTask):
             A container with `data` and `weight` properties.
             Both the data and weight must include a `freq` axis,
             and must contain all axes present in the taper.
-        taper : containers.ContainerBase
+        taper : ContainerPrototype
             Any container that has a `taper` property that has
             a `freq` axis and whose othes axes are a subset of
             those in the data.
@@ -2624,17 +2626,17 @@ class GeneralCombineTapers(GeneralCombineMasks):
 class CombineTapers(GeneralCombineTapers):
     """Combine an arbitrary number of tapers conservatively (multiply)."""
 
-    def process(self, tapers: list[containers.ContainerBase]):
+    def process(self, tapers: list[ContainerPrototype]):
         """Construct the product of all tapers.
 
         Parameters
         ----------
-        tapers : list of containers.ContainerBase
+        tapers : list of ContainerPrototype
             A list of containers with a `taper` dataset, all of the same type and shape.
 
         Returns
         -------
-        combined_taper : containers.ContainerBase
+        combined_taper : ContainerPrototype
             A new container of the same type containing the product of all tapers.
         """
         # Construct expression: A * B * C ...
@@ -3729,7 +3731,7 @@ def _convert_axis_nearest_interpolation(
 
     Parameters
     ----------
-    stream : containers.ContainerBase
+    stream : ContainerPrototype
         The input container holding the original data and axis.
         Example: LocalizedRFIMask with axes (freq, time, el).
     to_type : type
@@ -3752,7 +3754,7 @@ def _convert_axis_nearest_interpolation(
 
     Returns
     -------
-    out : containers.ContainerBase
+    out : ContainerPrototype
         A new container of type `to_type` with converted axes and interpolated datasets.
 
     Notes
