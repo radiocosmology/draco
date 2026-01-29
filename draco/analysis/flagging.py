@@ -15,8 +15,7 @@ from typing import ClassVar, overload
 import numpy as np
 import numpy.typing as npt
 from caput import config, mpiarray
-from caput.algorithms import fft
-from caput.algorithms.median import weighted_median
+from caput.algorithms import fft, median
 from caput.astro import constants
 from caput.containers import ContainerPrototype
 from caput.pipeline import tasklib
@@ -717,7 +716,7 @@ class SmoothVisWeight(tasklib.base.ContainerTask):
             else:
                 mask = np.ones_like(weight_local[i], dtype=np.float64)
 
-            weight_local[i] = weighted_median.moving_weighted_median(
+            weight_local[i] = median.moving_weighted_median(
                 data=weight_local[i],
                 weights=mask,
                 size=(1, self.kernel_size),
@@ -902,7 +901,7 @@ class ThresholdVisWeightBaseline(tasklib.base.ContainerTask):
             average_weight = np.sum(average_weight * average_sel, axis=-1)
             average_weight *= tools.invert_no_zero(np.sum(average_sel, axis=-1))
         elif self.average_type == "median":
-            average_weight = weighted_median.weighted_median(
+            average_weight = median.weighted_median(
                 average_weight, average_sel.astype(np.float64)
             )
 
@@ -1340,7 +1339,7 @@ class RFINarrowbandVisMask(RFIVisMask, transform.ReduceVar):
         # ratio of a rolling median of the background sky to the overall
         # median in time and multiply this ratio by the per-frequency
         # variance estimate
-        med = weighted_median.weighted_median(p_med, (~mask).astype(p_med.dtype))
+        med = median.weighted_median(p_med, (~mask).astype(p_med.dtype))
         rmed = filters.medfilt(p_med, mask, size=self.var_win_size)
         # Get the initial full variance using the lower variance estimate.
         # Increase the variance estimate during solar transit
@@ -1626,7 +1625,7 @@ class RFIMaskChisqHighDelay(tasklib.base.ContainerTask):
         y = np.ascontiguousarray(y.astype(np.float64))
         w = np.ascontiguousarray((~m).astype(np.float64))
 
-        med_y = weighted_median.weighted_median(y, w)
+        med_y = median.weighted_median(y, w)
         med_m = np.all(m, axis=-1)
         med_w = np.ascontiguousarray((~med_m).astype(np.float64))
 
@@ -1636,7 +1635,7 @@ class RFIMaskChisqHighDelay(tasklib.base.ContainerTask):
         # Subtract the baseline and estimate the noise
         abs_dev = np.where(med_m, 0.0, np.abs(med_y - baseline))
 
-        mad = 1.48625 * weighted_median.weighted_median(abs_dev, med_w)
+        mad = 1.48625 * median.weighted_median(abs_dev, med_w)
 
         # Flag outliers
         return abs_dev > (self.nsigma_1d * mad)
@@ -1663,7 +1662,7 @@ class RFIMaskChisqHighDelay(tasklib.base.ContainerTask):
         w = np.ascontiguousarray(w.astype(np.float64))
         win_size = (self.win_f, self.win_t)
 
-        med_y = weighted_median.moving_weighted_median(y, w, win_size)
+        med_y = median.moving_weighted_median(y, w, win_size)
 
         # Calculate the deviation from the median, normalized by the
         # expected standard deviation
@@ -1673,9 +1672,7 @@ class RFIMaskChisqHighDelay(tasklib.base.ContainerTask):
         # using the median absolute deviation.
         if self.estimate_var:
             f = np.ascontiguousarray((w > 0.0).astype(np.float64))
-            mad_y = 1.48625 * weighted_median.moving_weighted_median(
-                np.abs(dy), f, win_size
-            )
+            mad_y = 1.48625 * median.moving_weighted_median(np.abs(dy), f, win_size)
             dy *= tools.invert_no_zero(mad_y)
 
         # Take the absolute value of the relative excursion unless
@@ -1718,7 +1715,7 @@ class RFIMaskChisqHighDelay(tasklib.base.ContainerTask):
             f = np.ascontiguousarray(~mask * w, dtype=np.float64)
 
             # Calculate the local median
-            med_y = weighted_median.moving_weighted_median(y, f, win_size)
+            med_y = median.moving_weighted_median(y, f, win_size)
 
             # Calculate the deviation from the median, normalized by the
             # expected standard deviation
@@ -1728,9 +1725,7 @@ class RFIMaskChisqHighDelay(tasklib.base.ContainerTask):
             # using the median absolute deviation.
             if self.estimate_var:
                 f = np.ascontiguousarray(f > 0.0, dtype=np.float64)
-                mad_y = 1.48625 * weighted_median.moving_weighted_median(
-                    np.abs(dy), f, win_size
-                )
+                mad_y = 1.48625 * median.moving_weighted_median(np.abs(dy), f, win_size)
 
             # Generate a mask using sumthreshold
             stmask = rfi.sumthreshold(
@@ -2064,24 +2059,20 @@ class RFISensitivityMask(tasklib.base.ContainerTask):
         y = np.ascontiguousarray(rad.astype(np.float64))
         w = np.ascontiguousarray((~mask).astype(np.float64))
 
-        medt_y = weighted_median.quantile(y, w, self.quantile_1d)
+        medt_y = median.quantile(y, w, self.quantile_1d)
         medt_w = np.any(w, axis=-1).astype(np.float64)
 
         if self.win_f_1d is None:
-            medf_medt_y = weighted_median.weighted_median(medt_y, medt_w)
+            medf_medt_y = median.weighted_median(medt_y, medt_w)
         else:
-            medf_medt_y = weighted_median.moving_weighted_median(
-                medt_y, medt_w, self.win_f_1d
-            )
+            medf_medt_y = median.moving_weighted_median(medt_y, medt_w, self.win_f_1d)
 
         absd_medt_y = np.abs(medt_y - medf_medt_y)
 
         if self.win_f_1d is None:
-            mad_1d = self.MAD_TO_RMS * weighted_median.weighted_median(
-                absd_medt_y, medt_w
-            )
+            mad_1d = self.MAD_TO_RMS * median.weighted_median(absd_medt_y, medt_w)
         else:
-            mad_1d = self.MAD_TO_RMS * weighted_median.moving_weighted_median(
+            mad_1d = self.MAD_TO_RMS * median.moving_weighted_median(
                 absd_medt_y, medt_w, self.win_f_1d
             )
 
@@ -3148,21 +3139,19 @@ class BlendStack(tasklib.base.ContainerTask):
             mask = np.broadcast_to(mask, dss.shape).copy()
 
             # Get the median of the real part of the data and the stack
-            stack_med_real = weighted_median.weighted_median(
+            stack_med_real = median.weighted_median(
                 np.ascontiguousarray(dss.real), mask
             )
             # Get the median of the data in the common subset
-            data_med_real = weighted_median.weighted_median(
-                np.ascontiguousarray(ds.real), mask
-            )
+            data_med_real = median.weighted_median(np.ascontiguousarray(ds.real), mask)
 
             # If the data is complex, get the complex component too
             if np.iscomplexobj(dss):
-                stack_med_imag = weighted_median.weighted_median(
+                stack_med_imag = median.weighted_median(
                     np.ascontiguousarray(dss.imag), mask
                 )
 
-                data_med_imag = weighted_median.weighted_median(
+                data_med_imag = median.weighted_median(
                     np.ascontiguousarray(ds.imag), mask
                 )
 
