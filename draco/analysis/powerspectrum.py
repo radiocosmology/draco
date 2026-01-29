@@ -2,11 +2,12 @@
 
 import numpy as np
 from caput import config
+from caput.pipeline import tasklib
 
-from ..core import containers, task
+from ..core import containers
 
 
-class QuadraticPSEstimation(task.SingleTask):
+class QuadraticPSEstimation(tasklib.base.ContainerTask):
     """Estimate a power spectrum from a set of KLModes.
 
     Attributes

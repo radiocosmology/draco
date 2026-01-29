@@ -1,6 +1,7 @@
 import numpy as np
 import pytest
 
+from caput.containers import copy_datasets_filter
 from draco.core import containers
 
 # Run these tests under MPI
@@ -95,10 +96,10 @@ def test_copy_filter(ss_container):
     # Test some selections which should work
     for sel in (slice(None), slice(0, 16, 1), list(range(16)), slice(0, 30)):
         # These should all pass
-        containers.copy_datasets_filter(ss_container, new, "ra", {"ra": sel})
+        copy_datasets_filter(ss_container, new, "ra", {"ra": sel})
 
     # No selections
-    containers.copy_datasets_filter(ss_container, new, [], {})
+    copy_datasets_filter(ss_container, new, [], {})
 
     # Force redistribution and downselection
     new = containers.SiderealStream(
@@ -107,17 +108,15 @@ def test_copy_filter(ss_container):
 
     new.redistribute("stack")
     ss_container.redistribute("ra")
-    containers.copy_datasets_filter(ss_container, new, ("ra",), {"ra": slice(0, 5)})
+    copy_datasets_filter(ss_container, new, ("ra",), {"ra": slice(0, 5)})
 
     new.redistribute("freq")
     ss_container.redistribute("ra")
-    containers.copy_datasets_filter(ss_container, new, ["ra"], {"ra": [0, 3, 4, 6, 9]})
+    copy_datasets_filter(ss_container, new, ["ra"], {"ra": [0, 3, 4, 6, 9]})
 
     # This should faily due to a mismatch in axis and selection arguments
     with pytest.raises(ValueError):
-        containers.copy_datasets_filter(
-            ss_container, new, ["freq"], {"ra": slice(None)}
-        )
+        copy_datasets_filter(ss_container, new, ["freq"], {"ra": slice(None)})
 
     # Some multi-axis selections
     new = containers.SiderealStream(
@@ -125,7 +124,7 @@ def test_copy_filter(ss_container):
     )
 
     # This should pass since there is an axis available for redistribution
-    containers.copy_datasets_filter(
+    copy_datasets_filter(
         ss_container,
         new,
         selection={"ra": [0, 2], "freq": [0, 4]},
@@ -136,7 +135,7 @@ def test_copy_filter(ss_container):
     )
     # This should fail since there is no axis available to redistribute
     with pytest.raises(ValueError):
-        containers.copy_datasets_filter(
+        copy_datasets_filter(
             ss_container,
             new,
             selection={"ra": [0, 2], "freq": [0, 4], "stack": [0, 2]},

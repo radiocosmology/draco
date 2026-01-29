@@ -14,20 +14,22 @@ from typing import ClassVar, overload
 
 import numpy as np
 import numpy.typing as npt
-from caput import config, fftw, weighted_median
-from caput.mpiarray import MPIArray
-from cora.util import units
+from caput import config, mpiarray
+from caput.algorithms import fft, median
+from caput.astro import constants
+from caput.containers import ContainerPrototype
+from caput.pipeline import tasklib
 from scipy.signal import convolve
 from scipy.spatial.distance import cdist
 from skimage.filters import apply_hysteresis_threshold
 
 from ..analysis import transform
 from ..analysis.sidereal import _search_nearest
-from ..core import containers, io, task
+from ..core import containers, io
 from ..util import filters, rfi, tools
 
 
-class DayMask(task.SingleTask):
+class DayMask(tasklib.base.ContainerTask):
     """Crudely simulate a masking out of the daytime data.
 
     Attributes
@@ -107,7 +109,7 @@ class DayMask(task.SingleTask):
         return sstream
 
 
-class MaskMModeData(task.SingleTask):
+class MaskMModeData(tasklib.base.ContainerTask):
     """Mask out mmode data ahead of map making.
 
     Attributes
@@ -170,7 +172,7 @@ class MaskMModeData(task.SingleTask):
         return mmodes
 
 
-class MaskBaselines(task.SingleTask):
+class MaskBaselines(tasklib.base.ContainerTask):
     """Mask out baselines from a dataset.
 
     This task may produce output with shared datasets. Be warned that
@@ -309,7 +311,7 @@ class MaskBaselines(task.SingleTask):
         return ssc
 
 
-class FindBeamformedOutliers(task.SingleTask):
+class FindBeamformedOutliers(tasklib.base.ContainerTask):
     """Identify beamformed visibilities that deviate from our expectation for noise.
 
     Attributes
@@ -421,7 +423,7 @@ class FindBeamformedOutliers(task.SingleTask):
         return out
 
 
-class MaskBadGains(task.SingleTask):
+class MaskBadGains(tasklib.base.ContainerTask):
     """Get a mask of regions with bad gain.
 
     Assumes that bad gains are set to 1.
@@ -435,7 +437,7 @@ class MaskBadGains(task.SingleTask):
 
         Parameters
         ----------
-        data : :class:`andata.Corrdata` or :class:`container.ContainerBase` with a `gain` dataset
+        data : :class:`andata.Corrdata` or :class:`ContainerPrototype` with a `gain` dataset
             Data containing the gains to be flagged. Must have a `gain` dataset.
 
         Returns
@@ -457,7 +459,7 @@ class MaskBadGains(task.SingleTask):
         return mask_cont
 
 
-class MaskBeamformedWeights(task.SingleTask):
+class MaskBeamformedWeights(tasklib.base.ContainerTask):
     """Mask beamformed visibilities with anomalously large weights before stacking.
 
     Attributes
@@ -484,7 +486,7 @@ class MaskBeamformedWeights(task.SingleTask):
             The input container with the weight dataset set to zero
             if the weights exceed the threshold.
         """
-        from caput import mpiutil
+        from caput.util import mpitools
 
         data.redistribute("object_id")
 
@@ -495,7 +497,7 @@ class MaskBeamformedWeights(task.SingleTask):
             wlocal = data.weight[:, pp]
             wglobal = np.zeros(wlocal.global_shape, dtype=wlocal.dtype)
 
-            mpiutil.gather_local(
+            mpitools.gather_local(
                 wglobal, wlocal, wlocal.local_offset, root=0, comm=data.comm
             )
 
@@ -516,7 +518,7 @@ class MaskBeamformedWeights(task.SingleTask):
         return data
 
 
-class RadiometerWeight(task.SingleTask):
+class RadiometerWeight(tasklib.base.ContainerTask):
     r"""Update vis_weight according to the radiometer equation.
 
     .. math::
@@ -544,7 +546,7 @@ class RadiometerWeight(task.SingleTask):
         -------
         stream : SiderealStream or TimeStream
         """
-        from caput.time import STELLAR_S
+        from caput.astro.constants import STELLAR_S
 
         # Redistribute over the frequency direction
         stream.redistribute("freq")
@@ -578,7 +580,7 @@ class RadiometerWeight(task.SingleTask):
         return stream
 
 
-class SanitizeWeights(task.SingleTask):
+class SanitizeWeights(tasklib.base.ContainerTask):
     """Flags weights outside of a valid range.
 
     Flags any weights above a max threshold and below a minimum threshold.
@@ -630,7 +632,7 @@ class SanitizeWeights(task.SingleTask):
         return data
 
 
-class NegativeAutosMask(task.SingleTask):
+class NegativeAutosMask(tasklib.base.ContainerTask):
     """Flag in frequency-time if any autocorrelation is negative."""
 
     def process(self, data: containers.VisContainer) -> containers.RFIMask:
@@ -666,7 +668,7 @@ class NegativeAutosMask(task.SingleTask):
         return mask_cont
 
 
-class SmoothVisWeight(task.SingleTask):
+class SmoothVisWeight(tasklib.base.ContainerTask):
     """Smooth the visibility weights with a median filter.
 
     This is done in-place.
@@ -714,7 +716,7 @@ class SmoothVisWeight(task.SingleTask):
             else:
                 mask = np.ones_like(weight_local[i], dtype=np.float64)
 
-            weight_local[i] = weighted_median.moving_weighted_median(
+            weight_local[i] = median.moving_weighted_median(
                 data=weight_local[i],
                 weights=mask,
                 size=(1, self.kernel_size),
@@ -727,7 +729,7 @@ class SmoothVisWeight(task.SingleTask):
         return data
 
 
-class ThresholdVisWeightFrequency(task.SingleTask):
+class ThresholdVisWeightFrequency(tasklib.base.ContainerTask):
     """Create a mask to remove all weights below a per-frequency threshold.
 
     A single relative threshold is set for each frequency along with an absolute
@@ -787,7 +789,7 @@ class ThresholdVisWeightFrequency(task.SingleTask):
             > np.fmax(threshold * self.relative_threshold, self.absolute_threshold)
         )[:, 0, :]
         # Collect all parts of the mask. Method .allgather() returns a np.ndarray
-        mask = MPIArray.wrap(mask, axis=0).allgather()
+        mask = mpiarray.MPIArray.wrap(mask, axis=0).allgather()
         # Log the percent of data masked
         drop_frac = np.sum(mask) / np.prod(mask.shape)
         self.log.info(
@@ -799,7 +801,7 @@ class ThresholdVisWeightFrequency(task.SingleTask):
         return mask_cont
 
 
-class ThresholdVisWeightBaseline(task.SingleTask):
+class ThresholdVisWeightBaseline(tasklib.base.ContainerTask):
     """Form a mask corresponding to weights that are below some threshold.
 
     The threshold is determined as `maximum(absolute_threshold,
@@ -899,7 +901,7 @@ class ThresholdVisWeightBaseline(task.SingleTask):
             average_weight = np.sum(average_weight * average_sel, axis=-1)
             average_weight *= tools.invert_no_zero(np.sum(average_sel, axis=-1))
         elif self.average_type == "median":
-            average_weight = weighted_median.weighted_median(
+            average_weight = median.weighted_median(
                 average_weight, average_sel.astype(np.float64)
             )
 
@@ -940,7 +942,7 @@ class ThresholdVisWeightBaseline(task.SingleTask):
         self.log.info(f"{100.0 * mask_frac:.5f} of data is below the weight threshold")
 
         # Save mask to output container
-        mask_cont.mask[:] = MPIArray.wrap(local_mask, axis=1)
+        mask_cont.mask[:] = mpiarray.MPIArray.wrap(local_mask, axis=1)
 
         # Distribute back across frequency
         mask_cont.redistribute("freq")
@@ -949,7 +951,7 @@ class ThresholdVisWeightBaseline(task.SingleTask):
         return mask_cont
 
 
-class CollapseBaselineMask(task.SingleTask):
+class CollapseBaselineMask(tasklib.base.ContainerTask):
     """Collapse a baseline-dependent mask along the baseline axis.
 
     The output is a frequency/time mask that is True for any freq/time sample
@@ -992,7 +994,7 @@ class CollapseBaselineMask(task.SingleTask):
         local_mask = np.any(local_mask, axis=1)
 
         # Gather full mask on each rank
-        full_mask = MPIArray.wrap(local_mask, axis=0).allgather()
+        full_mask = mpiarray.MPIArray.wrap(local_mask, axis=0).allgather()
 
         # Log the percent of freq/time samples masked
         drop_frac = np.sum(full_mask) / np.prod(full_mask.shape)
@@ -1006,7 +1008,7 @@ class CollapseBaselineMask(task.SingleTask):
         return mask_cont
 
 
-class RFIVisMask(task.SingleTask):
+class RFIVisMask(tasklib.base.ContainerTask):
     """Identify and flag RFI in visibility data.
 
     This is a non-functional base class.
@@ -1098,8 +1100,8 @@ class RFIVisMask(task.SingleTask):
 
     def generate_mask(
         self,
-        vis: MPIArray,
-        weight: MPIArray,
+        vis: mpiarray.MPIArray,
+        weight: mpiarray.MPIArray,
         mask: npt.NDArray[np.bool_],
         freq: npt.NDArray[np.floating],
         baselines: npt.NDArray[np.floating],
@@ -1193,7 +1195,7 @@ class RFITransientVisMask(RFIVisMask):
         ra = np.unwrap(self.telescope.unix_to_lsa(times), period=360.0) * np.pi / 180.0
         # Get the per-frequency high-pass and low-pass cuts
         dec = np.deg2rad(self.telescope.latitude)
-        lambda_inv = freq[:, np.newaxis] * 1e6 / units.c
+        lambda_inv = freq[:, np.newaxis] * 1e6 / constants.c
 
         # Maximum cut per frequency
         hpf_cut = lambda_inv * baselines[:, 0].max() / np.cos(dec)
@@ -1215,7 +1217,7 @@ class RFITransientVisMask(RFIVisMask):
             )
 
             # MAD filter flags scattered emission after beamforming
-            map_hpf = abs(fftw.fft(v_hpf, axes=0))
+            map_hpf = abs(fft.fftw.fft(v_hpf, axes=0))
             mad_mask = np.zeros_like(v_hpf, dtype=bool) | mask[fsel][np.newaxis]
             mad_ = mad(map_hpf, mad_mask, self.mad_base_size, self.mad_dev_size)
             # Hysteresis threshold mask flags anything above `sigma_high` or
@@ -1227,7 +1229,7 @@ class RFITransientVisMask(RFIVisMask):
             # Collapse over baselines and flag
             mask[fsel] |= np.mean(mad_mask, axis=0) > self.frac_samples
 
-        return MPIArray.wrap(mask, axis=0).allgather()
+        return mpiarray.MPIArray.wrap(mask, axis=0).allgather()
 
 
 class RFINarrowbandVisMask(RFIVisMask, transform.ReduceVar):
@@ -1311,7 +1313,7 @@ class RFINarrowbandVisMask(RFIVisMask, transform.ReduceVar):
             power[fsel] = np.mean(abs(v_lpf)[bl_sel], axis=0)
 
         # Gather the entire power array for masking
-        power = MPIArray.wrap(power, axis=0).allgather()
+        power = mpiarray.MPIArray.wrap(power, axis=0).allgather()
 
         # Find times where there are bright sources in the sky
         # which should be treated differently
@@ -1337,7 +1339,7 @@ class RFINarrowbandVisMask(RFIVisMask, transform.ReduceVar):
         # ratio of a rolling median of the background sky to the overall
         # median in time and multiply this ratio by the per-frequency
         # variance estimate
-        med = weighted_median.weighted_median(p_med, (~mask).astype(p_med.dtype))
+        med = median.weighted_median(p_med, (~mask).astype(p_med.dtype))
         rmed = filters.medfilt(p_med, mask, size=self.var_win_size)
         # Get the initial full variance using the lower variance estimate.
         # Increase the variance estimate during solar transit
@@ -1390,7 +1392,7 @@ class RFINarrowbandVisMask(RFIVisMask, transform.ReduceVar):
         return np.zeros_like(times, dtype=bool)
 
 
-class RFIMaskChisqHighDelay(task.SingleTask):
+class RFIMaskChisqHighDelay(tasklib.base.ContainerTask):
     """Mask frequencies and times with anomalous chi-squared test statistic.
 
     Attributes
@@ -1623,7 +1625,7 @@ class RFIMaskChisqHighDelay(task.SingleTask):
         y = np.ascontiguousarray(y.astype(np.float64))
         w = np.ascontiguousarray((~m).astype(np.float64))
 
-        med_y = weighted_median.weighted_median(y, w)
+        med_y = median.weighted_median(y, w)
         med_m = np.all(m, axis=-1)
         med_w = np.ascontiguousarray((~med_m).astype(np.float64))
 
@@ -1633,7 +1635,7 @@ class RFIMaskChisqHighDelay(task.SingleTask):
         # Subtract the baseline and estimate the noise
         abs_dev = np.where(med_m, 0.0, np.abs(med_y - baseline))
 
-        mad = 1.48625 * weighted_median.weighted_median(abs_dev, med_w)
+        mad = 1.48625 * median.weighted_median(abs_dev, med_w)
 
         # Flag outliers
         return abs_dev > (self.nsigma_1d * mad)
@@ -1660,7 +1662,7 @@ class RFIMaskChisqHighDelay(task.SingleTask):
         w = np.ascontiguousarray(w.astype(np.float64))
         win_size = (self.win_f, self.win_t)
 
-        med_y = weighted_median.moving_weighted_median(y, w, win_size)
+        med_y = median.moving_weighted_median(y, w, win_size)
 
         # Calculate the deviation from the median, normalized by the
         # expected standard deviation
@@ -1670,9 +1672,7 @@ class RFIMaskChisqHighDelay(task.SingleTask):
         # using the median absolute deviation.
         if self.estimate_var:
             f = np.ascontiguousarray((w > 0.0).astype(np.float64))
-            mad_y = 1.48625 * weighted_median.moving_weighted_median(
-                np.abs(dy), f, win_size
-            )
+            mad_y = 1.48625 * median.moving_weighted_median(np.abs(dy), f, win_size)
             dy *= tools.invert_no_zero(mad_y)
 
         # Take the absolute value of the relative excursion unless
@@ -1715,7 +1715,7 @@ class RFIMaskChisqHighDelay(task.SingleTask):
             f = np.ascontiguousarray(~mask * w, dtype=np.float64)
 
             # Calculate the local median
-            med_y = weighted_median.moving_weighted_median(y, f, win_size)
+            med_y = median.moving_weighted_median(y, f, win_size)
 
             # Calculate the deviation from the median, normalized by the
             # expected standard deviation
@@ -1725,9 +1725,7 @@ class RFIMaskChisqHighDelay(task.SingleTask):
             # using the median absolute deviation.
             if self.estimate_var:
                 f = np.ascontiguousarray(f > 0.0, dtype=np.float64)
-                mad_y = 1.48625 * weighted_median.moving_weighted_median(
-                    np.abs(dy), f, win_size
-                )
+                mad_y = 1.48625 * median.moving_weighted_median(np.abs(dy), f, win_size)
 
             # Generate a mask using sumthreshold
             stmask = rfi.sumthreshold(
@@ -1781,7 +1779,7 @@ class RFIMaskChisqHighDelay(task.SingleTask):
         return np.zeros(times.size, dtype=bool)
 
 
-class RFISensitivityMask(task.SingleTask):
+class RFISensitivityMask(tasklib.base.ContainerTask):
     """Identify RFI as deviations in system sensitivity from expected radiometer noise.
 
     Attributes
@@ -1900,7 +1898,7 @@ class RFISensitivityMask(task.SingleTask):
         # Create arrays to hold final masks
         nfreq, _, ntime = radiometer.shape
 
-        finalmask = MPIArray((npol, nfreq, ntime), axis=0, dtype=bool)
+        finalmask = mpiarray.MPIArray((npol, nfreq, ntime), axis=0, dtype=bool)
         finalmask[:] = False
 
         # Loop over polarisations
@@ -1986,12 +1984,12 @@ class RFISensitivityMask(task.SingleTask):
 
             finalmask[li] = current_flag
 
-        # Perform an OR (.any) along the pol axis and reform into an MPIArray
+        # Perform an OR (.any) along the pol axis and reform into an mpiarray.MPIArray
         # along the freq axis
-        finalmask = MPIArray.wrap(finalmask.redistribute(1).any(0), 0)
+        finalmask = mpiarray.MPIArray.wrap(finalmask.redistribute(1).any(0), 0)
 
         # Collect all parts of the mask onto rank 1 and then broadcast to all ranks
-        finalmask = MPIArray.wrap(finalmask, 0).allgather()
+        finalmask = mpiarray.MPIArray.wrap(finalmask, 0).allgather()
 
         # Log the fraction of data masked
         percent_masked = 100 * np.sum(finalmask) / float(finalmask.size)
@@ -2061,24 +2059,20 @@ class RFISensitivityMask(task.SingleTask):
         y = np.ascontiguousarray(rad.astype(np.float64))
         w = np.ascontiguousarray((~mask).astype(np.float64))
 
-        medt_y = weighted_median.quantile(y, w, self.quantile_1d)
+        medt_y = median.quantile(y, w, self.quantile_1d)
         medt_w = np.any(w, axis=-1).astype(np.float64)
 
         if self.win_f_1d is None:
-            medf_medt_y = weighted_median.weighted_median(medt_y, medt_w)
+            medf_medt_y = median.weighted_median(medt_y, medt_w)
         else:
-            medf_medt_y = weighted_median.moving_weighted_median(
-                medt_y, medt_w, self.win_f_1d
-            )
+            medf_medt_y = median.moving_weighted_median(medt_y, medt_w, self.win_f_1d)
 
         absd_medt_y = np.abs(medt_y - medf_medt_y)
 
         if self.win_f_1d is None:
-            mad_1d = self.MAD_TO_RMS * weighted_median.weighted_median(
-                absd_medt_y, medt_w
-            )
+            mad_1d = self.MAD_TO_RMS * median.weighted_median(absd_medt_y, medt_w)
         else:
-            mad_1d = self.MAD_TO_RMS * weighted_median.moving_weighted_median(
+            mad_1d = self.MAD_TO_RMS * median.moving_weighted_median(
                 absd_medt_y, medt_w, self.win_f_1d
             )
 
@@ -2097,7 +2091,7 @@ class RFISensitivityMask(task.SingleTask):
         return nobaseflagsir | mask
 
 
-class RFIMask(task.SingleTask):
+class RFIMask(tasklib.base.ContainerTask):
     """Crappy RFI masking.
 
     Attributes
@@ -2199,7 +2193,7 @@ class RFIMask(task.SingleTask):
         return mask_cont
 
 
-class ApplyTimeFreqMask(task.SingleTask):
+class ApplyTimeFreqMask(tasklib.base.ContainerTask):
     """Apply a time-frequency mask to the data.
 
     Typically this is used to mask out all inputs at times and
@@ -2360,7 +2354,7 @@ class ApplyTimeFreqMask(task.SingleTask):
         return tsc
 
 
-class ApplyGenericMask(task.SingleTask):
+class ApplyGenericMask(tasklib.base.ContainerTask):
     """Apply a mask to a dataset with arbitrary axes.
 
     All of the mask axes must be present in the dataset, but
@@ -2370,7 +2364,7 @@ class ApplyGenericMask(task.SingleTask):
     should be flagged.
     """
 
-    def process(self, data: containers.ContainerBase, mask: containers.ContainerBase):
+    def process(self, data: ContainerPrototype, mask: ContainerPrototype):
         """Apply the mask to the dataset weights.
 
         Reorder the mask axes and add broadcasting axes if necessary.
@@ -2422,7 +2416,7 @@ class ApplyGenericMask(task.SingleTask):
 MaskBeamformedOutliers = ApplyGenericMask
 
 
-class GeneralCombineMasks(task.SingleTask):
+class GeneralCombineMasks(tasklib.base.ContainerTask):
     """Combine multiple masks using a user-specified logical expression.
 
     The input is a list of containers with `mask` datasets. Each mask is assigned
@@ -2445,17 +2439,17 @@ class GeneralCombineMasks(task.SingleTask):
     _dataset_name = "mask"
     _operators: ClassVar[set[str]] = set("&|~^()")
 
-    def process(self, masks: list[containers.ContainerBase]):
+    def process(self, masks: list[ContainerPrototype]):
         """Combine the given list of masks using the logical expression.
 
         Parameters
         ----------
-        masks : list of containers.ContainerBase
+        masks : list of ContainerPrototype
             A list of containers with a `mask` dataset, all of the same type and shape.
 
         Returns
         -------
-        combined_mask : containers.ContainerBase
+        combined_mask : ContainerPrototype
             A new container of the same type with the result of the logical combination.
         """
         if len(masks) > 26:
@@ -2504,17 +2498,17 @@ class GeneralCombineMasks(task.SingleTask):
 class CombineMasks(GeneralCombineMasks):
     """Combine an arbitrary number of masks conservatively (logical OR)."""
 
-    def process(self, masks: list[containers.ContainerBase]):
+    def process(self, masks: list[ContainerPrototype]):
         """Construct the logical OR of all masks.
 
         Parameters
         ----------
-        masks : list of containers.ContainerBase
+        masks : list of ContainerPrototype
             A list of containers with a `mask` dataset, all of the same type and shape.
 
         Returns
         -------
-        combined_mask : containers.ContainerBase
+        combined_mask : ContainerPrototype
             A new container of the same type containing the logical OR of all masks.
         """
         # Construct expression: A | B | C ...
@@ -2522,7 +2516,7 @@ class CombineMasks(GeneralCombineMasks):
         return super().process(masks)
 
 
-class ApplyTaper(task.SingleTask):
+class ApplyTaper(tasklib.base.ContainerTask):
     """Apply a taper to a dataset with arbitrary axes.
 
     All of the taper axes must be present in the dataset, but
@@ -2538,7 +2532,7 @@ class ApplyTaper(task.SingleTask):
 
     update_weight = config.Property(proptype=bool, default=False)
 
-    def process(self, data: containers.ContainerBase, taper: containers.ContainerBase):
+    def process(self, data: ContainerPrototype, taper: ContainerPrototype):
         """Apply the taper to the dataset weights.
 
         Reorder the taper axes and add broadcasting axes if necessary.
@@ -2549,7 +2543,7 @@ class ApplyTaper(task.SingleTask):
             A container with `data` and `weight` properties.
             Both the data and weight must include a `freq` axis,
             and must contain all axes present in the taper.
-        taper : containers.ContainerBase
+        taper : ContainerPrototype
             Any container that has a `taper` property that has
             a `freq` axis and whose othes axes are a subset of
             those in the data.
@@ -2623,17 +2617,17 @@ class GeneralCombineTapers(GeneralCombineMasks):
 class CombineTapers(GeneralCombineTapers):
     """Combine an arbitrary number of tapers conservatively (multiply)."""
 
-    def process(self, tapers: list[containers.ContainerBase]):
+    def process(self, tapers: list[ContainerPrototype]):
         """Construct the product of all tapers.
 
         Parameters
         ----------
-        tapers : list of containers.ContainerBase
+        tapers : list of ContainerPrototype
             A list of containers with a `taper` dataset, all of the same type and shape.
 
         Returns
         -------
-        combined_taper : containers.ContainerBase
+        combined_taper : ContainerPrototype
             A new container of the same type containing the product of all tapers.
         """
         # Construct expression: A * B * C ...
@@ -2641,7 +2635,7 @@ class CombineTapers(GeneralCombineTapers):
         return super().process(tapers)
 
 
-class MaskFromTaper(task.SingleTask):
+class MaskFromTaper(tasklib.base.ContainerTask):
     """Generate a binary mask from a taper.
 
     This task constructs a `RingMapMask` by thresholding a `RingMapTaper`.
@@ -2691,7 +2685,7 @@ class MaskFromTaper(task.SingleTask):
         return out
 
 
-class TaperDelayTransform(task.SingleTask):
+class TaperDelayTransform(tasklib.base.ContainerTask):
     """Apply a taper or mask to a DelayTransform container.
 
     This task applies a frequency-collapsed taper or mask to the delay-domain
@@ -2782,7 +2776,7 @@ class TaperDelayTransform(task.SingleTask):
         return data
 
 
-class ApplyBaselineMask(task.SingleTask):
+class ApplyBaselineMask(tasklib.base.ContainerTask):
     """Apply a distributed mask that varies across baselines.
 
     No broadcasting is done, so the data and mask should have the same
@@ -2874,7 +2868,7 @@ class ApplyBaselineMask(task.SingleTask):
         return tsc
 
 
-class MaskFreq(task.SingleTask):
+class MaskFreq(tasklib.base.ContainerTask):
     """Make a mask for certain frequencies.
 
     Attributes
@@ -2936,7 +2930,7 @@ class MaskFreq(task.SingleTask):
         )
         axis_dist = [ax for ax in waxes if ax in ["freq", "time", "ra"]].index("freq")
 
-        present_data = MPIArray.wrap(
+        present_data = mpiarray.MPIArray.wrap(
             (data.weight[:] > 0).sum(axis=axis_sum),
             comm=data.weight.comm,
             axis=axis_dist,
@@ -3026,7 +3020,7 @@ class MaskFreq(task.SingleTask):
         return genmask(res.x)
 
 
-class BlendStack(task.SingleTask):
+class BlendStack(tasklib.base.ContainerTask):
     """Mix a small amount of a stack into data to regularise RFI gaps.
 
     This is designed to mix in a small amount of a stack into a day of data (which
@@ -3145,21 +3139,19 @@ class BlendStack(task.SingleTask):
             mask = np.broadcast_to(mask, dss.shape).copy()
 
             # Get the median of the real part of the data and the stack
-            stack_med_real = weighted_median.weighted_median(
+            stack_med_real = median.weighted_median(
                 np.ascontiguousarray(dss.real), mask
             )
             # Get the median of the data in the common subset
-            data_med_real = weighted_median.weighted_median(
-                np.ascontiguousarray(ds.real), mask
-            )
+            data_med_real = median.weighted_median(np.ascontiguousarray(ds.real), mask)
 
             # If the data is complex, get the complex component too
             if np.iscomplexobj(dss):
-                stack_med_imag = weighted_median.weighted_median(
+                stack_med_imag = median.weighted_median(
                     np.ascontiguousarray(dss.imag), mask
                 )
 
-                data_med_imag = weighted_median.weighted_median(
+                data_med_imag = median.weighted_median(
                     np.ascontiguousarray(ds.imag), mask
                 )
 
@@ -3416,7 +3408,7 @@ def destripe(x, w, axis=1):
     return x - stripe[bsel]
 
 
-class RFIMaskSiderealRegridderNearest(task.SingleTask):
+class RFIMaskSiderealRegridderNearest(tasklib.base.ContainerTask):
     """Convert the axis of an RFI mask from time to ra.
 
     The conversion is performed by mapping values between Unix time and LSA
@@ -3501,7 +3493,7 @@ class RFIMaskSiderealRegridderNearest(task.SingleTask):
         )
 
 
-class RFIMaskTimeRegridderNearest(task.SingleTask):
+class RFIMaskTimeRegridderNearest(tasklib.base.ContainerTask):
     """Align the time axis of an input container to a target stream.
 
     This task adjusts the time axis of an RFI mask to match the time axis of
@@ -3556,7 +3548,7 @@ class RFIMaskTimeRegridderNearest(task.SingleTask):
         )
 
 
-class ReduceMaskEl(task.SingleTask):
+class ReduceMaskEl(tasklib.base.ContainerTask):
     """Reduce the 'el' axis from input classes and produce corresponding reduced output classes.
 
     Reduction algorithm: If the number of True values in the mask along the el axis
@@ -3614,7 +3606,7 @@ class ReduceMaskEl(task.SingleTask):
 
         # The output RFI mask is not frequency distributed
         arr = reduced_mask
-        arrdist = MPIArray.wrap(arr, axis=0)
+        arrdist = mpiarray.MPIArray.wrap(arr, axis=0)
         final_mask = arrdist.allgather()
 
         output.mask[:] = final_mask
@@ -3623,7 +3615,7 @@ class ReduceMaskEl(task.SingleTask):
         return output
 
 
-class ApplyLocalizedRFIMask(task.SingleTask):
+class ApplyLocalizedRFIMask(tasklib.base.ContainerTask):
     """Apply a localised (el-sensitive) RFI mask to the data by zeroing the weights.
 
     This class extends the class ApplyTimeFreqMask to include el in addition to freq and ra,
@@ -3728,7 +3720,7 @@ def _convert_axis_nearest_interpolation(
 
     Parameters
     ----------
-    stream : containers.ContainerBase
+    stream : ContainerPrototype
         The input container holding the original data and axis.
         Example: LocalizedRFIMask with axes (freq, time, el).
     to_type : type
@@ -3751,7 +3743,7 @@ def _convert_axis_nearest_interpolation(
 
     Returns
     -------
-    out : containers.ContainerBase
+    out : ContainerPrototype
         A new container of type `to_type` with converted axes and interpolated datasets.
 
     Notes

@@ -2,12 +2,13 @@
 
 import numpy as np
 from caput import config, mpiarray
+from caput.pipeline import tasklib
 
-from ..core import containers, io, task
+from ..core import containers, io
 from ..util import tools
 
 
-class BaseMapMaker(task.SingleTask):
+class BaseMapMaker(tasklib.base.ContainerTask):
     """Rudimetary m-mode map maker.
 
     Attributes

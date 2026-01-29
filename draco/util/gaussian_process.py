@@ -2,7 +2,7 @@
 
 import numpy as np
 import scipy.linalg as la
-from caput.tools import invert_no_zero
+from caput.algorithms import invert_no_zero
 
 from . import _fast_tools, kernels
 from .dpss import _dtype_to_real

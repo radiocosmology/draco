@@ -6,12 +6,15 @@ from typing import TypeVar
 
 import numpy as np
 import scipy.linalg as la
-from caput import config, fftw, memh5, mpiarray
-from cora.util import units
+from caput import config, memdata, mpiarray
+from caput.algorithms import fft, random
+from caput.astro import constants
+from caput.containers import ContainerPrototype
+from caput.pipeline import tasklib
 from numpy.lib.recfunctions import structured_to_unstructured
 
-from ..core import containers, io, task
-from ..util import filters, random, tools
+from ..core import containers, io
+from ..util import filters, tools
 from .delayopt import delay_power_spectrum_maxpost
 
 # A specific subclass of a FreqContainer
@@ -23,7 +26,7 @@ FreqContainerType = TypeVar("FreqContainerType", bound=containers.FreqContainer)
 # ---------------------
 
 
-class DelayFilter(task.SingleTask):
+class DelayFilter(tasklib.base.ContainerTask):
     """Remove delays less than a given threshold.
 
     This is performed by projecting the data onto the null space that is orthogonal
@@ -113,7 +116,9 @@ class DelayFilter(task.SingleTask):
                 baseline = np.linalg.norm(baseline)  # Norm
 
             # In micro seconds
-            baseline_delay_cut = self.za_cut * baseline / units.c * 1e6 + self.extra_cut
+            baseline_delay_cut = (
+                self.za_cut * baseline / constants.c * 1e6 + self.extra_cut
+            )
             delay_cut = np.amax([baseline_delay_cut, self.delay_cut])
 
             # Calculate the number of samples needed to construct the delay null space.
@@ -148,7 +153,7 @@ class DelayFilter(task.SingleTask):
         return ss
 
 
-class DelayFilterBase(task.SingleTask):
+class DelayFilterBase(tasklib.base.ContainerTask):
     """Remove delays less than a given threshold.
 
     This is performed by projecting the data onto the null space that is orthogonal
@@ -339,7 +344,7 @@ class DelayFilterBase(task.SingleTask):
 # -----------------------------
 
 
-class DelayTransformBase(task.SingleTask):
+class DelayTransformBase(tasklib.base.ContainerTask):
     """Base class for transforming from frequency to delay (non-functional).
 
     Attributes
@@ -652,7 +657,7 @@ class DelayTransformBase(task.SingleTask):
         ss: containers.FreqContainer,
         delays: np.ndarray,
         coord_axes: list[str],
-    ) -> containers.ContainerBase:
+    ) -> ContainerPrototype:
         """Create a suitable output container.
 
         Parameters
@@ -762,7 +767,7 @@ class DelayPowerSpectrumContainerMixin(GeneralInputContainerMixin):
         ss: containers.FreqContainer,
         delays: np.ndarray,
         coord_axes: list[str] | np.ndarray,
-    ) -> containers.ContainerBase:
+    ) -> ContainerPrototype:
         """Create the output container for the delay power spectrum.
 
         If `coord_axes` is a list of strings then it is assumed to be a list of the
@@ -827,7 +832,7 @@ class DelaySpectrumContainerMixin(GeneralInputContainerMixin):
 
     def _create_output(
         self, ss: containers.FreqContainer, delays: np.ndarray, coord_axes: list[str]
-    ) -> containers.ContainerBase:
+    ) -> ContainerPrototype:
         """Create the output container for the delay transform."""
         # Initialise the spectrum container
         nbase = np.prod([len(ss.index_map[ax]) for ax in coord_axes])
@@ -1053,7 +1058,7 @@ class DelaySpectrumWienerFilterIteratePS(DelaySpectrumWienerFilter):
 # -------------------------------------------------------------
 
 
-class DelaySpectrumToPowerSpectrum(task.SingleTask):
+class DelaySpectrumToPowerSpectrum(tasklib.base.ContainerTask):
     """Compute a delay power spectrum from a delay spectrum."""
 
     def process(self, dspec: containers.DelayTransform) -> containers.DelaySpectrum:
@@ -1210,7 +1215,7 @@ class DelayPowerSpectrumBase(DelayPowerSpectrumContainerMixin, DelayTransformBas
         raise NotImplementedError()
 
 
-class DelayPowerSpectrumGibbs(DelayPowerSpectrumBase, random.RandomTask):
+class DelayPowerSpectrumGibbs(DelayPowerSpectrumBase, tasklib.random.RandomTask):
     """Use a Gibbs sampler to estimate the delay power spectrum.
 
     The spectrum returned is the median of the final half of the
@@ -1296,7 +1301,9 @@ class DelayPowerSpectrumNRML(DelayPowerSpectrumBase):
         return spec, samples, success
 
 
-class DelayCrossPowerSpectrumEstimator(DelayPowerSpectrumGibbs, random.RandomTask):
+class DelayCrossPowerSpectrumEstimator(
+    DelayPowerSpectrumGibbs, tasklib.random.RandomTask
+):
     """A delay cross power spectrum estimator.
 
     This takes multiple compatible `FreqContainer`s as inputs and will return a
@@ -1336,7 +1343,7 @@ class DelayCrossPowerSpectrumEstimator(DelayPowerSpectrumGibbs, random.RandomTas
         ss: list[containers.FreqContainer],
         delays: np.ndarray,
         coord_axes: list[str],
-    ) -> containers.ContainerBase:
+    ) -> ContainerPrototype:
         """Create the output container for the delay power spectrum.
 
         If `coord_axes` is a list of strings then it is assumed to be a list of the
@@ -2119,7 +2126,7 @@ def delay_spectrum_fft(data, N, window="nuttall"):
         window = tools.window_generalised(wx, window=window)[np.newaxis]
         data *= window
 
-    return fftw.ifft(data, axes=-1)
+    return fft.fftw.ifft(data, axes=-1)
 
 
 def delay_spectrum_wiener_filter(
@@ -2229,9 +2236,9 @@ def match_axes(dset1, dset2):
 
 
 def flatten_axes(
-    dset: memh5.MemDatasetDistributed,
+    dset: memdata.MemDatasetDistributed,
     axes_to_keep: list[str],
-    match_dset: memh5.MemDatasetDistributed | None = None,
+    match_dset: memdata.MemDatasetDistributed | None = None,
 ) -> tuple[mpiarray.MPIArray, list[str]]:
     """Move the specified axes of the dataset to the back, and flatten all others.
 
