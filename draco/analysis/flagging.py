@@ -1089,7 +1089,9 @@ class RFIVisMask(tasklib.base.ContainerTask):
         mask = (weight == 0).all(axis=1)
         mask |= self._static_rfi_mask_hook(freq, times[0])[:, np.newaxis]
 
-        self.log.debug(f"{100.0 * mask.mean():.2f}% of data initially flagged.")
+        self.log.debug(
+            f"{100.0 * mask.allgather().mean():.2f}% of data initially flagged."
+        )
 
         # Create a time-frequency mask
         out.mask[:] = self.generate_mask(vis, weight, mask, freq, baselines, times)
