@@ -2,10 +2,10 @@ name: draco-ci-build
 on:
   pull_request:
     branches:
-    - master
+    - main
   push:
     branches:
-    - master
+    - main
 
 jobs:
 
@@ -13,12 +13,12 @@ jobs:
 
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v6
 
-    - name: Set up Python 3.13
-      uses: actions/setup-python@v5
+    - name: Set up Python
+      uses: actions/setup-python@v6
       with:
-        python-version: "3.13"
+        python-version: "3.14"
 
     - name: Install apt dependencies
       run: |
@@ -38,11 +38,11 @@ jobs:
 
     strategy:
       matrix:
-        python-version: ["3.10", "3.13"]
+        python-version: ["3.10", "3.14"]
 
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v6
 
     - name: Install apt dependencies
       run: |
@@ -50,7 +50,7 @@ jobs:
         sudo apt-get install -y libopenmpi-dev openmpi-bin libhdf5-serial-dev
 
     - name: Set up Python ${{ matrix.python-version }}
-      uses: actions/setup-python@v5
+      uses: actions/setup-python@v6
       with:
         python-version: ${{ matrix.python-version }}
 
@@ -75,17 +75,17 @@ jobs:
 
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v6
 
     - name: Install apt dependencies
       run: |
         sudo apt-get update
         sudo apt-get install -y libopenmpi-dev openmpi-bin
 
-    - name: Set up Python 3.13
-      uses: actions/setup-python@v5
+    - name: Set up Python
+      uses: actions/setup-python@v6
       with:
-        python-version: "3.13"
+        python-version: "3.14"
 
     - name: Install pip dependencies
       run: |
