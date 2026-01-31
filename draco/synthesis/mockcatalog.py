@@ -2,23 +2,6 @@
 
 See Usage section for usage.
 
-Pipeline tasks
-==============
-
-.. autosummary::
-    :toctree:
-
-    SelectionFunctionEstimator
-    ResizeSelectionFunctionMap
-    PdfGeneratorBase
-    PdfGeneratorUncorrelated
-    PdfGeneratorNoSelectionFunction
-    PdfGeneratorWithSelectionFunction
-    MockCatalogGenerator
-    AddGaussianZErrorsToCatalog
-    AddEBOSSZErrorsToCatalog
-    MapPixelLocationGenerator
-
 Usage
 =====
 
