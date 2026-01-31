@@ -1043,9 +1043,11 @@ class AddEBOSSZErrorsToCatalog(tasklib.base.ContainerTask, tasklib.random.Random
         This is taken from Raichoor et al. 2020 (https://arxiv.org/abs/2007.09007).
         They do not plot the error distribution, but Section 2.3 provides three
         percentiles:
+
             "Additionally, we can assess with repeats that 99.5, 95, and 50
             percent of our redshift estimates have a precision better than
             300 km s-1, 100 km s-1, and 20 km s-1, respectively."
+
         These percentiles do not follow a Gaussian, but are reasonably well fit
         by a Tukey lambda distribution if the scale and shape parameters
         are allowed to float.
