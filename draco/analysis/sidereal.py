@@ -15,7 +15,7 @@ import numpy as np
 import scipy.linalg as la
 from caput import config, mpiarray
 from caput.astro import constants
-from caput.containers import tod
+from caput.containers import empty_like, tod
 from caput.pipeline import tasklib
 
 from ..core import containers, io
@@ -889,7 +889,7 @@ class SiderealStacker(tasklib.base.ContainerTask):
         # If this is our first sidereal day, then initialize the
         # container that will hold the stack.
         if self.stack is None:
-            self.stack = containers.empty_like(sdata)
+            self.stack = empty_like(sdata)
 
             # Add stack-specific datasets
             if "nsample" not in self.stack.datasets:
@@ -1126,7 +1126,7 @@ class SiderealStackerMatch(tasklib.base.ContainerTask):
         if self.stack is None:
             self.log.info("Starting new stack.")
 
-            self.stack = containers.empty_like(sdata)
+            self.stack = empty_like(sdata)
             self.stack.redistribute("freq")
 
             # Initialise all datasets to zero
