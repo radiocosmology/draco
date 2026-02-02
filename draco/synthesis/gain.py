@@ -2,6 +2,7 @@
 
 import numpy as np
 from caput import config, mpiarray
+from caput.containers import empty_like
 from caput.pipeline import exceptions, tasklib
 
 from ..core import containers, io
@@ -363,7 +364,7 @@ class GainStacker(tasklib.base.ContainerTask):
         # If gain_stack is None create an MPIArray to hold the product expanded
         # gain data and redistribute over all freq
         if self.gain_stack is None:
-            self.gain_stack = containers.empty_like(stream)
+            self.gain_stack = empty_like(stream)
             self.gain_stack.redistribute("freq")
             gain.redistribute("freq")
 
@@ -417,7 +418,7 @@ class GainStacker(tasklib.base.ContainerTask):
 
             return self.gain_stack
 
-        data = containers.empty_like(self.stream)
+        data = empty_like(self.stream)
         data.redistribute("freq")
 
         self.gain_stack.vis[:] = self.gain_stack.vis[:] / self.gain_stack.weight[:]

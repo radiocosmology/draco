@@ -25,6 +25,7 @@ Tasks
 import numpy as np
 import scipy.constants
 from caput import config
+from caput.containers import empty_like
 from caput.pipeline import tasklib
 from mpi4py import MPI
 from numpy.lib.recfunctions import structured_to_unstructured
@@ -1037,7 +1038,7 @@ class DeconvolveAnalyticalBeam(DeconvolveHybridMBase):
         ra = np.linspace(0.0, 360.0, nra, endpoint=False)
         phi_arr = np.radians(ra)[np.newaxis, np.newaxis, np.newaxis, :]
 
-        hybrid_beam_m = containers.empty_like(hybrid_vis_m)
+        hybrid_beam_m = empty_like(hybrid_vis_m)
 
         # Loop over all local frequencies and calculate the beam m-modes
         for lfi, fi in hybrid_vis_m.vis[:].enumerate(axis=3):

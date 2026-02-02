@@ -9,7 +9,7 @@ import numpy as np
 import scipy.linalg as la
 from caput import config, mpiarray
 from caput.algorithms import fft, invert_no_zero
-from caput.containers import ContainerPrototype, copy_datasets_filter
+from caput.containers import ContainerPrototype, copy_datasets_filter, empty_like
 from caput.pipeline import exceptions, tasklib
 from numpy.lib.recfunctions import structured_to_unstructured
 
@@ -60,7 +60,7 @@ class FrequencyRebin(tasklib.base.ContainerTask):
         freq_map["width"] = fw
 
         # Create new container for rebinned stream
-        sb = containers.empty_like(ss, freq=freq_map)
+        sb = empty_like(ss, freq=freq_map)
 
         # Get all frequencies onto same node
         sb.redistribute(["time", "ra"])
@@ -403,7 +403,7 @@ class SelectFreq(tasklib.base.ContainerTask):
         data.redistribute(["ra", "time", "pixel"])
 
         # Create new container with subset of frequencies.
-        newdata = containers.empty_like(data, freq=freq_map)
+        newdata = empty_like(data, freq=freq_map)
 
         # Make sure all datasets are initialised
         for name in data.datasets.keys():
@@ -1138,7 +1138,7 @@ class SelectPol(tasklib.base.ContainerTask):
         weight_dset_name = getattr(polcont, "_weight_dset_name", None)
 
         # Create the output container
-        outcont = containers.empty_like(polcont, pol=np.array(self.pol))
+        outcont = empty_like(polcont, pol=np.array(self.pol))
 
         for name in polcont.datasets.keys():
             if name not in outcont.datasets:
@@ -1291,7 +1291,7 @@ class PolWeightedAverage(tasklib.base.ContainerTask):
             return axis, slc
 
         # Create output container
-        outcont = containers.empty_like(polcont, pol=np.array(["I"]))
+        outcont = empty_like(polcont, pol=np.array(["I"]))
 
         for name in polcont.datasets.keys():
             if name not in outcont.datasets:
@@ -1374,7 +1374,7 @@ class StokesIVis(tasklib.base.ContainerTask):
         # Make the output container
         # TODO: the axes for this container should probably
         # be adjusted to make more sense
-        out = containers.empty_like(data, stack=baselines)
+        out = empty_like(data, stack=baselines)
         out.redistribute("freq")
 
         out.vis[:] = vis.redistribute(0)
@@ -1682,7 +1682,7 @@ class MixData(tasklib.base.ContainerTask):
             )
 
         if self.mixed_data is None:
-            self.mixed_data = containers.empty_like(data)
+            self.mixed_data = empty_like(data)
 
             # If requested, add auxiliary datasets
             for key in self.aux_coeff.keys():
