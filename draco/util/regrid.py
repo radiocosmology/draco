@@ -194,7 +194,6 @@ def rebin_matrix(tra: np.ndarray, ra: np.ndarray, width_t: float = 0) -> np.ndar
     # NOTE: this can probably be done more efficiently, but we typically only need
     # to do this once per day
     for ii, (jj, t) in enumerate(zip(inds, tra)):
-
         lower_edge = t - width_t / 2.0
         upper_edge = t + width_t / 2.0
 

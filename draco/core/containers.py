@@ -1318,9 +1318,7 @@ class FilterFreqContainer(ContainerPrototype):
     _axes = ("freq_sum",)
 
     def __init__(self, *args, **kwargs):
-
         for ax in ["freq_sum"]:
-
             if ax not in kwargs:
                 if "axes_from" in kwargs and ax in kwargs["axes_from"].index_map:
                     kwargs[ax] = kwargs["axes_from"].index_map[ax]

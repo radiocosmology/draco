@@ -104,7 +104,6 @@ class TransformJyPerBeamToKelvin(tasklib.base.ContainerTask):
         return out_map
 
     def _get_max_baseline(self):
-
         prod = self.telescope.prodstack
         baselines = (
             self.telescope.feedpositions[prod["input_a"], :]
@@ -243,7 +242,6 @@ class ConstructWienerDelayTransform(tasklib.base.ContainerTask):
 
         # Loop over polarisations
         for pp in range(npol):
-
             self.log.info(f"Polarisation {pp} of {npol}")
 
             # The filter and freq_cov datasets do not have an elevation axis.
@@ -258,7 +256,6 @@ class ConstructWienerDelayTransform(tasklib.base.ContainerTask):
 
             # Loop over elevations
             for ee in range(nel_local):
-
                 self.log.info(f"Elevation {ee} of {nel_local}")
 
                 # Extract maps for this polarisation and elevation
@@ -438,11 +435,9 @@ class ApplyWienerDelayTransform(tasklib.base.ContainerTask):
 
         # Loop over pol and ra
         for pp in range(npol):
-
             eslc = slice(pp * nel, (pp + 1) * nel)
 
             for rr in range(nra):
-
                 # Shape (el, delay, freq)
                 op = filt[pp, rr]
 
@@ -744,8 +739,7 @@ class CrossPowerSpectrum3D(tasklib.base.ContainerTask):
         # Validate the types are the same
         if type(vis_1) is not type(vis_2):
             raise TypeError(
-                f"type(vis_1) (={type(vis_1)}) must match "
-                f"type(vis_2) (={type(vis_2)})"
+                f"type(vis_1) (={type(vis_1)}) must match type(vis_2) (={type(vis_2)})"
             )
 
         vis_1.redistribute("delay")
@@ -813,7 +807,7 @@ class CrossPowerSpectrum3D(tasklib.base.ContainerTask):
             pid_2 = pol_2.index(pstr_2)
 
             self.log.debug(
-                "Estimating power spectrum for pol: " f"{pstr} ({pid_1} x {pid_2})"
+                f"Estimating power spectrum for pol: {pstr} ({pid_1} x {pid_2})"
             )
 
             pspec[pp] = ps_norm * (vis_1[pid_1] * vis_2[pid_2].conj())

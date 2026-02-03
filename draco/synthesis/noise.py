@@ -432,9 +432,7 @@ class FreqCorrelatedNoise(tasklib.base.ContainerTask, tasklib.random.RandomTask)
 
         # Loop over pol and ew to reduce memory usage
         for pp in range(npol):
-
             for ee in range(new):
-
                 # Generate a set of complex random numbers with unit standard deviation
                 z = np.empty((nra, nfreq, nns), dtype=ovis.dtype)
 
