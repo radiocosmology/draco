@@ -2013,7 +2013,9 @@ class ReduceBase(tasklib.base.ContainerTask):
 
         return out
 
-    def _get_weights(self, data: containers.ContainerBase) -> mpiarray.MPIArray | None:
+    def _get_weights(
+        self, data: ContainerPrototype
+    ) -> tuple[mpiarray.MPIArray | None, list | None]:
         """Get the weights to use for the reduction."""
         if not hasattr(data, "weight") and self.weighting != "none":
             raise RuntimeError(
@@ -2025,9 +2027,7 @@ class ReduceBase(tasklib.base.ContainerTask):
 
         return None, None
 
-    def _make_output_container(
-        self, data: containers.ContainerBase
-    ) -> containers.ContainerBase:
+    def _make_output_container(self, data: ContainerPrototype) -> ContainerPrototype:
         """Create the output container."""
         # For a collapsed axis, the meaning of the index map will depend on
         # the reduction being done, and can be meaningless. The first value
