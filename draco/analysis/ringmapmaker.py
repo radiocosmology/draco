@@ -288,7 +288,7 @@ class BeamformNS(tasklib.base.ContainerTask):
         hv.attrs["beamform_ns_nsmax"] = nsmax
 
         # choose the precision which will be used in `matmul`
-        complex_dtype = np.dtype(f"complex{2*self.precision:.0f}")
+        complex_dtype = np.dtype(f"complex{2 * self.precision:.0f}")
         real_dtype = np.dtype(f"float{self.precision:.0f}")
 
         # precompute a phase array
@@ -504,8 +504,7 @@ class BeamformEW(tasklib.base.ContainerTask):
         if ("XY" in pols) or ("YX" in pols):
             if ("XY" in pols) ^ ("YX" in pols):
                 raise ValueError(
-                    "If cross-pols exist, both XY and YX must be present. "
-                    f"Got {pols}."
+                    f"If cross-pols exist, both XY and YX must be present. Got {pols}."
                 )
             dpol = ["reXY", "imXY"]
         else:

@@ -500,14 +500,12 @@ class DayenuDelayFilterHybridVis(tasklib.base.ContainerTask):
 
         # Loop over products
         for tt in range(ntime):
-
             t0 = time.time()
 
             flag = weight[..., tt] > 0.0
             flag = np.all(flag, axis=0, keepdims=True)
 
             for xx in range(new):
-
                 self.log.debug(f"Filter time {tt} of {ntime}, baseline {xx} of {new}.")
 
                 flagx = flag[0, :, xx, np.newaxis]
@@ -534,7 +532,6 @@ class DayenuDelayFilterHybridVis(tasklib.base.ContainerTask):
 
                 # Apply the filter
                 for pp in range(npol):
-
                     # Save the filter to the container
                     if self.save_filter:
                         filt[pp, :, :, xx, tt] = NF[0]
@@ -670,9 +667,7 @@ class ApplyDelayFilterHybridVis(tasklib.base.ContainerTask):
             self.log.debug(f"Filter time {tt} of {ntime}.")
 
             for xx in range(new):
-
                 for pp in range(npol):
-
                     flag = weight[pp, :, xx, tt] > 0.0
 
                     # Skip fully masked samples
@@ -1186,7 +1181,6 @@ def delay_filter(freq, flag, tau_width, tau_centre=0.0, epsilon=1e-12):
 
     cov = np.eye(nfreq, dtype=dtype)
     for tw, tc, eps in zip(*args):
-
         term = np.sinc(2.0 * tw * dfreq) / eps
         if np.abs(tc) > 0.0:
             term = term * np.exp(-2.0j * np.pi * tc * dfreq)

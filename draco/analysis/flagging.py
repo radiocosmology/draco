@@ -15,7 +15,8 @@ from typing import ClassVar, overload
 import numpy as np
 import numpy.typing as npt
 from caput import config, mpiarray
-from caput.algorithms import fft, median
+from caput.algorithms import fft as cfft
+from caput.algorithms import median
 from caput.astro import constants
 from caput.containers import ContainerPrototype
 from caput.pipeline import tasklib
@@ -192,6 +193,9 @@ class MaskBaselines(tasklib.base.ContainerTask):
     mask_short_ns : float, optional
         Mask out baselines shorter then a given distance in the North-South
         direction.
+    mask_pol : list of str, optional
+        List of polarisation products to mask. Each entry should be a string
+        of length 2, e.g. ["XX", "YY"].
     missing_threshold : float, optional
         Mask any baseline that is missing more than this fraction of samples. This is
         measured relative to other baselines.
@@ -203,6 +207,10 @@ class MaskBaselines(tasklib.base.ContainerTask):
         full copy of the data, if "vis" we create a copy only of the modified
         weight dataset and the unmodified vis dataset is shared, if "all" we
         modify in place and return the input container.
+    combine_method: {"and", "or"}
+        Method to combine different flagging criteria. If "or", a baseline is
+        flagged if any of the criteria are met. If "and", all criteria must be met.
+        Default is "or".
     """
 
     mask_long_ns = config.Property(proptype=float, default=None)
@@ -210,12 +218,16 @@ class MaskBaselines(tasklib.base.ContainerTask):
     mask_short_ew = config.Property(proptype=float, default=None)
     mask_short_ns = config.Property(proptype=float, default=None)
 
+    mask_pol = config.Property(proptype=list, default=None)
+
     weight_threshold = config.Property(proptype=float, default=None)
     missing_threshold = config.Property(proptype=float, default=None)
 
     zero_data = config.Property(proptype=bool, default=False)
 
     share = config.enum(["none", "vis", "all"], default="all")
+
+    combine_method = config.enum(["and", "or"], default="or")
 
     def setup(self, telescope):
         """Set the telescope model.
@@ -228,9 +240,7 @@ class MaskBaselines(tasklib.base.ContainerTask):
         self.telescope = io.get_telescope(telescope)
 
         if self.zero_data and self.share == "vis":
-            self.log.warn(
-                "Setting `zero_data = True` and `share = vis` doesn't make much sense."
-            )
+            raise RuntimeError("Can't zero the visibilities if they are shared.")
 
     def process(self, ss):
         """Apply the mask to data.
@@ -246,24 +256,32 @@ class MaskBaselines(tasklib.base.ContainerTask):
 
         baselines = self.telescope.baselines
 
-        # The masking array. True will *retain* a sample
-        mask = np.zeros_like(ss.weight[:].local_array, dtype=bool)
+        # Get the method used to combine the mask and initialise the masking
+        # array accordingly. True indicates a flagged sample.
+        if self.combine_method == "or":
+            combine_func = np.logical_or
+            mask = np.zeros_like(ss.weight[:].local_array, dtype=bool)
+        elif self.combine_method == "and":
+            combine_func = np.logical_and
+            mask = np.ones_like(ss.weight[:].local_array, dtype=bool)
+        else:
+            raise RuntimeError(f"Unknown combine_method: {self.combine_method}")
 
         if self.mask_long_ns is not None:
             long_ns_mask = np.abs(baselines[:, 1]) > self.mask_long_ns
-            mask |= long_ns_mask[np.newaxis, :, np.newaxis]
+            combine_func(mask, long_ns_mask[np.newaxis, :, np.newaxis], out=mask)
 
         if self.mask_short is not None:
             short_mask = np.sum(baselines**2, axis=1) ** 0.5 < self.mask_short
-            mask |= short_mask[np.newaxis, :, np.newaxis]
+            combine_func(mask, short_mask[np.newaxis, :, np.newaxis], out=mask)
 
         if self.mask_short_ew is not None:
             short_ew_mask = np.abs(baselines[:, 0]) < self.mask_short_ew
-            mask |= short_ew_mask[np.newaxis, :, np.newaxis]
+            combine_func(mask, short_ew_mask[np.newaxis, :, np.newaxis], out=mask)
 
         if self.mask_short_ns is not None:
             short_ns_mask = np.abs(baselines[:, 1]) < self.mask_short_ns
-            mask |= short_ns_mask[np.newaxis, :, np.newaxis]
+            combine_func(mask, short_ns_mask[np.newaxis, :, np.newaxis], out=mask)
 
         if self.weight_threshold is not None:
             # Get the sum of the weights over frequencies
@@ -272,8 +290,10 @@ class MaskBaselines(tasklib.base.ContainerTask):
             self.comm.Allreduce(weight_sum_local, weight_sum_tot, op=MPI.SUM)
 
             # Retain only baselines with average weights larger than the threshold
-            mask |= weight_sum_tot[np.newaxis, :, :] < self.weight_threshold * len(
-                ss.freq
+            combine_func(
+                mask,
+                weight_sum_tot[np.newaxis, :, :] < self.weight_threshold * len(ss.freq),
+                out=mask,
             )
 
         if self.missing_threshold is not None:
@@ -285,10 +305,21 @@ class MaskBaselines(tasklib.base.ContainerTask):
 
             # Mask out baselines with more that `missing_threshold` samples missing
             baseline_missing_ratio = 1 - nsamp_tot / nsamp_tot.max()
-            mask |= (
+            combine_func(
+                mask,
                 baseline_missing_ratio[np.newaxis, :, np.newaxis]
-                > self.missing_threshold
+                > self.missing_threshold,
+                out=mask,
             )
+
+        if self.mask_pol is not None:
+            pols = np.char.array(self.telescope.polarisation)[
+                self.telescope.uniquepairs
+            ]
+            pols = pols[:, 0] + pols[:, 1]
+
+            for p in self.mask_pol:
+                combine_func(mask, (pols == p)[np.newaxis, :, np.newaxis], out=mask)
 
         if self.share == "all":
             ssc = ss
@@ -1087,7 +1118,7 @@ class RFIVisMask(tasklib.base.ContainerTask):
 
         # Set up the initial mask, reducing over baselines
         mask = (weight == 0).all(axis=1)
-        mask |= self._static_rfi_mask_hook(freq, times[0])[:, np.newaxis]
+        mask.local_array[:] |= self._static_rfi_mask_hook(freq, times[0])[:, np.newaxis]
 
         self.log.debug(
             f"{100.0 * mask.allgather().mean():.2f}% of data initially flagged."
@@ -1195,203 +1226,196 @@ class RFITransientVisMask(RFIVisMask):
         """Mask scattered transient RFI."""
         # Convert times to ra in radians
         ra = np.unwrap(self.telescope.unix_to_lsa(times), period=360.0) * np.pi / 180.0
+
         # Get the per-frequency high-pass and low-pass cuts
         dec = np.deg2rad(self.telescope.latitude)
-        lambda_inv = freq[:, np.newaxis] * 1e6 / constants.c
-
-        # Maximum cut per frequency
+        lambda_inv = freq.min() * 1e6 / constants.c
         hpf_cut = lambda_inv * baselines[:, 0].max() / np.cos(dec)
 
-        vis = vis.local_array
-        weight = weight.local_array
+        # Create the output mask and apply the initial mask
+        finalmask = mpiarray.zeros(vis.global_shape, dtype=bool, axis=0)
+        finalmask |= mask[:, np.newaxis]
+        # Dereference the distributed array
+        fl = finalmask.local_array
 
         # Iterate over frequencies
-        for fsel in range(vis.shape[0]):
-            if np.all(mask[fsel]):
-                # Frequency is already masked
-                continue
-
-            # Apply a high-pass mmode filter. Scattered emission appears
-            # similar to an impulse function in time, so its fourier transform
-            # should extend to high m
-            v_hpf = filters.highpass_weighted_convolution_filter(
-                vis[fsel], weight[fsel], ra, hpf_cut[fsel]
+        for ii in range(fl.shape[0]):
+            # high-pass filter
+            vhpf = filters.highpass_weighted_convolution_filter(
+                vis.local_array[ii],
+                weight.local_array[ii],
+                ra,
+                hpf_cut,
+                axis=-1,
             )
-
-            # MAD filter flags scattered emission after beamforming
-            map_hpf = abs(fft.fftw.fft(v_hpf, axes=0))
-            mad_mask = np.zeros_like(v_hpf, dtype=bool) | mask[fsel][np.newaxis]
-            mad_ = mad(map_hpf, mad_mask, self.mad_base_size, self.mad_dev_size)
+            vfft = cfft.fft(vhpf, axis=0)
+            np.absolute(vfft, out=vfft)
+            # Compute median absolute deviations of the filtered map
+            mad_ = mad(vfft, fl[ii], self.mad_base_size, self.mad_dev_size)
             # Hysteresis threshold mask flags anything above `sigma_high` or
             # anything above `sigma_low` ONLY if it is connected to a region
             # above `sigma_high`
-            mad_mask |= apply_hysteresis_threshold(
-                mad_, self.sigma_low, self.sigma_high
-            )
-            # Collapse over baselines and flag
-            mask[fsel] |= np.mean(mad_mask, axis=0) > self.frac_samples
+            fl[ii] |= apply_hysteresis_threshold(mad_, self.sigma_low, self.sigma_high)
 
-        return mpiarray.MPIArray.wrap(mask, axis=0).allgather()
+        # Apply scale-invariant rank operator. At this stage, the mask typically
+        # won't have regions which are wide in _both_ time and frequency, so this
+        # should have a fairly minimal effect on the total flagging. Avoid extending
+        # anything that was originally masked.
+        finalmask = finalmask.redistribute(axis=1)
+        finalmask.local_array[:] |= rfi.scale_invariant_rank(
+            finalmask.local_array & ~mask.allgather()[:, np.newaxis],
+            eta=(0.1, 0.2),
+            axis=(0, -1),
+        )
+        finalmask = finalmask.redistribute(axis=0)
+
+        # Collapse over beams and return the time-frequency mask
+        return finalmask.mean(axis=1).allgather() > self.frac_samples
 
 
-class RFINarrowbandVisMask(RFIVisMask, transform.ReduceVar):
-    """Identify and flag narrowband RFI in the visibilities.
+class RFIInverseRedundancyChisqFreqMask(RFIVisMask):
+    """Identify and flag time-constant RFI in visibilities.
 
-    A low-pass filter is applied in RA to reduce transient sky sources.
-    The average visibility power is taken over 2+ cylinder separation baselines
-    to obtain a single 1D array per frequency. These powers are gathered across all
-    frequencies and a basic background subtraction is applied. Sumthreshold
-    algorithm is then used for flagging, with a variance estimate used to
-    boost the expected noise during the daytime and bright point source
-    transits.
+    Apply a median absolute deviation (MAD) filter to the median
+    in time of a chi-squared metric, followed by a high-sensitivity
+    MAD filter on the ratio of the visibilities to a smoothed
+    background.
 
     Attributes
     ----------
-    max_m
-        Maximum size of the SumThreshold window. Default is 64.
     nsigma
-        Initial threshold for SumThreshold. Default is 5.0.
-    solar_var_boost
-        Variance boost during solar transit. Default is 1e4.
-    bg_win_size
-        The size of the window used to estimate the background sky, provided
-        as (number of frequency channels, number of time samples).
-        Default is [11, 3].
-    var_win_size
-        The size of the window used when estimating the variance, provided
-        as (number of frequency channels, number of time samples).
-        Default is [3, 31].
-    lowpass_cutoff
-        Angular cutoff of the ra lowpass filter. Default is 7.5, which
-        corresponds to about 30 minutes of observation time.
+        Starting threshold for the MAD algorithm, given in number of standard
+        deviations. The threshold is reduced each iteration. Default is 10.0.
+    winsize : tuple, optional
+        Size of the median filter window to estimate the smooth background for
+        the final low-sensitivity 2D flagging. Default is (15, 11).
     """
 
-    max_m: int = config.Property(proptype=int, default=64)
-    nsigma: float = config.Property(proptype=float, default=5.0)
-    solar_var_boost: float = config.Property(proptype=float, default=1e4)
-    bg_win_size: list[int] = config.list_type(int, length=2, default=[11, 3])
-    var_win_size: list[int] = config.list_type(int, length=2, default=[3, 31])
-    lowpass_cutoff: float = config.Property(proptype=float, default=7.5)
-
-    def setup(self, telescope):
-        """Set up the baseline selections and ordering.
-
-        Parameters
-        ----------
-        telescope : TransitTelescope
-            The telescope object to use
-        """
-        super().setup(telescope)
-        # Set the parent class attribute to use the correct weighting
-        self.weighting = "weighted"
+    nsigma: int = config.Property(proptype=float, default=15.0)
+    winsize: tuple = config.Property(proptype=tuple, default=(15, 11))
 
     def generate_mask(self, vis, weight, mask, freq, baselines, times):
-        """Mask slow-moving narrow-band RFI."""
-        # Use a constant low-pass cutoff
-        cut = 1 / np.deg2rad(self.lowpass_cutoff)
-        lpf_cut = np.ones(len(freq), dtype=np.float64) * cut
-        # Select cylinders to include in static power estimation.
-        # Choose baselines which should not contain much sky structure
-        bl_sel = baselines[:, 0] > 2.0 * self.telescope.u_width
-        # Set up an array to store mean power from non-sky sources
-        power = np.zeros_like(weight[:, 0], dtype=np.float64, subok=False)
+        """Mask narrowband RFI."""
+        # We need all frequencies, so redistribute to the length-one
+        # reduced baseline axis and gather
+        vis = vis.real.allgather()[:, 0]
+        weight = weight.allgather()[:, 0]
+        mask = mask.allgather()
 
-        vis = vis.local_array
-        weight = weight.local_array
+        def _masked_median_func(x, m, axis=-1, keepdims=True, winsize=None):
+            # Median function that ignores masked values, operating
+            # on the magnitude of complex values
+            if axis != -1:
+                x = np.moveaxis(x, axis, -1)
+                m = np.moveaxis(m, axis, -1)
 
-        # Iterate over frequencies
-        for fsel in range(vis.shape[0]):
-            if np.all(mask[fsel]):
-                # Frequency is already masked
-                continue
+                if winsize is not None:
+                    # Move the window size to the correct axis
+                    winsize = list(winsize)
+                    w = winsize.pop(axis)
+                    winsize.append(w)
+                    winsize = tuple(winsize)
 
-            # Apply a low-pass mmode filter. This will remove transient
-            # sky sources, leaving only static sources and RFI
-            v_lpf = filters.lowpass_weighted_convolution_filter(
-                vis[fsel], weight[fsel], times, lpf_cut[fsel]
-            )
+            # `weighted_median` requires c-contiguous float64 input
+            x = np.abs(x, dtype=np.float64, order="C")
+            w = (~m).astype(np.float64, copy=True, order="C")
 
-            # Take the average over selected baselines
-            power[fsel] = np.mean(abs(v_lpf)[bl_sel], axis=0)
+            if winsize is not None:
+                # Apply a moving median filter to the weights
+                med = median.moving_weighted_median(x, w, size=winsize)
+            else:
+                med = median.weighted_median(x, w)
 
-        # Gather the entire power array for masking
-        power = mpiarray.MPIArray.wrap(power, axis=0).allgather()
+            if keepdims and (winsize is None):
+                med = med[..., np.newaxis]
 
-        # Find times where there are bright sources in the sky
-        # which should be treated differently
-        source_flag = self._source_flag_hook(times)
-        sun_flag = self._solar_transit_hook(times)
+            if axis != -1:
+                med = np.moveaxis(med, -1, axis).copy()
 
-        # Calculate the weighted variance over time, excluding times
-        # flagged to have higher than normal variance
-        wvar, ws = self.reduction(power, ~mask & ~source_flag[np.newaxis], axis=1)
-        # Get a smoothed estimate of the per-frequency variance
-        wvar = tools.arPLS_1d(wvar, ws == 0, lam=1e1)[:, np.newaxis]
-        # Ensure this estimate is strictly non-negative. The baseline
-        # fit can produce negative values near edges if there is a
-        # strong rolloff towards 0 (in which case the variance shoud
-        # be zero anyway)
-        wvar[wvar < 0] = 0.0
+            return med
 
-        # Get a background estimate of the sky, assuming that the
-        # type of rfi we're looking for is very localised in frequency
-        p_med = filters.medfilt(power, mask, size=self.bg_win_size)
+        def _mad1d(spectrum, m, axis=-1):
+            # Subtract a smooth baseline using IarPLS
+            baseline: np.ndarray = tools.IarPLS_1d(spectrum, m, lam=5e1)
+            # Re-use the spectrum array to store the absolute deviations
+            np.absolute(spectrum - baseline[..., np.newaxis], out=spectrum)
+            med = 1.4826 * _masked_median_func(spectrum, m, axis=axis)
 
-        # Create an estimate of the variance for each sample. Find the
-        # ratio of a rolling median of the background sky to the overall
-        # median in time and multiply this ratio by the per-frequency
-        # variance estimate
-        med = median.weighted_median(p_med, (~mask).astype(p_med.dtype))
-        rmed = filters.medfilt(p_med, mask, size=self.var_win_size)
-        # Get the initial full variance using the lower variance estimate.
-        # Increase the variance estimate during solar transit
-        var = wvar * rmed * tools.invert_no_zero(med)[:, np.newaxis]
-        var[:, sun_flag] *= self.solar_var_boost
+            return spectrum * tools.invert_no_zero(med)
 
-        # Generate an RFI mask from the background-subtracted data
-        summask = rfi.sumthreshold(
-            power - p_med,
-            start_flag=mask,
-            max_m=self.max_m,
-            threshold1=self.nsigma,
-            variance=var,
-        )
+        def _mask1d(x, m, thresh_low, thresh_high):
+            spectrum = _masked_median_func(x, m, axis=-1)
+            mi = np.all(m, axis=-1, keepdims=True)
+            # Convert to median absolute deviations
+            m1d = _mad1d(spectrum, mi, axis=0)
 
-        # Expand the mask in time only. Expanding in frequency generally ends
-        # up being too aggressive
-        summask |= rfi.sir((summask & ~mask)[:, np.newaxis], only_time=True)[:, 0]
+            return apply_hysteresis_threshold(m1d, thresh_low, thresh_high)
 
-        return summask
+        # Use only nighttime data
+        tslc = self._day_flag_hook(times)
 
-    def _source_flag_hook(self, times):
-        """Override to mask out bright point sources.
+        vi = vis[..., tslc]
+        mi = mask[..., tslc].copy()
+
+        # Apply the base 1D flagging
+        mi |= _mask1d(vi, mi, self.nsigma / 2, self.nsigma)
+
+        # Divide out a smooth background and do a higher sensitivity flagging
+        bg = filters.medfilt(vi, mi, size=self.winsize) * ~mi
+        ratio = vi * tools.invert_no_zero(bg)
+
+        mi |= _mask1d(ratio, mi, self.nsigma / 4, self.nsigma / 2)
+
+        # Apply the 1D frequency mask to all times
+        mask |= (mi & ~mask[..., tslc]).any(axis=-1, keepdims=True)
+
+        return mask
+
+    def _day_flag_hook(self, times):
+        """Override to mask daytime.
 
         Parameters
         ----------
-        times : np.ndarray[float]
+        times : np.ndarray[ntime]
             Array of timestamps.
 
         Returns
         -------
-        mask : np.ndarray[float]
+        mask : np.ndarray[ntime]
             Mask array. True will mask out a time sample.
         """
-        return np.zeros_like(times, dtype=bool)
+        return np.ones(times.size, dtype=bool)
 
-    def _solar_transit_hook(self, times):
-        """Override to flag solar transit times.
 
-        Parameters
-        ----------
-        times : np.ndarray[float]
-            Array of timestamps.
+class RFIStaticVisMask(
+    tasklib.base.group_tasks(
+        MaskBaselines,
+        transform.ReduceChisqInverseRedundancy,
+        RFIInverseRedundancyChisqFreqMask,
+    )
+):
+    """Group of tasks to identify and flag narrowband RFI in the visibilities.
 
-        Returns
-        -------
-        mask : np.ndarray[float]
-            Mask array. True will mask out a time sample.
-        """
-        return np.zeros_like(times, dtype=bool)
+    This task runs a series of tasks to identify and flag narrowband RFI
+    in visibility data. The tasks are:
+
+    1. `MaskBaselines`: Mask short baselines that are sensitive to diffuse
+       emission from the sky.
+    2. `ReduceChisqInverseRedundancy`: Compute a chi-squared test statistic
+       using inverse-redundancy weighting.
+    3. `RFIInverseRedundancyChisqMask`: Identify and flag (mostly) static RFI
+       in the visibilities using the inverse-redundancy chi-squared metric.
+    """
+
+    # Properties for MaskBaselines
+    mask_short: float = config.Property(proptype=float, default=5.0)
+    mask_pol: list[str] = config.Property(proptype=list, default=["XX", "YY"])
+    share: str = config.enum(["none", "vis"], default="vis")
+    # Properties for ReduceChisqInverseRedundancy
+    dataset: str = config.Property(proptype=str, default="vis")
+    axes: list[str] = config.Property(proptype=list, default=["stack"])
+    # Properties for RFIVisMask
+    stokes_i: bool = config.Property(proptype=bool, default=False)
 
 
 class RFIMaskChisqHighDelay(tasklib.base.ContainerTask):
@@ -1499,11 +1523,9 @@ class RFIMaskChisqHighDelay(tasklib.base.ContainerTask):
         # Determine time axis
         multiple_days = False
         if "ra" in stream.index_map:
-
             if self.telescope is None:
                 raise RuntimeError(
-                    "For sidereal streams, must provide "
-                    "telescope object during setup."
+                    "For sidereal streams, must provide telescope object during setup."
                 )
 
             csd = stream.attrs.get("lsd", stream.attrs.get("csd"))
@@ -1583,7 +1605,6 @@ class RFIMaskChisqHighDelay(tasklib.base.ContainerTask):
         # If requested, construct a mask for each polarisation separately
         pol_slice = np.arange(stream.pol.size) if separate_pol else [slice(None)]
         for pslc in pol_slice:
-
             mask = mask_input[pslc] | mask_sources
 
             if self.nsigma_1d > 0.0:
@@ -1713,7 +1734,6 @@ class RFIMaskChisqHighDelay(tasklib.base.ContainerTask):
         # of the background sky and the variance using the current mask.
         mask = w == 0.0
         for nsigma in self.threshold:
-
             f = np.ascontiguousarray(~mask * w, dtype=np.float64)
 
             # Calculate the local median
@@ -1927,7 +1947,6 @@ class RFISensitivityMask(tasklib.base.ContainerTask):
             # Slowly reduce the threshold.  At each iteration generate a new estimate
             # of the background sky and the variance using the current mask.
             for nsigma in self.threshold:
-
                 # Estimate the background by taking a 2D rolling median
                 med_y = filters.medfilt(y, current_flag, self.base_size)
                 dy = y - med_y
@@ -1977,9 +1996,9 @@ class RFISensitivityMask(tasklib.base.ContainerTask):
                         # then apply it here to extend the sumthreshold mask
                         # in time across the transits.
                         if not self.sir:
-                            expanded = rfi.sir(
-                                tempmask[:, None], eta=0.2, only_time=True
-                            )[:, 0]
+                            expanded = rfi.scale_invariant_rank(
+                                tempmask, eta=0.2, axis=-1
+                            )
                             tempmask = np.where(madtimes, expanded, tempmask)
 
                         current_flag |= tempmask
@@ -2085,9 +2104,10 @@ class RFISensitivityMask(tasklib.base.ContainerTask):
         # Remove baseflag from mask and run SIR
         nobaseflag = np.copy(mask)
         nobaseflag[baseflag] = False
-        nobaseflagsir = rfi.sir(
-            nobaseflag[:, np.newaxis, :], eta=self.eta, only_time=self.only_time
-        )[:, 0, :]
+
+        axes = (-1,) if self.only_time else (0, -1)
+
+        nobaseflagsir = rfi.scale_invariant_rank(nobaseflag, eta=self.eta, axis=axes)
 
         # Make sure the original mask (including baseflag) is still masked
         return nobaseflagsir | mask
@@ -2309,15 +2329,12 @@ class ApplyTimeFreqMask(tasklib.base.ContainerTask):
         if isinstance(
             rfimask, containers.RFIMaskByPol | containers.SiderealRFIMaskByPol
         ):
-
             if self.collapse_pol or "pol" not in t_axes:
-
                 # Collapse polarisation axis
                 mask = np.any(mask, axis=m_axes.index("pol"))
                 m_axes.remove("pol")
 
             elif "pol" in t_axes:
-
                 # Validate the polarisation axis
                 if not np.array_equal(tstream.pol, rfimask.pol):
                     raise ValueError(
@@ -3100,8 +3117,7 @@ class BlendStack(tasklib.base.ContainerTask):
 
         if not isinstance(data, _supported_types):
             raise TypeError(
-                f"Only {_supported_types} are supported. "
-                f"Got data type {type(data)}."
+                f"Only {_supported_types} are supported. Got data type {type(data)}."
             )
 
         # Try and get both the stack and the incoming data to have the same
