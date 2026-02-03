@@ -1252,10 +1252,10 @@ class RFITransientVisMask(RFIVisMask):
                 hpf_cut,
                 axis=-1,
             )
-            cfft.fft(vhpf, axis=0, out=vhpf)
-            np.absolute(vhpf, out=vhpf)
+            vfft = cfft.fft(vhpf, axis=0)
+            np.absolute(vfft, out=vfft)
             # Compute median absolute deviations of the filtered map
-            mad_ = mad(vhpf, fl[ii], self.mad_base_size, self.mad_dev_size)
+            mad_ = mad(vfft, fl[ii], self.mad_base_size, self.mad_dev_size)
             # Hysteresis threshold mask flags anything above `sigma_high` or
             # anything above `sigma_low` ONLY if it is connected to a region
             # above `sigma_high`
