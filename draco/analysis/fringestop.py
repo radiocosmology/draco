@@ -113,7 +113,6 @@ class Mix(tasklib.base.ContainerTask):
 
         # Loop over local frequencies
         for ff, nu in enumerate(freq):
-
             lmbda = scipy.constants.c / (nu * 1e6)
 
             omega = 2.0 * np.pi * x * cos_dec / lmbda

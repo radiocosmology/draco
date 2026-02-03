@@ -51,7 +51,7 @@ def get_kernel(name: str, **kernel_params):
 
     if kernelfunc is None:
         raise ValueError(
-            f"Invalid kernel type: '{name}'. " f"Valid kernels: {list(kdict.keys())}"
+            f"Invalid kernel type: '{name}'. Valid kernels: {list(kdict.keys())}"
         )
 
     return kernelfunc(**kernel_params)
@@ -258,7 +258,6 @@ def moving_average_inverse_kernel(
     # Calculate the matrix for the moving average
     W = np.zeros((N, N))
     for i in range(N):
-
         ll, ul = i - (width - 1) // 2, i + (width + 1) // 2
         if not periodic:
             ll, ul = max(0, ll), min(ul, N)

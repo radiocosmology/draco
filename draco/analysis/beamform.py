@@ -1442,7 +1442,6 @@ class HybridVisBeamForm(tasklib.base.ContainerTask):
 
         # Loop over sources and fringestop
         for ss, (idec, sdec) in enumerate(zip(nearest_dec, np.radians(src_dec))):
-
             in_range = np.flatnonzero(valid[ss])
             if (in_range.size == 0) or not valid_src[ss]:
                 continue
@@ -1455,7 +1454,6 @@ class HybridVisBeamForm(tasklib.base.ContainerTask):
             islcs = find_contiguous_slices(in_range)
             count = 0
             for islc in islcs:
-
                 svis = vis[..., idec, islc]  # pol, freq, ew, ha
                 sweight = weight[..., islc]
 
@@ -1468,7 +1466,6 @@ class HybridVisBeamForm(tasklib.base.ContainerTask):
 
                 # Loop over local frequencies and fringestop
                 for ff in range(svis.shape[1]):
-
                     owe[ss, :, ff, :, oslc] = sweight[:, ff]
 
                     # Calculate the phase
@@ -1578,7 +1575,6 @@ class FitBeamFormed(BeamFormExternalMixin, tasklib.base.ContainerTask):
 
         # Loop over sources
         for ss, sdec in enumerate(src_dec):
-
             # Ignore missing sources
             if not np.any(weight[ss] > 0.0):
                 continue
@@ -1590,7 +1586,6 @@ class FitBeamFormed(BeamFormExternalMixin, tasklib.base.ContainerTask):
 
             # Loop over polarisation
             for pp, pol in enumerate(data.pol):
-
                 b = beam[ss, pp, ..., slc]
                 w = weight[ss, pp, ..., slc]
 

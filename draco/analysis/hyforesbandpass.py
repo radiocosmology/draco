@@ -141,9 +141,7 @@ class DelayFilterHyFoReSBandpassHybridVis(tasklib.base.ContainerTask):
 
             # new stands for number east-west
             for xx in range(new):
-
                 for pp in range(npol):
-
                     flag = weight[pp, :, xx, tt] > 0.0
 
                     if not np.any(flag):
@@ -212,9 +210,7 @@ class DelayFilterHyFoReSBandpassHybridVis(tasklib.base.ContainerTask):
         self.log.debug("Start computing the estimated gains.")
         t0 = time.time()
         for pp in range(npol):
-
             for ff in range(nfreq):
-
                 for xx in range(new):
                     # grab datasets
                     # original data
@@ -253,7 +249,6 @@ class DelayFilterHyFoReSBandpassHybridVis(tasklib.base.ContainerTask):
         self.log.debug("Start computing the window.")
         t0 = time.time()
         for pp in range(npol):
-
             for xx in range(new):
                 for tt in range(ntime):
                     # grab datasets
@@ -423,9 +418,7 @@ class DelayFilterHyFoReSBandpassHybridVisMask(DelayFilterHyFoReSBandpassHybridVi
 
             # new stands for number east-west
             for xx in range(new):
-
                 for pp in range(npol):
-
                     flag = weight[pp, :, xx, tt] > 0.0
 
                     if not np.any(flag):
@@ -498,9 +491,7 @@ class DelayFilterHyFoReSBandpassHybridVisMask(DelayFilterHyFoReSBandpassHybridVi
         self.log.debug("Start computing the estimated gains.")
         t0 = time.time()
         for pp in range(npol):
-
             for ff in range(nfreq):
-
                 for xx in range(new):
                     # grab datasets
                     tvis = np.ascontiguousarray(vis[pp, ff, xx, ...])  # original data
@@ -658,9 +649,7 @@ class HyFoReSBandpassHybridVis(DelayFilterHyFoReSBandpassHybridVis):
         self.log.debug("Start computing the estimated gains.")
         t0 = time.time()
         for pp in range(npol):
-
             for ff in range(nfreq):
-
                 for xx in range(new):
                     # grab datasets
                     tvis = np.ascontiguousarray(vis[pp, ff, xx, ...])  # original data
@@ -830,7 +819,6 @@ class HyFoReSBandpassHybridVisMask(DelayFilterHyFoReSBandpassHybridVis):
         for pp in range(npol):
             # step 2
             for ff in range(nfreq):
-
                 for xx in range(new):
                     # grab datasets
                     tvis = np.ascontiguousarray(vis[pp, ff, xx, ...])  # original data
@@ -868,7 +856,6 @@ class HyFoReSBandpassHybridVisMask(DelayFilterHyFoReSBandpassHybridVis):
         self.log.debug("Start computing the window.")
         t0 = time.time()
         for pp in range(npol):
-
             for xx in range(new):
                 for tt in range(ntime):
                     # grab datasets
@@ -1008,9 +995,7 @@ class HyFoReSBandpassHybridVisMaskKeepSource(DelayFilterHyFoReSBandpassHybridVis
         self.log.debug("Start computing the estimated gains.")
         t0 = time.time()
         for pp in range(npol):
-
             for ff in range(nfreq):
-
                 for xx in range(new):
                     # grab datasets
                     tvis = np.ascontiguousarray(vis[pp, ff, xx, ...])  # original data
@@ -1048,7 +1033,6 @@ class HyFoReSBandpassHybridVisMaskKeepSource(DelayFilterHyFoReSBandpassHybridVis
         self.log.debug("Start computing the window.")
         t0 = time.time()
         for pp in range(npol):
-
             for xx in range(new):
                 for tt in range(ntime):
                     # grab datasets
@@ -1200,13 +1184,10 @@ class DelayFilterHyFoReSBandpassHybridVisClean(tasklib.base.ContainerTask):
             g = y
             self.log.debug("Skip compensating the window")
         else:
-
             self.log.debug("Start compensating the window")
 
             for pp in range(npol):
-
                 for xx in range(new):
-
                     # save the singular values for debugging or inspection
                     s_val[pp, xx] = la.svd(W[pp, xx, :, :], compute_uv=False)
                     # TODO: use la.solve(W, y)
@@ -1243,9 +1224,7 @@ class DelayFilterHyFoReSBandpassHybridVisClean(tasklib.base.ContainerTask):
             self.log.debug(f"Filter time {tt} of {ntime}.")
 
             for xx in range(new):
-
                 for pp in range(npol):
-
                     flag = weight[pp, :, xx, tt] > 0.0
 
                     if not np.any(flag):

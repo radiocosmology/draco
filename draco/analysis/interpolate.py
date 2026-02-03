@@ -250,7 +250,7 @@ class DPSSFilterBaseline(DPSSFilter):
 
         for ii, cut in enumerate(cuts):
             self.log.debug(
-                f"Making unique covariance {ii+1}/{len(cuts)} with cut={cut}."
+                f"Making unique covariance {ii + 1}/{len(cuts)} with cut={cut}."
             )
             cov = dpss.make_covariance(samples, cut, 0.0)
             modes.append(dpss.get_basis(cov))
@@ -380,8 +380,7 @@ def _flatten_axes(data, axes):
 
     if not axind:
         raise ValueError(
-            f"No matching axes. Dataset has axes {dax}, "
-            f"but axes {axes} were requested."
+            f"No matching axes. Dataset has axes {dax}, but axes {axes} were requested."
         )
 
     ds = data[:].view(np.ndarray)
