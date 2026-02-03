@@ -1,0 +1,408 @@
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" data-content_root="../../../">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>draco.core.io &mdash; draco 0.0.1 documentation</title>
+      <link rel="stylesheet" type="text/css" href="../../../_static/pygments.css?v=b86133f3" />
+      <link rel="stylesheet" type="text/css" href="../../../_static/css/theme.css?v=9edc463e" />
+
+  
+      <script src="../../../_static/jquery.js?v=5d32c60e"></script>
+      <script src="../../../_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
+      <script src="../../../_static/documentation_options.js?v=d45e8c67"></script>
+      <script src="../../../_static/doctools.js?v=9bcbadda"></script>
+      <script src="../../../_static/sphinx_highlight.js?v=dc90522c"></script>
+    <script src="../../../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../../../genindex.html" />
+    <link rel="search" title="Search" href="../../../search.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="../../../index.html" class="icon icon-home">
+            draco
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../../../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../tutorial.html">Tutorial</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../reference.html">API Reference</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../dev.html">Development Guidelines</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../../../index.html">draco</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../../../index.html" class="icon icon-home" aria-label="Home"></a></li>
+          <li class="breadcrumb-item"><a href="../../index.html">Module code</a></li>
+      <li class="breadcrumb-item active">draco.core.io</li>
+      <li class="wy-breadcrumbs-aside">
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <h1>Source code for draco.core.io</h1><div class="highlight"><pre>
+<span></span><span class="sd">&quot;&quot;&quot;Tasks for reading and writing specific container types.&quot;&quot;&quot;</span>
+
+<span class="kn">import</span><span class="w"> </span><span class="nn">numpy</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">np</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">caput</span><span class="w"> </span><span class="kn">import</span> <span class="n">config</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">caput.astro</span><span class="w"> </span><span class="kn">import</span> <span class="n">constants</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">caput.pipeline</span><span class="w"> </span><span class="kn">import</span> <span class="n">Task</span><span class="p">,</span> <span class="n">exceptions</span><span class="p">,</span> <span class="n">tasklib</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">drift.core</span><span class="w"> </span><span class="kn">import</span> <span class="n">beamtransfer</span><span class="p">,</span> <span class="n">manager</span><span class="p">,</span> <span class="n">telescope</span>
+
+
+<div class="viewcode-block" id="LoadMaps">
+<a class="viewcode-back" href="../../../_autosummary/draco.core.io.html#draco.core.io.LoadMaps">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">LoadMaps</span><span class="p">(</span><span class="n">tasklib</span><span class="o">.</span><span class="n">base</span><span class="o">.</span><span class="n">MPILoggedTask</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Load a series of maps from files given in the tasks parameters.</span>
+
+<span class="sd">    Maps are given as one, or a list of `File Groups` (see</span>
+<span class="sd">    :mod:`draco.core.io`). Maps within the same group are added together</span>
+<span class="sd">    before being passed on.</span>
+
+<span class="sd">    Attributes</span>
+<span class="sd">    ----------</span>
+<span class="sd">    maps : list or dict</span>
+<span class="sd">        A dictionary specifying a file group, or a list of them.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+
+    <span class="n">maps</span> <span class="o">=</span> <span class="n">config</span><span class="o">.</span><span class="n">Property</span><span class="p">(</span><span class="n">proptype</span><span class="o">=</span><span class="n">tasklib</span><span class="o">.</span><span class="n">io</span><span class="o">.</span><span class="n">list_of_filegroups</span><span class="p">)</span>
+
+<div class="viewcode-block" id="LoadMaps.next">
+<a class="viewcode-back" href="../../../_autosummary/draco.core.io.html#draco.core.io.LoadMaps.next">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">next</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Load the groups of maps from disk and pass them on.</span>
+
+<span class="sd">        Returns</span>
+<span class="sd">        -------</span>
+<span class="sd">        map : :class:`containers.Map`</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="kn">from</span><span class="w"> </span><span class="nn">.</span><span class="w"> </span><span class="kn">import</span> <span class="n">containers</span>
+
+        <span class="c1"># Exit this task if we have eaten all the file groups</span>
+        <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">maps</span><span class="p">)</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="n">exceptions</span><span class="o">.</span><span class="n">PipelineStopIteration</span>
+
+        <span class="n">group</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">maps</span><span class="o">.</span><span class="n">pop</span><span class="p">(</span><span class="mi">0</span><span class="p">)</span>
+
+        <span class="n">map_stack</span> <span class="o">=</span> <span class="kc">None</span>
+
+        <span class="c1"># Iterate over all the files in the group, load them into a Map</span>
+        <span class="c1"># container and add them all together</span>
+        <span class="k">for</span> <span class="n">mfile</span> <span class="ow">in</span> <span class="n">group</span><span class="p">[</span><span class="s2">&quot;files&quot;</span><span class="p">]:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">log</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="s2">&quot;Loading file </span><span class="si">%s</span><span class="s2">&quot;</span><span class="p">,</span> <span class="n">mfile</span><span class="p">)</span>
+
+            <span class="n">current_map</span> <span class="o">=</span> <span class="n">containers</span><span class="o">.</span><span class="n">Map</span><span class="o">.</span><span class="n">from_file</span><span class="p">(</span><span class="n">mfile</span><span class="p">,</span> <span class="n">distributed</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+            <span class="n">current_map</span><span class="o">.</span><span class="n">redistribute</span><span class="p">(</span><span class="s2">&quot;freq&quot;</span><span class="p">)</span>
+
+            <span class="c1"># Start the stack if needed</span>
+            <span class="k">if</span> <span class="n">map_stack</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+                <span class="n">map_stack</span> <span class="o">=</span> <span class="n">current_map</span>
+
+            <span class="c1"># Otherwise, check that the new map has consistent frequencies,</span>
+            <span class="c1"># nside and pol and stack up.</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="k">if</span> <span class="p">(</span><span class="n">current_map</span><span class="o">.</span><span class="n">freq</span> <span class="o">!=</span> <span class="n">map_stack</span><span class="o">.</span><span class="n">freq</span><span class="p">)</span><span class="o">.</span><span class="n">all</span><span class="p">():</span>
+                    <span class="k">raise</span> <span class="ne">RuntimeError</span><span class="p">(</span><span class="s2">&quot;Maps do not have consistent frequencies.&quot;</span><span class="p">)</span>
+
+                <span class="k">if</span> <span class="p">(</span><span class="n">current_map</span><span class="o">.</span><span class="n">index_map</span><span class="p">[</span><span class="s2">&quot;pol&quot;</span><span class="p">]</span> <span class="o">!=</span> <span class="n">map_stack</span><span class="o">.</span><span class="n">index_map</span><span class="p">[</span><span class="s2">&quot;pol&quot;</span><span class="p">])</span><span class="o">.</span><span class="n">all</span><span class="p">():</span>
+                    <span class="k">raise</span> <span class="ne">RuntimeError</span><span class="p">(</span><span class="s2">&quot;Maps do not have the same polarisations.&quot;</span><span class="p">)</span>
+
+                <span class="k">if</span> <span class="p">(</span>
+                    <span class="n">current_map</span><span class="o">.</span><span class="n">index_map</span><span class="p">[</span><span class="s2">&quot;pixel&quot;</span><span class="p">]</span> <span class="o">!=</span> <span class="n">map_stack</span><span class="o">.</span><span class="n">index_map</span><span class="p">[</span><span class="s2">&quot;pixel&quot;</span><span class="p">]</span>
+                <span class="p">)</span><span class="o">.</span><span class="n">all</span><span class="p">():</span>
+                    <span class="k">raise</span> <span class="ne">RuntimeError</span><span class="p">(</span><span class="s2">&quot;Maps do not have the same pixelisation.&quot;</span><span class="p">)</span>
+
+                <span class="n">map_stack</span><span class="o">.</span><span class="n">map</span><span class="p">[:]</span> <span class="o">+=</span> <span class="n">current_map</span><span class="o">.</span><span class="n">map</span><span class="p">[:]</span>
+
+        <span class="c1"># Assign a tag to the stack of maps</span>
+        <span class="n">map_stack</span><span class="o">.</span><span class="n">attrs</span><span class="p">[</span><span class="s2">&quot;tag&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">group</span><span class="p">[</span><span class="s2">&quot;tag&quot;</span><span class="p">]</span>
+
+        <span class="k">return</span> <span class="n">map_stack</span></div>
+</div>
+
+
+
+<div class="viewcode-block" id="LoadFITSCatalog">
+<a class="viewcode-back" href="../../../_autosummary/draco.core.io.html#draco.core.io.LoadFITSCatalog">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">LoadFITSCatalog</span><span class="p">(</span><span class="n">tasklib</span><span class="o">.</span><span class="n">base</span><span class="o">.</span><span class="n">ContainerTask</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Load an SDSS-style FITS source catalog.</span>
+
+<span class="sd">    Catalogs are given as one, or a list of `File Groups` (see</span>
+<span class="sd">    :mod:`draco.core.io`). Catalogs within the same group are combined together</span>
+<span class="sd">    before being passed on.</span>
+
+<span class="sd">    Attributes</span>
+<span class="sd">    ----------</span>
+<span class="sd">    catalogs : list or dict</span>
+<span class="sd">        A dictionary specifying a file group, or a list of them.</span>
+<span class="sd">    z_range : list, optional</span>
+<span class="sd">        Select only sources with a redshift within the given range.</span>
+<span class="sd">    freq_range : list, optional</span>
+<span class="sd">        Select only sources with a 21cm line freq within the given range. Overrides</span>
+<span class="sd">        `z_range`.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+
+    <span class="n">catalogs</span> <span class="o">=</span> <span class="n">config</span><span class="o">.</span><span class="n">Property</span><span class="p">(</span><span class="n">proptype</span><span class="o">=</span><span class="n">tasklib</span><span class="o">.</span><span class="n">io</span><span class="o">.</span><span class="n">list_of_filegroups</span><span class="p">)</span>
+    <span class="n">z_range</span> <span class="o">=</span> <span class="n">config</span><span class="o">.</span><span class="n">list_type</span><span class="p">(</span><span class="n">type_</span><span class="o">=</span><span class="nb">float</span><span class="p">,</span> <span class="n">length</span><span class="o">=</span><span class="mi">2</span><span class="p">,</span> <span class="n">default</span><span class="o">=</span><span class="kc">None</span><span class="p">)</span>
+    <span class="n">freq_range</span> <span class="o">=</span> <span class="n">config</span><span class="o">.</span><span class="n">list_type</span><span class="p">(</span><span class="n">type_</span><span class="o">=</span><span class="nb">float</span><span class="p">,</span> <span class="n">length</span><span class="o">=</span><span class="mi">2</span><span class="p">,</span> <span class="n">default</span><span class="o">=</span><span class="kc">None</span><span class="p">)</span>
+
+<div class="viewcode-block" id="LoadFITSCatalog.process">
+<a class="viewcode-back" href="../../../_autosummary/draco.core.io.html#draco.core.io.LoadFITSCatalog.process">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">process</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Load the groups of catalogs from disk, concatenate them and pass them on.</span>
+
+<span class="sd">        Returns</span>
+<span class="sd">        -------</span>
+<span class="sd">        catalog : :class:`containers.SpectroscopicCatalog`</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="kn">from</span><span class="w"> </span><span class="nn">astropy.io</span><span class="w"> </span><span class="kn">import</span> <span class="n">fits</span>
+
+        <span class="kn">from</span><span class="w"> </span><span class="nn">.</span><span class="w"> </span><span class="kn">import</span> <span class="n">containers</span>
+
+        <span class="c1"># Exit this task if we have eaten all the file groups</span>
+        <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">catalogs</span><span class="p">)</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="n">exceptions</span><span class="o">.</span><span class="n">PipelineStopIteration</span>
+
+        <span class="n">group</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">catalogs</span><span class="o">.</span><span class="n">pop</span><span class="p">(</span><span class="mi">0</span><span class="p">)</span>
+
+        <span class="c1"># Set the redshift selection</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">freq_range</span><span class="p">:</span>
+            <span class="n">zl</span> <span class="o">=</span> <span class="n">constants</span><span class="o">.</span><span class="n">nu21</span> <span class="o">/</span> <span class="bp">self</span><span class="o">.</span><span class="n">freq_range</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span> <span class="o">-</span> <span class="mi">1</span>
+            <span class="n">zh</span> <span class="o">=</span> <span class="n">constants</span><span class="o">.</span><span class="n">nu21</span> <span class="o">/</span> <span class="bp">self</span><span class="o">.</span><span class="n">freq_range</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">-</span> <span class="mi">1</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">z_range</span> <span class="o">=</span> <span class="p">(</span><span class="n">zl</span><span class="p">,</span> <span class="n">zh</span><span class="p">)</span>
+
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">z_range</span><span class="p">:</span>
+            <span class="n">zl</span><span class="p">,</span> <span class="n">zh</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">z_range</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">log</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Applying redshift selection </span><span class="si">{</span><span class="n">zl</span><span class="si">:</span><span class="s2">.2f</span><span class="si">}</span><span class="s2"> &lt;= z &lt;= </span><span class="si">{</span><span class="n">zh</span><span class="si">:</span><span class="s2">.2f</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+
+        <span class="c1"># Load the data only on rank=0 and then broadcast</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">comm</span><span class="o">.</span><span class="n">rank</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
+            <span class="c1"># Iterate over all the files in the group, load them into a Map</span>
+            <span class="c1"># container and add them all together</span>
+            <span class="n">catalog_stack</span> <span class="o">=</span> <span class="p">[]</span>
+            <span class="k">for</span> <span class="n">cfile</span> <span class="ow">in</span> <span class="n">group</span><span class="p">[</span><span class="s2">&quot;files&quot;</span><span class="p">]:</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">log</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="s2">&quot;Loading file </span><span class="si">%s</span><span class="s2">&quot;</span><span class="p">,</span> <span class="n">cfile</span><span class="p">)</span>
+
+                <span class="c1"># TODO: read out the weights from the catalogs</span>
+                <span class="k">with</span> <span class="n">fits</span><span class="o">.</span><span class="n">open</span><span class="p">(</span><span class="n">cfile</span><span class="p">,</span> <span class="n">mode</span><span class="o">=</span><span class="s2">&quot;readonly&quot;</span><span class="p">)</span> <span class="k">as</span> <span class="n">cat</span><span class="p">:</span>
+                    <span class="n">pos</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">([</span><span class="n">cat</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span><span class="o">.</span><span class="n">data</span><span class="p">[</span><span class="n">col</span><span class="p">]</span> <span class="k">for</span> <span class="n">col</span> <span class="ow">in</span> <span class="p">[</span><span class="s2">&quot;RA&quot;</span><span class="p">,</span> <span class="s2">&quot;DEC&quot;</span><span class="p">,</span> <span class="s2">&quot;Z&quot;</span><span class="p">]])</span>
+
+                <span class="c1"># Apply any redshift selection to the objects</span>
+                <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">z_range</span><span class="p">:</span>
+                    <span class="n">zsel</span> <span class="o">=</span> <span class="p">(</span><span class="n">pos</span><span class="p">[</span><span class="mi">2</span><span class="p">]</span> <span class="o">&gt;=</span> <span class="bp">self</span><span class="o">.</span><span class="n">z_range</span><span class="p">[</span><span class="mi">0</span><span class="p">])</span> <span class="o">&amp;</span> <span class="p">(</span><span class="n">pos</span><span class="p">[</span><span class="mi">2</span><span class="p">]</span> <span class="o">&lt;=</span> <span class="bp">self</span><span class="o">.</span><span class="n">z_range</span><span class="p">[</span><span class="mi">1</span><span class="p">])</span>
+                    <span class="n">pos</span> <span class="o">=</span> <span class="n">pos</span><span class="p">[:,</span> <span class="n">zsel</span><span class="p">]</span>
+
+                <span class="n">catalog_stack</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">pos</span><span class="p">)</span>
+
+            <span class="c1"># NOTE: this one is tricky, for some reason the concatenate in here</span>
+            <span class="c1"># produces a non C contiguous array, so we need to ensure that otherwise</span>
+            <span class="c1"># the broadcasting will get very confused</span>
+            <span class="n">catalog_array</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">concatenate</span><span class="p">(</span><span class="n">catalog_stack</span><span class="p">,</span> <span class="n">axis</span><span class="o">=-</span><span class="mi">1</span><span class="p">)</span><span class="o">.</span><span class="n">astype</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">float64</span><span class="p">)</span>
+            <span class="n">catalog_array</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">ascontiguousarray</span><span class="p">(</span><span class="n">catalog_array</span><span class="p">)</span>
+            <span class="n">num_objects</span> <span class="o">=</span> <span class="n">catalog_array</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">num_objects</span> <span class="o">=</span> <span class="kc">None</span>
+            <span class="n">catalog_array</span> <span class="o">=</span> <span class="kc">None</span>
+
+        <span class="c1"># Broadcast the size of the catalog to all ranks, create the target array and</span>
+        <span class="c1"># broadcast into it</span>
+        <span class="n">num_objects</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">comm</span><span class="o">.</span><span class="n">bcast</span><span class="p">(</span><span class="n">num_objects</span><span class="p">,</span> <span class="n">root</span><span class="o">=</span><span class="mi">0</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">log</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Constructing catalog with </span><span class="si">{</span><span class="n">num_objects</span><span class="si">}</span><span class="s2"> objects.&quot;</span><span class="p">)</span>
+
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">comm</span><span class="o">.</span><span class="n">rank</span> <span class="o">!=</span> <span class="mi">0</span><span class="p">:</span>
+            <span class="n">catalog_array</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">zeros</span><span class="p">((</span><span class="mi">3</span><span class="p">,</span> <span class="n">num_objects</span><span class="p">),</span> <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">float64</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">comm</span><span class="o">.</span><span class="n">Bcast</span><span class="p">(</span><span class="n">catalog_array</span><span class="p">,</span> <span class="n">root</span><span class="o">=</span><span class="mi">0</span><span class="p">)</span>
+
+        <span class="n">catalog</span> <span class="o">=</span> <span class="n">containers</span><span class="o">.</span><span class="n">SpectroscopicCatalog</span><span class="p">(</span><span class="n">object_id</span><span class="o">=</span><span class="n">num_objects</span><span class="p">)</span>
+        <span class="n">catalog</span><span class="p">[</span><span class="s2">&quot;position&quot;</span><span class="p">][</span><span class="s2">&quot;ra&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">catalog_array</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+        <span class="n">catalog</span><span class="p">[</span><span class="s2">&quot;position&quot;</span><span class="p">][</span><span class="s2">&quot;dec&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">catalog_array</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span>
+        <span class="n">catalog</span><span class="p">[</span><span class="s2">&quot;redshift&quot;</span><span class="p">][</span><span class="s2">&quot;z&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">catalog_array</span><span class="p">[</span><span class="mi">2</span><span class="p">]</span>
+        <span class="n">catalog</span><span class="p">[</span><span class="s2">&quot;redshift&quot;</span><span class="p">][</span><span class="s2">&quot;z_error&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="mi">0</span>
+
+        <span class="c1"># Assign a tag to the stack of maps</span>
+        <span class="n">catalog</span><span class="o">.</span><span class="n">attrs</span><span class="p">[</span><span class="s2">&quot;tag&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">group</span><span class="p">[</span><span class="s2">&quot;tag&quot;</span><span class="p">]</span>
+
+        <span class="k">return</span> <span class="n">catalog</span></div>
+</div>
+
+
+
+<div class="viewcode-block" id="LoadBeamTransfer">
+<a class="viewcode-back" href="../../../_autosummary/draco.core.io.html#draco.core.io.LoadBeamTransfer">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">LoadBeamTransfer</span><span class="p">(</span><span class="n">Task</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Loads a beam transfer manager from disk.</span>
+
+<span class="sd">    Attributes</span>
+<span class="sd">    ----------</span>
+<span class="sd">    product_directory : str</span>
+<span class="sd">        Path to the saved Beam Transfer products.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+
+    <span class="n">product_directory</span> <span class="o">=</span> <span class="n">config</span><span class="o">.</span><span class="n">Property</span><span class="p">(</span><span class="n">proptype</span><span class="o">=</span><span class="nb">str</span><span class="p">)</span>
+
+<div class="viewcode-block" id="LoadBeamTransfer.setup">
+<a class="viewcode-back" href="../../../_autosummary/draco.core.io.html#draco.core.io.LoadBeamTransfer.setup">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">setup</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Load the beam transfer matrices.</span>
+
+<span class="sd">        Returns</span>
+<span class="sd">        -------</span>
+<span class="sd">        tel : TransitTelescope</span>
+<span class="sd">            Object describing the telescope.</span>
+<span class="sd">        bt : BeamTransfer</span>
+<span class="sd">            BeamTransfer manager.</span>
+<span class="sd">        feed_info : list, optional</span>
+<span class="sd">            Optional list providing additional information about each feed.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="kn">import</span><span class="w"> </span><span class="nn">os</span>
+
+        <span class="kn">from</span><span class="w"> </span><span class="nn">drift.core</span><span class="w"> </span><span class="kn">import</span> <span class="n">beamtransfer</span>
+
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">exists</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">product_directory</span><span class="p">):</span>
+            <span class="k">raise</span> <span class="ne">RuntimeError</span><span class="p">(</span><span class="s2">&quot;BeamTransfers do not exist.&quot;</span><span class="p">)</span>
+
+        <span class="n">bt</span> <span class="o">=</span> <span class="n">beamtransfer</span><span class="o">.</span><span class="n">BeamTransfer</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">product_directory</span><span class="p">)</span>
+
+        <span class="n">tel</span> <span class="o">=</span> <span class="n">bt</span><span class="o">.</span><span class="n">telescope</span>
+
+        <span class="k">try</span><span class="p">:</span>
+            <span class="k">return</span> <span class="n">tel</span><span class="p">,</span> <span class="n">bt</span><span class="p">,</span> <span class="n">tel</span><span class="o">.</span><span class="n">feeds</span>
+        <span class="k">except</span> <span class="ne">AttributeError</span><span class="p">:</span>
+            <span class="k">return</span> <span class="n">tel</span><span class="p">,</span> <span class="n">bt</span></div>
+</div>
+
+
+
+<div class="viewcode-block" id="LoadProductManager">
+<a class="viewcode-back" href="../../../_autosummary/draco.core.io.html#draco.core.io.LoadProductManager">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">LoadProductManager</span><span class="p">(</span><span class="n">Task</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Loads a driftscan product manager from disk.</span>
+
+<span class="sd">    Attributes</span>
+<span class="sd">    ----------</span>
+<span class="sd">    product_directory : str</span>
+<span class="sd">        Path to the root of the products. This is the same as the output</span>
+<span class="sd">        directory used by ``drift-makeproducts``.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+
+    <span class="n">product_directory</span> <span class="o">=</span> <span class="n">config</span><span class="o">.</span><span class="n">Property</span><span class="p">(</span><span class="n">proptype</span><span class="o">=</span><span class="nb">str</span><span class="p">)</span>
+
+<div class="viewcode-block" id="LoadProductManager.setup">
+<a class="viewcode-back" href="../../../_autosummary/draco.core.io.html#draco.core.io.LoadProductManager.setup">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">setup</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Load the beam transfer matrices.</span>
+
+<span class="sd">        Returns</span>
+<span class="sd">        -------</span>
+<span class="sd">        manager : ProductManager</span>
+<span class="sd">            Object describing the telescope.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="kn">import</span><span class="w"> </span><span class="nn">os</span>
+
+        <span class="kn">from</span><span class="w"> </span><span class="nn">drift.core</span><span class="w"> </span><span class="kn">import</span> <span class="n">manager</span>
+
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">exists</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">product_directory</span><span class="p">):</span>
+            <span class="k">raise</span> <span class="ne">RuntimeError</span><span class="p">(</span><span class="s2">&quot;Products do not exist.&quot;</span><span class="p">)</span>
+
+        <span class="c1"># Load ProductManager and Timestream</span>
+        <span class="k">return</span> <span class="n">manager</span><span class="o">.</span><span class="n">ProductManager</span><span class="o">.</span><span class="n">from_config</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">product_directory</span><span class="p">)</span></div>
+</div>
+
+
+
+<span class="c1"># Python types for objects convertible to beamtransfers or telescope instances</span>
+<span class="n">BeamTransferConvertible</span> <span class="o">=</span> <span class="n">manager</span><span class="o">.</span><span class="n">ProductManager</span> <span class="o">|</span> <span class="n">beamtransfer</span><span class="o">.</span><span class="n">BeamTransfer</span>
+<span class="n">TelescopeConvertible</span> <span class="o">=</span> <span class="n">BeamTransferConvertible</span> <span class="o">|</span> <span class="n">telescope</span><span class="o">.</span><span class="n">TransitTelescope</span>
+
+
+<div class="viewcode-block" id="get_telescope">
+<a class="viewcode-back" href="../../../_autosummary/draco.core.io.html#draco.core.io.get_telescope">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">get_telescope</span><span class="p">(</span><span class="n">obj</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Return a telescope object out of the input.</span>
+
+<span class="sd">    Either `ProductManager`, `BeamTransfer`, or `TransitTelescope`.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">try</span><span class="p">:</span>
+        <span class="k">return</span> <span class="n">get_beamtransfer</span><span class="p">(</span><span class="n">obj</span><span class="p">)</span><span class="o">.</span><span class="n">telescope</span>
+    <span class="k">except</span> <span class="ne">RuntimeError</span><span class="p">:</span>
+        <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">obj</span><span class="p">,</span> <span class="n">telescope</span><span class="o">.</span><span class="n">TransitTelescope</span><span class="p">):</span>
+            <span class="k">return</span> <span class="n">obj</span>
+
+    <span class="k">raise</span> <span class="ne">RuntimeError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Could not get telescope instance out of </span><span class="si">{</span><span class="n">obj</span><span class="si">!r}</span><span class="s2">&quot;</span><span class="p">)</span></div>
+
+
+
+<div class="viewcode-block" id="get_beamtransfer">
+<a class="viewcode-back" href="../../../_autosummary/draco.core.io.html#draco.core.io.get_beamtransfer">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">get_beamtransfer</span><span class="p">(</span><span class="n">obj</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Return a BeamTransfer object out of the input.</span>
+
+<span class="sd">    Either `ProductManager` or `BeamTransfer`.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">obj</span><span class="p">,</span> <span class="n">beamtransfer</span><span class="o">.</span><span class="n">BeamTransfer</span><span class="p">):</span>
+        <span class="k">return</span> <span class="n">obj</span>
+
+    <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">obj</span><span class="p">,</span> <span class="n">manager</span><span class="o">.</span><span class="n">ProductManager</span><span class="p">):</span>
+        <span class="k">return</span> <span class="n">obj</span><span class="o">.</span><span class="n">beamtransfer</span>
+
+    <span class="k">raise</span> <span class="ne">RuntimeError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Could not get BeamTransfer instance out of </span><span class="si">{</span><span class="n">obj</span><span class="si">!r}</span><span class="s2">&quot;</span><span class="p">)</span></div>
+
+</pre></div>
+
+           </div>
+          </div>
+          <footer>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2016, Richard Shaw.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>

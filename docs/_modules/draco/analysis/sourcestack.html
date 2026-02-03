@@ -1,0 +1,596 @@
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" data-content_root="../../../">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>draco.analysis.sourcestack &mdash; draco 0.0.1 documentation</title>
+      <link rel="stylesheet" type="text/css" href="../../../_static/pygments.css?v=b86133f3" />
+      <link rel="stylesheet" type="text/css" href="../../../_static/css/theme.css?v=9edc463e" />
+
+  
+      <script src="../../../_static/jquery.js?v=5d32c60e"></script>
+      <script src="../../../_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
+      <script src="../../../_static/documentation_options.js?v=d45e8c67"></script>
+      <script src="../../../_static/doctools.js?v=9bcbadda"></script>
+      <script src="../../../_static/sphinx_highlight.js?v=dc90522c"></script>
+    <script src="../../../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../../../genindex.html" />
+    <link rel="search" title="Search" href="../../../search.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="../../../index.html" class="icon icon-home">
+            draco
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../../../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../tutorial.html">Tutorial</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../reference.html">API Reference</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../dev.html">Development Guidelines</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../../../index.html">draco</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../../../index.html" class="icon icon-home" aria-label="Home"></a></li>
+          <li class="breadcrumb-item"><a href="../../index.html">Module code</a></li>
+      <li class="breadcrumb-item active">draco.analysis.sourcestack</li>
+      <li class="wy-breadcrumbs-aside">
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <h1>Source code for draco.analysis.sourcestack</h1><div class="highlight"><pre>
+<span></span><span class="sd">&quot;&quot;&quot;Source Stack Analysis Tasks.&quot;&quot;&quot;</span>
+
+<span class="kn">import</span><span class="w"> </span><span class="nn">numpy</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">np</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">caput</span><span class="w"> </span><span class="kn">import</span> <span class="n">config</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">caput.astro</span><span class="w"> </span><span class="kn">import</span> <span class="n">constants</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">caput.pipeline</span><span class="w"> </span><span class="kn">import</span> <span class="n">exceptions</span><span class="p">,</span> <span class="n">tasklib</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">mpi4py</span><span class="w"> </span><span class="kn">import</span> <span class="n">MPI</span>
+
+<span class="kn">from</span><span class="w"> </span><span class="nn">..core</span><span class="w"> </span><span class="kn">import</span> <span class="n">containers</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">..util.tools</span><span class="w"> </span><span class="kn">import</span> <span class="n">invert_no_zero</span>
+
+<span class="c1"># Constants</span>
+<span class="n">NU21</span> <span class="o">=</span> <span class="n">constants</span><span class="o">.</span><span class="n">nu21</span>
+<span class="n">C</span> <span class="o">=</span> <span class="n">constants</span><span class="o">.</span><span class="n">c</span>
+
+
+<div class="viewcode-block" id="SourceStack">
+<a class="viewcode-back" href="../../../_autosummary/draco.analysis.sourcestack.html#draco.analysis.sourcestack.SourceStack">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">SourceStack</span><span class="p">(</span><span class="n">tasklib</span><span class="o">.</span><span class="n">base</span><span class="o">.</span><span class="n">ContainerTask</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Stack the product of `draco.analysis.BeamForm` accross sources.</span>
+
+<span class="sd">    For this to work BeamForm must have been run with `collapse_ha = True` (default).</span>
+
+<span class="sd">    Attributes</span>
+<span class="sd">    ----------</span>
+<span class="sd">    freqside : int</span>
+<span class="sd">        Number of frequency bins to keep on each side of source bin</span>
+<span class="sd">        when stacking. Default: 50.</span>
+<span class="sd">    single_source_bin_index : int, optional</span>
+<span class="sd">        Only stack on sources in frequency bin with this index.</span>
+<span class="sd">        Useful for isolating stacking signal from a narrow frequency range.</span>
+<span class="sd">        Default: None.</span>
+<span class="sd">    uniform_weight : bool, optional</span>
+<span class="sd">        If True, use uniform weighting instead of inverse variance weighting.</span>
+<span class="sd">        Mask information from original weights is still preserved.</span>
+<span class="sd">        Default: False.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+
+    <span class="c1"># Number of frequencies to keep on each side of source RA</span>
+    <span class="n">freqside</span> <span class="o">=</span> <span class="n">config</span><span class="o">.</span><span class="n">Property</span><span class="p">(</span><span class="n">proptype</span><span class="o">=</span><span class="nb">int</span><span class="p">,</span> <span class="n">default</span><span class="o">=</span><span class="mi">50</span><span class="p">)</span>
+
+    <span class="c1"># Only consider sources within frequency channel with this index</span>
+    <span class="n">single_source_bin_index</span> <span class="o">=</span> <span class="n">config</span><span class="o">.</span><span class="n">Property</span><span class="p">(</span><span class="n">proptype</span><span class="o">=</span><span class="nb">int</span><span class="p">,</span> <span class="n">default</span><span class="o">=</span><span class="kc">None</span><span class="p">)</span>
+
+    <span class="c1"># Use uniform weighting instead of inverse variance</span>
+    <span class="n">uniform_weight</span> <span class="o">=</span> <span class="n">config</span><span class="o">.</span><span class="n">Property</span><span class="p">(</span><span class="n">proptype</span><span class="o">=</span><span class="nb">bool</span><span class="p">,</span> <span class="n">default</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
+
+<div class="viewcode-block" id="SourceStack.process">
+<a class="viewcode-back" href="../../../_autosummary/draco.analysis.sourcestack.html#draco.analysis.sourcestack.SourceStack.process">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">process</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">formed_beam</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Receives a formed beam object and stack across sources.</span>
+
+<span class="sd">        Parameters</span>
+<span class="sd">        ----------</span>
+<span class="sd">        formed_beam : `containers.FormedBeam` object</span>
+<span class="sd">            Formed beams to stack over sources.</span>
+
+<span class="sd">        Returns</span>
+<span class="sd">        -------</span>
+<span class="sd">        stack : `containers.FrequencyStack` object</span>
+<span class="sd">            The stack of sources.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="c1"># Get communicator</span>
+        <span class="n">comm</span> <span class="o">=</span> <span class="n">formed_beam</span><span class="o">.</span><span class="n">comm</span>
+
+        <span class="c1"># Ensure formed_beam is distributed in sources</span>
+        <span class="n">formed_beam</span><span class="o">.</span><span class="n">redistribute</span><span class="p">(</span><span class="s2">&quot;object_id&quot;</span><span class="p">)</span>
+
+        <span class="c1"># Local shape and offset</span>
+        <span class="n">loff</span> <span class="o">=</span> <span class="n">formed_beam</span><span class="o">.</span><span class="n">beam</span><span class="o">.</span><span class="n">local_offset</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+        <span class="n">lshape</span> <span class="o">=</span> <span class="n">formed_beam</span><span class="o">.</span><span class="n">beam</span><span class="o">.</span><span class="n">local_shape</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+
+        <span class="c1"># Frequency axis</span>
+        <span class="n">freq</span> <span class="o">=</span> <span class="n">formed_beam</span><span class="o">.</span><span class="n">freq</span>
+        <span class="n">nfreq</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">freq</span><span class="p">)</span>
+
+        <span class="c1"># Polarisation axis</span>
+        <span class="n">pol</span> <span class="o">=</span> <span class="n">formed_beam</span><span class="o">.</span><span class="n">pol</span>
+        <span class="n">npol</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">pol</span><span class="p">)</span>
+
+        <span class="c1"># Frequency of sources in MHz</span>
+        <span class="n">source_freq</span> <span class="o">=</span> <span class="n">NU21</span> <span class="o">/</span> <span class="p">(</span><span class="n">formed_beam</span><span class="p">[</span><span class="s2">&quot;redshift&quot;</span><span class="p">][</span><span class="s2">&quot;z&quot;</span><span class="p">][</span><span class="n">loff</span> <span class="p">:</span> <span class="n">loff</span> <span class="o">+</span> <span class="n">lshape</span><span class="p">]</span> <span class="o">+</span> <span class="mf">1.0</span><span class="p">)</span>
+
+        <span class="c1"># Size of source stack array</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">nstack</span> <span class="o">=</span> <span class="mi">2</span> <span class="o">*</span> <span class="bp">self</span><span class="o">.</span><span class="n">freqside</span> <span class="o">+</span> <span class="mi">1</span>
+
+        <span class="c1"># Construct frequency offset axis (for stack container)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">stack_axis</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">copy</span><span class="p">(</span>
+            <span class="n">formed_beam</span><span class="o">.</span><span class="n">frequency</span><span class="p">[</span>
+                <span class="nb">int</span><span class="p">(</span><span class="n">nfreq</span> <span class="o">/</span> <span class="mi">2</span><span class="p">)</span> <span class="o">-</span> <span class="bp">self</span><span class="o">.</span><span class="n">freqside</span> <span class="p">:</span> <span class="nb">int</span><span class="p">(</span><span class="n">nfreq</span> <span class="o">/</span> <span class="mi">2</span><span class="p">)</span> <span class="o">+</span> <span class="bp">self</span><span class="o">.</span><span class="n">freqside</span> <span class="o">+</span> <span class="mi">1</span>
+            <span class="p">]</span>
+        <span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">stack_axis</span><span class="p">[</span><span class="s2">&quot;centre&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="p">(</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">stack_axis</span><span class="p">[</span><span class="s2">&quot;centre&quot;</span><span class="p">]</span> <span class="o">-</span> <span class="bp">self</span><span class="o">.</span><span class="n">stack_axis</span><span class="p">[</span><span class="s2">&quot;centre&quot;</span><span class="p">][</span><span class="bp">self</span><span class="o">.</span><span class="n">freqside</span><span class="p">]</span>
+        <span class="p">)</span>
+
+        <span class="c1"># Get f_mask and source_indices</span>
+        <span class="n">freqdiff</span> <span class="o">=</span> <span class="n">freq</span><span class="p">[</span><span class="n">np</span><span class="o">.</span><span class="n">newaxis</span><span class="p">,</span> <span class="p">:]</span> <span class="o">-</span> <span class="n">source_freq</span><span class="p">[:,</span> <span class="n">np</span><span class="o">.</span><span class="n">newaxis</span><span class="p">]</span>
+
+        <span class="c1"># Stack axis bin edges to digitize each source at, in either increasing</span>
+        <span class="c1"># or decreasing order depending on order of frequencies</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">stack_axis</span><span class="p">[</span><span class="s2">&quot;centre&quot;</span><span class="p">][</span><span class="mi">0</span><span class="p">]</span> <span class="o">&gt;</span> <span class="bp">self</span><span class="o">.</span><span class="n">stack_axis</span><span class="p">[</span><span class="s2">&quot;centre&quot;</span><span class="p">][</span><span class="o">-</span><span class="mi">1</span><span class="p">]:</span>
+            <span class="n">stackbins</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">stack_axis</span><span class="p">[</span><span class="s2">&quot;centre&quot;</span><span class="p">]</span> <span class="o">+</span> <span class="mf">0.5</span> <span class="o">*</span> <span class="bp">self</span><span class="o">.</span><span class="n">stack_axis</span><span class="p">[</span><span class="s2">&quot;width&quot;</span><span class="p">]</span>
+            <span class="n">stackbins</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">append</span><span class="p">(</span>
+                <span class="n">stackbins</span><span class="p">,</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">stack_axis</span><span class="p">[</span><span class="s2">&quot;centre&quot;</span><span class="p">][</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span> <span class="o">-</span> <span class="mf">0.5</span> <span class="o">*</span> <span class="bp">self</span><span class="o">.</span><span class="n">stack_axis</span><span class="p">[</span><span class="s2">&quot;width&quot;</span><span class="p">][</span><span class="o">-</span><span class="mi">1</span><span class="p">],</span>
+            <span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">stackbins</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">stack_axis</span><span class="p">[</span><span class="s2">&quot;centre&quot;</span><span class="p">]</span> <span class="o">-</span> <span class="mf">0.5</span> <span class="o">*</span> <span class="bp">self</span><span class="o">.</span><span class="n">stack_axis</span><span class="p">[</span><span class="s2">&quot;width&quot;</span><span class="p">]</span>
+            <span class="n">stackbins</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">append</span><span class="p">(</span>
+                <span class="n">stackbins</span><span class="p">,</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">stack_axis</span><span class="p">[</span><span class="s2">&quot;centre&quot;</span><span class="p">][</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span> <span class="o">+</span> <span class="mf">0.5</span> <span class="o">*</span> <span class="bp">self</span><span class="o">.</span><span class="n">stack_axis</span><span class="p">[</span><span class="s2">&quot;width&quot;</span><span class="p">][</span><span class="o">-</span><span class="mi">1</span><span class="p">],</span>
+            <span class="p">)</span>
+
+        <span class="c1"># Index of each frequency in stack axis, for each source</span>
+        <span class="n">source_indices</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">digitize</span><span class="p">(</span><span class="n">freqdiff</span><span class="p">,</span> <span class="n">stackbins</span><span class="p">)</span> <span class="o">-</span> <span class="mi">1</span>
+
+        <span class="c1"># Indices to be processed in full frequency axis for each source</span>
+        <span class="n">f_mask</span> <span class="o">=</span> <span class="p">(</span><span class="n">source_indices</span> <span class="o">&gt;=</span> <span class="mi">0</span><span class="p">)</span> <span class="o">&amp;</span> <span class="p">(</span><span class="n">source_indices</span> <span class="o">&lt;</span> <span class="bp">self</span><span class="o">.</span><span class="n">nstack</span><span class="p">)</span>
+
+        <span class="c1"># Only sources in the frequency range of the data.</span>
+        <span class="n">source_mask</span> <span class="o">=</span> <span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">sum</span><span class="p">(</span><span class="n">f_mask</span><span class="p">,</span> <span class="n">axis</span><span class="o">=</span><span class="mi">1</span><span class="p">)</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="p">)</span><span class="o">.</span><span class="n">astype</span><span class="p">(</span><span class="nb">bool</span><span class="p">)</span>
+
+        <span class="c1"># If desired, also restrict to sources within a specific channel.</span>
+        <span class="c1"># This works because the frequency axis is not distributed between</span>
+        <span class="c1"># ranks.</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">single_source_bin_index</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">fs</span> <span class="o">=</span> <span class="n">formed_beam</span><span class="o">.</span><span class="n">index_map</span><span class="p">[</span><span class="s2">&quot;freq&quot;</span><span class="p">][</span><span class="bp">self</span><span class="o">.</span><span class="n">single_source_bin_index</span><span class="p">]</span>
+            <span class="n">restricted_chan_mask</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">abs</span><span class="p">(</span><span class="n">source_freq</span> <span class="o">-</span> <span class="n">fs</span><span class="p">[</span><span class="s2">&quot;centre&quot;</span><span class="p">])</span> <span class="o">&lt;</span> <span class="p">(</span>
+                <span class="mf">0.5</span> <span class="o">*</span> <span class="n">fs</span><span class="p">[</span><span class="s2">&quot;width&quot;</span><span class="p">]</span>
+            <span class="p">)</span>
+            <span class="n">source_mask</span> <span class="o">*=</span> <span class="n">restricted_chan_mask</span>
+
+        <span class="c1"># Container to hold the stack</span>
+        <span class="k">if</span> <span class="n">npol</span> <span class="o">&gt;</span> <span class="mi">1</span><span class="p">:</span>
+            <span class="n">stack</span> <span class="o">=</span> <span class="n">containers</span><span class="o">.</span><span class="n">FrequencyStackByPol</span><span class="p">(</span>
+                <span class="n">freq</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">stack_axis</span><span class="p">,</span> <span class="n">pol</span><span class="o">=</span><span class="n">pol</span><span class="p">,</span> <span class="n">attrs_from</span><span class="o">=</span><span class="n">formed_beam</span>
+            <span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">stack</span> <span class="o">=</span> <span class="n">containers</span><span class="o">.</span><span class="n">FrequencyStack</span><span class="p">(</span>
+                <span class="n">freq</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">stack_axis</span><span class="p">,</span> <span class="n">attrs_from</span><span class="o">=</span><span class="n">formed_beam</span>
+            <span class="p">)</span>
+
+        <span class="c1"># Loop over polarisations</span>
+        <span class="k">for</span> <span class="n">pp</span><span class="p">,</span> <span class="n">pstr</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">pol</span><span class="p">):</span>
+            <span class="n">fb</span> <span class="o">=</span> <span class="n">formed_beam</span><span class="o">.</span><span class="n">beam</span><span class="p">[:,</span> <span class="n">pp</span><span class="p">]</span><span class="o">.</span><span class="n">view</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">)</span>
+            <span class="n">fw</span> <span class="o">=</span> <span class="n">formed_beam</span><span class="o">.</span><span class="n">weight</span><span class="p">[:,</span> <span class="n">pp</span><span class="p">]</span><span class="o">.</span><span class="n">view</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">)</span>
+
+            <span class="c1"># Create effective weights: preserve mask but optionally make uniform</span>
+            <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">uniform_weight</span><span class="p">:</span>
+                <span class="c1"># Create uniform weights where original weights are non-zero (preserve mask)</span>
+                <span class="n">fw_eff</span> <span class="o">=</span> <span class="p">(</span><span class="n">fw</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="p">)</span><span class="o">.</span><span class="n">astype</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">float64</span><span class="p">)</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="c1"># Use original inverse variance weights</span>
+                <span class="n">fw_eff</span> <span class="o">=</span> <span class="n">fw</span>
+
+            <span class="c1"># Source stack array.</span>
+            <span class="n">source_stack</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">zeros</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">nstack</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">float64</span><span class="p">)</span>
+            <span class="n">source_weight</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">zeros</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">nstack</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">float64</span><span class="p">)</span>
+
+            <span class="n">count</span> <span class="o">=</span> <span class="mi">0</span>  <span class="c1"># Source counter</span>
+            <span class="c1"># For each source in the range of this process</span>
+            <span class="k">for</span> <span class="n">lq</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">lshape</span><span class="p">):</span>
+                <span class="k">if</span> <span class="ow">not</span> <span class="n">source_mask</span><span class="p">[</span><span class="n">lq</span><span class="p">]:</span>
+                    <span class="c1"># Source not in the data redshift range</span>
+                    <span class="k">continue</span>
+
+                <span class="n">count</span> <span class="o">+=</span> <span class="mi">1</span>
+
+                <span class="c1"># Indices and slice for frequencies included in the stack.</span>
+                <span class="n">f_indices</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">arange</span><span class="p">(</span><span class="n">nfreq</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">int32</span><span class="p">)[</span><span class="n">f_mask</span><span class="p">[</span><span class="n">lq</span><span class="p">]]</span>
+                <span class="n">f_slice</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">s_</span><span class="p">[</span><span class="n">f_indices</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="p">:</span> <span class="n">f_indices</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span> <span class="o">+</span> <span class="mi">1</span><span class="p">]</span>
+
+                <span class="n">source_stack</span> <span class="o">+=</span> <span class="n">np</span><span class="o">.</span><span class="n">bincount</span><span class="p">(</span>
+                    <span class="n">source_indices</span><span class="p">[</span><span class="n">lq</span><span class="p">,</span> <span class="n">f_slice</span><span class="p">],</span>
+                    <span class="n">weights</span><span class="o">=</span><span class="n">fw_eff</span><span class="p">[</span><span class="n">lq</span><span class="p">,</span> <span class="n">f_slice</span><span class="p">]</span> <span class="o">*</span> <span class="n">fb</span><span class="p">[</span><span class="n">lq</span><span class="p">,</span> <span class="n">f_slice</span><span class="p">],</span>
+                    <span class="n">minlength</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">nstack</span><span class="p">,</span>
+                <span class="p">)</span>
+
+                <span class="n">source_weight</span> <span class="o">+=</span> <span class="n">np</span><span class="o">.</span><span class="n">bincount</span><span class="p">(</span>
+                    <span class="n">source_indices</span><span class="p">[</span><span class="n">lq</span><span class="p">,</span> <span class="n">f_slice</span><span class="p">],</span>
+                    <span class="n">weights</span><span class="o">=</span><span class="n">fw_eff</span><span class="p">[</span><span class="n">lq</span><span class="p">,</span> <span class="n">f_slice</span><span class="p">],</span>
+                    <span class="n">minlength</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">nstack</span><span class="p">,</span>
+                <span class="p">)</span>
+
+            <span class="c1"># Gather source stack for all ranks. Each contains the sum</span>
+            <span class="c1"># over a different subset of sources.</span>
+
+            <span class="n">source_stack_full</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">zeros</span><span class="p">(</span>
+                <span class="n">comm</span><span class="o">.</span><span class="n">size</span> <span class="o">*</span> <span class="bp">self</span><span class="o">.</span><span class="n">nstack</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">source_stack</span><span class="o">.</span><span class="n">dtype</span>
+            <span class="p">)</span>
+            <span class="n">source_weight_full</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">zeros</span><span class="p">(</span>
+                <span class="n">comm</span><span class="o">.</span><span class="n">size</span> <span class="o">*</span> <span class="bp">self</span><span class="o">.</span><span class="n">nstack</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">source_weight</span><span class="o">.</span><span class="n">dtype</span>
+            <span class="p">)</span>
+            <span class="c1"># Gather all ranks</span>
+            <span class="n">comm</span><span class="o">.</span><span class="n">Allgather</span><span class="p">(</span><span class="n">source_stack</span><span class="p">,</span> <span class="n">source_stack_full</span><span class="p">)</span>
+            <span class="n">comm</span><span class="o">.</span><span class="n">Allgather</span><span class="p">(</span><span class="n">source_weight</span><span class="p">,</span> <span class="n">source_weight_full</span><span class="p">)</span>
+
+            <span class="c1"># Determine the index for the output container</span>
+            <span class="n">oslc</span> <span class="o">=</span> <span class="p">(</span><span class="n">pp</span><span class="p">,</span> <span class="nb">slice</span><span class="p">(</span><span class="kc">None</span><span class="p">))</span> <span class="k">if</span> <span class="n">npol</span> <span class="o">&gt;</span> <span class="mi">1</span> <span class="k">else</span> <span class="nb">slice</span><span class="p">(</span><span class="kc">None</span><span class="p">)</span>
+
+            <span class="c1"># Sum across ranks</span>
+            <span class="n">stack</span><span class="o">.</span><span class="n">weight</span><span class="p">[</span><span class="n">oslc</span><span class="p">]</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">sum</span><span class="p">(</span>
+                <span class="n">source_weight_full</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="n">comm</span><span class="o">.</span><span class="n">size</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">nstack</span><span class="p">),</span> <span class="n">axis</span><span class="o">=</span><span class="mi">0</span>
+            <span class="p">)</span>
+            <span class="n">stack</span><span class="o">.</span><span class="n">stack</span><span class="p">[</span><span class="n">oslc</span><span class="p">]</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">sum</span><span class="p">(</span>
+                <span class="n">source_stack_full</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="n">comm</span><span class="o">.</span><span class="n">size</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">nstack</span><span class="p">),</span> <span class="n">axis</span><span class="o">=</span><span class="mi">0</span>
+            <span class="p">)</span> <span class="o">*</span> <span class="n">invert_no_zero</span><span class="p">(</span><span class="n">stack</span><span class="o">.</span><span class="n">weight</span><span class="p">[</span><span class="n">oslc</span><span class="p">])</span>
+
+            <span class="c1"># Gather all ranks of count. Report number of sources stacked</span>
+            <span class="n">full_count</span> <span class="o">=</span> <span class="n">comm</span><span class="o">.</span><span class="n">reduce</span><span class="p">(</span><span class="n">count</span><span class="p">,</span> <span class="n">op</span><span class="o">=</span><span class="n">MPI</span><span class="o">.</span><span class="n">SUM</span><span class="p">,</span> <span class="n">root</span><span class="o">=</span><span class="mi">0</span><span class="p">)</span>
+            <span class="k">if</span> <span class="n">comm</span><span class="o">.</span><span class="n">rank</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">log</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Number of sources stacked for pol </span><span class="si">{</span><span class="n">pstr</span><span class="si">}</span><span class="s2">: </span><span class="si">{</span><span class="n">full_count</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+
+        <span class="k">return</span> <span class="n">stack</span></div>
+</div>
+
+
+
+<div class="viewcode-block" id="RandomSubset">
+<a class="viewcode-back" href="../../../_autosummary/draco.analysis.sourcestack.html#draco.analysis.sourcestack.RandomSubset">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">RandomSubset</span><span class="p">(</span><span class="n">tasklib</span><span class="o">.</span><span class="n">base</span><span class="o">.</span><span class="n">ContainerTask</span><span class="p">,</span> <span class="n">tasklib</span><span class="o">.</span><span class="n">random</span><span class="o">.</span><span class="n">RandomTask</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Take a large mock catalog and draw `number` catalogs of a given `size`.</span>
+
+<span class="sd">    Attributes</span>
+<span class="sd">    ----------</span>
+<span class="sd">    number : int</span>
+<span class="sd">        Number of catalogs to construct.</span>
+<span class="sd">    size : int</span>
+<span class="sd">        Number of objects in each catalog.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+
+    <span class="n">number</span> <span class="o">=</span> <span class="n">config</span><span class="o">.</span><span class="n">Property</span><span class="p">(</span><span class="n">proptype</span><span class="o">=</span><span class="nb">int</span><span class="p">)</span>
+    <span class="n">size</span> <span class="o">=</span> <span class="n">config</span><span class="o">.</span><span class="n">Property</span><span class="p">(</span><span class="n">proptype</span><span class="o">=</span><span class="nb">int</span><span class="p">)</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__init__</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">catalog_ind</span> <span class="o">=</span> <span class="mi">0</span>
+
+<div class="viewcode-block" id="RandomSubset.setup">
+<a class="viewcode-back" href="../../../_autosummary/draco.analysis.sourcestack.html#draco.analysis.sourcestack.RandomSubset.setup">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">setup</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">catalog</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Set the full mock catalog.</span>
+
+<span class="sd">        Parameters</span>
+<span class="sd">        ----------</span>
+<span class="sd">        catalog : containers.SourceCatalog or containers.FormedBeam</span>
+<span class="sd">            The mock catalog to draw from.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="c1"># If the catalog is distributed, then we need to make sure that it</span>
+        <span class="c1"># is distributed over an axis other than the object_id axis.</span>
+        <span class="k">if</span> <span class="n">catalog</span><span class="o">.</span><span class="n">distributed</span><span class="p">:</span>
+            <span class="n">axis_size</span> <span class="o">=</span> <span class="p">{</span>
+                <span class="n">key</span><span class="p">:</span> <span class="nb">len</span><span class="p">(</span><span class="n">val</span><span class="p">)</span>
+                <span class="k">for</span> <span class="n">key</span><span class="p">,</span> <span class="n">val</span> <span class="ow">in</span> <span class="n">catalog</span><span class="o">.</span><span class="n">index_map</span><span class="o">.</span><span class="n">items</span><span class="p">()</span>
+                <span class="k">if</span> <span class="n">key</span> <span class="o">!=</span> <span class="s2">&quot;object_id&quot;</span>
+            <span class="p">}</span>
+
+            <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">axis_size</span><span class="p">)</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="p">:</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">distributed_axis</span> <span class="o">=</span> <span class="nb">max</span><span class="p">(</span><span class="n">axis_size</span><span class="p">,</span> <span class="n">key</span><span class="o">=</span><span class="n">axis_size</span><span class="o">.</span><span class="n">get</span><span class="p">)</span>
+
+                <span class="bp">self</span><span class="o">.</span><span class="n">log</span><span class="o">.</span><span class="n">info</span><span class="p">(</span>
+                    <span class="sa">f</span><span class="s2">&quot;Distributing over the </span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">distributed_axis</span><span class="si">}</span><span class="s2"> axis &quot;</span>
+                    <span class="s2">&quot;to take random subsets of objects.&quot;</span>
+                <span class="p">)</span>
+                <span class="n">catalog</span><span class="o">.</span><span class="n">redistribute</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">distributed_axis</span><span class="p">)</span>
+
+            <span class="k">else</span><span class="p">:</span>
+                <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+                    <span class="s2">&quot;The catalog that was provided is distributed &quot;</span>
+                    <span class="s2">&quot;over the object_id axis. Unable to take a &quot;</span>
+                    <span class="s2">&quot;random subset over object_id.&quot;</span>
+                <span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">distributed_axis</span> <span class="o">=</span> <span class="kc">None</span>
+
+        <span class="k">if</span> <span class="s2">&quot;tag&quot;</span> <span class="ow">in</span> <span class="n">catalog</span><span class="o">.</span><span class="n">attrs</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">base_tag</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">catalog</span><span class="o">.</span><span class="n">attrs</span><span class="p">[</span><span class="s1">&#39;tag&#39;</span><span class="p">]</span><span class="si">}</span><span class="s2">_mock_</span><span class="se">{{</span><span class="s2">:05d</span><span class="se">}}</span><span class="s2">&quot;</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">base_tag</span> <span class="o">=</span> <span class="s2">&quot;mock_{{:05d}}&quot;</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">catalog</span> <span class="o">=</span> <span class="n">catalog</span></div>
+
+
+<div class="viewcode-block" id="RandomSubset.process">
+<a class="viewcode-back" href="../../../_autosummary/draco.analysis.sourcestack.html#draco.analysis.sourcestack.RandomSubset.process">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">process</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Draw a new random catalog.</span>
+
+<span class="sd">        Returns</span>
+<span class="sd">        -------</span>
+<span class="sd">        new_catalog : containers.SourceCatalog or containers.FormedBeam</span>
+<span class="sd">            A catalog of the same type as the input catalog, with a random set of</span>
+<span class="sd">            objects.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">catalog_ind</span> <span class="o">&gt;=</span> <span class="bp">self</span><span class="o">.</span><span class="n">number</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="n">exceptions</span><span class="o">.</span><span class="n">PipelineStopIteration</span>
+
+        <span class="n">objects</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">catalog</span><span class="o">.</span><span class="n">index_map</span><span class="p">[</span><span class="s2">&quot;object_id&quot;</span><span class="p">]</span>
+        <span class="n">num_cat</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">objects</span><span class="p">)</span>
+
+        <span class="c1"># NOTE: We need to be very careful here, the RNG is initialised at first access</span>
+        <span class="c1"># and this is a collective operation. So we need to ensure all ranks do it even</span>
+        <span class="c1"># though only rank=0 is going to use the RNG in this task</span>
+        <span class="n">rng</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">rng</span>
+
+        <span class="c1"># Generate a random selection of objects on rank=0 and broadcast to all other</span>
+        <span class="c1"># ranks</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">comm</span><span class="o">.</span><span class="n">rank</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
+            <span class="n">ind</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">sort</span><span class="p">(</span><span class="n">rng</span><span class="o">.</span><span class="n">choice</span><span class="p">(</span><span class="n">num_cat</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">size</span><span class="p">,</span> <span class="n">replace</span><span class="o">=</span><span class="kc">False</span><span class="p">))</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">ind</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">zeros</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">size</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">int64</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">comm</span><span class="o">.</span><span class="n">Bcast</span><span class="p">(</span><span class="n">ind</span><span class="p">,</span> <span class="n">root</span><span class="o">=</span><span class="mi">0</span><span class="p">)</span>
+
+        <span class="c1"># Create new container</span>
+        <span class="n">new_catalog</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">catalog</span><span class="o">.</span><span class="vm">__class__</span><span class="p">(</span>
+            <span class="n">object_id</span><span class="o">=</span><span class="n">objects</span><span class="p">[</span><span class="n">ind</span><span class="p">],</span>
+            <span class="n">attrs_from</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">catalog</span><span class="p">,</span>
+            <span class="n">axes_from</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">catalog</span><span class="p">,</span>
+            <span class="n">comm</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">catalog</span><span class="o">.</span><span class="n">comm</span><span class="p">,</span>
+        <span class="p">)</span>
+
+        <span class="k">for</span> <span class="n">name</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">catalog</span><span class="o">.</span><span class="n">datasets</span><span class="o">.</span><span class="n">keys</span><span class="p">():</span>
+            <span class="k">if</span> <span class="n">name</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">new_catalog</span><span class="o">.</span><span class="n">datasets</span><span class="p">:</span>
+                <span class="n">new_catalog</span><span class="o">.</span><span class="n">add_dataset</span><span class="p">(</span><span class="n">name</span><span class="p">)</span>
+
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">distributed_axis</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">new_catalog</span><span class="o">.</span><span class="n">redistribute</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">distributed_axis</span><span class="p">)</span>
+
+        <span class="n">new_catalog</span><span class="o">.</span><span class="n">attrs</span><span class="p">[</span><span class="s2">&quot;tag&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">base_tag</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">catalog_ind</span><span class="p">)</span>
+
+        <span class="c1"># Loop over all datasets and if they have an object_id axis, select the</span>
+        <span class="c1"># relevant objects along that axis</span>
+        <span class="k">for</span> <span class="n">name</span><span class="p">,</span> <span class="n">dset</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">catalog</span><span class="o">.</span><span class="n">datasets</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+            <span class="k">if</span> <span class="n">dset</span><span class="o">.</span><span class="n">attrs</span><span class="p">[</span><span class="s2">&quot;axis&quot;</span><span class="p">][</span><span class="mi">0</span><span class="p">]</span> <span class="o">==</span> <span class="s2">&quot;object_id&quot;</span><span class="p">:</span>
+                <span class="n">new_catalog</span><span class="o">.</span><span class="n">datasets</span><span class="p">[</span><span class="n">name</span><span class="p">][:]</span> <span class="o">=</span> <span class="n">dset</span><span class="p">[:][</span><span class="n">ind</span><span class="p">]</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="n">new_catalog</span><span class="o">.</span><span class="n">datasets</span><span class="p">[</span><span class="n">name</span><span class="p">][:]</span> <span class="o">=</span> <span class="n">dset</span><span class="p">[:]</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">catalog_ind</span> <span class="o">+=</span> <span class="mi">1</span>
+
+        <span class="k">return</span> <span class="n">new_catalog</span></div>
+</div>
+
+
+
+<div class="viewcode-block" id="GroupSourceStacks">
+<a class="viewcode-back" href="../../../_autosummary/draco.analysis.sourcestack.html#draco.analysis.sourcestack.GroupSourceStacks">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">GroupSourceStacks</span><span class="p">(</span><span class="n">tasklib</span><span class="o">.</span><span class="n">base</span><span class="o">.</span><span class="n">ContainerTask</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Accumulate many frequency stacks into a single container.</span>
+
+<span class="sd">    Attributes</span>
+<span class="sd">    ----------</span>
+<span class="sd">    ngroup : int</span>
+<span class="sd">        The number of frequency stacks to accumulate into a</span>
+<span class="sd">        single container.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+
+    <span class="n">ngroup</span> <span class="o">=</span> <span class="n">config</span><span class="o">.</span><span class="n">Property</span><span class="p">(</span><span class="n">proptype</span><span class="o">=</span><span class="nb">int</span><span class="p">,</span> <span class="n">default</span><span class="o">=</span><span class="mi">100</span><span class="p">)</span>
+
+<div class="viewcode-block" id="GroupSourceStacks.setup">
+<a class="viewcode-back" href="../../../_autosummary/draco.analysis.sourcestack.html#draco.analysis.sourcestack.GroupSourceStacks.setup">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">setup</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Create a list to be populated by the process method.&quot;&quot;&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">stack</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">nmock</span> <span class="o">=</span> <span class="mi">0</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">counter</span> <span class="o">=</span> <span class="mi">0</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">_container_lookup</span> <span class="o">=</span> <span class="p">{</span>
+            <span class="n">containers</span><span class="o">.</span><span class="n">FrequencyStack</span><span class="p">:</span> <span class="n">containers</span><span class="o">.</span><span class="n">MockFrequencyStack</span><span class="p">,</span>
+            <span class="n">containers</span><span class="o">.</span><span class="n">FrequencyStackByPol</span><span class="p">:</span> <span class="n">containers</span><span class="o">.</span><span class="n">MockFrequencyStackByPol</span><span class="p">,</span>
+            <span class="n">containers</span><span class="o">.</span><span class="n">MockFrequencyStack</span><span class="p">:</span> <span class="n">containers</span><span class="o">.</span><span class="n">MockFrequencyStack</span><span class="p">,</span>
+            <span class="n">containers</span><span class="o">.</span><span class="n">MockFrequencyStackByPol</span><span class="p">:</span> <span class="n">containers</span><span class="o">.</span><span class="n">MockFrequencyStackByPol</span><span class="p">,</span>
+        <span class="p">}</span></div>
+
+
+<div class="viewcode-block" id="GroupSourceStacks.process">
+<a class="viewcode-back" href="../../../_autosummary/draco.analysis.sourcestack.html#draco.analysis.sourcestack.GroupSourceStacks.process">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">process</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">stack</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Add a FrequencyStack to the list.</span>
+
+<span class="sd">        As soon as list contains `ngroup` items, they will be collapsed</span>
+<span class="sd">        into a single container and output by the task.</span>
+
+<span class="sd">        Parameters</span>
+<span class="sd">        ----------</span>
+<span class="sd">        stack : containers.FrequencyStack, containers.FrequencyStackByPol,</span>
+<span class="sd">                containers.MockFrequencyStack, containers.MockFrequencyStackByPol</span>
+
+<span class="sd">        Returns</span>
+<span class="sd">        -------</span>
+<span class="sd">        out : containers.MockFrequencyStack, containers.MockFrequencyStackByPol</span>
+<span class="sd">            The previous `ngroup` FrequencyStacks accumulated into a single container.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">stack</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">stack</span><span class="p">)</span>
+        <span class="k">if</span> <span class="s2">&quot;mock&quot;</span> <span class="ow">in</span> <span class="n">stack</span><span class="o">.</span><span class="n">index_map</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">nmock</span> <span class="o">+=</span> <span class="n">stack</span><span class="o">.</span><span class="n">index_map</span><span class="p">[</span><span class="s2">&quot;mock&quot;</span><span class="p">]</span><span class="o">.</span><span class="n">size</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">nmock</span> <span class="o">+=</span> <span class="mi">1</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">log</span><span class="o">.</span><span class="n">info</span><span class="p">(</span>
+            <span class="sa">f</span><span class="s2">&quot;Collected frequency stack.  Current size is </span><span class="si">{</span><span class="nb">len</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">stack</span><span class="p">)</span><span class="si">:</span><span class="s2">d</span><span class="si">}</span><span class="s2">.&quot;</span>
+        <span class="p">)</span>
+
+        <span class="k">if</span> <span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">stack</span><span class="p">)</span> <span class="o">%</span> <span class="bp">self</span><span class="o">.</span><span class="n">ngroup</span><span class="p">)</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
+            <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_reset</span><span class="p">()</span>
+
+        <span class="k">return</span> <span class="kc">None</span></div>
+
+
+<div class="viewcode-block" id="GroupSourceStacks.process_finish">
+<a class="viewcode-back" href="../../../_autosummary/draco.analysis.sourcestack.html#draco.analysis.sourcestack.GroupSourceStacks.process_finish">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">process_finish</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Return whatever FrequencyStacks are currently in the list.</span>
+
+<span class="sd">        Returns</span>
+<span class="sd">        -------</span>
+<span class="sd">        out : containers.MockFrequencyStack, containers.MockFrequencyStackByPol</span>
+<span class="sd">            The remaining frequency stacks accumulated into a single container.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">stack</span><span class="p">)</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="p">:</span>
+            <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_reset</span><span class="p">()</span>
+
+        <span class="k">return</span> <span class="kc">None</span></div>
+
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">_reset</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Combine all frequency stacks currently in the list into new container.</span>
+
+<span class="sd">        Then, empty the list, reset the stack counter, and increment the group counter.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">log</span><span class="o">.</span><span class="n">info</span><span class="p">(</span>
+            <span class="sa">f</span><span class="s2">&quot;We have accumulated </span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">nmock</span><span class="si">:</span><span class="s2">d</span><span class="si">}</span><span class="s2"> mock realizations.  &quot;</span>
+            <span class="sa">f</span><span class="s2">&quot;Saving to file. [group </span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">counter</span><span class="si">:</span><span class="s2">03d</span><span class="si">}</span><span class="s2">]&quot;</span>
+        <span class="p">)</span>
+
+        <span class="n">mock</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">arange</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">nmock</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">int64</span><span class="p">)</span>
+
+        <span class="c1"># Create the output container</span>
+        <span class="n">OutputContainer</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_container_lookup</span><span class="p">[</span><span class="bp">self</span><span class="o">.</span><span class="n">stack</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="vm">__class__</span><span class="p">]</span>
+
+        <span class="n">out</span> <span class="o">=</span> <span class="n">OutputContainer</span><span class="p">(</span>
+            <span class="n">mock</span><span class="o">=</span><span class="n">mock</span><span class="p">,</span> <span class="n">axes_from</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">stack</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span> <span class="n">attrs_from</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">stack</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+        <span class="p">)</span>
+
+        <span class="n">counter_str</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">counter</span><span class="si">:</span><span class="s2">03d</span><span class="si">}</span><span class="s2">&quot;</span>
+
+        <span class="c1"># Update tag using the hierarchy that a group contains multiple mocks,</span>
+        <span class="c1"># and a supergroup contains multiple groups.</span>
+        <span class="k">if</span> <span class="s2">&quot;tag&quot;</span> <span class="ow">in</span> <span class="n">out</span><span class="o">.</span><span class="n">attrs</span><span class="p">:</span>
+            <span class="n">tag</span> <span class="o">=</span> <span class="n">out</span><span class="o">.</span><span class="n">attrs</span><span class="p">[</span><span class="s2">&quot;tag&quot;</span><span class="p">]</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="s2">&quot;_&quot;</span><span class="p">)</span>
+            <span class="k">if</span> <span class="s2">&quot;group&quot;</span> <span class="ow">in</span> <span class="n">tag</span><span class="p">:</span>
+                <span class="n">ig</span> <span class="o">=</span> <span class="nb">max</span><span class="p">(</span><span class="n">ii</span> <span class="k">for</span> <span class="n">ii</span><span class="p">,</span> <span class="n">tt</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">tag</span><span class="p">)</span> <span class="k">if</span> <span class="n">tt</span> <span class="o">==</span> <span class="s2">&quot;group&quot;</span><span class="p">)</span>
+                <span class="n">tag</span><span class="p">[</span><span class="n">ig</span><span class="p">]</span> <span class="o">=</span> <span class="s2">&quot;supergroup&quot;</span>
+                <span class="n">tag</span><span class="p">[</span><span class="n">ig</span> <span class="o">+</span> <span class="mi">1</span><span class="p">]</span> <span class="o">=</span> <span class="n">counter_str</span>
+
+            <span class="k">elif</span> <span class="s2">&quot;mock&quot;</span> <span class="ow">in</span> <span class="n">tag</span><span class="p">:</span>
+                <span class="n">im</span> <span class="o">=</span> <span class="nb">max</span><span class="p">(</span><span class="n">ii</span> <span class="k">for</span> <span class="n">ii</span><span class="p">,</span> <span class="n">tt</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">tag</span><span class="p">)</span> <span class="k">if</span> <span class="n">tt</span> <span class="o">==</span> <span class="s2">&quot;mock&quot;</span><span class="p">)</span>
+                <span class="n">tag</span><span class="p">[</span><span class="n">im</span><span class="p">]</span> <span class="o">=</span> <span class="s2">&quot;group&quot;</span>
+                <span class="n">tag</span><span class="p">[</span><span class="n">im</span> <span class="o">+</span> <span class="mi">1</span><span class="p">]</span> <span class="o">=</span> <span class="n">counter_str</span>
+
+            <span class="k">else</span><span class="p">:</span>
+                <span class="n">tag</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;group_</span><span class="si">{</span><span class="n">counter_str</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+
+            <span class="n">out</span><span class="o">.</span><span class="n">attrs</span><span class="p">[</span><span class="s2">&quot;tag&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="s2">&quot;_&quot;</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">tag</span><span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">out</span><span class="o">.</span><span class="n">attrs</span><span class="p">[</span><span class="s2">&quot;tag&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">&quot;group_</span><span class="si">{</span><span class="n">counter_str</span><span class="si">}</span><span class="s2">&quot;</span>
+
+        <span class="k">for</span> <span class="n">name</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">stack</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">datasets</span><span class="o">.</span><span class="n">keys</span><span class="p">():</span>
+            <span class="k">if</span> <span class="n">name</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">out</span><span class="o">.</span><span class="n">datasets</span><span class="p">:</span>
+                <span class="n">out</span><span class="o">.</span><span class="n">add_dataset</span><span class="p">(</span><span class="n">name</span><span class="p">)</span>
+
+        <span class="c1"># Loop over mock stacks and save to output container</span>
+        <span class="k">for</span> <span class="n">name</span><span class="p">,</span> <span class="n">odset</span> <span class="ow">in</span> <span class="n">out</span><span class="o">.</span><span class="n">datasets</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+            <span class="n">mock_count</span> <span class="o">=</span> <span class="mi">0</span>
+
+            <span class="k">for</span> <span class="n">ss</span><span class="p">,</span> <span class="n">stack</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">stack</span><span class="p">):</span>
+                <span class="n">dset</span> <span class="o">=</span> <span class="n">stack</span><span class="o">.</span><span class="n">datasets</span><span class="p">[</span><span class="n">name</span><span class="p">]</span>
+                <span class="k">if</span> <span class="n">dset</span><span class="o">.</span><span class="n">attrs</span><span class="p">[</span><span class="s2">&quot;axis&quot;</span><span class="p">][</span><span class="mi">0</span><span class="p">]</span> <span class="o">==</span> <span class="s2">&quot;mock&quot;</span><span class="p">:</span>
+                    <span class="n">data</span> <span class="o">=</span> <span class="n">dset</span><span class="p">[:]</span>
+                <span class="k">else</span><span class="p">:</span>
+                    <span class="n">data</span> <span class="o">=</span> <span class="n">dset</span><span class="p">[</span><span class="n">np</span><span class="o">.</span><span class="n">newaxis</span><span class="p">,</span> <span class="o">...</span><span class="p">]</span>
+
+                <span class="k">for</span> <span class="n">mdata</span> <span class="ow">in</span> <span class="n">data</span><span class="p">:</span>
+                    <span class="n">odset</span><span class="p">[</span><span class="n">mock_count</span><span class="p">]</span> <span class="o">=</span> <span class="n">mdata</span><span class="p">[:]</span>
+                    <span class="n">mock_count</span> <span class="o">+=</span> <span class="mi">1</span>
+
+        <span class="c1"># Reset the class attributes</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">stack</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">nmock</span> <span class="o">=</span> <span class="mi">0</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">counter</span> <span class="o">+=</span> <span class="mi">1</span>
+
+        <span class="k">return</span> <span class="n">out</span></div>
+
+</pre></div>
+
+           </div>
+          </div>
+          <footer>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2016, Richard Shaw.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>

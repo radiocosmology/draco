@@ -1,0 +1,338 @@
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" data-content_root="./">
+<head>
+  <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Tutorial &mdash; draco 0.0.1 documentation</title>
+      <link rel="stylesheet" type="text/css" href="_static/pygments.css?v=b86133f3" />
+      <link rel="stylesheet" type="text/css" href="_static/css/theme.css?v=9edc463e" />
+
+  
+      <script src="_static/jquery.js?v=5d32c60e"></script>
+      <script src="_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
+      <script src="_static/documentation_options.js?v=d45e8c67"></script>
+      <script src="_static/doctools.js?v=9bcbadda"></script>
+      <script src="_static/sphinx_highlight.js?v=dc90522c"></script>
+    <script src="_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="genindex.html" />
+    <link rel="search" title="Search" href="search.html" />
+    <link rel="next" title="API Reference" href="reference.html" />
+    <link rel="prev" title="draco" href="index.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="index.html" class="icon icon-home">
+            draco
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <ul class="current">
+<li class="toctree-l1 current"><a class="current reference internal" href="#">Tutorial</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="#setting-up-the-pipeline">Setting up the Pipeline</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#external-products">External Products</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#map-making-with-the-pipeline">Map-making with the Pipeline</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#ninja-techniques">Ninja Techniques</a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="reference.html">API Reference</a></li>
+<li class="toctree-l1"><a class="reference internal" href="dev.html">Development Guidelines</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="index.html">draco</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="index.html" class="icon icon-home" aria-label="Home"></a></li>
+      <li class="breadcrumb-item active">Tutorial</li>
+      <li class="wy-breadcrumbs-aside">
+            <a href="_sources/tutorial.rst.txt" rel="nofollow"> View page source</a>
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <section id="tutorial">
+<h1>Tutorial<a class="headerlink" href="#tutorial" title="Link to this heading"></a></h1>
+<p>This tutorial is going to go through the process of generating BAO constraints
+from the Pathfinder data. Just kidding! We’re actually just going to generate
+some simulated data and the turn it into maps.</p>
+<section id="setting-up-the-pipeline">
+<h2>Setting up the Pipeline<a class="headerlink" href="#setting-up-the-pipeline" title="Link to this heading"></a></h2>
+<p>Before you start, make sure you have access to the CHIME bitbucket organisation,
+and have set up your ssh keys for access to the bitbucket repositories from the
+machine you want to run the pipeline on. Unless you are working on <cite>Scinet</cite>,
+you’ll also want to ensure you have an account on <cite>niedermayer</cite> and your ssh
+keys are set up to allow password-less login, to ensure the database connection
+can be set up.</p>
+<p>There are a few software pre-requesites to ensure you have installed. Obviously
+python is one of them, with <cite>numpy</cite> and <cite>scipy</cite> installed, but you also need to
+have <cite>virtualenv</cite>, allowing us to install the pipeline and it’s dependencies
+without messing up the base python installation. To check you have it installed
+try running:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span>$ virtualenv --help
+</pre></div>
+</div>
+<p>if you get an error, it’s not installed properly so you’ll need to fix it.</p>
+<p>With that all sorted, we’re ready to start. First step, download the pipeline
+repository to wherever you want it installed:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span>$ git clone git@github.com/radiocosmology/draco.git
+</pre></div>
+</div>
+<p>Then change into that directory, and run the script <cite>mkvenv.sh</cite>:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span>$ cd draco
+$ ./mkvenv.sh
+</pre></div>
+</div>
+<p>The script will do three things. First it will create a python virtual
+environment to isolate the CHIME pipeline installation. Second it will fetch the
+python pre-requesites for the pipeline and install them into the virtualenv.
+Finally, it will install itself into the new virtualenv. Look carefully through
+the messages output for errors to make sure it completed successfully. You’ll
+need to activate the environment whenever you want to use the pipeline. To do
+that, simply do:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span>$ source &lt;path to pipeline&gt;/venv/bin/activate
+</pre></div>
+</div>
+<p>You can check that it’s installed correctly by firing up python, and attempting
+to import some of the packages. For example:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="gp">&gt;&gt;&gt; </span><span class="kn">from</span><span class="w"> </span><span class="nn">drift.core</span><span class="w"> </span><span class="kn">import</span> <span class="n">telescope</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="nb">print</span> <span class="n">telescope</span><span class="o">.</span><span class="vm">__file__</span>
+<span class="go">/Users/richard/code/draco/venv/src/driftscan/drift/core/telescope.pyc</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="kn">from</span><span class="w"> </span><span class="nn">draco</span><span class="w"> </span><span class="kn">import</span> <span class="n">containers</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="nb">print</span> <span class="n">containers</span><span class="o">.</span><span class="vm">__file__</span>
+<span class="go">/Users/richard/code/draco/draco/containers.pyc</span>
+</pre></div>
+</div>
+</section>
+<section id="external-products">
+<h2>External Products<a class="headerlink" href="#external-products" title="Link to this heading"></a></h2>
+<p>If you are here, you’ve got the pipeline successfully installed. Congratulations.</p>
+<p>There are a few data products we’ll need to run the pipeline that must be
+generated externally. Fortunately installing the pipeline has already setup all
+the tools we need to do this.</p>
+<p>We’ll start with the beam transfer matrices, which describes how the sky gets
+mapped into our measured visibilities. These are used both for simulating
+observations given a sky map, and for making maps from visibilities (real or
+simulated). To generate them we use the <cite>driftscan</cite> package, telling it what
+exactly to generate with a <cite>YAML</cite> configuration file such as the one below.</p>
+<div class="highlight-YAML notranslate"><div class="highlight"><pre><span></span><span class="linenos"> 1</span><span class="nt">config</span><span class="p">:</span>
+<span class="linenos"> 2</span><span class="w">    </span><span class="c1"># Only generate Beam Transfers.</span>
+<span class="linenos"> 3</span><span class="w">    </span><span class="nt">beamtransfers</span><span class="p">:</span><span class="w">      </span><span class="l l-Scalar l-Scalar-Plain">Yes</span>
+<span class="linenos"> 4</span><span class="w">    </span><span class="nt">kltransform</span><span class="p">:</span><span class="w">        </span><span class="l l-Scalar l-Scalar-Plain">No</span>
+<span class="linenos"> 5</span><span class="w">    </span><span class="nt">psfisher</span><span class="p">:</span><span class="w">           </span><span class="l l-Scalar l-Scalar-Plain">No</span>
+<span class="linenos"> 6</span>
+<span class="linenos"> 7</span><span class="w">    </span><span class="nt">output_directory</span><span class="p">:</span><span class="w">   </span><span class="l l-Scalar l-Scalar-Plain">beams</span>
+<span class="linenos"> 8</span>
+<span class="linenos"> 9</span><span class="nt">telescope</span><span class="p">:</span>
+<span class="linenos">10</span><span class="w">    </span><span class="nt">type</span><span class="p">:</span>
+<span class="linenos">11</span><span class="w">        </span><span class="c1"># Specify a custom class</span>
+<span class="linenos">12</span><span class="w">        </span><span class="nt">class</span><span class="p">:</span><span class="w">  </span><span class="l l-Scalar l-Scalar-Plain">PolarisedCylinderTelescope</span>
+<span class="linenos">13</span><span class="w">        </span><span class="nt">module</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">drift.telescope.cylinder</span>
+<span class="linenos">14</span>
+<span class="linenos">15</span><span class="w">    </span><span class="nt">freq_lower</span><span class="p">:</span><span class="w">         </span><span class="l l-Scalar l-Scalar-Plain">400.0</span>
+<span class="linenos">16</span><span class="w">    </span><span class="nt">freq_upper</span><span class="p">:</span><span class="w">         </span><span class="l l-Scalar l-Scalar-Plain">410.0</span>
+<span class="linenos">17</span><span class="w">    </span><span class="nt">num_freq</span><span class="p">:</span><span class="w">           </span><span class="l l-Scalar l-Scalar-Plain">5</span>
+<span class="linenos">18</span>
+<span class="linenos">19</span><span class="w">    </span><span class="nt">num_cylinders</span><span class="p">:</span><span class="w">      </span><span class="l l-Scalar l-Scalar-Plain">2</span>
+<span class="linenos">20</span><span class="w">    </span><span class="nt">num_feeds</span><span class="p">:</span><span class="w">          </span><span class="l l-Scalar l-Scalar-Plain">4</span>
+<span class="linenos">21</span><span class="w">    </span><span class="nt">feed_spacing</span><span class="p">:</span><span class="w">       </span><span class="l l-Scalar l-Scalar-Plain">0.3</span>
+<span class="linenos">22</span><span class="w">    </span><span class="nt">cylinder_width</span><span class="p">:</span><span class="w">     </span><span class="l l-Scalar l-Scalar-Plain">10.0</span>
+</pre></div>
+</div>
+<p>This file is run with the command:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span>$ drift-makeproducts run product_params.yaml
+</pre></div>
+</div>
+<p>To simulate the timestreams we also need a sky map to base it on. The <code class="docutils literal notranslate"><span class="pre">cora</span></code>
+package contains several different sky models we can use to produce a sky map.
+The easiest method is to use the <cite>cora-makesky</cite> command, e.g.:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span>$ cora-makesky foreground 64 401.0 411.0 5 foreground_map.h5
+</pre></div>
+</div>
+<p>which will generate an <code class="docutils literal notranslate"><span class="pre">HDF5</span></code> file containing simulated foreground maps at each
+polarisation (Stokes I, Q, U and V) with five frequency channels between 401.0
+and 411.0 MHz. Each map is in Healpix format with <code class="docutils literal notranslate"><span class="pre">NSIDE=16</span></code>. There are options
+to produce 21cm signal simulations as well as point source only, and galactic
+synchrotron maps.</p>
+</section>
+<section id="map-making-with-the-pipeline">
+<h2>Map-making with the Pipeline<a class="headerlink" href="#map-making-with-the-pipeline" title="Link to this heading"></a></h2>
+<p>The CHIME pipeline is built using the infrastructure developed by Kiyo in the
+<code class="docutils literal notranslate"><span class="pre">caput.pipeline</span></code> module. Python classes are written to perform task on the
+data, and a YAML configuration file describes how these should be configured and
+connected together. Below I’ve put the configuration file we are going to use to
+make maps from simulated data:</p>
+<div class="highlight-YAML notranslate"><div class="highlight"><pre><span></span><span class="linenos"> 1</span><span class="nt">pipeline</span><span class="p">:</span>
+<span class="linenos"> 2</span><span class="w">    </span><span class="nt">tasks</span><span class="p">:</span>
+<span class="linenos"> 3</span><span class="w">        </span><span class="p p-Indicator">-</span><span class="w">   </span><span class="nt">type</span><span class="p">:</span><span class="w">       </span><span class="l l-Scalar l-Scalar-Plain">draco.core.io.LoadBeamTransfer</span>
+<span class="linenos"> 4</span><span class="w">            </span><span class="nt">out</span><span class="p">:</span><span class="w">        </span><span class="l l-Scalar l-Scalar-Plain">tel_and_bt</span>
+<span class="linenos"> 5</span><span class="w">            </span><span class="nt">params</span><span class="p">:</span>
+<span class="linenos"> 6</span><span class="w">                </span><span class="nt">product_directory</span><span class="p">:</span><span class="w">  </span><span class="s">&quot;testbeams/bt/&quot;</span>
+<span class="linenos"> 7</span>
+<span class="linenos"> 8</span><span class="w">        </span><span class="p p-Indicator">-</span><span class="w">   </span><span class="nt">type</span><span class="p">:</span><span class="w">       </span><span class="l l-Scalar l-Scalar-Plain">draco.synthesis.stream.SimulateSidereal</span>
+<span class="linenos"> 9</span><span class="w">            </span><span class="nt">requires</span><span class="p">:</span><span class="w">   </span><span class="l l-Scalar l-Scalar-Plain">tel_and_bt</span>
+<span class="linenos">10</span><span class="w">            </span><span class="nt">out</span><span class="p">:</span><span class="w">        </span><span class="l l-Scalar l-Scalar-Plain">sstream</span>
+<span class="linenos">11</span><span class="w">            </span><span class="nt">params</span><span class="p">:</span>
+<span class="linenos">12</span><span class="w">                </span><span class="nt">save</span><span class="p">:</span><span class="w">   </span><span class="l l-Scalar l-Scalar-Plain">Yes</span>
+<span class="linenos">13</span><span class="w">                </span><span class="nt">output_root</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">teststream_</span>
+<span class="linenos">14</span>
+<span class="linenos">15</span><span class="w">        </span><span class="p p-Indicator">-</span><span class="w">   </span><span class="nt">type</span><span class="p">:</span><span class="w">       </span><span class="l l-Scalar l-Scalar-Plain">draco.analysis.transform.MModeTransform</span>
+<span class="linenos">16</span><span class="w">            </span><span class="nt">in</span><span class="p">:</span><span class="w">         </span><span class="l l-Scalar l-Scalar-Plain">sstream</span>
+<span class="linenos">17</span><span class="w">            </span><span class="nt">out</span><span class="p">:</span><span class="w">        </span><span class="l l-Scalar l-Scalar-Plain">mmodes</span>
+<span class="linenos">18</span>
+<span class="linenos">19</span><span class="w">        </span><span class="p p-Indicator">-</span><span class="w">   </span><span class="nt">type</span><span class="p">:</span><span class="w">       </span><span class="l l-Scalar l-Scalar-Plain">draco.analysis.mapmaker.DirtyMapMaker</span>
+<span class="linenos">20</span><span class="w">            </span><span class="nt">requires</span><span class="p">:</span><span class="w">   </span><span class="l l-Scalar l-Scalar-Plain">tel_and_bt</span>
+<span class="linenos">21</span><span class="w">            </span><span class="nt">in</span><span class="p">:</span><span class="w">         </span><span class="l l-Scalar l-Scalar-Plain">mmodes</span>
+<span class="linenos">22</span><span class="w">            </span><span class="nt">out</span><span class="p">:</span><span class="w">        </span><span class="l l-Scalar l-Scalar-Plain">dirtymap</span>
+<span class="linenos">23</span><span class="w">            </span><span class="nt">params</span><span class="p">:</span>
+<span class="linenos">24</span><span class="w">                </span><span class="nt">nside</span><span class="p">:</span><span class="w">      </span><span class="l l-Scalar l-Scalar-Plain">128</span>
+<span class="linenos">25</span><span class="w">                </span><span class="nt">save</span><span class="p">:</span><span class="w">   </span><span class="l l-Scalar l-Scalar-Plain">Yes</span>
+<span class="linenos">26</span><span class="w">                </span><span class="nt">output_root</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">map_dirty2_</span>
+<span class="linenos">27</span>
+<span class="linenos">28</span><span class="w">        </span><span class="p p-Indicator">-</span><span class="w">   </span><span class="nt">type</span><span class="p">:</span><span class="w">       </span><span class="l l-Scalar l-Scalar-Plain">draco.analysis.mapmaker.WienerMapMaker</span>
+<span class="linenos">29</span><span class="w">            </span><span class="nt">requires</span><span class="p">:</span><span class="w">   </span><span class="l l-Scalar l-Scalar-Plain">tel_and_bt</span>
+<span class="linenos">30</span><span class="w">            </span><span class="nt">in</span><span class="p">:</span><span class="w">         </span><span class="l l-Scalar l-Scalar-Plain">mmodes</span>
+<span class="linenos">31</span><span class="w">            </span><span class="nt">out</span><span class="p">:</span><span class="w">        </span><span class="l l-Scalar l-Scalar-Plain">wienermap</span>
+<span class="linenos">32</span><span class="w">            </span><span class="nt">params</span><span class="p">:</span>
+<span class="linenos">33</span><span class="w">                </span><span class="nt">nside</span><span class="p">:</span><span class="w">      </span><span class="l l-Scalar l-Scalar-Plain">128</span>
+<span class="linenos">34</span><span class="w">                </span><span class="nt">save</span><span class="p">:</span><span class="w">   </span><span class="l l-Scalar l-Scalar-Plain">Yes</span>
+<span class="linenos">35</span><span class="w">                </span><span class="nt">output_root</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">map_wiener2_</span>
+</pre></div>
+</div>
+<p>Before we jump into making the maps, let’s briefly go over what this all means.
+For further details you can consult the <code class="docutils literal notranslate"><span class="pre">caput</span></code> documentation on the pipeline.</p>
+<p>The bulk of this configuration file is a list of tasks being configured. There
+is a <code class="docutils literal notranslate"><span class="pre">type</span></code> field where the class is specified by its fully qualified python
+name (for example, the first task <code class="docutils literal notranslate"><span class="pre">draco.io.LoadBeamTransfer</span></code>). To
+connect one task to another, you simply specify a label for the <code class="docutils literal notranslate"><span class="pre">output</span></code> of
+one task, and give the same label to the <code class="docutils literal notranslate"><span class="pre">input</span></code> or <code class="docutils literal notranslate"><span class="pre">requires</span></code> of the other
+task. The labels themselves are dummy variables, any string will do, provided it
+does not clash with the name of another label. The distinction between <code class="docutils literal notranslate"><span class="pre">input</span></code>
+and <code class="docutils literal notranslate"><span class="pre">requires</span></code> is that the first is for an input which is passed every cycle
+of the pipeline, and the second is for something required only at initialisation
+of the task.</p>
+<p>Often we might want to configure a task from the YAML file itself. This is done
+with the <code class="docutils literal notranslate"><span class="pre">params</span></code> section of each task. The named items within this section
+are passed to the pipeline class when it is created. Each entry corresponds to a
+<code class="docutils literal notranslate"><span class="pre">config.Property</span></code> attribute on the class. For example the <code class="docutils literal notranslate"><span class="pre">SimulateSidereal</span></code>
+class has parameters that can be specified:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="k">class</span><span class="w"> </span><span class="nc">SimulateSidereal</span><span class="p">(</span><span class="n">task</span><span class="o">.</span><span class="n">SingleTask</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Create a simulated timestream.</span>
+
+<span class="sd">    Attributes</span>
+<span class="sd">    ----------</span>
+<span class="sd">    maps : list</span>
+<span class="sd">        List of map filenames. The sum of these form the simulated sky.</span>
+<span class="sd">    ndays : float, optional</span>
+<span class="sd">        Number of days of observation. Setting `ndays = None` (default) uses</span>
+<span class="sd">        the default stored in the telescope object; `ndays = 0`, assumes the</span>
+<span class="sd">        observation time is infinite so that the noise is zero. This allows a</span>
+<span class="sd">        fractional number to account for higher noise.</span>
+<span class="sd">    seed : integer, optional</span>
+<span class="sd">        Set the random seed used for the noise simulations. Default (None) is</span>
+<span class="sd">        to choose a random seed.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">maps</span> <span class="o">=</span> <span class="n">config</span><span class="o">.</span><span class="n">Property</span><span class="p">(</span><span class="n">proptype</span><span class="o">=</span><span class="nb">list</span><span class="p">)</span>
+    <span class="n">ndays</span> <span class="o">=</span> <span class="n">config</span><span class="o">.</span><span class="n">Property</span><span class="p">(</span><span class="n">proptype</span><span class="o">=</span><span class="nb">float</span><span class="p">,</span> <span class="n">default</span><span class="o">=</span><span class="mf">0.0</span><span class="p">)</span>
+    <span class="n">seed</span> <span class="o">=</span> <span class="n">config</span><span class="o">.</span><span class="n">Property</span><span class="p">(</span><span class="n">proptype</span><span class="o">=</span><span class="nb">int</span><span class="p">,</span> <span class="n">default</span><span class="o">=</span><span class="kc">None</span><span class="p">)</span>
+
+    <span class="o">...</span>
+</pre></div>
+</div>
+<p>In the YAML file we configured the task as follows:</p>
+<div class="highlight-YAML notranslate"><div class="highlight"><pre><span></span><span class="p p-Indicator">-</span><span class="w">   </span><span class="nt">type</span><span class="p">:</span><span class="w">       </span><span class="l l-Scalar l-Scalar-Plain">draco.synthesis.stream.SimulateSidereal</span>
+<span class="w">    </span><span class="nt">requires</span><span class="p">:</span><span class="w">   </span><span class="p p-Indicator">[</span><span class="nv">tel</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="nv">bt</span><span class="p p-Indicator">]</span>
+<span class="w">    </span><span class="nt">out</span><span class="p">:</span><span class="w">        </span><span class="l l-Scalar l-Scalar-Plain">sstream</span>
+<span class="w">    </span><span class="nt">params</span><span class="p">:</span>
+<span class="w">        </span><span class="nt">maps</span><span class="p">:</span><span class="w">   </span><span class="p p-Indicator">[</span><span class="w"> </span><span class="s">&quot;testfg.h5&quot;</span><span class="w"> </span><span class="p p-Indicator">]</span>
+<span class="w">        </span><span class="nt">save</span><span class="p">:</span><span class="w">   </span><span class="l l-Scalar l-Scalar-Plain">Yes</span>
+<span class="w">        </span><span class="nt">output_root</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">teststream_</span>
+</pre></div>
+</div>
+<p>Of the three properties available from the definition of <code class="docutils literal notranslate"><span class="pre">SimulateSidereal</span></code> we
+have only configured one of them, the list of maps to process. The remaining two
+entries of the <code class="docutils literal notranslate"><span class="pre">params</span></code> section are inherited from the pipeline base task.
+These simply tell the pipeline to save the output of the task, with a base name
+given by <code class="docutils literal notranslate"><span class="pre">output_root</span></code>.</p>
+<p>The pipeline is run with the <cite>caput-pipeline</cite> script:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span>$ caput-pipeline run pipeline_params.yaml
+</pre></div>
+</div>
+<p>What has it actually done? Let’s just quickly go through the tasks in order:</p>
+<ol class="arabic simple">
+<li><p>Load the beam transfer manager from disk. This just gives the pipeline access
+to all the beam transfer matrices produced by the driftscan code.</p></li>
+<li><p>Load a map from disk, use the beam transfers to transform it into a sidereal timestream.</p></li>
+<li><p>Select the products from the timestream that are understood by the given beam
+transfer manager. In this case it won’t change anything, but this task can
+subset frequencies and products as well as average over redundant baselines.</p></li>
+<li><p>Perform the m-mode transform on the sidereal timestream.</p></li>
+<li><p>Apply the map maker to the m-modes to produce a dirty map.</p></li>
+<li><p>Apply the map maker to the generate a Wiener filtered map.</p></li>
+</ol>
+</section>
+<section id="ninja-techniques">
+<h2>Ninja Techniques<a class="headerlink" href="#ninja-techniques" title="Link to this heading"></a></h2>
+<p>Running on a cluster. Coming soon….</p>
+</section>
+</section>
+
+
+           </div>
+          </div>
+          <footer><div class="rst-footer-buttons" role="navigation" aria-label="Footer">
+        <a href="index.html" class="btn btn-neutral float-left" title="draco" accesskey="p" rel="prev"><span class="fa fa-arrow-circle-left" aria-hidden="true"></span> Previous</a>
+        <a href="reference.html" class="btn btn-neutral float-right" title="API Reference" accesskey="n" rel="next">Next <span class="fa fa-arrow-circle-right" aria-hidden="true"></span></a>
+    </div>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2016, Richard Shaw.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>
