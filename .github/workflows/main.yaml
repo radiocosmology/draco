@@ -2,10 +2,10 @@ name: draco-ci-build
 on:
   pull_request:
     branches:
-    - main
+      - main
   push:
     branches:
-    - main
+      - main
 
 jobs:
 
@@ -37,34 +37,54 @@ jobs:
   run-tests:
 
     strategy:
+      fail-fast: false
       matrix:
+        os: [ubuntu-latest, macos-latest]
         python-version: ["3.10", "3.14"]
 
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v6
 
       - name: Install apt dependencies
+        if: matrix.os == 'ubuntu-latest'
         run: |
           sudo apt-get update
           sudo apt-get install -y libopenmpi-dev openmpi-bin libhdf5-serial-dev
+
+      - name: Install brew dependencies
+        if: matrix.os == 'macos-latest'
+        run: |
+          brew update
+          CC=mpicc brew install open-mpi hdf5-mpi
 
       - name: Set up Python ${{ matrix.python-version }}
         uses: actions/setup-python@v6
         with:
           python-version: ${{ matrix.python-version }}
 
-      - name: Install pip dependencies
+      - name: Update pip
+        run: pip install --upgrade pip
+      
+      - name: Disable OpenMP warning on macos
+        if: matrix.os == 'macos-latest'
         run: |
-          pip install -e .
-          pip install -e .[test]
+          echo "DRACO_NO_OPENMP=1" >> "$GITHUB_ENV"
+          echo "CORA_NO_OPENMP=1" >> "$GITHUB_ENV"
+          echo "CAPUT_NO_OPENMP=1" >> "$GITHUB_ENV"
+      
+      - name: Disable zstd assembly for recent macos with missing wheel
+        if: matrix.os == 'macos-latest' && matrix.python-version == '3.14'
+        run: echo "CFLAGS=-DZSTD_DISABLE_ASM" >> "$GITHUB_ENV"
+
+      - name: Install pip dependencies
+        run: CC=mpicc pip install ".[test]"
 
       - name: Run serial tests
-        run: pytest -x test/
+        run: pytest test/
 
       - name: Run parallel tests
-        run: |
-          mpirun -np 4 --oversubscribe pytest -x -m mpi test/
+        run: mpirun -np 4 --oversubscribe pytest -m mpi test/
 
       - name: Run caput linter on example configs
         run: |
