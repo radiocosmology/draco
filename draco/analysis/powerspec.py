@@ -149,10 +149,14 @@ class ConstructWienerDelayTransform(tasklib.base.ContainerTask):
         Upper bound of the frequency range over which the window is applied.
         Frequencies above this value will receive a weight of zero in the window.
         If None, defaults to the maximum frequency in the data.
+    use_dirty_beam : bool
+        Use the dirty beam to scale the signal prior. Setting to False will generate
+        an operator that is independent of el. Defaults to True.
     """
 
     prior_amp = config.Property(proptype=float, default=2.8e-5)
     prior_scale = config.Property(proptype=float, default=0.0)
+    use_dirty_beam = config.Property(proptype=bool, default=True)
 
     window = config.enum(
         [
@@ -192,13 +196,18 @@ class ConstructWienerDelayTransform(tasklib.base.ContainerTask):
             This operator maps filtered frequency-domain maps into delay space,
             with dimensions (pol, ra, el, delay, freq).
         """
-        # Redistribute over elevation
-        data.redistribute("el")
+        # Redistribute over RA
+        data.redistribute("ra")
 
         # Determine the shape of the input datasets
-        npol, nfreq, nra, nel_local = data.weight.local_shape
+        npol, nfreq, nra_local, nel = data.weight.local_shape
+        if self.use_dirty_beam:
+            el = data.el[:]
+        else:
+            nel = 1
+            el = np.array([0.0])
 
-        diag = (slice(None), np.arange(nfreq), np.arange(nfreq))
+        diag = (np.arange(nfreq), np.arange(nfreq))
 
         # Extract frequencies
         freq = data.freq
@@ -216,9 +225,9 @@ class ConstructWienerDelayTransform(tasklib.base.ContainerTask):
 
         # Create output container
         out = containers.DelayTransformOperator(
-            delay=tau, axes_from=data, attrs_from=data
+            delay=tau, el=el, axes_from=data, attrs_from=data
         )
-        out.redistribute("el")
+        out.redistribute("ra")
 
         D = out.filter[:].local_array
         D[:] = 0.0
@@ -247,24 +256,30 @@ class ConstructWienerDelayTransform(tasklib.base.ContainerTask):
             self.log.info(f"Polarisation {pp} of {npol}")
 
             # The filter and freq_cov datasets do not have an elevation axis.
-            # Perform an allgather to acquire the entire dataset on every rank.
             # Shape (ra, freq, freq)
-            C = data.freq_cov[pp].allgather().transpose(2, 0, 1)
-            K = data.filter[pp].allgather().transpose(2, 0, 1)
+            C = data.freq_cov[:].local_array[pp].transpose(2, 0, 1)
+            K = data.filter[:].local_array[pp].transpose(2, 0, 1)
 
-            # Extract the diagonal of the noise covariance
-            # Shape (ra, freq)
-            Cdiag = C[diag]
+            # Loop over RA
+            for rr in range(nra_local):
 
-            # Loop over elevations
-            for ee in range(nel_local):
+                # Extract the diagonal of the noise covariance
+                # Shape (el, freq)
+                Cdiag = C[rr][diag][np.newaxis, :]
 
-                self.log.info(f"Elevation {ee} of {nel_local}")
+                self.log.info(f"RA {rr} of {nra_local}")
 
                 # Extract maps for this polarisation and elevation
-                # Shape (ra, freq)
-                w = np.ascontiguousarray(wall[pp, :, :, ee].T)
-                b = np.sqrt(ball[pp, :, ee])
+                # Shape (el, freq)
+                w = np.ascontiguousarray(wall[pp, :, rr, :].T)
+                # Shape (el, freq)
+                b = np.sqrt(ball[pp, :, :]).T
+
+                if not self.use_dirty_beam:
+                    # average over the el axis
+                    w = np.sum(w, axis=0) * tools.invert_no_zero(np.sum(w > 0, axis=0))
+                    w = w[np.newaxis, :]
+                    b = np.ones_like(w)
 
                 # Create factor that scales the noise covariance from
                 # hybrid visibilities to map space by setting the diagonal
@@ -275,39 +290,39 @@ class ConstructWienerDelayTransform(tasklib.base.ContainerTask):
                 r_noise_2 = r_noise[:, :, np.newaxis] * r_noise[:, np.newaxis, :]
 
                 # Noise covariance in filtered frequency domain
-                # Shape (ra, freq, freq)
-                N = C * r_noise_2
+                # Shape (el, freq, freq)
+                N = C[rr] * r_noise_2
 
                 # Mask out missing frequencies in the filter and apply window
                 mask = w > 0
                 M = win_mask * mask
-                H = M[:, :, np.newaxis] * K
+                H = M[:, :, np.newaxis] * K[rr]
                 HT = H.transpose(0, 2, 1).conj()
 
                 # Signal covariance in masked, filtered frequency domain
-                # Shape (ra, freq, freq)
-                RSRT = H @ (FSFT * b[:, np.newaxis] * b) @ HT
+                # Shape (el, freq, freq)
+                RSRT = H @ (FSFT * b[..., np.newaxis] * b[:, np.newaxis, :]) @ HT
 
                 # Covariance (signal + noise) in masked, filtered frequency domain
-                # Shape (ra, freq, freq)
+                # Shape (el, freq, freq)
                 A = RSRT + N
 
                 # Determine inverse covariance
-                # Shape (ra, freq, freq)
+                # Shape (el, freq, freq)
                 A_inv = np.zeros_like(A)
-                for rr in range(nra):
-                    valid = np.flatnonzero(M[rr])
+                for ee in range(nel):
+                    valid = np.flatnonzero(M[ee])
 
                     if valid.size == 0:
                         continue
 
                     valid_2d = np.ix_(valid, valid)
-                    A_sub = A[rr][valid_2d]
+                    A_sub = A[ee][valid_2d]
 
                     cfactor = scipy.linalg.cho_factor(
                         A_sub, overwrite_a=True, check_finite=False
                     )
-                    A_inv[rr][valid_2d] = scipy.linalg.cho_solve(
+                    A_inv[ee][valid_2d] = scipy.linalg.cho_solve(
                         cfactor,
                         np.eye(valid.size),
                         overwrite_b=True,
@@ -316,12 +331,12 @@ class ConstructWienerDelayTransform(tasklib.base.ContainerTask):
 
                 # Construct the adjoint operator that projects from
                 # the filtered frequency domain to the delay domain
-                # Shape (ra, delay, freq)
+                # Shape (el, delay, freq)
                 RT = FT @ HT
 
                 # Apply adjoint operator to project to delay domain
-                # Shape (ra, delay, freq)
-                D[pp, :, ee, :, :] = (
+                # Shape (el, delay, freq)
+                D[pp, rr, :, :, :] = (
                     Sdiag[np.newaxis, :, np.newaxis] * (RT @ A_inv) * window
                 )
 
