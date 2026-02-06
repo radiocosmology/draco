@@ -463,6 +463,80 @@ class ApplyWienerDelayTransform(tasklib.base.ContainerTask):
         return out
 
 
+class SelectElFromDelayTransform(task.SingleTask):
+    """Trim a DelayTransform to a subset of elevation indices.
+
+    Attributes
+    ----------
+    el_range : list
+        Range of el indices [start, stop]
+    """
+
+    el_range = config.Property(proptype=list, default=[])
+
+    def process(self, ds: containers.DelayTransform):
+        """Selet a subset of the el.
+
+        Parameters
+        ----------
+        ds : containers.DelayTransform
+            The DelayTransform container.
+
+        Returns
+        -------
+        newdata : containers.DelayTransform
+        """
+        # The flattened axes in the baseline direction
+        axes = list(ds.attrs["baseline_axes"])
+        if "el" not in axes:
+            raise ValueError("This DelayTransform does not include an 'el' axis.")
+
+        # Determine the shape of the unflattened baseline axes
+        sizes = [ds.index_map[ax].size for ax in axes]
+        el_idx = axes.index("el")
+        n_base = int(np.prod(sizes))
+
+        # Build a mask selecting baseline indices where the el index lies
+        # within [start, stop)
+        start, stop = self.el_range
+        coords = np.array(np.unravel_index(np.arange(n_base), sizes))
+        mask = (coords[el_idx] >= start) & (coords[el_idx] < stop)
+        keep = np.arange(n_base)[mask]
+
+        # Define the new baseline axis length
+        new_sizes = sizes.copy()
+        new_sizes[el_idx] = stop - start
+        nbase_new = int(np.prod(new_sizes))
+
+        # Create a new DelayTransform container with the smaller baseline axis
+        out = containers.DelayTransform(
+            baseline=nbase_new,
+            sample=ds.index_map["sample"],
+            delay=ds.index_map["delay"],
+            attrs_from=ds,
+        )
+        # Copy index maps for pol and the truncated el axis
+        for ax in axes:
+            if ax == "el":
+                out.create_index_map("el", ds.index_map["el"][start:stop])
+            else:
+                out.create_index_map(ax, ds.index_map[ax])
+        out.attrs["baseline_axes"] = axes
+        out.redistribute("baseline")
+
+        keep_indices = keep.tolist()
+        # Copy all datasets, filtering along the baseline axis
+        containers.copy_datasets_filter(
+            ds,
+            out,
+            axis="baseline",
+            selection=keep_indices,
+            copy_without_selection=True,
+        )
+
+        return out
+
+
 class ReduceExcessScatter(ReduceChisq):
     """Generate a scale factor to re-scale the noise.
 
