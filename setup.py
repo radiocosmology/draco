@@ -5,6 +5,8 @@ required to build cython extensions.
 """
 
 import os
+import platform
+import re
 import subprocess
 import sysconfig
 import tempfile
@@ -13,9 +15,40 @@ import numpy as np
 from Cython.Build import cythonize
 from setuptools import Extension, setup
 
-# Subset of `-ffast-math` compiler flags which should
-# preserve IEEE compliance
-FAST_MATH_ARGS = ["-O3", "-fno-math-errno", "-fno-trapping-math", "-march=native"]
+# Subset of `-ffast-math` flags which preserve IEEE compliance
+FAST_MATH_ARGS = ["-O3", "-fno-math-errno", "-fno-trapping-math"]
+# Additional compiler flags
+COMPILE_FLAGS = ["-flto", *FAST_MATH_ARGS]
+
+
+def get_mcpu_flag():
+    """Try to figure out the relevant cpu flags."""
+    system = platform.system().lower()
+
+    if system != "darwin":
+        # Making no assumptions about other systems
+        return "-march=native" if system == "linux" else ""
+
+    try:
+        # Get CPU model: "Apple M3 Pro", etc.
+        cpu_brand = (
+            subprocess.check_output(["sysctl", "-n", "machdep.cpu.brand_string"])
+            .decode()
+            .strip()
+            .lower()
+        )
+    except:  # noqa: E722
+        return ""
+
+    # See if we can match against specifc Metal generations
+    match = re.match(r"apple m\d", cpu_brand)
+
+    if match:
+        cpu = match[0].lower().strip().replace(" ", "-")
+
+        return f"-mcpu={cpu}"
+
+    return "-mcpu=apple-m1"
 
 
 def _compiler_supports_openmp():
@@ -45,11 +78,10 @@ def _compiler_supports_openmp():
     return True
 
 
-OMP_ARGS = []
-
 if not os.environ.get("DRACO_NO_OPENMP"):
     if _compiler_supports_openmp():
-        OMP_ARGS = ["-fopenmp"]
+        # OpenMP flags are required by both the compiler and the linker
+        COMPILE_FLAGS.append("-fopenmp")
     else:
         cc = os.environ.get("CC", sysconfig.get_config_var("CC"))
         print(
@@ -60,6 +92,11 @@ if not os.environ.get("DRACO_NO_OPENMP"):
             "variable DRACO_NO_OPENMP to any truth-like value."
         )
 
+if "-fopenmp" not in COMPILE_FLAGS and platform.system().lower() == "darwin":
+    # Use Apple Accelerate
+    COMPILE_FLAGS.extend(("-framework", "Accelerate"))
+
+COMPILE_FLAGS.append(get_mcpu_flag())
 
 # Cython module for fast operations
 extensions = [
@@ -67,8 +104,8 @@ extensions = [
         "draco.util._fast_tools",
         ["draco/util/_fast_tools.pyx"],
         include_dirs=[np.get_include()],
-        extra_compile_args=[*FAST_MATH_ARGS, *OMP_ARGS],
-        extra_link_args=[*FAST_MATH_ARGS, *OMP_ARGS],
+        extra_compile_args=COMPILE_FLAGS,
+        extra_link_args=COMPILE_FLAGS,
     ),
 ]
 
