@@ -11,7 +11,8 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "draco"
 description = "Analysis and simulation tools for driftscan radio interferometers"
-license = { file = "LICENSE" }
+license = "MIT"
+license-files = ["LICENSE"]
 authors = [
     { name = "The CHIME Collaboration", email = "lgray@phas.ubc.ca" }
 ]
