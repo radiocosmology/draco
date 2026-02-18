@@ -1,0 +1,473 @@
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" data-content_root="../../../">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>draco.util.regrid &mdash; draco 0.0.1 documentation</title>
+      <link rel="stylesheet" type="text/css" href="../../../_static/pygments.css?v=b86133f3" />
+      <link rel="stylesheet" type="text/css" href="../../../_static/css/theme.css?v=9edc463e" />
+
+  
+      <script src="../../../_static/jquery.js?v=5d32c60e"></script>
+      <script src="../../../_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
+      <script src="../../../_static/documentation_options.js?v=d45e8c67"></script>
+      <script src="../../../_static/doctools.js?v=9bcbadda"></script>
+      <script src="../../../_static/sphinx_highlight.js?v=dc90522c"></script>
+    <script src="../../../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../../../genindex.html" />
+    <link rel="search" title="Search" href="../../../search.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="../../../index.html" class="icon icon-home">
+            draco
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../../../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../tutorial.html">Tutorial</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../reference.html">API Reference</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../dev.html">Development Guidelines</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../../../index.html">draco</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../../../index.html" class="icon icon-home" aria-label="Home"></a></li>
+          <li class="breadcrumb-item"><a href="../../index.html">Module code</a></li>
+      <li class="breadcrumb-item active">draco.util.regrid</li>
+      <li class="wy-breadcrumbs-aside">
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <h1>Source code for draco.util.regrid</h1><div class="highlight"><pre>
+<span></span><span class="sd">&quot;&quot;&quot;Routines for regridding irregular data using a Lanczos/Wiener filtering approach.</span>
+
+<span class="sd">This is described in some detail in `doclib:173</span>
+<span class="sd">&lt;http://bao.chimenet.ca/doc/cgi-bin/general/documents/display?Id=173&gt;`_.</span>
+<span class="sd">&quot;&quot;&quot;</span>
+
+<span class="kn">import</span><span class="w"> </span><span class="nn">numpy</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">np</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">scipy.linalg</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">la</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">scipy.sparse</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">ss</span>
+
+<span class="kn">from</span><span class="w"> </span><span class="nn">..util</span><span class="w"> </span><span class="kn">import</span> <span class="n">_fast_tools</span>
+
+
+<div class="viewcode-block" id="band_wiener">
+<a class="viewcode-back" href="../../../_autosummary/draco.util.regrid.html#draco.util.regrid.band_wiener">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">band_wiener</span><span class="p">(</span><span class="n">R</span><span class="p">,</span> <span class="n">Ni</span><span class="p">,</span> <span class="n">Si</span><span class="p">,</span> <span class="n">y</span><span class="p">,</span> <span class="n">bw</span><span class="p">):</span>
+<span class="w">    </span><span class="sa">r</span><span class="sd">&quot;&quot;&quot;Calculate the Wiener filter assuming various bandedness properties.</span>
+
+<span class="sd">    In particular this asserts that a particular element in the filtered</span>
+<span class="sd">    output will only couple to the nearest `bw` elements. Equivalently, this</span>
+<span class="sd">    is that the covariance matrix will be band diagonal. This allows us to use</span>
+<span class="sd">    fast routines to generate the solution.</span>
+
+<span class="sd">    Note that the inverse noise estimate returned is :math:`\mathrm{diag}(\mathbf{R}^T</span>
+<span class="sd">    \mathbf{N}^{-1} \mathbf{R})` and not the full Bayesian estimate including a</span>
+<span class="sd">    contribution from the signal covariance.</span>
+
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    R : np.ndarray[m, n]</span>
+<span class="sd">        Transfer matrix for the Wiener filter.</span>
+<span class="sd">    Ni : np.ndarray[k, n]</span>
+<span class="sd">        Inverse noise matrix. Noise assumed to be uncorrelated (i.e. diagonal matrix).</span>
+<span class="sd">    Si : np.narray[m]</span>
+<span class="sd">        Inverse signal matrix. Signal model assumed to be uncorrelated (i.e. diagonal</span>
+<span class="sd">        matrix).</span>
+<span class="sd">    y : np.ndarray[k, n]</span>
+<span class="sd">        Data to apply to.</span>
+<span class="sd">    bw : int</span>
+<span class="sd">        Bandwidth, i.e. how many elements couple together.</span>
+
+<span class="sd">    Returns</span>
+<span class="sd">    -------</span>
+<span class="sd">    xhat : np.ndarray[k, m]</span>
+<span class="sd">        Filtered data.</span>
+<span class="sd">    nw : np.ndarray[k, m]</span>
+<span class="sd">        Estimate of variance of each element.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">Ni</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">atleast_2d</span><span class="p">(</span><span class="n">Ni</span><span class="p">)</span>
+    <span class="n">y</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">atleast_2d</span><span class="p">(</span><span class="n">y</span><span class="p">)</span>
+
+    <span class="n">k</span> <span class="o">=</span> <span class="n">Ni</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+    <span class="n">m</span> <span class="o">=</span> <span class="n">R</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+
+    <span class="c1"># Initialise arrays</span>
+    <span class="n">xh</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">zeros</span><span class="p">((</span><span class="n">k</span><span class="p">,</span> <span class="n">m</span><span class="p">),</span> <span class="n">dtype</span><span class="o">=</span><span class="n">y</span><span class="o">.</span><span class="n">dtype</span><span class="p">)</span>
+    <span class="n">nw</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">zeros</span><span class="p">((</span><span class="n">k</span><span class="p">,</span> <span class="n">m</span><span class="p">),</span> <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">float32</span><span class="p">)</span>
+
+    <span class="c1"># Multiply by noise weights inplace to reduce memory usage (destroys original)</span>
+    <span class="n">y</span> <span class="o">*=</span> <span class="n">Ni</span>
+
+    <span class="c1"># Calculate dirty estimate (and output straight into xh)</span>
+    <span class="n">R_s</span> <span class="o">=</span> <span class="n">R</span><span class="o">.</span><span class="n">astype</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">float32</span><span class="p">)</span>
+    <span class="n">np</span><span class="o">.</span><span class="n">dot</span><span class="p">(</span><span class="n">y</span><span class="p">,</span> <span class="n">R_s</span><span class="o">.</span><span class="n">T</span><span class="p">,</span> <span class="n">out</span><span class="o">=</span><span class="n">xh</span><span class="p">)</span>
+
+    <span class="c1"># Calculate the start and end indices of the summation</span>
+    <span class="n">start_ind</span> <span class="o">=</span> <span class="p">(</span><span class="n">R</span> <span class="o">!=</span> <span class="mi">0</span><span class="p">)</span><span class="o">.</span><span class="n">argmax</span><span class="p">(</span><span class="n">axis</span><span class="o">=-</span><span class="mi">1</span><span class="p">)</span><span class="o">.</span><span class="n">astype</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">int32</span><span class="p">)</span>
+    <span class="n">end_ind</span> <span class="o">=</span> <span class="n">R</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span> <span class="o">-</span> <span class="p">(</span><span class="n">R</span><span class="p">[</span><span class="o">...</span><span class="p">,</span> <span class="p">::</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span> <span class="o">!=</span> <span class="mi">0</span><span class="p">)</span><span class="o">.</span><span class="n">argmax</span><span class="p">(</span><span class="n">axis</span><span class="o">=-</span><span class="mi">1</span><span class="p">)</span>
+    <span class="n">end_ind</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">where</span><span class="p">((</span><span class="n">R</span> <span class="o">==</span> <span class="mi">0</span><span class="p">)</span><span class="o">.</span><span class="n">all</span><span class="p">(</span><span class="n">axis</span><span class="o">=-</span><span class="mi">1</span><span class="p">),</span> <span class="mi">0</span><span class="p">,</span> <span class="n">end_ind</span><span class="p">)</span><span class="o">.</span><span class="n">astype</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">int32</span><span class="p">)</span>
+
+    <span class="c1"># Iterate through and solve noise</span>
+    <span class="k">for</span> <span class="n">ki</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">k</span><span class="p">):</span>
+        <span class="c1"># Upcast noise weights to float type</span>
+        <span class="n">Ni_ki</span> <span class="o">=</span> <span class="n">Ni</span><span class="p">[</span><span class="n">ki</span><span class="p">]</span><span class="o">.</span><span class="n">astype</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">float64</span><span class="p">)</span>
+
+        <span class="c1"># Calculate the Wiener noise weighting (i.e. inverse covariance)</span>
+        <span class="n">Ci</span> <span class="o">=</span> <span class="n">_fast_tools</span><span class="o">.</span><span class="n">_linear_covariance_banded</span><span class="p">(</span><span class="n">R</span><span class="p">,</span> <span class="n">Ni_ki</span><span class="p">,</span> <span class="n">start_ind</span><span class="p">,</span> <span class="n">end_ind</span><span class="p">,</span> <span class="n">bw</span><span class="p">)</span>
+
+        <span class="c1"># Set the noise estimate before adding in the signal contribution. This avoids</span>
+        <span class="c1"># the issue that the inverse-noise estimate becomes non-zero even when the data</span>
+        <span class="c1"># was entirely missing</span>
+        <span class="n">nw</span><span class="p">[</span><span class="n">ki</span><span class="p">]</span> <span class="o">=</span> <span class="n">Ci</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span>
+
+        <span class="c1"># Add on the signal covariance part</span>
+        <span class="n">Ci</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span> <span class="o">+=</span> <span class="n">Si</span>
+
+        <span class="c1"># Solve for the Wiener estimate</span>
+        <span class="n">xh</span><span class="p">[</span><span class="n">ki</span><span class="p">]</span> <span class="o">=</span> <span class="n">la</span><span class="o">.</span><span class="n">solveh_banded</span><span class="p">(</span><span class="n">Ci</span><span class="p">,</span> <span class="n">xh</span><span class="p">[</span><span class="n">ki</span><span class="p">])</span>
+
+    <span class="k">return</span> <span class="n">xh</span><span class="p">,</span> <span class="n">nw</span></div>
+
+
+
+<div class="viewcode-block" id="lanczos_kernel">
+<a class="viewcode-back" href="../../../_autosummary/draco.util.regrid.html#draco.util.regrid.lanczos_kernel">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">lanczos_kernel</span><span class="p">(</span><span class="n">x</span><span class="p">,</span> <span class="n">a</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Lanczos interpolation kernel.</span>
+
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    x : array_like</span>
+<span class="sd">        Point separation.</span>
+<span class="sd">    a : integer</span>
+<span class="sd">        Lanczos kernel width.</span>
+
+<span class="sd">    Returns</span>
+<span class="sd">    -------</span>
+<span class="sd">    kernel : np.ndarray</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">return</span> <span class="n">np</span><span class="o">.</span><span class="n">where</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">abs</span><span class="p">(</span><span class="n">x</span><span class="p">)</span> <span class="o">&lt;</span> <span class="n">a</span><span class="p">,</span> <span class="n">np</span><span class="o">.</span><span class="n">sinc</span><span class="p">(</span><span class="n">x</span><span class="p">)</span> <span class="o">*</span> <span class="n">np</span><span class="o">.</span><span class="n">sinc</span><span class="p">(</span><span class="n">x</span> <span class="o">/</span> <span class="n">a</span><span class="p">),</span> <span class="n">np</span><span class="o">.</span><span class="n">zeros_like</span><span class="p">(</span><span class="n">x</span><span class="p">))</span></div>
+
+
+
+<div class="viewcode-block" id="lanczos_forward_matrix">
+<a class="viewcode-back" href="../../../_autosummary/draco.util.regrid.html#draco.util.regrid.lanczos_forward_matrix">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">lanczos_forward_matrix</span><span class="p">(</span><span class="n">x</span><span class="p">,</span> <span class="n">y</span><span class="p">,</span> <span class="n">a</span><span class="o">=</span><span class="mi">5</span><span class="p">,</span> <span class="n">periodic</span><span class="o">=</span><span class="kc">False</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Lanczos interpolation matrix.</span>
+
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    x : np.ndarray[m]</span>
+<span class="sd">        Points we have data at. Must be regularly spaced.</span>
+<span class="sd">    y : np.ndarray[n]</span>
+<span class="sd">        Point we want to interpolate data onto.</span>
+<span class="sd">    a : integer, optional</span>
+<span class="sd">        Lanczos width parameter.</span>
+<span class="sd">    periodic : boolean, optional</span>
+<span class="sd">        Treat input points as periodic.</span>
+
+<span class="sd">    Returns</span>
+<span class="sd">    -------</span>
+<span class="sd">    matrix : np.ndarray[m, n]</span>
+<span class="sd">        Lanczos regridding matrix. Apply to data with `np.dot(matrix, data)`.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">dx</span> <span class="o">=</span> <span class="n">x</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span> <span class="o">-</span> <span class="n">x</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+
+    <span class="n">sep</span> <span class="o">=</span> <span class="p">(</span><span class="n">x</span><span class="p">[</span><span class="n">np</span><span class="o">.</span><span class="n">newaxis</span><span class="p">,</span> <span class="p">:]</span> <span class="o">-</span> <span class="n">y</span><span class="p">[:,</span> <span class="n">np</span><span class="o">.</span><span class="n">newaxis</span><span class="p">])</span> <span class="o">/</span> <span class="n">dx</span>
+
+    <span class="k">if</span> <span class="n">periodic</span><span class="p">:</span>
+        <span class="n">n</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">x</span><span class="p">)</span>
+        <span class="n">sep</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">where</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">abs</span><span class="p">(</span><span class="n">sep</span><span class="p">)</span> <span class="o">&gt;</span> <span class="n">n</span> <span class="o">//</span> <span class="mi">2</span><span class="p">,</span> <span class="n">n</span> <span class="o">-</span> <span class="n">np</span><span class="o">.</span><span class="n">abs</span><span class="p">(</span><span class="n">sep</span><span class="p">),</span> <span class="n">sep</span><span class="p">)</span>
+
+    <span class="k">return</span> <span class="n">lanczos_kernel</span><span class="p">(</span><span class="n">sep</span><span class="p">,</span> <span class="n">a</span><span class="p">)</span></div>
+
+
+
+<div class="viewcode-block" id="lanczos_inverse_matrix">
+<a class="viewcode-back" href="../../../_autosummary/draco.util.regrid.html#draco.util.regrid.lanczos_inverse_matrix">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">lanczos_inverse_matrix</span><span class="p">(</span><span class="n">x</span><span class="p">,</span> <span class="n">y</span><span class="p">,</span> <span class="n">a</span><span class="o">=</span><span class="mi">5</span><span class="p">,</span> <span class="n">cond</span><span class="o">=</span><span class="mf">1e-1</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Regrid data using a maximum likelihood inverse Lanczos.</span>
+
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    x : np.ndarray[m]</span>
+<span class="sd">        Points to regrid data onto. Must be regularly spaced.</span>
+<span class="sd">    y : np.ndarray[n]</span>
+<span class="sd">        Points we have data at. Irregular spacing.</span>
+<span class="sd">    a : integer, optional</span>
+<span class="sd">        Lanczos width parameter.</span>
+<span class="sd">    cond : float</span>
+<span class="sd">        Relative condition number for pseudo-inverse.</span>
+
+<span class="sd">    Returns</span>
+<span class="sd">    -------</span>
+<span class="sd">    matrix : np.ndarray[m, n]</span>
+<span class="sd">        Lanczos regridding matrix. Apply to data with `np.dot(matrix, data)`.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">lz_forward</span> <span class="o">=</span> <span class="n">lanczos_forward_matrix</span><span class="p">(</span><span class="n">x</span><span class="p">,</span> <span class="n">y</span><span class="p">,</span> <span class="n">a</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">la</span><span class="o">.</span><span class="n">pinv</span><span class="p">(</span><span class="n">lz_forward</span><span class="p">,</span> <span class="n">rcond</span><span class="o">=</span><span class="n">cond</span><span class="p">)</span></div>
+
+
+
+<div class="viewcode-block" id="rebin_matrix">
+<a class="viewcode-back" href="../../../_autosummary/draco.util.regrid.html#draco.util.regrid.rebin_matrix">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">rebin_matrix</span><span class="p">(</span><span class="n">tra</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">,</span> <span class="n">ra</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">,</span> <span class="n">width_t</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mi">0</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Construct a matrix to rebin the samples.</span>
+
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    tra</span>
+<span class="sd">        The samples we have in the time stream.</span>
+<span class="sd">    ra</span>
+<span class="sd">        The target samples we want in the sidereal stream.</span>
+<span class="sd">    width_t</span>
+<span class="sd">        The width of a time sample. Set to zero to do a nearest bin assignment.</span>
+
+<span class="sd">    Returns</span>
+<span class="sd">    -------</span>
+<span class="sd">    R</span>
+<span class="sd">        A matrix to perform the rebinning.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">R</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">zeros</span><span class="p">((</span><span class="n">ra</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span> <span class="n">tra</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">]))</span>
+
+    <span class="n">inds</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">searchsorted</span><span class="p">(</span><span class="n">ra</span><span class="p">,</span> <span class="n">tra</span><span class="p">)</span>
+
+    <span class="c1"># Estimate the typical width of an RA bin</span>
+    <span class="n">width_ra</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">median</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">abs</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">diff</span><span class="p">(</span><span class="n">ra</span><span class="p">)))</span>
+
+    <span class="n">lowest_ra</span> <span class="o">=</span> <span class="n">ra</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">-</span> <span class="n">width_ra</span> <span class="o">/</span> <span class="mi">2</span>
+    <span class="n">highest_ra</span> <span class="o">=</span> <span class="n">ra</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span> <span class="o">+</span> <span class="n">width_ra</span> <span class="o">/</span> <span class="mi">2</span>
+
+    <span class="c1"># NOTE: this is a bit of a hack to avoid zero division by zeros, but should have</span>
+    <span class="c1"># the required effect of giving 1 if the time sample is inside a bin, and zero</span>
+    <span class="c1"># otherwise.</span>
+    <span class="k">if</span> <span class="n">width_t</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
+        <span class="n">width_t</span> <span class="o">=</span> <span class="mf">1e-10</span>
+
+    <span class="c1"># NOTE: this can probably be done more efficiently, but we typically only need</span>
+    <span class="c1"># to do this once per day</span>
+    <span class="k">for</span> <span class="n">ii</span><span class="p">,</span> <span class="p">(</span><span class="n">jj</span><span class="p">,</span> <span class="n">t</span><span class="p">)</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="nb">zip</span><span class="p">(</span><span class="n">inds</span><span class="p">,</span> <span class="n">tra</span><span class="p">)):</span>
+        <span class="n">lower_edge</span> <span class="o">=</span> <span class="n">t</span> <span class="o">-</span> <span class="n">width_t</span> <span class="o">/</span> <span class="mf">2.0</span>
+        <span class="n">upper_edge</span> <span class="o">=</span> <span class="n">t</span> <span class="o">+</span> <span class="n">width_t</span> <span class="o">/</span> <span class="mf">2.0</span>
+
+        <span class="c1"># If we are in here we have weight to assign to the sample below</span>
+        <span class="k">if</span> <span class="n">upper_edge</span> <span class="o">&gt;</span> <span class="n">lowest_ra</span> <span class="ow">and</span> <span class="n">jj</span> <span class="o">&lt;</span> <span class="nb">len</span><span class="p">(</span><span class="n">ra</span><span class="p">):</span>
+            <span class="n">ra_edge</span> <span class="o">=</span> <span class="n">ra</span><span class="p">[</span><span class="n">jj</span><span class="p">]</span> <span class="o">-</span> <span class="n">width_ra</span> <span class="o">/</span> <span class="mi">2</span>
+            <span class="n">wh</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">clip</span><span class="p">((</span><span class="n">upper_edge</span> <span class="o">-</span> <span class="n">ra_edge</span><span class="p">)</span> <span class="o">/</span> <span class="n">width_t</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">,</span> <span class="mf">1.0</span><span class="p">)</span>
+            <span class="n">R</span><span class="p">[</span><span class="n">jj</span><span class="p">,</span> <span class="n">ii</span><span class="p">]</span> <span class="o">=</span> <span class="n">wh</span>
+
+        <span class="k">if</span> <span class="n">lower_edge</span> <span class="o">&lt;</span> <span class="n">highest_ra</span> <span class="ow">and</span> <span class="n">jj</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="p">:</span>
+            <span class="n">ra_edge</span> <span class="o">=</span> <span class="n">ra</span><span class="p">[</span><span class="n">jj</span> <span class="o">-</span> <span class="mi">1</span><span class="p">]</span> <span class="o">+</span> <span class="n">width_ra</span> <span class="o">/</span> <span class="mi">2</span>
+            <span class="n">wl</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">clip</span><span class="p">((</span><span class="n">ra_edge</span> <span class="o">-</span> <span class="n">lower_edge</span><span class="p">)</span> <span class="o">/</span> <span class="n">width_t</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">,</span> <span class="mf">1.0</span><span class="p">)</span>
+            <span class="n">R</span><span class="p">[</span><span class="n">jj</span> <span class="o">-</span> <span class="mi">1</span><span class="p">,</span> <span class="n">ii</span><span class="p">]</span> <span class="o">=</span> <span class="n">wl</span>
+
+    <span class="k">return</span> <span class="n">R</span></div>
+
+
+
+<div class="viewcode-block" id="grad_1d">
+<a class="viewcode-back" href="../../../_autosummary/draco.util.regrid.html#draco.util.regrid.grad_1d">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">grad_1d</span><span class="p">(</span>
+    <span class="n">x</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">,</span> <span class="n">si</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">,</span> <span class="n">mask</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">,</span> <span class="n">period</span><span class="p">:</span> <span class="nb">float</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Gradient with boundary samples wrapped.</span>
+
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    x</span>
+<span class="sd">        Data to calculate the gradient for.</span>
+<span class="sd">    si</span>
+<span class="sd">        Positions of the samples. Must be monotonically increasing.</span>
+<span class="sd">    mask</span>
+<span class="sd">        Boolean mask, True where a sample is flagged.</span>
+<span class="sd">    period</span>
+<span class="sd">        Period of `samples`. Default is None, which produces a</span>
+<span class="sd">        non-periodic gradient.</span>
+
+<span class="sd">    Returns</span>
+<span class="sd">    -------</span>
+<span class="sd">    gradient</span>
+<span class="sd">        Gradient of `x`. Gradient is set to zero where any sample in</span>
+<span class="sd">        the calculation was flagged.</span>
+<span class="sd">    mask</span>
+<span class="sd">        Boolean mask corresponding to samples for which a proper</span>
+<span class="sd">        gradient could not be calculated. True where a sample</span>
+<span class="sd">        is flagged.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">if</span> <span class="n">period</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="c1"># Wrap each array, accounting for the periodicity</span>
+        <span class="c1"># in sample positions</span>
+        <span class="n">x</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">concatenate</span><span class="p">(([</span><span class="n">x</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]],</span> <span class="n">x</span><span class="p">,</span> <span class="p">[</span><span class="n">x</span><span class="p">[</span><span class="mi">0</span><span class="p">]]))</span>
+        <span class="n">mask</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">concatenate</span><span class="p">(([</span><span class="n">mask</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]],</span> <span class="n">mask</span><span class="p">,</span> <span class="p">[</span><span class="n">mask</span><span class="p">[</span><span class="mi">0</span><span class="p">]]))</span>
+        <span class="c1"># Account for the possibility of multiple periods</span>
+        <span class="n">shift</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">ceil</span><span class="p">(</span><span class="n">si</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span> <span class="o">/</span> <span class="n">period</span><span class="p">)</span> <span class="o">*</span> <span class="n">period</span>
+        <span class="n">si</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">concatenate</span><span class="p">(([</span><span class="n">si</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span> <span class="o">-</span> <span class="n">shift</span><span class="p">],</span> <span class="n">si</span><span class="p">,</span> <span class="p">[</span><span class="n">si</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">+</span> <span class="n">shift</span><span class="p">]))</span>
+        <span class="c1"># Return with wrapped samples removed</span>
+        <span class="n">sel</span> <span class="o">=</span> <span class="nb">slice</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="o">-</span><span class="mi">1</span><span class="p">)</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="c1"># Calculate the gradient using `np.gradient` first order</span>
+        <span class="c1"># one-sided difference at the boundaries</span>
+        <span class="n">sel</span> <span class="o">=</span> <span class="nb">slice</span><span class="p">(</span><span class="kc">None</span><span class="p">)</span>
+
+    <span class="c1"># Extend the flagged values such that any gradient which</span>
+    <span class="c1"># includes a flagged sample is set to 0. This effectively</span>
+    <span class="c1"># involves masking any sample where an adjacent sample is masked</span>
+    <span class="n">mask</span> <span class="o">|=</span> <span class="n">np</span><span class="o">.</span><span class="n">concatenate</span><span class="p">(([</span><span class="kc">False</span><span class="p">],</span> <span class="n">mask</span><span class="p">[:</span><span class="o">-</span><span class="mi">1</span><span class="p">]))</span> <span class="o">|</span> <span class="n">np</span><span class="o">.</span><span class="n">concatenate</span><span class="p">((</span><span class="n">mask</span><span class="p">[</span><span class="mi">1</span><span class="p">:],</span> <span class="p">[</span><span class="kc">False</span><span class="p">]))</span>
+
+    <span class="c1"># `np.gradient` will produce NaNs if the sample separation is zero -</span>
+    <span class="c1"># i.e., if there are two adjacent zeros in `si`. Explicitly set</span>
+    <span class="c1"># these values to zero</span>
+    <span class="k">with</span> <span class="n">np</span><span class="o">.</span><span class="n">errstate</span><span class="p">(</span><span class="n">divide</span><span class="o">=</span><span class="s2">&quot;ignore&quot;</span><span class="p">,</span> <span class="n">invalid</span><span class="o">=</span><span class="s2">&quot;ignore&quot;</span><span class="p">):</span>
+        <span class="n">grad</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">gradient</span><span class="p">(</span><span class="n">x</span><span class="p">,</span> <span class="n">si</span><span class="p">)</span>
+
+    <span class="n">mask</span> <span class="o">|=</span> <span class="o">~</span><span class="n">np</span><span class="o">.</span><span class="n">isfinite</span><span class="p">(</span><span class="n">grad</span><span class="p">)</span>
+    <span class="n">grad</span><span class="p">[</span><span class="n">mask</span><span class="p">]</span> <span class="o">=</span> <span class="mf">0.0</span>
+
+    <span class="k">return</span> <span class="n">grad</span><span class="p">[</span><span class="n">sel</span><span class="p">],</span> <span class="n">mask</span><span class="p">[</span><span class="n">sel</span><span class="p">]</span></div>
+
+
+
+<div class="viewcode-block" id="taylor_coeff">
+<a class="viewcode-back" href="../../../_autosummary/draco.util.regrid.html#draco.util.regrid.taylor_coeff">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">taylor_coeff</span><span class="p">(</span>
+    <span class="n">x</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">,</span>
+    <span class="n">N</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span>
+    <span class="n">M</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span>
+    <span class="n">Ni</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">,</span>
+    <span class="n">Si</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span>
+    <span class="n">period</span><span class="p">:</span> <span class="nb">float</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="n">xc</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">list</span><span class="p">[</span><span class="n">ss</span><span class="o">.</span><span class="n">csr_array</span><span class="p">]:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Return a set of sparse matrices that estimates expansion coefficients.</span>
+
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    x</span>
+<span class="sd">        Positions of each element.</span>
+<span class="sd">    N</span>
+<span class="sd">        Number of positions each side to estimate from.</span>
+<span class="sd">    M</span>
+<span class="sd">        The number of terms in the expansion.</span>
+<span class="sd">    Ni</span>
+<span class="sd">        The weight for each position. The inverse noise variance if interpreted as a</span>
+<span class="sd">        Wiener filter.</span>
+<span class="sd">    Si</span>
+<span class="sd">        A regulariser. The inverse signal variance if interpreted as a Wiener filter.</span>
+<span class="sd">    period</span>
+<span class="sd">        If set, assume the axis is periodic with this period.</span>
+<span class="sd">    xc</span>
+<span class="sd">        An optional parameter giving the location to return the coefficients at. If not</span>
+<span class="sd">        set, just use the locations of each individual sample.</span>
+
+
+<span class="sd">    Returns</span>
+<span class="sd">    -------</span>
+<span class="sd">    matrices</span>
+<span class="sd">        A set of sparse matrices that will estimate the coefficents at each location.</span>
+<span class="sd">        Each matrix is for a different coefficient.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">nx</span> <span class="o">=</span> <span class="n">x</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+
+    <span class="n">ind</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">arange</span><span class="p">(</span><span class="n">nx</span><span class="p">)[:,</span> <span class="n">np</span><span class="o">.</span><span class="n">newaxis</span><span class="p">]</span> <span class="o">+</span> <span class="n">np</span><span class="o">.</span><span class="n">arange</span><span class="p">(</span><span class="o">-</span><span class="n">N</span><span class="p">,</span> <span class="n">N</span> <span class="o">+</span> <span class="mi">1</span><span class="p">)[</span><span class="n">np</span><span class="o">.</span><span class="n">newaxis</span><span class="p">,</span> <span class="p">:]</span>
+
+    <span class="n">xc</span> <span class="o">=</span> <span class="n">x</span> <span class="k">if</span> <span class="n">xc</span> <span class="ow">is</span> <span class="kc">None</span> <span class="k">else</span> <span class="n">xc</span>
+
+    <span class="c1"># If periodic then just wrap back around</span>
+    <span class="k">if</span> <span class="n">period</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="n">ind</span> <span class="o">=</span> <span class="n">ind</span> <span class="o">%</span> <span class="n">nx</span>
+        <span class="n">xf</span> <span class="o">=</span> <span class="n">x</span><span class="p">[</span><span class="n">ind</span><span class="p">]</span> <span class="o">-</span> <span class="n">xc</span><span class="p">[:,</span> <span class="n">np</span><span class="o">.</span><span class="n">newaxis</span><span class="p">]</span>
+        <span class="n">x</span> <span class="o">=</span> <span class="p">((</span><span class="n">x</span> <span class="o">+</span> <span class="n">period</span> <span class="o">/</span> <span class="mi">2</span><span class="p">)</span> <span class="o">%</span> <span class="n">period</span><span class="p">)</span> <span class="o">-</span> <span class="n">period</span> <span class="o">/</span> <span class="mi">2</span>
+        <span class="n">Na</span> <span class="o">=</span> <span class="n">Ni</span><span class="p">[</span><span class="n">ind</span><span class="p">]</span>
+
+    <span class="c1"># If not then set the weights for out of bounds entries to zero</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="n">mask</span> <span class="o">=</span> <span class="p">(</span><span class="n">ind</span> <span class="o">&lt;</span> <span class="mi">0</span><span class="p">)</span> <span class="o">|</span> <span class="p">(</span><span class="n">ind</span> <span class="o">&gt;=</span> <span class="n">nx</span><span class="p">)</span>
+        <span class="n">ind</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">where</span><span class="p">(</span><span class="n">mask</span><span class="p">,</span> <span class="mi">0</span><span class="p">,</span> <span class="n">ind</span><span class="p">)</span>
+        <span class="n">xf</span> <span class="o">=</span> <span class="n">x</span><span class="p">[</span><span class="n">ind</span><span class="p">]</span> <span class="o">-</span> <span class="n">x</span><span class="p">[:,</span> <span class="n">np</span><span class="o">.</span><span class="n">newaxis</span><span class="p">]</span>
+        <span class="n">Na</span> <span class="o">=</span> <span class="n">Ni</span><span class="p">[</span><span class="n">ind</span><span class="p">]</span>
+        <span class="n">Na</span><span class="p">[</span><span class="n">mask</span><span class="p">]</span> <span class="o">=</span> <span class="mf">0.0</span>
+
+    <span class="c1"># Create the required matrices at each location</span>
+    <span class="n">X</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">stack</span><span class="p">([</span><span class="n">xf</span><span class="o">**</span><span class="n">m</span> <span class="k">for</span> <span class="n">m</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">M</span><span class="p">)],</span> <span class="n">axis</span><span class="o">=</span><span class="mi">2</span><span class="p">)</span>
+    <span class="n">XhNi</span> <span class="o">=</span> <span class="p">(</span><span class="n">X</span> <span class="o">*</span> <span class="n">Na</span><span class="p">[:,</span> <span class="p">:,</span> <span class="n">np</span><span class="o">.</span><span class="n">newaxis</span><span class="p">])</span><span class="o">.</span><span class="n">transpose</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="mi">2</span><span class="p">,</span> <span class="mi">1</span><span class="p">)</span>
+    <span class="n">XhNiX</span> <span class="o">=</span> <span class="n">XhNi</span> <span class="o">@</span> <span class="n">X</span>
+
+    <span class="c1"># Calculate the covariance part of the filter</span>
+    <span class="n">Ci</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">identity</span><span class="p">(</span><span class="n">M</span><span class="p">)</span> <span class="o">*</span> <span class="n">Si</span> <span class="o">+</span> <span class="n">XhNiX</span>
+    <span class="n">C</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">zeros_like</span><span class="p">(</span><span class="n">Ci</span><span class="p">)</span>
+    <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">nx</span><span class="p">):</span>
+        <span class="n">C</span><span class="p">[</span><span class="n">i</span><span class="p">]</span> <span class="o">=</span> <span class="n">la</span><span class="o">.</span><span class="n">inv</span><span class="p">(</span><span class="n">Ci</span><span class="p">[</span><span class="n">i</span><span class="p">])</span>
+
+    <span class="n">W</span> <span class="o">=</span> <span class="n">C</span> <span class="o">@</span> <span class="n">XhNi</span>
+
+    <span class="c1"># Create the indptr array designating the start and end of the indices for each row</span>
+    <span class="c1"># in the csr_array</span>
+    <span class="n">indptr</span> <span class="o">=</span> <span class="p">(</span><span class="mi">2</span> <span class="o">*</span> <span class="n">N</span> <span class="o">+</span> <span class="mi">1</span><span class="p">)</span> <span class="o">*</span> <span class="n">np</span><span class="o">.</span><span class="n">arange</span><span class="p">(</span><span class="n">nx</span> <span class="o">+</span> <span class="mi">1</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="nb">int</span><span class="p">)</span>
+    <span class="k">return</span> <span class="p">[</span>
+        <span class="n">ss</span><span class="o">.</span><span class="n">csr_array</span><span class="p">((</span><span class="n">W</span><span class="p">[:,</span> <span class="n">i</span><span class="p">]</span><span class="o">.</span><span class="n">ravel</span><span class="p">(),</span> <span class="n">ind</span><span class="o">.</span><span class="n">ravel</span><span class="p">(),</span> <span class="n">indptr</span><span class="p">),</span> <span class="n">shape</span><span class="o">=</span><span class="p">(</span><span class="n">nx</span><span class="p">,</span> <span class="n">nx</span><span class="p">))</span>
+        <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">M</span><span class="p">)</span>
+    <span class="p">]</span></div>
+
+</pre></div>
+
+           </div>
+          </div>
+          <footer>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2016, Richard Shaw.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>

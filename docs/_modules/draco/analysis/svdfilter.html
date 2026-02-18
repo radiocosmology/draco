@@ -1,0 +1,304 @@
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" data-content_root="../../../">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>draco.analysis.svdfilter &mdash; draco 0.0.1 documentation</title>
+      <link rel="stylesheet" type="text/css" href="../../../_static/pygments.css?v=b86133f3" />
+      <link rel="stylesheet" type="text/css" href="../../../_static/css/theme.css?v=9edc463e" />
+
+  
+      <script src="../../../_static/jquery.js?v=5d32c60e"></script>
+      <script src="../../../_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
+      <script src="../../../_static/documentation_options.js?v=d45e8c67"></script>
+      <script src="../../../_static/doctools.js?v=9bcbadda"></script>
+      <script src="../../../_static/sphinx_highlight.js?v=dc90522c"></script>
+    <script src="../../../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../../../genindex.html" />
+    <link rel="search" title="Search" href="../../../search.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="../../../index.html" class="icon icon-home">
+            draco
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../../../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../tutorial.html">Tutorial</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../reference.html">API Reference</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../dev.html">Development Guidelines</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../../../index.html">draco</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../../../index.html" class="icon icon-home" aria-label="Home"></a></li>
+          <li class="breadcrumb-item"><a href="../../index.html">Module code</a></li>
+      <li class="breadcrumb-item active">draco.analysis.svdfilter</li>
+      <li class="wy-breadcrumbs-aside">
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <h1>Source code for draco.analysis.svdfilter</h1><div class="highlight"><pre>
+<span></span><span class="sd">&quot;&quot;&quot;A set of tasks for SVD filtering the m-modes.&quot;&quot;&quot;</span>
+
+<span class="kn">import</span><span class="w"> </span><span class="nn">numpy</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">np</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">scipy.linalg</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">la</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">caput</span><span class="w"> </span><span class="kn">import</span> <span class="n">config</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">caput.pipeline</span><span class="w"> </span><span class="kn">import</span> <span class="n">tasklib</span>
+
+<span class="kn">from</span><span class="w"> </span><span class="nn">..core</span><span class="w"> </span><span class="kn">import</span> <span class="n">containers</span>
+
+
+<div class="viewcode-block" id="SVDSpectrumEstimator">
+<a class="viewcode-back" href="../../../_autosummary/draco.analysis.svdfilter.html#draco.analysis.svdfilter.SVDSpectrumEstimator">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">SVDSpectrumEstimator</span><span class="p">(</span><span class="n">tasklib</span><span class="o">.</span><span class="n">base</span><span class="o">.</span><span class="n">ContainerTask</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Calculate the SVD spectrum of a set of m-modes.</span>
+
+<span class="sd">    Attributes</span>
+<span class="sd">    ----------</span>
+<span class="sd">    niter : int</span>
+<span class="sd">        Number of iterations of EM to perform.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+
+    <span class="n">niter</span> <span class="o">=</span> <span class="n">config</span><span class="o">.</span><span class="n">Property</span><span class="p">(</span><span class="n">proptype</span><span class="o">=</span><span class="nb">int</span><span class="p">,</span> <span class="n">default</span><span class="o">=</span><span class="mi">5</span><span class="p">)</span>
+
+<div class="viewcode-block" id="SVDSpectrumEstimator.process">
+<a class="viewcode-back" href="../../../_autosummary/draco.analysis.svdfilter.html#draco.analysis.svdfilter.SVDSpectrumEstimator.process">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">process</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">mmodes</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Calculate the spectrum.</span>
+
+<span class="sd">        Parameters</span>
+<span class="sd">        ----------</span>
+<span class="sd">        mmodes : containers.MModes</span>
+<span class="sd">            MModes to find the spectrum of.</span>
+
+<span class="sd">        Returns</span>
+<span class="sd">        -------</span>
+<span class="sd">        spectrum : containers.SVDSpectrum</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">mmodes</span><span class="o">.</span><span class="n">redistribute</span><span class="p">(</span><span class="s2">&quot;m&quot;</span><span class="p">)</span>
+
+        <span class="n">vis</span> <span class="o">=</span> <span class="n">mmodes</span><span class="o">.</span><span class="n">vis</span><span class="p">[:]</span>
+        <span class="n">weight</span> <span class="o">=</span> <span class="n">mmodes</span><span class="o">.</span><span class="n">weight</span><span class="p">[:]</span>
+
+        <span class="n">nmode</span> <span class="o">=</span> <span class="nb">min</span><span class="p">(</span><span class="n">vis</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span> <span class="o">*</span> <span class="n">vis</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">3</span><span class="p">],</span> <span class="n">vis</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">2</span><span class="p">])</span>
+
+        <span class="n">spec</span> <span class="o">=</span> <span class="n">containers</span><span class="o">.</span><span class="n">SVDSpectrum</span><span class="p">(</span><span class="n">singularvalue</span><span class="o">=</span><span class="n">nmode</span><span class="p">,</span> <span class="n">axes_from</span><span class="o">=</span><span class="n">mmodes</span><span class="p">)</span>
+        <span class="n">spec</span><span class="o">.</span><span class="n">spectrum</span><span class="p">[:]</span> <span class="o">=</span> <span class="mf">0.0</span>
+
+        <span class="k">for</span> <span class="n">mi</span><span class="p">,</span> <span class="n">m</span> <span class="ow">in</span> <span class="n">vis</span><span class="o">.</span><span class="n">enumerate</span><span class="p">(</span><span class="n">axis</span><span class="o">=</span><span class="mi">0</span><span class="p">):</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">log</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="s2">&quot;Calculating SVD spectrum of m=</span><span class="si">%i</span><span class="s2">&quot;</span><span class="p">,</span> <span class="n">m</span><span class="p">)</span>
+
+            <span class="n">vis_m</span> <span class="o">=</span> <span class="n">vis</span><span class="o">.</span><span class="n">local_array</span><span class="p">[</span><span class="n">mi</span><span class="p">]</span><span class="o">.</span><span class="n">transpose</span><span class="p">((</span><span class="mi">1</span><span class="p">,</span> <span class="mi">0</span><span class="p">,</span> <span class="mi">2</span><span class="p">))</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="n">vis</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">2</span><span class="p">],</span> <span class="o">-</span><span class="mi">1</span><span class="p">)</span>
+            <span class="n">weight_m</span> <span class="o">=</span> <span class="p">(</span>
+                <span class="n">weight</span><span class="o">.</span><span class="n">local_array</span><span class="p">[</span><span class="n">mi</span><span class="p">]</span><span class="o">.</span><span class="n">transpose</span><span class="p">((</span><span class="mi">1</span><span class="p">,</span> <span class="mi">0</span><span class="p">,</span> <span class="mi">2</span><span class="p">))</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="n">vis</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">2</span><span class="p">],</span> <span class="o">-</span><span class="mi">1</span><span class="p">)</span>
+            <span class="p">)</span>
+            <span class="n">mask_m</span> <span class="o">=</span> <span class="n">weight_m</span> <span class="o">==</span> <span class="mf">0.0</span>
+
+            <span class="n">_</span><span class="p">,</span> <span class="n">sig</span><span class="p">,</span> <span class="n">_</span> <span class="o">=</span> <span class="n">svd_em</span><span class="p">(</span><span class="n">vis_m</span><span class="p">,</span> <span class="n">mask_m</span><span class="p">,</span> <span class="n">niter</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">niter</span><span class="p">)</span>
+
+            <span class="n">spec</span><span class="o">.</span><span class="n">spectrum</span><span class="p">[</span><span class="n">m</span><span class="p">]</span> <span class="o">=</span> <span class="n">sig</span>
+
+        <span class="k">return</span> <span class="n">spec</span></div>
+</div>
+
+
+
+<div class="viewcode-block" id="SVDFilter">
+<a class="viewcode-back" href="../../../_autosummary/draco.analysis.svdfilter.html#draco.analysis.svdfilter.SVDFilter">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">SVDFilter</span><span class="p">(</span><span class="n">tasklib</span><span class="o">.</span><span class="n">base</span><span class="o">.</span><span class="n">ContainerTask</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;SVD filter the m-modes to remove the most correlated components.</span>
+
+<span class="sd">    Attributes</span>
+<span class="sd">    ----------</span>
+<span class="sd">    niter : int</span>
+<span class="sd">        Number of iterations of EM to perform.</span>
+<span class="sd">    local_threshold : float</span>
+<span class="sd">        Cut out modes with singular value higher than `local_threshold` times the</span>
+<span class="sd">        largest mode on each m.</span>
+<span class="sd">    global_threshold : float</span>
+<span class="sd">        Remove modes with singular value higher than `global_threshold` times the</span>
+<span class="sd">        largest mode on any m</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+
+    <span class="n">niter</span> <span class="o">=</span> <span class="n">config</span><span class="o">.</span><span class="n">Property</span><span class="p">(</span><span class="n">proptype</span><span class="o">=</span><span class="nb">int</span><span class="p">,</span> <span class="n">default</span><span class="o">=</span><span class="mi">5</span><span class="p">)</span>
+    <span class="n">global_threshold</span> <span class="o">=</span> <span class="n">config</span><span class="o">.</span><span class="n">Property</span><span class="p">(</span><span class="n">proptype</span><span class="o">=</span><span class="nb">float</span><span class="p">,</span> <span class="n">default</span><span class="o">=</span><span class="mf">1e-3</span><span class="p">)</span>
+    <span class="n">local_threshold</span> <span class="o">=</span> <span class="n">config</span><span class="o">.</span><span class="n">Property</span><span class="p">(</span><span class="n">proptype</span><span class="o">=</span><span class="nb">float</span><span class="p">,</span> <span class="n">default</span><span class="o">=</span><span class="mf">1e-2</span><span class="p">)</span>
+
+<div class="viewcode-block" id="SVDFilter.process">
+<a class="viewcode-back" href="../../../_autosummary/draco.analysis.svdfilter.html#draco.analysis.svdfilter.SVDFilter.process">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">process</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">mmodes</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Filter MModes using an SVD.</span>
+
+<span class="sd">        Parameters</span>
+<span class="sd">        ----------</span>
+<span class="sd">        mmodes : container.MModes</span>
+<span class="sd">            MModes to process</span>
+
+<span class="sd">        Returns</span>
+<span class="sd">        -------</span>
+<span class="sd">        mmodes : container.MModes</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="kn">from</span><span class="w"> </span><span class="nn">mpi4py</span><span class="w"> </span><span class="kn">import</span> <span class="n">MPI</span>
+
+        <span class="n">mmodes</span><span class="o">.</span><span class="n">redistribute</span><span class="p">(</span><span class="s2">&quot;m&quot;</span><span class="p">)</span>
+
+        <span class="n">vis</span> <span class="o">=</span> <span class="n">mmodes</span><span class="o">.</span><span class="n">vis</span><span class="p">[:]</span>
+        <span class="n">weight</span> <span class="o">=</span> <span class="n">mmodes</span><span class="o">.</span><span class="n">weight</span><span class="p">[:]</span>
+
+        <span class="n">sv_max</span> <span class="o">=</span> <span class="mf">0.0</span>
+
+        <span class="c1"># TODO: this should be changed such that it does all the computation in</span>
+        <span class="c1"># a single SVD pass.</span>
+
+        <span class="c1"># Do a quick first pass calculation of all the singular values to get the max on this rank.</span>
+        <span class="k">for</span> <span class="n">mi</span><span class="p">,</span> <span class="n">m</span> <span class="ow">in</span> <span class="n">vis</span><span class="o">.</span><span class="n">enumerate</span><span class="p">(</span><span class="n">axis</span><span class="o">=</span><span class="mi">0</span><span class="p">):</span>
+            <span class="n">vis_m</span> <span class="o">=</span> <span class="n">vis</span><span class="o">.</span><span class="n">local_array</span><span class="p">[</span><span class="n">mi</span><span class="p">]</span><span class="o">.</span><span class="n">transpose</span><span class="p">((</span><span class="mi">1</span><span class="p">,</span> <span class="mi">0</span><span class="p">,</span> <span class="mi">2</span><span class="p">))</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="n">vis</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">2</span><span class="p">],</span> <span class="o">-</span><span class="mi">1</span><span class="p">)</span>
+            <span class="n">weight_m</span> <span class="o">=</span> <span class="p">(</span>
+                <span class="n">weight</span><span class="o">.</span><span class="n">local_array</span><span class="p">[</span><span class="n">mi</span><span class="p">]</span><span class="o">.</span><span class="n">transpose</span><span class="p">((</span><span class="mi">1</span><span class="p">,</span> <span class="mi">0</span><span class="p">,</span> <span class="mi">2</span><span class="p">))</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="n">vis</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">2</span><span class="p">],</span> <span class="o">-</span><span class="mi">1</span><span class="p">)</span>
+            <span class="p">)</span>
+            <span class="n">mask_m</span> <span class="o">=</span> <span class="n">weight_m</span> <span class="o">==</span> <span class="mf">0.0</span>
+
+            <span class="n">u</span><span class="p">,</span> <span class="n">sig</span><span class="p">,</span> <span class="n">vh</span> <span class="o">=</span> <span class="n">svd_em</span><span class="p">(</span><span class="n">vis_m</span><span class="p">,</span> <span class="n">mask_m</span><span class="p">,</span> <span class="n">niter</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">niter</span><span class="p">)</span>
+
+            <span class="n">sv_max</span> <span class="o">=</span> <span class="nb">max</span><span class="p">(</span><span class="n">sig</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span> <span class="n">sv_max</span><span class="p">)</span>
+
+        <span class="c1"># Reduce to get the global max.</span>
+        <span class="n">global_max</span> <span class="o">=</span> <span class="n">mmodes</span><span class="o">.</span><span class="n">comm</span><span class="o">.</span><span class="n">allreduce</span><span class="p">(</span><span class="n">sv_max</span><span class="p">,</span> <span class="n">op</span><span class="o">=</span><span class="n">MPI</span><span class="o">.</span><span class="n">MAX</span><span class="p">)</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">log</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="s2">&quot;Global maximum singular value=</span><span class="si">%.2g</span><span class="s2">&quot;</span><span class="p">,</span> <span class="n">global_max</span><span class="p">)</span>
+        <span class="kn">import</span><span class="w"> </span><span class="nn">sys</span>
+
+        <span class="n">sys</span><span class="o">.</span><span class="n">stdout</span><span class="o">.</span><span class="n">flush</span><span class="p">()</span>
+
+        <span class="c1"># Loop over all m&#39;s and remove modes below the combined cut</span>
+        <span class="k">for</span> <span class="n">mi</span><span class="p">,</span> <span class="n">m</span> <span class="ow">in</span> <span class="n">vis</span><span class="o">.</span><span class="n">enumerate</span><span class="p">(</span><span class="n">axis</span><span class="o">=</span><span class="mi">0</span><span class="p">):</span>
+            <span class="n">vis_m</span> <span class="o">=</span> <span class="n">vis</span><span class="o">.</span><span class="n">local_array</span><span class="p">[</span><span class="n">mi</span><span class="p">]</span><span class="o">.</span><span class="n">transpose</span><span class="p">((</span><span class="mi">1</span><span class="p">,</span> <span class="mi">0</span><span class="p">,</span> <span class="mi">2</span><span class="p">))</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="n">vis</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">2</span><span class="p">],</span> <span class="o">-</span><span class="mi">1</span><span class="p">)</span>
+            <span class="n">weight_m</span> <span class="o">=</span> <span class="p">(</span>
+                <span class="n">weight</span><span class="o">.</span><span class="n">local_array</span><span class="p">[</span><span class="n">mi</span><span class="p">]</span><span class="o">.</span><span class="n">transpose</span><span class="p">((</span><span class="mi">1</span><span class="p">,</span> <span class="mi">0</span><span class="p">,</span> <span class="mi">2</span><span class="p">))</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="n">vis</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">2</span><span class="p">],</span> <span class="o">-</span><span class="mi">1</span><span class="p">)</span>
+            <span class="p">)</span>
+            <span class="n">mask_m</span> <span class="o">=</span> <span class="n">weight_m</span> <span class="o">==</span> <span class="mf">0.0</span>
+
+            <span class="n">u</span><span class="p">,</span> <span class="n">sig</span><span class="p">,</span> <span class="n">vh</span> <span class="o">=</span> <span class="n">svd_em</span><span class="p">(</span><span class="n">vis_m</span><span class="p">,</span> <span class="n">mask_m</span><span class="p">,</span> <span class="n">niter</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">niter</span><span class="p">)</span>
+
+            <span class="c1"># Zero out singular values below the combined mode cut</span>
+            <span class="n">global_cut</span> <span class="o">=</span> <span class="p">(</span><span class="n">sig</span> <span class="o">&gt;</span> <span class="bp">self</span><span class="o">.</span><span class="n">global_threshold</span> <span class="o">*</span> <span class="n">global_max</span><span class="p">)</span><span class="o">.</span><span class="n">sum</span><span class="p">()</span>
+            <span class="n">local_cut</span> <span class="o">=</span> <span class="p">(</span><span class="n">sig</span> <span class="o">&gt;</span> <span class="bp">self</span><span class="o">.</span><span class="n">local_threshold</span> <span class="o">*</span> <span class="n">sig</span><span class="p">[</span><span class="mi">0</span><span class="p">])</span><span class="o">.</span><span class="n">sum</span><span class="p">()</span>
+            <span class="n">cut</span> <span class="o">=</span> <span class="nb">max</span><span class="p">(</span><span class="n">global_cut</span><span class="p">,</span> <span class="n">local_cut</span><span class="p">)</span>
+            <span class="n">sig</span><span class="p">[:</span><span class="n">cut</span><span class="p">]</span> <span class="o">=</span> <span class="mf">0.0</span>
+
+            <span class="c1"># Recombine the matrix</span>
+            <span class="n">vis_m</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">dot</span><span class="p">(</span><span class="n">u</span><span class="p">,</span> <span class="n">sig</span><span class="p">[:,</span> <span class="n">np</span><span class="o">.</span><span class="n">newaxis</span><span class="p">]</span> <span class="o">*</span> <span class="n">vh</span><span class="p">)</span>
+
+            <span class="c1"># Reshape and write back into the mmodes container</span>
+            <span class="n">vis</span><span class="p">[</span><span class="n">mi</span><span class="p">]</span> <span class="o">=</span> <span class="n">vis_m</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="n">vis</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">2</span><span class="p">],</span> <span class="mi">2</span><span class="p">,</span> <span class="o">-</span><span class="mi">1</span><span class="p">)</span><span class="o">.</span><span class="n">transpose</span><span class="p">((</span><span class="mi">1</span><span class="p">,</span> <span class="mi">0</span><span class="p">,</span> <span class="mi">2</span><span class="p">))</span>
+
+        <span class="k">return</span> <span class="n">mmodes</span></div>
+</div>
+
+
+
+<div class="viewcode-block" id="svd_em">
+<a class="viewcode-back" href="../../../_autosummary/draco.analysis.svdfilter.html#draco.analysis.svdfilter.svd_em">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">svd_em</span><span class="p">(</span><span class="n">A</span><span class="p">,</span> <span class="n">mask</span><span class="p">,</span> <span class="n">niter</span><span class="o">=</span><span class="mi">5</span><span class="p">,</span> <span class="n">rank</span><span class="o">=</span><span class="mi">5</span><span class="p">,</span> <span class="n">full_matrices</span><span class="o">=</span><span class="kc">False</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Perform an SVD with missing entries using Expectation-Maximisation.</span>
+
+<span class="sd">    This assumes that the matrix is well approximated by only a few modes in</span>
+<span class="sd">    order fill the missing entries. This is probably not a proper EM scheme, but</span>
+<span class="sd">    is not far off.</span>
+
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    A : np.ndarray</span>
+<span class="sd">        Matrix to SVD.</span>
+<span class="sd">    mask : np.ndarray</span>
+<span class="sd">        Boolean array of masked values. Missing values are `True`.</span>
+<span class="sd">    niter : int, optional</span>
+<span class="sd">        Number of iterations to perform.</span>
+<span class="sd">    rank : int, optional</span>
+<span class="sd">        Set the rank of the approximation used to fill the missing values.</span>
+<span class="sd">    full_matrices : bool, optional</span>
+<span class="sd">        Return the full span of eigenvectors and values (see `scipy.linalg.svd`</span>
+<span class="sd">        for a fuller description).</span>
+
+<span class="sd">    Returns</span>
+<span class="sd">    -------</span>
+<span class="sd">    u, sig, vh : np.ndarray</span>
+<span class="sd">        The singular values and vectors.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="c1"># Do an initial fill of the missing entries</span>
+    <span class="n">A</span> <span class="o">=</span> <span class="n">A</span><span class="o">.</span><span class="n">copy</span><span class="p">()</span>
+    <span class="n">A</span><span class="p">[</span><span class="n">mask</span><span class="p">]</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">median</span><span class="p">(</span><span class="n">A</span><span class="p">[</span><span class="o">~</span><span class="n">mask</span><span class="p">])</span>
+
+    <span class="c1"># Perform cycles of calculating the SVD with the current guess for the</span>
+    <span class="c1"># missing values, then forming a new estimate of the missing values using a</span>
+    <span class="c1"># low rank approximation.</span>
+    <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">niter</span><span class="p">):</span>
+        <span class="n">u</span><span class="p">,</span> <span class="n">sig</span><span class="p">,</span> <span class="n">vh</span> <span class="o">=</span> <span class="n">la</span><span class="o">.</span><span class="n">svd</span><span class="p">(</span><span class="n">A</span><span class="p">,</span> <span class="n">full_matrices</span><span class="o">=</span><span class="n">full_matrices</span><span class="p">,</span> <span class="n">overwrite_a</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
+
+        <span class="n">low_rank_A</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">dot</span><span class="p">(</span><span class="n">u</span><span class="p">[:,</span> <span class="p">:</span><span class="n">rank</span><span class="p">]</span> <span class="o">*</span> <span class="n">sig</span><span class="p">[:</span><span class="n">rank</span><span class="p">],</span> <span class="n">vh</span><span class="p">[:</span><span class="n">rank</span><span class="p">])</span>
+        <span class="n">A</span><span class="p">[</span><span class="n">mask</span><span class="p">]</span> <span class="o">=</span> <span class="n">low_rank_A</span><span class="p">[</span><span class="n">mask</span><span class="p">]</span>
+
+    <span class="k">return</span> <span class="n">u</span><span class="p">,</span> <span class="n">sig</span><span class="p">,</span> <span class="n">vh</span></div>
+
+</pre></div>
+
+           </div>
+          </div>
+          <footer>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2016, Richard Shaw.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>

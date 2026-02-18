@@ -1,0 +1,603 @@
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" data-content_root="../../../">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>draco.util.kernels &mdash; draco 0.0.1 documentation</title>
+      <link rel="stylesheet" type="text/css" href="../../../_static/pygments.css?v=b86133f3" />
+      <link rel="stylesheet" type="text/css" href="../../../_static/css/theme.css?v=9edc463e" />
+
+  
+      <script src="../../../_static/jquery.js?v=5d32c60e"></script>
+      <script src="../../../_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
+      <script src="../../../_static/documentation_options.js?v=d45e8c67"></script>
+      <script src="../../../_static/doctools.js?v=9bcbadda"></script>
+      <script src="../../../_static/sphinx_highlight.js?v=dc90522c"></script>
+    <script src="../../../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../../../genindex.html" />
+    <link rel="search" title="Search" href="../../../search.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="../../../index.html" class="icon icon-home">
+            draco
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../../../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../tutorial.html">Tutorial</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../reference.html">API Reference</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../dev.html">Development Guidelines</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../../../index.html">draco</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../../../index.html" class="icon icon-home" aria-label="Home"></a></li>
+          <li class="breadcrumb-item"><a href="../../index.html">Module code</a></li>
+      <li class="breadcrumb-item active">draco.util.kernels</li>
+      <li class="wy-breadcrumbs-aside">
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <h1>Source code for draco.util.kernels</h1><div class="highlight"><pre>
+<span></span><span class="sd">&quot;&quot;&quot;Routines for creating kernel/covariance matrices.&quot;&quot;&quot;</span>
+
+<span class="kn">import</span><span class="w"> </span><span class="nn">numpy</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">np</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">scipy</span><span class="w"> </span><span class="kn">import</span> <span class="n">linalg</span> <span class="k">as</span> <span class="n">la</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">scipy.spatial.distance</span><span class="w"> </span><span class="kn">import</span> <span class="n">cdist</span>
+
+<span class="n">__all__</span> <span class="o">=</span> <span class="p">[</span>
+    <span class="s2">&quot;convert_band_diagonal&quot;</span><span class="p">,</span>
+    <span class="s2">&quot;euclidean_difference_kernel&quot;</span><span class="p">,</span>
+    <span class="s2">&quot;gaussian_kernel&quot;</span><span class="p">,</span>
+    <span class="s2">&quot;get_kernel&quot;</span><span class="p">,</span>
+    <span class="s2">&quot;is_hermitian_positive_definite&quot;</span><span class="p">,</span>
+    <span class="s2">&quot;matern_kernel&quot;</span><span class="p">,</span>
+    <span class="s2">&quot;moving_average_inverse_kernel&quot;</span><span class="p">,</span>
+    <span class="s2">&quot;periodic_kernel&quot;</span><span class="p">,</span>
+    <span class="s2">&quot;rational_kernel&quot;</span><span class="p">,</span>
+    <span class="s2">&quot;squared_difference_kernel&quot;</span><span class="p">,</span>
+<span class="p">]</span>
+
+
+<div class="viewcode-block" id="get_kernel">
+<a class="viewcode-back" href="../../../_autosummary/draco.util.kernels.html#draco.util.kernels.get_kernel">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">get_kernel</span><span class="p">(</span><span class="n">name</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="o">**</span><span class="n">kernel_params</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Get a covariance matrix by name.</span>
+
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    name : str</span>
+<span class="sd">        Name of the covariance function.</span>
+<span class="sd">    kernel_params : dict</span>
+<span class="sd">        Extra keyword arguments to pass to the kernel function.</span>
+
+<span class="sd">    Notes</span>
+<span class="sd">    -----</span>
+<span class="sd">    The `banded` argument is no longer honoured, and a full kernel</span>
+<span class="sd">    array is returned. The full kernel can be converted to</span>
+<span class="sd">    band-diagonal form with `convert_band_diagonal`.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">if</span> <span class="s2">&quot;banded&quot;</span> <span class="ow">in</span> <span class="n">kernel_params</span><span class="p">:</span>
+        <span class="kn">import</span><span class="w"> </span><span class="nn">warnings</span>
+
+        <span class="n">warnings</span><span class="o">.</span><span class="n">warn</span><span class="p">(</span><span class="s2">&quot;The `banded` keyword is not longer used&quot;</span><span class="p">)</span>
+
+    <span class="n">kdict</span> <span class="o">=</span> <span class="p">{</span>
+        <span class="s2">&quot;gaussian&quot;</span><span class="p">:</span> <span class="n">gaussian_kernel</span><span class="p">,</span>
+        <span class="s2">&quot;rational&quot;</span><span class="p">:</span> <span class="n">rational_kernel</span><span class="p">,</span>
+        <span class="s2">&quot;matern&quot;</span><span class="p">:</span> <span class="n">matern_kernel</span><span class="p">,</span>
+        <span class="s2">&quot;periodic&quot;</span><span class="p">:</span> <span class="n">periodic_kernel</span><span class="p">,</span>
+        <span class="s2">&quot;moving_average&quot;</span><span class="p">:</span> <span class="n">moving_average_inverse_kernel</span><span class="p">,</span>
+    <span class="p">}</span>
+
+    <span class="n">kernelfunc</span> <span class="o">=</span> <span class="n">kdict</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">name</span><span class="o">.</span><span class="n">lower</span><span class="p">())</span>
+
+    <span class="k">if</span> <span class="n">kernelfunc</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+            <span class="sa">f</span><span class="s2">&quot;Invalid kernel type: &#39;</span><span class="si">{</span><span class="n">name</span><span class="si">}</span><span class="s2">&#39;. Valid kernels: </span><span class="si">{</span><span class="nb">list</span><span class="p">(</span><span class="n">kdict</span><span class="o">.</span><span class="n">keys</span><span class="p">())</span><span class="si">}</span><span class="s2">&quot;</span>
+        <span class="p">)</span>
+
+    <span class="k">return</span> <span class="n">kernelfunc</span><span class="p">(</span><span class="o">**</span><span class="n">kernel_params</span><span class="p">)</span></div>
+
+
+
+<span class="c1"># =======</span>
+<span class="c1"># Kernels</span>
+<span class="c1"># =======</span>
+
+
+<div class="viewcode-block" id="gaussian_kernel">
+<a class="viewcode-back" href="../../../_autosummary/draco.util.kernels.html#draco.util.kernels.gaussian_kernel">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">gaussian_kernel</span><span class="p">(</span>
+    <span class="n">N</span><span class="p">:</span> <span class="nb">int</span> <span class="o">|</span> <span class="nb">tuple</span> <span class="o">|</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">,</span> <span class="n">width</span><span class="p">:</span> <span class="nb">int</span> <span class="o">|</span> <span class="nb">float</span> <span class="o">|</span> <span class="nb">tuple</span><span class="p">,</span> <span class="n">alpha</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span>
+<span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Return a gaussian kernel.</span>
+
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    N : int | tuple</span>
+<span class="sd">        Number of samples over which to generate the kernel.</span>
+<span class="sd">        If this is a length-2 tuple, assume that this is a</span>
+<span class="sd">        correlation between two different sets of indices.</span>
+<span class="sd">    width : int | tuple</span>
+<span class="sd">        Standard deviation of the kernel.</span>
+<span class="sd">    alpha : float</span>
+<span class="sd">        Square root of the kernel variance.</span>
+<span class="sd">    kwargs : dict</span>
+<span class="sd">        Unused keyword arguemnts, required for compatibilty</span>
+<span class="sd">        when calling with `get_kernel`.</span>
+
+<span class="sd">    Returns</span>
+<span class="sd">    -------</span>
+<span class="sd">    C : np.ndarray</span>
+<span class="sd">        Gaussian covariance matrix of shape (N[0], N[1]). If</span>
+<span class="sd">        N is an integer, the covariance is square with shape (N, N).</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">dist</span> <span class="o">=</span> <span class="n">squared_difference_kernel</span><span class="p">(</span><span class="n">N</span><span class="p">,</span> <span class="n">width</span><span class="p">)</span>
+
+    <span class="k">return</span> <span class="p">(</span><span class="n">alpha</span><span class="o">**</span><span class="mi">2</span><span class="p">)</span> <span class="o">*</span> <span class="n">np</span><span class="o">.</span><span class="n">exp</span><span class="p">(</span><span class="o">-</span><span class="mf">0.5</span> <span class="o">*</span> <span class="n">dist</span><span class="p">)</span></div>
+
+
+
+<div class="viewcode-block" id="rational_kernel">
+<a class="viewcode-back" href="../../../_autosummary/draco.util.kernels.html#draco.util.kernels.rational_kernel">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">rational_kernel</span><span class="p">(</span>
+    <span class="n">N</span><span class="p">:</span> <span class="nb">int</span> <span class="o">|</span> <span class="nb">tuple</span> <span class="o">|</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">,</span>
+    <span class="n">width</span><span class="p">:</span> <span class="nb">int</span> <span class="o">|</span> <span class="nb">float</span> <span class="o">|</span> <span class="nb">tuple</span><span class="p">,</span>
+    <span class="n">alpha</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span>
+    <span class="n">a</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span>
+    <span class="o">**</span><span class="n">kwargs</span><span class="p">,</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Return a rational kernel.</span>
+
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    N : int | tuple</span>
+<span class="sd">        Number of samples over which to generate the kernel.</span>
+<span class="sd">        If this is a length-2 tuple, assume that this is a</span>
+<span class="sd">        correlation between two different sets of indices.</span>
+<span class="sd">    width : int | tuple</span>
+<span class="sd">        Width of the kernel.</span>
+<span class="sd">    alpha : float</span>
+<span class="sd">        Square root of the kernel variance.</span>
+<span class="sd">    a : float</span>
+<span class="sd">        Kernel scale weighting parameter.</span>
+<span class="sd">    kwargs : dict</span>
+<span class="sd">        Unused keyword arguemnts, required for compatibilty</span>
+<span class="sd">        when calling with `get_kernel`.</span>
+
+<span class="sd">    Returns</span>
+<span class="sd">    -------</span>
+<span class="sd">    C : np.ndarray</span>
+<span class="sd">        Rational covariance matrix of shape (N[0], N[1]). If</span>
+<span class="sd">        N is an integer, the covariance is square with shape (N, N).</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">dist</span> <span class="o">=</span> <span class="n">squared_difference_kernel</span><span class="p">(</span><span class="n">N</span><span class="p">,</span> <span class="n">width</span><span class="p">)</span>
+
+    <span class="k">return</span> <span class="p">(</span><span class="n">alpha</span><span class="o">**</span><span class="mi">2</span><span class="p">)</span> <span class="o">*</span> <span class="p">(</span><span class="mi">1</span> <span class="o">+</span> <span class="n">dist</span> <span class="o">/</span> <span class="p">(</span><span class="mi">2</span> <span class="o">*</span> <span class="n">a</span><span class="p">))</span> <span class="o">**</span> <span class="o">-</span><span class="n">a</span></div>
+
+
+
+<div class="viewcode-block" id="matern_kernel">
+<a class="viewcode-back" href="../../../_autosummary/draco.util.kernels.html#draco.util.kernels.matern_kernel">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">matern_kernel</span><span class="p">(</span>
+    <span class="n">N</span><span class="p">:</span> <span class="nb">int</span> <span class="o">|</span> <span class="nb">tuple</span> <span class="o">|</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">,</span>
+    <span class="n">width</span><span class="p">:</span> <span class="nb">int</span> <span class="o">|</span> <span class="nb">float</span> <span class="o">|</span> <span class="nb">tuple</span><span class="p">,</span>
+    <span class="n">alpha</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span>
+    <span class="n">nu</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span>
+    <span class="o">**</span><span class="n">kwargs</span><span class="p">,</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Return a matern kernel.</span>
+
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    N : int | tuple</span>
+<span class="sd">        Number of samples over which to generate the kernel.</span>
+<span class="sd">        If this is a length-2 tuple, assume that this is a</span>
+<span class="sd">        correlation between two different sets of indices.</span>
+<span class="sd">    width : int | tuple</span>
+<span class="sd">        Width of the kernel.</span>
+<span class="sd">    alpha : float</span>
+<span class="sd">        Square root of the kernel variance.</span>
+<span class="sd">    nu : float</span>
+<span class="sd">        Smoothness parameter. Larger values produce smoother kernels.</span>
+<span class="sd">        Currently, only values of 1.5 (once differentiable) and 2.5</span>
+<span class="sd">        (twice differentiable) are supported.</span>
+<span class="sd">    kwargs : dict</span>
+<span class="sd">        Unused keyword arguemnts, required for compatibilty</span>
+<span class="sd">        when calling with `get_kernel`.</span>
+
+<span class="sd">    Returns</span>
+<span class="sd">    -------</span>
+<span class="sd">    C : np.ndarray</span>
+<span class="sd">        Matern covariance matrix of shape (N[0], N[1]). If</span>
+<span class="sd">        N is an integer, the covariance is square with shape (N, N).</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">if</span> <span class="n">nu</span> <span class="ow">not</span> <span class="ow">in</span> <span class="p">{</span><span class="mf">1.5</span><span class="p">,</span> <span class="mf">2.5</span><span class="p">}:</span>
+        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+            <span class="sa">f</span><span class="s2">&quot;Invalid value `nu`=</span><span class="si">{</span><span class="n">nu</span><span class="si">}</span><span class="s2">. &quot;</span>
+            <span class="s2">&quot;Only values of (1.5, 2.5) are currently supported.&quot;</span>
+        <span class="p">)</span>
+
+    <span class="n">dist</span> <span class="o">=</span> <span class="n">euclidean_difference_kernel</span><span class="p">(</span><span class="n">N</span><span class="p">,</span> <span class="n">width</span><span class="p">)</span>
+
+    <span class="k">if</span> <span class="n">nu</span> <span class="o">==</span> <span class="mf">1.5</span><span class="p">:</span>
+        <span class="n">dist</span> <span class="o">*=</span> <span class="n">np</span><span class="o">.</span><span class="n">sqrt</span><span class="p">(</span><span class="mi">3</span><span class="p">)</span>
+        <span class="n">C</span> <span class="o">=</span> <span class="mf">1.0</span> <span class="o">+</span> <span class="n">dist</span>
+        <span class="n">C</span> <span class="o">*=</span> <span class="n">np</span><span class="o">.</span><span class="n">exp</span><span class="p">(</span><span class="o">-</span><span class="n">dist</span><span class="p">)</span>
+    <span class="k">elif</span> <span class="n">nu</span> <span class="o">==</span> <span class="mf">2.5</span><span class="p">:</span>
+        <span class="n">dist</span> <span class="o">*=</span> <span class="n">np</span><span class="o">.</span><span class="n">sqrt</span><span class="p">(</span><span class="mi">5</span><span class="p">)</span>
+        <span class="n">C</span> <span class="o">=</span> <span class="mf">1.0</span> <span class="o">+</span> <span class="n">dist</span> <span class="o">+</span> <span class="n">dist</span><span class="o">**</span><span class="mi">2</span> <span class="o">/</span> <span class="mf">3.0</span>
+        <span class="n">C</span> <span class="o">*=</span> <span class="n">np</span><span class="o">.</span><span class="n">exp</span><span class="p">(</span><span class="o">-</span><span class="n">dist</span><span class="p">)</span>
+
+    <span class="c1"># Scale</span>
+    <span class="n">C</span> <span class="o">*=</span> <span class="n">alpha</span><span class="o">**</span><span class="mi">2</span>
+
+    <span class="k">return</span> <span class="n">C</span></div>
+
+
+
+<div class="viewcode-block" id="periodic_kernel">
+<a class="viewcode-back" href="../../../_autosummary/draco.util.kernels.html#draco.util.kernels.periodic_kernel">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">periodic_kernel</span><span class="p">(</span>
+    <span class="n">N</span><span class="p">:</span> <span class="nb">int</span> <span class="o">|</span> <span class="nb">tuple</span> <span class="o">|</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">,</span>
+    <span class="n">width</span><span class="p">:</span> <span class="nb">int</span> <span class="o">|</span> <span class="nb">float</span> <span class="o">|</span> <span class="nb">tuple</span><span class="p">,</span>
+    <span class="n">alpha</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span>
+    <span class="n">p</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span>
+    <span class="o">**</span><span class="n">kwargs</span><span class="p">,</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Return a periodic kernel, aka Exp-Sine-Squared.</span>
+
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    N</span>
+<span class="sd">        Number of samples over which to generate the kernel.</span>
+<span class="sd">        If this is a length-2 tuple, assume that this is a</span>
+<span class="sd">        correlation between two different sets of indices.</span>
+<span class="sd">    width</span>
+<span class="sd">        Width of the kernel.</span>
+<span class="sd">    alpha</span>
+<span class="sd">        Square root of the kernel variance.</span>
+<span class="sd">    p</span>
+<span class="sd">        Periodicity of the kernel.</span>
+<span class="sd">    kwargs : dict</span>
+<span class="sd">        Unused keyword arguemnts, required for compatibilty</span>
+<span class="sd">        when calling with `get_kernel`.</span>
+
+<span class="sd">    Returns</span>
+<span class="sd">    -------</span>
+<span class="sd">    C : np.ndarray</span>
+<span class="sd">        Periodic covariance matrix of shape (N[0], N[1]). If</span>
+<span class="sd">        N is an integer, the covariance is square with shape (N, N).</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">dist</span> <span class="o">=</span> <span class="n">euclidean_difference_kernel</span><span class="p">(</span><span class="n">N</span><span class="p">,</span> <span class="n">width</span><span class="p">)</span>
+
+    <span class="n">C</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">sin</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">pi</span> <span class="o">*</span> <span class="n">dist</span> <span class="o">/</span> <span class="n">p</span><span class="p">)</span>
+    <span class="n">C</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">exp</span><span class="p">(</span><span class="o">-</span><span class="mi">2</span> <span class="o">*</span> <span class="n">C</span><span class="o">**</span><span class="mi">2</span><span class="p">)</span>
+
+    <span class="c1"># Scale</span>
+    <span class="n">C</span> <span class="o">*=</span> <span class="n">alpha</span><span class="o">**</span><span class="mi">2</span>
+
+    <span class="k">return</span> <span class="n">C</span></div>
+
+
+
+<div class="viewcode-block" id="moving_average_inverse_kernel">
+<a class="viewcode-back" href="../../../_autosummary/draco.util.kernels.html#draco.util.kernels.moving_average_inverse_kernel">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">moving_average_inverse_kernel</span><span class="p">(</span>
+    <span class="n">N</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span> <span class="n">width</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span> <span class="n">alpha</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span> <span class="n">periodic</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">True</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;A smoothness prior on the values at given locations.</span>
+
+<span class="sd">    This calculates the average in a window of `width` points, and then applies a</span>
+<span class="sd">    Gaussian with precision `alpha` and this average as the mean for each point. For a</span>
+<span class="sd">    `width` of 3 this is effectively a constraint on the second derivative.</span>
+
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    N : int | tuple</span>
+<span class="sd">        Number of samples over which to generate the kernel.</span>
+<span class="sd">        If this is a length-2 tuple, assume that this is a</span>
+<span class="sd">        correlation between two different sets of indices.</span>
+<span class="sd">    width : int | tuple</span>
+<span class="sd">        Width of the kernel.</span>
+<span class="sd">    alpha : float</span>
+<span class="sd">        Smoothness precision.</span>
+<span class="sd">    periodic : bool</span>
+<span class="sd">        Assume the function is periodic and wrap.</span>
+
+<span class="sd">    Returns</span>
+<span class="sd">    -------</span>
+<span class="sd">    Ci : np.ndarray</span>
+<span class="sd">        Inverse covariance matrix of shape (N[0], N[1]) representing a</span>
+<span class="sd">        window average. If N is an integer, the covariance is square</span>
+<span class="sd">        with shape (N, N).</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="c1"># Calculate the matrix for the moving average</span>
+    <span class="n">W</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">zeros</span><span class="p">((</span><span class="n">N</span><span class="p">,</span> <span class="n">N</span><span class="p">))</span>
+    <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">N</span><span class="p">):</span>
+        <span class="n">ll</span><span class="p">,</span> <span class="n">ul</span> <span class="o">=</span> <span class="n">i</span> <span class="o">-</span> <span class="p">(</span><span class="n">width</span> <span class="o">-</span> <span class="mi">1</span><span class="p">)</span> <span class="o">//</span> <span class="mi">2</span><span class="p">,</span> <span class="n">i</span> <span class="o">+</span> <span class="p">(</span><span class="n">width</span> <span class="o">+</span> <span class="mi">1</span><span class="p">)</span> <span class="o">//</span> <span class="mi">2</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">periodic</span><span class="p">:</span>
+            <span class="n">ll</span><span class="p">,</span> <span class="n">ul</span> <span class="o">=</span> <span class="nb">max</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="n">ll</span><span class="p">),</span> <span class="nb">min</span><span class="p">(</span><span class="n">ul</span><span class="p">,</span> <span class="n">N</span><span class="p">)</span>
+        <span class="n">v</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">arange</span><span class="p">(</span><span class="n">ll</span><span class="p">,</span> <span class="n">ul</span><span class="p">)</span>
+
+        <span class="n">W</span><span class="p">[</span><span class="n">i</span><span class="p">][</span><span class="n">v</span><span class="p">]</span> <span class="o">=</span> <span class="mf">1.0</span> <span class="o">/</span> <span class="nb">len</span><span class="p">(</span><span class="n">v</span><span class="p">)</span>
+
+    <span class="n">IW</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">identity</span><span class="p">(</span><span class="n">N</span><span class="p">)</span> <span class="o">-</span> <span class="n">W</span>
+
+    <span class="k">return</span> <span class="n">alpha</span> <span class="o">*</span> <span class="p">(</span><span class="n">IW</span><span class="o">.</span><span class="n">T</span> <span class="o">@</span> <span class="n">IW</span><span class="p">)</span></div>
+
+
+
+<span class="c1"># ==================</span>
+<span class="c1"># Distance functions</span>
+<span class="c1"># ==================</span>
+
+
+<div class="viewcode-block" id="squared_difference_kernel">
+<a class="viewcode-back" href="../../../_autosummary/draco.util.kernels.html#draco.util.kernels.squared_difference_kernel">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">squared_difference_kernel</span><span class="p">(</span>
+    <span class="n">N</span><span class="p">:</span> <span class="nb">int</span> <span class="o">|</span> <span class="nb">tuple</span> <span class="o">|</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">,</span> <span class="n">width</span><span class="p">:</span> <span class="nb">int</span> <span class="o">|</span> <span class="nb">float</span> <span class="o">|</span> <span class="nb">tuple</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Create a distance matrix for a kernel using squared difference.</span>
+
+<span class="sd">    N : int | tuple</span>
+<span class="sd">        Number of samples over which to generate the kernel.</span>
+<span class="sd">        If this is a length-2 tuple, assume that this is a</span>
+<span class="sd">        correlation between two different sets of indices.</span>
+<span class="sd">    width : int | tuple</span>
+<span class="sd">        Width of the kernel along each axis. For a gaussian,</span>
+<span class="sd">        this is the standard deviation.</span>
+
+<span class="sd">    Returns</span>
+<span class="sd">    -------</span>
+<span class="sd">    diff : np.ndarray</span>
+<span class="sd">        Array of normalized distances.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="c1"># If only a single integer is provided, assume</span>
+    <span class="c1"># a square covariance matrix</span>
+    <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">N</span><span class="p">,</span> <span class="nb">int</span> <span class="o">|</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">):</span>
+        <span class="n">N</span> <span class="o">=</span> <span class="p">(</span><span class="n">N</span><span class="p">,</span> <span class="n">N</span><span class="p">)</span>
+
+    <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">width</span><span class="p">,</span> <span class="nb">int</span> <span class="o">|</span> <span class="nb">float</span><span class="p">):</span>
+        <span class="n">width</span> <span class="o">=</span> <span class="p">(</span><span class="n">width</span><span class="p">,</span> <span class="n">width</span><span class="p">)</span>
+
+    <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">N</span><span class="p">)</span> <span class="o">!=</span> <span class="mi">2</span> <span class="ow">or</span> <span class="nb">len</span><span class="p">(</span><span class="n">width</span><span class="p">)</span> <span class="o">!=</span> <span class="mi">2</span><span class="p">:</span>
+        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Invalid parameters. Got N=</span><span class="si">{</span><span class="n">N</span><span class="si">}</span><span class="s2"> and width=</span><span class="si">{</span><span class="n">width</span><span class="si">}</span><span class="s2">.&quot;</span><span class="p">)</span>
+
+    <span class="n">i0</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">arange</span><span class="p">(</span><span class="n">N</span><span class="p">[</span><span class="mi">0</span><span class="p">])</span> <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">N</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span> <span class="nb">int</span><span class="p">)</span> <span class="k">else</span> <span class="n">N</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+    <span class="n">i1</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">arange</span><span class="p">(</span><span class="n">N</span><span class="p">[</span><span class="mi">1</span><span class="p">])</span> <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">N</span><span class="p">[</span><span class="mi">1</span><span class="p">],</span> <span class="nb">int</span><span class="p">)</span> <span class="k">else</span> <span class="n">N</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span>
+
+    <span class="n">i0</span> <span class="o">=</span> <span class="n">i0</span> <span class="o">/</span> <span class="n">width</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+    <span class="n">i1</span> <span class="o">=</span> <span class="n">i1</span> <span class="o">/</span> <span class="n">width</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span>
+
+    <span class="k">return</span> <span class="n">np</span><span class="o">.</span><span class="n">subtract</span><span class="o">.</span><span class="n">outer</span><span class="p">(</span><span class="n">i0</span><span class="p">,</span> <span class="n">i1</span><span class="p">)</span> <span class="o">**</span> <span class="mi">2</span></div>
+
+
+
+<div class="viewcode-block" id="euclidean_difference_kernel">
+<a class="viewcode-back" href="../../../_autosummary/draco.util.kernels.html#draco.util.kernels.euclidean_difference_kernel">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">euclidean_difference_kernel</span><span class="p">(</span>
+    <span class="n">N</span><span class="p">:</span> <span class="nb">int</span> <span class="o">|</span> <span class="nb">tuple</span> <span class="o">|</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">,</span> <span class="n">width</span><span class="p">:</span> <span class="nb">int</span> <span class="o">|</span> <span class="nb">float</span> <span class="o">|</span> <span class="nb">tuple</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Create a distance matrix for a kernel using euclidean difference.</span>
+
+<span class="sd">    N : int | tuple</span>
+<span class="sd">        Number of samples over which to generate the kernel.</span>
+<span class="sd">        If this is a length-2 tuple, assume that this is a</span>
+<span class="sd">        correlation between two different sets of indices.</span>
+<span class="sd">    width : int | tuple</span>
+<span class="sd">        Width of the kernel along each axis. For a gaussian,</span>
+<span class="sd">        this is the standard deviation.</span>
+
+<span class="sd">    Returns</span>
+<span class="sd">    -------</span>
+<span class="sd">    diff : np.ndarray</span>
+<span class="sd">        Array of normalized distances.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">N</span><span class="p">,</span> <span class="nb">int</span> <span class="o">|</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">):</span>
+        <span class="n">N</span> <span class="o">=</span> <span class="p">(</span><span class="n">N</span><span class="p">,</span> <span class="n">N</span><span class="p">)</span>
+
+    <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">width</span><span class="p">,</span> <span class="nb">int</span> <span class="o">|</span> <span class="nb">float</span><span class="p">):</span>
+        <span class="n">width</span> <span class="o">=</span> <span class="p">(</span><span class="n">width</span><span class="p">,</span> <span class="n">width</span><span class="p">)</span>
+
+    <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">N</span><span class="p">)</span> <span class="o">!=</span> <span class="mi">2</span> <span class="ow">or</span> <span class="nb">len</span><span class="p">(</span><span class="n">width</span><span class="p">)</span> <span class="o">!=</span> <span class="mi">2</span><span class="p">:</span>
+        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Invalid parameters. Got N=</span><span class="si">{</span><span class="n">N</span><span class="si">}</span><span class="s2"> and width=</span><span class="si">{</span><span class="n">width</span><span class="si">}</span><span class="s2">.&quot;</span><span class="p">)</span>
+
+    <span class="n">i0</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">arange</span><span class="p">(</span><span class="n">N</span><span class="p">[</span><span class="mi">0</span><span class="p">])</span> <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">N</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span> <span class="nb">int</span><span class="p">)</span> <span class="k">else</span> <span class="n">N</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+    <span class="n">i1</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">arange</span><span class="p">(</span><span class="n">N</span><span class="p">[</span><span class="mi">1</span><span class="p">])</span> <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">N</span><span class="p">[</span><span class="mi">1</span><span class="p">],</span> <span class="nb">int</span><span class="p">)</span> <span class="k">else</span> <span class="n">N</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span>
+
+    <span class="n">i0</span> <span class="o">=</span> <span class="n">i0</span> <span class="o">/</span> <span class="n">width</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+    <span class="n">i1</span> <span class="o">=</span> <span class="n">i1</span> <span class="o">/</span> <span class="n">width</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span>
+
+    <span class="k">return</span> <span class="n">cdist</span><span class="p">(</span><span class="n">i0</span><span class="p">[:,</span> <span class="n">np</span><span class="o">.</span><span class="n">newaxis</span><span class="p">],</span> <span class="n">i1</span><span class="p">[:,</span> <span class="n">np</span><span class="o">.</span><span class="n">newaxis</span><span class="p">],</span> <span class="n">metric</span><span class="o">=</span><span class="s2">&quot;euclidean&quot;</span><span class="p">)</span></div>
+
+
+
+<span class="c1"># =========</span>
+<span class="c1"># Utilities</span>
+<span class="c1"># =========</span>
+
+
+<div class="viewcode-block" id="is_hermitian_positive_definite">
+<a class="viewcode-back" href="../../../_autosummary/draco.util.kernels.html#draco.util.kernels.is_hermitian_positive_definite">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">is_hermitian_positive_definite</span><span class="p">(</span><span class="n">x</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">bool</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Check if a matrix is Hermitian positive-definite.</span>
+
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    x</span>
+<span class="sd">        Array to check.</span>
+
+<span class="sd">    Returns</span>
+<span class="sd">    -------</span>
+<span class="sd">    result</span>
+<span class="sd">        True if `x` is hermitian positive-definite</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">la</span><span class="o">.</span><span class="n">ishermitian</span><span class="p">(</span><span class="n">x</span><span class="p">):</span>
+        <span class="k">return</span> <span class="kc">False</span>
+
+    <span class="k">try</span><span class="p">:</span>
+        <span class="n">la</span><span class="o">.</span><span class="n">cholesky</span><span class="p">(</span><span class="n">x</span><span class="p">,</span> <span class="n">lower</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
+    <span class="k">except</span> <span class="n">la</span><span class="o">.</span><span class="n">LinAlgError</span><span class="p">:</span>
+        <span class="k">return</span> <span class="kc">False</span>
+
+    <span class="k">return</span> <span class="kc">True</span></div>
+
+
+
+<div class="viewcode-block" id="convert_band_diagonal">
+<a class="viewcode-back" href="../../../_autosummary/draco.util.kernels.html#draco.util.kernels.convert_band_diagonal">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">convert_band_diagonal</span><span class="p">(</span>
+    <span class="n">x</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">,</span> <span class="n">tol</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">1.0e-8</span><span class="p">,</span> <span class="n">which</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;full&quot;</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Convert a full band diagonal kernel into just the lower band.</span>
+
+<span class="sd">    Used to feed into `la.solveh_banded.`</span>
+
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    x</span>
+<span class="sd">        `n x n` symmetric band-diagonal matrix</span>
+<span class="sd">    tol</span>
+<span class="sd">        Smallest value to consider when finding the</span>
+<span class="sd">        band edge. Default is 1.0e-5.</span>
+<span class="sd">    which</span>
+<span class="sd">        Which band to extract. Options are</span>
+<span class="sd">        {&quot;lower&quot;, &quot;upper&quot;, &quot;full&quot;}. Default is &quot;full&quot;.</span>
+
+<span class="sd">    Returns</span>
+<span class="sd">    -------</span>
+<span class="sd">    xb</span>
+<span class="sd">        Band diagonal matrix of shape (n,u+l+1), (n,u+1), or (n,l+1)</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">if</span> <span class="n">which</span> <span class="o">==</span> <span class="s2">&quot;full&quot;</span><span class="p">:</span>
+        <span class="k">return</span> <span class="n">_bd_sym</span><span class="p">(</span><span class="n">x</span><span class="p">,</span> <span class="n">tol</span><span class="p">)</span>
+    <span class="k">if</span> <span class="n">which</span> <span class="ow">in</span> <span class="p">{</span><span class="s2">&quot;upper&quot;</span><span class="p">,</span> <span class="s2">&quot;lower&quot;</span><span class="p">}:</span>
+        <span class="k">return</span> <span class="n">_bd_sym_ul</span><span class="p">(</span><span class="n">x</span><span class="p">,</span> <span class="n">tol</span><span class="p">,</span> <span class="n">lower</span><span class="o">=</span><span class="n">which</span> <span class="o">==</span> <span class="s2">&quot;lower&quot;</span><span class="p">)</span>
+
+    <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+        <span class="sa">f</span><span class="s2">&quot;Got invalid argument `which`=</span><span class="si">{</span><span class="n">which</span><span class="si">}</span><span class="s2">. &quot;</span>
+        <span class="s2">&quot;Only `full`, `upper`, or `lower` are accepted.&quot;</span>
+    <span class="p">)</span></div>
+
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_bd_sym</span><span class="p">(</span><span class="n">x</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">,</span> <span class="n">tol</span><span class="p">:</span> <span class="nb">float</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Full band of a symmetric band-diagonal matrix.&quot;&quot;&quot;</span>
+    <span class="n">N</span> <span class="o">=</span> <span class="n">x</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+    <span class="n">M</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">sum</span><span class="p">(</span><span class="n">x</span> <span class="o">&gt;</span> <span class="n">tol</span><span class="p">,</span> <span class="n">axis</span><span class="o">=-</span><span class="mi">1</span><span class="p">)</span><span class="o">.</span><span class="n">max</span><span class="p">()</span> <span class="o">//</span> <span class="mi">2</span> <span class="o">+</span> <span class="mi">1</span>
+
+    <span class="n">banded</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">zeros</span><span class="p">((</span><span class="mi">2</span> <span class="o">*</span> <span class="n">M</span> <span class="o">-</span> <span class="mi">1</span><span class="p">,</span> <span class="n">N</span><span class="p">),</span> <span class="n">dtype</span><span class="o">=</span><span class="n">x</span><span class="o">.</span><span class="n">dtype</span><span class="p">)</span>
+
+    <span class="n">banded</span><span class="p">[</span><span class="n">M</span> <span class="o">-</span> <span class="mi">1</span> <span class="p">:]</span> <span class="o">=</span> <span class="n">_bd_sym_ul</span><span class="p">(</span><span class="n">x</span><span class="p">,</span> <span class="n">tol</span><span class="p">,</span> <span class="n">lower</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+    <span class="n">banded</span><span class="p">[:</span> <span class="n">M</span> <span class="o">-</span> <span class="mi">1</span><span class="p">]</span> <span class="o">=</span> <span class="n">_bd_sym_ul</span><span class="p">(</span><span class="n">x</span><span class="p">,</span> <span class="n">tol</span><span class="p">,</span> <span class="n">lower</span><span class="o">=</span><span class="kc">False</span><span class="p">)[</span><span class="mi">1</span><span class="p">:]</span>
+
+    <span class="k">return</span> <span class="n">banded</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_bd_sym_ul</span><span class="p">(</span><span class="n">x</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">,</span> <span class="n">tol</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span> <span class="n">lower</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Upper or lower band of a symmetric band-diagonal matrix.</span>
+
+<span class="sd">    Should be symmetric positive-definite.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">N</span> <span class="o">=</span> <span class="n">x</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+    <span class="n">M</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">sum</span><span class="p">(</span><span class="n">x</span> <span class="o">&gt;</span> <span class="n">tol</span><span class="p">,</span> <span class="n">axis</span><span class="o">=-</span><span class="mi">1</span><span class="p">)</span><span class="o">.</span><span class="n">max</span><span class="p">()</span> <span class="o">//</span> <span class="mi">2</span> <span class="o">+</span> <span class="mi">1</span>
+
+    <span class="n">banded</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">zeros</span><span class="p">((</span><span class="n">M</span><span class="p">,</span> <span class="n">N</span><span class="p">),</span> <span class="n">dtype</span><span class="o">=</span><span class="n">x</span><span class="o">.</span><span class="n">dtype</span><span class="p">)</span>
+
+    <span class="k">for</span> <span class="n">ii</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">M</span><span class="p">):</span>
+        <span class="k">if</span> <span class="n">lower</span><span class="p">:</span>
+            <span class="n">banded</span><span class="p">[</span><span class="n">ii</span><span class="p">,</span> <span class="p">:</span> <span class="n">N</span> <span class="o">-</span> <span class="n">ii</span><span class="p">]</span> <span class="o">=</span> <span class="n">x</span><span class="o">.</span><span class="n">diagonal</span><span class="p">(</span><span class="n">ii</span><span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">banded</span><span class="p">[</span><span class="o">-</span><span class="n">ii</span><span class="p">,</span> <span class="n">ii</span><span class="p">:]</span> <span class="o">=</span> <span class="n">x</span><span class="o">.</span><span class="n">diagonal</span><span class="p">(</span><span class="o">-</span><span class="n">ii</span><span class="p">)</span>
+
+    <span class="k">return</span> <span class="n">banded</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_get_band_inds</span><span class="p">(</span><span class="n">R</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">,</span> <span class="n">tol</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">1.0e-4</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">tuple</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Get the indices of the band edge for a band diagonal matrix.</span>
+
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    R</span>
+<span class="sd">        Band diagonal matrix</span>
+<span class="sd">    tol</span>
+<span class="sd">        Cutoff threshold to consider values to be</span>
+<span class="sd">        outside of the main band.</span>
+
+<span class="sd">    Returns</span>
+<span class="sd">    -------</span>
+<span class="sd">    start_ind : np.ndarray[int]</span>
+<span class="sd">        left indices of the band.</span>
+<span class="sd">    end_ind : np.ndarray[int]</span>
+<span class="sd">        right indices of the band.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">u</span> <span class="o">=</span> <span class="nb">abs</span><span class="p">(</span><span class="n">R</span><span class="p">)</span> <span class="o">&gt;</span> <span class="n">tol</span>
+
+    <span class="n">start_ind</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">argmax</span><span class="p">(</span><span class="n">u</span><span class="p">,</span> <span class="n">axis</span><span class="o">=-</span><span class="mi">1</span><span class="p">)</span>
+    <span class="n">end_ind</span> <span class="o">=</span> <span class="n">R</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span> <span class="o">-</span> <span class="n">np</span><span class="o">.</span><span class="n">argmax</span><span class="p">(</span><span class="n">u</span><span class="p">[</span><span class="o">...</span><span class="p">,</span> <span class="p">::</span><span class="o">-</span><span class="mi">1</span><span class="p">],</span> <span class="n">axis</span><span class="o">=-</span><span class="mi">1</span><span class="p">)</span>
+    <span class="n">end_ind</span><span class="p">[</span><span class="o">~</span><span class="n">np</span><span class="o">.</span><span class="n">any</span><span class="p">(</span><span class="n">u</span><span class="p">,</span> <span class="n">axis</span><span class="o">=-</span><span class="mi">1</span><span class="p">)]</span> <span class="o">=</span> <span class="mi">0</span>
+
+    <span class="k">return</span> <span class="n">start_ind</span><span class="o">.</span><span class="n">astype</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">int32</span><span class="p">),</span> <span class="n">end_ind</span><span class="o">.</span><span class="n">astype</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">int32</span><span class="p">)</span>
+</pre></div>
+
+           </div>
+          </div>
+          <footer>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2016, Richard Shaw.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>

@@ -1,0 +1,1489 @@
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" data-content_root="../../../">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>draco.synthesis.mockcatalog &mdash; draco 0.0.1 documentation</title>
+      <link rel="stylesheet" type="text/css" href="../../../_static/pygments.css?v=b86133f3" />
+      <link rel="stylesheet" type="text/css" href="../../../_static/css/theme.css?v=9edc463e" />
+
+  
+      <script src="../../../_static/jquery.js?v=5d32c60e"></script>
+      <script src="../../../_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
+      <script src="../../../_static/documentation_options.js?v=d45e8c67"></script>
+      <script src="../../../_static/doctools.js?v=9bcbadda"></script>
+      <script src="../../../_static/sphinx_highlight.js?v=dc90522c"></script>
+    <script src="../../../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../../../genindex.html" />
+    <link rel="search" title="Search" href="../../../search.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="../../../index.html" class="icon icon-home">
+            draco
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../../../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../tutorial.html">Tutorial</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../reference.html">API Reference</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../dev.html">Development Guidelines</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../../../index.html">draco</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../../../index.html" class="icon icon-home" aria-label="Home"></a></li>
+          <li class="breadcrumb-item"><a href="../../index.html">Module code</a></li>
+      <li class="breadcrumb-item active">draco.synthesis.mockcatalog</li>
+      <li class="wy-breadcrumbs-aside">
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <h1>Source code for draco.synthesis.mockcatalog</h1><div class="highlight"><pre>
+<span></span><span class="sd">&quot;&quot;&quot;Tasks for making mock catalogs.</span>
+
+<span class="sd">See Usage section for usage.</span>
+
+<span class="sd">Usage</span>
+<span class="sd">=====</span>
+
+<span class="sd">Generally you would want to use these tasks together. A catalog is fed to</span>
+<span class="sd">:class:`SelectionFunctionEstimator`, which generates a selection function map from a</span>
+<span class="sd">low-rank SVD approximation to the positions in the catalog.</span>
+<span class="sd">:class:`ResizeSelectionFunctionMap` resizes this to match the resolution of a simulated</span>
+<span class="sd">map of galaxy overdensity delta_g. The resized selection function and delta_g</span>
+<span class="sd">map are then fed to :class:`PdfGeneratorWithSelectionFunction`, which makes a PDF map</span>
+<span class="sd">from which simulated sources are drawn in :class:`MockCatalogGenerator`. The PDF can also</span>
+<span class="sd">be generated without a selection function, or assuming a uniform distribution</span>
+<span class="sd">of sources.</span>
+
+<span class="sd">:class:`MapPixelLocationGenerator` is a specialized task that creates a catalog whose</span>
+<span class="sd">&quot;sources&quot; are located at Healpix pixel centers for a given angular resolution.</span>
+
+<span class="sd">Below is an example workflow:</span>
+
+<span class="sd">&gt;&gt;&gt; mock_config = &#39;&#39;&#39;</span>
+<span class="sd">... pipeline :</span>
+<span class="sd">...     tasks:</span>
+<span class="sd">...         - type: draco.core.io.LoadFilesFromParams</span>
+<span class="sd">...           out: cat_for_selfunc</span>
+<span class="sd">...           params:</span>
+<span class="sd">...               files:</span>
+<span class="sd">...                   - &quot;/path/to/data/catalog.h5&quot;</span>
+<span class="sd">...</span>
+<span class="sd">...         - type:   draco.synthesis.mockcatalog.SelectionFunctionEstimator</span>
+<span class="sd">...           in: cat_for_selfunc</span>
+<span class="sd">...           out: selfunc</span>
+<span class="sd">...           params:</span>
+<span class="sd">...               save: False</span>
+<span class="sd">...</span>
+<span class="sd">...         - type: draco.core.io.LoadMaps</span>
+<span class="sd">...           out: source_map</span>
+<span class="sd">...           params:</span>
+<span class="sd">...               maps:</span>
+<span class="sd">...                   files:</span>
+<span class="sd">...                       - &quot;/path/to/delta_g/map.h5&quot;</span>
+<span class="sd">...</span>
+<span class="sd">...          - type: draco.synthesis.mockcatalog.ResizeSelectionFunctionMap</span>
+<span class="sd">...            in: [selfunc, source_map]</span>
+<span class="sd">...            out: resized_selfunc</span>
+<span class="sd">...            params:</span>
+<span class="sd">...                smooth: True</span>
+<span class="sd">...                save: True</span>
+<span class="sd">...                output_name: /path/to/saved/resized_selfunc.h5</span>
+<span class="sd">...</span>
+<span class="sd">...          - type: draco.synthesis.mockcatalog.PdfGeneratorWithSelectionFunction</span>
+<span class="sd">...            in: [source_map, resized_selfunc]</span>
+<span class="sd">...            out: pdf_map</span>
+<span class="sd">...            params:</span>
+<span class="sd">...                save: False</span>
+<span class="sd">...</span>
+<span class="sd">...          - type: draco.synthesis.mockcatalog.MockCatalogGenerator</span>
+<span class="sd">...            requires: pdf_map</span>
+<span class="sd">...            out: mock_cat</span>
+<span class="sd">...            params:</span>
+<span class="sd">...                nsource: 100000</span>
+<span class="sd">...                ncat: 1</span>
+<span class="sd">...                save: True</span>
+<span class="sd">...                output_root: mock_</span>
+<span class="sd">...</span>
+<span class="sd">&quot;&quot;&quot;</span>
+
+<span class="kn">import</span><span class="w"> </span><span class="nn">healpy</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">hp</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">numpy</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">np</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">scipy.stats</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">caput</span><span class="w"> </span><span class="kn">import</span> <span class="n">config</span><span class="p">,</span> <span class="n">mpiarray</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">caput.astro</span><span class="w"> </span><span class="kn">import</span> <span class="n">constants</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">caput.pipeline</span><span class="w"> </span><span class="kn">import</span> <span class="n">tasklib</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">caput.util</span><span class="w"> </span><span class="kn">import</span> <span class="n">mpitools</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">mpi4py</span><span class="w"> </span><span class="kn">import</span> <span class="n">MPI</span>
+
+<span class="kn">from</span><span class="w"> </span><span class="nn">..core</span><span class="w"> </span><span class="kn">import</span> <span class="n">containers</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">..util</span><span class="w"> </span><span class="kn">import</span> <span class="n">tools</span>
+
+<span class="c1"># Constants</span>
+<span class="n">C</span> <span class="o">=</span> <span class="n">constants</span><span class="o">.</span><span class="n">c</span>
+
+
+<span class="c1"># Pipeline tasks</span>
+<span class="c1"># --------------</span>
+
+
+<div class="viewcode-block" id="SelectionFunctionEstimator">
+<a class="viewcode-back" href="../../../_autosummary/draco.synthesis.mockcatalog.html#draco.synthesis.mockcatalog.SelectionFunctionEstimator">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">SelectionFunctionEstimator</span><span class="p">(</span><span class="n">tasklib</span><span class="o">.</span><span class="n">base</span><span class="o">.</span><span class="n">ContainerTask</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Estimate the selection function based on a low rank SVD reconstruction.</span>
+
+<span class="sd">    Takes a source catalog as input.</span>
+
+<span class="sd">    The defaults for nside, n_z, and n_modes have been empirically determined</span>
+<span class="sd">    to produce reasonable results for the selection function when z_min = 0.8,</span>
+<span class="sd">    z_max = 2.5.</span>
+
+<span class="sd">    Redshifts are binned into n_z equispaced bins with min and max</span>
+<span class="sd">    bin edges set by z_min and z_max.</span>
+
+<span class="sd">    Attributes</span>
+<span class="sd">    ----------</span>
+<span class="sd">    nside : int</span>
+<span class="sd">        Healpix Nside for catalog maps generated for the SVD.</span>
+<span class="sd">        Default: 16.</span>
+<span class="sd">    n_z : int</span>
+<span class="sd">        Number of redshift bins for catalog maps generated for the SVD.</span>
+<span class="sd">        Default: 32.</span>
+<span class="sd">    z_min : float</span>
+<span class="sd">        Lower edge of minimum redshift bin for catalog maps generated for the SVD.</span>
+<span class="sd">        Default: 0.8.</span>
+<span class="sd">    z_max : float</span>
+<span class="sd">        Upper edge of maximum redshift for catalog maps generated for the SVD.</span>
+<span class="sd">        Default: 2.5.</span>
+<span class="sd">    n_modes : int</span>
+<span class="sd">        Number of SVD modes used in recovering the selection function from</span>
+<span class="sd">        the catalog maps.</span>
+<span class="sd">        Default: 7.</span>
+<span class="sd">    tracer : str, optional</span>
+<span class="sd">        Set an optional tracer attribute that can be used to identify the type of</span>
+<span class="sd">        catalog later in the pipeline.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+
+    <span class="n">bcat_path</span> <span class="o">=</span> <span class="n">config</span><span class="o">.</span><span class="n">Property</span><span class="p">(</span><span class="n">proptype</span><span class="o">=</span><span class="nb">str</span><span class="p">,</span> <span class="n">default</span><span class="o">=</span><span class="kc">None</span><span class="p">)</span>
+
+    <span class="c1"># These seem to be optimal parameters for eBOSS quasars, and</span>
+    <span class="c1"># usually should not need to be changed from the default values:</span>
+    <span class="n">nside</span> <span class="o">=</span> <span class="n">config</span><span class="o">.</span><span class="n">Property</span><span class="p">(</span><span class="n">proptype</span><span class="o">=</span><span class="nb">int</span><span class="p">,</span> <span class="n">default</span><span class="o">=</span><span class="mi">16</span><span class="p">)</span>
+    <span class="n">n_z</span> <span class="o">=</span> <span class="n">config</span><span class="o">.</span><span class="n">Property</span><span class="p">(</span><span class="n">proptype</span><span class="o">=</span><span class="nb">int</span><span class="p">,</span> <span class="n">default</span><span class="o">=</span><span class="mi">32</span><span class="p">)</span>
+    <span class="n">z_min</span> <span class="o">=</span> <span class="n">config</span><span class="o">.</span><span class="n">Property</span><span class="p">(</span><span class="n">proptype</span><span class="o">=</span><span class="nb">float</span><span class="p">,</span> <span class="n">default</span><span class="o">=</span><span class="mf">0.8</span><span class="p">)</span>
+    <span class="n">z_max</span> <span class="o">=</span> <span class="n">config</span><span class="o">.</span><span class="n">Property</span><span class="p">(</span><span class="n">proptype</span><span class="o">=</span><span class="nb">float</span><span class="p">,</span> <span class="n">default</span><span class="o">=</span><span class="mf">2.5</span><span class="p">)</span>
+    <span class="n">n_modes</span> <span class="o">=</span> <span class="n">config</span><span class="o">.</span><span class="n">Property</span><span class="p">(</span><span class="n">proptype</span><span class="o">=</span><span class="nb">int</span><span class="p">,</span> <span class="n">default</span><span class="o">=</span><span class="mi">7</span><span class="p">)</span>
+
+    <span class="n">tracer</span> <span class="o">=</span> <span class="n">config</span><span class="o">.</span><span class="n">Property</span><span class="p">(</span><span class="n">proptype</span><span class="o">=</span><span class="nb">str</span><span class="p">,</span> <span class="n">default</span><span class="o">=</span><span class="kc">None</span><span class="p">)</span>
+
+<div class="viewcode-block" id="SelectionFunctionEstimator.process">
+<a class="viewcode-back" href="../../../_autosummary/draco.synthesis.mockcatalog.html#draco.synthesis.mockcatalog.SelectionFunctionEstimator.process">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">process</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">cat</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Estimate selection function from SVD of catalog map.</span>
+
+<span class="sd">        After binning the positions in the catalog into redshift bins</span>
+<span class="sd">        and healpix pixels, we SVD the n_z x n_pixel map and reconstruct</span>
+<span class="sd">        the catalog with a small number of modes. Doing this at low angular</span>
+<span class="sd">        resolution smoothes out the distribution of sources and provides</span>
+<span class="sd">        and estimate of the selection function.</span>
+
+<span class="sd">        Parameters</span>
+<span class="sd">        ----------</span>
+<span class="sd">        cat : :class:`containers.SpectroscopicCatalog`</span>
+<span class="sd">            Input catalog.</span>
+
+<span class="sd">        Returns</span>
+<span class="sd">        -------</span>
+<span class="sd">        selfunc : :class:`containers.Map`</span>
+<span class="sd">            The visibility dataset with new weights.</span>
+
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="c1"># Compute redshift bin edges and centers</span>
+        <span class="n">zlims_selfunc</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">linspace</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">z_min</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">z_max</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">n_z</span> <span class="o">+</span> <span class="mi">1</span><span class="p">)</span>
+        <span class="n">z_selfunc</span> <span class="o">=</span> <span class="p">(</span><span class="n">zlims_selfunc</span><span class="p">[:</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span> <span class="o">+</span> <span class="n">zlims_selfunc</span><span class="p">[</span><span class="mi">1</span><span class="p">:])</span> <span class="o">*</span> <span class="mf">0.5</span>
+
+        <span class="c1"># Transform redshift bin edges to frequency bin edges</span>
+        <span class="n">freq_selfunc</span> <span class="o">=</span> <span class="n">_zlims_to_freq</span><span class="p">(</span><span class="n">z_selfunc</span><span class="p">,</span> <span class="n">zlims_selfunc</span><span class="p">)</span>
+
+        <span class="c1"># Create Map container to store the selection function</span>
+        <span class="n">selfunc</span> <span class="o">=</span> <span class="n">containers</span><span class="o">.</span><span class="n">Map</span><span class="p">(</span>
+            <span class="n">nside</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">nside</span><span class="p">,</span> <span class="n">polarisation</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span> <span class="n">freq</span><span class="o">=</span><span class="n">freq_selfunc</span><span class="p">,</span> <span class="n">attrs_from</span><span class="o">=</span><span class="n">cat</span>
+        <span class="p">)</span>
+
+        <span class="c1"># Initialize selection function to zero</span>
+        <span class="n">selfunc</span><span class="p">[</span><span class="s2">&quot;map&quot;</span><span class="p">][:]</span> <span class="o">=</span> <span class="mi">0</span>  <span class="c1"># np.zeros(selfunc[&quot;map&quot;].local_shape)</span>
+
+        <span class="c1"># Create maps from original catalog (on each MPI rank separately)</span>
+        <span class="n">maps</span> <span class="o">=</span> <span class="n">_cat_to_maps</span><span class="p">(</span><span class="n">cat</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">nside</span><span class="p">,</span> <span class="n">zlims_selfunc</span><span class="p">)</span>
+
+        <span class="c1"># SVD the n_z x n_pixel map of source counts</span>
+        <span class="n">svd</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">linalg</span><span class="o">.</span><span class="n">svd</span><span class="p">(</span><span class="n">maps</span><span class="p">,</span> <span class="n">full_matrices</span><span class="o">=</span><span class="mi">0</span><span class="p">)</span>
+
+        <span class="c1"># Get axis parameters for distributed map:</span>
+        <span class="n">lo</span> <span class="o">=</span> <span class="n">selfunc</span><span class="p">[</span><span class="s2">&quot;map&quot;</span><span class="p">][:,</span> <span class="mi">0</span><span class="p">,</span> <span class="p">:]</span><span class="o">.</span><span class="n">local_offset</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+        <span class="n">ls</span> <span class="o">=</span> <span class="n">selfunc</span><span class="p">[</span><span class="s2">&quot;map&quot;</span><span class="p">][:,</span> <span class="mi">0</span><span class="p">,</span> <span class="p">:]</span><span class="o">.</span><span class="n">local_shape</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+
+        <span class="c1"># Accumulate the modes we wish to keep in the Map container</span>
+        <span class="k">for</span> <span class="n">mode_i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">n_modes</span><span class="p">):</span>
+            <span class="n">uj</span> <span class="o">=</span> <span class="n">svd</span><span class="p">[</span><span class="mi">0</span><span class="p">][:,</span> <span class="n">mode_i</span><span class="p">]</span>
+            <span class="n">sj</span> <span class="o">=</span> <span class="n">svd</span><span class="p">[</span><span class="mi">1</span><span class="p">][</span><span class="n">mode_i</span><span class="p">]</span>
+            <span class="n">vj</span> <span class="o">=</span> <span class="n">svd</span><span class="p">[</span><span class="mi">2</span><span class="p">][</span><span class="n">mode_i</span><span class="p">,</span> <span class="p">:]</span>
+
+            <span class="c1"># Wrap reconstructed selfunc mode into MPIArray, so that</span>
+            <span class="c1"># we can add to distributed map dataset</span>
+            <span class="n">recmode</span> <span class="o">=</span> <span class="n">mpiarray</span><span class="o">.</span><span class="n">MPIArray</span><span class="o">.</span><span class="n">wrap</span><span class="p">(</span>
+                <span class="p">(</span><span class="n">uj</span><span class="p">[:,</span> <span class="kc">None</span><span class="p">]</span> <span class="o">*</span> <span class="n">sj</span> <span class="o">*</span> <span class="n">vj</span><span class="p">[</span><span class="kc">None</span><span class="p">,</span> <span class="p">:])[</span><span class="n">lo</span> <span class="p">:</span> <span class="n">lo</span> <span class="o">+</span> <span class="n">ls</span><span class="p">],</span> <span class="n">axis</span><span class="o">=</span><span class="mi">0</span>
+            <span class="p">)</span>
+            <span class="n">selfunc</span><span class="p">[</span><span class="s2">&quot;map&quot;</span><span class="p">][:,</span> <span class="mi">0</span><span class="p">,</span> <span class="p">:]</span> <span class="o">+=</span> <span class="n">recmode</span>
+
+        <span class="c1"># Remove negative entries remaining from SVD recovery:</span>
+        <span class="n">selfunc</span><span class="p">[</span><span class="s2">&quot;map&quot;</span><span class="p">][</span><span class="n">np</span><span class="o">.</span><span class="n">where</span><span class="p">(</span><span class="n">selfunc</span><span class="o">.</span><span class="n">map</span><span class="p">[:]</span> <span class="o">&lt;</span> <span class="mf">0.0</span><span class="p">)]</span> <span class="o">=</span> <span class="mf">0.0</span>
+
+        <span class="c1"># Set a tracer attribute</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">tracer</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">selfunc</span><span class="o">.</span><span class="n">attrs</span><span class="p">[</span><span class="s2">&quot;tracer&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">tracer</span>
+
+        <span class="k">return</span> <span class="n">selfunc</span></div>
+</div>
+
+
+
+<div class="viewcode-block" id="ResizeSelectionFunctionMap">
+<a class="viewcode-back" href="../../../_autosummary/draco.synthesis.mockcatalog.html#draco.synthesis.mockcatalog.ResizeSelectionFunctionMap">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">ResizeSelectionFunctionMap</span><span class="p">(</span><span class="n">tasklib</span><span class="o">.</span><span class="n">base</span><span class="o">.</span><span class="n">ContainerTask</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Selection function map with the same frequency and resolution sampling.</span>
+
+<span class="sd">    Takes a selection function map and simulated source (biased density) map and</span>
+<span class="sd">    return a selection function map with the same resolution and frequency sampling</span>
+<span class="sd">    as the source map.</span>
+
+<span class="sd">    Attributes</span>
+<span class="sd">    ----------</span>
+<span class="sd">    smooth : bool</span>
+<span class="sd">        Smooth the resized selection function on the scale of the original</span>
+<span class="sd">        pixel area. This helps to erase the imprint of the original pixelization</span>
+<span class="sd">        on the resized map, particularly at the edges of the selection function.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+
+    <span class="n">smooth</span> <span class="o">=</span> <span class="n">config</span><span class="o">.</span><span class="n">Property</span><span class="p">(</span><span class="n">proptype</span><span class="o">=</span><span class="nb">bool</span><span class="p">,</span> <span class="n">default</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
+
+<div class="viewcode-block" id="ResizeSelectionFunctionMap.process">
+<a class="viewcode-back" href="../../../_autosummary/draco.synthesis.mockcatalog.html#draco.synthesis.mockcatalog.ResizeSelectionFunctionMap.process">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">process</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">selfunc</span><span class="p">,</span> <span class="n">source_map</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Resize selection function map.</span>
+
+<span class="sd">        Parameters</span>
+<span class="sd">        ----------</span>
+<span class="sd">        selfunc : :class:`containers.Map`</span>
+<span class="sd">            Input selection function.</span>
+<span class="sd">        source_map : :class:`containers.Map`</span>
+<span class="sd">            Map whose frequency and angular redshift resolution the</span>
+<span class="sd">            output selection function map will be matched to. This will</span>
+<span class="sd">            typically be the same map passed to the `PdfGenerator` task.</span>
+
+<span class="sd">        Returns</span>
+<span class="sd">        -------</span>
+<span class="sd">        new_selfunc : class:`containers.Map`</span>
+<span class="sd">            Resized selection function.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="kn">from</span><span class="w"> </span><span class="nn">..util</span><span class="w"> </span><span class="kn">import</span> <span class="n">regrid</span>
+
+        <span class="c1"># Convert frequency axes to redshifts</span>
+        <span class="n">z_selfunc</span> <span class="o">=</span> <span class="n">_freq_to_z</span><span class="p">(</span><span class="n">selfunc</span><span class="o">.</span><span class="n">index_map</span><span class="p">[</span><span class="s2">&quot;freq&quot;</span><span class="p">])</span>
+        <span class="n">z_source</span> <span class="o">=</span> <span class="n">_freq_to_z</span><span class="p">(</span><span class="n">source_map</span><span class="o">.</span><span class="n">index_map</span><span class="p">[</span><span class="s2">&quot;freq&quot;</span><span class="p">])</span>
+
+        <span class="c1"># Make container for resized selection function map</span>
+        <span class="n">new_selfunc</span> <span class="o">=</span> <span class="n">containers</span><span class="o">.</span><span class="n">Map</span><span class="p">(</span>
+            <span class="n">polarisation</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span> <span class="n">axes_from</span><span class="o">=</span><span class="n">source_map</span><span class="p">,</span> <span class="n">attrs_from</span><span class="o">=</span><span class="n">source_map</span>
+        <span class="p">)</span>
+
+        <span class="c1"># Form matrix to interpolate frequency/z axis</span>
+        <span class="n">interp_m</span> <span class="o">=</span> <span class="n">regrid</span><span class="o">.</span><span class="n">lanczos_forward_matrix</span><span class="p">(</span>
+            <span class="n">z_selfunc</span><span class="p">[</span><span class="s2">&quot;centre&quot;</span><span class="p">],</span> <span class="n">z_source</span><span class="p">[</span><span class="s2">&quot;centre&quot;</span><span class="p">]</span>
+        <span class="p">)</span>
+        <span class="c1"># Correct for redshift bin widths:</span>
+        <span class="n">interp_m</span> <span class="o">*=</span> <span class="n">z_source</span><span class="p">[</span><span class="s2">&quot;width&quot;</span><span class="p">][:,</span> <span class="n">np</span><span class="o">.</span><span class="n">newaxis</span><span class="p">]</span> <span class="o">/</span> <span class="n">z_selfunc</span><span class="p">[</span><span class="s2">&quot;width&quot;</span><span class="p">][</span><span class="n">np</span><span class="o">.</span><span class="n">newaxis</span><span class="p">,</span> <span class="p">:]</span>
+
+        <span class="c1"># Redistribute selfunc along pixel axis, so we can resize</span>
+        <span class="c1"># the frequency axis</span>
+        <span class="n">selfunc</span><span class="o">.</span><span class="n">redistribute</span><span class="p">(</span><span class="s2">&quot;pixel&quot;</span><span class="p">)</span>
+
+        <span class="c1"># Interpolate input selection function onto new redshift bins,</span>
+        <span class="c1"># and wrap in MPIArray distributed along pixel axis</span>
+        <span class="n">selfunc_map_newz</span> <span class="o">=</span> <span class="n">mpiarray</span><span class="o">.</span><span class="n">MPIArray</span><span class="o">.</span><span class="n">wrap</span><span class="p">(</span>
+            <span class="n">np</span><span class="o">.</span><span class="n">dot</span><span class="p">(</span><span class="n">interp_m</span><span class="p">,</span> <span class="n">selfunc</span><span class="o">.</span><span class="n">map</span><span class="p">[:,</span> <span class="mi">0</span><span class="p">,</span> <span class="p">:]),</span> <span class="n">axis</span><span class="o">=</span><span class="mi">1</span>
+        <span class="p">)</span>
+
+        <span class="c1"># Redistribute along frequency axis</span>
+        <span class="n">selfunc_map_newz</span> <span class="o">=</span> <span class="n">selfunc_map_newz</span><span class="o">.</span><span class="n">redistribute</span><span class="p">(</span><span class="n">axis</span><span class="o">=</span><span class="mi">0</span><span class="p">)</span>
+
+        <span class="c1"># Determine desired output healpix Nside parameter</span>
+        <span class="n">nside</span> <span class="o">=</span> <span class="n">new_selfunc</span><span class="o">.</span><span class="n">nside</span>
+
+        <span class="c1"># Get local section of container for output selection function</span>
+        <span class="n">new_selfunc_map_local</span> <span class="o">=</span> <span class="n">new_selfunc</span><span class="o">.</span><span class="n">map</span><span class="p">[:]</span>
+
+        <span class="c1"># For each frequency in local section, up/downgrade healpix maps</span>
+        <span class="c1"># of selection function to desired resolution, and set negative</span>
+        <span class="c1"># pixel values (which the Lanczos interpolation can create) to zero</span>
+        <span class="k">for</span> <span class="n">fi</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">selfunc_map_newz</span><span class="o">.</span><span class="n">local_shape</span><span class="p">[</span><span class="mi">0</span><span class="p">]):</span>
+            <span class="n">new_selfunc_map_local</span><span class="p">[:][</span><span class="n">fi</span><span class="p">,</span> <span class="mi">0</span><span class="p">]</span> <span class="o">=</span> <span class="n">hp</span><span class="o">.</span><span class="n">ud_grade</span><span class="p">(</span><span class="n">selfunc_map_newz</span><span class="p">[</span><span class="n">fi</span><span class="p">],</span> <span class="n">nside</span><span class="p">)</span>
+
+            <span class="c1"># If desired, convolve the resized selection function with a</span>
+            <span class="c1"># Gaussian with FWHM equal to the sqrt of the original pixel area.</span>
+            <span class="c1"># This smoothes out the edges of the map, which will otherwise retain</span>
+            <span class="c1"># the shape of the original pixelization.</span>
+            <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">smooth</span><span class="p">:</span>
+                <span class="n">old_nside</span> <span class="o">=</span> <span class="n">selfunc</span><span class="o">.</span><span class="n">nside</span>
+                <span class="n">smoothing_fwhm</span> <span class="o">=</span> <span class="n">hp</span><span class="o">.</span><span class="n">nside2resol</span><span class="p">(</span><span class="n">old_nside</span><span class="p">)</span>
+                <span class="n">new_selfunc_map_local</span><span class="p">[:][</span><span class="n">fi</span><span class="p">,</span> <span class="mi">0</span><span class="p">]</span> <span class="o">=</span> <span class="n">hp</span><span class="o">.</span><span class="n">smoothing</span><span class="p">(</span>
+                    <span class="n">new_selfunc_map_local</span><span class="p">[:][</span><span class="n">fi</span><span class="p">,</span> <span class="mi">0</span><span class="p">],</span>
+                    <span class="n">fwhm</span><span class="o">=</span><span class="n">smoothing_fwhm</span><span class="p">,</span>
+                <span class="p">)</span>
+
+            <span class="n">new_selfunc_map_local</span><span class="p">[:][</span><span class="n">fi</span><span class="p">,</span> <span class="mi">0</span><span class="p">][</span><span class="n">new_selfunc_map_local</span><span class="p">[:][</span><span class="n">fi</span><span class="p">,</span> <span class="mi">0</span><span class="p">][:]</span> <span class="o">&lt;</span> <span class="mi">0</span><span class="p">]</span> <span class="o">=</span> <span class="mi">0</span>
+
+        <span class="k">return</span> <span class="n">new_selfunc</span></div>
+</div>
+
+
+
+<div class="viewcode-block" id="PdfGeneratorBase">
+<a class="viewcode-back" href="../../../_autosummary/draco.synthesis.mockcatalog.html#draco.synthesis.mockcatalog.PdfGeneratorBase">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">PdfGeneratorBase</span><span class="p">(</span><span class="n">tasklib</span><span class="o">.</span><span class="n">base</span><span class="o">.</span><span class="n">ContainerTask</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Base class for PDF generator (non-functional).</span>
+
+<span class="sd">    Take a source catalog selection function and simulated source</span>
+<span class="sd">    (biased density) map and return a PDF map constructed from the</span>
+<span class="sd">    product of the two, appropriately normalized. This PDF map can be used</span>
+<span class="sd">    by the task :class:`MockCatalogGenerator` to draw mock catalogs.</span>
+
+<span class="sd">    Derived classes must implement process().</span>
+
+<span class="sd">    Attributes</span>
+<span class="sd">    ----------</span>
+<span class="sd">    tracer : str, optional</span>
+<span class="sd">        Set an optional tracer attribute that can be used to identify the type of</span>
+<span class="sd">        catalog later in the pipeline.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+
+    <span class="n">tracer</span> <span class="o">=</span> <span class="n">config</span><span class="o">.</span><span class="n">Property</span><span class="p">(</span><span class="n">proptype</span><span class="o">=</span><span class="nb">str</span><span class="p">,</span> <span class="n">default</span><span class="o">=</span><span class="kc">None</span><span class="p">)</span>
+
+<div class="viewcode-block" id="PdfGeneratorBase.make_pdf_map">
+<a class="viewcode-back" href="../../../_autosummary/draco.synthesis.mockcatalog.html#draco.synthesis.mockcatalog.PdfGeneratorBase.make_pdf_map">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">make_pdf_map</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">source_map</span><span class="p">,</span> <span class="n">z_weights</span><span class="p">,</span> <span class="n">selfunc</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Make PDF map from source map, redshift weights, and selection function.</span>
+
+<span class="sd">        Parameters</span>
+<span class="sd">        ----------</span>
+<span class="sd">        source_map : :class:`containers.Map`</span>
+<span class="sd">            Overdensity map to base PDF on.</span>
+<span class="sd">        z_weights : `MPIArray`</span>
+<span class="sd">            Relative weight of each redshift/frequency bin in PDF.</span>
+<span class="sd">        selfunc : :class:`containers.Map`, optional</span>
+<span class="sd">            Selection function for objects drawn from PDF. If not specified,</span>
+<span class="sd">            a uniform selection function is assumed.</span>
+
+<span class="sd">        Returns</span>
+<span class="sd">        -------</span>
+<span class="sd">        pdf_map : :class:`containers.Map`</span>
+<span class="sd">            Output PDF map.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="c1"># Assuming source map is overdensity, add 1 to form rho/rho_mean</span>
+        <span class="n">rho</span> <span class="o">=</span> <span class="n">mpiarray</span><span class="o">.</span><span class="n">MPIArray</span><span class="o">.</span><span class="n">wrap</span><span class="p">(</span><span class="n">source_map</span><span class="o">.</span><span class="n">map</span><span class="p">[:,</span> <span class="mi">0</span><span class="p">,</span> <span class="p">:]</span> <span class="o">+</span> <span class="mf">1.0</span><span class="p">,</span> <span class="n">axis</span><span class="o">=</span><span class="mi">0</span><span class="p">)</span>
+
+        <span class="k">if</span> <span class="p">(</span><span class="n">rho</span> <span class="o">&lt;</span> <span class="mi">0</span><span class="p">)</span><span class="o">.</span><span class="n">any</span><span class="p">():</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">log</span><span class="o">.</span><span class="n">error</span><span class="p">(</span><span class="s2">&quot;Found negative entries in source map.&quot;</span><span class="p">)</span>
+
+        <span class="c1"># Normalize density to have unit mean in each z-bin:</span>
+        <span class="n">rho</span> <span class="o">=</span> <span class="n">mpiarray</span><span class="o">.</span><span class="n">MPIArray</span><span class="o">.</span><span class="n">wrap</span><span class="p">(</span><span class="n">rho</span> <span class="o">/</span> <span class="n">np</span><span class="o">.</span><span class="n">mean</span><span class="p">(</span><span class="n">rho</span><span class="p">,</span> <span class="n">axis</span><span class="o">=</span><span class="mi">1</span><span class="p">)[:,</span> <span class="n">np</span><span class="o">.</span><span class="n">newaxis</span><span class="p">],</span> <span class="n">axis</span><span class="o">=</span><span class="mi">0</span><span class="p">)</span>
+
+        <span class="k">if</span> <span class="n">selfunc</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="c1"># Get local section of selection function</span>
+            <span class="n">selfunc_local</span> <span class="o">=</span> <span class="n">selfunc</span><span class="o">.</span><span class="n">map</span><span class="p">[:,</span> <span class="mi">0</span><span class="p">,</span> <span class="p">:]</span>
+
+            <span class="k">if</span> <span class="p">(</span><span class="n">selfunc_local</span> <span class="o">&lt;</span> <span class="mi">0</span><span class="p">)</span><span class="o">.</span><span class="n">any</span><span class="p">():</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">log</span><span class="o">.</span><span class="n">error</span><span class="p">(</span><span class="s2">&quot;Found negative entries in selection function.&quot;</span><span class="p">)</span>
+
+            <span class="c1"># Multiply selection function into density</span>
+            <span class="n">pdf</span> <span class="o">=</span> <span class="n">mpiarray</span><span class="o">.</span><span class="n">MPIArray</span><span class="o">.</span><span class="n">wrap</span><span class="p">(</span><span class="n">rho</span> <span class="o">*</span> <span class="n">selfunc_local</span><span class="p">,</span> <span class="n">axis</span><span class="o">=</span><span class="mi">0</span><span class="p">)</span>
+
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">pdf</span> <span class="o">=</span> <span class="n">mpiarray</span><span class="o">.</span><span class="n">MPIArray</span><span class="o">.</span><span class="n">wrap</span><span class="p">(</span><span class="n">rho</span><span class="p">,</span> <span class="n">axis</span><span class="o">=</span><span class="mi">0</span><span class="p">)</span>
+
+        <span class="c1"># Normalize by redshift weights</span>
+        <span class="n">pdf</span> <span class="o">=</span> <span class="n">mpiarray</span><span class="o">.</span><span class="n">MPIArray</span><span class="o">.</span><span class="n">wrap</span><span class="p">(</span>
+            <span class="n">pdf</span>
+            <span class="o">*</span> <span class="n">tools</span><span class="o">.</span><span class="n">invert_no_zero</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">sum</span><span class="p">(</span><span class="n">pdf</span><span class="p">,</span> <span class="n">axis</span><span class="o">=</span><span class="mi">1</span><span class="p">))[:,</span> <span class="n">np</span><span class="o">.</span><span class="n">newaxis</span><span class="p">]</span>
+            <span class="o">*</span> <span class="n">z_weights</span><span class="p">[:,</span> <span class="n">np</span><span class="o">.</span><span class="n">newaxis</span><span class="p">],</span>
+            <span class="n">axis</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span>
+        <span class="p">)</span>
+
+        <span class="c1"># Make container for PDF</span>
+        <span class="n">pdf_map</span> <span class="o">=</span> <span class="n">containers</span><span class="o">.</span><span class="n">Map</span><span class="p">(</span>
+            <span class="n">nside</span><span class="o">=</span><span class="n">source_map</span><span class="o">.</span><span class="n">nside</span><span class="p">,</span>
+            <span class="n">polarisation</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span>
+            <span class="n">freq</span><span class="o">=</span><span class="n">source_map</span><span class="o">.</span><span class="n">index_map</span><span class="p">[</span><span class="s2">&quot;freq&quot;</span><span class="p">],</span>
+            <span class="n">attrs_from</span><span class="o">=</span><span class="n">selfunc</span><span class="p">,</span>
+        <span class="p">)</span>
+
+        <span class="c1"># Put computed PDF into local section of container</span>
+        <span class="n">pdf_map_local</span> <span class="o">=</span> <span class="n">pdf_map</span><span class="o">.</span><span class="n">map</span><span class="p">[:]</span>
+        <span class="n">pdf_map_local</span><span class="p">[:,</span> <span class="mi">0</span><span class="p">,</span> <span class="p">:]</span> <span class="o">=</span> <span class="n">pdf</span>
+
+        <span class="c1"># Set a tracer attribute</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">tracer</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">pdf_map</span><span class="o">.</span><span class="n">attrs</span><span class="p">[</span><span class="s2">&quot;tracer&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">tracer</span>
+
+        <span class="k">return</span> <span class="n">pdf_map</span></div>
+
+
+<div class="viewcode-block" id="PdfGeneratorBase.process">
+<a class="viewcode-back" href="../../../_autosummary/draco.synthesis.mockcatalog.html#draco.synthesis.mockcatalog.PdfGeneratorBase.process">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">process</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Produce a pdf.&quot;&quot;&quot;</span>
+        <span class="k">raise</span> <span class="ne">NotImplementedError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="vm">__class__</span><span class="si">}</span><span class="s2"> must define a process method.&quot;</span><span class="p">)</span></div>
+</div>
+
+
+
+<div class="viewcode-block" id="PdfGeneratorUncorrelated">
+<a class="viewcode-back" href="../../../_autosummary/draco.synthesis.mockcatalog.html#draco.synthesis.mockcatalog.PdfGeneratorUncorrelated">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">PdfGeneratorUncorrelated</span><span class="p">(</span><span class="n">PdfGeneratorBase</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Generate uniform PDF for making uncorrelated mocks.&quot;&quot;&quot;</span>
+
+<div class="viewcode-block" id="PdfGeneratorUncorrelated.process">
+<a class="viewcode-back" href="../../../_autosummary/draco.synthesis.mockcatalog.html#draco.synthesis.mockcatalog.PdfGeneratorUncorrelated.process">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">process</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">source_map</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Make PDF map with uniform z weights and delta_g=0.</span>
+
+<span class="sd">        Parameters</span>
+<span class="sd">        ----------</span>
+<span class="sd">        source_map : :class:`containers.Map`</span>
+<span class="sd">            Overdensity map that determines z and angular resolution</span>
+<span class="sd">            of output PDF map.</span>
+
+<span class="sd">        Returns</span>
+<span class="sd">        -------</span>
+<span class="sd">        pdf_map : :class:`containers.Map`</span>
+<span class="sd">            Output PDF map.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="c1"># Get local section of source map, and set to zero</span>
+        <span class="n">source_map_local</span> <span class="o">=</span> <span class="n">source_map</span><span class="o">.</span><span class="n">map</span><span class="p">[:,</span> <span class="mi">0</span><span class="p">,</span> <span class="p">:]</span>
+        <span class="n">source_map_local</span><span class="p">[:]</span> <span class="o">=</span> <span class="mi">0</span>
+
+        <span class="c1"># Get local and global shape of frequency axis</span>
+        <span class="n">ls</span> <span class="o">=</span> <span class="n">source_map</span><span class="o">.</span><span class="n">map</span><span class="o">.</span><span class="n">local_shape</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+        <span class="n">gs</span> <span class="o">=</span> <span class="n">source_map</span><span class="o">.</span><span class="n">map</span><span class="o">.</span><span class="n">global_shape</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+
+        <span class="c1"># Set each frequency channel to have equal total probability</span>
+        <span class="n">z_weights</span> <span class="o">=</span> <span class="n">mpiarray</span><span class="o">.</span><span class="n">MPIArray</span><span class="o">.</span><span class="n">wrap</span><span class="p">(</span><span class="mi">1</span> <span class="o">/</span> <span class="n">gs</span> <span class="o">*</span> <span class="n">np</span><span class="o">.</span><span class="n">ones</span><span class="p">(</span><span class="n">ls</span><span class="p">),</span> <span class="n">axis</span><span class="o">=</span><span class="mi">0</span><span class="p">)</span>
+
+        <span class="c1"># Create PDF map</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">make_pdf_map</span><span class="p">(</span><span class="n">source_map</span><span class="p">,</span> <span class="n">z_weights</span><span class="p">)</span></div>
+</div>
+
+
+
+<div class="viewcode-block" id="PdfGeneratorWithSelectionFunction">
+<a class="viewcode-back" href="../../../_autosummary/draco.synthesis.mockcatalog.html#draco.synthesis.mockcatalog.PdfGeneratorWithSelectionFunction">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">PdfGeneratorWithSelectionFunction</span><span class="p">(</span><span class="n">PdfGeneratorBase</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Generate PDF that incorporates a selection function.&quot;&quot;&quot;</span>
+
+<div class="viewcode-block" id="PdfGeneratorWithSelectionFunction.process">
+<a class="viewcode-back" href="../../../_autosummary/draco.synthesis.mockcatalog.html#draco.synthesis.mockcatalog.PdfGeneratorWithSelectionFunction.process">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">process</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">source_map</span><span class="p">,</span> <span class="n">selfunc</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Make PDF map that incorporates the selection function.</span>
+
+<span class="sd">        Parameters</span>
+<span class="sd">        ----------</span>
+<span class="sd">        source_map : :class:`containers.Map`</span>
+<span class="sd">            Overdensity map that determines z and angular resolution</span>
+<span class="sd">            of output PDF map.</span>
+<span class="sd">        selfunc : :class:`containers.Map`</span>
+<span class="sd">            Selection function map. Must have same z and angular resolution</span>
+<span class="sd">            as source_map. Typically taken from `ResizeSelectionFunctionMap`.</span>
+
+<span class="sd">        Returns</span>
+<span class="sd">        -------</span>
+<span class="sd">        pdf_map : :class:`containers.Map`</span>
+<span class="sd">            Output PDF map.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="c1"># Get local section of selection function</span>
+        <span class="n">selfunc_local</span> <span class="o">=</span> <span class="n">selfunc</span><span class="o">.</span><span class="n">map</span><span class="p">[:,</span> <span class="mi">0</span><span class="p">,</span> <span class="p">:]</span>
+
+        <span class="c1"># Generate weights for distribution of sources in redshift:</span>
+        <span class="c1"># first, sum over selfunc pixel values at each z (z_weights),</span>
+        <span class="c1"># then sum these over all z (z_weights_sum).</span>
+        <span class="n">z_weights</span> <span class="o">=</span> <span class="n">selfunc_local</span><span class="o">.</span><span class="n">sum</span><span class="p">(</span><span class="n">axis</span><span class="o">=</span><span class="mi">1</span><span class="p">)</span>
+        <span class="n">z_weights_sum</span> <span class="o">=</span> <span class="n">z_weights</span><span class="o">.</span><span class="n">sum</span><span class="p">()</span><span class="o">.</span><span class="n">allreduce</span><span class="p">()</span>
+
+        <span class="c1"># Normalize z_weights by grand total</span>
+        <span class="n">z_weights</span> <span class="o">=</span> <span class="n">mpiarray</span><span class="o">.</span><span class="n">MPIArray</span><span class="o">.</span><span class="n">wrap</span><span class="p">(</span><span class="n">z_weights</span> <span class="o">/</span> <span class="n">z_weights_sum</span><span class="p">,</span> <span class="n">axis</span><span class="o">=</span><span class="mi">0</span><span class="p">)</span>
+
+        <span class="c1"># Create PDF map</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">make_pdf_map</span><span class="p">(</span><span class="n">source_map</span><span class="p">,</span> <span class="n">z_weights</span><span class="p">,</span> <span class="n">selfunc</span><span class="p">)</span></div>
+</div>
+
+
+
+<div class="viewcode-block" id="PdfGeneratorNoSelectionFunction">
+<a class="viewcode-back" href="../../../_autosummary/draco.synthesis.mockcatalog.html#draco.synthesis.mockcatalog.PdfGeneratorNoSelectionFunction">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">PdfGeneratorNoSelectionFunction</span><span class="p">(</span><span class="n">PdfGeneratorBase</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Generate PDF that assumes a trivial selection function.</span>
+
+<span class="sd">    Attributes</span>
+<span class="sd">    ----------</span>
+<span class="sd">    use_voxel_volumes : bool</span>
+<span class="sd">        If true, set redshift weights based on relative comoving volumes</span>
+<span class="sd">        of voxels corresponding to each frequency channel. Default: False.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+
+    <span class="n">use_voxel_volumes</span> <span class="o">=</span> <span class="n">config</span><span class="o">.</span><span class="n">Property</span><span class="p">(</span><span class="n">proptype</span><span class="o">=</span><span class="nb">bool</span><span class="p">,</span> <span class="n">default</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
+
+<div class="viewcode-block" id="PdfGeneratorNoSelectionFunction.process">
+<a class="viewcode-back" href="../../../_autosummary/draco.synthesis.mockcatalog.html#draco.synthesis.mockcatalog.PdfGeneratorNoSelectionFunction.process">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">process</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">source_map</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Make PDF map that assumes a trivial selection function.</span>
+
+<span class="sd">        Parameters</span>
+<span class="sd">        ----------</span>
+<span class="sd">        source_map : :class:`containers.Map`</span>
+<span class="sd">            Overdensity map that determines z and angular resolution</span>
+<span class="sd">            of output PDF map.</span>
+
+<span class="sd">        Returns</span>
+<span class="sd">        -------</span>
+<span class="sd">        pdf_map : :class:`containers.Map`</span>
+<span class="sd">            Output PDF map.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="c1"># Get local offset and shape of frequency axis, and global shape</span>
+        <span class="n">lo</span> <span class="o">=</span> <span class="n">source_map</span><span class="o">.</span><span class="n">map</span><span class="o">.</span><span class="n">local_offset</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+        <span class="n">ls</span> <span class="o">=</span> <span class="n">source_map</span><span class="o">.</span><span class="n">map</span><span class="o">.</span><span class="n">local_shape</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+        <span class="n">gs</span> <span class="o">=</span> <span class="n">source_map</span><span class="o">.</span><span class="n">map</span><span class="o">.</span><span class="n">global_shape</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+
+        <span class="k">if</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">use_voxel_volumes</span><span class="p">:</span>
+            <span class="c1"># Set each frequency channel to have equal total probability</span>
+            <span class="n">z_weights</span> <span class="o">=</span> <span class="n">mpiarray</span><span class="o">.</span><span class="n">MPIArray</span><span class="o">.</span><span class="n">wrap</span><span class="p">(</span><span class="mi">1</span> <span class="o">/</span> <span class="n">gs</span> <span class="o">*</span> <span class="n">np</span><span class="o">.</span><span class="n">ones</span><span class="p">(</span><span class="n">ls</span><span class="p">),</span> <span class="n">axis</span><span class="o">=</span><span class="mi">0</span><span class="p">)</span>
+
+        <span class="k">else</span><span class="p">:</span>
+            <span class="c1"># Set total probability for each frequency channel based</span>
+            <span class="c1"># on voxel volume for that channel.</span>
+            <span class="c1"># Healpix maps have equal-angular-area pixels, so the voxel</span>
+            <span class="c1"># area is proportional to \chi^2 * (\chi_max - \chi_min),</span>
+            <span class="c1"># where we use \chi_centre for the first \chi (which incorporates</span>
+            <span class="c1"># the z-dependence of transverse area), and the second factor</span>
+            <span class="c1"># is the voxel size along the z direction.</span>
+            <span class="kn">from</span><span class="w"> </span><span class="nn">cora.util</span><span class="w"> </span><span class="kn">import</span> <span class="n">cosmology</span>
+
+            <span class="n">cosmo</span> <span class="o">=</span> <span class="n">cosmology</span><span class="o">.</span><span class="n">Cosmology</span><span class="p">()</span>
+            <span class="n">z_weights_global</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">zeros</span><span class="p">(</span><span class="n">gs</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">float64</span><span class="p">)</span>
+
+            <span class="c1"># First, we compute the normalization for each channel</span>
+            <span class="c1"># globally</span>
+            <span class="k">for</span> <span class="n">fi</span><span class="p">,</span> <span class="n">freq</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">source_map</span><span class="o">.</span><span class="n">index_map</span><span class="p">[</span><span class="s2">&quot;freq&quot;</span><span class="p">]):</span>
+                <span class="n">z_min</span> <span class="o">=</span> <span class="n">constants</span><span class="o">.</span><span class="n">nu21</span> <span class="o">/</span> <span class="p">(</span><span class="n">freq</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">+</span> <span class="mf">0.5</span> <span class="o">*</span> <span class="n">freq</span><span class="p">[</span><span class="mi">1</span><span class="p">])</span> <span class="o">-</span> <span class="mi">1</span>
+                <span class="n">z_max</span> <span class="o">=</span> <span class="n">constants</span><span class="o">.</span><span class="n">nu21</span> <span class="o">/</span> <span class="p">(</span><span class="n">freq</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">-</span> <span class="mf">0.5</span> <span class="o">*</span> <span class="n">freq</span><span class="p">[</span><span class="mi">1</span><span class="p">])</span> <span class="o">-</span> <span class="mi">1</span>
+                <span class="n">z_mean</span> <span class="o">=</span> <span class="n">constants</span><span class="o">.</span><span class="n">nu21</span> <span class="o">/</span> <span class="n">freq</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">-</span> <span class="mi">1</span>
+
+                <span class="n">z_weights_global</span><span class="p">[</span><span class="n">fi</span><span class="p">]</span> <span class="o">=</span> <span class="n">cosmo</span><span class="o">.</span><span class="n">comoving_distance</span><span class="p">(</span><span class="n">z_mean</span><span class="p">)</span> <span class="o">**</span> <span class="mi">2</span> <span class="o">*</span> <span class="p">(</span>
+                    <span class="n">cosmo</span><span class="o">.</span><span class="n">comoving_distance</span><span class="p">(</span><span class="n">z_max</span><span class="p">)</span> <span class="o">-</span> <span class="n">cosmo</span><span class="o">.</span><span class="n">comoving_distance</span><span class="p">(</span><span class="n">z_min</span><span class="p">)</span>
+                <span class="p">)</span>
+
+            <span class="n">z_weights_global</span> <span class="o">/=</span> <span class="n">z_weights_global</span><span class="o">.</span><span class="n">sum</span><span class="p">()</span>
+
+            <span class="c1"># Select local section of weights</span>
+            <span class="n">z_weights</span> <span class="o">=</span> <span class="n">mpiarray</span><span class="o">.</span><span class="n">MPIArray</span><span class="o">.</span><span class="n">wrap</span><span class="p">(</span><span class="n">z_weights_global</span><span class="p">[</span><span class="n">lo</span> <span class="p">:</span> <span class="n">lo</span> <span class="o">+</span> <span class="n">ls</span><span class="p">],</span> <span class="n">axis</span><span class="o">=</span><span class="mi">0</span><span class="p">)</span>
+
+        <span class="c1"># Create PDF map</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">make_pdf_map</span><span class="p">(</span><span class="n">source_map</span><span class="p">,</span> <span class="n">z_weights</span><span class="p">)</span></div>
+</div>
+
+
+
+<div class="viewcode-block" id="MockCatalogGenerator">
+<a class="viewcode-back" href="../../../_autosummary/draco.synthesis.mockcatalog.html#draco.synthesis.mockcatalog.MockCatalogGenerator">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">MockCatalogGenerator</span><span class="p">(</span><span class="n">tasklib</span><span class="o">.</span><span class="n">base</span><span class="o">.</span><span class="n">ContainerTask</span><span class="p">,</span> <span class="n">tasklib</span><span class="o">.</span><span class="n">random</span><span class="o">.</span><span class="n">RandomTask</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Take PDF maps generated by task :class:`PdfGenerator` and use it to draw mock catalogs.</span>
+
+<span class="sd">    Attributes</span>
+<span class="sd">    ----------</span>
+<span class="sd">    nsource : int</span>
+<span class="sd">        Number of sources to draw in each mock catalog.</span>
+<span class="sd">    ncat : int</span>
+<span class="sd">        Number of catalogs to generate.</span>
+<span class="sd">    z_at_channel_centers : bool, optional</span>
+<span class="sd">        Place each source at a redshift corresponding to the center of</span>
+<span class="sd">        its frequency channel (True), or randomly distribute each source&#39;s</span>
+<span class="sd">        redshift within its channel (False). Default: False.</span>
+<span class="sd">    srcs_at_pixel_centers : bool, optional</span>
+<span class="sd">        Place each source precisely at Healpix pixel center (True), or</span>
+<span class="sd">        randomly distribute each source within pixel (False).</span>
+<span class="sd">        Default: False.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+
+    <span class="n">nsource</span> <span class="o">=</span> <span class="n">config</span><span class="o">.</span><span class="n">Property</span><span class="p">(</span><span class="n">proptype</span><span class="o">=</span><span class="nb">int</span><span class="p">)</span>
+    <span class="n">ncat</span> <span class="o">=</span> <span class="n">config</span><span class="o">.</span><span class="n">Property</span><span class="p">(</span><span class="n">proptype</span><span class="o">=</span><span class="nb">int</span><span class="p">)</span>
+
+    <span class="n">z_at_channel_centers</span> <span class="o">=</span> <span class="n">config</span><span class="o">.</span><span class="n">Property</span><span class="p">(</span><span class="n">proptype</span><span class="o">=</span><span class="nb">bool</span><span class="p">,</span> <span class="n">default</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
+    <span class="n">srcs_at_pixel_centers</span> <span class="o">=</span> <span class="n">config</span><span class="o">.</span><span class="n">Property</span><span class="p">(</span><span class="n">proptype</span><span class="o">=</span><span class="nb">bool</span><span class="p">,</span> <span class="n">default</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
+
+<div class="viewcode-block" id="MockCatalogGenerator.setup">
+<a class="viewcode-back" href="../../../_autosummary/draco.synthesis.mockcatalog.html#draco.synthesis.mockcatalog.MockCatalogGenerator.setup">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">setup</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">pdf_map</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Pre-load information from PDF.</span>
+
+<span class="sd">        Parameters</span>
+<span class="sd">        ----------</span>
+<span class="sd">        pdf_map : :class:`containers.Map`</span>
+<span class="sd">            PDF from which to draw positions of sources.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="c1"># Get PDF map container and corresponding healpix Nside</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">pdf</span> <span class="o">=</span> <span class="n">pdf_map</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">nside</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">pdf</span><span class="o">.</span><span class="n">nside</span>
+
+        <span class="c1"># Get MPI rank</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">rank</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">comm</span><span class="o">.</span><span class="n">Get_rank</span><span class="p">()</span>
+
+        <span class="c1"># Get local shapes and offsets of frequency axis</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">lo</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">pdf</span><span class="o">.</span><span class="n">map</span><span class="p">[:,</span> <span class="mi">0</span><span class="p">,</span> <span class="p">:]</span><span class="o">.</span><span class="n">local_offset</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">ls</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">pdf</span><span class="o">.</span><span class="n">map</span><span class="p">[:,</span> <span class="mi">0</span><span class="p">,</span> <span class="p">:]</span><span class="o">.</span><span class="n">local_shape</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">lo_list</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">comm</span><span class="o">.</span><span class="n">allgather</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">lo</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">ls_list</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">comm</span><span class="o">.</span><span class="n">allgather</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">ls</span><span class="p">)</span>
+
+        <span class="c1"># Global shape of frequency axis</span>
+        <span class="n">n_z</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">pdf</span><span class="o">.</span><span class="n">map</span><span class="p">[:,</span> <span class="mi">0</span><span class="p">,</span> <span class="p">:]</span><span class="o">.</span><span class="n">global_shape</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+
+        <span class="c1"># Weight of each redshift bin in the PDF, as sum over all</span>
+        <span class="c1"># PDF map pixels at that redshift</span>
+        <span class="n">z_weights</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">sum</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">pdf</span><span class="o">.</span><span class="n">map</span><span class="p">[:,</span> <span class="mi">0</span><span class="p">,</span> <span class="p">:],</span> <span class="n">axis</span><span class="o">=</span><span class="mi">1</span><span class="p">)</span>
+
+        <span class="c1"># Initialize array to hold global z_weights</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">rank</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
+            <span class="c1"># Only rank zero is relevant</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">global_z_weights</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">zeros</span><span class="p">(</span><span class="n">n_z</span><span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="c1"># All processes must have a value for self.global_z_weights</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">global_z_weights</span> <span class="o">=</span> <span class="kc">None</span>
+
+        <span class="c1"># Gather z_weights on rank 0 (necessary to draw a redshift</span>
+        <span class="c1"># distribution of sources):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">comm</span><span class="o">.</span><span class="n">Gatherv</span><span class="p">(</span>
+            <span class="n">z_weights</span><span class="p">,</span>
+            <span class="p">[</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">global_z_weights</span><span class="p">,</span>
+                <span class="nb">tuple</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">ls_list</span><span class="p">),</span>
+                <span class="nb">tuple</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">lo_list</span><span class="p">),</span>
+                <span class="n">MPI</span><span class="o">.</span><span class="n">DOUBLE</span><span class="p">,</span>
+            <span class="p">],</span>
+            <span class="n">root</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span>
+        <span class="p">)</span>
+
+        <span class="c1"># CDF to draw sources from, as cumulative sum over pixel values</span>
+        <span class="c1"># at each redshift</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">cdf</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">cumsum</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">pdf</span><span class="o">.</span><span class="n">map</span><span class="p">[:,</span> <span class="mi">0</span><span class="p">,</span> <span class="p">:],</span> <span class="n">axis</span><span class="o">=</span><span class="mi">1</span><span class="p">)</span>
+        <span class="c1"># Normalize CDF by final entry</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">cdf</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">cdf</span> <span class="o">/</span> <span class="bp">self</span><span class="o">.</span><span class="n">cdf</span><span class="p">[:,</span> <span class="o">-</span><span class="mi">1</span><span class="p">][:,</span> <span class="n">np</span><span class="o">.</span><span class="n">newaxis</span><span class="p">]</span></div>
+
+
+<div class="viewcode-block" id="MockCatalogGenerator.process">
+<a class="viewcode-back" href="../../../_autosummary/draco.synthesis.mockcatalog.html#draco.synthesis.mockcatalog.MockCatalogGenerator.process">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">process</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Make a mock catalog based on input PDF.</span>
+
+<span class="sd">        Returns</span>
+<span class="sd">        -------</span>
+<span class="sd">        mock_catalog : :class:`containers.SpectroscopicCatalog`</span>
+<span class="sd">            Simulated catalog.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">rank</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
+            <span class="c1"># Only rank zero is relevant.</span>
+            <span class="c1"># The number of sources in each redshift bin follows a multinomial</span>
+            <span class="c1"># distribution (reshape from (1,nz) to (nz) to make a 1D array):</span>
+            <span class="n">global_source_numbers</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">rng</span><span class="o">.</span><span class="n">multinomial</span><span class="p">(</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">nsource</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">global_z_weights</span>
+            <span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="c1"># All processes must have a value for source_numbers:</span>
+            <span class="n">global_source_numbers</span> <span class="o">=</span> <span class="kc">None</span>
+
+        <span class="c1"># Send number of sources per redshift to local sections on each rank.</span>
+        <span class="c1"># Need to pass tuples. For some reason lists don&#39;t work.</span>
+        <span class="c1"># source_numbers has shape (self.ls)</span>
+        <span class="n">source_numbers</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">zeros</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">ls</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">int64</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">comm</span><span class="o">.</span><span class="n">Scatterv</span><span class="p">(</span>
+            <span class="p">[</span>
+                <span class="n">global_source_numbers</span><span class="p">,</span>
+                <span class="nb">tuple</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">ls_list</span><span class="p">),</span>
+                <span class="nb">tuple</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">lo_list</span><span class="p">),</span>
+                <span class="n">MPI</span><span class="o">.</span><span class="n">DOUBLE</span><span class="p">,</span>
+            <span class="p">],</span>
+            <span class="n">source_numbers</span><span class="p">,</span>
+        <span class="p">)</span>
+
+        <span class="c1"># Compute the square root of the angular pixel area,</span>
+        <span class="c1"># as a gross approximation of the pixel size.</span>
+        <span class="n">ang_size</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">rad2deg</span><span class="p">(</span><span class="n">hp</span><span class="o">.</span><span class="n">nside2resol</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">nside</span><span class="p">))</span>
+
+        <span class="c1"># Redshifts corresponding to frequencies at bin centers</span>
+        <span class="n">z_global</span> <span class="o">=</span> <span class="n">_freq_to_z</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">pdf</span><span class="o">.</span><span class="n">index_map</span><span class="p">[</span><span class="s2">&quot;freq&quot;</span><span class="p">][:])</span>
+
+        <span class="c1"># Get total number of sources on this rank, and make arrays to hold</span>
+        <span class="c1"># information for all sources</span>
+        <span class="n">nsource_rank</span> <span class="o">=</span> <span class="n">source_numbers</span><span class="o">.</span><span class="n">sum</span><span class="p">()</span>
+        <span class="n">mock_zs</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">empty</span><span class="p">(</span><span class="n">nsource_rank</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">float64</span><span class="p">)</span>
+        <span class="n">mock_ra</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">empty</span><span class="p">(</span><span class="n">nsource_rank</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">float64</span><span class="p">)</span>
+        <span class="n">mock_dec</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">empty</span><span class="p">(</span><span class="n">nsource_rank</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">float64</span><span class="p">)</span>
+
+        <span class="c1"># Loop over local redshift bins</span>
+        <span class="n">source_offset</span> <span class="o">=</span> <span class="mi">0</span>
+        <span class="k">for</span> <span class="n">zi</span><span class="p">,</span> <span class="n">nsource_bin</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">source_numbers</span><span class="p">):</span>
+            <span class="c1"># Draw a uniform random number in [0,1] for each source.</span>
+            <span class="c1"># This will determine which angular pixel the source is assigned to.</span>
+            <span class="n">rnbs</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">rng</span><span class="o">.</span><span class="n">uniform</span><span class="p">(</span><span class="n">size</span><span class="o">=</span><span class="n">nsource_bin</span><span class="p">)</span>
+
+            <span class="c1"># For each source, determine index of pixel the source falls into</span>
+            <span class="n">pix_idxs</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">digitize</span><span class="p">(</span><span class="n">rnbs</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">cdf</span><span class="p">[</span><span class="n">zi</span><span class="p">])</span>
+
+            <span class="c1"># If desired, generate random numbers to randomize position of sources</span>
+            <span class="c1"># within z bin. These are uniform random numbers in [-0.5, 0.5], which</span>
+            <span class="c1"># will determine the source&#39;s relative displacement from the bin&#39;s</span>
+            <span class="c1"># mean redshift.</span>
+            <span class="k">if</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">z_at_channel_centers</span><span class="p">:</span>
+                <span class="n">rz</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">rng</span><span class="o">.</span><span class="n">uniform</span><span class="p">(</span><span class="n">size</span><span class="o">=</span><span class="n">nsource_bin</span><span class="p">)</span> <span class="o">-</span> <span class="mf">0.5</span>
+
+            <span class="c1"># If desired, generate random numbers to randomize position of sources</span>
+            <span class="c1"># in each healpix pixel. These are uniform random numbers in [-0.5, 0.5],</span>
+            <span class="c1"># which will determine the source&#39;s relative displacement from the pixel&#39;s</span>
+            <span class="c1"># central RA and dec.</span>
+            <span class="k">if</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">srcs_at_pixel_centers</span><span class="p">:</span>
+                <span class="n">rtheta</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">rng</span><span class="o">.</span><span class="n">uniform</span><span class="p">(</span><span class="n">size</span><span class="o">=</span><span class="n">nsource_bin</span><span class="p">)</span> <span class="o">-</span> <span class="mf">0.5</span>
+                <span class="n">rphi</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">rng</span><span class="o">.</span><span class="n">uniform</span><span class="p">(</span><span class="n">size</span><span class="o">=</span><span class="n">nsource_bin</span><span class="p">)</span> <span class="o">-</span> <span class="mf">0.5</span>
+
+            <span class="c1"># Get global index of z bin, and make array of z values of sources,</span>
+            <span class="c1"># set to central z of bin</span>
+            <span class="n">global_z_index</span> <span class="o">=</span> <span class="n">zi</span> <span class="o">+</span> <span class="bp">self</span><span class="o">.</span><span class="n">lo</span>
+            <span class="n">z_value</span> <span class="o">=</span> <span class="n">z_global</span><span class="p">[</span><span class="s2">&quot;centre&quot;</span><span class="p">][</span><span class="n">global_z_index</span><span class="p">]</span> <span class="o">*</span> <span class="n">np</span><span class="o">.</span><span class="n">ones</span><span class="p">(</span><span class="n">nsource_bin</span><span class="p">)</span>
+
+            <span class="c1"># Get dec, RA of center of pixel containing each source</span>
+            <span class="n">decbase</span><span class="p">,</span> <span class="n">RAbase</span> <span class="o">=</span> <span class="n">_pix_to_radec</span><span class="p">(</span><span class="n">pix_idxs</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">nside</span><span class="p">)</span>
+            <span class="c1"># If desired, add random angular offsets from pixel centers</span>
+            <span class="k">if</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">srcs_at_pixel_centers</span><span class="p">:</span>
+                <span class="n">decbase</span> <span class="o">+=</span> <span class="n">ang_size</span> <span class="o">*</span> <span class="n">rtheta</span>
+                <span class="n">RAbase</span> <span class="o">+=</span> <span class="n">ang_size</span> <span class="o">*</span> <span class="n">rphi</span>
+
+            <span class="c1"># If desired, add random offset within z bin to z of each source</span>
+            <span class="k">if</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">z_at_channel_centers</span><span class="p">:</span>
+                <span class="n">z_value</span> <span class="o">+=</span> <span class="n">z_global</span><span class="p">[</span><span class="s2">&quot;width&quot;</span><span class="p">][</span><span class="n">global_z_index</span><span class="p">]</span> <span class="o">*</span> <span class="n">rz</span>
+
+            <span class="c1"># Populate local arrays of source redshift, RA, dec</span>
+            <span class="n">mock_zs</span><span class="p">[</span><span class="n">source_offset</span> <span class="p">:</span> <span class="n">source_offset</span> <span class="o">+</span> <span class="n">nsource_bin</span><span class="p">]</span> <span class="o">=</span> <span class="n">z_value</span>
+            <span class="n">mock_ra</span><span class="p">[</span><span class="n">source_offset</span> <span class="p">:</span> <span class="n">source_offset</span> <span class="o">+</span> <span class="n">nsource_bin</span><span class="p">]</span> <span class="o">=</span> <span class="n">RAbase</span>
+            <span class="n">mock_dec</span><span class="p">[</span><span class="n">source_offset</span> <span class="p">:</span> <span class="n">source_offset</span> <span class="o">+</span> <span class="n">nsource_bin</span><span class="p">]</span> <span class="o">=</span> <span class="n">decbase</span>
+
+            <span class="c1"># Increment source_offset to start of next block of sources</span>
+            <span class="c1"># in mock_... arrays</span>
+            <span class="n">source_offset</span> <span class="o">+=</span> <span class="n">nsource_bin</span>
+
+        <span class="c1"># Define arrays to hold full source catalog</span>
+        <span class="n">mock_zs_full</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">empty</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">nsource</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">mock_zs</span><span class="o">.</span><span class="n">dtype</span><span class="p">)</span>
+        <span class="n">mock_ra_full</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">empty</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">nsource</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">mock_ra</span><span class="o">.</span><span class="n">dtype</span><span class="p">)</span>
+        <span class="n">mock_dec_full</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">empty</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">nsource</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">mock_dec</span><span class="o">.</span><span class="n">dtype</span><span class="p">)</span>
+
+        <span class="c1"># Tuple (not list!) of number of sources in each rank</span>
+        <span class="c1"># Note: the counts and displacement arguments of Allgatherv are tuples!</span>
+        <span class="n">nsource_tuple</span> <span class="o">=</span> <span class="nb">tuple</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">comm</span><span class="o">.</span><span class="n">allgather</span><span class="p">(</span><span class="n">nsource_rank</span><span class="p">))</span>
+        <span class="c1"># Tuple (not list!) of displacements of each rank array in full array</span>
+        <span class="n">dspls</span> <span class="o">=</span> <span class="nb">tuple</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">insert</span><span class="p">(</span><span class="n">arr</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">cumsum</span><span class="p">(</span><span class="n">nsource_tuple</span><span class="p">)[:</span><span class="o">-</span><span class="mi">1</span><span class="p">],</span> <span class="n">obj</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span> <span class="n">values</span><span class="o">=</span><span class="mf">0.0</span><span class="p">))</span>
+        <span class="c1"># Gather redshifts</span>
+        <span class="n">recvbuf</span> <span class="o">=</span> <span class="p">[</span><span class="n">mock_zs_full</span><span class="p">,</span> <span class="n">nsource_tuple</span><span class="p">,</span> <span class="n">dspls</span><span class="p">,</span> <span class="n">MPI</span><span class="o">.</span><span class="n">DOUBLE</span><span class="p">]</span>
+        <span class="n">sendbuf</span> <span class="o">=</span> <span class="p">[</span><span class="n">mock_zs</span><span class="p">,</span> <span class="nb">len</span><span class="p">(</span><span class="n">mock_zs</span><span class="p">)]</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">comm</span><span class="o">.</span><span class="n">Allgatherv</span><span class="p">(</span><span class="n">sendbuf</span><span class="p">,</span> <span class="n">recvbuf</span><span class="p">)</span>
+        <span class="c1"># Gather theta</span>
+        <span class="n">recvbuf</span> <span class="o">=</span> <span class="p">[</span><span class="n">mock_dec_full</span><span class="p">,</span> <span class="n">nsource_tuple</span><span class="p">,</span> <span class="n">dspls</span><span class="p">,</span> <span class="n">MPI</span><span class="o">.</span><span class="n">DOUBLE</span><span class="p">]</span>
+        <span class="n">sendbuf</span> <span class="o">=</span> <span class="p">[</span><span class="n">mock_dec</span><span class="p">,</span> <span class="nb">len</span><span class="p">(</span><span class="n">mock_dec</span><span class="p">)]</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">comm</span><span class="o">.</span><span class="n">Allgatherv</span><span class="p">(</span><span class="n">sendbuf</span><span class="p">,</span> <span class="n">recvbuf</span><span class="p">)</span>
+        <span class="c1"># Gather phi</span>
+        <span class="n">recvbuf</span> <span class="o">=</span> <span class="p">[</span><span class="n">mock_ra_full</span><span class="p">,</span> <span class="n">nsource_tuple</span><span class="p">,</span> <span class="n">dspls</span><span class="p">,</span> <span class="n">MPI</span><span class="o">.</span><span class="n">DOUBLE</span><span class="p">]</span>
+        <span class="n">sendbuf</span> <span class="o">=</span> <span class="p">[</span><span class="n">mock_ra</span><span class="p">,</span> <span class="nb">len</span><span class="p">(</span><span class="n">mock_ra</span><span class="p">)]</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">comm</span><span class="o">.</span><span class="n">Allgatherv</span><span class="p">(</span><span class="n">sendbuf</span><span class="p">,</span> <span class="n">recvbuf</span><span class="p">)</span>
+
+        <span class="c1"># Create catalog container</span>
+        <span class="n">mock_catalog</span> <span class="o">=</span> <span class="n">containers</span><span class="o">.</span><span class="n">SpectroscopicCatalog</span><span class="p">(</span>
+            <span class="n">object_id</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">arange</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">nsource</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">uint64</span><span class="p">),</span>
+            <span class="n">attrs_from</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">pdf</span><span class="p">,</span>
+        <span class="p">)</span>
+
+        <span class="c1"># Create position and redshift datasets</span>
+        <span class="n">mock_catalog</span><span class="p">[</span><span class="s2">&quot;position&quot;</span><span class="p">][:]</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">empty</span><span class="p">(</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">nsource</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="p">[(</span><span class="s2">&quot;ra&quot;</span><span class="p">,</span> <span class="n">mock_ra</span><span class="o">.</span><span class="n">dtype</span><span class="p">),</span> <span class="p">(</span><span class="s2">&quot;dec&quot;</span><span class="p">,</span> <span class="n">mock_dec</span><span class="o">.</span><span class="n">dtype</span><span class="p">)]</span>
+        <span class="p">)</span>
+        <span class="n">mock_catalog</span><span class="p">[</span><span class="s2">&quot;redshift&quot;</span><span class="p">][:]</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">empty</span><span class="p">(</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">nsource</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="p">[(</span><span class="s2">&quot;z&quot;</span><span class="p">,</span> <span class="n">mock_zs</span><span class="o">.</span><span class="n">dtype</span><span class="p">),</span> <span class="p">(</span><span class="s2">&quot;z_error&quot;</span><span class="p">,</span> <span class="n">mock_zs</span><span class="o">.</span><span class="n">dtype</span><span class="p">)]</span>
+        <span class="p">)</span>
+        <span class="c1"># Assign data to catalog container</span>
+        <span class="n">mock_catalog</span><span class="p">[</span><span class="s2">&quot;position&quot;</span><span class="p">][</span><span class="s2">&quot;ra&quot;</span><span class="p">][:]</span> <span class="o">=</span> <span class="n">mock_ra_full</span>
+        <span class="n">mock_catalog</span><span class="p">[</span><span class="s2">&quot;position&quot;</span><span class="p">][</span><span class="s2">&quot;dec&quot;</span><span class="p">][:]</span> <span class="o">=</span> <span class="n">mock_dec_full</span>
+        <span class="n">mock_catalog</span><span class="p">[</span><span class="s2">&quot;redshift&quot;</span><span class="p">][</span><span class="s2">&quot;z&quot;</span><span class="p">][:]</span> <span class="o">=</span> <span class="n">mock_zs_full</span>
+        <span class="n">mock_catalog</span><span class="p">[</span><span class="s2">&quot;redshift&quot;</span><span class="p">][</span><span class="s2">&quot;z_error&quot;</span><span class="p">][:]</span> <span class="o">=</span> <span class="mi">0</span>
+
+        <span class="c1"># If we&#39;ve created the requested number of mocks, prepare to exit</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_count</span> <span class="o">==</span> <span class="bp">self</span><span class="o">.</span><span class="n">ncat</span> <span class="o">-</span> <span class="mi">1</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">done</span> <span class="o">=</span> <span class="kc">True</span>
+
+        <span class="k">return</span> <span class="n">mock_catalog</span></div>
+</div>
+
+
+
+<div class="viewcode-block" id="AddGaussianZErrorsToCatalog">
+<a class="viewcode-back" href="../../../_autosummary/draco.synthesis.mockcatalog.html#draco.synthesis.mockcatalog.AddGaussianZErrorsToCatalog">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">AddGaussianZErrorsToCatalog</span><span class="p">(</span>
+    <span class="n">tasklib</span><span class="o">.</span><span class="n">base</span><span class="o">.</span><span class="n">ContainerTask</span><span class="p">,</span> <span class="n">tasklib</span><span class="o">.</span><span class="n">random</span><span class="o">.</span><span class="n">RandomTask</span>
+<span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Add random Gaussian redshift errors to redshifts in a catalog.</span>
+
+<span class="sd">    The standard deviation of the errors is determined either</span>
+<span class="sd">    by sigma_z or sigma_z / (1+z), or by the `z_error` field of the</span>
+<span class="sd">    catalog.</span>
+
+<span class="sd">    Note that the errors are added to the catalog in place, such that</span>
+<span class="sd">    if the original catalog is subsequently used in a pipeline, it will</span>
+<span class="sd">    have the errors included.</span>
+
+<span class="sd">    Attributes</span>
+<span class="sd">    ----------</span>
+<span class="sd">    use_catalog_z_errors : bool</span>
+<span class="sd">        Set standard deviation of Gaussian error based on `z_error` value</span>
+<span class="sd">        for each source in catalog. If True, overrides `sigma`.</span>
+<span class="sd">        Default: False.</span>
+<span class="sd">    sigma : float</span>
+<span class="sd">        Standard deviation corresponding to choice in `sigma_type`.</span>
+<span class="sd">    sigma_type : string</span>
+<span class="sd">        Interpretation of `sigma`:</span>
+<span class="sd">            &#39;sigma_z&#39; - Standard deviation of Gaussian for z errors.</span>
+<span class="sd">            &#39;sigma_z_over_1plusz&#39; - Standard deviation divided by (1+z).</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+
+    <span class="n">use_catalog_z_errors</span> <span class="o">=</span> <span class="n">config</span><span class="o">.</span><span class="n">Property</span><span class="p">(</span><span class="n">proptype</span><span class="o">=</span><span class="nb">bool</span><span class="p">,</span> <span class="n">default</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
+    <span class="n">sigma</span> <span class="o">=</span> <span class="n">config</span><span class="o">.</span><span class="n">Property</span><span class="p">(</span><span class="n">proptype</span><span class="o">=</span><span class="nb">float</span><span class="p">)</span>
+    <span class="n">sigma_type</span> <span class="o">=</span> <span class="n">config</span><span class="o">.</span><span class="n">enum</span><span class="p">([</span><span class="s2">&quot;sigma_z&quot;</span><span class="p">,</span> <span class="s2">&quot;sigma_z_over_1plusz&quot;</span><span class="p">])</span>
+
+<div class="viewcode-block" id="AddGaussianZErrorsToCatalog.process">
+<a class="viewcode-back" href="../../../_autosummary/draco.synthesis.mockcatalog.html#draco.synthesis.mockcatalog.AddGaussianZErrorsToCatalog.process">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">process</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">cat</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Generate random redshift errors and add to redshifts in catalog.</span>
+
+<span class="sd">        Parameters</span>
+<span class="sd">        ----------</span>
+<span class="sd">        cat : :class:`containers.SpectroscopicCatalog`</span>
+<span class="sd">            Input catalog.</span>
+
+<span class="sd">        Returns</span>
+<span class="sd">        -------</span>
+<span class="sd">        cat_out : :class:`containers.SpectroscopicCatalog`</span>
+<span class="sd">            Catalog with redshift errors added.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="c1"># Get redshifts from catalog</span>
+        <span class="n">cat_z</span> <span class="o">=</span> <span class="n">cat</span><span class="p">[</span><span class="s2">&quot;redshift&quot;</span><span class="p">][</span><span class="s2">&quot;z&quot;</span><span class="p">][:]</span>
+        <span class="n">cat_z_err</span> <span class="o">=</span> <span class="n">cat</span><span class="p">[</span><span class="s2">&quot;redshift&quot;</span><span class="p">][</span><span class="s2">&quot;z_error&quot;</span><span class="p">][:]</span>
+
+        <span class="c1"># Generate standard normal z errors</span>
+        <span class="n">z_err</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">rng</span><span class="o">.</span><span class="n">normal</span><span class="p">(</span><span class="n">size</span><span class="o">=</span><span class="n">cat_z</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">])</span>
+        <span class="c1"># Multiply by appropriate sigma</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">use_catalog_z_errors</span><span class="p">:</span>
+            <span class="k">if</span> <span class="ow">not</span> <span class="n">np</span><span class="o">.</span><span class="n">any</span><span class="p">(</span><span class="n">cat_z_err</span><span class="p">):</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">log</span><span class="o">.</span><span class="n">error</span><span class="p">(</span>
+                    <span class="s2">&quot;Warning: no existing z_error information in catalog, so no z errors will be added&quot;</span>
+                <span class="p">)</span>
+            <span class="n">z_err</span> <span class="o">*=</span> <span class="n">cat_z_err</span>
+        <span class="k">elif</span> <span class="bp">self</span><span class="o">.</span><span class="n">sigma_type</span> <span class="o">==</span> <span class="s2">&quot;sigma_z&quot;</span><span class="p">:</span>
+            <span class="n">z_err</span> <span class="o">*=</span> <span class="bp">self</span><span class="o">.</span><span class="n">sigma</span>
+        <span class="k">else</span><span class="p">:</span>  <span class="c1"># self.sigma_type == &quot;sigma_z_over_1plusz&quot;</span>
+            <span class="n">z_err</span> <span class="o">*=</span> <span class="bp">self</span><span class="o">.</span><span class="n">sigma</span> <span class="o">*</span> <span class="p">(</span><span class="mi">1</span> <span class="o">+</span> <span class="n">cat_z</span><span class="p">)</span>
+
+        <span class="c1"># Add errors to catalog redshifts</span>
+        <span class="n">cat_z</span> <span class="o">+=</span> <span class="n">z_err</span>
+
+        <span class="c1"># TODO: store information about error distribution in z_error field</span>
+
+        <span class="k">return</span> <span class="n">cat</span></div>
+</div>
+
+
+
+<div class="viewcode-block" id="AddEBOSSZErrorsToCatalog">
+<a class="viewcode-back" href="../../../_autosummary/draco.synthesis.mockcatalog.html#draco.synthesis.mockcatalog.AddEBOSSZErrorsToCatalog">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">AddEBOSSZErrorsToCatalog</span><span class="p">(</span><span class="n">tasklib</span><span class="o">.</span><span class="n">base</span><span class="o">.</span><span class="n">ContainerTask</span><span class="p">,</span> <span class="n">tasklib</span><span class="o">.</span><span class="n">random</span><span class="o">.</span><span class="n">RandomTask</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Add eBOSS-type random redshift errors to redshifts in a catalog.</span>
+
+<span class="sd">    See the docstrings for _{qso,elg,lrg}_velocity_error() for descriptions</span>
+<span class="sd">    of each redshift error distribution.</span>
+
+<span class="sd">    Note also that the errors are added to the catalog in place, such that</span>
+<span class="sd">    if the original catalog is subsequently used in a pipeline, it will</span>
+<span class="sd">    have the errors included.</span>
+
+<span class="sd">    Attributes</span>
+<span class="sd">    ----------</span>
+<span class="sd">    tracer : {&quot;ELG&quot;|&quot;LRG&quot;|&quot;QSO&quot;|&quot;QSOalt&quot;}</span>
+<span class="sd">        Generate redshift errors corresponding to this eBOSS sample.</span>
+<span class="sd">        If not specified, task will attempt to detect the tracer type from</span>
+<span class="sd">        the catalog&#39;s `tracer` attribute or its tag. Default: None</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+
+    <span class="n">tracer</span> <span class="o">=</span> <span class="n">config</span><span class="o">.</span><span class="n">enum</span><span class="p">([</span><span class="s2">&quot;QSO&quot;</span><span class="p">,</span> <span class="s2">&quot;ELG&quot;</span><span class="p">,</span> <span class="s2">&quot;LRG&quot;</span><span class="p">,</span> <span class="s2">&quot;QSOalt&quot;</span><span class="p">],</span> <span class="n">default</span><span class="o">=</span><span class="kc">None</span><span class="p">)</span>
+
+<div class="viewcode-block" id="AddEBOSSZErrorsToCatalog.process">
+<a class="viewcode-back" href="../../../_autosummary/draco.synthesis.mockcatalog.html#draco.synthesis.mockcatalog.AddEBOSSZErrorsToCatalog.process">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">process</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">cat</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Generate random redshift errors and add to redshifts in catalog.</span>
+
+<span class="sd">        Parameters</span>
+<span class="sd">        ----------</span>
+<span class="sd">        cat : :class:`containers.SpectroscopicCatalog`</span>
+<span class="sd">            Input catalog.</span>
+
+<span class="sd">        Returns</span>
+<span class="sd">        -------</span>
+<span class="sd">        cat_out : :class:`containers.SpectroscopicCatalog`</span>
+<span class="sd">            Catalog with redshift errors added.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">tracer</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">tracer</span>
+
+        <span class="c1"># If tracer not specified in config, check to see whether it&#39;s stored</span>
+        <span class="c1"># in the catalog&#39;s &#39;tracer&#39; attribute or in its tag</span>
+        <span class="k">if</span> <span class="n">tracer</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="k">if</span> <span class="s2">&quot;tracer&quot;</span> <span class="ow">in</span> <span class="n">cat</span><span class="o">.</span><span class="n">attrs</span><span class="p">:</span>
+                <span class="n">tracer</span> <span class="o">=</span> <span class="n">cat</span><span class="o">.</span><span class="n">attrs</span><span class="p">[</span><span class="s2">&quot;tracer&quot;</span><span class="p">]</span><span class="o">.</span><span class="n">upper</span><span class="p">()</span>
+
+                <span class="k">if</span> <span class="n">tracer</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">_velocity_error_function_lookup</span><span class="p">:</span>
+                    <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+                        <span class="sa">f</span><span class="s2">&quot;Tracer explicitly set to &#39;</span><span class="si">{</span><span class="n">tracer</span><span class="si">}</span><span class="s2">&#39; in catalog, but value not supported.&quot;</span>
+                    <span class="p">)</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="k">for</span> <span class="n">key</span> <span class="ow">in</span> <span class="n">_velocity_error_function_lookup</span><span class="o">.</span><span class="n">keys</span><span class="p">():</span>
+                    <span class="k">if</span> <span class="n">key</span> <span class="ow">in</span> <span class="n">cat</span><span class="o">.</span><span class="n">attrs</span><span class="p">[</span><span class="s2">&quot;tag&quot;</span><span class="p">]</span><span class="o">.</span><span class="n">upper</span><span class="p">():</span>
+                        <span class="n">tracer</span> <span class="o">=</span> <span class="n">key</span>
+                        <span class="k">break</span>
+
+                <span class="k">if</span> <span class="n">tracer</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+                    <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+                        <span class="s2">&quot;Must specify eBOSS tracer in config property, &quot;</span>
+                        <span class="s2">&quot;catalog &#39;tracer&#39; attribute, or catalog &#39;tag&#39; attribute.&quot;</span>
+                    <span class="p">)</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">log</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Applying </span><span class="si">{</span><span class="n">tracer</span><span class="si">}</span><span class="s2"> redshift errors.&quot;</span><span class="p">)</span>
+
+        <span class="c1"># Get redshifts from catalog</span>
+        <span class="n">cat_z</span> <span class="o">=</span> <span class="n">cat</span><span class="p">[</span><span class="s2">&quot;redshift&quot;</span><span class="p">][</span><span class="s2">&quot;z&quot;</span><span class="p">][:]</span>
+
+        <span class="c1"># Generate redshift errors for the chosen tracer</span>
+        <span class="n">z_err</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_generate_z_errors</span><span class="p">(</span><span class="n">cat_z</span><span class="p">,</span> <span class="n">tracer</span><span class="p">)</span>
+
+        <span class="c1"># Add errors to catalog redshifts</span>
+        <span class="n">cat_z</span> <span class="o">+=</span> <span class="n">z_err</span>
+
+        <span class="c1"># TODO: store information about error distribution in z_error field</span>
+
+        <span class="k">return</span> <span class="n">cat</span></div>
+
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">_generate_z_errors</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">z</span><span class="p">,</span> <span class="n">tracer</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Generate redshift errors using a tracer-specific velocity error distribution.</span>
+
+<span class="sd">        See e.g. Eq. (A1) from https://arxiv.org/abs/1012.2912 for the</span>
+<span class="sd">        relationship between redshift errors and peculiar velocity errors.</span>
+
+<span class="sd">        Parameters</span>
+<span class="sd">        ----------</span>
+<span class="sd">        z: np.ndarray[nsource,]</span>
+<span class="sd">            Source redshifts.</span>
+<span class="sd">        tracer : {&quot;ELG&quot;|&quot;LRG&quot;|&quot;QSO&quot;}</span>
+<span class="sd">            Name of the tracer.</span>
+
+<span class="sd">        Returns</span>
+<span class="sd">        -------</span>
+<span class="sd">        dz: np.ndarray[nsource,]</span>
+<span class="sd">            Perturbations to source redshifts based on random velocity errors.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="n">tracer</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">_velocity_error_function_lookup</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+                <span class="sa">f</span><span class="s2">&quot;Do not recognize </span><span class="si">{</span><span class="n">tracer</span><span class="si">}</span><span class="s2">.  Must define a method &quot;</span>
+                <span class="s2">&quot;for drawing random velocity errors for this tracer.&quot;</span>
+            <span class="p">)</span>
+
+        <span class="n">err_func</span> <span class="o">=</span> <span class="n">_velocity_error_function_lookup</span><span class="p">[</span><span class="n">tracer</span><span class="p">]</span>
+
+        <span class="n">dv</span> <span class="o">=</span> <span class="n">err_func</span><span class="p">(</span><span class="n">z</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">rng</span><span class="p">)</span>
+
+        <span class="k">return</span> <span class="p">(</span><span class="mf">1.0</span> <span class="o">+</span> <span class="n">z</span><span class="p">)</span> <span class="o">*</span> <span class="n">dv</span> <span class="o">/</span> <span class="p">(</span><span class="n">C</span> <span class="o">*</span> <span class="mf">1e-3</span><span class="p">)</span>
+
+<div class="viewcode-block" id="AddEBOSSZErrorsToCatalog.qso_velocity_error">
+<a class="viewcode-back" href="../../../_autosummary/draco.synthesis.mockcatalog.html#draco.synthesis.mockcatalog.AddEBOSSZErrorsToCatalog.qso_velocity_error">[docs]</a>
+    <span class="nd">@staticmethod</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">qso_velocity_error</span><span class="p">(</span><span class="n">z</span><span class="p">,</span> <span class="n">rng</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Draw random velocity errors for quasars.</span>
+
+<span class="sd">        This is taken from Lyke et al. 2020 (https://arxiv.org/abs/2007.09001).</span>
+<span class="sd">        Section 4.6 and Appendix A are the relevant parts. Figure 4 shows the</span>
+<span class="sd">        distribution of redshift errors. It is well modelled by the sum of</span>
+<span class="sd">        two Gaussians with standard deviations 150 and 1000 km/s.</span>
+<span class="sd">        Roughly 1/6 of the quasars belong to the wider Gaussian.</span>
+
+<span class="sd">        Parameters</span>
+<span class="sd">        ----------</span>
+<span class="sd">        z : np.ndarray</span>
+<span class="sd">            True redshift for the object.</span>
+<span class="sd">        rng : numpy.random.Generator</span>
+<span class="sd">            Numpy RNG to use for generating random numbers.</span>
+
+<span class="sd">        Returns</span>
+<span class="sd">        -------</span>
+<span class="sd">        dv: np.ndarray[nsample,]</span>
+<span class="sd">            Velocity errors in km / s.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">QSO_SIG1</span> <span class="o">=</span> <span class="mf">150.0</span>
+        <span class="n">QSO_SIG2</span> <span class="o">=</span> <span class="mf">1000.0</span>
+        <span class="n">QSO_F</span> <span class="o">=</span> <span class="mf">4.478</span>
+
+        <span class="n">nsample</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">z</span><span class="p">)</span>
+
+        <span class="n">dv1</span> <span class="o">=</span> <span class="n">rng</span><span class="o">.</span><span class="n">normal</span><span class="p">(</span><span class="n">scale</span><span class="o">=</span><span class="n">QSO_SIG1</span><span class="p">,</span> <span class="n">size</span><span class="o">=</span><span class="n">nsample</span><span class="p">)</span>
+        <span class="n">dv2</span> <span class="o">=</span> <span class="n">rng</span><span class="o">.</span><span class="n">normal</span><span class="p">(</span><span class="n">scale</span><span class="o">=</span><span class="n">QSO_SIG2</span><span class="p">,</span> <span class="n">size</span><span class="o">=</span><span class="n">nsample</span><span class="p">)</span>
+
+        <span class="n">u</span> <span class="o">=</span> <span class="n">rng</span><span class="o">.</span><span class="n">uniform</span><span class="p">(</span><span class="n">size</span><span class="o">=</span><span class="n">nsample</span><span class="p">)</span>
+        <span class="n">flag</span> <span class="o">=</span> <span class="n">u</span> <span class="o">&gt;=</span> <span class="p">(</span><span class="mf">1.0</span> <span class="o">/</span> <span class="p">(</span><span class="mf">1.0</span> <span class="o">+</span> <span class="n">QSO_F</span><span class="p">))</span>
+
+        <span class="k">return</span> <span class="n">np</span><span class="o">.</span><span class="n">where</span><span class="p">(</span><span class="n">flag</span><span class="p">,</span> <span class="n">dv1</span><span class="p">,</span> <span class="n">dv2</span><span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="AddEBOSSZErrorsToCatalog.qsoalt_velocity_error">
+<a class="viewcode-back" href="../../../_autosummary/draco.synthesis.mockcatalog.html#draco.synthesis.mockcatalog.AddEBOSSZErrorsToCatalog.qsoalt_velocity_error">[docs]</a>
+    <span class="nd">@staticmethod</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">qsoalt_velocity_error</span><span class="p">(</span><span class="n">z</span><span class="p">,</span> <span class="n">rng</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Draw random velocity errors for quasars using a redshift dependent model.</span>
+
+<span class="sd">        This is based on the Lyke et al. model use in `qso_velocity_error` but fixing an</span>
+<span class="sd">        issue with the fraction of quasars in the wide distribution at all redshifts, and</span>
+<span class="sd">        reducing the errors at low redshift to account for the behaviour seen in Figure</span>
+<span class="sd">        9 on Lyke et al.</span>
+
+<span class="sd">        Parameters</span>
+<span class="sd">        ----------</span>
+<span class="sd">        z : np.ndarray</span>
+<span class="sd">            True redshift for the object.</span>
+<span class="sd">        rng : numpy.random.Generator</span>
+<span class="sd">            Numpy RNG to use for generating random numbers.</span>
+
+<span class="sd">        Returns</span>
+<span class="sd">        -------</span>
+<span class="sd">        dv: np.ndarray[nsample,]</span>
+<span class="sd">            Velocity errors in km / s.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">QSO_SIG1_highz</span> <span class="o">=</span> <span class="mf">150.0</span>
+        <span class="n">QSO_SIG1_lowz</span> <span class="o">=</span> <span class="mf">90.0</span>
+        <span class="n">QSO_SIG2</span> <span class="o">=</span> <span class="mf">1000.0</span>
+
+        <span class="n">QSO_F_highz</span> <span class="o">=</span> <span class="mf">35.0</span>
+        <span class="n">QSO_ztrans</span> <span class="o">=</span> <span class="mf">1.0</span>
+        <span class="n">QSO_zwidth</span> <span class="o">=</span> <span class="mf">0.05</span>
+
+        <span class="k">def</span><span class="w"> </span><span class="nf">smooth_step_function</span><span class="p">(</span><span class="n">z</span><span class="p">,</span> <span class="n">zt</span><span class="p">,</span> <span class="n">zw</span><span class="p">,</span> <span class="n">fl</span><span class="p">,</span> <span class="n">fh</span><span class="p">):</span>
+            <span class="k">return</span> <span class="p">(</span><span class="mi">1</span> <span class="o">+</span> <span class="n">np</span><span class="o">.</span><span class="n">tanh</span><span class="p">((</span><span class="n">z</span> <span class="o">-</span> <span class="n">zt</span><span class="p">)</span> <span class="o">/</span> <span class="n">zw</span><span class="p">))</span> <span class="o">*</span> <span class="p">(</span><span class="n">fh</span> <span class="o">-</span> <span class="n">fl</span><span class="p">)</span> <span class="o">/</span> <span class="mi">2</span> <span class="o">+</span> <span class="n">fl</span>
+
+        <span class="k">def</span><span class="w"> </span><span class="nf">invfz</span><span class="p">(</span><span class="n">z</span><span class="p">):</span>
+            <span class="k">return</span> <span class="n">smooth_step_function</span><span class="p">(</span><span class="n">z</span><span class="p">,</span> <span class="n">QSO_ztrans</span><span class="p">,</span> <span class="n">QSO_zwidth</span><span class="p">,</span> <span class="mi">0</span><span class="p">,</span> <span class="mi">1</span> <span class="o">/</span> <span class="n">QSO_F_highz</span><span class="p">)</span>
+
+        <span class="k">def</span><span class="w"> </span><span class="nf">sig1z</span><span class="p">(</span><span class="n">z</span><span class="p">):</span>
+            <span class="k">return</span> <span class="n">smooth_step_function</span><span class="p">(</span>
+                <span class="n">z</span><span class="p">,</span> <span class="n">QSO_ztrans</span><span class="p">,</span> <span class="n">QSO_zwidth</span><span class="p">,</span> <span class="n">QSO_SIG1_lowz</span><span class="p">,</span> <span class="n">QSO_SIG1_highz</span>
+            <span class="p">)</span>
+
+        <span class="n">nsample</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">z</span><span class="p">)</span>
+
+        <span class="c1"># A random variable to decide which Gaussian to draw the error from</span>
+        <span class="n">invf</span> <span class="o">=</span> <span class="n">invfz</span><span class="p">(</span><span class="n">z</span><span class="p">)</span>
+        <span class="n">u</span> <span class="o">=</span> <span class="n">rng</span><span class="o">.</span><span class="n">uniform</span><span class="p">(</span><span class="n">size</span><span class="o">=</span><span class="n">nsample</span><span class="p">)</span>
+        <span class="n">flag</span> <span class="o">=</span> <span class="n">u</span> <span class="o">&gt;=</span> <span class="p">(</span><span class="n">invf</span> <span class="o">/</span> <span class="p">(</span><span class="mf">1.0</span> <span class="o">+</span> <span class="n">invf</span><span class="p">))</span>
+
+        <span class="n">dv1</span> <span class="o">=</span> <span class="n">rng</span><span class="o">.</span><span class="n">standard_normal</span><span class="p">(</span><span class="n">nsample</span><span class="p">)</span> <span class="o">*</span> <span class="n">sig1z</span><span class="p">(</span><span class="n">z</span><span class="p">)</span>
+        <span class="n">dv2</span> <span class="o">=</span> <span class="n">rng</span><span class="o">.</span><span class="n">standard_normal</span><span class="p">(</span><span class="n">nsample</span><span class="p">)</span> <span class="o">*</span> <span class="n">QSO_SIG2</span>
+
+        <span class="k">return</span> <span class="n">np</span><span class="o">.</span><span class="n">where</span><span class="p">(</span><span class="n">flag</span><span class="p">,</span> <span class="n">dv1</span><span class="p">,</span> <span class="n">dv2</span><span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="AddEBOSSZErrorsToCatalog.lrg_velocity_error">
+<a class="viewcode-back" href="../../../_autosummary/draco.synthesis.mockcatalog.html#draco.synthesis.mockcatalog.AddEBOSSZErrorsToCatalog.lrg_velocity_error">[docs]</a>
+    <span class="nd">@staticmethod</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">lrg_velocity_error</span><span class="p">(</span><span class="n">z</span><span class="p">,</span> <span class="n">rng</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Draw random velocity errors for luminous red galaxies.</span>
+
+<span class="sd">        This is taken from Ross et al. 2020 (https://arxiv.org/abs/2007.09000).  Figure</span>
+<span class="sd">        2 shows the distribution of redshift differences for repeated observations of</span>
+<span class="sd">        the same object; this is well fit by a Gaussian with width 92 km/s. They state</span>
+<span class="sd">        that this corresponds to a Gaussian distribution for the single-measurement</span>
+<span class="sd">        redshift errors, with width 65.6 km/s.  There is a bit of a tail that is not</span>
+<span class="sd">        being captured in their Gaussian fit, and is hence not simulated in this</span>
+<span class="sd">        routine.</span>
+
+<span class="sd">        Parameters</span>
+<span class="sd">        ----------</span>
+<span class="sd">        z : np.ndarray</span>
+<span class="sd">            True redshift for the object.</span>
+<span class="sd">        rng : numpy.random.Generator</span>
+<span class="sd">            Numpy RNG to use for generating random numbers.</span>
+
+<span class="sd">        Returns</span>
+<span class="sd">        -------</span>
+<span class="sd">        dv: np.ndarray[nsample,]</span>
+<span class="sd">            Velocity errors in km / s.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">LRG_SIG</span> <span class="o">=</span> <span class="mf">65.6</span>
+
+        <span class="k">return</span> <span class="n">rng</span><span class="o">.</span><span class="n">normal</span><span class="p">(</span><span class="n">scale</span><span class="o">=</span><span class="n">LRG_SIG</span><span class="p">,</span> <span class="n">size</span><span class="o">=</span><span class="nb">len</span><span class="p">(</span><span class="n">z</span><span class="p">))</span></div>
+
+
+<div class="viewcode-block" id="AddEBOSSZErrorsToCatalog.elg_velocity_error">
+<a class="viewcode-back" href="../../../_autosummary/draco.synthesis.mockcatalog.html#draco.synthesis.mockcatalog.AddEBOSSZErrorsToCatalog.elg_velocity_error">[docs]</a>
+    <span class="nd">@staticmethod</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">elg_velocity_error</span><span class="p">(</span><span class="n">z</span><span class="p">,</span> <span class="n">rng</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Draw random velocity errors for emission line galaxies.</span>
+
+<span class="sd">        This is taken from Raichoor et al. 2020 (https://arxiv.org/abs/2007.09007).</span>
+<span class="sd">        They do not plot the error distribution, but Section 2.3 provides three</span>
+<span class="sd">        percentiles:</span>
+
+<span class="sd">            &quot;Additionally, we can assess with repeats that 99.5, 95, and 50</span>
+<span class="sd">            percent of our redshift estimates have a precision better than</span>
+<span class="sd">            300 km s-1, 100 km s-1, and 20 km s-1, respectively.&quot;</span>
+
+<span class="sd">        These percentiles do not follow a Gaussian, but are reasonably well fit</span>
+<span class="sd">        by a Tukey lambda distribution if the scale and shape parameters</span>
+<span class="sd">        are allowed to float.</span>
+
+<span class="sd">        Parameters</span>
+<span class="sd">        ----------</span>
+<span class="sd">        z : np.ndarray</span>
+<span class="sd">            True redshift for the object.</span>
+<span class="sd">        rng : numpy.random.Generator</span>
+<span class="sd">            Numpy RNG to use for generating random numbers.</span>
+
+<span class="sd">        Returns</span>
+<span class="sd">        -------</span>
+<span class="sd">        dv: np.ndarray[nsample,]</span>
+<span class="sd">            Velocity errors in km / s.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">ELG_SIG</span> <span class="o">=</span> <span class="mf">11.877</span>
+        <span class="n">ELG_LAMBDA</span> <span class="o">=</span> <span class="o">-</span><span class="mf">0.4028</span>
+
+        <span class="n">dist</span> <span class="o">=</span> <span class="n">scipy</span><span class="o">.</span><span class="n">stats</span><span class="o">.</span><span class="n">tukeylambda</span>
+        <span class="n">dist</span><span class="o">.</span><span class="n">random_state</span> <span class="o">=</span> <span class="n">rng</span>
+        <span class="k">return</span> <span class="n">dist</span><span class="o">.</span><span class="n">rvs</span><span class="p">(</span><span class="n">ELG_LAMBDA</span><span class="p">,</span> <span class="n">scale</span><span class="o">=</span><span class="n">ELG_SIG</span><span class="p">,</span> <span class="n">size</span><span class="o">=</span><span class="nb">len</span><span class="p">(</span><span class="n">z</span><span class="p">))</span></div>
+</div>
+
+
+
+<span class="n">_velocity_error_function_lookup</span> <span class="o">=</span> <span class="p">{</span>
+    <span class="s2">&quot;QSO&quot;</span><span class="p">:</span> <span class="n">AddEBOSSZErrorsToCatalog</span><span class="o">.</span><span class="n">qso_velocity_error</span><span class="p">,</span>
+    <span class="s2">&quot;QSOalt&quot;</span><span class="p">:</span> <span class="n">AddEBOSSZErrorsToCatalog</span><span class="o">.</span><span class="n">qsoalt_velocity_error</span><span class="p">,</span>
+    <span class="s2">&quot;ELG&quot;</span><span class="p">:</span> <span class="n">AddEBOSSZErrorsToCatalog</span><span class="o">.</span><span class="n">elg_velocity_error</span><span class="p">,</span>
+    <span class="s2">&quot;LRG&quot;</span><span class="p">:</span> <span class="n">AddEBOSSZErrorsToCatalog</span><span class="o">.</span><span class="n">lrg_velocity_error</span><span class="p">,</span>
+<span class="p">}</span>
+
+
+<div class="viewcode-block" id="MapPixelLocationGenerator">
+<a class="viewcode-back" href="../../../_autosummary/draco.synthesis.mockcatalog.html#draco.synthesis.mockcatalog.MapPixelLocationGenerator">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">MapPixelLocationGenerator</span><span class="p">(</span><span class="n">tasklib</span><span class="o">.</span><span class="n">base</span><span class="o">.</span><span class="n">ContainerTask</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Generate a &#39;catalog&#39; of Healpix pixel centers.</span>
+
+<span class="sd">    This is useful if you want to stack on each Healpix pixel for</span>
+<span class="sd">    a given Healpix resolution (determined by an input map).</span>
+<span class="sd">    This task outputs a SpectroscopicCatalog</span>
+<span class="sd">    that can then be fed to the usual beamforming task.</span>
+
+<span class="sd">    All &quot;sources&quot; are assigned to the same frequency channel, for simplicity.</span>
+
+<span class="sd">    Attributes</span>
+<span class="sd">    ----------</span>
+<span class="sd">    freq_idx : int</span>
+<span class="sd">        Index of frequency channel to assign to all &quot;sources&quot;.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+
+    <span class="n">freq_idx</span> <span class="o">=</span> <span class="n">config</span><span class="o">.</span><span class="n">Property</span><span class="p">(</span><span class="n">proptype</span><span class="o">=</span><span class="nb">int</span><span class="p">)</span>
+
+<div class="viewcode-block" id="MapPixelLocationGenerator.setup">
+<a class="viewcode-back" href="../../../_autosummary/draco.synthesis.mockcatalog.html#draco.synthesis.mockcatalog.MapPixelLocationGenerator.setup">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">setup</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">in_map</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Pre-load information from input map.&quot;&quot;&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">map_</span> <span class="o">=</span> <span class="n">in_map</span>
+
+        <span class="c1"># Get MPI rank</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">rank</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">comm</span><span class="o">.</span><span class="n">Get_rank</span><span class="p">()</span>
+
+        <span class="c1"># Get desired N_pix and Nside</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">npix</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">map_</span><span class="o">.</span><span class="n">index_map</span><span class="p">[</span><span class="s2">&quot;pixel&quot;</span><span class="p">])</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">nside</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">map_</span><span class="o">.</span><span class="n">nside</span>
+
+        <span class="c1"># Get redshift to assign to all &quot;sources&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">z_arr</span> <span class="o">=</span> <span class="n">_freq_to_z</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">map_</span><span class="o">.</span><span class="n">index_map</span><span class="p">[</span><span class="s2">&quot;freq&quot;</span><span class="p">])</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">z</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">z_arr</span><span class="p">[</span><span class="bp">self</span><span class="o">.</span><span class="n">freq_idx</span><span class="p">][</span><span class="s2">&quot;centre&quot;</span><span class="p">]</span></div>
+
+
+<div class="viewcode-block" id="MapPixelLocationGenerator.process">
+<a class="viewcode-back" href="../../../_autosummary/draco.synthesis.mockcatalog.html#draco.synthesis.mockcatalog.MapPixelLocationGenerator.process">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">process</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Make a catalog of pixel positions.</span>
+
+<span class="sd">        Returns</span>
+<span class="sd">        -------</span>
+<span class="sd">        mock_catalog : :class:`containers.SpectroscopicCatalog`</span>
+<span class="sd">            Output catalog.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="c1"># Get local section of Healpix pixel indices</span>
+        <span class="n">local_pix_indices</span> <span class="o">=</span> <span class="n">mpitools</span><span class="o">.</span><span class="n">partition_list_mpi</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">arange</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">npix</span><span class="p">))</span>
+        <span class="n">npix_rank</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">local_pix_indices</span><span class="p">)</span>
+
+        <span class="c1"># Convert pixel indices to (dec,RA)</span>
+        <span class="n">pix_dec</span><span class="p">,</span> <span class="n">pix_ra</span> <span class="o">=</span> <span class="n">_pix_to_radec</span><span class="p">(</span><span class="n">local_pix_indices</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">nside</span><span class="p">)</span>
+
+        <span class="c1"># Make arrays to hold the whole source set information</span>
+        <span class="n">ra_full</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">empty</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">npix</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">pix_ra</span><span class="o">.</span><span class="n">dtype</span><span class="p">)</span>
+        <span class="n">dec_full</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">empty</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">npix</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">pix_dec</span><span class="o">.</span><span class="n">dtype</span><span class="p">)</span>
+
+        <span class="c1"># Tuple (not list!) of number of pixels in each rank</span>
+        <span class="c1"># The counts and displacement arguments of Allgatherv are tuples!</span>
+        <span class="n">npix_tuple</span> <span class="o">=</span> <span class="nb">tuple</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">comm</span><span class="o">.</span><span class="n">allgather</span><span class="p">(</span><span class="n">npix_rank</span><span class="p">))</span>
+        <span class="c1"># Tuple (not list!) of displacements of each rank array in full array</span>
+        <span class="n">dspls</span> <span class="o">=</span> <span class="nb">tuple</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">insert</span><span class="p">(</span><span class="n">arr</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">cumsum</span><span class="p">(</span><span class="n">npix_tuple</span><span class="p">)[:</span><span class="o">-</span><span class="mi">1</span><span class="p">],</span> <span class="n">obj</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span> <span class="n">values</span><span class="o">=</span><span class="mf">0.0</span><span class="p">))</span>
+        <span class="c1"># Gather theta</span>
+        <span class="n">recvbuf</span> <span class="o">=</span> <span class="p">[</span><span class="n">ra_full</span><span class="p">,</span> <span class="n">npix_tuple</span><span class="p">,</span> <span class="n">dspls</span><span class="p">,</span> <span class="n">MPI</span><span class="o">.</span><span class="n">DOUBLE</span><span class="p">]</span>
+        <span class="n">sendbuf</span> <span class="o">=</span> <span class="p">[</span><span class="n">pix_ra</span><span class="p">,</span> <span class="nb">len</span><span class="p">(</span><span class="n">pix_ra</span><span class="p">)]</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">comm</span><span class="o">.</span><span class="n">Allgatherv</span><span class="p">(</span><span class="n">sendbuf</span><span class="p">,</span> <span class="n">recvbuf</span><span class="p">)</span>
+        <span class="c1"># Gather phi</span>
+        <span class="n">recvbuf</span> <span class="o">=</span> <span class="p">[</span><span class="n">dec_full</span><span class="p">,</span> <span class="n">npix_tuple</span><span class="p">,</span> <span class="n">dspls</span><span class="p">,</span> <span class="n">MPI</span><span class="o">.</span><span class="n">DOUBLE</span><span class="p">]</span>
+        <span class="n">sendbuf</span> <span class="o">=</span> <span class="p">[</span><span class="n">pix_dec</span><span class="p">,</span> <span class="nb">len</span><span class="p">(</span><span class="n">pix_dec</span><span class="p">)]</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">comm</span><span class="o">.</span><span class="n">Allgatherv</span><span class="p">(</span><span class="n">sendbuf</span><span class="p">,</span> <span class="n">recvbuf</span><span class="p">)</span>
+
+        <span class="c1"># Create catalog container</span>
+        <span class="n">mock_catalog</span> <span class="o">=</span> <span class="n">containers</span><span class="o">.</span><span class="n">SpectroscopicCatalog</span><span class="p">(</span>
+            <span class="n">object_id</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">arange</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">npix</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">uint64</span><span class="p">)</span>
+        <span class="p">)</span>
+
+        <span class="c1"># Create position and redshift datasets</span>
+        <span class="n">mock_catalog</span><span class="p">[</span><span class="s2">&quot;position&quot;</span><span class="p">][:]</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">empty</span><span class="p">(</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">npix</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="p">[(</span><span class="s2">&quot;ra&quot;</span><span class="p">,</span> <span class="n">pix_ra</span><span class="o">.</span><span class="n">dtype</span><span class="p">),</span> <span class="p">(</span><span class="s2">&quot;dec&quot;</span><span class="p">,</span> <span class="n">pix_dec</span><span class="o">.</span><span class="n">dtype</span><span class="p">)]</span>
+        <span class="p">)</span>
+        <span class="n">mock_catalog</span><span class="p">[</span><span class="s2">&quot;redshift&quot;</span><span class="p">][:]</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">empty</span><span class="p">(</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">npix</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="p">[(</span><span class="s2">&quot;z&quot;</span><span class="p">,</span> <span class="n">pix_ra</span><span class="o">.</span><span class="n">dtype</span><span class="p">),</span> <span class="p">(</span><span class="s2">&quot;z_error&quot;</span><span class="p">,</span> <span class="n">pix_ra</span><span class="o">.</span><span class="n">dtype</span><span class="p">)]</span>
+        <span class="p">)</span>
+        <span class="c1"># Assign data to catalog container</span>
+        <span class="n">mock_catalog</span><span class="p">[</span><span class="s2">&quot;position&quot;</span><span class="p">][</span><span class="s2">&quot;ra&quot;</span><span class="p">][:]</span> <span class="o">=</span> <span class="n">ra_full</span>
+        <span class="n">mock_catalog</span><span class="p">[</span><span class="s2">&quot;position&quot;</span><span class="p">][</span><span class="s2">&quot;dec&quot;</span><span class="p">][:]</span> <span class="o">=</span> <span class="n">dec_full</span>
+        <span class="n">mock_catalog</span><span class="p">[</span><span class="s2">&quot;redshift&quot;</span><span class="p">][</span><span class="s2">&quot;z&quot;</span><span class="p">][:]</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">z</span> <span class="o">*</span> <span class="n">np</span><span class="o">.</span><span class="n">ones</span><span class="p">(</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">npix</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">pix_ra</span><span class="o">.</span><span class="n">dtype</span>
+        <span class="p">)</span>
+        <span class="n">mock_catalog</span><span class="p">[</span><span class="s2">&quot;redshift&quot;</span><span class="p">][</span><span class="s2">&quot;z_error&quot;</span><span class="p">][:]</span> <span class="o">=</span> <span class="mf">0.0</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">done</span> <span class="o">=</span> <span class="kc">True</span>
+        <span class="k">return</span> <span class="n">mock_catalog</span></div>
+</div>
+
+
+
+<span class="c1"># Internal functions</span>
+<span class="c1"># ------------------</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_zlims_to_freq</span><span class="p">(</span><span class="n">z</span><span class="p">,</span> <span class="n">zlims</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Convert redshift bins to frequency.</span>
+
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    z : np.array</span>
+<span class="sd">        Redshift bin centers.</span>
+<span class="sd">    zlims : np.array</span>
+<span class="sd">        Redshift bin edges.</span>
+
+<span class="sd">    Returns</span>
+<span class="sd">    -------</span>
+<span class="sd">    freqs : np.ndarray</span>
+<span class="sd">        Array of tuples of frequency bin centers and widths.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">freqcentre</span> <span class="o">=</span> <span class="n">constants</span><span class="o">.</span><span class="n">nu21</span> <span class="o">/</span> <span class="p">(</span><span class="n">z</span> <span class="o">+</span> <span class="mi">1</span><span class="p">)</span>
+    <span class="n">freqlims</span> <span class="o">=</span> <span class="n">constants</span><span class="o">.</span><span class="n">nu21</span> <span class="o">/</span> <span class="p">(</span><span class="n">zlims</span> <span class="o">+</span> <span class="mi">1</span><span class="p">)</span>
+    <span class="n">freqwidth</span> <span class="o">=</span> <span class="nb">abs</span><span class="p">(</span><span class="n">freqlims</span><span class="p">[:</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span> <span class="o">-</span> <span class="n">freqlims</span><span class="p">[</span><span class="mi">1</span><span class="p">:])</span>
+    <span class="k">return</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">(</span>
+        <span class="p">[(</span><span class="n">freqcentre</span><span class="p">[</span><span class="n">ii</span><span class="p">],</span> <span class="n">freqwidth</span><span class="p">[</span><span class="n">ii</span><span class="p">])</span> <span class="k">for</span> <span class="n">ii</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">z</span><span class="p">))],</span>
+        <span class="n">dtype</span><span class="o">=</span><span class="p">[(</span><span class="s2">&quot;centre&quot;</span><span class="p">,</span> <span class="s2">&quot;&lt;f8&quot;</span><span class="p">),</span> <span class="p">(</span><span class="s2">&quot;width&quot;</span><span class="p">,</span> <span class="s2">&quot;&lt;f8&quot;</span><span class="p">)],</span>
+    <span class="p">)</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_freq_to_z</span><span class="p">(</span><span class="n">freq</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Convert frequency bins to redshift.</span>
+
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    freq : np.array</span>
+<span class="sd">        Array of tuples of frequency bin centers and widths.</span>
+
+<span class="sd">    Returns</span>
+<span class="sd">    -------</span>
+<span class="sd">    freq : np.ndarray</span>
+<span class="sd">        Array of tuples of z bin centers and widths</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">fc</span> <span class="o">=</span> <span class="n">freq</span><span class="p">[</span><span class="s2">&quot;centre&quot;</span><span class="p">]</span>
+    <span class="n">fw</span> <span class="o">=</span> <span class="n">freq</span><span class="p">[</span><span class="s2">&quot;width&quot;</span><span class="p">]</span>
+    <span class="n">z</span> <span class="o">=</span> <span class="n">constants</span><span class="o">.</span><span class="n">nu21</span> <span class="o">/</span> <span class="n">fc</span> <span class="o">-</span> <span class="mf">1.0</span>
+
+    <span class="n">sgn</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">sign</span><span class="p">(</span><span class="n">fc</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span> <span class="o">-</span> <span class="n">fc</span><span class="p">[</span><span class="mi">0</span><span class="p">])</span>
+
+    <span class="n">flims</span> <span class="o">=</span> <span class="n">fc</span> <span class="o">-</span> <span class="n">sgn</span> <span class="o">*</span> <span class="mf">0.5</span> <span class="o">*</span> <span class="n">fw</span>
+    <span class="n">flims</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">flims</span><span class="p">,</span> <span class="n">fc</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span> <span class="o">+</span> <span class="n">sgn</span> <span class="o">*</span> <span class="mf">0.5</span> <span class="o">*</span> <span class="n">fw</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">])</span>
+    <span class="n">zlims</span> <span class="o">=</span> <span class="n">constants</span><span class="o">.</span><span class="n">nu21</span> <span class="o">/</span> <span class="n">flims</span> <span class="o">-</span> <span class="mf">1.0</span>
+    <span class="n">z_width</span> <span class="o">=</span> <span class="nb">abs</span><span class="p">(</span><span class="n">zlims</span><span class="p">[:</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span> <span class="o">-</span> <span class="n">zlims</span><span class="p">[</span><span class="mi">1</span><span class="p">:])</span>
+
+    <span class="k">return</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">(</span>
+        <span class="p">[(</span><span class="n">z</span><span class="p">[</span><span class="n">ii</span><span class="p">],</span> <span class="n">z_width</span><span class="p">[</span><span class="n">ii</span><span class="p">])</span> <span class="k">for</span> <span class="n">ii</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">z</span><span class="p">))],</span>
+        <span class="n">dtype</span><span class="o">=</span><span class="p">[(</span><span class="s2">&quot;centre&quot;</span><span class="p">,</span> <span class="s2">&quot;&lt;f8&quot;</span><span class="p">),</span> <span class="p">(</span><span class="s2">&quot;width&quot;</span><span class="p">,</span> <span class="s2">&quot;&lt;f8&quot;</span><span class="p">)],</span>
+    <span class="p">)</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_pix_to_radec</span><span class="p">(</span><span class="n">index</span><span class="p">,</span> <span class="n">nside</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Convert healpix pixel indices to (dec, RA).</span>
+
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    index : np.array</span>
+<span class="sd">        Array of healpix pixel indices.</span>
+<span class="sd">    nside : int</span>
+<span class="sd">        Healpix nside corresponding to pixel indices.</span>
+
+<span class="sd">    Returns</span>
+<span class="sd">    -------</span>
+<span class="sd">    dec, RA : np.ndarray</span>
+<span class="sd">        Output dec and ra coordinates, in degrees.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">theta</span><span class="p">,</span> <span class="n">phi</span> <span class="o">=</span> <span class="n">hp</span><span class="o">.</span><span class="n">pix2ang</span><span class="p">(</span><span class="n">nside</span><span class="p">,</span> <span class="n">index</span><span class="p">)</span>
+    <span class="k">return</span> <span class="o">-</span><span class="n">np</span><span class="o">.</span><span class="n">degrees</span><span class="p">(</span><span class="n">theta</span> <span class="o">-</span> <span class="n">np</span><span class="o">.</span><span class="n">pi</span> <span class="o">/</span> <span class="mf">2.0</span><span class="p">),</span> <span class="n">np</span><span class="o">.</span><span class="n">degrees</span><span class="p">(</span><span class="n">phi</span><span class="p">)</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_radec_to_pix</span><span class="p">(</span><span class="n">ra</span><span class="p">,</span> <span class="n">dec</span><span class="p">,</span> <span class="n">nside</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Convert (RA, dec) to nearest healpix pixels.</span>
+
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    ra, dec : np.array</span>
+<span class="sd">        Input RA and dec coordinates, in degrees.</span>
+<span class="sd">    nside : int</span>
+<span class="sd">        Healpix nside corresponding to input coordinates.</span>
+
+<span class="sd">    Returns</span>
+<span class="sd">    -------</span>
+<span class="sd">    index : np.array</span>
+<span class="sd">        Array of healpix pixel indices.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">return</span> <span class="n">hp</span><span class="o">.</span><span class="n">ang2pix</span><span class="p">(</span><span class="n">nside</span><span class="p">,</span> <span class="n">np</span><span class="o">.</span><span class="n">radians</span><span class="p">(</span><span class="o">-</span><span class="n">dec</span> <span class="o">+</span> <span class="mf">90.0</span><span class="p">),</span> <span class="n">np</span><span class="o">.</span><span class="n">radians</span><span class="p">(</span><span class="n">ra</span><span class="p">))</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_cat_to_maps</span><span class="p">(</span><span class="n">cat</span><span class="p">,</span> <span class="n">nside</span><span class="p">,</span> <span class="n">zlims_selfunc</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Grid a catalog of sky and z positions onto healpix maps.</span>
+
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    cat : containers.SpectroscopicCatalog</span>
+<span class="sd">        Input catalog.</span>
+<span class="sd">    nside : int</span>
+<span class="sd">        Healpix Nside parameter for output maps.</span>
+<span class="sd">    zlims_selfunc : np.ndarray</span>
+<span class="sd">        Edges of target redshift bins.</span>
+
+<span class="sd">    Returns</span>
+<span class="sd">    -------</span>
+<span class="sd">    maps : np.ndarray</span>
+<span class="sd">        Output healpix maps, packed as [n_z, n_pix].</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="c1"># Number of pixels to use in catalog maps for SVD</span>
+    <span class="n">n_pix</span> <span class="o">=</span> <span class="n">hp</span><span class="o">.</span><span class="n">nside2npix</span><span class="p">(</span><span class="n">nside</span><span class="p">)</span>
+
+    <span class="c1"># Number of redshift bins</span>
+    <span class="n">n_z</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">zlims_selfunc</span><span class="p">)</span> <span class="o">-</span> <span class="mi">1</span>
+
+    <span class="c1"># Create maps from original catalog (on each MPI rank separately)</span>
+    <span class="n">maps</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">zeros</span><span class="p">((</span><span class="n">n_z</span><span class="p">,</span> <span class="n">n_pix</span><span class="p">))</span>
+    <span class="c1"># Compute indices of each source along z axis</span>
+    <span class="n">idxs</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">digitize</span><span class="p">(</span><span class="n">cat</span><span class="p">[</span><span class="s2">&quot;redshift&quot;</span><span class="p">][</span><span class="s2">&quot;z&quot;</span><span class="p">],</span> <span class="n">zlims_selfunc</span><span class="p">)</span> <span class="o">-</span> <span class="mi">1</span>  <span class="c1"># -1 to get indices</span>
+    <span class="c1"># Map pixel of each source</span>
+    <span class="n">pixels</span> <span class="o">=</span> <span class="n">_radec_to_pix</span><span class="p">(</span><span class="n">cat</span><span class="p">[</span><span class="s2">&quot;position&quot;</span><span class="p">][</span><span class="s2">&quot;ra&quot;</span><span class="p">],</span> <span class="n">cat</span><span class="p">[</span><span class="s2">&quot;position&quot;</span><span class="p">][</span><span class="s2">&quot;dec&quot;</span><span class="p">],</span> <span class="n">nside</span><span class="p">)</span>
+
+    <span class="k">for</span> <span class="n">zi</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">n_z</span><span class="p">):</span>
+        <span class="c1"># Get map pixels containing sources in redshift bin zi</span>
+        <span class="n">zpixels</span> <span class="o">=</span> <span class="n">pixels</span><span class="p">[</span><span class="n">idxs</span> <span class="o">==</span> <span class="n">zi</span><span class="p">]</span>
+        <span class="c1"># For each pixel in map, set pixel value to number of sources</span>
+        <span class="c1"># within that pixel</span>
+        <span class="k">for</span> <span class="n">pi</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">n_pix</span><span class="p">):</span>
+            <span class="n">maps</span><span class="p">[</span><span class="n">zi</span><span class="p">,</span> <span class="n">pi</span><span class="p">]</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">sum</span><span class="p">(</span><span class="n">zpixels</span> <span class="o">==</span> <span class="n">pi</span><span class="p">)</span>
+
+    <span class="k">return</span> <span class="n">maps</span>
+</pre></div>
+
+           </div>
+          </div>
+          <footer>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2016, Richard Shaw.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>

@@ -1,0 +1,723 @@
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" data-content_root="../../../">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>draco.synthesis.stream &mdash; draco 0.0.1 documentation</title>
+      <link rel="stylesheet" type="text/css" href="../../../_static/pygments.css?v=b86133f3" />
+      <link rel="stylesheet" type="text/css" href="../../../_static/css/theme.css?v=9edc463e" />
+
+  
+      <script src="../../../_static/jquery.js?v=5d32c60e"></script>
+      <script src="../../../_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
+      <script src="../../../_static/documentation_options.js?v=d45e8c67"></script>
+      <script src="../../../_static/doctools.js?v=9bcbadda"></script>
+      <script src="../../../_static/sphinx_highlight.js?v=dc90522c"></script>
+    <script src="../../../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../../../genindex.html" />
+    <link rel="search" title="Search" href="../../../search.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="../../../index.html" class="icon icon-home">
+            draco
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../../../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../tutorial.html">Tutorial</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../reference.html">API Reference</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../dev.html">Development Guidelines</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../../../index.html">draco</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../../../index.html" class="icon icon-home" aria-label="Home"></a></li>
+          <li class="breadcrumb-item"><a href="../../index.html">Module code</a></li>
+      <li class="breadcrumb-item active">draco.synthesis.stream</li>
+      <li class="wy-breadcrumbs-aside">
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <h1>Source code for draco.synthesis.stream</h1><div class="highlight"><pre>
+<span></span><span class="sd">&quot;&quot;&quot;Tasks for simulating sidereal and time stream data.</span>
+
+<span class="sd">A typical pattern would be to turn a map into a</span>
+<span class="sd">:class:`containers.SiderealStream` with the :class:`SimulateSidereal` task, then</span>
+<span class="sd">expand any redundant products with :class:`ExpandProducts` and finally generate</span>
+<span class="sd">a set of time stream files with :class:`MakeTimeStream`.</span>
+<span class="sd">&quot;&quot;&quot;</span>
+
+<span class="kn">import</span><span class="w"> </span><span class="nn">inspect</span>
+
+<span class="kn">import</span><span class="w"> </span><span class="nn">numpy</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">np</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">caput</span><span class="w"> </span><span class="kn">import</span> <span class="n">config</span><span class="p">,</span> <span class="n">mpiarray</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">caput.algorithms</span><span class="w"> </span><span class="kn">import</span> <span class="n">invert_no_zero</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">caput.pipeline</span><span class="w"> </span><span class="kn">import</span> <span class="n">exceptions</span><span class="p">,</span> <span class="n">tasklib</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">caput.util</span><span class="w"> </span><span class="kn">import</span> <span class="n">mpitools</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">cora.util</span><span class="w"> </span><span class="kn">import</span> <span class="n">hputil</span>
+
+<span class="kn">from</span><span class="w"> </span><span class="nn">..core</span><span class="w"> </span><span class="kn">import</span> <span class="n">containers</span><span class="p">,</span> <span class="n">io</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">..util</span><span class="w"> </span><span class="kn">import</span> <span class="n">regrid</span>
+
+
+<div class="viewcode-block" id="SimulateSidereal">
+<a class="viewcode-back" href="../../../_autosummary/draco.synthesis.stream.html#draco.synthesis.stream.SimulateSidereal">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">SimulateSidereal</span><span class="p">(</span><span class="n">tasklib</span><span class="o">.</span><span class="n">base</span><span class="o">.</span><span class="n">ContainerTask</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Create a simulated sidereal dataset from an input map.</span>
+
+<span class="sd">    Attributes</span>
+<span class="sd">    ----------</span>
+<span class="sd">    stacked : bool</span>
+<span class="sd">        When set, in the case that the beam transfer matrices are not full triangle</span>
+<span class="sd">        treat them as having been generated by collating the baselines of full triangle</span>
+<span class="sd">        data, and set appropriate `index_map/stack` and `reverse_map/stack` entries. If</span>
+<span class="sd">        not set, treat the entries as having been generated by down selecting the full</span>
+<span class="sd">        set of baselines, and thus don&#39;t create the `stack` entries. Default is `True`.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+
+    <span class="n">stacked</span> <span class="o">=</span> <span class="n">config</span><span class="o">.</span><span class="n">Property</span><span class="p">(</span><span class="n">proptype</span><span class="o">=</span><span class="nb">bool</span><span class="p">,</span> <span class="n">default</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+
+<div class="viewcode-block" id="SimulateSidereal.setup">
+<a class="viewcode-back" href="../../../_autosummary/draco.synthesis.stream.html#draco.synthesis.stream.SimulateSidereal.setup">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">setup</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">bt</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Setup the simulation.</span>
+
+<span class="sd">        Parameters</span>
+<span class="sd">        ----------</span>
+<span class="sd">        bt : ProductManager or BeamTransfer</span>
+<span class="sd">            Beam Transfer maanger.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">beamtransfer</span> <span class="o">=</span> <span class="n">io</span><span class="o">.</span><span class="n">get_beamtransfer</span><span class="p">(</span><span class="n">bt</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">telescope</span> <span class="o">=</span> <span class="n">io</span><span class="o">.</span><span class="n">get_telescope</span><span class="p">(</span><span class="n">bt</span><span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="SimulateSidereal.process">
+<a class="viewcode-back" href="../../../_autosummary/draco.synthesis.stream.html#draco.synthesis.stream.SimulateSidereal.process">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">process</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">map_</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Simulate a SiderealStream.</span>
+
+<span class="sd">        Parameters</span>
+<span class="sd">        ----------</span>
+<span class="sd">        map_ : :class:`containers.Map`</span>
+<span class="sd">            The sky map to process to into a sidereal stream. Frequencies in the</span>
+<span class="sd">            map, must match the Beam Transfer matrices.</span>
+
+<span class="sd">        Returns</span>
+<span class="sd">        -------</span>
+<span class="sd">        ss : SiderealStream</span>
+<span class="sd">            Stacked sidereal day.</span>
+<span class="sd">        feeds : list of CorrInput</span>
+<span class="sd">            Description of the feeds simulated.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="c1"># Read in telescope system</span>
+        <span class="n">bt</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">beamtransfer</span>
+        <span class="n">tel</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">telescope</span>
+
+        <span class="n">lmax</span> <span class="o">=</span> <span class="n">tel</span><span class="o">.</span><span class="n">lmax</span>
+        <span class="n">mmax</span> <span class="o">=</span> <span class="n">tel</span><span class="o">.</span><span class="n">mmax</span>
+        <span class="n">nfreq</span> <span class="o">=</span> <span class="n">tel</span><span class="o">.</span><span class="n">nfreq</span>
+        <span class="n">npol</span> <span class="o">=</span> <span class="n">tel</span><span class="o">.</span><span class="n">num_pol_sky</span>
+
+        <span class="n">lfreq</span> <span class="o">=</span> <span class="n">mpitools</span><span class="o">.</span><span class="n">split_local</span><span class="p">(</span><span class="n">nfreq</span><span class="p">)[</span><span class="mi">0</span><span class="p">]</span>
+
+        <span class="c1"># Set the minimum resolution required for the sky.</span>
+        <span class="n">ntime</span> <span class="o">=</span> <span class="mi">2</span> <span class="o">*</span> <span class="n">mmax</span> <span class="o">+</span> <span class="mi">1</span>
+
+        <span class="n">freqmap</span> <span class="o">=</span> <span class="n">map_</span><span class="o">.</span><span class="n">index_map</span><span class="p">[</span><span class="s2">&quot;freq&quot;</span><span class="p">][:]</span>
+        <span class="n">row_map</span> <span class="o">=</span> <span class="n">map_</span><span class="o">.</span><span class="n">map</span><span class="p">[:]</span>
+
+        <span class="k">if</span> <span class="p">(</span><span class="n">tel</span><span class="o">.</span><span class="n">frequencies</span> <span class="o">!=</span> <span class="n">freqmap</span><span class="p">[</span><span class="s2">&quot;centre&quot;</span><span class="p">])</span><span class="o">.</span><span class="n">any</span><span class="p">():</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;Frequencies in map do not match those in Beam Transfers.&quot;</span><span class="p">)</span>
+
+        <span class="c1"># Calculate the alm&#39;s for the local sections</span>
+        <span class="n">row_alm</span> <span class="o">=</span> <span class="n">hputil</span><span class="o">.</span><span class="n">sphtrans_sky</span><span class="p">(</span><span class="n">row_map</span><span class="o">.</span><span class="n">local_array</span><span class="p">,</span> <span class="n">lmax</span><span class="o">=</span><span class="n">lmax</span><span class="p">)</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span>
+            <span class="p">(</span><span class="n">lfreq</span><span class="p">,</span> <span class="n">npol</span> <span class="o">*</span> <span class="p">(</span><span class="n">lmax</span> <span class="o">+</span> <span class="mi">1</span><span class="p">),</span> <span class="n">lmax</span> <span class="o">+</span> <span class="mi">1</span><span class="p">)</span>
+        <span class="p">)</span>
+
+        <span class="c1"># Trim off excess m&#39;s and wrap into MPIArray</span>
+        <span class="n">row_alm</span> <span class="o">=</span> <span class="n">row_alm</span><span class="p">[</span><span class="o">...</span><span class="p">,</span> <span class="p">:</span> <span class="p">(</span><span class="n">mmax</span> <span class="o">+</span> <span class="mi">1</span><span class="p">)]</span>
+        <span class="n">row_alm</span> <span class="o">=</span> <span class="n">mpiarray</span><span class="o">.</span><span class="n">MPIArray</span><span class="o">.</span><span class="n">wrap</span><span class="p">(</span><span class="n">row_alm</span><span class="p">,</span> <span class="n">axis</span><span class="o">=</span><span class="mi">0</span><span class="p">)</span>
+
+        <span class="c1"># Perform the transposition to distribute different m&#39;s across processes. Neat</span>
+        <span class="c1"># tip, putting a shorter value for the number of columns, trims the array at</span>
+        <span class="c1"># the same time</span>
+        <span class="n">col_alm</span> <span class="o">=</span> <span class="n">row_alm</span><span class="o">.</span><span class="n">redistribute</span><span class="p">(</span><span class="n">axis</span><span class="o">=</span><span class="mi">2</span><span class="p">)</span>
+
+        <span class="c1"># Transpose and reshape to shift m index first.</span>
+        <span class="n">col_alm</span> <span class="o">=</span> <span class="n">col_alm</span><span class="o">.</span><span class="n">transpose</span><span class="p">((</span><span class="mi">2</span><span class="p">,</span> <span class="mi">0</span><span class="p">,</span> <span class="mi">1</span><span class="p">))</span><span class="o">.</span><span class="n">reshape</span><span class="p">((</span><span class="kc">None</span><span class="p">,</span> <span class="n">nfreq</span><span class="p">,</span> <span class="n">npol</span><span class="p">,</span> <span class="n">lmax</span> <span class="o">+</span> <span class="mi">1</span><span class="p">))</span>
+
+        <span class="c1"># Create storage for visibility data</span>
+        <span class="n">vis_data</span> <span class="o">=</span> <span class="n">mpiarray</span><span class="o">.</span><span class="n">MPIArray</span><span class="p">(</span>
+            <span class="p">(</span><span class="n">mmax</span> <span class="o">+</span> <span class="mi">1</span><span class="p">,</span> <span class="n">nfreq</span><span class="p">,</span> <span class="n">bt</span><span class="o">.</span><span class="n">ntel</span><span class="p">),</span> <span class="n">axis</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">complex128</span>
+        <span class="p">)</span>
+        <span class="n">vis_data</span><span class="p">[:]</span> <span class="o">=</span> <span class="mf">0.0</span>
+
+        <span class="c1"># Iterate over m&#39;s local to this process and generate the corresponding</span>
+        <span class="c1"># visibilities</span>
+        <span class="k">for</span> <span class="n">mp</span><span class="p">,</span> <span class="n">mi</span> <span class="ow">in</span> <span class="n">vis_data</span><span class="o">.</span><span class="n">enumerate</span><span class="p">(</span><span class="n">axis</span><span class="o">=</span><span class="mi">0</span><span class="p">):</span>
+            <span class="n">vis_data</span><span class="p">[</span><span class="n">mp</span><span class="p">]</span> <span class="o">=</span> <span class="n">bt</span><span class="o">.</span><span class="n">project_vector_sky_to_telescope</span><span class="p">(</span>
+                <span class="n">mi</span><span class="p">,</span> <span class="n">col_alm</span><span class="o">.</span><span class="n">local_array</span><span class="p">[</span><span class="n">mp</span><span class="p">]</span>
+            <span class="p">)</span>
+
+        <span class="c1"># Rearrange axes such that frequency is last (as we want to divide</span>
+        <span class="c1"># frequencies across processors)</span>
+        <span class="n">row_vis</span> <span class="o">=</span> <span class="n">vis_data</span><span class="o">.</span><span class="n">transpose</span><span class="p">((</span><span class="mi">0</span><span class="p">,</span> <span class="mi">2</span><span class="p">,</span> <span class="mi">1</span><span class="p">))</span>
+
+        <span class="c1"># Parallel transpose to get all m&#39;s back onto the same processor</span>
+        <span class="n">col_vis_tmp</span> <span class="o">=</span> <span class="n">row_vis</span><span class="o">.</span><span class="n">redistribute</span><span class="p">(</span><span class="n">axis</span><span class="o">=</span><span class="mi">2</span><span class="p">)</span>
+        <span class="n">col_vis_tmp</span> <span class="o">=</span> <span class="n">col_vis_tmp</span><span class="o">.</span><span class="n">reshape</span><span class="p">((</span><span class="n">mmax</span> <span class="o">+</span> <span class="mi">1</span><span class="p">,</span> <span class="mi">2</span><span class="p">,</span> <span class="n">tel</span><span class="o">.</span><span class="n">npairs</span><span class="p">,</span> <span class="kc">None</span><span class="p">))</span>
+
+        <span class="c1"># Transpose the local section to make the m&#39;s the last axis and unwrap the</span>
+        <span class="c1"># positive and negative m at the same time.</span>
+        <span class="n">col_vis</span> <span class="o">=</span> <span class="n">mpiarray</span><span class="o">.</span><span class="n">MPIArray</span><span class="p">(</span>
+            <span class="p">(</span><span class="n">tel</span><span class="o">.</span><span class="n">npairs</span><span class="p">,</span> <span class="n">nfreq</span><span class="p">,</span> <span class="n">ntime</span><span class="p">),</span> <span class="n">axis</span><span class="o">=</span><span class="mi">1</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">complex128</span>
+        <span class="p">)</span>
+        <span class="n">col_vis</span><span class="p">[:]</span> <span class="o">=</span> <span class="mf">0.0</span>
+        <span class="n">col_vis</span><span class="p">[</span><span class="o">...</span><span class="p">,</span> <span class="mi">0</span><span class="p">]</span> <span class="o">=</span> <span class="n">col_vis_tmp</span><span class="p">[</span><span class="mi">0</span><span class="p">,</span> <span class="mi">0</span><span class="p">]</span>
+        <span class="k">for</span> <span class="n">mi</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="n">mmax</span> <span class="o">+</span> <span class="mi">1</span><span class="p">):</span>
+            <span class="n">col_vis</span><span class="p">[</span><span class="o">...</span><span class="p">,</span> <span class="n">mi</span><span class="p">]</span> <span class="o">=</span> <span class="n">col_vis_tmp</span><span class="p">[</span><span class="n">mi</span><span class="p">,</span> <span class="mi">0</span><span class="p">]</span>
+            <span class="n">col_vis</span><span class="p">[</span><span class="o">...</span><span class="p">,</span> <span class="o">-</span><span class="n">mi</span><span class="p">]</span> <span class="o">=</span> <span class="n">col_vis_tmp</span><span class="p">[</span>
+                <span class="n">mi</span><span class="p">,</span> <span class="mi">1</span>
+            <span class="p">]</span><span class="o">.</span><span class="n">conj</span><span class="p">()</span>  <span class="c1"># Conjugate only (not (-1)**m - see paper)</span>
+
+        <span class="k">del</span> <span class="n">col_vis_tmp</span>
+
+        <span class="c1"># Fourier transform m-modes back to get final timestream.</span>
+        <span class="n">vis_stream</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">fft</span><span class="o">.</span><span class="n">ifft</span><span class="p">(</span><span class="n">col_vis</span><span class="p">,</span> <span class="n">axis</span><span class="o">=-</span><span class="mi">1</span><span class="p">)</span> <span class="o">*</span> <span class="n">ntime</span>
+        <span class="n">vis_stream</span> <span class="o">=</span> <span class="n">vis_stream</span><span class="o">.</span><span class="n">reshape</span><span class="p">((</span><span class="n">tel</span><span class="o">.</span><span class="n">npairs</span><span class="p">,</span> <span class="n">lfreq</span><span class="p">,</span> <span class="n">ntime</span><span class="p">))</span>
+        <span class="n">vis_stream</span> <span class="o">=</span> <span class="n">vis_stream</span><span class="o">.</span><span class="n">transpose</span><span class="p">((</span><span class="mi">1</span><span class="p">,</span> <span class="mi">0</span><span class="p">,</span> <span class="mi">2</span><span class="p">))</span><span class="o">.</span><span class="n">copy</span><span class="p">()</span>
+
+        <span class="c1"># Try and fetch out the feed index and info from the telescope object.</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="n">feed_index</span> <span class="o">=</span> <span class="n">tel</span><span class="o">.</span><span class="n">input_index</span>
+        <span class="k">except</span> <span class="ne">AttributeError</span><span class="p">:</span>
+            <span class="n">feed_index</span> <span class="o">=</span> <span class="n">tel</span><span class="o">.</span><span class="n">nfeed</span>
+
+        <span class="n">kwargs</span> <span class="o">=</span> <span class="p">{}</span>
+
+        <span class="k">if</span> <span class="n">tel</span><span class="o">.</span><span class="n">npairs</span> <span class="o">!=</span> <span class="p">(</span><span class="n">tel</span><span class="o">.</span><span class="n">nfeed</span> <span class="o">+</span> <span class="mi">1</span><span class="p">)</span> <span class="o">*</span> <span class="n">tel</span><span class="o">.</span><span class="n">nfeed</span> <span class="o">//</span> <span class="mi">2</span> <span class="ow">and</span> <span class="bp">self</span><span class="o">.</span><span class="n">stacked</span><span class="p">:</span>
+            <span class="c1"># If we should treat this as stacked, then pull the information straight</span>
+            <span class="c1"># from the telescope class</span>
+            <span class="n">kwargs</span><span class="p">[</span><span class="s2">&quot;prod&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">tel</span><span class="o">.</span><span class="n">index_map_prod</span>
+            <span class="n">kwargs</span><span class="p">[</span><span class="s2">&quot;stack&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">tel</span><span class="o">.</span><span class="n">index_map_stack</span>
+            <span class="n">kwargs</span><span class="p">[</span><span class="s2">&quot;reverse_map_stack&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">tel</span><span class="o">.</span><span class="n">reverse_map_stack</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="c1"># Construct a product map as if this was a down selection</span>
+            <span class="n">prod_map</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">zeros</span><span class="p">(</span>
+                <span class="n">tel</span><span class="o">.</span><span class="n">uniquepairs</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span> <span class="n">dtype</span><span class="o">=</span><span class="p">[(</span><span class="s2">&quot;input_a&quot;</span><span class="p">,</span> <span class="nb">int</span><span class="p">),</span> <span class="p">(</span><span class="s2">&quot;input_b&quot;</span><span class="p">,</span> <span class="nb">int</span><span class="p">)]</span>
+            <span class="p">)</span>
+            <span class="n">prod_map</span><span class="p">[</span><span class="s2">&quot;input_a&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">tel</span><span class="o">.</span><span class="n">uniquepairs</span><span class="p">[:,</span> <span class="mi">0</span><span class="p">]</span>
+            <span class="n">prod_map</span><span class="p">[</span><span class="s2">&quot;input_b&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">tel</span><span class="o">.</span><span class="n">uniquepairs</span><span class="p">[:,</span> <span class="mi">1</span><span class="p">]</span>
+
+            <span class="n">kwargs</span><span class="p">[</span><span class="s2">&quot;prod&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">prod_map</span>
+
+        <span class="c1"># Construct container and set visibility data</span>
+        <span class="n">sstream</span> <span class="o">=</span> <span class="n">containers</span><span class="o">.</span><span class="n">SiderealStream</span><span class="p">(</span>
+            <span class="n">freq</span><span class="o">=</span><span class="n">freqmap</span><span class="p">,</span>
+            <span class="n">ra</span><span class="o">=</span><span class="n">ntime</span><span class="p">,</span>
+            <span class="nb">input</span><span class="o">=</span><span class="n">feed_index</span><span class="p">,</span>
+            <span class="n">distributed</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
+            <span class="n">comm</span><span class="o">=</span><span class="n">map_</span><span class="o">.</span><span class="n">comm</span><span class="p">,</span>
+            <span class="o">**</span><span class="n">kwargs</span><span class="p">,</span>
+        <span class="p">)</span>
+        <span class="n">sstream</span><span class="o">.</span><span class="n">vis</span><span class="p">[:]</span> <span class="o">=</span> <span class="n">mpiarray</span><span class="o">.</span><span class="n">MPIArray</span><span class="o">.</span><span class="n">wrap</span><span class="p">(</span><span class="n">vis_stream</span><span class="p">,</span> <span class="n">axis</span><span class="o">=</span><span class="mi">0</span><span class="p">)</span>
+        <span class="n">sstream</span><span class="o">.</span><span class="n">weight</span><span class="p">[:]</span> <span class="o">=</span> <span class="mf">1.0</span>
+
+        <span class="k">return</span> <span class="n">sstream</span></div>
+</div>
+
+
+
+<div class="viewcode-block" id="ExpandProducts">
+<a class="viewcode-back" href="../../../_autosummary/draco.synthesis.stream.html#draco.synthesis.stream.ExpandProducts">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">ExpandProducts</span><span class="p">(</span><span class="n">tasklib</span><span class="o">.</span><span class="n">base</span><span class="o">.</span><span class="n">ContainerTask</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Un-wrap collated products to full triangle.&quot;&quot;&quot;</span>
+
+<div class="viewcode-block" id="ExpandProducts.setup">
+<a class="viewcode-back" href="../../../_autosummary/draco.synthesis.stream.html#draco.synthesis.stream.ExpandProducts.setup">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">setup</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">telescope</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Get a reference to the telescope class.</span>
+
+<span class="sd">        Parameters</span>
+<span class="sd">        ----------</span>
+<span class="sd">        telescope : :class:`drift.core.TransitTelescope`</span>
+<span class="sd">            Telescope object to use</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">telescope</span> <span class="o">=</span> <span class="n">io</span><span class="o">.</span><span class="n">get_telescope</span><span class="p">(</span><span class="n">telescope</span><span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="ExpandProducts.process">
+<a class="viewcode-back" href="../../../_autosummary/draco.synthesis.stream.html#draco.synthesis.stream.ExpandProducts.process">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">process</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">sstream</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Transform a sidereal stream to having a full product matrix.</span>
+
+<span class="sd">        Parameters</span>
+<span class="sd">        ----------</span>
+<span class="sd">        sstream : :class:`containers.SiderealStream`</span>
+<span class="sd">            Sidereal stream to unwrap.</span>
+
+<span class="sd">        Returns</span>
+<span class="sd">        -------</span>
+<span class="sd">        new_sstream : :class:`containers.SiderealStream`</span>
+<span class="sd">            Unwrapped sidereal stream.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">sstream</span><span class="o">.</span><span class="n">redistribute</span><span class="p">(</span><span class="s2">&quot;freq&quot;</span><span class="p">)</span>
+
+        <span class="n">ninput</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">sstream</span><span class="o">.</span><span class="n">input</span><span class="p">)</span>
+        <span class="n">prod</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">(</span>
+            <span class="p">[(</span><span class="n">fi</span><span class="p">,</span> <span class="n">fj</span><span class="p">)</span> <span class="k">for</span> <span class="n">fi</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">ninput</span><span class="p">)</span> <span class="k">for</span> <span class="n">fj</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">fi</span><span class="p">,</span> <span class="n">ninput</span><span class="p">)],</span>
+            <span class="n">dtype</span><span class="o">=</span><span class="p">[(</span><span class="s2">&quot;input_a&quot;</span><span class="p">,</span> <span class="nb">int</span><span class="p">),</span> <span class="p">(</span><span class="s2">&quot;input_b&quot;</span><span class="p">,</span> <span class="nb">int</span><span class="p">)],</span>
+        <span class="p">)</span>
+        <span class="n">nprod</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">prod</span><span class="p">)</span>
+
+        <span class="n">new_stream</span> <span class="o">=</span> <span class="n">containers</span><span class="o">.</span><span class="n">SiderealStream</span><span class="p">(</span><span class="n">prod</span><span class="o">=</span><span class="n">prod</span><span class="p">,</span> <span class="n">stack</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">axes_from</span><span class="o">=</span><span class="n">sstream</span><span class="p">)</span>
+        <span class="n">new_stream</span><span class="o">.</span><span class="n">redistribute</span><span class="p">(</span><span class="s2">&quot;freq&quot;</span><span class="p">)</span>
+        <span class="n">new_stream</span><span class="o">.</span><span class="n">vis</span><span class="p">[:]</span> <span class="o">=</span> <span class="mf">0.0</span>
+        <span class="n">new_stream</span><span class="o">.</span><span class="n">weight</span><span class="p">[:]</span> <span class="o">=</span> <span class="mf">0.0</span>
+
+        <span class="c1"># Create dummpy index and reverse map for the stack axis to match the behaviour</span>
+        <span class="c1"># of reading in an N^2 file through andata</span>
+        <span class="n">fwd_stack</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">empty</span><span class="p">(</span><span class="n">nprod</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="p">[(</span><span class="s2">&quot;prod&quot;</span><span class="p">,</span> <span class="s2">&quot;&lt;u4&quot;</span><span class="p">),</span> <span class="p">(</span><span class="s2">&quot;conjugate&quot;</span><span class="p">,</span> <span class="s2">&quot;u1&quot;</span><span class="p">)])</span>
+        <span class="n">fwd_stack</span><span class="p">[</span><span class="s2">&quot;prod&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">arange</span><span class="p">(</span><span class="n">nprod</span><span class="p">)</span>
+        <span class="n">fwd_stack</span><span class="p">[</span><span class="s2">&quot;conjugate&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="kc">False</span>
+        <span class="n">new_stream</span><span class="o">.</span><span class="n">create_index_map</span><span class="p">(</span><span class="s2">&quot;stack&quot;</span><span class="p">,</span> <span class="n">fwd_stack</span><span class="p">)</span>
+        <span class="n">rev_stack</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">empty</span><span class="p">(</span><span class="n">nprod</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="p">[(</span><span class="s2">&quot;stack&quot;</span><span class="p">,</span> <span class="s2">&quot;&lt;u4&quot;</span><span class="p">),</span> <span class="p">(</span><span class="s2">&quot;conjugate&quot;</span><span class="p">,</span> <span class="s2">&quot;u1&quot;</span><span class="p">)])</span>
+        <span class="n">rev_stack</span><span class="p">[</span><span class="s2">&quot;stack&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">arange</span><span class="p">(</span><span class="n">nprod</span><span class="p">)</span>
+        <span class="n">rev_stack</span><span class="p">[</span><span class="s2">&quot;conjugate&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="kc">False</span>
+        <span class="n">new_stream</span><span class="o">.</span><span class="n">create_reverse_map</span><span class="p">(</span><span class="s2">&quot;stack&quot;</span><span class="p">,</span> <span class="n">rev_stack</span><span class="p">)</span>
+
+        <span class="c1"># Iterate over all feed pairs and work out which is the correct index in the sidereal stack.</span>
+        <span class="k">for</span> <span class="n">pi</span><span class="p">,</span> <span class="p">(</span><span class="n">fi</span><span class="p">,</span> <span class="n">fj</span><span class="p">)</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">prod</span><span class="p">):</span>
+            <span class="n">unique_ind</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">telescope</span><span class="o">.</span><span class="n">feedmap</span><span class="p">[</span><span class="n">fi</span><span class="p">,</span> <span class="n">fj</span><span class="p">]</span>
+            <span class="n">conj</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">telescope</span><span class="o">.</span><span class="n">feedconj</span><span class="p">[</span><span class="n">fi</span><span class="p">,</span> <span class="n">fj</span><span class="p">]</span>
+
+            <span class="c1"># unique_ind is less than zero it has masked out</span>
+            <span class="k">if</span> <span class="n">unique_ind</span> <span class="o">&lt;</span> <span class="mi">0</span><span class="p">:</span>
+                <span class="k">continue</span>
+
+            <span class="n">prod_stream</span> <span class="o">=</span> <span class="n">sstream</span><span class="o">.</span><span class="n">vis</span><span class="p">[:,</span> <span class="n">unique_ind</span><span class="p">]</span>
+            <span class="n">new_stream</span><span class="o">.</span><span class="n">vis</span><span class="p">[:,</span> <span class="n">pi</span><span class="p">]</span> <span class="o">=</span> <span class="n">prod_stream</span><span class="o">.</span><span class="n">conj</span><span class="p">()</span> <span class="k">if</span> <span class="n">conj</span> <span class="k">else</span> <span class="n">prod_stream</span>
+
+            <span class="n">new_stream</span><span class="o">.</span><span class="n">weight</span><span class="p">[:,</span> <span class="n">pi</span><span class="p">]</span> <span class="o">=</span> <span class="mf">1.0</span>
+
+        <span class="k">return</span> <span class="n">new_stream</span></div>
+</div>
+
+
+
+<div class="viewcode-block" id="MakeTimeStream">
+<a class="viewcode-back" href="../../../_autosummary/draco.synthesis.stream.html#draco.synthesis.stream.MakeTimeStream">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">MakeTimeStream</span><span class="p">(</span><span class="n">tasklib</span><span class="o">.</span><span class="n">base</span><span class="o">.</span><span class="n">ContainerTask</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Generate a time stream from a sidereal stream.</span>
+
+<span class="sd">    Requires an input dataset with a time axis to mimic.</span>
+
+<span class="sd">    Attributes</span>
+<span class="sd">    ----------</span>
+<span class="sd">    lanczos_width : int</span>
+<span class="sd">        Width of the Lanczos interpolation kernel.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+
+    <span class="n">lanczos_width</span> <span class="o">=</span> <span class="n">config</span><span class="o">.</span><span class="n">Property</span><span class="p">(</span><span class="n">proptype</span><span class="o">=</span><span class="nb">int</span><span class="p">,</span> <span class="n">default</span><span class="o">=</span><span class="mi">5</span><span class="p">)</span>
+
+<div class="viewcode-block" id="MakeTimeStream.setup">
+<a class="viewcode-back" href="../../../_autosummary/draco.synthesis.stream.html#draco.synthesis.stream.MakeTimeStream.setup">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">setup</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">observer</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Set up a telescope object.</span>
+
+<span class="sd">        Parameters</span>
+<span class="sd">        ----------</span>
+<span class="sd">        observer : ProductManager</span>
+<span class="sd">            Telescope manager</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">observer</span> <span class="o">=</span> <span class="n">io</span><span class="o">.</span><span class="n">get_telescope</span><span class="p">(</span><span class="n">observer</span><span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="MakeTimeStream.process">
+<a class="viewcode-back" href="../../../_autosummary/draco.synthesis.stream.html#draco.synthesis.stream.MakeTimeStream.process">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">process</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">sstream</span><span class="p">,</span> <span class="n">tstream</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Sample the sidereal stream at a set of times.</span>
+
+<span class="sd">        Parameters</span>
+<span class="sd">        ----------</span>
+<span class="sd">        sstream : containers.SiderealStream | containers.HybridVisStream</span>
+<span class="sd">            Dataset sampled in RA</span>
+<span class="sd">        tstream : containers.TODContainer | HybridVisStream</span>
+<span class="sd">            Dataset sampled in time</span>
+
+<span class="sd">        Returns</span>
+<span class="sd">        -------</span>
+<span class="sd">        timestream : containers.TimeStream | containers.HybridVisStream</span>
+<span class="sd">            sstream data sampled in time</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="c1"># Figure out the time-like axis of `tstream`</span>
+        <span class="k">if</span> <span class="nb">hasattr</span><span class="p">(</span><span class="n">tstream</span><span class="p">,</span> <span class="s2">&quot;time&quot;</span><span class="p">):</span>
+            <span class="n">time</span> <span class="o">=</span> <span class="n">tstream</span><span class="o">.</span><span class="n">time</span><span class="p">[:]</span>
+            <span class="n">tra</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">observer</span><span class="o">.</span><span class="n">unix_to_lsa</span><span class="p">(</span><span class="n">time</span><span class="p">)</span>
+        <span class="k">elif</span> <span class="nb">hasattr</span><span class="p">(</span><span class="n">tstream</span><span class="p">,</span> <span class="s2">&quot;ra&quot;</span><span class="p">):</span>
+            <span class="n">tra</span> <span class="o">=</span> <span class="n">tstream</span><span class="o">.</span><span class="n">ra</span><span class="p">[:]</span>
+            <span class="n">lsd</span> <span class="o">=</span> <span class="n">tstream</span><span class="o">.</span><span class="n">attrs</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;lsd&quot;</span><span class="p">,</span> <span class="n">tstream</span><span class="o">.</span><span class="n">attrs</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;csd&quot;</span><span class="p">))</span>
+            <span class="n">time</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">observer</span><span class="o">.</span><span class="n">lsd_to_unix</span><span class="p">(</span><span class="n">lsd</span> <span class="o">+</span> <span class="n">tra</span> <span class="o">/</span> <span class="mf">360.0</span><span class="p">)</span>
+
+        <span class="c1"># Determine output container based on input container</span>
+        <span class="n">container_map</span> <span class="o">=</span> <span class="p">{</span>
+            <span class="n">containers</span><span class="o">.</span><span class="n">SiderealStream</span><span class="p">:</span> <span class="n">containers</span><span class="o">.</span><span class="n">TimeStream</span><span class="p">,</span>
+            <span class="n">containers</span><span class="o">.</span><span class="n">HybridVisStream</span><span class="p">:</span> <span class="n">containers</span><span class="o">.</span><span class="n">HybridVisStream</span><span class="p">,</span>
+        <span class="p">}</span>
+
+        <span class="c1"># Make the new timestream containers</span>
+        <span class="k">for</span> <span class="bp">cls</span> <span class="ow">in</span> <span class="n">inspect</span><span class="o">.</span><span class="n">getmro</span><span class="p">(</span><span class="n">sstream</span><span class="o">.</span><span class="vm">__class__</span><span class="p">):</span>
+            <span class="n">OutputContainer</span> <span class="o">=</span> <span class="n">container_map</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="bp">cls</span><span class="p">)</span>
+
+            <span class="k">if</span> <span class="n">OutputContainer</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+                <span class="k">break</span>
+
+        <span class="k">if</span> <span class="n">OutputContainer</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">TypeError</span><span class="p">(</span>
+                <span class="sa">f</span><span class="s2">&quot;No valid container mapping.</span><span class="se">\n</span><span class="s2">Got </span><span class="si">{</span><span class="n">sstream</span><span class="o">.</span><span class="vm">__class__</span><span class="si">}</span><span class="s2">.</span><span class="se">\n</span><span class="s2">&quot;</span>
+                <span class="sa">f</span><span class="s2">&quot;Mappings exist for </span><span class="si">{</span><span class="nb">list</span><span class="p">(</span><span class="n">container_map</span><span class="o">.</span><span class="n">keys</span><span class="p">())</span><span class="si">}</span><span class="s2">.&quot;</span>
+            <span class="p">)</span>
+
+        <span class="c1"># Provide both the time and ra axes - whichever one isn&#39;t</span>
+        <span class="c1"># used will be ignored</span>
+        <span class="n">out</span> <span class="o">=</span> <span class="n">OutputContainer</span><span class="p">(</span><span class="n">axes_from</span><span class="o">=</span><span class="n">sstream</span><span class="p">,</span> <span class="n">attrs_from</span><span class="o">=</span><span class="n">sstream</span><span class="p">,</span> <span class="n">time</span><span class="o">=</span><span class="n">time</span><span class="p">,</span> <span class="n">ra</span><span class="o">=</span><span class="n">tra</span><span class="p">)</span>
+
+        <span class="c1"># Make sure datasets are distributed correctly</span>
+        <span class="n">sstream</span><span class="o">.</span><span class="n">redistribute</span><span class="p">(</span><span class="s2">&quot;freq&quot;</span><span class="p">)</span>
+        <span class="n">out</span><span class="o">.</span><span class="n">redistribute</span><span class="p">(</span><span class="s2">&quot;freq&quot;</span><span class="p">)</span>
+
+        <span class="c1"># Make the interpolation array</span>
+        <span class="n">R</span> <span class="o">=</span> <span class="n">regrid</span><span class="o">.</span><span class="n">lanczos_forward_matrix</span><span class="p">(</span>
+            <span class="n">sstream</span><span class="o">.</span><span class="n">ra</span><span class="p">,</span> <span class="n">tra</span> <span class="o">%</span> <span class="mi">360</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">lanczos_width</span><span class="p">,</span> <span class="n">periodic</span><span class="o">=</span><span class="kc">True</span>
+        <span class="p">)</span><span class="o">.</span><span class="n">T</span><span class="o">.</span><span class="n">copy</span><span class="p">()</span>
+
+        <span class="c1"># Move the RA axis to the back</span>
+        <span class="n">axind</span> <span class="o">=</span> <span class="nb">list</span><span class="p">(</span><span class="n">sstream</span><span class="o">.</span><span class="n">data</span><span class="o">.</span><span class="n">attrs</span><span class="p">[</span><span class="s2">&quot;axis&quot;</span><span class="p">])</span><span class="o">.</span><span class="n">index</span><span class="p">(</span><span class="s2">&quot;ra&quot;</span><span class="p">)</span>
+        <span class="n">data</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">moveaxis</span><span class="p">(</span><span class="n">sstream</span><span class="o">.</span><span class="n">data</span><span class="p">[:]</span><span class="o">.</span><span class="n">local_array</span><span class="p">,</span> <span class="n">axind</span><span class="p">,</span> <span class="o">-</span><span class="mi">1</span><span class="p">)</span>
+
+        <span class="c1"># Apply the interpolation matrix and</span>
+        <span class="c1"># move the time-like axis back to where it belongs</span>
+        <span class="n">out</span><span class="o">.</span><span class="n">data</span><span class="p">[:]</span><span class="o">.</span><span class="n">local_array</span><span class="p">[:]</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">moveaxis</span><span class="p">(</span><span class="n">data</span> <span class="o">@</span> <span class="n">R</span><span class="p">,</span> <span class="o">-</span><span class="mi">1</span><span class="p">,</span> <span class="n">axind</span><span class="p">)</span>
+
+        <span class="c1"># Propagate the weights as well</span>
+        <span class="n">waxind</span> <span class="o">=</span> <span class="nb">list</span><span class="p">(</span><span class="n">sstream</span><span class="o">.</span><span class="n">weight</span><span class="o">.</span><span class="n">attrs</span><span class="p">[</span><span class="s2">&quot;axis&quot;</span><span class="p">])</span><span class="o">.</span><span class="n">index</span><span class="p">(</span><span class="s2">&quot;ra&quot;</span><span class="p">)</span>
+        <span class="n">var</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">moveaxis</span><span class="p">(</span><span class="n">invert_no_zero</span><span class="p">(</span><span class="n">sstream</span><span class="o">.</span><span class="n">weight</span><span class="p">[:]</span><span class="o">.</span><span class="n">local_array</span><span class="p">),</span> <span class="n">waxind</span><span class="p">,</span> <span class="o">-</span><span class="mi">1</span><span class="p">)</span>
+        <span class="n">wout</span> <span class="o">=</span> <span class="n">invert_no_zero</span><span class="p">(</span><span class="n">var</span> <span class="o">@</span> <span class="p">(</span><span class="n">R</span><span class="o">**</span><span class="mi">2</span><span class="p">))</span>
+
+        <span class="n">out</span><span class="o">.</span><span class="n">weight</span><span class="p">[:]</span><span class="o">.</span><span class="n">local_array</span><span class="p">[:]</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">moveaxis</span><span class="p">(</span><span class="n">wout</span><span class="p">,</span> <span class="o">-</span><span class="mi">1</span><span class="p">,</span> <span class="n">waxind</span><span class="p">)</span>
+
+        <span class="k">return</span> <span class="n">out</span></div>
+</div>
+
+
+
+<div class="viewcode-block" id="MakeTimeStreamFixedInput">
+<a class="viewcode-back" href="../../../_autosummary/draco.synthesis.stream.html#draco.synthesis.stream.MakeTimeStreamFixedInput">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">MakeTimeStreamFixedInput</span><span class="p">(</span><span class="n">MakeTimeStream</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Make multiple time streams from a single input.&quot;&quot;&quot;</span>
+
+<div class="viewcode-block" id="MakeTimeStreamFixedInput.setup">
+<a class="viewcode-back" href="../../../_autosummary/draco.synthesis.stream.html#draco.synthesis.stream.MakeTimeStreamFixedInput.setup">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">setup</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">observer</span><span class="p">,</span> <span class="n">sstream</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Set up a telescope object and save the input stream.</span>
+
+<span class="sd">        Parameters</span>
+<span class="sd">        ----------</span>
+<span class="sd">        observer : ProductManager</span>
+<span class="sd">            Telescope manager</span>
+<span class="sd">        sstream : containers.SiderealStream | containers.HybridVisStream</span>
+<span class="sd">            Input sidereal dataset</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">sstream</span> <span class="o">=</span> <span class="n">sstream</span>
+        <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="n">setup</span><span class="p">(</span><span class="n">observer</span><span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="MakeTimeStreamFixedInput.process">
+<a class="viewcode-back" href="../../../_autosummary/draco.synthesis.stream.html#draco.synthesis.stream.MakeTimeStreamFixedInput.process">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">process</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">tstream</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Sample the saved sidereal stream at `tstream` time samples.</span>
+
+<span class="sd">        Parameters</span>
+<span class="sd">        ----------</span>
+<span class="sd">        tstream : containers.TODContainer</span>
+<span class="sd">            Dataset sampled in time</span>
+
+<span class="sd">        Returns</span>
+<span class="sd">        -------</span>
+<span class="sd">        timestream : containers.TimeStream | containers.HybridVisStream</span>
+<span class="sd">            sstream data sampled in time</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="n">process</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">sstream</span><span class="p">,</span> <span class="n">tstream</span><span class="p">)</span></div>
+</div>
+
+
+
+<div class="viewcode-block" id="MakeTimeStreamFixedTime">
+<a class="viewcode-back" href="../../../_autosummary/draco.synthesis.stream.html#draco.synthesis.stream.MakeTimeStreamFixedTime">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">MakeTimeStreamFixedTime</span><span class="p">(</span><span class="n">MakeTimeStream</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Make multiple time streams for fixed time samples.&quot;&quot;&quot;</span>
+
+<div class="viewcode-block" id="MakeTimeStreamFixedTime.setup">
+<a class="viewcode-back" href="../../../_autosummary/draco.synthesis.stream.html#draco.synthesis.stream.MakeTimeStreamFixedTime.setup">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">setup</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">observer</span><span class="p">,</span> <span class="n">tstream</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Set up a telescope object and save the input timestream.</span>
+
+<span class="sd">        Parameters</span>
+<span class="sd">        ----------</span>
+<span class="sd">        observer : ProductManager</span>
+<span class="sd">            Telescope manager</span>
+<span class="sd">        tstream : containers.TODContainer</span>
+<span class="sd">            Input sidereal dataset</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">tstream</span> <span class="o">=</span> <span class="n">tstream</span>
+        <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="n">setup</span><span class="p">(</span><span class="n">observer</span><span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="MakeTimeStreamFixedTime.process">
+<a class="viewcode-back" href="../../../_autosummary/draco.synthesis.stream.html#draco.synthesis.stream.MakeTimeStreamFixedTime.process">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">process</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">sstream</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Sample the sidereal stream at saved time samples.</span>
+
+<span class="sd">        Parameters</span>
+<span class="sd">        ----------</span>
+<span class="sd">        sstream : containers.SiderealSteam | containers.HybridVisStream</span>
+<span class="sd">            Dataset sampled in time</span>
+
+<span class="sd">        Returns</span>
+<span class="sd">        -------</span>
+<span class="sd">        timestream : containers.TimeStream | containers.HybridVisStream</span>
+<span class="sd">            sstream data sampled in time</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="n">process</span><span class="p">(</span><span class="n">sstream</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">tstream</span><span class="p">)</span></div>
+</div>
+
+
+
+<div class="viewcode-block" id="MakeMultipleTimeStreams">
+<a class="viewcode-back" href="../../../_autosummary/draco.synthesis.stream.html#draco.synthesis.stream.MakeMultipleTimeStreams">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">MakeMultipleTimeStreams</span><span class="p">(</span><span class="n">MakeTimeStreamFixedInput</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Generate a series of time streams files from a sidereal stream.</span>
+
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    start_time, end_time : float or datetime</span>
+<span class="sd">        Start and end times of the timestream to simulate. Needs to be either a</span>
+<span class="sd">        `float` (UNIX time) or a `datetime` objects in UTC.</span>
+<span class="sd">    integration_time : float, optional</span>
+<span class="sd">        Integration time in seconds. Takes precedence over `integration_frame_exp`.</span>
+<span class="sd">    integration_frame_exp: int, optional</span>
+<span class="sd">        Specify the integration time in frames. The integration time is</span>
+<span class="sd">        `2**integration_frame_exp * 2.56 us`.</span>
+<span class="sd">    samples_per_file : int, optional</span>
+<span class="sd">        Number of samples per file.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+
+    <span class="n">start_time</span> <span class="o">=</span> <span class="n">config</span><span class="o">.</span><span class="n">utc_time</span><span class="p">()</span>
+    <span class="n">end_time</span> <span class="o">=</span> <span class="n">config</span><span class="o">.</span><span class="n">utc_time</span><span class="p">()</span>
+
+    <span class="n">integration_time</span> <span class="o">=</span> <span class="n">config</span><span class="o">.</span><span class="n">Property</span><span class="p">(</span><span class="n">proptype</span><span class="o">=</span><span class="nb">float</span><span class="p">,</span> <span class="n">default</span><span class="o">=</span><span class="kc">None</span><span class="p">)</span>
+    <span class="n">integration_frame_exp</span> <span class="o">=</span> <span class="n">config</span><span class="o">.</span><span class="n">Property</span><span class="p">(</span><span class="n">proptype</span><span class="o">=</span><span class="nb">int</span><span class="p">,</span> <span class="n">default</span><span class="o">=</span><span class="mi">23</span><span class="p">)</span>
+
+    <span class="n">samples_per_file</span> <span class="o">=</span> <span class="n">config</span><span class="o">.</span><span class="n">Property</span><span class="p">(</span><span class="n">proptype</span><span class="o">=</span><span class="nb">int</span><span class="p">,</span> <span class="n">default</span><span class="o">=</span><span class="mi">1024</span><span class="p">)</span>
+
+    <span class="n">_cur_time</span> <span class="o">=</span> <span class="kc">None</span>  <span class="c1"># Hold the current file start time</span>
+
+<div class="viewcode-block" id="MakeMultipleTimeStreams.process">
+<a class="viewcode-back" href="../../../_autosummary/draco.synthesis.stream.html#draco.synthesis.stream.MakeMultipleTimeStreams.process">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">process</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Create a timestream file.</span>
+
+<span class="sd">        Returns</span>
+<span class="sd">        -------</span>
+<span class="sd">        tstream : containers.TimeStream | containers.HybridVisStream</span>
+<span class="sd">            Time stream object.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_cur_time</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_cur_time</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">start_time</span>
+
+        <span class="c1"># First check to see if we have reached the end of the requested time,</span>
+        <span class="c1"># and if so stop the iteration.</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_cur_time</span> <span class="o">&gt;=</span> <span class="bp">self</span><span class="o">.</span><span class="n">end_time</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="n">exceptions</span><span class="o">.</span><span class="n">PipelineStopIteration</span>
+
+        <span class="c1"># Produce a new timestream with the target time axis</span>
+        <span class="n">tstream</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_next_time_axis</span><span class="p">()</span>
+
+        <span class="k">return</span> <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="n">process</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">sstream</span><span class="p">,</span> <span class="n">tstream</span><span class="p">)</span></div>
+
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">_next_time_axis</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="c1"># Calculate the integration time</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">integration_time</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">int_time</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">integration_time</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">int_time</span> <span class="o">=</span> <span class="mf">2.56e-6</span> <span class="o">*</span> <span class="mi">2</span><span class="o">**</span><span class="bp">self</span><span class="o">.</span><span class="n">integration_frame_exp</span>
+
+        <span class="c1"># Calculate number of samples in file and timestamps</span>
+        <span class="n">nsamp</span> <span class="o">=</span> <span class="nb">min</span><span class="p">(</span>
+            <span class="nb">int</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">ceil</span><span class="p">((</span><span class="bp">self</span><span class="o">.</span><span class="n">end_time</span> <span class="o">-</span> <span class="bp">self</span><span class="o">.</span><span class="n">_cur_time</span><span class="p">)</span> <span class="o">/</span> <span class="n">int_time</span><span class="p">)),</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">samples_per_file</span><span class="p">,</span>
+        <span class="p">)</span>
+        <span class="n">timestamps</span> <span class="o">=</span> <span class="p">(</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_cur_time</span> <span class="o">+</span> <span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">arange</span><span class="p">(</span><span class="n">nsamp</span><span class="p">)</span> <span class="o">+</span> <span class="mi">1</span><span class="p">)</span> <span class="o">*</span> <span class="n">int_time</span>
+        <span class="p">)</span>  <span class="c1"># +1 as timestamps are at the end of each sample</span>
+
+        <span class="c1"># Construct the time axis index map</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">integration_time</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">time</span> <span class="o">=</span> <span class="n">timestamps</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">_time_dtype</span> <span class="o">=</span> <span class="p">[(</span><span class="s2">&quot;fpga_count&quot;</span><span class="p">,</span> <span class="n">np</span><span class="o">.</span><span class="n">uint64</span><span class="p">),</span> <span class="p">(</span><span class="s2">&quot;ctime&quot;</span><span class="p">,</span> <span class="n">np</span><span class="o">.</span><span class="n">float64</span><span class="p">)]</span>
+            <span class="n">time</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">zeros</span><span class="p">(</span><span class="n">nsamp</span><span class="p">,</span> <span class="n">_time_dtype</span><span class="p">)</span>
+            <span class="n">time</span><span class="p">[</span><span class="s2">&quot;ctime&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">timestamps</span>
+            <span class="n">time</span><span class="p">[</span><span class="s2">&quot;fpga_count&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="p">(</span>
+                <span class="p">(</span><span class="n">timestamps</span> <span class="o">-</span> <span class="bp">self</span><span class="o">.</span><span class="n">start_time</span><span class="p">)</span>
+                <span class="o">/</span> <span class="n">int_time</span>
+                <span class="o">*</span> <span class="mi">2</span><span class="o">**</span><span class="bp">self</span><span class="o">.</span><span class="n">integration_frame_exp</span>
+            <span class="p">)</span><span class="o">.</span><span class="n">astype</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">uint64</span><span class="p">)</span>
+
+        <span class="c1"># Increment the current start time for the next iteration</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_cur_time</span> <span class="o">+=</span> <span class="n">nsamp</span> <span class="o">*</span> <span class="n">int_time</span>
+
+        <span class="c1"># Return an empty, un-initialised TODContainer</span>
+        <span class="c1"># for compatibility with parent tasks</span>
+        <span class="k">return</span> <span class="n">containers</span><span class="o">.</span><span class="n">TODContainer</span><span class="p">(</span><span class="n">time</span><span class="o">=</span><span class="n">time</span><span class="p">,</span> <span class="n">skip_datasets</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span></div>
+
+
+
+<div class="viewcode-block" id="MakeSiderealDayStream">
+<a class="viewcode-back" href="../../../_autosummary/draco.synthesis.stream.html#draco.synthesis.stream.MakeSiderealDayStream">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">MakeSiderealDayStream</span><span class="p">(</span><span class="n">tasklib</span><span class="o">.</span><span class="n">base</span><span class="o">.</span><span class="n">ContainerTask</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Task for simulating a set of sidereal days from a given stream.</span>
+
+<span class="sd">    This creates a copy of the base stream for every LSD within the provided time</span>
+<span class="sd">    range.</span>
+
+<span class="sd">    Attributes</span>
+<span class="sd">    ----------</span>
+<span class="sd">    start_time, end_time : float or datetime</span>
+<span class="sd">        Start and end times of the sidereal streams to simulate. Needs to be either a</span>
+<span class="sd">        `float` (UNIX time) or a `datetime` objects in UTC.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+
+    <span class="n">start_time</span> <span class="o">=</span> <span class="n">config</span><span class="o">.</span><span class="n">utc_time</span><span class="p">()</span>
+    <span class="n">end_time</span> <span class="o">=</span> <span class="n">config</span><span class="o">.</span><span class="n">utc_time</span><span class="p">()</span>
+
+<div class="viewcode-block" id="MakeSiderealDayStream.setup">
+<a class="viewcode-back" href="../../../_autosummary/draco.synthesis.stream.html#draco.synthesis.stream.MakeSiderealDayStream.setup">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">setup</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">bt</span><span class="p">,</span> <span class="n">sstream</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Set up an observer and the data to use for this simulation.</span>
+
+<span class="sd">        Parameters</span>
+<span class="sd">        ----------</span>
+<span class="sd">        bt : beamtransfer.BeamTransfer or manager.ProductManager</span>
+<span class="sd">            Sets up an observer holding the geographic location of the telscope.</span>
+<span class="sd">        sstream : containers.SiderealStream</span>
+<span class="sd">            The base sidereal data to use for this simulation.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">observer</span> <span class="o">=</span> <span class="n">io</span><span class="o">.</span><span class="n">get_telescope</span><span class="p">(</span><span class="n">bt</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">lsd_start</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">observer</span><span class="o">.</span><span class="n">unix_to_lsd</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">start_time</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">lsd_end</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">observer</span><span class="o">.</span><span class="n">unix_to_lsd</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">end_time</span><span class="p">)</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">log</span><span class="o">.</span><span class="n">info</span><span class="p">(</span>
+            <span class="s2">&quot;Sidereal period requested: LSD=</span><span class="si">%i</span><span class="s2"> to LSD=</span><span class="si">%i</span><span class="s2">&quot;</span><span class="p">,</span>
+            <span class="nb">int</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">lsd_start</span><span class="p">),</span>
+            <span class="nb">int</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">lsd_end</span><span class="p">),</span>
+        <span class="p">)</span>
+
+        <span class="c1"># Initialize the current lsd time</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_current_lsd</span> <span class="o">=</span> <span class="kc">None</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">sstream</span> <span class="o">=</span> <span class="n">sstream</span></div>
+
+
+<div class="viewcode-block" id="MakeSiderealDayStream.process">
+<a class="viewcode-back" href="../../../_autosummary/draco.synthesis.stream.html#draco.synthesis.stream.MakeSiderealDayStream.process">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">process</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Generate a sidereal stream for the specific sidereal day.</span>
+
+<span class="sd">        Returns</span>
+<span class="sd">        -------</span>
+<span class="sd">        ss : :class:`containers.SiderealStream`</span>
+<span class="sd">            Simulated sidereal day stream.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="c1"># If current_lsd is None then this is the first time we&#39;ve run</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_current_lsd</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="c1"># Check if lsd is an integer, if not add an lsd</span>
+            <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">lsd_start</span><span class="p">,</span> <span class="nb">int</span><span class="p">):</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">_current_lsd</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">lsd_start</span><span class="p">)</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">_current_lsd</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">lsd_start</span> <span class="o">+</span> <span class="mi">1</span><span class="p">)</span>
+
+        <span class="c1"># Check if we have reached the end of the requested time</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_current_lsd</span> <span class="o">&gt;=</span> <span class="bp">self</span><span class="o">.</span><span class="n">lsd_end</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="n">exceptions</span><span class="o">.</span><span class="n">PipelineStopIteration</span>
+
+        <span class="n">ss</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">sstream</span><span class="o">.</span><span class="n">copy</span><span class="p">()</span>
+        <span class="n">ss</span><span class="o">.</span><span class="n">attrs</span><span class="p">[</span><span class="s2">&quot;tag&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">&quot;lsd_</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">_current_lsd</span><span class="si">}</span><span class="s2">&quot;</span>
+        <span class="n">ss</span><span class="o">.</span><span class="n">attrs</span><span class="p">[</span><span class="s2">&quot;lsd&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_current_lsd</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">_current_lsd</span> <span class="o">+=</span> <span class="mi">1</span>
+
+        <span class="k">return</span> <span class="n">ss</span></div>
+</div>
+
+</pre></div>
+
+           </div>
+          </div>
+          <footer>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2016, Richard Shaw.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>

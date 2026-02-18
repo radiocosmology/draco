@@ -1,0 +1,423 @@
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" data-content_root="../../../">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>draco.analysis.mapmaker &mdash; draco 0.0.1 documentation</title>
+      <link rel="stylesheet" type="text/css" href="../../../_static/pygments.css?v=b86133f3" />
+      <link rel="stylesheet" type="text/css" href="../../../_static/css/theme.css?v=9edc463e" />
+
+  
+      <script src="../../../_static/jquery.js?v=5d32c60e"></script>
+      <script src="../../../_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
+      <script src="../../../_static/documentation_options.js?v=d45e8c67"></script>
+      <script src="../../../_static/doctools.js?v=9bcbadda"></script>
+      <script src="../../../_static/sphinx_highlight.js?v=dc90522c"></script>
+    <script src="../../../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../../../genindex.html" />
+    <link rel="search" title="Search" href="../../../search.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="../../../index.html" class="icon icon-home">
+            draco
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../../../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../tutorial.html">Tutorial</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../reference.html">API Reference</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../dev.html">Development Guidelines</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../../../index.html">draco</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../../../index.html" class="icon icon-home" aria-label="Home"></a></li>
+          <li class="breadcrumb-item"><a href="../../index.html">Module code</a></li>
+      <li class="breadcrumb-item active">draco.analysis.mapmaker</li>
+      <li class="wy-breadcrumbs-aside">
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <h1>Source code for draco.analysis.mapmaker</h1><div class="highlight"><pre>
+<span></span><span class="sd">&quot;&quot;&quot;Map making from driftscan data using the m-mode formalism.&quot;&quot;&quot;</span>
+
+<span class="kn">import</span><span class="w"> </span><span class="nn">numpy</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">np</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">caput</span><span class="w"> </span><span class="kn">import</span> <span class="n">config</span><span class="p">,</span> <span class="n">mpiarray</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">caput.pipeline</span><span class="w"> </span><span class="kn">import</span> <span class="n">tasklib</span>
+
+<span class="kn">from</span><span class="w"> </span><span class="nn">..core</span><span class="w"> </span><span class="kn">import</span> <span class="n">containers</span><span class="p">,</span> <span class="n">io</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">..util</span><span class="w"> </span><span class="kn">import</span> <span class="n">tools</span>
+
+
+<div class="viewcode-block" id="BaseMapMaker">
+<a class="viewcode-back" href="../../../_autosummary/draco.analysis.mapmaker.html#draco.analysis.mapmaker.BaseMapMaker">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">BaseMapMaker</span><span class="p">(</span><span class="n">tasklib</span><span class="o">.</span><span class="n">base</span><span class="o">.</span><span class="n">ContainerTask</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Rudimetary m-mode map maker.</span>
+
+<span class="sd">    Attributes</span>
+<span class="sd">    ----------</span>
+<span class="sd">    nside : int</span>
+<span class="sd">        Resolution of output Healpix map.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+
+    <span class="n">nside</span> <span class="o">=</span> <span class="n">config</span><span class="o">.</span><span class="n">Property</span><span class="p">(</span><span class="n">proptype</span><span class="o">=</span><span class="nb">int</span><span class="p">,</span> <span class="n">default</span><span class="o">=</span><span class="mi">256</span><span class="p">)</span>
+
+    <span class="n">bt_cache</span> <span class="o">=</span> <span class="kc">None</span>
+
+<div class="viewcode-block" id="BaseMapMaker.setup">
+<a class="viewcode-back" href="../../../_autosummary/draco.analysis.mapmaker.html#draco.analysis.mapmaker.BaseMapMaker.setup">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">setup</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">bt</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Set the beamtransfer matrices to use.</span>
+
+<span class="sd">        Parameters</span>
+<span class="sd">        ----------</span>
+<span class="sd">        bt : beamtransfer.BeamTransfer or manager.ProductManager</span>
+<span class="sd">            Beam transfer manager object (or ProductManager) containing all the</span>
+<span class="sd">            pre-generated beam transfer matrices.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">beamtransfer</span> <span class="o">=</span> <span class="n">io</span><span class="o">.</span><span class="n">get_beamtransfer</span><span class="p">(</span><span class="n">bt</span><span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="BaseMapMaker.process">
+<a class="viewcode-back" href="../../../_autosummary/draco.analysis.mapmaker.html#draco.analysis.mapmaker.BaseMapMaker.process">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">process</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">mmodes</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Make a map from the given m-modes.</span>
+
+<span class="sd">        Parameters</span>
+<span class="sd">        ----------</span>
+<span class="sd">        mmodes : containers.MModes</span>
+<span class="sd">            Data to map</span>
+
+<span class="sd">        Returns</span>
+<span class="sd">        -------</span>
+<span class="sd">        map : containers.Map</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="kn">from</span><span class="w"> </span><span class="nn">cora.util</span><span class="w"> </span><span class="kn">import</span> <span class="n">hputil</span>
+
+        <span class="c1"># Fetch various properties</span>
+        <span class="n">bt</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">beamtransfer</span>
+        <span class="n">lmax</span> <span class="o">=</span> <span class="n">bt</span><span class="o">.</span><span class="n">telescope</span><span class="o">.</span><span class="n">lmax</span>
+        <span class="n">mmax</span> <span class="o">=</span> <span class="nb">min</span><span class="p">(</span><span class="n">bt</span><span class="o">.</span><span class="n">telescope</span><span class="o">.</span><span class="n">mmax</span><span class="p">,</span> <span class="nb">len</span><span class="p">(</span><span class="n">mmodes</span><span class="o">.</span><span class="n">index_map</span><span class="p">[</span><span class="s2">&quot;m&quot;</span><span class="p">])</span> <span class="o">-</span> <span class="mi">1</span><span class="p">)</span>
+        <span class="n">nfreq</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">mmodes</span><span class="o">.</span><span class="n">index_map</span><span class="p">[</span><span class="s2">&quot;freq&quot;</span><span class="p">])</span>  <span class="c1"># bt.telescope.nfreq</span>
+
+        <span class="c1"># Figure out mapping between the frequencies</span>
+        <span class="n">bt_freq</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">beamtransfer</span><span class="o">.</span><span class="n">telescope</span><span class="o">.</span><span class="n">frequencies</span>
+        <span class="n">mm_freq</span> <span class="o">=</span> <span class="n">mmodes</span><span class="o">.</span><span class="n">index_map</span><span class="p">[</span><span class="s2">&quot;freq&quot;</span><span class="p">][</span><span class="s2">&quot;centre&quot;</span><span class="p">]</span>
+
+        <span class="n">freq_ind</span> <span class="o">=</span> <span class="n">tools</span><span class="o">.</span><span class="n">find_keys</span><span class="p">(</span><span class="n">bt_freq</span><span class="p">,</span> <span class="n">mm_freq</span><span class="p">,</span> <span class="n">require_match</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+
+        <span class="c1"># Trim off excess m-modes</span>
+        <span class="n">mmodes</span><span class="o">.</span><span class="n">redistribute</span><span class="p">(</span><span class="s2">&quot;freq&quot;</span><span class="p">)</span>
+        <span class="n">m_array</span> <span class="o">=</span> <span class="n">mmodes</span><span class="o">.</span><span class="n">vis</span><span class="p">[:</span> <span class="p">(</span><span class="n">mmax</span> <span class="o">+</span> <span class="mi">1</span><span class="p">)]</span>
+        <span class="n">m_array</span> <span class="o">=</span> <span class="n">m_array</span><span class="o">.</span><span class="n">redistribute</span><span class="p">(</span><span class="n">axis</span><span class="o">=</span><span class="mi">0</span><span class="p">)</span>
+
+        <span class="n">m_weight</span> <span class="o">=</span> <span class="n">mmodes</span><span class="o">.</span><span class="n">weight</span><span class="p">[:</span> <span class="p">(</span><span class="n">mmax</span> <span class="o">+</span> <span class="mi">1</span><span class="p">)]</span>
+        <span class="n">m_weight</span> <span class="o">=</span> <span class="n">m_weight</span><span class="o">.</span><span class="n">redistribute</span><span class="p">(</span><span class="n">axis</span><span class="o">=</span><span class="mi">0</span><span class="p">)</span>
+
+        <span class="c1"># Create array to store alms in.</span>
+        <span class="n">alm</span> <span class="o">=</span> <span class="n">mpiarray</span><span class="o">.</span><span class="n">MPIArray</span><span class="p">(</span>
+            <span class="p">(</span><span class="n">nfreq</span><span class="p">,</span> <span class="mi">4</span><span class="p">,</span> <span class="n">lmax</span> <span class="o">+</span> <span class="mi">1</span><span class="p">,</span> <span class="n">mmax</span> <span class="o">+</span> <span class="mi">1</span><span class="p">),</span>
+            <span class="n">axis</span><span class="o">=</span><span class="mi">3</span><span class="p">,</span>
+            <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">complex128</span><span class="p">,</span>
+            <span class="n">comm</span><span class="o">=</span><span class="n">mmodes</span><span class="o">.</span><span class="n">comm</span><span class="p">,</span>
+        <span class="p">)</span>
+        <span class="n">alm</span><span class="p">[:]</span> <span class="o">=</span> <span class="mf">0.0</span>
+
+        <span class="c1"># Loop over all m&#39;s and solve from m-mode visibilities to alms.</span>
+        <span class="k">for</span> <span class="n">mi</span><span class="p">,</span> <span class="n">m</span> <span class="ow">in</span> <span class="n">m_array</span><span class="o">.</span><span class="n">enumerate</span><span class="p">(</span><span class="n">axis</span><span class="o">=</span><span class="mi">0</span><span class="p">):</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">log</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span>
+                <span class="s2">&quot;Processing m=</span><span class="si">%i</span><span class="s2"> (local </span><span class="si">%i</span><span class="s2">/</span><span class="si">%i</span><span class="s2">)&quot;</span><span class="p">,</span> <span class="n">m</span><span class="p">,</span> <span class="n">mi</span> <span class="o">+</span> <span class="mi">1</span><span class="p">,</span> <span class="n">m_array</span><span class="o">.</span><span class="n">local_shape</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+            <span class="p">)</span>
+
+            <span class="c1"># Get and cache the beam transfer matrix, but trim off any l &lt; m.</span>
+            <span class="c1"># if self.bt_cache is None:</span>
+            <span class="c1">#     self.bt_cache = (m, bt.beam_m(m))</span>
+            <span class="c1">#     self.log.debug(&quot;Cached beamtransfer for m=%i&quot;, m)</span>
+
+            <span class="k">for</span> <span class="n">fi</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">nfreq</span><span class="p">):</span>
+                <span class="n">v</span> <span class="o">=</span> <span class="n">m_array</span><span class="p">[</span><span class="n">mi</span><span class="p">,</span> <span class="p">:,</span> <span class="n">fi</span><span class="p">]</span><span class="o">.</span><span class="n">view</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">)</span>
+                <span class="n">a</span> <span class="o">=</span> <span class="n">alm</span><span class="p">[</span><span class="n">fi</span><span class="p">,</span> <span class="o">...</span><span class="p">,</span> <span class="n">mi</span><span class="p">]</span><span class="o">.</span><span class="n">view</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">)</span>
+                <span class="n">Ni</span> <span class="o">=</span> <span class="n">m_weight</span><span class="p">[</span><span class="n">mi</span><span class="p">,</span> <span class="p">:,</span> <span class="n">fi</span><span class="p">]</span><span class="o">.</span><span class="n">view</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">)</span>
+
+                <span class="n">a</span><span class="p">[:]</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_solve_m</span><span class="p">(</span><span class="n">m</span><span class="p">,</span> <span class="n">freq_ind</span><span class="p">[</span><span class="n">fi</span><span class="p">],</span> <span class="n">v</span><span class="p">,</span> <span class="n">Ni</span><span class="p">)</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">bt_cache</span> <span class="o">=</span> <span class="kc">None</span>
+
+        <span class="c1"># Redistribute back over frequency</span>
+        <span class="n">alm</span> <span class="o">=</span> <span class="n">alm</span><span class="o">.</span><span class="n">redistribute</span><span class="p">(</span><span class="n">axis</span><span class="o">=</span><span class="mi">0</span><span class="p">)</span>
+
+        <span class="c1"># Copy into square alm array for transform</span>
+        <span class="n">almt</span> <span class="o">=</span> <span class="n">mpiarray</span><span class="o">.</span><span class="n">MPIArray</span><span class="p">(</span>
+            <span class="p">(</span><span class="n">nfreq</span><span class="p">,</span> <span class="mi">4</span><span class="p">,</span> <span class="n">lmax</span> <span class="o">+</span> <span class="mi">1</span><span class="p">,</span> <span class="n">lmax</span> <span class="o">+</span> <span class="mi">1</span><span class="p">),</span>
+            <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">complex128</span><span class="p">,</span>
+            <span class="n">axis</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span>
+            <span class="n">comm</span><span class="o">=</span><span class="n">mmodes</span><span class="o">.</span><span class="n">comm</span><span class="p">,</span>
+        <span class="p">)</span>
+        <span class="n">almt</span><span class="p">[</span><span class="o">...</span><span class="p">,</span> <span class="p">:</span> <span class="p">(</span><span class="n">mmax</span> <span class="o">+</span> <span class="mi">1</span><span class="p">)]</span> <span class="o">=</span> <span class="n">alm</span>
+        <span class="n">alm</span> <span class="o">=</span> <span class="n">almt</span>
+
+        <span class="c1"># Perform spherical harmonic transform to map space</span>
+        <span class="n">maps</span> <span class="o">=</span> <span class="n">hputil</span><span class="o">.</span><span class="n">sphtrans_inv_sky</span><span class="p">(</span><span class="n">alm</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">nside</span><span class="p">)</span>
+        <span class="n">maps</span> <span class="o">=</span> <span class="n">mpiarray</span><span class="o">.</span><span class="n">MPIArray</span><span class="o">.</span><span class="n">wrap</span><span class="p">(</span><span class="n">maps</span><span class="p">,</span> <span class="n">axis</span><span class="o">=</span><span class="mi">0</span><span class="p">)</span>
+
+        <span class="n">m</span> <span class="o">=</span> <span class="n">containers</span><span class="o">.</span><span class="n">Map</span><span class="p">(</span><span class="n">nside</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">nside</span><span class="p">,</span> <span class="n">axes_from</span><span class="o">=</span><span class="n">mmodes</span><span class="p">,</span> <span class="n">comm</span><span class="o">=</span><span class="n">mmodes</span><span class="o">.</span><span class="n">comm</span><span class="p">)</span>
+        <span class="n">m</span><span class="o">.</span><span class="n">map</span><span class="p">[:]</span> <span class="o">=</span> <span class="n">maps</span>
+
+        <span class="k">return</span> <span class="n">m</span></div>
+
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">_solve_m</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">m</span><span class="p">,</span> <span class="n">f</span><span class="p">,</span> <span class="n">v</span><span class="p">,</span> <span class="n">Ni</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Solve for the a_lm&#39;s.</span>
+
+<span class="sd">        This implementation is blank. Must be overriden.</span>
+
+<span class="sd">        Parameters</span>
+<span class="sd">        ----------</span>
+<span class="sd">        m : int</span>
+<span class="sd">            Which m-mode are we solving for.</span>
+<span class="sd">        f : int</span>
+<span class="sd">            Frequency we are solving for. This is the index for the beam transfers.</span>
+<span class="sd">        v : np.ndarray[2, nbase]</span>
+<span class="sd">            Visibility data.</span>
+<span class="sd">        Ni : np.ndarray[2, nbase]</span>
+<span class="sd">            Inverse of noise variance. Used as the noise matrix for the solve.</span>
+
+<span class="sd">        Returns</span>
+<span class="sd">        -------</span>
+<span class="sd">        a : np.ndarray[npol, lmax+1]</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">pass</span></div>
+
+
+
+<div class="viewcode-block" id="DirtyMapMaker">
+<a class="viewcode-back" href="../../../_autosummary/draco.analysis.mapmaker.html#draco.analysis.mapmaker.DirtyMapMaker">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">DirtyMapMaker</span><span class="p">(</span><span class="n">BaseMapMaker</span><span class="p">):</span>
+<span class="w">    </span><span class="sa">r</span><span class="sd">&quot;&quot;&quot;Generate a dirty map.</span>
+
+<span class="sd">    Notes</span>
+<span class="sd">    -----</span>
+<span class="sd">    The dirty map is produced by generating a set of :math:`a_{lm}` coefficients</span>
+<span class="sd">    using</span>
+
+<span class="sd">    .. math:: \hat{\mathbf{a}} = \mathbf{B}^\dagger \mathbf{N}^{-1} \mathbf{v}</span>
+
+<span class="sd">    and then performing the spherical harmonic transform to get the sky intensity.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">_solve_m</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">m</span><span class="p">,</span> <span class="n">f</span><span class="p">,</span> <span class="n">v</span><span class="p">,</span> <span class="n">Ni</span><span class="p">):</span>
+        <span class="n">bt</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">beamtransfer</span>
+
+        <span class="c1"># Massage the arrays into shape</span>
+        <span class="n">v</span> <span class="o">=</span> <span class="n">v</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="n">bt</span><span class="o">.</span><span class="n">ntel</span><span class="p">)</span>
+        <span class="n">Ni</span> <span class="o">=</span> <span class="n">Ni</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="n">bt</span><span class="o">.</span><span class="n">ntel</span><span class="p">)</span>
+        <span class="n">bm</span> <span class="o">=</span> <span class="n">bt</span><span class="o">.</span><span class="n">beam_m</span><span class="p">(</span><span class="n">m</span><span class="p">,</span> <span class="n">fi</span><span class="o">=</span><span class="n">f</span><span class="p">)</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="n">bt</span><span class="o">.</span><span class="n">ntel</span><span class="p">,</span> <span class="n">bt</span><span class="o">.</span><span class="n">nsky</span><span class="p">)</span>
+
+        <span class="c1"># Solve for the dirty map alms</span>
+        <span class="n">a</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">dot</span><span class="p">(</span><span class="n">bm</span><span class="o">.</span><span class="n">T</span><span class="o">.</span><span class="n">conj</span><span class="p">(),</span> <span class="n">Ni</span> <span class="o">*</span> <span class="n">v</span><span class="p">)</span>
+
+        <span class="c1"># Reshape to the correct output</span>
+        <span class="k">return</span> <span class="n">a</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="n">bt</span><span class="o">.</span><span class="n">telescope</span><span class="o">.</span><span class="n">num_pol_sky</span><span class="p">,</span> <span class="n">bt</span><span class="o">.</span><span class="n">telescope</span><span class="o">.</span><span class="n">lmax</span> <span class="o">+</span> <span class="mi">1</span><span class="p">)</span></div>
+
+
+
+<div class="viewcode-block" id="MaximumLikelihoodMapMaker">
+<a class="viewcode-back" href="../../../_autosummary/draco.analysis.mapmaker.html#draco.analysis.mapmaker.MaximumLikelihoodMapMaker">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">MaximumLikelihoodMapMaker</span><span class="p">(</span><span class="n">BaseMapMaker</span><span class="p">):</span>
+<span class="w">    </span><span class="sa">r</span><span class="sd">&quot;&quot;&quot;Generate a Maximum Likelihood map using the Moore-Penrose pseudo-inverse.</span>
+
+<span class="sd">    Notes</span>
+<span class="sd">    -----</span>
+<span class="sd">    The dirty map is produced by generating a set of :math:`a_{lm}` coefficients</span>
+<span class="sd">    using</span>
+
+<span class="sd">    .. math:: \hat{\mathbf{a}} = \left( \mathbf{N}^{-1/2 }\mathbf{B} \right) ^+ \mathbf{N}^{-1/2} \mathbf{v}</span>
+
+<span class="sd">    where the superscript :math:`+` denotes the pseudo-inverse.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">_solve_m</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">m</span><span class="p">,</span> <span class="n">f</span><span class="p">,</span> <span class="n">v</span><span class="p">,</span> <span class="n">Ni</span><span class="p">):</span>
+        <span class="n">bt</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">beamtransfer</span>
+
+        <span class="c1"># Massage the arrays into shape</span>
+        <span class="n">v</span> <span class="o">=</span> <span class="n">v</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="n">bt</span><span class="o">.</span><span class="n">ntel</span><span class="p">)</span>
+        <span class="n">Ni</span> <span class="o">=</span> <span class="n">Ni</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="n">bt</span><span class="o">.</span><span class="n">ntel</span><span class="p">)</span>
+        <span class="n">bm</span> <span class="o">=</span> <span class="n">bt</span><span class="o">.</span><span class="n">beam_m</span><span class="p">(</span><span class="n">m</span><span class="p">,</span> <span class="n">fi</span><span class="o">=</span><span class="n">f</span><span class="p">)</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="n">bt</span><span class="o">.</span><span class="n">ntel</span><span class="p">,</span> <span class="n">bt</span><span class="o">.</span><span class="n">nsky</span><span class="p">)</span>
+
+        <span class="n">Nh</span> <span class="o">=</span> <span class="n">Ni</span><span class="o">**</span><span class="mf">0.5</span>
+
+        <span class="c1"># Construct the beam pseudo inverse</span>
+        <span class="n">ib</span> <span class="o">=</span> <span class="n">pinv_svd</span><span class="p">(</span><span class="n">bm</span> <span class="o">*</span> <span class="n">Nh</span><span class="p">[:,</span> <span class="n">np</span><span class="o">.</span><span class="n">newaxis</span><span class="p">])</span>
+
+        <span class="c1"># Solve for the ML map alms</span>
+        <span class="n">a</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">dot</span><span class="p">(</span><span class="n">ib</span><span class="p">,</span> <span class="n">Nh</span> <span class="o">*</span> <span class="n">v</span><span class="p">)</span>
+
+        <span class="c1"># Reshape to the correct output</span>
+        <span class="k">return</span> <span class="n">a</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="n">bt</span><span class="o">.</span><span class="n">telescope</span><span class="o">.</span><span class="n">num_pol_sky</span><span class="p">,</span> <span class="n">bt</span><span class="o">.</span><span class="n">telescope</span><span class="o">.</span><span class="n">lmax</span> <span class="o">+</span> <span class="mi">1</span><span class="p">)</span></div>
+
+
+
+<div class="viewcode-block" id="WienerMapMaker">
+<a class="viewcode-back" href="../../../_autosummary/draco.analysis.mapmaker.html#draco.analysis.mapmaker.WienerMapMaker">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">WienerMapMaker</span><span class="p">(</span><span class="n">BaseMapMaker</span><span class="p">):</span>
+<span class="w">    </span><span class="sa">r</span><span class="sd">&quot;&quot;&quot;Generate a Wiener filtered map.</span>
+
+<span class="sd">    Assumes that the signal is a Gaussian random field described by</span>
+<span class="sd">    a power-law power spectum.</span>
+
+<span class="sd">    Attributes</span>
+<span class="sd">    ----------</span>
+<span class="sd">    prior_amp : float</span>
+<span class="sd">        An amplitude prior to use for the map maker. In Kelvin.</span>
+<span class="sd">    prior_tilt : float</span>
+<span class="sd">        Power law index prior for the power spectrum.</span>
+
+<span class="sd">    Notes</span>
+<span class="sd">    -----</span>
+<span class="sd">    The Wiener map is produced by generating a set of :math:`a_{lm}` coefficients</span>
+<span class="sd">    using</span>
+
+<span class="sd">    .. math::</span>
+<span class="sd">        \hat{\mathbf{a}} = \left( \mathbf{S}^{-1} + \mathbf{B}^\dagger</span>
+<span class="sd">        \mathbf{N}^{-1} \mathbf{B} \right)^{-1} \mathbf{B}^\dagger \mathbf{N}^{-1} \mathbf{v}</span>
+
+<span class="sd">    where the signal covariance matrix :math:`\mathbf{S}` is assumed to be</span>
+<span class="sd">    governed by a power law power spectrum for each polarisation component.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+
+    <span class="n">prior_amp</span> <span class="o">=</span> <span class="n">config</span><span class="o">.</span><span class="n">Property</span><span class="p">(</span><span class="n">proptype</span><span class="o">=</span><span class="nb">float</span><span class="p">,</span> <span class="n">default</span><span class="o">=</span><span class="mf">1.0</span><span class="p">)</span>
+    <span class="n">prior_tilt</span> <span class="o">=</span> <span class="n">config</span><span class="o">.</span><span class="n">Property</span><span class="p">(</span><span class="n">proptype</span><span class="o">=</span><span class="nb">float</span><span class="p">,</span> <span class="n">default</span><span class="o">=</span><span class="mf">0.5</span><span class="p">)</span>
+
+    <span class="n">bt_cache</span> <span class="o">=</span> <span class="kc">None</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">_solve_m</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">m</span><span class="p">,</span> <span class="n">f</span><span class="p">,</span> <span class="n">v</span><span class="p">,</span> <span class="n">Ni</span><span class="p">):</span>
+        <span class="kn">import</span><span class="w"> </span><span class="nn">scipy.linalg</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">la</span>
+
+        <span class="n">bt</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">beamtransfer</span>
+
+        <span class="c1"># Get transfer for this m and f</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">bt_cache</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="bp">self</span><span class="o">.</span><span class="n">bt_cache</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">==</span> <span class="n">m</span><span class="p">:</span>
+            <span class="n">bm</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">bt_cache</span><span class="p">[</span><span class="mi">1</span><span class="p">][</span><span class="n">f</span><span class="p">]</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">bm</span> <span class="o">=</span> <span class="n">bt</span><span class="o">.</span><span class="n">beam_m</span><span class="p">(</span><span class="n">m</span><span class="p">,</span> <span class="n">fi</span><span class="o">=</span><span class="n">f</span><span class="p">)</span>
+        <span class="n">bm</span> <span class="o">=</span> <span class="n">bm</span><span class="p">[</span><span class="o">...</span><span class="p">,</span> <span class="n">m</span><span class="p">:]</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="n">bt</span><span class="o">.</span><span class="n">ntel</span><span class="p">,</span> <span class="o">-</span><span class="mi">1</span><span class="p">)</span>
+
+        <span class="c1"># Massage the arrays into shape</span>
+        <span class="n">v</span> <span class="o">=</span> <span class="n">v</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="n">bt</span><span class="o">.</span><span class="n">ntel</span><span class="p">)</span>
+        <span class="n">Ni</span> <span class="o">=</span> <span class="n">Ni</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="n">bt</span><span class="o">.</span><span class="n">ntel</span><span class="p">)</span>
+        <span class="n">Nh</span> <span class="o">=</span> <span class="n">Ni</span><span class="o">**</span><span class="mf">0.5</span>
+
+        <span class="c1"># Construct pre-wightened beam and beam-conjugated matrices</span>
+        <span class="n">bmt</span> <span class="o">=</span> <span class="n">bm</span> <span class="o">*</span> <span class="n">Nh</span><span class="p">[:,</span> <span class="n">np</span><span class="o">.</span><span class="n">newaxis</span><span class="p">]</span>
+        <span class="n">bth</span> <span class="o">=</span> <span class="n">bmt</span><span class="o">.</span><span class="n">T</span><span class="o">.</span><span class="n">conj</span><span class="p">()</span>
+
+        <span class="c1"># Pre-wighten the visibilities</span>
+        <span class="n">vt</span> <span class="o">=</span> <span class="n">Nh</span> <span class="o">*</span> <span class="n">v</span>
+
+        <span class="c1"># Construct the signal covariance matrix</span>
+        <span class="n">l</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">arange</span><span class="p">(</span><span class="n">bt</span><span class="o">.</span><span class="n">telescope</span><span class="o">.</span><span class="n">lmax</span> <span class="o">+</span> <span class="mi">1</span><span class="p">)</span>
+        <span class="n">l</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">=</span> <span class="mi">1</span>  <span class="c1"># Change l=0 to get around singularity</span>
+        <span class="n">l</span> <span class="o">=</span> <span class="n">l</span><span class="p">[</span><span class="n">m</span><span class="p">:]</span>  <span class="c1"># Trim off any l &lt; m</span>
+        <span class="n">cl_TT</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">prior_amp</span><span class="o">**</span><span class="mi">2</span> <span class="o">*</span> <span class="n">l</span> <span class="o">**</span> <span class="p">(</span><span class="o">-</span><span class="bp">self</span><span class="o">.</span><span class="n">prior_tilt</span><span class="p">)</span>
+        <span class="n">S_diag</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">concatenate</span><span class="p">([</span><span class="n">cl_TT</span><span class="p">]</span> <span class="o">*</span> <span class="mi">4</span><span class="p">)</span>
+
+        <span class="c1"># For large ntel it&#39;s quickest to solve in the standard Wiener filter way</span>
+        <span class="k">if</span> <span class="n">bt</span><span class="o">.</span><span class="n">ntel</span> <span class="o">&gt;</span> <span class="n">bt</span><span class="o">.</span><span class="n">nsky</span><span class="p">:</span>
+            <span class="n">Ci</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">diag</span><span class="p">(</span><span class="mf">1.0</span> <span class="o">/</span> <span class="n">S_diag</span><span class="p">)</span> <span class="o">+</span> <span class="n">np</span><span class="o">.</span><span class="n">dot</span><span class="p">(</span>
+                <span class="n">bth</span><span class="p">,</span> <span class="n">bmt</span>
+            <span class="p">)</span>  <span class="c1"># Construct the inverse covariance</span>
+            <span class="n">a_dirty</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">dot</span><span class="p">(</span><span class="n">bth</span><span class="p">,</span> <span class="n">vt</span><span class="p">)</span>  <span class="c1"># Find the dirty map</span>
+            <span class="n">a_wiener</span> <span class="o">=</span> <span class="n">la</span><span class="o">.</span><span class="n">solve</span><span class="p">(</span><span class="n">Ci</span><span class="p">,</span> <span class="n">a_dirty</span><span class="p">,</span> <span class="n">sym_pos</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>  <span class="c1"># Solve to find C vt</span>
+
+        <span class="c1"># If not it&#39;s better to rearrange using the results for blockwise matrix inversion</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">pCi</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">identity</span><span class="p">(</span><span class="n">bt</span><span class="o">.</span><span class="n">ntel</span><span class="p">)</span> <span class="o">+</span> <span class="n">np</span><span class="o">.</span><span class="n">dot</span><span class="p">(</span><span class="n">bmt</span> <span class="o">*</span> <span class="n">S_diag</span><span class="p">[</span><span class="n">np</span><span class="o">.</span><span class="n">newaxis</span><span class="p">,</span> <span class="p">:],</span> <span class="n">bth</span><span class="p">)</span>
+            <span class="n">v_int</span> <span class="o">=</span> <span class="n">la</span><span class="o">.</span><span class="n">solve</span><span class="p">(</span><span class="n">pCi</span><span class="p">,</span> <span class="n">vt</span><span class="p">,</span> <span class="n">sym_pos</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+            <span class="n">a_wiener</span> <span class="o">=</span> <span class="n">S_diag</span> <span class="o">*</span> <span class="n">np</span><span class="o">.</span><span class="n">dot</span><span class="p">(</span><span class="n">bth</span><span class="p">,</span> <span class="n">v_int</span><span class="p">)</span>
+
+        <span class="c1"># Copy the solution into a correctly shaped array output</span>
+        <span class="n">a</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">zeros</span><span class="p">((</span><span class="n">bt</span><span class="o">.</span><span class="n">telescope</span><span class="o">.</span><span class="n">num_pol_sky</span><span class="p">,</span> <span class="n">bt</span><span class="o">.</span><span class="n">telescope</span><span class="o">.</span><span class="n">lmax</span> <span class="o">+</span> <span class="mi">1</span><span class="p">),</span> <span class="n">dtype</span><span class="o">=</span><span class="n">v</span><span class="o">.</span><span class="n">dtype</span><span class="p">)</span>
+        <span class="n">a</span><span class="p">[:,</span> <span class="n">m</span><span class="p">:]</span> <span class="o">=</span> <span class="n">a_wiener</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="n">bt</span><span class="o">.</span><span class="n">telescope</span><span class="o">.</span><span class="n">num_pol_sky</span><span class="p">,</span> <span class="o">-</span><span class="mi">1</span><span class="p">)</span>
+
+        <span class="k">return</span> <span class="n">a</span></div>
+
+
+
+<div class="viewcode-block" id="pinv_svd">
+<a class="viewcode-back" href="../../../_autosummary/draco.analysis.mapmaker.html#draco.analysis.mapmaker.pinv_svd">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">pinv_svd</span><span class="p">(</span><span class="n">M</span><span class="p">,</span> <span class="n">acond</span><span class="o">=</span><span class="mf">1e-4</span><span class="p">,</span> <span class="n">rcond</span><span class="o">=</span><span class="mf">1e-3</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Generate the pseudo-inverse from an svd.</span>
+
+<span class="sd">    Not really clear why I&#39;m not just using la.pinv2 instead</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="kn">import</span><span class="w"> </span><span class="nn">scipy.linalg</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">la</span>
+
+    <span class="n">u</span><span class="p">,</span> <span class="n">sig</span><span class="p">,</span> <span class="n">vh</span> <span class="o">=</span> <span class="n">la</span><span class="o">.</span><span class="n">svd</span><span class="p">(</span><span class="n">M</span><span class="p">,</span> <span class="n">full_matrices</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
+
+    <span class="n">rank</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">sum</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">logical_and</span><span class="p">(</span><span class="n">sig</span> <span class="o">&gt;</span> <span class="n">rcond</span> <span class="o">*</span> <span class="n">sig</span><span class="o">.</span><span class="n">max</span><span class="p">(),</span> <span class="n">sig</span> <span class="o">&gt;</span> <span class="n">acond</span><span class="p">))</span>
+
+    <span class="n">psigma_diag</span> <span class="o">=</span> <span class="mf">1.0</span> <span class="o">/</span> <span class="n">sig</span><span class="p">[:</span><span class="n">rank</span><span class="p">]</span>
+
+    <span class="k">return</span> <span class="n">np</span><span class="o">.</span><span class="n">transpose</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">conjugate</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">dot</span><span class="p">(</span><span class="n">u</span><span class="p">[:,</span> <span class="p">:</span><span class="n">rank</span><span class="p">]</span> <span class="o">*</span> <span class="n">psigma_diag</span><span class="p">,</span> <span class="n">vh</span><span class="p">[:</span><span class="n">rank</span><span class="p">])))</span></div>
+
+</pre></div>
+
+           </div>
+          </div>
+          <footer>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2016, Richard Shaw.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>

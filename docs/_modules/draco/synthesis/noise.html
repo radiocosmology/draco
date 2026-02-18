@@ -1,0 +1,624 @@
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" data-content_root="../../../">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>draco.synthesis.noise &mdash; draco 0.0.1 documentation</title>
+      <link rel="stylesheet" type="text/css" href="../../../_static/pygments.css?v=b86133f3" />
+      <link rel="stylesheet" type="text/css" href="../../../_static/css/theme.css?v=9edc463e" />
+
+  
+      <script src="../../../_static/jquery.js?v=5d32c60e"></script>
+      <script src="../../../_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
+      <script src="../../../_static/documentation_options.js?v=d45e8c67"></script>
+      <script src="../../../_static/doctools.js?v=9bcbadda"></script>
+      <script src="../../../_static/sphinx_highlight.js?v=dc90522c"></script>
+    <script src="../../../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../../../genindex.html" />
+    <link rel="search" title="Search" href="../../../search.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="../../../index.html" class="icon icon-home">
+            draco
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../../../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../tutorial.html">Tutorial</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../reference.html">API Reference</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../dev.html">Development Guidelines</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../../../index.html">draco</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../../../index.html" class="icon icon-home" aria-label="Home"></a></li>
+          <li class="breadcrumb-item"><a href="../../index.html">Module code</a></li>
+      <li class="breadcrumb-item active">draco.synthesis.noise</li>
+      <li class="wy-breadcrumbs-aside">
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <h1>Source code for draco.synthesis.noise</h1><div class="highlight"><pre>
+<span></span><span class="sd">&quot;&quot;&quot;Add the effects of instrumental noise into the simulation.</span>
+
+<span class="sd">This is separated out into multiple tasks. The first, :class:`ReceiverTemperature`</span>
+<span class="sd">adds in the effects of instrumental noise bias into the data. The second,</span>
+<span class="sd">:class:`SampleNoise`, takes a timestream which is assumed to be the expected (or</span>
+<span class="sd">average) value and returns an observed time stream. The :class: `GaussianNoise`</span>
+<span class="sd">adds in the effects of a Gaussian distributed noise into visibility data.</span>
+<span class="sd">The :class: `GaussianNoiseDataset` replaces visibility data with Gaussian distributed noise,</span>
+<span class="sd">using the variance of the noise estimate in the existing data.</span>
+<span class="sd">&quot;&quot;&quot;</span>
+
+<span class="kn">import</span><span class="w"> </span><span class="nn">numpy</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">np</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">caput</span><span class="w"> </span><span class="kn">import</span> <span class="n">config</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">caput.astro.constants</span><span class="w"> </span><span class="kn">import</span> <span class="n">STELLAR_S</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">caput.pipeline</span><span class="w"> </span><span class="kn">import</span> <span class="n">exceptions</span><span class="p">,</span> <span class="n">tasklib</span>
+
+<span class="kn">from</span><span class="w"> </span><span class="nn">..core</span><span class="w"> </span><span class="kn">import</span> <span class="n">containers</span><span class="p">,</span> <span class="n">io</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">..util</span><span class="w"> </span><span class="kn">import</span> <span class="n">random</span><span class="p">,</span> <span class="n">tools</span>
+
+
+<div class="viewcode-block" id="ReceiverTemperature">
+<a class="viewcode-back" href="../../../_autosummary/draco.synthesis.noise.html#draco.synthesis.noise.ReceiverTemperature">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">ReceiverTemperature</span><span class="p">(</span><span class="n">tasklib</span><span class="o">.</span><span class="n">base</span><span class="o">.</span><span class="n">ContainerTask</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Add a basic receiver temperature term into the data.</span>
+
+<span class="sd">    This class adds in an uncorrelated, frequency and time independent receiver</span>
+<span class="sd">    noise temperature to the data. As it is uncorrelated this will only affect</span>
+<span class="sd">    the auto-correlations. Note this only adds in the offset to the visibility,</span>
+<span class="sd">    to add the corresponding random fluctuations to subsequently use the</span>
+<span class="sd">    :class:`SampleNoise` task.</span>
+
+<span class="sd">    Attributes</span>
+<span class="sd">    ----------</span>
+<span class="sd">    recv_temp : float</span>
+<span class="sd">        The receiver temperature in Kelvin.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+
+    <span class="n">recv_temp</span> <span class="o">=</span> <span class="n">config</span><span class="o">.</span><span class="n">Property</span><span class="p">(</span><span class="n">proptype</span><span class="o">=</span><span class="nb">float</span><span class="p">,</span> <span class="n">default</span><span class="o">=</span><span class="mf">0.0</span><span class="p">)</span>
+
+<div class="viewcode-block" id="ReceiverTemperature.process">
+<a class="viewcode-back" href="../../../_autosummary/draco.synthesis.noise.html#draco.synthesis.noise.ReceiverTemperature.process">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">process</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">data</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Iterate over the products to find the auto-correlations and add the noise into them.&quot;&quot;&quot;</span>
+        <span class="k">for</span> <span class="n">pi</span><span class="p">,</span> <span class="n">prod</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">data</span><span class="o">.</span><span class="n">prodstack</span><span class="p">):</span>
+            <span class="c1"># Great an auto!</span>
+            <span class="k">if</span> <span class="n">prod</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">==</span> <span class="n">prod</span><span class="p">[</span><span class="mi">1</span><span class="p">]:</span>
+                <span class="n">data</span><span class="o">.</span><span class="n">vis</span><span class="p">[:,</span> <span class="n">pi</span><span class="p">]</span> <span class="o">+=</span> <span class="bp">self</span><span class="o">.</span><span class="n">recv_temp</span>
+
+        <span class="k">return</span> <span class="n">data</span></div>
+</div>
+
+
+
+<div class="viewcode-block" id="GaussianNoiseDataset">
+<a class="viewcode-back" href="../../../_autosummary/draco.synthesis.noise.html#draco.synthesis.noise.GaussianNoiseDataset">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">GaussianNoiseDataset</span><span class="p">(</span><span class="n">tasklib</span><span class="o">.</span><span class="n">base</span><span class="o">.</span><span class="n">ContainerTask</span><span class="p">,</span> <span class="n">tasklib</span><span class="o">.</span><span class="n">random</span><span class="o">.</span><span class="n">RandomTask</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Generates a Gaussian distributed noise dataset using the noise estimates of an existing dataset.</span>
+
+<span class="sd">    Attributes</span>
+<span class="sd">    ----------</span>
+<span class="sd">    dataset : string</span>
+<span class="sd">        The dataset to fill with gaussian noise. If set to &#39;vis&#39;, will ensure</span>
+<span class="sd">        autos are real. If not set, will look for a default dataset in a list</span>
+<span class="sd">        of known containers.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+
+    <span class="n">dataset</span> <span class="o">=</span> <span class="n">config</span><span class="o">.</span><span class="n">Property</span><span class="p">(</span><span class="n">proptype</span><span class="o">=</span><span class="nb">str</span><span class="p">,</span> <span class="n">default</span><span class="o">=</span><span class="kc">None</span><span class="p">)</span>
+    <span class="n">in_place</span> <span class="o">=</span> <span class="n">config</span><span class="o">.</span><span class="n">Property</span><span class="p">(</span><span class="n">proptype</span><span class="o">=</span><span class="nb">bool</span><span class="p">,</span> <span class="n">default</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+
+<div class="viewcode-block" id="GaussianNoiseDataset.process">
+<a class="viewcode-back" href="../../../_autosummary/draco.synthesis.noise.html#draco.synthesis.noise.GaussianNoiseDataset.process">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">process</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">data</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Generates a Gaussian distributed noise dataset given the provided dataset&#39;s visibility weights.</span>
+
+<span class="sd">        Parameters</span>
+<span class="sd">        ----------</span>
+<span class="sd">        data : :class:`VisContainer`</span>
+<span class="sd">            Any dataset which contains a vis and weight attribute.</span>
+<span class="sd">            Note the modification is done in place.</span>
+
+<span class="sd">        Returns</span>
+<span class="sd">        -------</span>
+<span class="sd">        data_noise : same as parameter `data`</span>
+<span class="sd">            The previous dataset with the visibility replaced with</span>
+<span class="sd">            a Gaussian distributed noise realisation.</span>
+
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">dataset</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">containers</span><span class="o">.</span><span class="n">DataWeightContainer</span><span class="p">):</span>
+                <span class="n">dataset_name</span> <span class="o">=</span> <span class="n">data</span><span class="o">.</span><span class="n">_data_dset_name</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+                    <span class="sa">f</span><span class="s2">&quot;No default dataset known for </span><span class="si">{</span><span class="nb">type</span><span class="p">(</span><span class="n">data</span><span class="p">)</span><span class="si">}</span><span class="s2"> container.&quot;</span>
+                <span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">dataset_name</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">dataset</span>
+
+        <span class="k">if</span> <span class="n">dataset_name</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">data</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="n">config</span><span class="o">.</span><span class="n">CaputConfigError</span><span class="p">(</span>
+                <span class="sa">f</span><span class="s2">&quot;Dataset &#39;</span><span class="si">{</span><span class="n">dataset_name</span><span class="si">}</span><span class="s2">&#39; does not exist in container </span><span class="si">{</span><span class="nb">type</span><span class="p">(</span><span class="n">data</span><span class="p">)</span><span class="si">}</span><span class="s2">.&quot;</span>
+            <span class="p">)</span>
+
+        <span class="c1"># Distribute in something other than `stack`</span>
+        <span class="n">data</span><span class="o">.</span><span class="n">redistribute</span><span class="p">(</span><span class="s2">&quot;freq&quot;</span><span class="p">)</span>
+
+        <span class="c1"># If requested, create a new output container</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">in_place</span><span class="p">:</span>
+            <span class="n">out</span> <span class="o">=</span> <span class="n">data</span><span class="o">.</span><span class="n">copy</span><span class="p">()</span>
+            <span class="n">out</span><span class="o">.</span><span class="n">redistribute</span><span class="p">(</span><span class="s2">&quot;freq&quot;</span><span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">out</span> <span class="o">=</span> <span class="n">data</span>
+
+        <span class="c1"># Replace visibilities with noise</span>
+        <span class="n">dset</span> <span class="o">=</span> <span class="n">out</span><span class="p">[</span><span class="n">dataset_name</span><span class="p">][:]</span><span class="o">.</span><span class="n">local_array</span>
+        <span class="n">weight</span> <span class="o">=</span> <span class="n">data</span><span class="o">.</span><span class="n">weight</span><span class="p">[:]</span><span class="o">.</span><span class="n">local_array</span>
+        <span class="k">if</span> <span class="n">np</span><span class="o">.</span><span class="n">iscomplexobj</span><span class="p">(</span><span class="n">dset</span><span class="p">):</span>
+            <span class="n">random</span><span class="o">.</span><span class="n">complex_normal</span><span class="p">(</span>
+                <span class="n">scale</span><span class="o">=</span><span class="n">tools</span><span class="o">.</span><span class="n">invert_no_zero</span><span class="p">(</span><span class="n">weight</span><span class="p">)</span> <span class="o">**</span> <span class="mf">0.5</span><span class="p">,</span>
+                <span class="n">out</span><span class="o">=</span><span class="n">dset</span><span class="p">,</span>
+                <span class="n">rng</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">rng</span><span class="p">,</span>
+            <span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">rng</span><span class="o">.</span><span class="n">standard_normal</span><span class="p">(</span><span class="n">out</span><span class="o">=</span><span class="n">dset</span><span class="p">)</span>
+            <span class="n">dset</span> <span class="o">*=</span> <span class="n">tools</span><span class="o">.</span><span class="n">invert_no_zero</span><span class="p">(</span><span class="n">weight</span><span class="p">)</span> <span class="o">**</span> <span class="mf">0.5</span>
+
+        <span class="c1"># We need to loop to ensure the autos are real and have the correct variance</span>
+        <span class="k">if</span> <span class="n">dataset_name</span> <span class="o">==</span> <span class="s2">&quot;vis&quot;</span><span class="p">:</span>
+            <span class="k">for</span> <span class="n">si</span><span class="p">,</span> <span class="n">prod</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">data</span><span class="o">.</span><span class="n">prodstack</span><span class="p">):</span>
+                <span class="k">if</span> <span class="n">prod</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">==</span> <span class="n">prod</span><span class="p">[</span><span class="mi">1</span><span class="p">]:</span>
+                    <span class="c1"># This is an auto-correlation</span>
+                    <span class="n">dset</span><span class="p">[:,</span> <span class="n">si</span><span class="p">]</span><span class="o">.</span><span class="n">real</span> <span class="o">*=</span> <span class="mi">2</span><span class="o">**</span><span class="mf">0.5</span>
+                    <span class="n">dset</span><span class="p">[:,</span> <span class="n">si</span><span class="p">]</span><span class="o">.</span><span class="n">imag</span> <span class="o">=</span> <span class="mf">0.0</span>
+
+        <span class="k">return</span> <span class="n">out</span></div>
+</div>
+
+
+
+<div class="viewcode-block" id="MultipleNoiseRealizationsMixin">
+<a class="viewcode-back" href="../../../_autosummary/draco.synthesis.noise.html#draco.synthesis.noise.MultipleNoiseRealizationsMixin">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">MultipleNoiseRealizationsMixin</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Generates multiple noise realizations with the same underlying statistics.</span>
+
+<span class="sd">    This is a non-functional class mixin that must be combined with a class whose</span>
+<span class="sd">    process method generates a single noise realization.</span>
+
+<span class="sd">    Attributes</span>
+<span class="sd">    ----------</span>
+<span class="sd">    niter : int</span>
+<span class="sd">        Number of noise realizations to generate.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+
+    <span class="n">niter</span> <span class="o">=</span> <span class="n">config</span><span class="o">.</span><span class="n">Property</span><span class="p">(</span><span class="n">proptype</span><span class="o">=</span><span class="nb">int</span><span class="p">,</span> <span class="n">default</span><span class="o">=</span><span class="mi">1</span><span class="p">)</span>
+    <span class="n">in_place</span> <span class="o">=</span> <span class="kc">False</span>
+
+<div class="viewcode-block" id="MultipleNoiseRealizationsMixin.setup">
+<a class="viewcode-back" href="../../../_autosummary/draco.synthesis.noise.html#draco.synthesis.noise.MultipleNoiseRealizationsMixin.setup">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">setup</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">data1</span><span class="p">,</span> <span class="n">data2</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Save the data as a class attribute.</span>
+
+<span class="sd">        If multiple input containers are provided, the class alternates between</span>
+<span class="sd">        them when generating the noise realization. This enables cross power</span>
+<span class="sd">        spectrum analysis.</span>
+
+<span class="sd">        Parameters</span>
+<span class="sd">        ----------</span>
+<span class="sd">        data1 : :class:`VisContainer`</span>
+<span class="sd">            Any dataset which contains a vis and weight attribute.</span>
+<span class="sd">        data2 : :class:`VisContainer`</span>
+<span class="sd">            Any dataset which contains a vis and weight attribute.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">data</span> <span class="o">=</span> <span class="p">[</span><span class="n">data1</span><span class="p">]</span>
+        <span class="k">if</span> <span class="n">data2</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">data</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">data2</span><span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="MultipleNoiseRealizationsMixin.process">
+<a class="viewcode-back" href="../../../_autosummary/draco.synthesis.noise.html#draco.synthesis.noise.MultipleNoiseRealizationsMixin.process">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">process</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Generate a noise realization.</span>
+
+<span class="sd">        The variance will be set to the inverse of the</span>
+<span class="sd">        weight dataset of the container provided on setup.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_count</span> <span class="o">==</span> <span class="bp">self</span><span class="o">.</span><span class="n">niter</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="n">exceptions</span><span class="o">.</span><span class="n">PipelineStopIteration</span>
+
+        <span class="k">return</span> <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="n">process</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">data</span><span class="p">[</span><span class="bp">self</span><span class="o">.</span><span class="n">_count</span> <span class="o">%</span> <span class="nb">len</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">data</span><span class="p">)])</span></div>
+</div>
+
+
+
+<div class="viewcode-block" id="MultipleGaussianNoiseDatasets">
+<a class="viewcode-back" href="../../../_autosummary/draco.synthesis.noise.html#draco.synthesis.noise.MultipleGaussianNoiseDatasets">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">MultipleGaussianNoiseDatasets</span><span class="p">(</span>
+    <span class="n">MultipleNoiseRealizationsMixin</span><span class="p">,</span> <span class="n">GaussianNoiseDataset</span>
+<span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Generates multiple Gaussian distributed noise datasets.&quot;&quot;&quot;</span></div>
+
+
+
+<div class="viewcode-block" id="GaussianNoise">
+<a class="viewcode-back" href="../../../_autosummary/draco.synthesis.noise.html#draco.synthesis.noise.GaussianNoise">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">GaussianNoise</span><span class="p">(</span><span class="n">tasklib</span><span class="o">.</span><span class="n">base</span><span class="o">.</span><span class="n">ContainerTask</span><span class="p">,</span> <span class="n">tasklib</span><span class="o">.</span><span class="n">random</span><span class="o">.</span><span class="n">RandomTask</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Add Gaussian distributed noise to a visibility dataset.</span>
+
+<span class="sd">    Note that this is an approximation to the actual noise distribution good only</span>
+<span class="sd">    when T_recv &gt;&gt; T_sky and delta_time * delta_freq &gt;&gt; 1.</span>
+
+<span class="sd">    Attributes</span>
+<span class="sd">    ----------</span>
+<span class="sd">    ndays : float</span>
+<span class="sd">        Multiplies the number of samples in each measurement.</span>
+<span class="sd">    set_weights : bool</span>
+<span class="sd">        Set the weights to the appropriate values.</span>
+<span class="sd">    add_noise : bool</span>
+<span class="sd">        Add Gaussian noise to the visibilities. By default this is True, but it may be</span>
+<span class="sd">        desirable to only set the weights.</span>
+<span class="sd">    recv_temp : bool</span>
+<span class="sd">        The temperature of the noise to add.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+
+    <span class="n">recv_temp</span> <span class="o">=</span> <span class="n">config</span><span class="o">.</span><span class="n">Property</span><span class="p">(</span><span class="n">proptype</span><span class="o">=</span><span class="nb">float</span><span class="p">,</span> <span class="n">default</span><span class="o">=</span><span class="mf">50.0</span><span class="p">)</span>
+    <span class="n">ndays</span> <span class="o">=</span> <span class="n">config</span><span class="o">.</span><span class="n">Property</span><span class="p">(</span><span class="n">proptype</span><span class="o">=</span><span class="nb">float</span><span class="p">,</span> <span class="n">default</span><span class="o">=</span><span class="mf">733.0</span><span class="p">)</span>
+    <span class="n">set_weights</span> <span class="o">=</span> <span class="n">config</span><span class="o">.</span><span class="n">Property</span><span class="p">(</span><span class="n">proptype</span><span class="o">=</span><span class="nb">bool</span><span class="p">,</span> <span class="n">default</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+    <span class="n">add_noise</span> <span class="o">=</span> <span class="n">config</span><span class="o">.</span><span class="n">Property</span><span class="p">(</span><span class="n">proptype</span><span class="o">=</span><span class="nb">bool</span><span class="p">,</span> <span class="n">default</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+
+<div class="viewcode-block" id="GaussianNoise.setup">
+<a class="viewcode-back" href="../../../_autosummary/draco.synthesis.noise.html#draco.synthesis.noise.GaussianNoise.setup">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">setup</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">manager</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Set the telescope instance if a manager object is given.</span>
+
+<span class="sd">        This is used to simulate noise for visibilities that are stacked</span>
+<span class="sd">        over redundant baselines.</span>
+
+<span class="sd">        Parameters</span>
+<span class="sd">        ----------</span>
+<span class="sd">        manager : manager.ProductManager, optional</span>
+<span class="sd">            The telescope/manager used to set the `redundancy`. If not set,</span>
+<span class="sd">            `redundancy` is derived from the data.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="n">manager</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">telescope</span> <span class="o">=</span> <span class="n">io</span><span class="o">.</span><span class="n">get_telescope</span><span class="p">(</span><span class="n">manager</span><span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">telescope</span> <span class="o">=</span> <span class="kc">None</span></div>
+
+
+<div class="viewcode-block" id="GaussianNoise.process">
+<a class="viewcode-back" href="../../../_autosummary/draco.synthesis.noise.html#draco.synthesis.noise.GaussianNoise.process">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">process</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">data</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Generate a noisy dataset.</span>
+
+<span class="sd">        Parameters</span>
+<span class="sd">        ----------</span>
+<span class="sd">        data : :class:`containers.SiderealStream` or :class:`containers.TimeStream`</span>
+<span class="sd">            The expected (i.e. noiseless) visibility dataset. Note the modification</span>
+<span class="sd">            is done in place.</span>
+
+<span class="sd">        Returns</span>
+<span class="sd">        -------</span>
+<span class="sd">        data_noise : same as parameter `data`</span>
+<span class="sd">            The sampled (i.e. noisy) visibility dataset.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">data</span><span class="o">.</span><span class="n">redistribute</span><span class="p">(</span><span class="s2">&quot;freq&quot;</span><span class="p">)</span>
+
+        <span class="n">visdata</span> <span class="o">=</span> <span class="n">data</span><span class="o">.</span><span class="n">vis</span><span class="p">[:]</span>
+
+        <span class="c1"># Get the time interval</span>
+        <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">containers</span><span class="o">.</span><span class="n">SiderealStream</span><span class="p">):</span>
+            <span class="n">dt</span> <span class="o">=</span> <span class="mi">240</span> <span class="o">*</span> <span class="p">(</span><span class="n">data</span><span class="o">.</span><span class="n">ra</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span> <span class="o">-</span> <span class="n">data</span><span class="o">.</span><span class="n">ra</span><span class="p">[</span><span class="mi">0</span><span class="p">])</span> <span class="o">*</span> <span class="n">STELLAR_S</span>
+            <span class="n">ntime</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">data</span><span class="o">.</span><span class="n">ra</span><span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">dt</span> <span class="o">=</span> <span class="n">data</span><span class="o">.</span><span class="n">time</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span> <span class="o">-</span> <span class="n">data</span><span class="o">.</span><span class="n">time</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+            <span class="n">ntime</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">data</span><span class="o">.</span><span class="n">time</span><span class="p">)</span>
+
+        <span class="c1"># TODO: this assumes uniform channels</span>
+        <span class="n">df</span> <span class="o">=</span> <span class="n">data</span><span class="o">.</span><span class="n">index_map</span><span class="p">[</span><span class="s2">&quot;freq&quot;</span><span class="p">][</span><span class="s2">&quot;width&quot;</span><span class="p">][</span><span class="mi">0</span><span class="p">]</span> <span class="o">*</span> <span class="mf">1e6</span>
+        <span class="n">nfreq</span> <span class="o">=</span> <span class="n">data</span><span class="o">.</span><span class="n">vis</span><span class="o">.</span><span class="n">local_shape</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+        <span class="n">nprod</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">data</span><span class="o">.</span><span class="n">prodstack</span><span class="p">)</span>
+        <span class="n">ninput</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">data</span><span class="o">.</span><span class="n">index_map</span><span class="p">[</span><span class="s2">&quot;input&quot;</span><span class="p">])</span>
+
+        <span class="c1"># Consider if this data is stacked over redundant baselines or not.</span>
+        <span class="k">if</span> <span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">telescope</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">)</span> <span class="ow">and</span> <span class="p">(</span><span class="n">nprod</span> <span class="o">==</span> <span class="bp">self</span><span class="o">.</span><span class="n">telescope</span><span class="o">.</span><span class="n">nbase</span><span class="p">):</span>
+            <span class="n">redundancy</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">telescope</span><span class="o">.</span><span class="n">redundancy</span>
+        <span class="k">elif</span> <span class="n">nprod</span> <span class="o">==</span> <span class="n">ninput</span> <span class="o">*</span> <span class="p">(</span><span class="n">ninput</span> <span class="o">+</span> <span class="mi">1</span><span class="p">)</span> <span class="o">/</span> <span class="mi">2</span><span class="p">:</span>
+            <span class="n">redundancy</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">ones</span><span class="p">(</span><span class="n">nprod</span><span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;Unexpected number of products&quot;</span><span class="p">)</span>
+
+        <span class="c1"># Calculate the number of samples, this is a 1D array for the prod axis.</span>
+        <span class="n">nsamp</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">ndays</span> <span class="o">*</span> <span class="n">dt</span> <span class="o">*</span> <span class="n">df</span><span class="p">)</span> <span class="o">*</span> <span class="n">redundancy</span>
+        <span class="n">std</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">recv_temp</span> <span class="o">/</span> <span class="n">np</span><span class="o">.</span><span class="n">sqrt</span><span class="p">(</span><span class="n">nsamp</span><span class="p">)</span>
+
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">add_noise</span><span class="p">:</span>
+            <span class="n">noise</span> <span class="o">=</span> <span class="n">random</span><span class="o">.</span><span class="n">complex_normal</span><span class="p">(</span>
+                <span class="n">size</span><span class="o">=</span><span class="p">(</span><span class="n">nfreq</span><span class="p">,</span> <span class="n">nprod</span><span class="p">,</span> <span class="n">ntime</span><span class="p">),</span>
+                <span class="n">scale</span><span class="o">=</span><span class="n">std</span><span class="p">[</span><span class="n">np</span><span class="o">.</span><span class="n">newaxis</span><span class="p">,</span> <span class="p">:,</span> <span class="n">np</span><span class="o">.</span><span class="n">newaxis</span><span class="p">],</span>
+                <span class="n">rng</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">rng</span><span class="p">,</span>
+            <span class="p">)</span>
+
+            <span class="c1"># Iterate over the products to find the auto-correlations and add the noise</span>
+            <span class="k">for</span> <span class="n">pi</span><span class="p">,</span> <span class="n">prod</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">data</span><span class="o">.</span><span class="n">prodstack</span><span class="p">):</span>
+                <span class="c1"># Auto: multiply by sqrt(2) because auto has twice the variance</span>
+                <span class="k">if</span> <span class="n">prod</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">==</span> <span class="n">prod</span><span class="p">[</span><span class="mi">1</span><span class="p">]:</span>
+                    <span class="n">visdata</span><span class="p">[:,</span> <span class="n">pi</span><span class="p">]</span><span class="o">.</span><span class="n">real</span> <span class="o">+=</span> <span class="n">np</span><span class="o">.</span><span class="n">sqrt</span><span class="p">(</span><span class="mi">2</span><span class="p">)</span> <span class="o">*</span> <span class="n">noise</span><span class="p">[:,</span> <span class="n">pi</span><span class="p">]</span><span class="o">.</span><span class="n">real</span>
+
+                <span class="k">else</span><span class="p">:</span>
+                    <span class="n">visdata</span><span class="p">[:,</span> <span class="n">pi</span><span class="p">]</span> <span class="o">+=</span> <span class="n">noise</span><span class="p">[:,</span> <span class="n">pi</span><span class="p">]</span>
+
+        <span class="c1"># Construct and set the correct weights in place</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">set_weights</span><span class="p">:</span>
+            <span class="k">for</span> <span class="n">lfi</span><span class="p">,</span> <span class="n">fi</span> <span class="ow">in</span> <span class="n">visdata</span><span class="o">.</span><span class="n">enumerate</span><span class="p">(</span><span class="mi">0</span><span class="p">):</span>
+                <span class="n">data</span><span class="o">.</span><span class="n">weight</span><span class="p">[</span><span class="n">fi</span><span class="p">]</span> <span class="o">=</span> <span class="mf">1.0</span> <span class="o">/</span> <span class="n">std</span><span class="p">[:,</span> <span class="n">np</span><span class="o">.</span><span class="n">newaxis</span><span class="p">]</span> <span class="o">**</span> <span class="mi">2</span>
+
+        <span class="k">return</span> <span class="n">data</span></div>
+</div>
+
+
+
+<div class="viewcode-block" id="SampleNoise">
+<a class="viewcode-back" href="../../../_autosummary/draco.synthesis.noise.html#draco.synthesis.noise.SampleNoise">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">SampleNoise</span><span class="p">(</span><span class="n">tasklib</span><span class="o">.</span><span class="n">base</span><span class="o">.</span><span class="n">ContainerTask</span><span class="p">,</span> <span class="n">tasklib</span><span class="o">.</span><span class="n">random</span><span class="o">.</span><span class="n">RandomTask</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Add properly distributed noise to a visibility dataset.</span>
+
+<span class="sd">    This task draws properly (complex Wishart) distributed samples from an input</span>
+<span class="sd">    visibility dataset which is assumed to represent the expectation.</span>
+
+<span class="sd">    See http://link.springer.com/article/10.1007%2Fs10440-010-9599-x for a</span>
+<span class="sd">    discussion of the Bartlett decomposition for complex Wishart distributed</span>
+<span class="sd">    quantities.</span>
+
+<span class="sd">    Attributes</span>
+<span class="sd">    ----------</span>
+<span class="sd">    sample_frac : float</span>
+<span class="sd">        Multiplies the number of samples in each measurement. For instance this</span>
+<span class="sd">        could be a duty cycle if the correlator was not keeping up, or could be</span>
+<span class="sd">        larger than one if multiple measurements were combined.</span>
+<span class="sd">    set_weights : bool</span>
+<span class="sd">        Set the weights to the appropriate values.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+
+    <span class="n">sample_frac</span> <span class="o">=</span> <span class="n">config</span><span class="o">.</span><span class="n">Property</span><span class="p">(</span><span class="n">proptype</span><span class="o">=</span><span class="nb">float</span><span class="p">,</span> <span class="n">default</span><span class="o">=</span><span class="mf">1.0</span><span class="p">)</span>
+    <span class="n">seed</span> <span class="o">=</span> <span class="n">config</span><span class="o">.</span><span class="n">Property</span><span class="p">(</span><span class="n">proptype</span><span class="o">=</span><span class="nb">int</span><span class="p">,</span> <span class="n">default</span><span class="o">=</span><span class="kc">None</span><span class="p">)</span>
+    <span class="n">set_weights</span> <span class="o">=</span> <span class="n">config</span><span class="o">.</span><span class="n">Property</span><span class="p">(</span><span class="n">proptype</span><span class="o">=</span><span class="nb">bool</span><span class="p">,</span> <span class="n">default</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+
+<div class="viewcode-block" id="SampleNoise.process">
+<a class="viewcode-back" href="../../../_autosummary/draco.synthesis.noise.html#draco.synthesis.noise.SampleNoise.process">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">process</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">data_exp</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Generate a noisy dataset.</span>
+
+<span class="sd">        Parameters</span>
+<span class="sd">        ----------</span>
+<span class="sd">        data_exp : :class:`containers.SiderealStream` or :class:`containers.TimeStream`</span>
+<span class="sd">            The expected (i.e. noiseless) visibility dataset. Must be the full</span>
+<span class="sd">            triangle. Make sure you have added an instrumental noise bias if you</span>
+<span class="sd">            want instrumental noise.</span>
+
+<span class="sd">        Returns</span>
+<span class="sd">        -------</span>
+<span class="sd">        data_samp : same as parameter `data_exp`</span>
+<span class="sd">            The sampled (i.e. noisy) visibility dataset.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="kn">from</span><span class="w"> </span><span class="nn">..util</span><span class="w"> </span><span class="kn">import</span> <span class="n">_fast_tools</span>
+
+        <span class="n">data_exp</span><span class="o">.</span><span class="n">redistribute</span><span class="p">(</span><span class="s2">&quot;freq&quot;</span><span class="p">)</span>
+
+        <span class="n">nfeed</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">data_exp</span><span class="o">.</span><span class="n">index_map</span><span class="p">[</span><span class="s2">&quot;input&quot;</span><span class="p">])</span>
+
+        <span class="c1"># Get a reference to the base MPIArray. Attempting to do this in the</span>
+        <span class="c1"># loop fails if not all ranks enter the loop (as there is an implied MPI</span>
+        <span class="c1"># Barrier)</span>
+        <span class="n">vis_data</span> <span class="o">=</span> <span class="n">data_exp</span><span class="o">.</span><span class="n">vis</span><span class="p">[:]</span>
+
+        <span class="c1"># Get the time interval</span>
+        <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">data_exp</span><span class="p">,</span> <span class="n">containers</span><span class="o">.</span><span class="n">SiderealStream</span><span class="p">):</span>
+            <span class="n">dt</span> <span class="o">=</span> <span class="mi">240</span> <span class="o">*</span> <span class="p">(</span><span class="n">data_exp</span><span class="o">.</span><span class="n">ra</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span> <span class="o">-</span> <span class="n">data_exp</span><span class="o">.</span><span class="n">ra</span><span class="p">[</span><span class="mi">0</span><span class="p">])</span> <span class="o">*</span> <span class="n">STELLAR_S</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">dt</span> <span class="o">=</span> <span class="n">data_exp</span><span class="o">.</span><span class="n">time</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span> <span class="o">-</span> <span class="n">data_exp</span><span class="o">.</span><span class="n">time</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+
+        <span class="c1"># Iterate over frequencies</span>
+        <span class="k">for</span> <span class="n">lfi</span><span class="p">,</span> <span class="n">fi</span> <span class="ow">in</span> <span class="n">vis_data</span><span class="o">.</span><span class="n">enumerate</span><span class="p">(</span><span class="mi">0</span><span class="p">):</span>
+            <span class="c1"># Get the frequency interval</span>
+            <span class="n">df</span> <span class="o">=</span> <span class="n">data_exp</span><span class="o">.</span><span class="n">index_map</span><span class="p">[</span><span class="s2">&quot;freq&quot;</span><span class="p">][</span><span class="s2">&quot;width&quot;</span><span class="p">][</span><span class="n">fi</span><span class="p">]</span> <span class="o">*</span> <span class="mf">1e6</span>
+
+            <span class="c1"># Calculate the number of samples</span>
+            <span class="n">nsamp</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">sample_frac</span> <span class="o">*</span> <span class="n">dt</span> <span class="o">*</span> <span class="n">df</span><span class="p">)</span>
+
+            <span class="c1"># Iterate over time</span>
+            <span class="k">for</span> <span class="n">lti</span><span class="p">,</span> <span class="n">ti</span> <span class="ow">in</span> <span class="n">vis_data</span><span class="o">.</span><span class="n">enumerate</span><span class="p">(</span><span class="mi">2</span><span class="p">):</span>
+                <span class="c1"># Unpack visibilites into full matrix</span>
+                <span class="n">vis_utv</span> <span class="o">=</span> <span class="n">vis_data</span><span class="p">[</span><span class="n">lfi</span><span class="p">,</span> <span class="p">:,</span> <span class="n">lti</span><span class="p">]</span><span class="o">.</span><span class="n">view</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">)</span><span class="o">.</span><span class="n">copy</span><span class="p">()</span>
+                <span class="n">vis_mat</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">zeros</span><span class="p">((</span><span class="n">nfeed</span><span class="p">,</span> <span class="n">nfeed</span><span class="p">),</span> <span class="n">dtype</span><span class="o">=</span><span class="n">vis_utv</span><span class="o">.</span><span class="n">dtype</span><span class="p">)</span>
+                <span class="n">_fast_tools</span><span class="o">.</span><span class="n">_unpack_product_array_fast</span><span class="p">(</span>
+                    <span class="n">vis_utv</span><span class="p">,</span> <span class="n">vis_mat</span><span class="p">,</span> <span class="n">np</span><span class="o">.</span><span class="n">arange</span><span class="p">(</span><span class="n">nfeed</span><span class="p">),</span> <span class="n">nfeed</span>
+                <span class="p">)</span>
+
+                <span class="n">vis_samp</span> <span class="o">=</span> <span class="n">random</span><span class="o">.</span><span class="n">complex_wishart</span><span class="p">(</span><span class="n">vis_mat</span><span class="p">,</span> <span class="n">nsamp</span><span class="p">,</span> <span class="n">rng</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">rng</span><span class="p">)</span> <span class="o">/</span> <span class="n">nsamp</span>
+
+                <span class="n">vis_data</span><span class="p">[</span><span class="n">lfi</span><span class="p">,</span> <span class="p">:,</span> <span class="n">lti</span><span class="p">]</span> <span class="o">=</span> <span class="n">vis_samp</span><span class="p">[</span><span class="n">np</span><span class="o">.</span><span class="n">triu_indices</span><span class="p">(</span><span class="n">nfeed</span><span class="p">)]</span>
+
+            <span class="c1"># Construct and set the correct weights in place</span>
+            <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">set_weights</span><span class="p">:</span>
+                <span class="n">autos</span> <span class="o">=</span> <span class="n">tools</span><span class="o">.</span><span class="n">extract_diagonal</span><span class="p">(</span><span class="n">vis_data</span><span class="p">[</span><span class="n">lfi</span><span class="p">],</span> <span class="n">axis</span><span class="o">=</span><span class="mi">0</span><span class="p">)</span><span class="o">.</span><span class="n">real</span>
+                <span class="n">weight_fac</span> <span class="o">=</span> <span class="n">nsamp</span><span class="o">**</span><span class="mf">0.5</span> <span class="o">/</span> <span class="n">autos</span>
+                <span class="n">tools</span><span class="o">.</span><span class="n">apply_gain</span><span class="p">(</span>
+                    <span class="n">data_exp</span><span class="o">.</span><span class="n">weight</span><span class="p">[</span><span class="n">fi</span><span class="p">][</span><span class="n">np</span><span class="o">.</span><span class="n">newaxis</span><span class="p">,</span> <span class="o">...</span><span class="p">],</span>
+                    <span class="n">weight_fac</span><span class="p">[</span><span class="n">np</span><span class="o">.</span><span class="n">newaxis</span><span class="p">,</span> <span class="o">...</span><span class="p">],</span>
+                    <span class="n">out</span><span class="o">=</span><span class="n">data_exp</span><span class="o">.</span><span class="n">weight</span><span class="p">[</span><span class="n">fi</span><span class="p">][</span><span class="n">np</span><span class="o">.</span><span class="n">newaxis</span><span class="p">,</span> <span class="o">...</span><span class="p">],</span>
+                <span class="p">)</span>
+
+        <span class="k">return</span> <span class="n">data_exp</span></div>
+</div>
+
+
+
+<div class="viewcode-block" id="FreqCorrelatedNoise">
+<a class="viewcode-back" href="../../../_autosummary/draco.synthesis.noise.html#draco.synthesis.noise.FreqCorrelatedNoise">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">FreqCorrelatedNoise</span><span class="p">(</span><span class="n">tasklib</span><span class="o">.</span><span class="n">base</span><span class="o">.</span><span class="n">ContainerTask</span><span class="p">,</span> <span class="n">tasklib</span><span class="o">.</span><span class="n">random</span><span class="o">.</span><span class="n">RandomTask</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Generate frequency-correlated noise using Cholesky factors.</span>
+
+<span class="sd">    This task uses precomputed Cholesky decompositions of the frequency-frequency</span>
+<span class="sd">    noise covariance (stored in a FreqNoiseModel container) to simulate</span>
+<span class="sd">    a noise realization into a VisGridStream container.</span>
+
+<span class="sd">    Attributes</span>
+<span class="sd">    ----------</span>
+<span class="sd">    save_redundancy : bool</span>
+<span class="sd">        If True, save the redundancy of each visibility.  Default is False.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+
+    <span class="n">save_redundancy</span> <span class="o">=</span> <span class="n">config</span><span class="o">.</span><span class="n">Property</span><span class="p">(</span><span class="n">proptype</span><span class="o">=</span><span class="nb">bool</span><span class="p">,</span> <span class="n">default</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
+
+<div class="viewcode-block" id="FreqCorrelatedNoise.process">
+<a class="viewcode-back" href="../../../_autosummary/draco.synthesis.noise.html#draco.synthesis.noise.FreqCorrelatedNoise.process">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">process</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">noise_model</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Simulate noise into a VisGridStream container.</span>
+
+<span class="sd">        Parameters</span>
+<span class="sd">        ----------</span>
+<span class="sd">        noise_model : containers.FreqNoiseModel</span>
+<span class="sd">            Input noise model containing Cholesky factors and baseline redundancy.</span>
+
+<span class="sd">        Returns</span>
+<span class="sd">        -------</span>
+<span class="sd">        out : containers.VisGridStream</span>
+<span class="sd">            Container filled with a frequency-correlated noise realization.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">noise_model</span><span class="o">.</span><span class="n">redistribute</span><span class="p">(</span><span class="s2">&quot;ra&quot;</span><span class="p">)</span>
+
+        <span class="n">out</span> <span class="o">=</span> <span class="n">containers</span><span class="o">.</span><span class="n">VisGridStream</span><span class="p">(</span>
+            <span class="n">axes_from</span><span class="o">=</span><span class="n">noise_model</span><span class="p">,</span>
+            <span class="n">attrs_from</span><span class="o">=</span><span class="n">noise_model</span><span class="p">,</span>
+            <span class="n">distributed</span><span class="o">=</span><span class="n">noise_model</span><span class="o">.</span><span class="n">distributed</span><span class="p">,</span>
+            <span class="n">comm</span><span class="o">=</span><span class="n">noise_model</span><span class="o">.</span><span class="n">comm</span><span class="p">,</span>
+        <span class="p">)</span>
+        <span class="n">out</span><span class="o">.</span><span class="n">redistribute</span><span class="p">(</span><span class="s2">&quot;ra&quot;</span><span class="p">)</span>
+
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">save_redundancy</span><span class="p">:</span>
+            <span class="n">out</span><span class="o">.</span><span class="n">add_dataset</span><span class="p">(</span><span class="s2">&quot;redundancy&quot;</span><span class="p">)</span>
+            <span class="n">out</span><span class="o">.</span><span class="n">redundancy</span><span class="p">[:]</span> <span class="o">=</span> <span class="n">noise_model</span><span class="o">.</span><span class="n">redundancy</span><span class="p">[:][</span><span class="o">...</span><span class="p">,</span> <span class="n">np</span><span class="o">.</span><span class="n">newaxis</span><span class="p">]</span>
+
+        <span class="c1"># Compute the redundancy factor that determines how the noise depends</span>
+        <span class="c1"># on north-south baseline distance</span>
+        <span class="n">redundancy</span> <span class="o">=</span> <span class="n">noise_model</span><span class="o">.</span><span class="n">redundancy</span><span class="p">[:]</span>
+        <span class="n">inv_sqrt_redundancy</span> <span class="o">=</span> <span class="n">tools</span><span class="o">.</span><span class="n">invert_no_zero</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">sqrt</span><span class="p">(</span><span class="n">redundancy</span><span class="p">))</span>
+
+        <span class="c1"># Dereference datasets</span>
+        <span class="n">L</span> <span class="o">=</span> <span class="n">noise_model</span><span class="o">.</span><span class="n">freq_cov</span><span class="p">[:]</span><span class="o">.</span><span class="n">local_array</span>
+        <span class="n">weight</span> <span class="o">=</span> <span class="n">noise_model</span><span class="o">.</span><span class="n">weight</span><span class="p">[:]</span><span class="o">.</span><span class="n">local_array</span>
+
+        <span class="n">ovis</span> <span class="o">=</span> <span class="n">out</span><span class="o">.</span><span class="n">vis</span><span class="p">[:]</span><span class="o">.</span><span class="n">local_array</span>
+        <span class="n">oweight</span> <span class="o">=</span> <span class="n">out</span><span class="o">.</span><span class="n">weight</span><span class="p">[:]</span><span class="o">.</span><span class="n">local_array</span>
+
+        <span class="n">npol</span><span class="p">,</span> <span class="n">nfreq</span><span class="p">,</span> <span class="n">new</span><span class="p">,</span> <span class="n">nns</span><span class="p">,</span> <span class="n">nra</span> <span class="o">=</span> <span class="n">ovis</span><span class="o">.</span><span class="n">shape</span>
+
+        <span class="c1"># Loop over pol and ew to reduce memory usage</span>
+        <span class="k">for</span> <span class="n">pp</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">npol</span><span class="p">):</span>
+            <span class="k">for</span> <span class="n">ee</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">new</span><span class="p">):</span>
+                <span class="c1"># Generate a set of complex random numbers with unit standard deviation</span>
+                <span class="n">z</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">empty</span><span class="p">((</span><span class="n">nra</span><span class="p">,</span> <span class="n">nfreq</span><span class="p">,</span> <span class="n">nns</span><span class="p">),</span> <span class="n">dtype</span><span class="o">=</span><span class="n">ovis</span><span class="o">.</span><span class="n">dtype</span><span class="p">)</span>
+
+                <span class="n">random</span><span class="o">.</span><span class="n">complex_normal</span><span class="p">(</span>
+                    <span class="n">scale</span><span class="o">=</span><span class="mf">1.0</span><span class="p">,</span>
+                    <span class="n">out</span><span class="o">=</span><span class="n">z</span><span class="p">,</span>
+                    <span class="n">rng</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">rng</span><span class="p">,</span>
+                <span class="p">)</span>
+
+                <span class="c1"># Multiply by the Cholesky decomposition of the freq-freq covariance matrix</span>
+                <span class="c1"># to introduce the desired correlation as a function of frequency, then divide</span>
+                <span class="c1"># by the square root of the redundancy of the baseline.</span>
+                <span class="n">sz</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">matmul</span><span class="p">(</span><span class="n">L</span><span class="p">[</span><span class="n">pp</span><span class="p">,</span> <span class="n">ee</span><span class="p">],</span> <span class="n">z</span><span class="p">)</span> <span class="o">*</span> <span class="n">inv_sqrt_redundancy</span><span class="p">[</span><span class="n">pp</span><span class="p">,</span> <span class="n">ee</span><span class="p">]</span>
+
+                <span class="n">ovis</span><span class="p">[</span><span class="n">pp</span><span class="p">,</span> <span class="p">:,</span> <span class="n">ee</span><span class="p">]</span> <span class="o">=</span> <span class="n">sz</span><span class="o">.</span><span class="n">transpose</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="mi">2</span><span class="p">,</span> <span class="mi">0</span><span class="p">)</span>
+
+                <span class="n">oweight</span><span class="p">[</span><span class="n">pp</span><span class="p">,</span> <span class="p">:,</span> <span class="n">ee</span><span class="p">]</span> <span class="o">=</span> <span class="p">(</span>
+                    <span class="n">weight</span><span class="p">[</span><span class="n">pp</span><span class="p">,</span> <span class="p">:,</span> <span class="n">ee</span><span class="p">,</span> <span class="n">np</span><span class="o">.</span><span class="n">newaxis</span><span class="p">,</span> <span class="p">:]</span> <span class="o">*</span> <span class="n">redundancy</span><span class="p">[</span><span class="n">pp</span><span class="p">,</span> <span class="n">ee</span><span class="p">,</span> <span class="p">:,</span> <span class="n">np</span><span class="o">.</span><span class="n">newaxis</span><span class="p">]</span>
+                <span class="p">)</span>
+
+        <span class="c1"># Ensure that the visibility matrix is Hermitian</span>
+        <span class="n">nyp</span> <span class="o">=</span> <span class="n">nns</span> <span class="o">//</span> <span class="mi">2</span> <span class="o">+</span> <span class="mi">1</span>
+        <span class="n">slc_pos</span> <span class="o">=</span> <span class="nb">slice</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="n">nyp</span><span class="p">)</span>
+        <span class="n">slc_neg</span> <span class="o">=</span> <span class="nb">slice</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">,</span> <span class="o">-</span><span class="n">nyp</span><span class="p">,</span> <span class="o">-</span><span class="mi">1</span><span class="p">)</span>
+
+        <span class="n">pconjmap</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">unique</span><span class="p">(</span>
+            <span class="p">[</span><span class="n">pj</span> <span class="o">+</span> <span class="n">pi</span> <span class="k">for</span> <span class="n">pi</span><span class="p">,</span> <span class="n">pj</span> <span class="ow">in</span> <span class="n">out</span><span class="o">.</span><span class="n">index_map</span><span class="p">[</span><span class="s2">&quot;pol&quot;</span><span class="p">]],</span> <span class="n">return_inverse</span><span class="o">=</span><span class="kc">True</span>
+        <span class="p">)[</span><span class="mi">1</span><span class="p">]</span>
+
+        <span class="k">for</span> <span class="n">pi</span><span class="p">,</span> <span class="n">po</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">pconjmap</span><span class="p">):</span>
+            <span class="n">ovis</span><span class="p">[</span><span class="n">po</span><span class="p">,</span> <span class="p">:,</span> <span class="mi">0</span><span class="p">,</span> <span class="n">slc_neg</span><span class="p">,</span> <span class="p">:]</span> <span class="o">=</span> <span class="n">ovis</span><span class="p">[</span><span class="n">pi</span><span class="p">,</span> <span class="p">:,</span> <span class="mi">0</span><span class="p">,</span> <span class="n">slc_pos</span><span class="p">,</span> <span class="p">:]</span><span class="o">.</span><span class="n">conj</span><span class="p">()</span>
+            <span class="k">if</span> <span class="n">pi</span> <span class="o">==</span> <span class="n">po</span><span class="p">:</span>
+                <span class="n">ovis</span><span class="p">[</span><span class="n">po</span><span class="p">,</span> <span class="p">:,</span> <span class="mi">0</span><span class="p">,</span> <span class="mi">0</span><span class="p">,</span> <span class="p">:]</span> <span class="o">=</span> <span class="n">ovis</span><span class="p">[</span><span class="n">pi</span><span class="p">,</span> <span class="p">:,</span> <span class="mi">0</span><span class="p">,</span> <span class="mi">0</span><span class="p">,</span> <span class="p">:]</span><span class="o">.</span><span class="n">real</span> <span class="o">*</span> <span class="mi">2</span><span class="o">**</span><span class="mf">0.5</span>
+
+        <span class="k">return</span> <span class="n">out</span></div>
+</div>
+
+
+
+<div class="viewcode-block" id="MultipleFreqCorrelatedNoise">
+<a class="viewcode-back" href="../../../_autosummary/draco.synthesis.noise.html#draco.synthesis.noise.MultipleFreqCorrelatedNoise">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">MultipleFreqCorrelatedNoise</span><span class="p">(</span><span class="n">MultipleNoiseRealizationsMixin</span><span class="p">,</span> <span class="n">FreqCorrelatedNoise</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Generates multiple realizations of frequency-correlated noise.&quot;&quot;&quot;</span></div>
+
+</pre></div>
+
+           </div>
+          </div>
+          <footer>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2016, Richard Shaw.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>

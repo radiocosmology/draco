@@ -1,0 +1,655 @@
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" data-content_root="../../../">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>draco.util.dpss &mdash; draco 0.0.1 documentation</title>
+      <link rel="stylesheet" type="text/css" href="../../../_static/pygments.css?v=b86133f3" />
+      <link rel="stylesheet" type="text/css" href="../../../_static/css/theme.css?v=9edc463e" />
+
+  
+      <script src="../../../_static/jquery.js?v=5d32c60e"></script>
+      <script src="../../../_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
+      <script src="../../../_static/documentation_options.js?v=d45e8c67"></script>
+      <script src="../../../_static/doctools.js?v=9bcbadda"></script>
+      <script src="../../../_static/sphinx_highlight.js?v=dc90522c"></script>
+    <script src="../../../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../../../genindex.html" />
+    <link rel="search" title="Search" href="../../../search.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="../../../index.html" class="icon icon-home">
+            draco
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../../../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../tutorial.html">Tutorial</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../reference.html">API Reference</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../dev.html">Development Guidelines</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../../../index.html">draco</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../../../index.html" class="icon icon-home" aria-label="Home"></a></li>
+          <li class="breadcrumb-item"><a href="../../index.html">Module code</a></li>
+      <li class="breadcrumb-item active">draco.util.dpss</li>
+      <li class="wy-breadcrumbs-aside">
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <h1>Source code for draco.util.dpss</h1><div class="highlight"><pre>
+<span></span><span class="sd">&quot;&quot;&quot;Routines for DPSS inpainting.&quot;&quot;&quot;</span>
+
+<span class="kn">import</span><span class="w"> </span><span class="nn">numpy</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">np</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">caput.algorithms</span><span class="w"> </span><span class="kn">import</span> <span class="n">invert_no_zero</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">scipy</span><span class="w"> </span><span class="kn">import</span> <span class="n">interpolate</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">scipy</span><span class="w"> </span><span class="kn">import</span> <span class="n">linalg</span> <span class="k">as</span> <span class="n">la</span>
+
+
+<div class="viewcode-block" id="make_covariance">
+<a class="viewcode-back" href="../../../_autosummary/draco.util.dpss.html#draco.util.dpss.make_covariance">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">make_covariance</span><span class="p">(</span>
+    <span class="n">samples</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">,</span>
+    <span class="n">halfwidths</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="nb">float</span><span class="p">],</span>
+    <span class="n">centres</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="nb">float</span><span class="p">],</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Make a signal covariance model.</span>
+
+<span class="sd">    Assumes the signal is a sum of top-hats in fourier</span>
+<span class="sd">    space with centres at `centres` and half-widths</span>
+<span class="sd">    in `halfwidths`.</span>
+
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    samples</span>
+<span class="sd">        Samples corresponding to the signal measurements</span>
+<span class="sd">    halfwidths</span>
+<span class="sd">        List of window half-widths in units defined by the</span>
+<span class="sd">        fourier inverse of `samples`. Must be the same length</span>
+<span class="sd">        as `centres`.</span>
+<span class="sd">    centres</span>
+<span class="sd">        List of window centres in units defined by the fourier</span>
+<span class="sd">        inverse of `samples`. Must be the sample length as</span>
+<span class="sd">        `halfwidths`.</span>
+
+<span class="sd">    Returns</span>
+<span class="sd">    -------</span>
+<span class="sd">    cov</span>
+<span class="sd">        Model for the signal covariance. If all entries in</span>
+<span class="sd">        `centres` are zero, this is a real array. Otherwise,</span>
+<span class="sd">        it is complex.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">if</span> <span class="n">np</span><span class="o">.</span><span class="n">isscalar</span><span class="p">(</span><span class="n">halfwidths</span><span class="p">):</span>
+        <span class="n">halfwidths</span> <span class="o">=</span> <span class="p">[</span><span class="n">halfwidths</span><span class="p">]</span>
+
+    <span class="k">if</span> <span class="n">np</span><span class="o">.</span><span class="n">isscalar</span><span class="p">(</span><span class="n">centres</span><span class="p">):</span>
+        <span class="n">centres</span> <span class="o">=</span> <span class="p">[</span><span class="n">centres</span><span class="p">]</span>
+
+    <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">centres</span><span class="p">)</span> <span class="o">!=</span> <span class="nb">len</span><span class="p">(</span><span class="n">halfwidths</span><span class="p">):</span>
+        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+            <span class="s2">&quot;`halfwidths` and `centres` must be the same length. &quot;</span>
+            <span class="sa">f</span><span class="s2">&quot;Got halfwidths=</span><span class="si">{</span><span class="n">halfwidths</span><span class="si">}</span><span class="s2">, centres=</span><span class="si">{</span><span class="n">centres</span><span class="si">}</span><span class="s2">&quot;</span>
+        <span class="p">)</span>
+
+    <span class="c1"># Create a grid of the outer difference of samples</span>
+    <span class="n">ds</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">subtract</span><span class="o">.</span><span class="n">outer</span><span class="p">(</span><span class="n">samples</span><span class="p">,</span> <span class="n">samples</span><span class="p">)</span>
+    <span class="n">cov</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">zeros</span><span class="p">(</span><span class="n">ds</span><span class="o">.</span><span class="n">shape</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">complex128</span><span class="p">)</span>
+
+    <span class="k">for</span> <span class="n">ct</span><span class="p">,</span> <span class="n">hw</span> <span class="ow">in</span> <span class="nb">zip</span><span class="p">(</span><span class="n">centres</span><span class="p">,</span> <span class="n">halfwidths</span><span class="p">):</span>
+        <span class="n">cov</span> <span class="o">+=</span> <span class="n">np</span><span class="o">.</span><span class="n">exp</span><span class="p">(</span><span class="o">-</span><span class="mf">2.0</span><span class="n">j</span> <span class="o">*</span> <span class="n">np</span><span class="o">.</span><span class="n">pi</span> <span class="o">*</span> <span class="n">ct</span> <span class="o">*</span> <span class="n">ds</span><span class="p">)</span> <span class="o">*</span> <span class="n">np</span><span class="o">.</span><span class="n">sinc</span><span class="p">(</span><span class="mf">2.0</span> <span class="o">*</span> <span class="n">hw</span> <span class="o">*</span> <span class="n">ds</span><span class="p">)</span>
+
+    <span class="c1"># If the covariance is entirely real, return a real-type</span>
+    <span class="c1"># array since this is always computationally faster to use</span>
+    <span class="k">if</span> <span class="n">np</span><span class="o">.</span><span class="n">isreal</span><span class="p">(</span><span class="n">cov</span><span class="p">)</span><span class="o">.</span><span class="n">all</span><span class="p">():</span>
+        <span class="n">cov</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">ascontiguousarray</span><span class="p">(</span><span class="n">cov</span><span class="o">.</span><span class="n">real</span><span class="p">)</span>
+
+    <span class="k">return</span> <span class="n">cov</span></div>
+
+
+
+<div class="viewcode-block" id="get_basis">
+<a class="viewcode-back" href="../../../_autosummary/draco.util.dpss.html#draco.util.dpss.get_basis">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">get_basis</span><span class="p">(</span>
+    <span class="n">cov</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">,</span> <span class="n">threshold</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">1e-12</span><span class="p">,</span> <span class="n">dtype</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">dtype</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">float32</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Compute the nth order Slepian sequence (DPSS).</span>
+
+<span class="sd">    Order `n` is selected as the number of eigenvalues of</span>
+<span class="sd">    `cov` greater than threshold when normalized by the</span>
+<span class="sd">    largest eigenvalue.</span>
+
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    cov</span>
+<span class="sd">        Signal covariance model, constructed as a sum of</span>
+<span class="sd">        top-hats.</span>
+<span class="sd">    threshold</span>
+<span class="sd">        Eigenvalue cutoff relative to the largest eigenvalue.</span>
+<span class="sd">        Default is 1e-12.</span>
+<span class="sd">    dtype</span>
+<span class="sd">        Data type of the output sequence. This casting happens</span>
+<span class="sd">        AFTER the eigen decomposition and eigenvalue</span>
+<span class="sd">        threshold cut. If `cov` is complex, a datatype will</span>
+<span class="sd">        correspond to the datatype of the REAL component - i.e. if</span>
+<span class="sd">        `cov` is complex and `dtype=np.float32`, output sequence</span>
+<span class="sd">        will have type `np.complex64`.</span>
+
+<span class="sd">    Returns</span>
+<span class="sd">    -------</span>
+<span class="sd">    basis</span>
+<span class="sd">        Eigenvectors corresponding to eigenvalues larger than</span>
+<span class="sd">        `threshold` times the largest eigenvalue.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="c1"># Using the `evd` driver seems to be significantly faster</span>
+    <span class="c1"># than other drivers for the types of matrices we&#39;re</span>
+    <span class="c1"># using here. If this ever seems to become a rate-limiting</span>
+    <span class="c1"># step, try using the `evr` driver instead.</span>
+    <span class="n">evals</span><span class="p">,</span> <span class="n">evecs</span> <span class="o">=</span> <span class="n">la</span><span class="o">.</span><span class="n">eigh</span><span class="p">(</span><span class="n">cov</span><span class="p">,</span> <span class="n">check_finite</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span> <span class="n">driver</span><span class="o">=</span><span class="s2">&quot;evd&quot;</span><span class="p">)</span>
+    <span class="n">idx</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">argsort</span><span class="p">(</span><span class="n">evals</span><span class="p">)[::</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span>
+
+    <span class="c1"># Sort the values and vectors by decreasing</span>
+    <span class="c1"># eigenvalue magnitude</span>
+    <span class="n">evals</span> <span class="o">=</span> <span class="n">evals</span><span class="p">[</span><span class="n">idx</span><span class="p">]</span>
+    <span class="n">evecs</span> <span class="o">=</span> <span class="n">evecs</span><span class="p">[:,</span> <span class="n">idx</span><span class="p">]</span>
+
+    <span class="n">nmodes</span> <span class="o">=</span> <span class="p">(</span><span class="n">evals</span> <span class="o">&gt;</span> <span class="n">threshold</span> <span class="o">*</span> <span class="n">evals</span><span class="o">.</span><span class="n">max</span><span class="p">())</span><span class="o">.</span><span class="n">sum</span><span class="p">()</span>
+
+    <span class="c1"># Figure out the output datatype</span>
+    <span class="k">if</span> <span class="n">np</span><span class="o">.</span><span class="n">iscomplexobj</span><span class="p">(</span><span class="n">evecs</span><span class="p">):</span>
+        <span class="n">dtype</span> <span class="o">=</span> <span class="n">_dtype_to_complex</span><span class="p">(</span><span class="n">dtype</span><span class="p">)</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="n">dtype</span> <span class="o">=</span> <span class="n">_dtype_to_real</span><span class="p">(</span><span class="n">dtype</span><span class="p">)</span>
+
+    <span class="k">return</span> <span class="n">evecs</span><span class="p">[:,</span> <span class="p">:</span><span class="n">nmodes</span><span class="p">]</span><span class="o">.</span><span class="n">astype</span><span class="p">(</span><span class="n">dtype</span><span class="p">)</span></div>
+
+
+
+<div class="viewcode-block" id="project">
+<a class="viewcode-back" href="../../../_autosummary/draco.util.dpss.html#draco.util.dpss.project">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">project</span><span class="p">(</span><span class="n">x</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">,</span> <span class="n">Ni</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">,</span> <span class="n">A</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Project noise-weighted data into the DPSS basis.</span>
+
+<span class="sd">    This can be thought of as the right half of a wiener filter.</span>
+
+
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    x</span>
+<span class="sd">        Data to be interpolated.</span>
+<span class="sd">    Ni</span>
+<span class="sd">        Inverse noise variance associated with each sample,</span>
+<span class="sd">        with masked values set to zero.</span>
+<span class="sd">    A</span>
+<span class="sd">        dpss basis, assumed to be the output of `get_basis`.</span>
+
+<span class="sd">    Returns</span>
+<span class="sd">    -------</span>
+<span class="sd">    xproj</span>
+<span class="sd">        Noise-weighted data projected into the dpss basis.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="c1"># Make sure these arrays are at least 2d,</span>
+    <span class="c1"># which is helpful to make these operations consistant</span>
+    <span class="n">x</span><span class="p">,</span> <span class="n">_</span> <span class="o">=</span> <span class="n">atleast_Nd</span><span class="p">(</span><span class="n">x</span><span class="p">,</span> <span class="mi">2</span><span class="p">)</span>
+    <span class="n">Ni</span><span class="p">,</span> <span class="n">_</span> <span class="o">=</span> <span class="n">atleast_Nd</span><span class="p">(</span><span class="n">Ni</span><span class="p">,</span> <span class="mi">2</span><span class="p">)</span>
+
+    <span class="c1"># Assuming `A` is given directly as the output of</span>
+    <span class="c1"># `get_basis`, the conjugate transpose is needed</span>
+    <span class="n">AT</span> <span class="o">=</span> <span class="n">A</span><span class="o">.</span><span class="n">T</span><span class="o">.</span><span class="n">conj</span><span class="p">()</span>
+
+    <span class="k">return</span> <span class="n">AT</span> <span class="o">@</span> <span class="p">(</span><span class="n">Ni</span> <span class="o">*</span> <span class="n">x</span><span class="p">)</span></div>
+
+
+
+<div class="viewcode-block" id="solve">
+<a class="viewcode-back" href="../../../_autosummary/draco.util.dpss.html#draco.util.dpss.solve">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">solve</span><span class="p">(</span>
+    <span class="n">xp</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">,</span> <span class="n">Ni</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">,</span> <span class="n">A</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">,</span> <span class="n">Si</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">1e-3</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">list</span><span class="p">[</span><span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">,</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">]:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Apply the inpainting operator to data.</span>
+
+<span class="sd">    Returns the inpainted data and corresponding inverse</span>
+<span class="sd">    variance weight estimate. Only the diagonal of the</span>
+<span class="sd">    covariance is returned, for computational reasons.</span>
+
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    xp</span>
+<span class="sd">        Noise-weighted data projected into the dpss basis,</span>
+<span class="sd">        assumed to be the output of `project`</span>
+<span class="sd">    Ni</span>
+<span class="sd">        Inverse-variance noise weights.</span>
+<span class="sd">    A</span>
+<span class="sd">        dpss basis, assumed to be the output of `get_basis`.</span>
+<span class="sd">    Si</span>
+<span class="sd">        Regularizer, treated as the expected typical inverse</span>
+<span class="sd">        signal variance in a Wiener filter. The default value</span>
+<span class="sd">        of 1e-3 seems to work quite well, so it should be</span>
+<span class="sd">        changed with caution.</span>
+
+<span class="sd">    Returns</span>
+<span class="sd">    -------</span>
+<span class="sd">    xinp</span>
+<span class="sd">        Inpainted data.</span>
+<span class="sd">    winp</span>
+<span class="sd">        Inverse of the diagonal of the uncertainty matrix.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">AT</span> <span class="o">=</span> <span class="n">A</span><span class="o">.</span><span class="n">T</span><span class="o">.</span><span class="n">conj</span><span class="p">()</span>
+    <span class="c1"># Check the shape of `xp` and `Ni` and move axes</span>
+    <span class="c1"># if necessary to match `A`. Keep the original axis</span>
+    <span class="c1"># position so it can be reverted later. It&#39;s faster to</span>
+    <span class="c1"># copy than it is to iterate over a non-contiguous array</span>
+    <span class="n">xp</span><span class="p">,</span> <span class="n">si</span> <span class="o">=</span> <span class="n">_check_shape</span><span class="p">(</span><span class="n">xp</span><span class="p">,</span> <span class="n">AT</span><span class="p">,</span> <span class="n">copy</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+    <span class="n">Ni</span><span class="p">,</span> <span class="n">_</span> <span class="o">=</span> <span class="n">_check_shape</span><span class="p">(</span><span class="n">Ni</span><span class="p">,</span> <span class="n">A</span><span class="p">,</span> <span class="n">copy</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+    <span class="c1"># Ensure that `xp` and `Ni` are at least two</span>
+    <span class="c1"># dimensional so we can iterate over the first axis</span>
+    <span class="n">xp</span><span class="p">,</span> <span class="n">inv</span> <span class="o">=</span> <span class="n">atleast_Nd</span><span class="p">(</span><span class="n">xp</span><span class="p">,</span> <span class="n">N</span><span class="o">=</span><span class="mi">2</span><span class="p">,</span> <span class="n">lax</span><span class="o">=</span><span class="mi">0</span><span class="p">)</span>
+    <span class="n">Ni</span><span class="p">,</span> <span class="n">_</span> <span class="o">=</span> <span class="n">atleast_Nd</span><span class="p">(</span><span class="n">Ni</span><span class="p">,</span> <span class="n">N</span><span class="o">=</span><span class="mi">2</span><span class="p">,</span> <span class="n">lax</span><span class="o">=</span><span class="mi">0</span><span class="p">)</span>
+
+    <span class="n">b</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">zeros_like</span><span class="p">(</span><span class="n">xp</span><span class="p">)</span>
+
+    <span class="c1"># Figure out which datatype to use depending</span>
+    <span class="c1"># on whether or not `A` is complex</span>
+    <span class="n">cho_dtype</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">float32</span>
+    <span class="k">if</span> <span class="n">np</span><span class="o">.</span><span class="n">iscomplexobj</span><span class="p">(</span><span class="n">A</span><span class="p">):</span>
+        <span class="n">cho_dtype</span> <span class="o">=</span> <span class="n">_dtype_to_complex</span><span class="p">(</span><span class="n">cho_dtype</span><span class="p">)</span>
+
+    <span class="c1"># Iterate over the first axis</span>
+    <span class="k">for</span> <span class="n">ii</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">xp</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">]):</span>
+        <span class="n">Ni_ii</span> <span class="o">=</span> <span class="n">Ni</span><span class="p">[</span><span class="n">ii</span><span class="p">]</span><span class="o">.</span><span class="n">astype</span><span class="p">(</span><span class="n">A</span><span class="o">.</span><span class="n">dtype</span><span class="p">)</span>
+
+        <span class="k">if</span> <span class="n">np</span><span class="o">.</span><span class="n">all</span><span class="p">(</span><span class="n">Ni_ii</span> <span class="o">==</span> <span class="mi">0</span><span class="p">):</span>
+            <span class="k">continue</span>
+
+        <span class="n">ATNi</span> <span class="o">=</span> <span class="n">AT</span> <span class="o">*</span> <span class="n">Ni_ii</span><span class="p">[</span><span class="n">np</span><span class="o">.</span><span class="n">newaxis</span><span class="p">]</span>
+
+        <span class="c1"># Make the covariance matrix</span>
+        <span class="n">Ci</span> <span class="o">=</span> <span class="n">ATNi</span> <span class="o">@</span> <span class="n">A</span>
+        <span class="c1"># Add a diagonal regulariser to the covariance.</span>
+        <span class="c1"># In a weiner filter, this is the signal covariance.</span>
+        <span class="c1"># Use einsum trick to get a view of the diagonal.</span>
+        <span class="n">np</span><span class="o">.</span><span class="n">einsum</span><span class="p">(</span><span class="s2">&quot;ii-&gt;i&quot;</span><span class="p">,</span> <span class="n">Ci</span><span class="p">)[:]</span> <span class="o">+=</span> <span class="n">Si</span>
+        <span class="c1"># Cholesky decomposition. This is faster than</span>
+        <span class="c1"># doing a standard solve, and significantly</span>
+        <span class="c1"># faster than an inverse</span>
+        <span class="n">CiL</span> <span class="o">=</span> <span class="n">la</span><span class="o">.</span><span class="n">cho_factor</span><span class="p">(</span><span class="n">Ci</span><span class="o">.</span><span class="n">astype</span><span class="p">(</span><span class="n">cho_dtype</span><span class="p">),</span> <span class="n">lower</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span> <span class="n">check_finite</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
+
+        <span class="c1"># Solve for the data projection coefficient</span>
+        <span class="n">b</span><span class="p">[</span><span class="n">ii</span><span class="p">]</span> <span class="o">=</span> <span class="n">la</span><span class="o">.</span><span class="n">cho_solve</span><span class="p">(</span><span class="n">CiL</span><span class="p">,</span> <span class="n">xp</span><span class="p">[</span><span class="n">ii</span><span class="p">],</span> <span class="n">check_finite</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
+
+        <span class="c1"># Solve for beta part of the the inpainting operator</span>
+        <span class="c1"># F = A (Si^{-1} + A^{H} Ni A)^{-1} A^{H} Ni</span>
+        <span class="c1"># where F = A @ beta</span>
+        <span class="c1"># Only save the diagonal component of the resulting</span>
+        <span class="c1"># covariance. This can be done faster using a fancy</span>
+        <span class="c1"># einsum than by doing the individual matrix mults,</span>
+        <span class="c1"># but it&#39;s still the slowest step here so it might</span>
+        <span class="c1"># be worth writing some custom cython or numba</span>
+        <span class="n">beta</span> <span class="o">=</span> <span class="n">la</span><span class="o">.</span><span class="n">cho_solve</span><span class="p">(</span><span class="n">CiL</span><span class="p">,</span> <span class="n">ATNi</span><span class="p">,</span> <span class="n">check_finite</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
+
+        <span class="n">betaT</span> <span class="o">=</span> <span class="n">beta</span><span class="o">.</span><span class="n">T</span><span class="o">.</span><span class="n">conj</span><span class="p">()</span>
+        <span class="n">N_ii</span> <span class="o">=</span> <span class="n">invert_no_zero</span><span class="p">(</span><span class="n">Ni_ii</span><span class="p">)</span>
+        <span class="n">var</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">einsum</span><span class="p">(</span><span class="s2">&quot;ik,kj,j,jm,mi-&gt;i&quot;</span><span class="p">,</span> <span class="n">A</span><span class="p">,</span> <span class="n">beta</span><span class="p">,</span> <span class="n">N_ii</span><span class="p">,</span> <span class="n">betaT</span><span class="p">,</span> <span class="n">AT</span><span class="p">,</span> <span class="n">optimize</span><span class="o">=</span><span class="s2">&quot;greedy&quot;</span><span class="p">)</span>
+
+        <span class="c1"># Save out the inverse variance weights. Technically,</span>
+        <span class="c1"># we should be making the full covariance matrix,</span>
+        <span class="c1"># inverting that, then taking the resuling diagonal,</span>
+        <span class="c1"># but that isn&#39;t computationally feasible</span>
+        <span class="n">Ni</span><span class="p">[</span><span class="n">ii</span><span class="p">]</span> <span class="o">=</span> <span class="n">invert_no_zero</span><span class="p">(</span><span class="n">var</span><span class="p">)</span>
+
+    <span class="c1"># Construct the interpolated data</span>
+    <span class="n">x</span> <span class="o">=</span> <span class="n">A</span> <span class="o">@</span> <span class="n">np</span><span class="o">.</span><span class="n">moveaxis</span><span class="p">(</span><span class="n">b</span><span class="p">[</span><span class="n">inv</span><span class="p">],</span> <span class="o">-</span><span class="mi">1</span><span class="p">,</span> <span class="n">si</span><span class="p">)</span>
+
+    <span class="k">return</span> <span class="n">x</span><span class="p">,</span> <span class="n">np</span><span class="o">.</span><span class="n">moveaxis</span><span class="p">(</span><span class="n">Ni</span><span class="p">[</span><span class="n">inv</span><span class="p">],</span> <span class="o">-</span><span class="mi">1</span><span class="p">,</span> <span class="n">si</span><span class="p">)</span></div>
+
+
+
+<div class="viewcode-block" id="accumulate_variance">
+<a class="viewcode-back" href="../../../_autosummary/draco.util.dpss.html#draco.util.dpss.accumulate_variance">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">accumulate_variance</span><span class="p">(</span><span class="n">wo</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">,</span> <span class="n">wi</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">,</span> <span class="n">W</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Pchip interpolate and accumulate weights.</span>
+
+<span class="sd">    Pchip seems to behave reasonably well around boundaries</span>
+<span class="sd">    and large spikes.</span>
+
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    wo</span>
+<span class="sd">        Non-inpainted inverse variance weights. These</span>
+<span class="sd">        will be interpolated</span>
+<span class="sd">    wi</span>
+<span class="sd">        Inpainted weights, assumed to be output from `solve`</span>
+<span class="sd">    W</span>
+<span class="sd">        Boolean masking matrix, where False values correspond</span>
+<span class="sd">        to flagged data in `wo` which need to be interpolated.</span>
+
+<span class="sd">    Returns</span>
+<span class="sd">    -------</span>
+<span class="sd">    wacc</span>
+<span class="sd">        Inverse variance weights accumulated after interpolating.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="c1"># Interpolate variances. This seems to produce</span>
+    <span class="c1"># better edge behaviour</span>
+    <span class="n">vo</span> <span class="o">=</span> <span class="n">invert_no_zero</span><span class="p">(</span><span class="n">wo</span><span class="p">)</span>
+    <span class="n">vi</span> <span class="o">=</span> <span class="n">invert_no_zero</span><span class="p">(</span><span class="n">wi</span><span class="p">)</span>
+
+    <span class="n">samples</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">arange</span><span class="p">(</span><span class="n">vo</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">])</span>
+
+    <span class="c1"># Iterate over the last axis</span>
+    <span class="k">for</span> <span class="n">ii</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">vo</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]):</span>
+        <span class="n">sel</span> <span class="o">=</span> <span class="n">W</span><span class="p">[:,</span> <span class="n">ii</span><span class="p">]</span>
+
+        <span class="k">if</span> <span class="n">sel</span><span class="o">.</span><span class="n">sum</span><span class="p">()</span> <span class="o">&lt;</span> <span class="mi">2</span><span class="p">:</span>
+            <span class="c1"># Need a minimum number of samples</span>
+            <span class="c1"># to interpolate</span>
+            <span class="k">continue</span>
+
+        <span class="c1"># Interpolate. Pchip seems to work reasonably well</span>
+        <span class="c1"># over small gaps without producing any crazy effects</span>
+        <span class="c1"># over large gaps and edges.</span>
+        <span class="n">pchip</span> <span class="o">=</span> <span class="n">interpolate</span><span class="o">.</span><span class="n">PchipInterpolator</span><span class="p">(</span>
+            <span class="n">samples</span><span class="p">[</span><span class="n">sel</span><span class="p">],</span> <span class="n">vo</span><span class="p">[:,</span> <span class="n">ii</span><span class="p">][</span><span class="n">sel</span><span class="p">],</span> <span class="n">extrapolate</span><span class="o">=</span><span class="kc">True</span>
+        <span class="p">)</span>
+        <span class="c1"># Handle extrapolation errors.</span>
+        <span class="n">wint</span> <span class="o">=</span> <span class="n">pchip</span><span class="p">(</span><span class="n">samples</span><span class="p">)</span>
+        <span class="n">wint</span><span class="p">[</span><span class="n">wint</span> <span class="o">&lt;</span> <span class="mi">0</span><span class="p">]</span> <span class="o">=</span> <span class="mi">0</span>
+        <span class="c1"># Accumulate</span>
+        <span class="n">vi</span><span class="p">[:,</span> <span class="n">ii</span><span class="p">]</span> <span class="o">+=</span> <span class="n">wint</span>
+
+    <span class="k">return</span> <span class="n">invert_no_zero</span><span class="p">(</span><span class="n">vi</span><span class="p">)</span></div>
+
+
+
+<div class="viewcode-block" id="flag_above_cutoff">
+<a class="viewcode-back" href="../../../_autosummary/draco.util.dpss.html#draco.util.dpss.flag_above_cutoff">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">flag_above_cutoff</span><span class="p">(</span><span class="n">W</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">,</span> <span class="n">fc</span><span class="p">:</span> <span class="nb">float</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Mask to flag inpainted gaps wider than the cutoff `fc`.</span>
+
+<span class="sd">    Calculates the width of each flagged region along the last axis,</span>
+<span class="sd">    and returns a mask which is False for gaps larger than those</span>
+<span class="sd">    that can be reasonably interpolated by a covariance with a</span>
+<span class="sd">    certain cutoff.</span>
+
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    W</span>
+<span class="sd">        Original mask array, False where samples are flagged.</span>
+<span class="sd">    fc</span>
+<span class="sd">        Cutoff width, in units of samples. Gaps above this</span>
+<span class="sd">        value are flagged. A `None` value will return the</span>
+<span class="sd">        original mask</span>
+
+<span class="sd">    Returns</span>
+<span class="sd">    -------</span>
+<span class="sd">    mask</span>
+<span class="sd">        Mask with gaps larger than `fc` flagged, where</span>
+<span class="sd">        False corresponds to flagged values.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">if</span> <span class="n">fc</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="k">return</span> <span class="n">W</span>
+
+    <span class="n">M</span> <span class="o">=</span> <span class="o">~</span><span class="n">W</span>
+    <span class="n">dist</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">zeros_like</span><span class="p">(</span><span class="n">W</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">float32</span><span class="p">)</span>
+    <span class="c1"># Get the rising and falling edge of flagged regions</span>
+    <span class="n">rise</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">diff</span><span class="p">(</span><span class="n">M</span><span class="p">,</span> <span class="n">axis</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span> <span class="n">prepend</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span> <span class="o">&amp;</span> <span class="n">M</span>
+    <span class="n">rise</span> <span class="o">=</span> <span class="n">rise</span><span class="p">[:</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span>
+    <span class="n">fall</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">diff</span><span class="p">(</span><span class="n">W</span><span class="p">,</span> <span class="n">axis</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span> <span class="n">append</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span> <span class="o">&amp;</span> <span class="n">M</span>
+
+    <span class="c1"># Get the leftmost and rightmost data boundaries,</span>
+    <span class="c1"># assuming that we can&#39;t extrapolate</span>
+    <span class="n">lbound</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">argmax</span><span class="p">(</span><span class="n">W</span><span class="p">,</span> <span class="n">axis</span><span class="o">=</span><span class="mi">0</span><span class="p">)</span>
+    <span class="n">rbound</span> <span class="o">=</span> <span class="n">W</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">-</span> <span class="n">np</span><span class="o">.</span><span class="n">argmax</span><span class="p">(</span><span class="n">W</span><span class="p">[::</span><span class="o">-</span><span class="mi">1</span><span class="p">],</span> <span class="n">axis</span><span class="o">=</span><span class="mi">0</span><span class="p">)</span> <span class="o">-</span> <span class="mi">1</span>
+
+    <span class="c1"># This works, but maybe isn&#39;t optimally fast</span>
+    <span class="k">for</span> <span class="n">ii</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">M</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]):</span>
+        <span class="n">rind</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">flatnonzero</span><span class="p">(</span><span class="n">rise</span><span class="p">[:,</span> <span class="n">ii</span><span class="p">])</span>
+        <span class="n">find</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">flatnonzero</span><span class="p">(</span><span class="n">fall</span><span class="p">[:,</span> <span class="n">ii</span><span class="p">])</span>
+
+        <span class="k">for</span> <span class="n">ri</span><span class="p">,</span> <span class="n">fi</span> <span class="ow">in</span> <span class="nb">zip</span><span class="p">(</span><span class="n">rind</span><span class="p">,</span> <span class="n">find</span><span class="p">):</span>
+            <span class="n">dist</span><span class="p">[</span><span class="n">ri</span> <span class="p">:</span> <span class="n">fi</span> <span class="o">+</span> <span class="mi">1</span><span class="p">,</span> <span class="n">ii</span><span class="p">]</span> <span class="o">=</span> <span class="n">fi</span> <span class="o">-</span> <span class="n">ri</span>
+
+        <span class="n">dist</span><span class="p">[:</span> <span class="n">lbound</span><span class="p">[</span><span class="n">ii</span><span class="p">],</span> <span class="n">ii</span><span class="p">]</span> <span class="o">=</span> <span class="mi">2</span> <span class="o">*</span> <span class="n">fc</span>
+        <span class="n">dist</span><span class="p">[</span><span class="n">rbound</span><span class="p">[</span><span class="n">ii</span><span class="p">]</span> <span class="p">:,</span> <span class="n">ii</span><span class="p">]</span> <span class="o">=</span> <span class="mi">2</span> <span class="o">*</span> <span class="n">fc</span>
+
+    <span class="k">return</span> <span class="n">dist</span> <span class="o">&lt;</span> <span class="n">fc</span></div>
+
+
+
+<div class="viewcode-block" id="filter">
+<a class="viewcode-back" href="../../../_autosummary/draco.util.dpss.html#draco.util.dpss.filter">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">filter</span><span class="p">(</span>
+    <span class="n">x</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">,</span> <span class="n">Ni</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">,</span> <span class="n">A</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">,</span> <span class="n">W</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">,</span> <span class="n">Si</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">1e-3</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Filter using a DPSS basis over the first axis.</span>
+
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    x</span>
+<span class="sd">        Data to filter. Can be Real or Complex.</span>
+<span class="sd">    Ni</span>
+<span class="sd">        Inverse variance noise weights for each sample in `x`.</span>
+<span class="sd">    A</span>
+<span class="sd">        dpss basis, assumed to be the output of `get_basis`.</span>
+<span class="sd">    W</span>
+<span class="sd">        Mask array, where False values will be replaced by</span>
+<span class="sd">        inpainted data.</span>
+<span class="sd">    Si</span>
+<span class="sd">        Regularizer, treated as the expected typical inverse</span>
+<span class="sd">        signal variance in a Wiener filter. The default value</span>
+<span class="sd">        of 1e-3 seems to work quite well, so it should be</span>
+<span class="sd">        changed with caution.</span>
+
+<span class="sd">    Returns</span>
+<span class="sd">    -------</span>
+<span class="sd">    xfilt</span>
+<span class="sd">        Filtered data.</span>
+<span class="sd">    wfilt</span>
+<span class="sd">        Filtered inverse variance weights.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="c1"># Subtract the mean data before inpainting and</span>
+    <span class="c1"># re-add at the end</span>
+    <span class="n">xhat</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">sum</span><span class="p">(</span><span class="n">x</span> <span class="o">*</span> <span class="n">W</span><span class="p">,</span> <span class="n">axis</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span> <span class="n">keepdims</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+    <span class="n">xhat</span> <span class="o">*=</span> <span class="n">invert_no_zero</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">sum</span><span class="p">(</span><span class="n">W</span><span class="p">,</span> <span class="n">axis</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span> <span class="n">keepdims</span><span class="o">=</span><span class="kc">True</span><span class="p">))</span>
+
+    <span class="c1"># Make the data projection</span>
+    <span class="n">xp</span> <span class="o">=</span> <span class="n">project</span><span class="p">(</span><span class="n">x</span> <span class="o">-</span> <span class="n">xhat</span><span class="p">,</span> <span class="n">Ni</span><span class="p">,</span> <span class="n">A</span><span class="p">)</span>
+    <span class="c1"># Make the inpainted data</span>
+    <span class="n">xfilt</span><span class="p">,</span> <span class="n">wfilt</span> <span class="o">=</span> <span class="n">solve</span><span class="p">(</span><span class="n">xp</span><span class="p">,</span> <span class="n">Ni</span><span class="p">,</span> <span class="n">A</span><span class="p">,</span> <span class="n">Si</span><span class="p">)</span>
+
+    <span class="c1"># Interpolate and accumulate variances</span>
+    <span class="n">wfilt</span> <span class="o">=</span> <span class="n">accumulate_variance</span><span class="p">(</span><span class="n">Ni</span><span class="p">,</span> <span class="n">wfilt</span><span class="p">,</span> <span class="n">W</span><span class="p">)</span>
+
+    <span class="c1"># Re-add the mean</span>
+    <span class="n">xfilt</span> <span class="o">+=</span> <span class="n">xhat</span>
+
+    <span class="k">return</span> <span class="n">xfilt</span><span class="p">,</span> <span class="n">wfilt</span></div>
+
+
+
+<div class="viewcode-block" id="inpaint">
+<a class="viewcode-back" href="../../../_autosummary/draco.util.dpss.html#draco.util.dpss.inpaint">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">inpaint</span><span class="p">(</span>
+    <span class="n">x</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">,</span> <span class="n">Ni</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">,</span> <span class="n">A</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">,</span> <span class="n">W</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">,</span> <span class="n">Si</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">1e-3</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Inpaint using a DPSS basis over the first axis.</span>
+
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    x</span>
+<span class="sd">        Data to interpolate. Can be Real or Complex.</span>
+<span class="sd">    Ni</span>
+<span class="sd">        Inverse variance noise weights for each sample in `x`.</span>
+<span class="sd">    A</span>
+<span class="sd">        dpss basis, assumed to be the output of `get_basis`.</span>
+<span class="sd">    W</span>
+<span class="sd">        Mask array, where False values will be replaced by</span>
+<span class="sd">        inpainted data.</span>
+<span class="sd">    Si</span>
+<span class="sd">        Regularizer, treated as the expected typical inverse</span>
+<span class="sd">        signal variance in a Wiener filter. The default value</span>
+<span class="sd">        of 1e-3 seems to work quite well, so it should be</span>
+<span class="sd">        changed with caution.</span>
+
+<span class="sd">    Returns</span>
+<span class="sd">    -------</span>
+<span class="sd">    xinp</span>
+<span class="sd">        Inpainted data. Samples where `W` is True are not changed</span>
+<span class="sd">        from the input data.</span>
+<span class="sd">    winp</span>
+<span class="sd">        Inpainted inverse variance weights. Samples where `W` is True</span>
+<span class="sd">        are not changed from the input data.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">xinp</span><span class="p">,</span> <span class="n">winp</span> <span class="o">=</span> <span class="nb">filter</span><span class="p">(</span><span class="n">x</span><span class="p">,</span> <span class="n">Ni</span><span class="p">,</span> <span class="n">A</span><span class="p">,</span> <span class="n">W</span><span class="p">,</span> <span class="n">Si</span><span class="p">)</span>
+
+    <span class="n">xinp</span><span class="p">[</span><span class="n">W</span><span class="p">]</span> <span class="o">=</span> <span class="n">x</span><span class="p">[</span><span class="n">W</span><span class="p">]</span>
+    <span class="n">winp</span><span class="p">[</span><span class="n">W</span><span class="p">]</span> <span class="o">=</span> <span class="n">Ni</span><span class="p">[</span><span class="n">W</span><span class="p">]</span>
+
+    <span class="k">return</span> <span class="n">xinp</span><span class="p">,</span> <span class="n">winp</span></div>
+
+
+
+<div class="viewcode-block" id="atleast_Nd">
+<a class="viewcode-back" href="../../../_autosummary/draco.util.dpss.html#draco.util.dpss.atleast_Nd">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">atleast_Nd</span><span class="p">(</span><span class="n">x</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">,</span> <span class="n">N</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span> <span class="n">lax</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="o">-</span><span class="mi">1</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Ensure that an array is at least `N` dimensional.</span>
+
+<span class="sd">    Unlike `np.atleast_2d` and similar, this allows the user</span>
+<span class="sd">    to select the location where new axes are inserted. New axes</span>
+<span class="sd">    are always grouped together. If `x.ndim` is greater or equal to</span>
+<span class="sd">    `N`, `x` is returned unchanged.</span>
+
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    x</span>
+<span class="sd">        Array to expend dimensions.</span>
+<span class="sd">    N</span>
+<span class="sd">        Desired dimension of `x`.</span>
+<span class="sd">    lax</span>
+<span class="sd">        Axis to the left of where the new axes</span>
+<span class="sd">        are added. Default is -1, so new axes are</span>
+<span class="sd">        added to the end.</span>
+
+<span class="sd">    Returns</span>
+<span class="sd">    -------</span>
+<span class="sd">    xn</span>
+<span class="sd">        `x` with extra dimensions added, if needed.</span>
+<span class="sd">    inv</span>
+<span class="sd">        Index tuple which inverses the operation.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="c1"># Desired dimensionality is already satisfied</span>
+    <span class="k">if</span> <span class="n">x</span><span class="o">.</span><span class="n">ndim</span> <span class="o">&gt;=</span> <span class="n">N</span><span class="p">:</span>
+        <span class="k">return</span> <span class="n">x</span><span class="p">,</span> <span class="p">(</span><span class="nb">slice</span><span class="p">(</span><span class="kc">None</span><span class="p">),)</span> <span class="o">*</span> <span class="n">x</span><span class="o">.</span><span class="n">ndim</span>
+
+    <span class="c1"># Create an indexer for the new axes</span>
+    <span class="n">newdims</span> <span class="o">=</span> <span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">newaxis</span><span class="p">,)</span> <span class="o">*</span> <span class="p">(</span><span class="n">N</span> <span class="o">-</span> <span class="n">x</span><span class="o">.</span><span class="n">ndim</span><span class="p">)</span>
+
+    <span class="c1"># Create an indexer to place the new axes</span>
+    <span class="c1"># according to `lax`</span>
+    <span class="k">if</span> <span class="n">lax</span> <span class="o">==</span> <span class="o">-</span><span class="mi">1</span><span class="p">:</span>
+        <span class="n">lax</span> <span class="o">=</span> <span class="n">x</span><span class="o">.</span><span class="n">ndim</span>
+
+    <span class="n">slobj</span> <span class="o">=</span> <span class="p">(</span><span class="nb">slice</span><span class="p">(</span><span class="kc">None</span><span class="p">),)</span> <span class="o">*</span> <span class="nb">max</span><span class="p">(</span><span class="n">x</span><span class="o">.</span><span class="n">ndim</span> <span class="o">-</span> <span class="n">lax</span><span class="p">,</span> <span class="mi">0</span><span class="p">)</span>
+
+    <span class="n">add</span> <span class="o">=</span> <span class="p">(</span><span class="o">...</span><span class="p">,</span> <span class="o">*</span><span class="n">newdims</span><span class="p">,</span> <span class="o">*</span><span class="n">slobj</span><span class="p">)</span>
+    <span class="n">inv</span> <span class="o">=</span> <span class="p">(</span><span class="o">...</span><span class="p">,</span> <span class="o">*</span><span class="p">(</span><span class="mi">0</span> <span class="k">for</span> <span class="n">_</span> <span class="ow">in</span> <span class="n">newdims</span><span class="p">),</span> <span class="o">*</span><span class="n">slobj</span><span class="p">)</span>
+
+    <span class="k">return</span> <span class="n">x</span><span class="p">[</span><span class="n">add</span><span class="p">],</span> <span class="n">np</span><span class="o">.</span><span class="n">s_</span><span class="p">[</span><span class="n">inv</span><span class="p">]</span></div>
+
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_check_shape</span><span class="p">(</span><span class="n">x</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">,</span> <span class="n">A</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">,</span> <span class="n">copy</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Set the last axis of `x` to match the first axis of `A`.&quot;&quot;&quot;</span>
+    <span class="n">sval</span> <span class="o">=</span> <span class="n">A</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+
+    <span class="k">try</span><span class="p">:</span>
+        <span class="n">si</span> <span class="o">=</span> <span class="n">x</span><span class="o">.</span><span class="n">shape</span><span class="o">.</span><span class="n">index</span><span class="p">(</span><span class="n">sval</span><span class="p">)</span>
+    <span class="k">except</span> <span class="ne">ValueError</span> <span class="k">as</span> <span class="n">exc</span><span class="p">:</span>
+        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Shape mismatch. x: </span><span class="si">{</span><span class="n">x</span><span class="o">.</span><span class="n">shape</span><span class="si">}</span><span class="s2">, A: </span><span class="si">{</span><span class="n">A</span><span class="o">.</span><span class="n">shape</span><span class="si">}</span><span class="s2">.&quot;</span><span class="p">)</span> <span class="kn">from</span><span class="w"> </span><span class="nn">exc</span>
+
+    <span class="c1"># Move the target axis to the end</span>
+    <span class="k">if</span> <span class="n">x</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span> <span class="o">!=</span> <span class="n">sval</span><span class="p">:</span>
+        <span class="n">x</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">moveaxis</span><span class="p">(</span><span class="n">x</span><span class="p">,</span> <span class="n">si</span><span class="p">,</span> <span class="o">-</span><span class="mi">1</span><span class="p">)</span>
+
+    <span class="c1"># Make a copy. This is helpful for speed since</span>
+    <span class="c1"># the transposed array may not be c-contiguous,</span>
+    <span class="c1"># but should be used with caution if `x` is large</span>
+    <span class="k">if</span> <span class="n">copy</span><span class="p">:</span>
+        <span class="n">x</span> <span class="o">=</span> <span class="n">x</span><span class="o">.</span><span class="n">copy</span><span class="p">(</span><span class="n">order</span><span class="o">=</span><span class="s2">&quot;C&quot;</span><span class="p">)</span>
+
+    <span class="k">return</span> <span class="n">x</span><span class="p">,</span> <span class="n">si</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_dtype_to_real</span><span class="p">(</span><span class="n">dtype</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">dtype</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">np</span><span class="o">.</span><span class="n">dtype</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Get a real dtype with matching precision.&quot;&quot;&quot;</span>
+    <span class="k">return</span> <span class="n">np</span><span class="o">.</span><span class="n">dtype</span><span class="p">(</span><span class="n">dtype</span><span class="p">)</span><span class="o">.</span><span class="n">type</span><span class="p">(</span><span class="mi">0</span><span class="p">)</span><span class="o">.</span><span class="n">real</span><span class="o">.</span><span class="n">dtype</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_dtype_to_complex</span><span class="p">(</span><span class="n">dtype</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">dtype</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">np</span><span class="o">.</span><span class="n">dtype</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Get a complex dtype with matching precision.&quot;&quot;&quot;</span>
+    <span class="n">_map</span> <span class="o">=</span> <span class="p">{</span>
+        <span class="s2">&quot;float32&quot;</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">complex64</span><span class="p">,</span>
+        <span class="s2">&quot;float64&quot;</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">complex128</span><span class="p">,</span>
+    <span class="p">}</span>
+
+    <span class="k">return</span> <span class="n">np</span><span class="o">.</span><span class="n">dtype</span><span class="p">(</span><span class="n">_map</span><span class="p">[</span><span class="n">_dtype_to_real</span><span class="p">(</span><span class="n">dtype</span><span class="p">)</span><span class="o">.</span><span class="n">name</span><span class="p">])</span>
+</pre></div>
+
+           </div>
+          </div>
+          <footer>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2016, Richard Shaw.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>
