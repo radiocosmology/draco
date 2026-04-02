@@ -880,7 +880,7 @@ class TimeStream(FreqContainer, VisContainer, TODContainer):
         return self.datasets["input_flags"]
 
 
-class EigenDecompBase(ContainerBase):
+class EigenDecompBase(ContainerPrototype):
 
     _axes = ("ev",)
 
@@ -3159,8 +3159,8 @@ def empty_timestream(**kwargs):
 
 
 def copy_datasets_filter(
-    source: ContainerBase,
-    dest: ContainerBase,
+    source: ContainerPrototype,
+    dest: ContainerPrototype,
     axis: str | list | tuple = [],
     selection: np.ndarray | list | slice | dict = {},
     exclude_axes: list[str] | None = None,
@@ -3295,7 +3295,7 @@ def copy_datasets_filter(
             dest_dset.redistribute(original_ax_id)
 
 
-class TransitFitParams(ContainerBase):
+class TransitFitParams(ContainerPrototype):
     """Parallel container for holding the results of fitting a model to a point source transit."""
 
     _axes = ("freq", "input", "param", "component")
