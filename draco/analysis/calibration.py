@@ -11,10 +11,10 @@ from caput import config, mpiarray
 from caput.util import mpitools
 
 from ..core import  io, containers
-from draco.util import tools, cal_utils, fluxcat, _fast_tools, interferometry
+from draco.util import tools, cal_utils, _fast_tools, interferometry
 
 from ..ephem import sources
-
+import fluxcat
 import json
 
 
