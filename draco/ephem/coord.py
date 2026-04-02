@@ -19,7 +19,7 @@ from typing import TYPE_CHECKING
 import numpy as np
 import skyfield.starlib
 
-from caput.time import skyfield_wrapper, unix_to_skyfield_time
+from caput.astro.skyfield import skyfield_wrapper, unix_to_skyfield_time
 
 if TYPE_CHECKING:
     from typing import Optional, Tuple, Union
@@ -27,7 +27,7 @@ if TYPE_CHECKING:
     import skyfield.jpllib
     import skyfield.timelib
     import skyfield.units
-    import caput.time
+    from caput.astro.observer import Observer
 
     SkyfieldSource = Union[
         skyfield.starlib.Star,
@@ -40,7 +40,7 @@ del TYPE_CHECKING
 
 def object_coords(
     body: SkyfieldSource,
-    obs: Optional[caput.time.Observer],
+    obs: Optional[Observer],
     date: Optional[float] = None,
     deg: bool = False
 ) -> Tuple[float, float]:
