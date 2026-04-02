@@ -7,15 +7,17 @@ from typing import overload
 
 import numpy as np
 import scipy.linalg as la
-from caput import config, fftw, mpiarray, pipeline
-from caput.tools import invert_no_zero
+from caput import config, mpiarray
+from caput.algorithms import fft, invert_no_zero
+from caput.containers import ContainerPrototype, copy_datasets_filter, empty_like
+from caput.pipeline import exceptions, tasklib
 from numpy.lib.recfunctions import structured_to_unstructured
 
-from ..core import containers, io, task
+from ..core import containers, io
 from ..util import regrid, tools
 
 
-class FrequencyRebin(task.SingleTask):
+class FrequencyRebin(tasklib.base.ContainerTask):
     """Rebin neighbouring frequency channels.
 
     Parameters
@@ -58,7 +60,7 @@ class FrequencyRebin(task.SingleTask):
         freq_map["width"] = fw
 
         # Create new container for rebinned stream
-        sb = containers.empty_like(ss, freq=freq_map)
+        sb = empty_like(ss, freq=freq_map)
 
         # Get all frequencies onto same node
         sb.redistribute(["time", "ra"])
@@ -137,7 +139,7 @@ class TelescopeStreamMixIn:
         self.bt_rev["conjugate"] = np.where(feedmask, self.telescope.feedconj[triu], 0)
 
 
-class CollateProducts(TelescopeStreamMixIn, task.SingleTask):
+class CollateProducts(TelescopeStreamMixIn, tasklib.base.ContainerTask):
     """Extract and order the correlation products for map-making.
 
     The task will take a sidereal task and format the products that are needed
@@ -318,9 +320,7 @@ class CollateProducts(TelescopeStreamMixIn, task.SingleTask):
         sp.weight[:] = counter**2 * tools.invert_no_zero(sp.weight[:])
 
         # Copy over any additional datasets that need to be frequency filtered
-        containers.copy_datasets_filter(
-            ss, sp, "freq", freq_ind, ["input", "prod", "stack"]
-        )
+        copy_datasets_filter(ss, sp, "freq", freq_ind, ["input", "prod", "stack"])
 
         # Switch back to frequency distribution. This will have minimal
         # cost if we are already distributed in frequency
@@ -330,7 +330,7 @@ class CollateProducts(TelescopeStreamMixIn, task.SingleTask):
         return sp
 
 
-class SelectFreq(task.SingleTask):
+class SelectFreq(tasklib.base.ContainerTask):
     """Select a subset of frequencies from a container.
 
     Attributes
@@ -360,12 +360,12 @@ class SelectFreq(task.SingleTask):
 
         Parameters
         ----------
-        data : containers.ContainerBase
+        data : ContainerPrototype
             A data container with a frequency axis.
 
         Returns
         -------
-        newdata : containers.ContainerBase
+        newdata : ContainerPrototype
             New container with trimmed frequencies.
         """
         # Set up frequency selection.
@@ -403,7 +403,7 @@ class SelectFreq(task.SingleTask):
         data.redistribute(["ra", "time", "pixel"])
 
         # Create new container with subset of frequencies.
-        newdata = containers.empty_like(data, freq=freq_map)
+        newdata = empty_like(data, freq=freq_map)
 
         # Make sure all datasets are initialised
         for name in data.datasets.keys():
@@ -415,8 +415,8 @@ class SelectFreq(task.SingleTask):
 
         # Copy over datasets. If the dataset has a frequency axis,
         # then we only copy over the subset.
-        if isinstance(data, containers.ContainerBase):
-            containers.copy_datasets_filter(
+        if isinstance(data, ContainerPrototype):
+            copy_datasets_filter(
                 data, newdata, "freq", newindex, copy_without_selection=True
             )
         else:
@@ -478,7 +478,7 @@ class GenerateSubBands(SelectFreq):
             downselected along the frequency axis.
         """
         if len(self.sub_bands) == 0:
-            raise pipeline.PipelineStopIteration
+            raise exceptions.PipelineStopIteration
 
         tag = self.sub_bands.pop()
         self._set_freq_selection(**self.sub_band_spec[tag])
@@ -497,7 +497,7 @@ class GenerateSubBands(SelectFreq):
             setattr(self, key, value)
 
 
-class ElevationDependentHybridVisWeight(task.SingleTask):
+class ElevationDependentHybridVisWeight(tasklib.base.ContainerTask):
     """Add elevation dependence to hybrid visibility weights."""
 
     def process(self, data: containers.HybridVisStream):
@@ -532,7 +532,7 @@ class ElevationDependentHybridVisWeight(task.SingleTask):
         return data
 
 
-class MModeTransform(task.SingleTask):
+class MModeTransform(tasklib.base.ContainerTask):
     """Transform a sidereal stream to m-modes.
 
     Currently ignores any noise weighting.
@@ -684,7 +684,7 @@ def _make_marray(ts, mmodes=None, mmax=None, dtype=None, use_fftw=True):
     # still faster than `numpy` or `scipy` ffts.
     shp = ts.shape
     if use_fftw:
-        m_fft = fftw.fft(ts.reshape(-1, shp[-1]), axes=-1).reshape(shp)
+        m_fft = fft.fftw.fft(ts.reshape(-1, shp[-1]), axes=-1).reshape(shp)
     else:
         m_fft = np.fft.fft(ts.reshape(-1, shp[-1]), axis=-1).reshape(shp)
 
@@ -705,7 +705,7 @@ def _make_marray(ts, mmodes=None, mmax=None, dtype=None, use_fftw=True):
     return mmodes
 
 
-class MModeInverseTransform(task.SingleTask):
+class MModeInverseTransform(tasklib.base.ContainerTask):
     """Transform m-modes to sidereal stream.
 
     Currently ignores any noise weighting.
@@ -792,7 +792,9 @@ class MModeInverseTransform(task.SingleTask):
         return sstream
 
 
-class SiderealMModeResample(task.group_tasks(MModeTransform, MModeInverseTransform)):
+class SiderealMModeResample(
+    tasklib.base.group_tasks(MModeTransform, MModeInverseTransform)
+):
     """Resample a sidereal stream by FFT.
 
     This performs a forward and inverse m-mode transform to resample a sidereal stream.
@@ -849,7 +851,7 @@ def _unpack_marray(mmodes, n=None):
     return marray
 
 
-class LanczosRegridder(task.SingleTask):
+class LanczosRegridder(tasklib.base.ContainerTask):
     """Interpolate the time-like axis of a dataset onto a regular grid.
 
     Uses a maximum-likelihood inverse of a Lanczos interpolation to do the
@@ -886,7 +888,7 @@ class LanczosRegridder(task.SingleTask):
 
         Parameters
         ----------
-        observer : :class:`~caput.time.Observer`
+        observer : :class:`~caput.astro.observer.Observer`
             An Observer object holding the geographic location of the telescope.
             Note that :class:`~drift.core.TransitTelescope` instances are also
             Observers.
@@ -988,7 +990,7 @@ class LanczosRegridder(task.SingleTask):
 Regridder = LanczosRegridder
 
 
-class ShiftRA(task.SingleTask):
+class ShiftRA(tasklib.base.ContainerTask):
     """Add a shift to the RA axis.
 
     This is useful for fixing a bug in earlier revisions of CHIME processing.
@@ -1063,7 +1065,7 @@ class ShiftRA(task.SingleTask):
         return sscont
 
 
-class SelectPol(task.SingleTask):
+class SelectPol(tasklib.base.ContainerTask):
     """Extract a subset of Stokes parameters from beamformed data.
 
     Supports extraction of Stokes I, Q, U, and V from beamformed data for
@@ -1103,7 +1105,7 @@ class SelectPol(task.SingleTask):
 
         Parameters
         ----------
-        polcont : ContainerBase
+        polcont : ContainerPrototype
             A container with a 'pol' axis containing linear polarisation data
             (e.g., XX, YY, reXY, imXY).
 
@@ -1136,7 +1138,7 @@ class SelectPol(task.SingleTask):
         weight_dset_name = getattr(polcont, "_weight_dset_name", None)
 
         # Create the output container
-        outcont = containers.empty_like(polcont, pol=np.array(self.pol))
+        outcont = empty_like(polcont, pol=np.array(self.pol))
 
         for name in polcont.datasets.keys():
             if name not in outcont.datasets:
@@ -1150,7 +1152,6 @@ class SelectPol(task.SingleTask):
 
         # Loop over datasets
         for name, dset in polcont.datasets.items():
-
             out_dset = outcont.datasets[name]
 
             if "pol" not in dset.attrs["axis"]:
@@ -1175,14 +1176,12 @@ class SelectPol(task.SingleTask):
 
             # Loop over output polarisations
             for oo, po in enumerate(self.pol):
-
                 oslc = make_slice(oo, pol_axis_pos)
                 pol_to_sum = self.P[po]
                 nsum = len(pol_to_sum)
 
                 # Loop over the input polarisations that we need to sum
                 for pi, sign in pol_to_sum.items():
-
                     ii = input_pol.index(pi)
                     islc = make_slice(ii, pol_axis_pos)
 
@@ -1232,7 +1231,7 @@ class SelectPol(task.SingleTask):
         return outcont
 
 
-class PolWeightedAverage(task.SingleTask):
+class PolWeightedAverage(tasklib.base.ContainerTask):
     """Compute an optimally weighted pseudo-Stokes I from XX and YY polarisations.
 
     This computes a weighted average:
@@ -1289,7 +1288,7 @@ class PolWeightedAverage(task.SingleTask):
             return axis, slc
 
         # Create output container
-        outcont = containers.empty_like(polcont, pol=np.array(["I"]))
+        outcont = empty_like(polcont, pol=np.array(["I"]))
 
         for name in polcont.datasets.keys():
             if name not in outcont.datasets:
@@ -1309,7 +1308,6 @@ class PolWeightedAverage(task.SingleTask):
 
         # Loop over all other datasets
         for name, dset in polcont.datasets.items():
-
             # Already dealt with weights
             if name == polcont._weight_dset_name:
                 continue
@@ -1332,7 +1330,7 @@ class PolWeightedAverage(task.SingleTask):
         return outcont
 
 
-class StokesIVis(task.SingleTask):
+class StokesIVis(tasklib.base.ContainerTask):
     """Extract instrumental Stokes I from visibilities."""
 
     def setup(self, telescope):
@@ -1340,7 +1338,7 @@ class StokesIVis(task.SingleTask):
 
         Parameters
         ----------
-        telescope : :class:`~caput.time.Observer`
+        telescope : :class:`~caput.astro.observer.Observer`
             An Observer object holding the geographic location of the telescope.
             Note that :class:`~drift.core.TransitTelescope` instances are also
             Observers.
@@ -1372,7 +1370,7 @@ class StokesIVis(task.SingleTask):
         # Make the output container
         # TODO: the axes for this container should probably
         # be adjusted to make more sense
-        out = containers.empty_like(data, stack=baselines)
+        out = empty_like(data, stack=baselines)
         out.redistribute("freq")
 
         out.vis[:] = vis.redistribute(0)
@@ -1450,7 +1448,7 @@ def stokes_I(sstream, tel):
     return vis_I, vis_weight, ubase
 
 
-class TransformJanskyToKelvin(task.SingleTask):
+class TransformJanskyToKelvin(tasklib.base.ContainerTask):
     """Task to convert from Jy to Kelvin and vice-versa.
 
     This integrates over the primary beams in the telescope class to derive the
@@ -1605,7 +1603,7 @@ class TransformJanskyToKelvin(task.SingleTask):
         return new_stream
 
 
-class MixData(task.SingleTask):
+class MixData(tasklib.base.ContainerTask):
     """Mix together pieces of data with specified weights.
 
     This can generate arbitrary linear combinations of the data and weights for both
@@ -1644,7 +1642,7 @@ class MixData(task.SingleTask):
     data_coeff = config.list_type(type_=float)
     weight_coeff = config.list_type(type_=float)
     tag_coeff = config.list_type(type_=bool)
-    aux_coeff = config.Property(proptype=dict)
+    aux_coeff = config.Property(proptype=dict, default={})
     invert_weight = config.Property(proptype=bool, default=False)
     require_nonzero_weight = config.Property(proptype=bool, default=False)
 
@@ -1680,7 +1678,7 @@ class MixData(task.SingleTask):
             )
 
         if self.mixed_data is None:
-            self.mixed_data = containers.empty_like(data)
+            self.mixed_data = empty_like(data)
 
             # If requested, add auxiliary datasets
             for key in self.aux_coeff.keys():
@@ -1847,7 +1845,7 @@ class MixTwoDatasets(MixData):
         return
 
 
-class Downselect(io.SelectionsMixin, task.SingleTask):
+class Downselect(tasklib.io.SelectionsMixin, tasklib.base.ContainerTask):
     """Apply axis selections to a container.
 
     Apply slice or `np.take` operations across multiple axes of a container.
@@ -1857,7 +1855,7 @@ class Downselect(io.SelectionsMixin, task.SingleTask):
     in the selections.
     """
 
-    def process(self, data: containers.ContainerBase) -> containers.ContainerBase:
+    def process(self, data: ContainerPrototype) -> ContainerPrototype:
         """Apply downselections to the container.
 
         Parameters
@@ -1898,14 +1896,12 @@ class Downselect(io.SelectionsMixin, task.SingleTask):
         out = data.__class__(
             axes_from=data, attrs_from=data, skip_datasets=True, **output_axes
         )
-        containers.copy_datasets_filter(
-            data, out, selection=sel, copy_without_selection=True
-        )
+        copy_datasets_filter(data, out, selection=sel)
 
         return out
 
 
-class ReduceBase(task.SingleTask):
+class ReduceBase(tasklib.base.ContainerTask):
     """Apply a weighted reduction operation across specific axes.
 
     This is non-functional without overriding the `reduction` method.
@@ -1929,7 +1925,7 @@ class ReduceBase(task.SingleTask):
 
     _op = None
 
-    def process(self, data: containers.ContainerBase) -> containers.ContainerBase:
+    def process(self, data: ContainerPrototype) -> ContainerPrototype:
         """Downselect and apply the reduction operation to the data.
 
         Parameters
@@ -1979,19 +1975,19 @@ class ReduceBase(task.SingleTask):
         out.redistribute(new_ax_name)
 
         # Get the weights
-        if hasattr(data, "weight"):
+        weight, w_axes = self._get_weights(data)
+
+        if weight is not None:
             # The weights should be distributed over the same axis as the array,
             # even if they don't share all the same axes
-            w_axes = list(data.weight.attrs["axis"])
             new_weight_ax = w_axes.index(new_ax_name)
-            weight = data.weight[:].redistribute(new_weight_ax)
+            weight = weight.redistribute(new_weight_ax)
             # Insert a size 1 axis for each missing axis in the weights
             wslc = [slice(None) if ax in w_axes else None for ax in ds_axes]
             weight = weight.local_array[tuple(wslc)]
         else:
-            self.log.info("No weights available. Using equal weighting.")
+            weight = np.ones_like(ds[:].local_array, dtype=np.float32)
             wslc = None
-            weight = np.ones(ds.local_shape, ds.dtype)
 
         # Apply the reduction, ensuring that the weights have the correct dimension
         weight = np.broadcast_to(weight, ds.local_shape, subok=False)
@@ -2017,9 +2013,21 @@ class ReduceBase(task.SingleTask):
 
         return out
 
-    def _make_output_container(
-        self, data: containers.ContainerBase
-    ) -> containers.ContainerBase:
+    def _get_weights(
+        self, data: ContainerPrototype
+    ) -> tuple[mpiarray.MPIArray | None, list | None]:
+        """Get the weights to use for the reduction."""
+        if not hasattr(data, "weight") and self.weighting != "none":
+            raise RuntimeError(
+                "No weights available. Cannot use weighted or masked weighting."
+            )
+
+        if hasattr(data, "weight"):
+            return data.weight[:], list(data.weight.attrs["axis"])
+
+        return None, None
+
+    def _make_output_container(self, data: ContainerPrototype) -> ContainerPrototype:
         """Create the output container."""
         # For a collapsed axis, the meaning of the index map will depend on
         # the reduction being done, and can be meaningless. The first value
@@ -2109,7 +2117,33 @@ class ReduceChisq(ReduceBase):
         return v, num
 
 
-class HPFTimeStream(task.SingleTask):
+class _InverseStackRedundancyWeights(ReduceBase):
+    """Weights to undo the effect of redundancy averaging."""
+
+    def _get_weights(self, data):
+        """Calculate baseline redundancy and return the inverse."""
+        if "stack" not in data.index_map:
+            raise RuntimeError(
+                "No 'stack' axis in index map. Cannot calculate weights."
+            )
+
+        redundancy = tools.calculate_redundancy(
+            data.input_flags[:],
+            data.index_map["prod"][:],
+            data.reverse_map["stack"]["stack"][:],
+            data.index_map["stack"][:].size,
+        )
+
+        weight = data.weight[:] * tools.invert_no_zero(redundancy**2)[np.newaxis]
+
+        return weight, list(data.weight.attrs["axis"])
+
+
+class ReduceChisqInverseRedundancy(ReduceChisq, _InverseStackRedundancyWeights):
+    """Calculate the chi-squared per degree of freedom, undoing redundancy averaging."""
+
+
+class HPFTimeStream(tasklib.base.ContainerTask):
     """High pass filter a timestream.
 
     This is done by solving for a low-pass filtered version of the timestream and then

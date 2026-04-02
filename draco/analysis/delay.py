@@ -1,15 +1,20 @@
 """Delay space spectrum estimation and filtering."""
 
+from __future__ import annotations
+
 from typing import TypeVar
 
 import numpy as np
 import scipy.linalg as la
-from caput import config, fftw, memh5, mpiarray
-from cora.util import units
+from caput import config, memdata, mpiarray
+from caput.algorithms import fft, random
+from caput.astro import constants
+from caput.containers import ContainerPrototype
+from caput.pipeline import tasklib
 from numpy.lib.recfunctions import structured_to_unstructured
 
-from ..core import containers, io, task
-from ..util import filters, random, tools
+from ..core import containers, io
+from ..util import filters, tools
 from .delayopt import delay_power_spectrum_maxpost
 
 # A specific subclass of a FreqContainer
@@ -21,7 +26,7 @@ FreqContainerType = TypeVar("FreqContainerType", bound=containers.FreqContainer)
 # ---------------------
 
 
-class DelayFilter(task.SingleTask):
+class DelayFilter(tasklib.base.ContainerTask):
     """Remove delays less than a given threshold.
 
     This is performed by projecting the data onto the null space that is orthogonal
@@ -111,7 +116,9 @@ class DelayFilter(task.SingleTask):
                 baseline = np.linalg.norm(baseline)  # Norm
 
             # In micro seconds
-            baseline_delay_cut = self.za_cut * baseline / units.c * 1e6 + self.extra_cut
+            baseline_delay_cut = (
+                self.za_cut * baseline / constants.c * 1e6 + self.extra_cut
+            )
             delay_cut = np.amax([baseline_delay_cut, self.delay_cut])
 
             # Calculate the number of samples needed to construct the delay null space.
@@ -146,7 +153,7 @@ class DelayFilter(task.SingleTask):
         return ss
 
 
-class DelayFilterBase(task.SingleTask):
+class DelayFilterBase(tasklib.base.ContainerTask):
     """Remove delays less than a given threshold.
 
     This is performed by projecting the data onto the null space that is orthogonal
@@ -337,7 +344,7 @@ class DelayFilterBase(task.SingleTask):
 # -----------------------------
 
 
-class DelayTransformBase(task.SingleTask):
+class DelayTransformBase(tasklib.base.ContainerTask):
     """Base class for transforming from frequency to delay (non-functional).
 
     Attributes
@@ -650,7 +657,7 @@ class DelayTransformBase(task.SingleTask):
         ss: containers.FreqContainer,
         delays: np.ndarray,
         coord_axes: list[str],
-    ) -> containers.ContainerBase:
+    ) -> ContainerPrototype:
         """Create a suitable output container.
 
         Parameters
@@ -760,7 +767,7 @@ class DelayPowerSpectrumContainerMixin(GeneralInputContainerMixin):
         ss: containers.FreqContainer,
         delays: np.ndarray,
         coord_axes: list[str] | np.ndarray,
-    ) -> containers.ContainerBase:
+    ) -> ContainerPrototype:
         """Create the output container for the delay power spectrum.
 
         If `coord_axes` is a list of strings then it is assumed to be a list of the
@@ -825,7 +832,7 @@ class DelaySpectrumContainerMixin(GeneralInputContainerMixin):
 
     def _create_output(
         self, ss: containers.FreqContainer, delays: np.ndarray, coord_axes: list[str]
-    ) -> containers.ContainerBase:
+    ) -> ContainerPrototype:
         """Create the output container for the delay transform."""
         # Initialise the spectrum container
         nbase = np.prod([len(ss.index_map[ax]) for ax in coord_axes])
@@ -889,13 +896,16 @@ class DelaySpectrumBase(DelaySpectrumContainerMixin, DelayTransformBase):
             Output delay spectrum.
         """
         nbase = out_cont.spectrum.global_shape[0]
+        nbaselocal = out_cont.spectrum.local_shape[0]
         ndelay = len(delays)
 
         prior = self._get_prior(nbase)
 
         # Iterate over the combined baseline axis
         for lbi, bi in out_cont.spectrum[:].enumerate(axis=0):
-            self.log.debug(f"Estimating the delay transform of baseline {bi}/{nbase}")
+            self.log.debug(
+                f"Estimating the delay transform of baseline {bi + 1}/{nbaselocal} ({nbase} total)."
+            )
 
             data = data_view.local_array[lbi]
             weight = weight_view.local_array[lbi]
@@ -1048,7 +1058,7 @@ class DelaySpectrumWienerFilterIteratePS(DelaySpectrumWienerFilter):
 # -------------------------------------------------------------
 
 
-class DelaySpectrumToPowerSpectrum(task.SingleTask):
+class DelaySpectrumToPowerSpectrum(tasklib.base.ContainerTask):
     """Compute a delay power spectrum from a delay spectrum."""
 
     def process(self, dspec: containers.DelayTransform) -> containers.DelaySpectrum:
@@ -1126,6 +1136,7 @@ class DelayPowerSpectrumBase(DelayPowerSpectrumContainerMixin, DelayTransformBas
             Output delay spectrum or delay power spectrum.
         """
         nbase = out_cont.spectrum.global_shape[0]
+        nbaselocal = out_cont.spectrum.local_shape[0]
         ndelay = len(delays)
 
         # Set initial conditions for delay power spectrum
@@ -1133,7 +1144,9 @@ class DelayPowerSpectrumBase(DelayPowerSpectrumContainerMixin, DelayTransformBas
 
         # Iterate over all baselines and use the Gibbs sampler to estimate the spectrum
         for lbi, bi in out_cont.spectrum[:].enumerate(axis=0):
-            self.log.debug(f"Delay transforming baseline {bi}/{nbase}")
+            self.log.debug(
+                f"Delay transforming baseline {bi + 1}/{nbaselocal} ({nbase} total)."
+            )
 
             # Get the local selections
             data = data_view.local_array[lbi]
@@ -1202,7 +1215,7 @@ class DelayPowerSpectrumBase(DelayPowerSpectrumContainerMixin, DelayTransformBas
         raise NotImplementedError()
 
 
-class DelayPowerSpectrumGibbs(DelayPowerSpectrumBase, random.RandomTask):
+class DelayPowerSpectrumGibbs(DelayPowerSpectrumBase, tasklib.random.RandomTask):
     """Use a Gibbs sampler to estimate the delay power spectrum.
 
     The spectrum returned is the median of the final half of the
@@ -1212,11 +1225,15 @@ class DelayPowerSpectrumGibbs(DelayPowerSpectrumBase, random.RandomTask):
     ----------
     initial_amplitude : float, optional
         The Gibbs sampler will be initialized with a flat power spectrum with
-        this amplitude. Unused if maxpost=True (flat spectrum is a bad initial
-        guess for the max-likelihood estimator). Default: 10.
+        this amplitude. Default is 10.0
+    median_frac : float, optional
+        The returned power spectrum is the median of the last `median_frac`
+        fraction of samples. Default is 0.5.
+
     """
 
     initial_amplitude = config.Property(proptype=float, default=10.0)
+    median_frac = config.Property(proptype=float, default=0.5)
 
     def _get_prior(self, nbase, ndelay, dtype):
         """Start with a flat prior."""
@@ -1224,7 +1241,7 @@ class DelayPowerSpectrumGibbs(DelayPowerSpectrumBase, random.RandomTask):
 
     def _estimator(self, data, weight, S, ndelay, channel_ind):
         """Use a gibbs sampler to calculate a power spectrum."""
-        samples = delay_power_spectrum_gibbs(
+        samples, success = delay_power_spectrum_gibbs(
             data,
             ndelay,
             weight,
@@ -1236,10 +1253,18 @@ class DelayPowerSpectrumGibbs(DelayPowerSpectrumBase, random.RandomTask):
             complex_timedomain=self.complex_timedomain,
         )
 
-        spec = np.median(samples[-(self.nsamp // 2) :], axis=0)
-        spec = np.fft.fftshift(spec)
+        nsamp_spec = int(self.nsamp * self.median_frac)
 
-        return spec, samples, True
+        if samples:
+            spec = np.median(samples[-nsamp_spec:], axis=0)
+            spec = np.fft.fftshift(spec)
+        else:
+            # Estimator failed at the first sample. Set the spectrum
+            # to the prior and flag it as bad
+            success = False
+            spec = S
+
+        return spec, samples, success
 
 
 class DelayPowerSpectrumNRML(DelayPowerSpectrumBase):
@@ -1276,7 +1301,9 @@ class DelayPowerSpectrumNRML(DelayPowerSpectrumBase):
         return spec, samples, success
 
 
-class DelayCrossPowerSpectrumEstimator(DelayPowerSpectrumGibbs, random.RandomTask):
+class DelayCrossPowerSpectrumEstimator(
+    DelayPowerSpectrumGibbs, tasklib.random.RandomTask
+):
     """A delay cross power spectrum estimator.
 
     This takes multiple compatible `FreqContainer`s as inputs and will return a
@@ -1316,7 +1343,7 @@ class DelayCrossPowerSpectrumEstimator(DelayPowerSpectrumGibbs, random.RandomTas
         ss: list[containers.FreqContainer],
         delays: np.ndarray,
         coord_axes: list[str],
-    ) -> containers.ContainerBase:
+    ) -> ContainerPrototype:
         """Create the output container for the delay power spectrum.
 
         If `coord_axes` is a list of strings then it is assumed to be a list of the
@@ -1651,7 +1678,7 @@ def _compute_delay_spectrum_inputs(data, N, Ni, fsel, window, complex_timedomain
     # Window the frequency data
     if window is not None:
         # Construct the window function
-        x = fsel * 1.0 / total_freq
+        x = fsel / total_freq
         w = tools.window_generalised(x, window=window)
         w = np.repeat(w, 2)
 
@@ -1660,7 +1687,7 @@ def _compute_delay_spectrum_inputs(data, N, Ni, fsel, window, complex_timedomain
         data *= w[:, np.newaxis]
 
     if complex_timedomain:
-        is_real_freq = np.zeros_like(fsel).astype(bool)
+        is_real_freq = np.zeros(fsel.shape, dtype=bool)
     else:
         is_real_freq = (fsel == 0) | (fsel == N // 2)
 
@@ -1674,10 +1701,10 @@ def _compute_delay_spectrum_inputs(data, N, Ni, fsel, window, complex_timedomain
     # Create the transpose of the Fourier matrix weighted by the noise
     # (this is used multiple times)
     FTNih = F.T * Ni_r[np.newaxis, :] ** 0.5
-    FTNiF = np.dot(FTNih, FTNih.T)
+    FTNiF = FTNih @ FTNih.T
 
     # Pre-whiten the data to save doing it repeatedly
-    data = data * Ni_r[:, np.newaxis] ** 0.5
+    data *= Ni_r[:, np.newaxis] ** 0.5
 
     # Return data and inverse-noise-weighted Fourier matrices
     return data, FTNih, FTNiF
@@ -1730,6 +1757,8 @@ def delay_power_spectrum_gibbs(
     -------
     spec : list
         List of spectrum samples.
+    success : bool
+        True if the chain completed successfully.
     """
     # Get reference to RNG
     if rng is None:
@@ -1751,9 +1780,9 @@ def delay_power_spectrum_gibbs(
         # with a given delay power spectrum `S`. Do this using the perturbed Wiener
         # filter approach
 
-        # This method is fastest if the number of frequencies is larger than the number
-        # of delays we are solving for. Typically this isn't true, so we probably want
-        # `_draw_signal_sample_t`
+        # This method is generally faster unless there are very few frequencies
+
+        Si = tools.invert_no_zero(S)
 
         # Construct the Wiener covariance
         if complex_timedomain:
@@ -1761,9 +1790,14 @@ def delay_power_spectrum_gibbs(
             # real and imaginary components of the delay spectrum, each of which have
             # power spectrum equal to 0.5 times the power spectrum of the complex
             # delay spectrum, if the statistics are circularly symmetric
-            S = 0.5 * np.repeat(S, 2)
-        Si = 1.0 * tools.invert_no_zero(S)
-        Ci = np.diag(Si) + FTNiF
+            # Multply by 2 here since we've already inverted S
+            Si = 2.0 * np.repeat(Si, 2)
+
+        # This is faster than creating the full diagonal Si matrix
+        Ci = FTNiF.copy()
+        np.einsum("ii->i", Ci)[:] += Si
+        # Use a cholesky solve which is probably the fastest option here
+        CiL = la.cho_factor(Ci, check_finite=False, lower=False, overwrite_a=True)
 
         # Draw random vectors that form the perturbations
         if complex_timedomain:
@@ -1776,13 +1810,19 @@ def delay_power_spectrum_gibbs(
 
         # Construct the random signal sample by forming a perturbed vector and
         # then doing a matrix solve
-        y = np.dot(FTNih, data + w2) + Si[:, np.newaxis] ** 0.5 * w1
+        # Try to re-use existing arrays as much as possible
+        w2d = np.add(data, w2, out=w2)
+        w1Sih = np.multiply(w1, (Si**0.5)[:, np.newaxis], out=w1)
 
-        return la.solve(Ci, y, assume_a="pos")
+        y = np.add(w1Sih, (FTNih @ w2d), out=w1Sih)
+
+        return la.cho_solve(CiL, y, check_finite=False, overwrite_b=True)
 
     def _draw_signal_sample_t(S):
-        # This method is fastest if the number of delays is larger than the number of
-        # frequencies. This is usually the regime we are in.
+        # This method is fastest if the number of delays is significantly
+        # larger than the number of frequencies.
+
+        Sh = S**0.5
 
         # Construct various dependent matrices
         if complex_timedomain:
@@ -1790,10 +1830,7 @@ def delay_power_spectrum_gibbs(
             # real and imaginary components of the delay spectrum, each of which have
             # power spectrum equal to 0.5 times the power spectrum of the complex
             # delay spectrum, if the statistics are circularly symmetric
-            S = 0.5 * np.repeat(S, 2)
-        Sh = S**0.5
-        Rt = Sh[:, np.newaxis] * FTNih
-        R = Rt.T.conj()
+            Sh = (0.5**0.5) * np.repeat(Sh, 2)
 
         # Draw random vectors that form the perturbations
         if complex_timedomain:
@@ -1804,26 +1841,41 @@ def delay_power_spectrum_gibbs(
             w1 = rng.standard_normal((N, data.shape[1]))
         w2 = rng.standard_normal(data.shape)
 
-        # Perform the solve step (rather than explicitly using the inverse)
-        y = data + w2 - np.dot(R, w1)
-        Ci = np.identity(2 * Ni.shape[0]) + np.dot(R, Rt)
-        x = la.solve(Ci, y, assume_a="pos")
+        Rt = FTNih.copy()
+        Rt *= Sh[:, np.newaxis]
+        R = Rt.T.conj()
 
-        return Sh[:, np.newaxis] * (np.dot(Rt, x) + w1)
+        # Perform the solve step (rather than explicitly using the inverse)
+        y = np.subtract(w2, R @ w1, out=w2)
+        y += data
+
+        Ci = R @ Rt
+        # Add an identity
+        np.einsum("ii->i", Ci)[:] += 1.0
+
+        CiL = la.cho_factor(Ci, check_finite=False, lower=False, overwrite_a=True)
+
+        x = la.cho_solve(CiL, y, check_finite=False, overwrite_b=True)
+
+        return Sh[:, np.newaxis] * ((Rt @ x) + w1)
 
     def _draw_ps_sample(d):
-        # Draw a random delay power spectrum sample assuming the signal is Gaussian and
-        # we have a flat prior on the power spectrum.
+        # Draw a random delay power spectrum sample assuming the signal
+        # is Gaussian and we have a flat prior on the power spectrum.
         # This means drawing from a inverse chi^2.
+
+        S_hat = d.var(axis=-1)
 
         if complex_timedomain:
             # If delay spectrum is complex, combine real and imaginary components
             # stored in d, such that variance below is variance of complex spectrum
-            d = d[0::2] + 1.0j * d[1::2]
-        S_hat = d.var(axis=1)
+            # It's computationally faster to do this operation after taking
+            # tje variance since it's a significantly smaller array, and we're using
+            # a real/complex alternating float view of the complex dara
+            S_hat = S_hat[::2] + S_hat[1::2]
 
         df = d.shape[1]
-        chi2 = rng.chisquare(df, size=d.shape[0])
+        chi2 = rng.chisquare(df, size=S_hat.shape[0])
 
         return S_hat * df / chi2
 
@@ -1836,12 +1888,20 @@ def delay_power_spectrum_gibbs(
     # Perform the Gibbs sampling iteration for a given number of loops and
     # return the power spectrum output of them.
     for ii in range(niter):
-        d_samp = _draw_signal_sample(S_samp)
+        try:
+            d_samp = _draw_signal_sample(S_samp)
+        except np.linalg.LinAlgError:
+            # Covariance is not positive-definite (is this expected?)
+            success = False
+            break
+
         S_samp = _draw_ps_sample(d_samp)
 
         spec.append(S_samp)
+    else:
+        success = True
 
-    return spec
+    return spec, success
 
 
 def delay_spectrum_gibbs_cross(
@@ -2066,7 +2126,7 @@ def delay_spectrum_fft(data, N, window="nuttall"):
         window = tools.window_generalised(wx, window=window)[np.newaxis]
         data *= window
 
-    return fftw.ifft(data, axes=-1)
+    return fft.fftw.ifft(data, axes=-1)
 
 
 def delay_spectrum_wiener_filter(
@@ -2176,9 +2236,9 @@ def match_axes(dset1, dset2):
 
 
 def flatten_axes(
-    dset: memh5.MemDatasetDistributed,
+    dset: memdata.MemDatasetDistributed,
     axes_to_keep: list[str],
-    match_dset: memh5.MemDatasetDistributed | None = None,
+    match_dset: memdata.MemDatasetDistributed | None = None,
 ) -> tuple[mpiarray.MPIArray, list[str]]:
     """Move the specified axes of the dataset to the back, and flatten all others.
 

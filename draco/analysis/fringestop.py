@@ -2,11 +2,12 @@
 
 import numpy as np
 import scipy.constants
+from caput.pipeline import tasklib
 
-from ..core import io, task
+from ..core import io
 
 
-class Mix(task.SingleTask):
+class Mix(tasklib.base.ContainerTask):
     r"""Baseclass for down-mixing or up-mixing visibilities as a function of time.
 
     Also known as fringestopping.  This task multiplies the visibilities by a
@@ -37,7 +38,7 @@ class Mix(task.SingleTask):
 
         Parameters
         ----------
-        manager : caput.time.Observer or draco.core.io.TelescopeConvertible
+        manager : caput.astro.observer.Observer or draco.core.io.TelescopeConvertible
             If the data is already beamformed, then this can be an Observer object
             holding the geographic location of the telescope.  Otherwise this should
             be a TelescopeConvertible that also contains the baseline distribution.
@@ -112,7 +113,6 @@ class Mix(task.SingleTask):
 
         # Loop over local frequencies
         for ff, nu in enumerate(freq):
-
             lmbda = scipy.constants.c / (nu * 1e6)
 
             omega = 2.0 * np.pi * x * cos_dec / lmbda

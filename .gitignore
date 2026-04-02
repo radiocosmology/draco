@@ -41,3 +41,7 @@ nosetests.xml
 # Editor rubble
 *~
 .*.sw?
+
+# docs
+_build
+_autosummary

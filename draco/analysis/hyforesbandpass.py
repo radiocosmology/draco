@@ -36,18 +36,19 @@ import time
 
 import numpy as np
 from caput import config
-from cora.util import units
+from caput.astro import constants
+from caput.pipeline import tasklib
 from mpi4py import MPI
 from scipy import linalg as la
 
 from draco.analysis.ringmapmaker import find_grid_indices
 from draco.core import containers
 
-from ..core import io, task
+from ..core import io
 from ..util import tools
 
 
-class DelayFilterHyFoReSBandpassHybridVis(task.SingleTask):
+class DelayFilterHyFoReSBandpassHybridVis(tasklib.base.ContainerTask):
     """Estimate bandpass gains and their window matrix from unfiltered hybrid vis.
 
     HyFoReS uses the unfiltered visibilities as estimated foregrounds and use the
@@ -140,9 +141,7 @@ class DelayFilterHyFoReSBandpassHybridVis(task.SingleTask):
 
             # new stands for number east-west
             for xx in range(new):
-
                 for pp in range(npol):
-
                     flag = weight[pp, :, xx, tt] > 0.0
 
                     if not np.any(flag):
@@ -211,9 +210,7 @@ class DelayFilterHyFoReSBandpassHybridVis(task.SingleTask):
         self.log.debug("Start computing the estimated gains.")
         t0 = time.time()
         for pp in range(npol):
-
             for ff in range(nfreq):
-
                 for xx in range(new):
                     # grab datasets
                     # original data
@@ -252,7 +249,6 @@ class DelayFilterHyFoReSBandpassHybridVis(task.SingleTask):
         self.log.debug("Start computing the window.")
         t0 = time.time()
         for pp in range(npol):
-
             for xx in range(new):
                 for tt in range(ntime):
                     # grab datasets
@@ -344,7 +340,7 @@ class DelayFilterHyFoReSBandpassHybridVis(task.SingleTask):
             Regions of sky where ``|sin(za)|`` is greater than or equal to
             this value will contain aliases.
         """
-        return units.c / (freq * 1e6 * self.min_ysep) - 1.0
+        return constants.c / (freq * 1e6 * self.min_ysep) - 1.0
 
 
 class DelayFilterHyFoReSBandpassHybridVisMask(DelayFilterHyFoReSBandpassHybridVis):
@@ -422,9 +418,7 @@ class DelayFilterHyFoReSBandpassHybridVisMask(DelayFilterHyFoReSBandpassHybridVi
 
             # new stands for number east-west
             for xx in range(new):
-
                 for pp in range(npol):
-
                     flag = weight[pp, :, xx, tt] > 0.0
 
                     if not np.any(flag):
@@ -497,9 +491,7 @@ class DelayFilterHyFoReSBandpassHybridVisMask(DelayFilterHyFoReSBandpassHybridVi
         self.log.debug("Start computing the estimated gains.")
         t0 = time.time()
         for pp in range(npol):
-
             for ff in range(nfreq):
-
                 for xx in range(new):
                     # grab datasets
                     tvis = np.ascontiguousarray(vis[pp, ff, xx, ...])  # original data
@@ -657,9 +649,7 @@ class HyFoReSBandpassHybridVis(DelayFilterHyFoReSBandpassHybridVis):
         self.log.debug("Start computing the estimated gains.")
         t0 = time.time()
         for pp in range(npol):
-
             for ff in range(nfreq):
-
                 for xx in range(new):
                     # grab datasets
                     tvis = np.ascontiguousarray(vis[pp, ff, xx, ...])  # original data
@@ -829,7 +819,6 @@ class HyFoReSBandpassHybridVisMask(DelayFilterHyFoReSBandpassHybridVis):
         for pp in range(npol):
             # step 2
             for ff in range(nfreq):
-
                 for xx in range(new):
                     # grab datasets
                     tvis = np.ascontiguousarray(vis[pp, ff, xx, ...])  # original data
@@ -867,7 +856,6 @@ class HyFoReSBandpassHybridVisMask(DelayFilterHyFoReSBandpassHybridVis):
         self.log.debug("Start computing the window.")
         t0 = time.time()
         for pp in range(npol):
-
             for xx in range(new):
                 for tt in range(ntime):
                     # grab datasets
@@ -1007,9 +995,7 @@ class HyFoReSBandpassHybridVisMaskKeepSource(DelayFilterHyFoReSBandpassHybridVis
         self.log.debug("Start computing the estimated gains.")
         t0 = time.time()
         for pp in range(npol):
-
             for ff in range(nfreq):
-
                 for xx in range(new):
                     # grab datasets
                     tvis = np.ascontiguousarray(vis[pp, ff, xx, ...])  # original data
@@ -1047,7 +1033,6 @@ class HyFoReSBandpassHybridVisMaskKeepSource(DelayFilterHyFoReSBandpassHybridVis
         self.log.debug("Start computing the window.")
         t0 = time.time()
         for pp in range(npol):
-
             for xx in range(new):
                 for tt in range(ntime):
                     # grab datasets
@@ -1104,7 +1089,7 @@ class HyFoReSBandpassHybridVisMaskKeepSource(DelayFilterHyFoReSBandpassHybridVis
         return bp_gain_win
 
 
-class DelayFilterHyFoReSBandpassHybridVisClean(task.SingleTask):
+class DelayFilterHyFoReSBandpassHybridVisClean(tasklib.base.ContainerTask):
     """Compensates bandpass gain windows and subtracts foreground residuals.
 
     This task first compensates the bandpass window to obtain the unwindowed
@@ -1199,13 +1184,10 @@ class DelayFilterHyFoReSBandpassHybridVisClean(task.SingleTask):
             g = y
             self.log.debug("Skip compensating the window")
         else:
-
             self.log.debug("Start compensating the window")
 
             for pp in range(npol):
-
                 for xx in range(new):
-
                     # save the singular values for debugging or inspection
                     s_val[pp, xx] = la.svd(W[pp, xx, :, :], compute_uv=False)
                     # TODO: use la.solve(W, y)
@@ -1242,9 +1224,7 @@ class DelayFilterHyFoReSBandpassHybridVisClean(task.SingleTask):
             self.log.debug(f"Filter time {tt} of {ntime}.")
 
             for xx in range(new):
-
                 for pp in range(npol):
-
                     flag = weight[pp, :, xx, tt] > 0.0
 
                     if not np.any(flag):

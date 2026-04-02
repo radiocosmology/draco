@@ -2,12 +2,13 @@
 
 import numpy as np
 from caput import config
+from caput.pipeline import tasklib
 
-from ..core import containers, io, task
+from ..core import containers, io
 from ..util import tools
 
 
-class ComputeSystemSensitivity(task.SingleTask):
+class ComputeSystemSensitivity(tasklib.base.ContainerTask):
     """Compute the sensitivity of beamformed visibilities.
 
     Parameters

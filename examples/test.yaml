@@ -7,7 +7,7 @@ cluster:
 
 pipeline :
     tasks:
-        -   type: draco.core.io.LoadFilesFromParams
+        -   type: caput.pipeline.tasklib.io.LoadFilesFromParams
             out: input_files
             params:
                 files: testdata/*.h5

@@ -36,7 +36,6 @@ extensions = [
     "sphinx.ext.mathjax",
     "sphinx.ext.viewcode",
     "sphinx.ext.napoleon",
-    "sphinx.ext.autosectionlabel",
 ]
 
 napoleon_google_docstring = False

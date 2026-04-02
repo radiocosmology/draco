@@ -1,13 +1,15 @@
-"""
+"""draco.util.
+
+Modules
+=======
 .. autosummary::
     :toctree:
 
-    exception
-    random
+    dpss
+    interferometry
+    kernels
     regrid
     rfi
     testing
     tools
-    truncate
-
 """

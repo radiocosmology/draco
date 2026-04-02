@@ -1,6 +1,7 @@
 from draco.core.containers import GainData
 
-from caput import mpiarray, mpiutil
+from caput import mpiarray
+from caput.util import mpitools
 
 import pytest
 import glob
@@ -10,8 +11,8 @@ import os
 # Run these tests under MPI
 pytestmark = pytest.mark.mpi
 
-comm = mpiutil.world
-rank, size = mpiutil.rank, mpiutil.size
+comm = mpitools.world
+rank, size = mpitools.rank, mpitools.size
 
 len_axis = 8
 

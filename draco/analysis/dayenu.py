@@ -8,15 +8,16 @@ import time
 import numpy as np
 import scipy.interpolate
 from caput import config
-from cora.util import units
+from caput.astro import constants
+from caput.pipeline import tasklib
 from mpi4py import MPI
 
-from ..core import containers, io, task
+from ..core import containers, io
 from ..util import tools
 from . import transform
 
 
-class DayenuDelayFilter(task.SingleTask):
+class DayenuDelayFilter(tasklib.base.ContainerTask):
     """Apply a DAYENU high-pass delay filter to visibility data.
 
     Attributes
@@ -186,7 +187,7 @@ class DayenuDelayFilter(task.SingleTask):
         else:
             baselines = np.sqrt(np.sum(baselines**2, axis=-1))  # Norm
 
-        baseline_delay_cut = 1e6 * self.za_cut * baselines / units.c
+        baseline_delay_cut = 1e6 * self.za_cut * baselines / constants.c
 
         return baseline_delay_cut + self.tauw
 
@@ -403,7 +404,7 @@ class DayenuDelayFilterFixedCutoff(transform.ReduceChisq):
         return out
 
 
-class DayenuDelayFilterHybridVis(task.SingleTask):
+class DayenuDelayFilterHybridVis(tasklib.base.ContainerTask):
     """Apply a DAYENU high-pass delay filter to hybrid beamformed visibilities.
 
     Attributes
@@ -499,14 +500,12 @@ class DayenuDelayFilterHybridVis(task.SingleTask):
 
         # Loop over products
         for tt in range(ntime):
-
             t0 = time.time()
 
             flag = weight[..., tt] > 0.0
             flag = np.all(flag, axis=0, keepdims=True)
 
             for xx in range(new):
-
                 self.log.debug(f"Filter time {tt} of {ntime}, baseline {xx} of {new}.")
 
                 flagx = flag[0, :, xx, np.newaxis]
@@ -533,7 +532,6 @@ class DayenuDelayFilterHybridVis(task.SingleTask):
 
                 # Apply the filter
                 for pp in range(npol):
-
                     # Save the filter to the container
                     if self.save_filter:
                         filt[pp, :, :, xx, tt] = NF[0]
@@ -574,7 +572,7 @@ class DayenuDelayFilterHybridVis(task.SingleTask):
         return stream
 
 
-class ApplyDelayFilterHybridVis(task.SingleTask):
+class ApplyDelayFilterHybridVis(tasklib.base.ContainerTask):
     """Apply a previously saved filter to the hybrid beamformed visibilities.
 
     This task takes a DAYENU filter saved in hybrid beamformed data and applies to
@@ -669,9 +667,7 @@ class ApplyDelayFilterHybridVis(task.SingleTask):
             self.log.debug(f"Filter time {tt} of {ntime}.")
 
             for xx in range(new):
-
                 for pp in range(npol):
-
                     flag = weight[pp, :, xx, tt] > 0.0
 
                     # Skip fully masked samples
@@ -777,7 +773,7 @@ class ApplyDelayFilterHybridVisSingleSource(ApplyDelayFilterHybridVis):
         return super().process(hv, self.source)
 
 
-class DayenuDelayFilterMap(task.SingleTask):
+class DayenuDelayFilterMap(tasklib.base.ContainerTask):
     """Apply a DAYENU high-pass delay filter to ringmap data.
 
     Attributes
@@ -978,7 +974,7 @@ class DayenuDelayFilterMap(task.SingleTask):
         return np.max([func(el) for func in self._cut_interpolator.values()])
 
 
-class DayenuMFilter(task.SingleTask):
+class DayenuMFilter(tasklib.base.ContainerTask):
     """Apply a DAYENU bandpass m-mode filter.
 
     Attributes
@@ -1119,7 +1115,7 @@ class DayenuMFilter(task.SingleTask):
         return stream
 
     def _get_cut(self, freq, xsep):
-        lmbda = units.c / (freq * 1e6)
+        lmbda = constants.c / (freq * 1e6)
         u = xsep / lmbda
         return instantaneous_m(
             0.0, np.radians(self.telescope.latitude), np.radians(self.dec), u, 0.0
@@ -1185,7 +1181,6 @@ def delay_filter(freq, flag, tau_width, tau_centre=0.0, epsilon=1e-12):
 
     cov = np.eye(nfreq, dtype=dtype)
     for tw, tc, eps in zip(*args):
-
         term = np.sinc(2.0 * tw * dfreq) / eps
         if np.abs(tc) > 0.0:
             term = term * np.exp(-2.0j * np.pi * tc * dfreq)

@@ -13,16 +13,18 @@ import inspect
 
 import numpy as np
 import scipy.linalg as la
-from caput import config, mpiarray, tod
-from cora.util import units
+from caput import config, mpiarray
+from caput.astro import constants
+from caput.containers import empty_like, tod
+from caput.pipeline import tasklib
 
-from ..core import containers, io, task
+from ..core import containers, io
 from ..util import gaussian_process, regrid, tools
 from .interpolate import _inv_move_front, _move_front
 from .transform import LanczosRegridder
 
 
-class SiderealGrouper(task.SingleTask):
+class SiderealGrouper(tasklib.base.ContainerTask):
     """Group individual timestreams together into whole Sidereal days.
 
     Attributes
@@ -261,7 +263,7 @@ class SiderealRegridder(LanczosRegridder):
         ]
 
         # Calculate the fringe rate assuming that ha = 0.0 and dec = lat
-        lmbda = units.c / (freq * 1e6)
+        lmbda = constants.c / (freq * 1e6)
         u = self.observer.baselines[np.newaxis, :, 0] / lmbda[:, np.newaxis]
 
         omega = -2.0 * np.pi * u * np.cos(np.radians(self.observer.latitude))
@@ -672,7 +674,6 @@ class SiderealRebinner(SiderealRegridder):
         # For an input TimeStream, this will be a loop over freq.
         # For an input HybridVisStream, this will be a loop over (pol, freq, ew).
         for ind in np.ndindex(*vis_data.shape[:-2]):
-
             w = weight[ind]
             m = (w > 0.0).astype(np.float32)
             if self.weight == "uniform":
@@ -730,7 +731,7 @@ class SiderealRebinner(SiderealRegridder):
         return sdata
 
 
-class RebinGradientCorrection(task.SingleTask):
+class RebinGradientCorrection(tasklib.base.ContainerTask):
     """Apply a linear gradient correction to shift RA samples to bin centres.
 
     Requires a sidereal day with full sidereal coverage to calculate a local
@@ -830,7 +831,7 @@ class RebinGradientCorrection(task.SingleTask):
         return sstream
 
 
-class SiderealStacker(task.SingleTask):
+class SiderealStacker(tasklib.base.ContainerTask):
     """Take in a set of sidereal days, and stack them up.
 
     Also computes the variance over sideral days using an
@@ -888,7 +889,7 @@ class SiderealStacker(task.SingleTask):
         # If this is our first sidereal day, then initialize the
         # container that will hold the stack.
         if self.stack is None:
-            self.stack = containers.empty_like(sdata)
+            self.stack = empty_like(sdata)
 
             # Add stack-specific datasets
             if "nsample" not in self.stack.datasets:
@@ -1048,7 +1049,6 @@ class SiderealStacker(task.SingleTask):
         # Can be found in the stack.nsample dataset for uniform case
         # or the stack.weight dataset for inverse variance case.
         if self.with_sample_variance:
-
             # Perform Bessel's correction.  In the case of
             # uniform  weighting, norm will be equal to nsample - 1.
             norm = norm - self.sum_coeff_sq * tools.invert_no_zero(norm)
@@ -1079,7 +1079,7 @@ class SiderealStacker(task.SingleTask):
         return self.stack
 
 
-class SiderealStackerMatch(task.SingleTask):
+class SiderealStackerMatch(tasklib.base.ContainerTask):
     """Take in a set of sidereal days, and stack them up.
 
     This treats the time average of each input sidereal stream as an extra source of
@@ -1126,7 +1126,7 @@ class SiderealStackerMatch(task.SingleTask):
         if self.stack is None:
             self.log.info("Starting new stack.")
 
-            self.stack = containers.empty_like(sdata)
+            self.stack = empty_like(sdata)
             self.stack.redistribute("freq")
 
             # Initialise all datasets to zero
@@ -1230,7 +1230,7 @@ class SiderealStackerMatch(task.SingleTask):
             # Note, need to use a pseudo-inverse in here as there is a singular mode
             A = la.pinv(
                 np.identity(self.count) - np.dot(V.T, Ni_s[:, np.newaxis] * V),
-                rcond=1e-8,
+                rtol=1e-8,
             )
 
             # Perform the deconvolution step

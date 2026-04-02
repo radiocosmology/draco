@@ -1,7 +1,7 @@
 """Routines for DPSS inpainting."""
 
 import numpy as np
-from caput.tools import invert_no_zero
+from caput.algorithms import invert_no_zero
 from scipy import interpolate
 from scipy import linalg as la
 

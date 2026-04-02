@@ -1,4 +1,8 @@
-"""
+"""draco.analysis.
+
+Modules
+=======
+
 .. autosummary::
     :toctree:
 
@@ -13,5 +17,4 @@
     sourcestack
     svdfilter
     transform
-
 """

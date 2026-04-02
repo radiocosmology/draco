@@ -1,14 +1,16 @@
 """Tasks to do data interpolation/inpainting."""
 
 import numpy as np
-from caput import config, mpiutil
-from cora.util import units
+from caput import config
+from caput.astro import constants
+from caput.pipeline import tasklib
+from caput.util import mpitools
 
-from ..core import io, task
+from ..core import io
 from ..util import dpss
 
 
-class DPSSFilter(task.SingleTask):
+class DPSSFilter(tasklib.base.ContainerTask):
     """Fill data gaps using DPSS inpainting.
 
     Discrete prolate spheroidal sequence (DPSS) inpainting involves
@@ -248,7 +250,7 @@ class DPSSFilterBaseline(DPSSFilter):
 
         for ii, cut in enumerate(cuts):
             self.log.debug(
-                f"Making unique covariance {ii+1}/{len(cuts)} with cut={cut}."
+                f"Making unique covariance {ii + 1}/{len(cuts)} with cut={cut}."
             )
             cov = dpss.make_covariance(samples, cut, 0.0)
             modes.append(dpss.get_basis(cov))
@@ -258,7 +260,7 @@ class DPSSFilterBaseline(DPSSFilter):
         cutoff = self.cutoff_frac * fs / np.max(cuts)
         # Need the mask to be the same for all baselines,
         # so use the most aggressive masking
-        cutoff = mpiutil.allreduce(cutoff, op=mpiutil.MIN)
+        cutoff = mpitools.allreduce(cutoff, op=mpitools.MIN)
 
         return modes, amap, cutoff
 
@@ -304,7 +306,7 @@ class DPSSFilterDelay(DPSSFilterBaseline):
 
         # Get the delay cut for each baseline. Round delay cuts
         # to three decimal places to reduce repeat calculations
-        delay_cut = self.za_cut * blen / units.c * 1.0e6 + self.extra_cut
+        delay_cut = self.za_cut * blen / constants.c * 1.0e6 + self.extra_cut
         delay_cut = np.maximum(delay_cut, self.halfwidths[0])
 
         return np.round(delay_cut, decimals=3)
@@ -343,7 +345,7 @@ class DPSSFilterMMode(DPSSFilterBaseline):
         dec = np.deg2rad(self.telescope.latitude)
         # Cut at the maximum `m` expected for each baseline.
         # Compensate for the fact the ra samples is in degrees
-        mcut = (np.pi / 180) * freq * 1e6 * blen / (units.c * np.cos(dec))
+        mcut = (np.pi / 180) * freq * 1e6 * blen / (constants.c * np.cos(dec))
         mcut = np.maximum(mcut, self.halfwidths[0])
 
         return np.round(mcut, decimals=2)
@@ -378,8 +380,7 @@ def _flatten_axes(data, axes):
 
     if not axind:
         raise ValueError(
-            f"No matching axes. Dataset has axes {dax}, "
-            f"but axes {axes} were requested."
+            f"No matching axes. Dataset has axes {dax}, but axes {axes} were requested."
         )
 
     ds = data[:].view(np.ndarray)

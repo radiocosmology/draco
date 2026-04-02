@@ -1,12 +1,14 @@
 """Tasks for generating random gain fluctuations in the data and stacking them."""
 
 import numpy as np
-from caput import config, mpiarray, pipeline
+from caput import config, mpiarray
+from caput.containers import empty_like
+from caput.pipeline import exceptions, tasklib
 
-from ..core import containers, io, task
+from ..core import containers, io
 
 
-class BaseGains(task.SingleTask):
+class BaseGains(tasklib.base.ContainerTask):
     """Rudimentary class to generate gain timestreams.
 
     The gains are drawn for times which match up to an input timestream file.
@@ -171,7 +173,7 @@ class SiderealGains(BaseGains):
 
         # Check if we have reached the end of the requested time
         if self._current_lsd >= self.lsd_end:
-            raise pipeline.PipelineStopIteration
+            raise exceptions.PipelineStopIteration
 
         # Convert the current lsd day to unix time
         unix_start = self.observer.lsd_to_unix(self._current_lsd)
@@ -300,7 +302,7 @@ class RandomSiderealGains(RandomGains, SiderealGains):
     pass
 
 
-class GainStacker(task.SingleTask):
+class GainStacker(tasklib.base.ContainerTask):
     r"""Take sidereal gain data, make products and stack them up.
 
     Attributes
@@ -362,7 +364,7 @@ class GainStacker(task.SingleTask):
         # If gain_stack is None create an MPIArray to hold the product expanded
         # gain data and redistribute over all freq
         if self.gain_stack is None:
-            self.gain_stack = containers.empty_like(stream)
+            self.gain_stack = empty_like(stream)
             self.gain_stack.redistribute("freq")
             gain.redistribute("freq")
 
@@ -416,7 +418,7 @@ class GainStacker(task.SingleTask):
 
             return self.gain_stack
 
-        data = containers.empty_like(self.stream)
+        data = empty_like(self.stream)
         data.redistribute("freq")
 
         self.gain_stack.vis[:] = self.gain_stack.vis[:] / self.gain_stack.weight[:]
