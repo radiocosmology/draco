@@ -194,11 +194,11 @@ class PerformEigenDecomp(tasklib.base.ContainerTask):
 
                 # Iterate, replacing with low-rank approximation
                 for ii in range(niter):
-
+                    self.log.debug(f"Generating eigen-vals, niter:{ii}")
                     evalue, evec = scipy.linalg.eigh(
                         V, subset_by_index=ecalc, check_finite=False
                     )
-
+                    self.log.debug(f"Finished eigen-vals generation, niter:{ii}")
                     low_rank_approx = np.matmul(
                         evec, evalue[:, np.newaxis] * evec.T.conj()
                     )
