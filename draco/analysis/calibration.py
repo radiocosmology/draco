@@ -428,7 +428,7 @@ class EigenCalibration(tasklib.base.ContainerTask):
         input_flags = np.zeros(ninput, dtype=bool)
         for ii in range(ninput):
             input_flags[ii] = np.logical_not(
-                mpiutil.allreduce(evec_all_zero[ii], op=MPI.LAND, comm=data.comm)
+                mpitools.allreduce(evec_all_zero[ii], op=MPI.LAND, comm=data.comm)
             )
 
         self.log.info(
@@ -1151,7 +1151,7 @@ class FlagAmplitude(tasklib.base.ContainerTask):
                 else:
                     full_med_amp_by_pol = None
 
-                mpiutil.gather_local(
+                mpitools.gather_local(
                     full_med_amp_by_pol,
                     med_amp_by_pol,
                     (sfreq,),
@@ -1188,7 +1188,7 @@ class FlagAmplitude(tasklib.base.ContainerTask):
         ) > self.threshold_good_freq
 
         good_freq = list(sfreq + np.flatnonzero(flag_freq))
-        good_freq = np.array(mpiutil.allreduce(good_freq, op=MPI.SUM, comm=gain.comm))
+        good_freq = np.array(mpitools.allreduce(good_freq, op=MPI.SUM, comm=gain.comm))
 
         flag &= flag_freq[:, np.newaxis]
 
@@ -1213,7 +1213,7 @@ class FlagAmplitude(tasklib.base.ContainerTask):
         flag_input = fraction_good > self.threshold_good_input
 
         good_input = list(flag.local_offset[1] + np.flatnonzero(flag_input))
-        good_input = np.array(mpiutil.allreduce(good_input, op=MPI.SUM, comm=gain.comm))
+        good_input = np.array(mpitools.allreduce(good_input, op=MPI.SUM, comm=gain.comm))
 
         flag[:] &= flag_input[np.newaxis, :]
 
