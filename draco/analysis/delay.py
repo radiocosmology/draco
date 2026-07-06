@@ -789,6 +789,7 @@ class DelayPowerSpectrumContainerMixin(GeneralInputContainerMixin):
             delay=delays,
             sample=self.nsamp,
             attrs_from=ss,
+            weight_boost=self.weight_boost,
         )
 
         delay_spec.redistribute("baseline")
