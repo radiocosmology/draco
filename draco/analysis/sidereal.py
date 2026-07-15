@@ -11,6 +11,7 @@ into  :class:`SiderealGrouper`, then feeding that into
 
 import inspect
 
+import interprs
 import numpy as np
 import scipy.linalg as la
 from caput import config, mpiarray
@@ -386,79 +387,27 @@ class SiderealRegridderNearest(SiderealRegridder):
 class SiderealRegridderLinear(SiderealRegridder):
     """Regrid onto the sidereal day using linear interpolation."""
 
-    def _regrid(self, vis, weight, lsd):
+    def _regrid(self, vis: np.ndarray, weight: np.ndarray, lsd: np.ndarray):
         # Create a regular grid
-        interp_grid = np.arange(0, self.samples, dtype=np.float64) / self.samples
-        interp_grid = interp_grid * (self.end - self.start) + self.start
+        # NB: interpolate_linear only accepts float32 indices at the moment -
+        # this will be updated soon
+        xout = np.arange(0, self.samples, dtype=np.float64) / self.samples
+        xin = lsd - self.start
 
-        # Find the data points that lie on either side of each point in the fixed grid
-        index = np.searchsorted(lsd, interp_grid, side="left")
+        out_shape = (*vis.shape[:-1], xout.size)
 
-        ind1 = index - 1
-        ind2 = index
-
-        # If the fixed grid is outside the range covered by the data,
-        # then we will extrapolate and later flag as bad.
-        below = np.flatnonzero(ind1 == -1)
-        if below.size > 0:
-            ind1[below] = 0
-            ind2[below] = 1
-
-        above = np.flatnonzero(ind2 == lsd.size)
-        if above.size > 0:
-            ind1[above] = lsd.size - 2
-            ind2[above] = lsd.size - 1
-
-        # If the closest data points to the fixed grid point are more than one
-        # sample spacing away, then we will later flag that data as bad.
-        # This will occur if the input data does not cover the full sidereal day.
-        delta = np.median(np.abs(np.diff(lsd)))
-        distant = np.flatnonzero(
-            (np.abs(lsd[ind1] - interp_grid) > delta)
-            | (np.abs(lsd[ind2] - interp_grid) > delta)
+        interp_vis, interp_weight = interprs.interpolate_linear_weighted(
+            xin,
+            xout,
+            vis.reshape(-1, vis.shape[-1]),
+            weight.reshape(-1, weight.shape[-1]),
         )
 
-        # Calculate the coefficients for the linear interpolation
-        dx1 = interp_grid - lsd[ind1]
-        dx2 = lsd[ind2] - interp_grid
-
-        norm = tools.invert_no_zero(dx1 + dx2)
-        coeff1 = dx2 * norm
-        coeff2 = dx1 * norm
-
-        # Initialize the output arrays
-        shp = (*vis.shape[:-1], self.samples)
-
-        interp_vis = np.zeros(shp, dtype=vis.dtype)
-        interp_weight = np.zeros(shp, dtype=weight.dtype)
-
-        # Loop over frequencies to reduce memory usage
-        for ff in range(shp[0]):
-            fvis = vis[ff]
-            fweight = weight[ff]
-
-            # Consider the data valid if it has nonzero weight
-            fflag = fweight > 0.0
-
-            # Determine the variance from the inverse weight
-            fvar = tools.invert_no_zero(fweight)
-
-            # Require both data points to be valid for the interpolated value to be valid
-            finterp_flag = fflag[:, ind1] & fflag[:, ind2]
-
-            # Interpolate the visibilities and propagate the weights
-            interp_vis[ff] = coeff1 * fvis[:, ind1] + coeff2 * fvis[:, ind2]
-
-            interp_weight[ff] = tools.invert_no_zero(
-                coeff1**2 * fvar[:, ind1] + coeff2**2 * fvar[:, ind2]
-            ) * finterp_flag.astype(np.float32)
-
-        # Flag as bad any values that were extrapolated or that used distant points
-        interp_weight[..., below] = 0.0
-        interp_weight[..., above] = 0.0
-        interp_weight[..., distant] = 0.0
-
-        return interp_grid, interp_vis, interp_weight
+        return (
+            xout,
+            interp_vis.reshape(out_shape),
+            interp_weight.reshape(out_shape),
+        )
 
 
 class SiderealRegridderCubic(SiderealRegridder):
