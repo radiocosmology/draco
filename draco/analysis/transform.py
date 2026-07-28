@@ -851,12 +851,10 @@ def _unpack_marray(mmodes, n=None):
     return marray
 
 
-class LanczosRegridder(tasklib.base.ContainerTask):
+class RegridderBase(tasklib.base.ContainerTask):
     """Interpolate the time-like axis of a dataset onto a regular grid.
 
-    Uses a maximum-likelihood inverse of a Lanczos interpolation to do the
-    regridding. This gives a reasonably local regridding, that is pretty well
-    behaved in m-space.
+    Non-functional base class - requires implementation of `_regrid`.
 
     Attributes
     ----------
@@ -929,8 +927,13 @@ class LanczosRegridder(tasklib.base.ContainerTask):
             self.log.error(msg)
             raise RuntimeError(msg)
 
+        # Normalize input time range
+        source_samples = (times - self.start) / (self.end - self.start)
+
         # perform regridding
-        new_grid, new_vis, ni = self._regrid(vis_data, weight, times)
+        new_grid, new_vis, ni = self._regrid(vis_data, weight, source_samples)
+        # convert the new time-like axis back into time units
+        new_grid = new_grid * (self.end - self.start) + self.start
 
         # Wrap to produce MPIArray
         new_vis = mpiarray.MPIArray.wrap(new_vis, axis=data.vis.distributed_axis)
@@ -945,23 +948,51 @@ class LanczosRegridder(tasklib.base.ContainerTask):
 
         return new_data
 
-    def _regrid(self, vis_data, weight, times):
+    def _regrid(self, data, weight, source_samples, data_out=None, weight_out=None):
+        """Implementation of an interpolation algorithm.
+
+        Output arrays can be provided. If not, they must be computed in this method.
+
+        Parameters
+        ----------
+        data : np.ndarray
+            Input data. Last axis corresponds to samples provided in `source_samples`
+        weight : np.ndarray
+            Inverse-variance weights for each data point.
+        source_samples : np.ndarray
+            1D array defining time-like axis samples. These must be normalized such that
+            the range [0, 1] matches the width of the target interpolation grid.
+        data_out : np.ndarray
+            Optional output array to write into. Default is None.
+        weight_out : np.ndarray
+            Optional output array to write into. Default is None.
+        """
+        raise NotImplementedError()
+
+
+class LanczosRegridder(RegridderBase):
+    """Interpolate the time-like axis using Lanczos interpolation.
+
+    Uses a maximum-likelihood inverse of a Lanczos interpolation to do the
+    regridding. This gives a reasonably local regridding, that is pretty well
+    behaved in m-space.
+    """
+
+    def _regrid(self, data, weight, source_samples, data_out=None, weight_out=None):
         # Create a regular grid, padded at either end to supress interpolation issues
         pad = 5 * self.kernel_width
         interp_grid = (
             np.arange(-pad, self.samples + pad, dtype=np.float64) / self.samples
         )
-        # scale to specified range
-        interp_grid = interp_grid * (self.end - self.start) + self.start
 
         # Construct regridding matrix for reverse problem
         lzf = regrid.lanczos_forward_matrix(
-            interp_grid, times, self.kernel_width
+            interp_grid, source_samples, self.kernel_width
         ).T.copy()
 
         # Reshape data
-        vr = vis_data.reshape(-1, vis_data.shape[-1])
-        nr = weight.reshape(-1, vis_data.shape[-1])
+        vr = data.reshape(-1, data.shape[-1])
+        nr = weight.reshape(-1, data.shape[-1])
 
         # Construct a signal 'covariance'
         Si = np.ones_like(interp_grid) * self.epsilon
@@ -975,19 +1006,21 @@ class LanczosRegridder(tasklib.base.ContainerTask):
         interp_grid = interp_grid[pad:-pad].copy()
 
         # Reshape to the correct shape
-        sts = sts.reshape((*vis_data.shape[:-1], self.samples))
-        ni = ni.reshape((*vis_data.shape[:-1], self.samples))
+        if data_out is None:
+            data_out = sts.reshape((*data.shape[:-1], self.samples))
+        else:
+            data_out[:] = sts.reshape((*data.shape[:-1], self.samples))
+        if weight_out is None:
+            weight_out = ni.reshape((*data.shape[:-1], self.samples))
+        else:
+            weight_out[:] = ni.reshape((*data.shape[:-1], self.samples))
 
         if self.mask_zero_weight:
             # set weights to zero where there is no data
             w_mask = weight.sum(axis=-1) != 0.0
             ni *= w_mask[..., np.newaxis]
 
-        return interp_grid, sts, ni
-
-
-# Alias for compatibility
-Regridder = LanczosRegridder
+        return interp_grid, data_out, weight_out
 
 
 class ShiftRA(tasklib.base.ContainerTask):
