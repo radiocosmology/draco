@@ -219,7 +219,8 @@ class SiderealRegridderBase(RegridderBase):
 
         # Get view of data
         weight = data.weight[:].local_array
-        data = data.vis[:].local_array
+        vis = data.vis[:].local_array
+        freq = data.freq[data.vis[:].local_bounds]
 
         # create the output dataset and pass to the regridding method
         sdata = containers.SiderealStream(
@@ -232,14 +233,15 @@ class SiderealRegridderBase(RegridderBase):
         # Mix down
         if self.down_mix:
             self.log.info("Downmixing before regridding.")
-            freq = data.freq[data.vis[:].local_bounds]
-            phase = self._get_phase(freq, data.prodstack, source_samples)
-            data *= phase
+            # iterate over frequencies to reduce memory
+            for ii, f in enumerate(freq):
+                phase = self._get_phase(f, data.prodstack, source_samples)[0]
+                vis[ii] *= phase
 
         # perform regridding, writing directly into the
         # local output array
         new_grid, sts, ni = self._regrid(
-            data,
+            vis,
             weight,
             source_samples,
             data_out=sdata.vis[:].local_array,
@@ -248,9 +250,10 @@ class SiderealRegridderBase(RegridderBase):
 
         # Mix back up
         if self.down_mix:
-            phase = self._get_phase(freq, data.prodstack, new_grid).conj()
-            sts *= phase
-            ni *= (np.abs(phase) > 0.0).astype(ni.dtype)
+            for ii, f in enumerate(freq):
+                phase = self._get_phase(f, data.prodstack, new_grid)[0].conj()
+                sts[ii] *= phase
+                ni[ii] *= (np.abs(phase) > 0.0).astype(ni.dtype)
 
         return sdata
 
@@ -267,8 +270,8 @@ class SiderealRegridderBase(RegridderBase):
         ]
 
         # Calculate the fringe rate assuming that ha = 0.0 and dec = lat
-        lmbda = constants.c / (freq * 1e6)
-        u = self.observer.baselines[np.newaxis, :, 0] / lmbda[:, np.newaxis]
+        lmbda = np.atleast_1d(constants.c / (freq * 1e6))[:, np.newaxis]
+        u = self.observer.baselines[np.newaxis, :, 0] / lmbda
 
         omega = -2.0 * np.pi * u * np.cos(np.radians(self.observer.latitude))
 
@@ -341,7 +344,7 @@ class SiderealRegridderGP(SiderealRegridderBase):
         # Move the arrays back to the correct shape and trim padding
         grid = grid[pad:-pad].copy()
         data_out[:] = _inv_move_front(
-            vout[:, pad:-pad], (0, -1), (*vis.shape[:-1], self.samples)
+            vout[:, pad:-pad], (0, -1), (*data.shape[:-1], self.samples)
         )
         weight_out[:] = _inv_move_front(
             wout[:, pad:-pad], (0, -1), (*weight.shape[:-1], self.samples)
