@@ -187,19 +187,21 @@ class SiderealRegridderBase(RegridderBase):
         sdata : containers.SiderealStream
             The regularly gridded sidereal timestream.
         """
-        self.log.info(f"Regridding LSD:{data.attrs['lsd']}")
-
         # Redistribute if needed too
         data.redistribute("freq")
 
         # Fetch which LSD this is to set bounds
-        self.start = data.attrs["lsd"]
-        self.end = self.start + 1
+        lsd = data.attrs["lsd"]
 
         # Get the source samples, depending on the input type
         if "time" in data.index_map:
             # Convert data timestamps into fractional LSA
-            source_samples = self.observer.unix_to_lsd(data.time) - self.start
+            if not isinstance(lsd, float | int):
+                raise ValueError(
+                    f"Invalid type for lsd: expected `int` | `float`, got `{type(lsd)}`. "
+                    "For time-sampled data, only a single lsd can be interpolated at once."
+                )
+            source_samples = self.observer.unix_to_lsd(data.time) - lsd
         elif "ra" in data.index_map:
             # Convert data ra samples into fractional LSA
             source_samples = data.ra / 360.0
@@ -208,6 +210,11 @@ class SiderealRegridderBase(RegridderBase):
                 f"Invalid input data container {data.__class__.__name__}. "
                 "Expected container with a `time` or an `ra` axis."
             )
+
+        if isinstance(lsd, float):
+            self.log.info(f"Regridding LSD: {lsd}")
+        else:
+            self.log.info(f"Regridding stack containing LSDs: {lsd}")
 
         # This regridder only supports visibilities and their
         # corresponding weights. Make sure this is logged.
@@ -227,8 +234,6 @@ class SiderealRegridderBase(RegridderBase):
             attrs_from=data, axes_from=data, ra=self.samples
         )
         sdata.redistribute("freq")
-        sdata.attrs["lsd"] = self.start
-        sdata.attrs["tag"] = f"lsd_{self.start:.0f}"
 
         # Mix down
         if self.down_mix:
