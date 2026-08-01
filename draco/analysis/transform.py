@@ -992,7 +992,7 @@ class LanczosRegridder(RegridderBase):
 
         # Reshape data
         vr = data.reshape(-1, data.shape[-1])
-        nr = weight.reshape(-1, data.shape[-1])
+        nr = weight.reshape(-1, weight.shape[-1])
 
         # Construct a signal 'covariance'
         Si = np.ones_like(interp_grid) * self.epsilon
@@ -1000,20 +1000,21 @@ class LanczosRegridder(RegridderBase):
         # Calculate the interpolated data and a noise weight at the points in the padded grid
         sts, ni = regrid.band_wiener(lzf, nr, Si, vr, 2 * self.kernel_width - 1)
 
-        # Throw away the padded ends
-        sts = sts[:, pad:-pad].copy()
-        ni = ni[:, pad:-pad].copy()
-        interp_grid = interp_grid[pad:-pad].copy()
+        # Throw away the padded ends and reshape back
+        sts = sts.reshape((*data.shape[:-1], self.samples))[..., pad:-pad]
+        ni = ni.reshape((*data.shape[:-1], self.samples))[..., pad:-pad]
+        interp_grid = interp_grid[pad:-pad]
 
         # Reshape to the correct shape
         if data_out is None:
-            data_out = sts.reshape((*data.shape[:-1], self.samples))
+            data_out = sts.copy()
         else:
-            data_out[:] = sts.reshape((*data.shape[:-1], self.samples))
+            data_out[:] = sts
+
         if weight_out is None:
-            weight_out = ni.reshape((*data.shape[:-1], self.samples))
+            weight_out = ni.copy()
         else:
-            weight_out[:] = ni.reshape((*data.shape[:-1], self.samples))
+            weight_out[:] = ni
 
         if self.mask_zero_weight:
             # set weights to zero where there is no data
