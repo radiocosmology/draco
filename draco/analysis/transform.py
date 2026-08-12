@@ -5,9 +5,9 @@ This includes grouping frequencies and products to performing the m-mode transfo
 
 from typing import overload
 
-import interprs
 import numpy as np
 import scipy.linalg as la
+import wyvern as wv
 from caput import config, mpiarray
 from caput.algorithms import fft, invert_no_zero
 from caput.containers import ContainerPrototype, copy_datasets_filter, empty_like
@@ -995,7 +995,7 @@ class LanczosRegridder(RegridderBase):
         # Create a regular grid, padded at either end to supress interpolation issues
         xout = np.arange(0, self.samples, dtype=np.float64) / self.samples
 
-        interprs.interpolate_lanczos_weighted(
+        wv.interpolate.interpolate_lanczos_weighted(
             source_samples,
             xout,
             self.kernel_width,

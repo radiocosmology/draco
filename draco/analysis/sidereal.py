@@ -11,9 +11,9 @@ into  :class:`SiderealGrouper`, then feeding that into
 
 import inspect
 
-import interprs
 import numpy as np
 import scipy.linalg as la
+import wyvern as wv
 from caput import config, mpiarray
 from caput.astro import constants
 from caput.containers import empty_like, tod
@@ -405,7 +405,7 @@ class SiderealRegridderLinear(SiderealRegridderBase):
         # Create a regular grid
         xout = np.arange(0, self.samples, dtype=np.float64) / self.samples
 
-        interprs.interpolate_linear_weighted(
+        wv.interpolate.interpolate_linear_weighted(
             source_samples,
             xout,
             data.reshape(-1, data.shape[-1]),

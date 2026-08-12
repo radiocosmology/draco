@@ -337,7 +337,7 @@ class BeamFormBase(tasklib.base.ContainerTask):
                         )
                         # Populate only where ha_mask is true. Zero otherwise.
                         weight_full[pol][:, ha_mask] = (
-                            this_sumweight**2 * invert_no_zero(this_weight2)
+                            this_sumweight** 2 * invert_no_zero(this_weight2)
                         )
                     else:
                         weight_full[pol][:, ha_mask] = this_sumweight
