@@ -995,10 +995,47 @@ class LanczosRegridder(RegridderBase):
         # Create a regular grid, padded at either end to supress interpolation issues
         xout = np.arange(0, self.samples, dtype=np.float64) / self.samples
 
-        wv.interpolate.interpolate_lanczos_weighted(
+        # Make the interpolation kernel
+        kernel = wv.kernels.LanczosKernel(self.kernel_width)
+        wv.interpolate.interpolate_kernel_weighted(
             source_samples,
             xout,
-            self.kernel_width,
+            kernel,
+            data.reshape(-1, data.shape[-1]),
+            weight.reshape(-1, weight.shape[-1]),
+            y_out=data_out.reshape(-1, data_out.shape[-1]),
+            w_out=weight_out.reshape(-1, weight_out.shape[-1]),
+        )
+
+        return xout, data_out, weight_out
+
+
+class KaiserBesselRegridder(RegridderBase):
+    """Interpolate the time-like axis a KaiserBessel kernel.
+
+    Attributes
+    ----------
+    beta : float
+        Kaiser window beta parameter. If `None`, the default of `pi * a`
+        is used. Default is None.
+    """
+
+    beta = config.Property(proptype=float, default=None)
+
+    def _regrid(self, data, weight, source_samples, data_out, weight_out):
+        # Create a regular grid, padded at either end to supress interpolation issues
+        xout = np.arange(0, self.samples, dtype=np.float64) / self.samples
+
+        # Make the interpolation kernel
+        kernel = wv.kernels.KaiserBesselKernel(self.kernel_width)
+
+        if self.beta is not None:
+            kernel.set_beta(self.beta)
+
+        wv.interpolate.interpolate_kernel_weighted(
+            source_samples,
+            xout,
+            kernel,
             data.reshape(-1, data.shape[-1]),
             weight.reshape(-1, weight.shape[-1]),
             y_out=data_out.reshape(-1, data_out.shape[-1]),
