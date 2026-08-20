@@ -22,7 +22,12 @@ from caput.pipeline import tasklib
 from ..core import containers, io
 from ..util import gaussian_process, regrid, tools
 from .interpolate import _inv_move_front, _move_front
-from .transform import LanczosRegridder, LanczosWienerRegridder, RegridderBase
+from .transform import (
+    KaiserBesselRegridder,
+    LanczosRegridder,
+    LanczosWienerRegridder,
+    RegridderBase,
+)
 
 
 class SiderealGrouper(tasklib.base.ContainerTask):
@@ -291,6 +296,10 @@ class SiderealRegridderBase(RegridderBase):
 
 
 class SiderealRegridderLanczos(SiderealRegridderBase, LanczosRegridder):
+    """Sidereal regridder using lanczos interpolation."""
+
+
+class SiderealRegridderKaiserBessel(SiderealRegridderBase, KaiserBesselRegridder):
     """Sidereal regridder using lanczos interpolation."""
 
 
