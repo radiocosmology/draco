@@ -989,7 +989,17 @@ class LanczosRegridder(RegridderBase):
 
     Unlike :py:class:`LanczosWienerRegridder`, this just does a standard
     forward interpolation using a lanczos kernel.
+
+    Attributes
+    ----------
+    scale : float
+        Optional kernel scaling factor. Input sample spacing is divided by
+        this factor prior to computing the kernel function; a larger scale
+        factor increases the width of the kernel, and the number of taps is
+        scaled accordingly. Default is 1.0.
     """
+
+    scale = config.Property(proptype=float, default=1.0)
 
     def _regrid(self, data, weight, source_samples, data_out, weight_out):
         # Create a regular grid, padded at either end to supress interpolation issues
@@ -1003,6 +1013,7 @@ class LanczosRegridder(RegridderBase):
             kernel,
             data.reshape(-1, data.shape[-1]),
             weight.reshape(-1, weight.shape[-1]),
+            scale=self.scale,
             y_out=data_out.reshape(-1, data_out.shape[-1]),
             w_out=weight_out.reshape(-1, weight_out.shape[-1]),
         )
@@ -1015,12 +1026,18 @@ class KaiserBesselRegridder(RegridderBase):
 
     Attributes
     ----------
+    scale : float
+        Optional kernel scaling factor. Input sample spacing is divided by
+        this factor prior to computing the kernel function; a larger scale
+        factor increases the width of the kernel, and the number of taps is
+        scaled accordingly. Default is 1.0.
     beta : float
         Kaiser window beta parameter. If `None`, the default of `pi * a`
         is used. Default is None.
     """
 
     beta = config.Property(proptype=float, default=None)
+    scale = config.Property(proptype=float, default=1.0)
 
     def _regrid(self, data, weight, source_samples, data_out, weight_out):
         # Create a regular grid, padded at either end to supress interpolation issues
@@ -1038,6 +1055,7 @@ class KaiserBesselRegridder(RegridderBase):
             kernel,
             data.reshape(-1, data.shape[-1]),
             weight.reshape(-1, weight.shape[-1]),
+            scale=self.scale,
             y_out=data_out.reshape(-1, data_out.shape[-1]),
             w_out=weight_out.reshape(-1, weight_out.shape[-1]),
         )
