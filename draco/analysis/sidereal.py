@@ -13,6 +13,7 @@ import inspect
 
 import numpy as np
 import scipy.linalg as la
+import wyvern as wv
 from caput import config, mpiarray
 from caput.astro import constants
 from caput.containers import empty_like, tod
@@ -21,7 +22,12 @@ from caput.pipeline import tasklib
 from ..core import containers, io
 from ..util import gaussian_process, regrid, tools
 from .interpolate import _inv_move_front, _move_front
-from .transform import LanczosRegridder
+from .transform import (
+    KaiserBesselRegridder,
+    LanczosRegridder,
+    LanczosWienerRegridder,
+    RegridderBase,
+)
 
 
 class SiderealGrouper(tasklib.base.ContainerTask):
@@ -157,7 +163,7 @@ class SiderealGrouper(tasklib.base.ContainerTask):
         return ts
 
 
-class SiderealRegridder(LanczosRegridder):
+class SiderealRegridderBase(RegridderBase):
     """Take a sidereal days worth of data, and put onto a regular grid.
 
     Uses a maximum-likelihood inverse of a Lanczos interpolation to do the
@@ -186,27 +192,34 @@ class SiderealRegridder(LanczosRegridder):
         sdata : containers.SiderealStream
             The regularly gridded sidereal timestream.
         """
-        self.log.info(f"Regridding LSD:{data.attrs['lsd']}")
-
         # Redistribute if needed too
         data.redistribute("freq")
 
         # Fetch which LSD this is to set bounds
-        self.start = data.attrs["lsd"]
-        self.end = self.start + 1
+        lsd = data.attrs["lsd"]
 
         # Get the source samples, depending on the input type
         if "time" in data.index_map:
-            # Convert data timestamps into LSDs
-            source_samples = self.observer.unix_to_lsd(data.time)
+            # Convert data timestamps into fractional LSA
+            if not isinstance(lsd, float | int):
+                raise ValueError(
+                    f"Invalid type for lsd: expected `int` | `float`, got `{type(lsd)}`. "
+                    "For time-sampled data, only a single lsd can be interpolated at once."
+                )
+            source_samples = self.observer.unix_to_lsd(data.time) - lsd
         elif "ra" in data.index_map:
-            # Convert data ra samples into LSDs
-            source_samples = self.start + data.ra / 360.0
+            # Convert data ra samples into fractional LSA
+            source_samples = data.ra / 360.0
         else:
             raise TypeError(
                 f"Invalid input data container {data.__class__.__name__}. "
                 "Expected container with a `time` or an `ra` axis."
             )
+
+        if isinstance(lsd, float):
+            self.log.info(f"Regridding LSD: {lsd}")
+        else:
+            self.log.info(f"Regridding stack containing LSDs: {lsd}")
 
         # This regridder only supports visibilities and their
         # corresponding weights. Make sure this is logged.
@@ -218,41 +231,45 @@ class SiderealRegridder(LanczosRegridder):
 
         # Get view of data
         weight = data.weight[:].local_array
-        vis_data = data.vis[:].local_array
+        vis = data.vis[:].local_array
+        freq = data.freq[data.vis[:].local_bounds]
 
-        # Mix down
-        if self.down_mix:
-            self.log.info("Downmixing before regridding.")
-            freq = data.freq[data.vis[:].local_bounds]
-            phase = self._get_phase(freq, data.prodstack, source_samples)
-            vis_data *= phase
-
-        # perform regridding
-        new_grid, sts, ni = self._regrid(vis_data, weight, source_samples)
-
-        # Mix back up
-        if self.down_mix:
-            phase = self._get_phase(freq, data.prodstack, new_grid).conj()
-            sts *= phase
-            ni *= (np.abs(phase) > 0.0).astype(ni.dtype)
-
-        # Wait here for all processes to be done
-        self.comm.Barrier()
-
-        # FYI this whole process creates an extra copy of the sidereal stack.
-        # This could probably be optimised out with a little work.
+        # create the output dataset and pass to the regridding method
         sdata = containers.SiderealStream(
             attrs_from=data, axes_from=data, ra=self.samples
         )
         sdata.redistribute("freq")
-        sdata.vis[:].local_array[:] = sts
-        sdata.weight[:].local_array[:] = ni
-        sdata.attrs["lsd"] = self.start
-        sdata.attrs["tag"] = f"lsd_{self.start:.0f}"
+
+        # Mix down
+        if self.down_mix:
+            self.log.info("Downmixing before regridding.")
+            # iterate over frequencies to reduce memory
+            for ii, f in enumerate(freq):
+                phase = self._get_phase(f, data.prodstack, source_samples)[0]
+                vis[ii] *= phase
+
+        # perform regridding, writing directly into the
+        # local output array
+        new_grid, sts, ni = self._regrid(
+            vis,
+            weight,
+            source_samples,
+            data_out=sdata.vis[:].local_array,
+            weight_out=sdata.weight[:].local_array,
+        )
+
+        # Mix back up
+        if self.down_mix:
+            for ii, f in enumerate(freq):
+                phase = self._get_phase(f, data.prodstack, new_grid)[0].conj()
+                sts[ii] *= phase
+                ni[ii] *= (np.abs(phase) > 0.0).astype(ni.dtype)
 
         return sdata
 
-    def _get_phase(self, freq, prod, lsd):
+    def _get_phase(self, freq, prod, source_samples):
+        # Convert source samples to LSD
+        lsd = source_samples + self.start
         # Determine if any baselines contains masked feeds
         # These baselines will be flagged since they do not
         # have valid baseline distances.
@@ -263,8 +280,8 @@ class SiderealRegridder(LanczosRegridder):
         ]
 
         # Calculate the fringe rate assuming that ha = 0.0 and dec = lat
-        lmbda = constants.c / (freq * 1e6)
-        u = self.observer.baselines[np.newaxis, :, 0] / lmbda[:, np.newaxis]
+        lmbda = np.atleast_1d(constants.c / (freq * 1e6))[:, np.newaxis]
+        u = self.observer.baselines[np.newaxis, :, 0] / lmbda
 
         omega = -2.0 * np.pi * u * np.cos(np.radians(self.observer.latitude))
 
@@ -278,7 +295,19 @@ class SiderealRegridder(LanczosRegridder):
         )
 
 
-class SiderealRegridderGP(SiderealRegridder):
+class SiderealRegridderLanczos(SiderealRegridderBase, LanczosRegridder):
+    """Sidereal regridder using lanczos interpolation."""
+
+
+class SiderealRegridderKaiserBessel(SiderealRegridderBase, KaiserBesselRegridder):
+    """Sidereal regridder using lanczos interpolation."""
+
+
+class SiderealRegridderLanczosWiener(SiderealRegridderBase, LanczosWienerRegridder):
+    """Sidereal regridder using a wiener filter with an assumed Lanczos transfer function."""
+
+
+class SiderealRegridderGP(SiderealRegridderBase):
     r"""Regrid onto the sidereal day using Gaussian Process Regression.
 
     Attributes
@@ -295,14 +324,10 @@ class SiderealRegridderGP(SiderealRegridder):
     mask_cutoff = config.Property(proptype=float, default=1.7)
     mask_cutoff_partition = config.Property(proptype=int, default=1)
 
-    def _regrid(self, vis, weight, times):
+    def _regrid(self, data, weight, source_samples, data_out, weight_out):
         # Create a regular grid, padded at either end to supress interpolation issues
         pad = 5 * self.kernel_width
         grid = np.arange(-pad, self.samples + pad, dtype=np.float64) / self.samples
-
-        # Remove the csd offset in the source samples. This is
-        # required for the kernels to be properly normalized.
-        times -= self.start
 
         # Reshape the vis and weight arrays, moving frequency and
         # time-like axes to the front and flattening remaining axes
@@ -311,7 +336,7 @@ class SiderealRegridderGP(SiderealRegridder):
         # latter should be fairly straightforward to add, wheras it would
         # take some thought to support additional datasets (`dirty_beam`,
         # `filter`, etc...).
-        vx = _move_front(vis, (0, -1), vis.shape)
+        vx = _move_front(data, (0, -1), data.shape)
         wx = _move_front(weight, (0, -1), weight.shape)
 
         # Define the kernel parameters
@@ -327,7 +352,7 @@ class SiderealRegridderGP(SiderealRegridder):
         vout, wout = gaussian_process.resample(
             vx,
             wx,
-            xi=times,
+            xi=source_samples,
             xo=grid,
             cutoff_dist=self.mask_cutoff,
             cutoff_partition=self.mask_cutoff_partition,
@@ -336,14 +361,14 @@ class SiderealRegridderGP(SiderealRegridder):
 
         # Move the arrays back to the correct shape and trim padding
         grid = grid[pad:-pad].copy()
-        vout = _inv_move_front(
-            vout[:, pad:-pad], (0, -1), (*vis.shape[:-1], self.samples)
+        data_out[:] = _inv_move_front(
+            vout[:, pad:-pad], (0, -1), (*data.shape[:-1], self.samples)
         )
-        wout = _inv_move_front(
+        weight_out[:] = _inv_move_front(
             wout[:, pad:-pad], (0, -1), (*weight.shape[:-1], self.samples)
         )
 
-        return grid, vout, wout
+        return grid, data_out, weight_out
 
 
 def _search_nearest(x, xeval):
@@ -359,118 +384,57 @@ def _search_nearest(x, xeval):
     )
 
 
-class SiderealRegridderNearest(SiderealRegridder):
+class SiderealRegridderNearest(SiderealRegridderBase):
     """Regrid onto the sidereal day using nearest neighbor interpolation."""
 
-    def _regrid(self, vis, weight, lsd):
+    def _regrid(self, data, weight, source_samples, data_out, weight_out):
         # Create a regular grid
         interp_grid = np.arange(0, self.samples, dtype=np.float64) / self.samples
-        interp_grid = interp_grid * (self.end - self.start) + self.start
 
         # Find the data points that are closest to the fixed points on the grid
-        index = _search_nearest(lsd, interp_grid)
+        index = _search_nearest(source_samples, interp_grid)
 
-        interp_vis = vis[..., index]
-        interp_weight = weight[..., index]
+        data_out[:] = data[..., index]
+        weight_out[:] = weight[..., index]
 
         # Flag the re-gridded data if the nearest neighbor was more than one
         # sample spacing away.  This can occur if the input data does not have
         # complete sidereal coverage.
-        delta = np.median(np.abs(np.diff(lsd)))
-        distant = np.flatnonzero(np.abs(lsd[index] - interp_grid) > delta)
-        interp_weight[..., distant] = 0.0
+        delta = np.median(np.abs(np.diff(source_samples)))
+        distant = np.flatnonzero(np.abs(source_samples[index] - interp_grid) > delta)
+        weight_out[..., distant] = 0.0
 
-        return interp_grid, interp_vis, interp_weight
+        return interp_grid, data_out, weight_out
 
 
-class SiderealRegridderLinear(SiderealRegridder):
+class SiderealRegridderLinear(SiderealRegridderBase):
     """Regrid onto the sidereal day using linear interpolation."""
 
-    def _regrid(self, vis, weight, lsd):
+    def _regrid(self, data, weight, source_samples, data_out, weight_out):
         # Create a regular grid
-        interp_grid = np.arange(0, self.samples, dtype=np.float64) / self.samples
-        interp_grid = interp_grid * (self.end - self.start) + self.start
+        xout = np.arange(0, self.samples, dtype=np.float64) / self.samples
 
-        # Find the data points that lie on either side of each point in the fixed grid
-        index = np.searchsorted(lsd, interp_grid, side="left")
-
-        ind1 = index - 1
-        ind2 = index
-
-        # If the fixed grid is outside the range covered by the data,
-        # then we will extrapolate and later flag as bad.
-        below = np.flatnonzero(ind1 == -1)
-        if below.size > 0:
-            ind1[below] = 0
-            ind2[below] = 1
-
-        above = np.flatnonzero(ind2 == lsd.size)
-        if above.size > 0:
-            ind1[above] = lsd.size - 2
-            ind2[above] = lsd.size - 1
-
-        # If the closest data points to the fixed grid point are more than one
-        # sample spacing away, then we will later flag that data as bad.
-        # This will occur if the input data does not cover the full sidereal day.
-        delta = np.median(np.abs(np.diff(lsd)))
-        distant = np.flatnonzero(
-            (np.abs(lsd[ind1] - interp_grid) > delta)
-            | (np.abs(lsd[ind2] - interp_grid) > delta)
+        wv.interpolate.interpolate_linear_weighted(
+            source_samples,
+            xout,
+            data.reshape(-1, data.shape[-1]),
+            weight.reshape(-1, weight.shape[-1]),
+            y_out=data_out.reshape(-1, data_out.shape[-1]),
+            w_out=weight_out.reshape(-1, weight_out.shape[-1]),
         )
 
-        # Calculate the coefficients for the linear interpolation
-        dx1 = interp_grid - lsd[ind1]
-        dx2 = lsd[ind2] - interp_grid
-
-        norm = tools.invert_no_zero(dx1 + dx2)
-        coeff1 = dx2 * norm
-        coeff2 = dx1 * norm
-
-        # Initialize the output arrays
-        shp = (*vis.shape[:-1], self.samples)
-
-        interp_vis = np.zeros(shp, dtype=vis.dtype)
-        interp_weight = np.zeros(shp, dtype=weight.dtype)
-
-        # Loop over frequencies to reduce memory usage
-        for ff in range(shp[0]):
-            fvis = vis[ff]
-            fweight = weight[ff]
-
-            # Consider the data valid if it has nonzero weight
-            fflag = fweight > 0.0
-
-            # Determine the variance from the inverse weight
-            fvar = tools.invert_no_zero(fweight)
-
-            # Require both data points to be valid for the interpolated value to be valid
-            finterp_flag = fflag[:, ind1] & fflag[:, ind2]
-
-            # Interpolate the visibilities and propagate the weights
-            interp_vis[ff] = coeff1 * fvis[:, ind1] + coeff2 * fvis[:, ind2]
-
-            interp_weight[ff] = tools.invert_no_zero(
-                coeff1**2 * fvar[:, ind1] + coeff2**2 * fvar[:, ind2]
-            ) * finterp_flag.astype(np.float32)
-
-        # Flag as bad any values that were extrapolated or that used distant points
-        interp_weight[..., below] = 0.0
-        interp_weight[..., above] = 0.0
-        interp_weight[..., distant] = 0.0
-
-        return interp_grid, interp_vis, interp_weight
+        return xout, data_out, weight_out
 
 
-class SiderealRegridderCubic(SiderealRegridder):
+class SiderealRegridderCubic(SiderealRegridderBase):
     """Regrid onto the sidereal day using cubic Hermite spline interpolation."""
 
-    def _regrid(self, vis, weight, lsd):
+    def _regrid(self, data, weight, source_samples, data_out, weight_out):
         # Create a regular grid
         interp_grid = np.arange(0, self.samples, dtype=np.float64) / self.samples
-        interp_grid = interp_grid * (self.end - self.start) + self.start
 
         # Find the data point just after each point on the fixed grid
-        index = np.searchsorted(lsd, interp_grid, side="left")
+        index = np.searchsorted(source_samples, interp_grid, side="left")
 
         # Find the 4 data points that will be used to interpolate
         # each point on the fixed grid
@@ -482,21 +446,21 @@ class SiderealRegridderCubic(SiderealRegridder):
         if below.size > 0:
             index = np.maximum(index, 0)
 
-        above = np.flatnonzero(np.any(index >= lsd.size, axis=0))
+        above = np.flatnonzero(np.any(index >= source_samples.size, axis=0))
         if above.size > 0:
-            index = np.minimum(index, lsd.size - 1)
+            index = np.minimum(index, source_samples.size - 1)
 
         # If the closest data points to the fixed grid point are more than one
         # sample spacing away, then we will later flag that data as bad.
         # This will occur if the input data does not cover the full sidereal day.
-        delta = np.median(np.abs(np.diff(lsd)))
+        delta = np.median(np.abs(np.diff(source_samples)))
         distant = np.flatnonzero(
-            np.any(np.abs(interp_grid - lsd[index]) > (2.0 * delta), axis=0)
+            np.any(np.abs(interp_grid - source_samples[index]) > (2.0 * delta), axis=0)
         )
 
         # Calculate the coefficients for the interpolation
-        u = (interp_grid - lsd[index[1]]) * tools.invert_no_zero(
-            lsd[index[2]] - lsd[index[1]]
+        u = (interp_grid - source_samples[index[1]]) * tools.invert_no_zero(
+            source_samples[index[2]] - source_samples[index[1]]
         )
 
         coeff = np.zeros((4, u.size), dtype=np.float64)
@@ -507,21 +471,18 @@ class SiderealRegridderCubic(SiderealRegridder):
         coeff *= 0.5
 
         # Initialize the output arrays
-        shp = (*vis.shape[:-1], self.samples)
-
-        interp_vis = np.zeros(shp, dtype=vis.dtype)
-        interp_weight = np.zeros(shp, dtype=weight.dtype)
+        shp = (*data.shape[:-1], self.samples)
 
         # Loop over frequencies to reduce memory usage
         for ff in range(shp[0]):
-            fvis = vis[ff]
+            fvis = data[ff]
             fweight = weight[ff]
 
             # Consider the data valid if it has nonzero weight
             fflag = fweight > 0.0
 
             # Determine the variance from the inverse weight
-            fvar = tools.invert_no_zero(fweight)
+            fvar: np.ndarray = tools.invert_no_zero(fweight)
 
             # Interpolate the visibilities and propagate the weights
             finterp_flag = np.ones(shp[1:], dtype=bool)
@@ -531,23 +492,23 @@ class SiderealRegridderCubic(SiderealRegridder):
                 finterp_flag &= fflag[:, ii]
                 finterp_var += cc**2 * fvar[:, ii]
 
-                interp_vis[ff] += cc * fvis[:, ii]
+                data_out[ff] += cc * fvis[:, ii]
 
             # Invert the accumulated variances to get the weight
             # Require all data points are valid for the interpolated value to be valid
-            interp_weight[ff] = tools.invert_no_zero(finterp_var) * finterp_flag.astype(
+            weight_out[ff] = tools.invert_no_zero(finterp_var) * finterp_flag.astype(
                 np.float32
             )
 
         # Flag as bad any values that were extrapolated or that used distant points
-        interp_weight[..., below] = 0.0
-        interp_weight[..., above] = 0.0
-        interp_weight[..., distant] = 0.0
+        weight_out[..., below] = 0.0
+        weight_out[..., above] = 0.0
+        weight_out[..., distant] = 0.0
 
-        return interp_grid, interp_vis, interp_weight
+        return interp_grid, data_out, weight_out
 
 
-class SiderealRebinner(SiderealRegridder):
+class SiderealRebinner(SiderealRegridderBase):
     """Regrid a sidereal day of data using a binning method.
 
     Assign a fraction of each time sample to the nearest RA bin based
