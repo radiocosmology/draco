@@ -20,7 +20,7 @@ pipeline :
             in:     input_files
             requires: manager
 
-        -   type:       draco.analysis.sidereal.SiderealRegridder
+        -   type:       draco.analysis.sidereal.SiderealRegridderLinear
             in:         siderealday
             out:        sday
             requires: manager
