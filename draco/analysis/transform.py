@@ -7,6 +7,7 @@ from typing import overload
 
 import numpy as np
 import scipy.linalg as la
+import wyvern as wv
 from caput import config, mpiarray
 from caput.algorithms import fft, invert_no_zero
 from caput.containers import ContainerPrototype, copy_datasets_filter, empty_like
@@ -851,12 +852,10 @@ def _unpack_marray(mmodes, n=None):
     return marray
 
 
-class LanczosRegridder(tasklib.base.ContainerTask):
+class RegridderBase(tasklib.base.ContainerTask):
     """Interpolate the time-like axis of a dataset onto a regular grid.
 
-    Uses a maximum-likelihood inverse of a Lanczos interpolation to do the
-    regridding. This gives a reasonably local regridding, that is pretty well
-    behaved in m-space.
+    Non-functional base class - requires implementation of `_regrid`.
 
     Attributes
     ----------
@@ -929,39 +928,164 @@ class LanczosRegridder(tasklib.base.ContainerTask):
             self.log.error(msg)
             raise RuntimeError(msg)
 
-        # perform regridding
-        new_grid, new_vis, ni = self._regrid(vis_data, weight, times)
+        # Normalize input time range
+        source_samples = (times - self.start) / (self.end - self.start)
 
-        # Wrap to produce MPIArray
-        new_vis = mpiarray.MPIArray.wrap(new_vis, axis=data.vis.distributed_axis)
-        ni = mpiarray.MPIArray.wrap(ni, axis=data.vis.distributed_axis)
+        # Expected output grid. We need to construct this ahead of time
+        # in order to avoid an additional copy when creating the output
+        # container
+        expected_grid = np.arange(0, self.samples, dtype=np.float64) / self.samples
+        expected_grid *= self.end - self.start
+        expected_grid += self.start
 
         # Create new container for output
         cont_type = data.__class__
-        new_data = cont_type(axes_from=data, **{timelike_axis: new_grid})
+        new_data = cont_type(axes_from=data, **{timelike_axis: self.samples})
         new_data.redistribute("freq")
-        new_data.vis[:] = new_vis
-        new_data.weight[:] = ni
+
+        # perform regridding
+        new_grid, _, _ = self._regrid(
+            vis_data,
+            weight,
+            source_samples,
+            data_out=new_data.vis[:].local_array,
+            weight_out=new_data.weight[:].local_array,
+        )
+        # convert the new time-like axis back into time units
+        # and ensure that it matches the expectation
+        new_grid = new_grid * (self.end - self.start) + self.start
+
+        if (new_grid != expected_grid).any():
+            raise ValueError(
+                "Expected output grid does not match the actual output grid."
+            )
 
         return new_data
 
-    def _regrid(self, vis_data, weight, times):
+    def _regrid(self, data, weight, source_samples, data_out, weight_out):
+        """Implementation of an interpolation algorithm.
+
+        Output arrays can be provided. If not, they must be computed in this method.
+
+        Parameters
+        ----------
+        data : np.ndarray
+            Input data. Last axis corresponds to samples provided in `source_samples`
+        weight : np.ndarray
+            Inverse-variance weights for each data point.
+        source_samples : np.ndarray
+            1D array defining time-like axis samples. These must be normalized such that
+            the range [0, 1] matches the width of the target interpolation grid.
+        data_out : np.ndarray
+            Optional output array to write into. Default is None.
+        weight_out : np.ndarray
+            Optional output array to write into. Default is None.
+        """
+        raise NotImplementedError()
+
+
+class LanczosRegridder(RegridderBase):
+    """Interpolate the time-like axis using Lanczos interpolation.
+
+    Unlike :py:class:`LanczosWienerRegridder`, this just does a standard
+    forward interpolation using a lanczos kernel.
+
+    Attributes
+    ----------
+    scale : float
+        Optional kernel scaling factor. Input sample spacing is divided by
+        this factor prior to computing the kernel function; a larger scale
+        factor increases the width of the kernel, and the number of taps is
+        scaled accordingly. Default is 1.0.
+    """
+
+    scale = config.Property(proptype=float, default=1.0)
+
+    def _regrid(self, data, weight, source_samples, data_out, weight_out):
+        # Create a regular grid, padded at either end to supress interpolation issues
+        xout = np.arange(0, self.samples, dtype=np.float64) / self.samples
+
+        # Make the interpolation kernel
+        kernel = wv.kernels.LanczosKernel(self.kernel_width)
+        wv.interpolate.interpolate_kernel_weighted(
+            source_samples,
+            xout,
+            kernel,
+            data.reshape(-1, data.shape[-1]),
+            weight.reshape(-1, weight.shape[-1]),
+            scale=self.scale,
+            y_out=data_out.reshape(-1, data_out.shape[-1]),
+            w_out=weight_out.reshape(-1, weight_out.shape[-1]),
+        )
+
+        return xout, data_out, weight_out
+
+
+class KaiserBesselRegridder(RegridderBase):
+    """Interpolate the time-like axis a KaiserBessel kernel.
+
+    Attributes
+    ----------
+    scale : float
+        Optional kernel scaling factor. Input sample spacing is divided by
+        this factor prior to computing the kernel function; a larger scale
+        factor increases the width of the kernel, and the number of taps is
+        scaled accordingly. Default is 1.0.
+    beta : float
+        Kaiser window beta parameter. If `None`, the default of `pi * a`
+        is used. Default is None.
+    """
+
+    beta = config.Property(proptype=float, default=None)
+    scale = config.Property(proptype=float, default=1.0)
+
+    def _regrid(self, data, weight, source_samples, data_out, weight_out):
+        # Create a regular grid, padded at either end to supress interpolation issues
+        xout = np.arange(0, self.samples, dtype=np.float64) / self.samples
+
+        # Make the interpolation kernel
+        kernel = wv.kernels.KaiserBesselKernel(self.kernel_width)
+
+        if self.beta is not None:
+            kernel.set_beta(self.beta)
+
+        wv.interpolate.interpolate_kernel_weighted(
+            source_samples,
+            xout,
+            kernel,
+            data.reshape(-1, data.shape[-1]),
+            weight.reshape(-1, weight.shape[-1]),
+            scale=self.scale,
+            y_out=data_out.reshape(-1, data_out.shape[-1]),
+            w_out=weight_out.reshape(-1, weight_out.shape[-1]),
+        )
+
+        return xout, data_out, weight_out
+
+
+class LanczosWienerRegridder(RegridderBase):
+    """Interpolate the time-like axis using Lanczos interpolation.
+
+    Uses a maximum-likelihood inverse of a Lanczos interpolation to do the
+    regridding. This gives a reasonably local regridding, that is pretty well
+    behaved in m-space.
+    """
+
+    def _regrid(self, data, weight, source_samples, data_out, weight_out):
         # Create a regular grid, padded at either end to supress interpolation issues
         pad = 5 * self.kernel_width
         interp_grid = (
             np.arange(-pad, self.samples + pad, dtype=np.float64) / self.samples
         )
-        # scale to specified range
-        interp_grid = interp_grid * (self.end - self.start) + self.start
 
         # Construct regridding matrix for reverse problem
         lzf = regrid.lanczos_forward_matrix(
-            interp_grid, times, self.kernel_width
+            interp_grid, source_samples, self.kernel_width
         ).T.copy()
 
         # Reshape data
-        vr = vis_data.reshape(-1, vis_data.shape[-1])
-        nr = weight.reshape(-1, vis_data.shape[-1])
+        vr = data.reshape(-1, data.shape[-1])
+        nr = weight.reshape(-1, weight.shape[-1])
 
         # Construct a signal 'covariance'
         Si = np.ones_like(interp_grid) * self.epsilon
@@ -969,25 +1093,21 @@ class LanczosRegridder(tasklib.base.ContainerTask):
         # Calculate the interpolated data and a noise weight at the points in the padded grid
         sts, ni = regrid.band_wiener(lzf, nr, Si, vr, 2 * self.kernel_width - 1)
 
-        # Throw away the padded ends
-        sts = sts[:, pad:-pad].copy()
-        ni = ni[:, pad:-pad].copy()
-        interp_grid = interp_grid[pad:-pad].copy()
-
-        # Reshape to the correct shape
-        sts = sts.reshape((*vis_data.shape[:-1], self.samples))
-        ni = ni.reshape((*vis_data.shape[:-1], self.samples))
+        # Throw away the padded ends and reshape back
+        data_out[:] = sts.reshape((*data.shape[:-1], self.samples + 2 * pad))[
+            ..., pad:-pad
+        ]
+        weight_out[:] = ni.reshape((*data.shape[:-1], self.samples + 2 * pad))[
+            ..., pad:-pad
+        ]
+        interp_grid = interp_grid[pad:-pad]
 
         if self.mask_zero_weight:
             # set weights to zero where there is no data
             w_mask = weight.sum(axis=-1) != 0.0
             ni *= w_mask[..., np.newaxis]
 
-        return interp_grid, sts, ni
-
-
-# Alias for compatibility
-Regridder = LanczosRegridder
+        return interp_grid, data_out, weight_out
 
 
 class ShiftRA(tasklib.base.ContainerTask):

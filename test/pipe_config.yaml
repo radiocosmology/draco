@@ -89,7 +89,7 @@ pipeline:
                 save:   No
                 output_root: "output/gtstream_"
 
-        -   type:       draco.analysis.sidereal.SiderealRegridder
+        -   type:       draco.analysis.sidereal.SiderealRegridderLinear
             requires:   tel
             in:         gtstream
             out:        csstream
