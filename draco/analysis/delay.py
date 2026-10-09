@@ -1085,21 +1085,22 @@ class DelaySpectrumToPowerSpectrum(tasklib.base.ContainerTask):
         if "spectrum_mask" in dspec.datasets:
             w = dspec.datasets["spectrum_mask"][:].local_array
             w = ~w[..., np.newaxis]
+            var_kwargs = {"where": w}
             # Also, add a spectrum mask to the power spectrum
             pspec.add_dataset("spectrum_mask")
             pspec.datasets["spectrum_mask"][:] = 0
         else:
-            w = None
+            var_kwargs = {}
 
         ps = pspec.spectrum[:].local_array
         ds = dspec.spectrum[:].local_array
 
-        ps[:] = np.var(ds, axis=1, where=w)
+        ps[:] = np.var(ds, axis=1, **var_kwargs)
 
         # Check for NaNs and mask them. This happens if an entire slice
         # along the variance axis is masked, and should correspond
         # to bad baselines. Don't bother if no mask was used.
-        if w is not None:
+        if "where" in var_kwargs.keys():
             nans = np.isnan(ps)
             ps[nans] = 0.0
             pspec.datasets["spectrum_mask"][:].local_array[:] = np.any(nans, axis=-1)
