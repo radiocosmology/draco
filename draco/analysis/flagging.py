@@ -1422,6 +1422,30 @@ class RFIStaticVisMask(
     stokes_i: bool = config.Property(proptype=bool, default=False)
 
 
+def _float_or_none(x):
+    """Property type for an optional float (None is kept)."""
+    return None if x is None else float(x)
+
+
+class _TVMaskMixin:
+    """Flag whole TV channels with the `tv_*` properties of the task."""
+
+    def _tv_mask(self, x, freq, sigma):
+        """Mask of the whole TV channels to flag, or nothing if `tv_fraction` is None."""
+        if self.tv_fraction is None:
+            return np.zeros(x.shape, dtype=bool)
+
+        return tv_channels_flag(
+            x,
+            freq,
+            sigma=sigma,
+            f=self.tv_fraction,
+            base_freq=self.tv_base_freq,
+            width=self.tv_channel_width,
+            nchannel=self.tv_nchannel,
+        )
+
+
 class RFIMaskChisqHighDelay(tasklib.base.ContainerTask):
     """Mask frequencies and times with anomalous chi-squared test statistic.
 
@@ -1805,7 +1829,7 @@ class RFIMaskChisqHighDelay(tasklib.base.ContainerTask):
         return np.zeros(times.size, dtype=bool)
 
 
-class RFISensitivityMask(tasklib.base.ContainerTask):
+class RFISensitivityMask(_TVMaskMixin, tasklib.base.ContainerTask):
     """Identify RFI as deviations in system sensitivity from expected radiometer noise.
 
     Attributes
@@ -1847,7 +1871,13 @@ class RFISensitivityMask(tasklib.base.ContainerTask):
         (number of frequency channels, number of time samples).  Default: (101, 31)
     tv_fraction : float, optional
         Fraction of bad samples in a digital TV channel that cause the whole
-        channel to be flagged.  Default: 0.5
+        channel to be flagged. Set to None to not flag whole TV channels.
+        Default: 0.5
+    tv_base_freq, tv_channel_width : float, optional
+        Lower edge of the first TV channel and width of the TV channels, in MHz.
+        Default: 398 and 6 (North American digital TV, as seen by CHIME)
+    tv_nchannel : int, optional
+        Number of TV channels.  Default: 67 (398-800 MHz)
     max_m : int, optional
         Maximum size of the SumThreshold window to use.  Default: 64
     sir : bool, optional
@@ -1873,7 +1903,10 @@ class RFISensitivityMask(tasklib.base.ContainerTask):
 
     base_size = config.list_type(int, length=2, default=(37, 181))
     mad_size = config.list_type(int, length=2, default=(101, 31))
-    tv_fraction = config.Property(proptype=float, default=0.5)
+    tv_fraction = config.Property(proptype=_float_or_none, default=0.5)
+    tv_base_freq = config.Property(proptype=float, default=398.0)
+    tv_channel_width = config.Property(proptype=float, default=6.0)
+    tv_nchannel = config.Property(proptype=int, default=67)
     max_m = config.Property(proptype=int, default=64)
 
     sir = config.Property(proptype=bool, default=False)
@@ -1968,9 +2001,7 @@ class RFISensitivityMask(tasklib.base.ContainerTask):
                 madmask = ady_nsigma > nsigma
 
                 # Flag for scattered TV emission
-                tvmask = tv_channels_flag(
-                    ady_nsigma, freq, sigma=nsigma, f=self.tv_fraction
-                )
+                tvmask = self._tv_mask(ady_nsigma, freq, nsigma)
 
                 madmask |= tvmask
 
@@ -2117,7 +2148,7 @@ class RFISensitivityMask(tasklib.base.ContainerTask):
         return nobaseflagsir | mask
 
 
-class RFIMask(tasklib.base.ContainerTask):
+class RFIMask(_TVMaskMixin, tasklib.base.ContainerTask):
     """Crappy RFI masking.
 
     Attributes
@@ -2127,13 +2158,21 @@ class RFIMask(tasklib.base.ContainerTask):
         the non-RFI samples are Gaussian.
     tv_fraction : float, optional
         Number of bad samples in a digital TV channel that cause the whole
-        channel to be flagged.
+        channel to be flagged. Set to None to not flag whole TV channels.
+    tv_base_freq, tv_channel_width : float, optional
+        Lower edge of the first TV channel and width of the TV channels, in MHz.
+        Default: 398 and 6 (North American digital TV, as seen by CHIME)
+    tv_nchannel : int, optional
+        Number of TV channels.  Default: 67 (398-800 MHz)
     stack_ind : int
         Which stack to process to derive flags for the whole dataset.
     """
 
     sigma = config.Property(proptype=float, default=5.0)
-    tv_fraction = config.Property(proptype=float, default=0.5)
+    tv_fraction = config.Property(proptype=_float_or_none, default=0.5)
+    tv_base_freq = config.Property(proptype=float, default=398.0)
+    tv_channel_width = config.Property(proptype=float, default=6.0)
+    tv_nchannel = config.Property(proptype=int, default=67)
     stack_ind = config.Property(proptype=int)
 
     @overload
@@ -2201,9 +2240,7 @@ class RFIMask(tasklib.base.ContainerTask):
             maddev = np.where(np.isnan(maddev), 2 * self.sigma, maddev)
 
             # Reflag for scattered TV emission
-            tvmask = tv_channels_flag(
-                maddev, sstream.freq, sigma=self.sigma, f=self.tv_fraction
-            )
+            tvmask = self._tv_mask(maddev, sstream.freq, self.sigma)
 
             # Construct the new mask
             mask[:] = tvmask | (maddev > self.sigma)
@@ -3313,13 +3350,18 @@ def p_to_sigma(p):
     return ss.norm.isf(p / 2)
 
 
-def tv_channels_flag(x, freq, sigma=5, f=0.5, debug=False):
+def tv_channels_flag(
+    x, freq, sigma=5, f=0.5, debug=False, base_freq=398.0, width=6.0, nchannel=67
+):
     """Perform a higher sensitivity flagging for the TV stations.
 
     This flags a whole TV station band if more than fraction f of the samples
     within a station band exceed a given threshold. The threshold is calculated
     by wanting a fixed false positive rate (as described by sigma) for fraction
-    f of samples exceeding the threshold
+    f of samples exceeding the threshold.
+
+    Frequencies outside the TV channels are never flagged by this function, so it
+    can be used on data that extend beyond the TV band (e.g. CHORD, 300-1500 MHz).
 
     Parameters
     ----------
@@ -3334,6 +3376,12 @@ def tv_channels_flag(x, freq, sigma=5, f=0.5, debug=False):
         thing.
     debug : bool, optional
         Returns (mask, fraction) instead to give extra debugging info.
+    base_freq : float, optional
+        Lower edge of the first TV channel in MHz. Default: 398
+    width : float, optional
+        Width of the TV channels in MHz. Default: 6
+    nchannel : int, optional
+        Number of TV channels. Default: 67 (398-800 MHz)
 
     Returns
     -------
@@ -3341,17 +3389,19 @@ def tv_channels_flag(x, freq, sigma=5, f=0.5, debug=False):
         Mask of the input data.
     """
     p_false = sigma_to_p(sigma)
-    frac = np.ones_like(x, dtype=np.float32)
 
-    tvstart_freq = 398
-    tvwidth_freq = 6
+    # Frequencies outside the TV channels are not flagged here
+    frac = np.zeros_like(x, dtype=np.float32)
+
+    tvstart_freq = base_freq
+    tvwidth_freq = width
 
     # Calculate the boundaries of each frequency channel
     df = np.median(np.abs(np.diff(freq)))
     freq_start = freq - 0.5 * df
     freq_end = freq + 0.5 * df
 
-    for i in range(67):
+    for i in range(nchannel):
         # Find all frequencies that lie wholly or partially within the TV channel
         fs = tvstart_freq + i * tvwidth_freq
         fe = fs + tvwidth_freq
