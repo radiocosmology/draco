@@ -127,7 +127,8 @@ def medfilt(
     x = np.ascontiguousarray(x.astype(np.float64))
     w = np.ascontiguousarray((~mask).astype(np.float64))
 
-    return algorithms.median.moving_weighted_median(x, w, size, *args)
+    # The window size must be a tuple (sizes from a config are lists)
+    return algorithms.median.moving_weighted_median(x, w, tuple(size), *args)
 
 
 def null_filter(
