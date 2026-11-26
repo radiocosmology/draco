@@ -1985,14 +1985,14 @@ class RFISensitivityMask(_TVMaskMixin, tasklib.base.ContainerTask):
             # of the background sky and the variance using the current mask.
             for nsigma in self.threshold:
                 # Estimate the background by taking a 2D rolling median
-                med_y = filters.medfilt(y, current_flag, self.base_size)
+                med_y = filters.medfilt(y, current_flag, tuple(self.base_size))
                 dy = y - med_y
 
                 # Estimate the median absolute deviation
                 ady = np.abs(dy)
 
                 med_ady = self.MAD_TO_RMS * filters.medfilt(
-                    ady, current_flag, self.mad_size
+                    ady, current_flag, tuple(self.mad_size)
                 )
 
                 ady_nsigma = ady * tools.invert_no_zero(med_ady)

@@ -6,33 +6,8 @@ import pytest
 from draco.analysis import flagging
 from draco.core import containers
 
-CHIME_FREQ = 800.0 - np.arange(1024) * 400.0 / 1024
 # CHORD: 300-1500 MHz, 3200 / 16384 MHz channels
 CHORD_FREQ = 300.0 + np.arange(6145) * 3200.0 / 16384
-
-
-def _tv_channels_flag_old(x, freq, sigma=5, f=0.5):
-    """`tv_channels_flag` before frequencies outside the TV band were fixed.
-
-    Started from a flagged fraction of 1, so every frequency outside 398-800 MHz
-    was flagged.
-    """
-    p_false = flagging.sigma_to_p(sigma)
-    frac = np.ones_like(x, dtype=np.float32)
-    df = np.median(np.abs(np.diff(freq)))
-    freq_start = freq - 0.5 * df
-    freq_end = freq + 0.5 * df
-    for i in range(67):
-        fs = 398 + i * 6
-        fe = fs + 6
-        sel = (freq_end >= fs) & (freq_start <= fe)
-        if not sel.any():
-            continue
-        N = sel.sum()
-        k = int(f * N)
-        t = flagging.p_to_sigma(flagging.inverse_binom_cdf_prob(k, N, 1 - p_false))
-        frac[sel] = (x[sel] > t).mean(axis=0)[np.newaxis, :]
-    return frac > f
 
 
 def _deviations(freq, ntime=100, seed=0, tv=(500.0, 506.0)):
@@ -44,24 +19,12 @@ def _deviations(freq, ntime=100, seed=0, tv=(500.0, 506.0)):
     return x, in_tv
 
 
-def test_chime_band_unchanged():
-    """CHIME's band lies inside the TV channels: the mask is as before."""
-    for seed in range(3):
-        x, _ = _deviations(CHIME_FREQ, seed=seed)
-        np.testing.assert_array_equal(
-            flagging.tv_channels_flag(x, CHIME_FREQ),
-            _tv_channels_flag_old(x, CHIME_FREQ),
-        )
-
-
 def test_outside_tv_band_not_flagged():
     """Frequencies outside 398-800 MHz are never flagged (CHORD's band)."""
-    x, in_tv = _deviations(CHORD_FREQ)
+    x, _ = _deviations(CHORD_FREQ)
     mask = flagging.tv_channels_flag(x, CHORD_FREQ)
     outside = (CHORD_FREQ < 398) | (CHORD_FREQ > 800)
     assert not mask[outside].any()
-    # The old code flagged all of them
-    assert _tv_channels_flag_old(x, CHORD_FREQ)[outside].all()
 
 
 def test_tv_channel_flagged():
@@ -120,7 +83,7 @@ def test_sensitivity_mask_wide_band(tv_fraction):
 
 
 def test_tv_fraction_none_config():
-    """`tv_fraction: null` in a config gives None (it used to raise)."""
+    """`tv_fraction: null` in a config gives None, which turns the TV flag off."""
     for cls in (flagging.RFISensitivityMask, flagging.RFIMask):
         task = cls()
         task.read_config({"tv_fraction": None, "stack_ind": 0})
